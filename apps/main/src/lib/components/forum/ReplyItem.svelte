@@ -39,6 +39,8 @@
 		hostUserId?: string;
 		/** §88 AMA: whether the current viewer is the host (for approve UI). */
 		isHost?: boolean;
+		/** Callback to mark this reply as the accepted answer. */
+		onMarkSolved?: (replyId: string) => void;
 	}
 	let {
 		reply,
@@ -53,7 +55,8 @@
 		currentUserId,
 		deletedUserIds,
 		hostUserId,
-		isHost
+		isHost,
+		onMarkSolved
 	}: Props = $props();
 
 	const myVote = $derived.by(() => (userVotes?.[reply.id] ?? 0) as 1 | -1 | 0);
@@ -131,6 +134,7 @@
 
 	const canEditReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
 	const canDeleteReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	const canMarkSolved = $derived.by(() => canSolve && !isAccepted && !removed && typeof onMarkSolved === 'function');
 
 	// Server-resolved children plus any posted locally during this session.
 	const allChildren = $derived([...childrenOf(reply.id), ...localChildren]);
@@ -316,6 +320,15 @@
 					>
 						{#if deleting}<Loader2 size={12} class="animate-spin" />{:else}<Trash2 size={12} />{/if}
 						{t('forum.delete', 'Delete')}
+					</button>
+				{/if}
+				{#if canMarkSolved}
+					<button
+						type="button"
+						onclick={() => onMarkSolved?.(reply.id)}
+						class="inline-flex items-center gap-1 text-[var(--color-success)] transition-colors hover:text-[var(--color-text)]"
+					>
+						<CheckCircle2 size={12} /> {t('forum.mark_answer', 'Mark as answer')}
 					</button>
 				{/if}
 			</div>

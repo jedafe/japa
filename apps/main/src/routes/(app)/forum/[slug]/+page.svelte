@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2 } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
@@ -97,16 +97,76 @@ import { contentHref } from '$lib/utils/contentLink';
 		solved = thread.solved;
 	});
 
-	async function toggleSolve() {
+	let acceptedReplyId = $state<string | null>(null);
+	$effect(() => {
+		acceptedReplyId = data.acceptedReplyId;
+	});
+
+	let showPollForm = $state(false);
+	let pollQuestion = $state('');
+	let pollMulti = $state(false);
+	let pollCloseAt = $state('');
+	let pollOptions = $state<string[]>(['', '']);
+	let pollSubmitting = $state(false);
+	let pollError = $state<string | null>(null);
+
+	const canCreatePoll = $derived.by(
+		() => data.authed && !data.poll && (data.canModerate || data.currentUserId === thread.author_user_id)
+	);
+
+	async function createPoll(e: Event) {
+		e.preventDefault();
+		if (pollSubmitting) return;
+		pollSubmitting = true;
+		pollError = null;
+
+		const options = pollOptions.map((label) => label.trim()).filter(Boolean);
+		if (pollQuestion.trim() === '') {
+			pollError = t('forum.poll_question_required', 'Poll question is required');
+			pollSubmitting = false;
+			return;
+		}
+		if (options.length < 2) {
+			pollError = t('forum.poll_options_min', 'Add at least two options');
+			pollSubmitting = false;
+			return;
+		}
+
+		const body: Record<string, any> = {
+			question: pollQuestion.trim(),
+			is_multi_select: pollMulti,
+			options: options.map((label, i) => ({ label, position: i }))
+		};
+		if (pollCloseAt) body.close_at = new Date(pollCloseAt).toISOString();
+
+		const res = await api.post(`/forum/${thread.id}/poll`, body);
+		pollSubmitting = false;
+		if (res.error) {
+			pollError = res.error.message ?? t('forum.poll_create_error', 'Could not create poll');
+		} else {
+			pollQuestion = '';
+			pollMulti = false;
+			pollCloseAt = '';
+			pollOptions = ['', ''];
+			showPollForm = false;
+			await invalidateAll();
+		}
+	}
+
+	async function toggleSolve(replyId?: string) {
 		if (solving || !data.canSolve) return;
 		solving = true;
 		const wasSolved = solved;
 		solved = !wasSolved; // optimistic
 		const res = wasSolved
 			? await api.delete(`/forum/${thread.id}/solve`)
-			: await api.post(`/forum/${thread.id}/solve`);
+			: await api.post(`/forum/${thread.id}/solve`, replyId ? { reply_id: replyId } : {});
 		solving = false;
-		if (res.error) solved = wasSolved; // rollback
+		if (res.error) {
+			solved = wasSolved;
+		} else if (!wasSolved && replyId) {
+			acceptedReplyId = replyId;
+		}
 	}
 
 	// Bookmark toggle — POST/DELETE /forum/bookmarks with entity_type=thread.
@@ -466,6 +526,53 @@ import { contentHref } from '$lib/utils/contentLink';
 			<div class="mt-5">
 				<PollBlock pollData={data.poll} spaceId={data.thread.space_id} />
 			</div>
+		{:else if canCreatePoll}
+			<div class="mt-5">
+				{#if showPollForm}
+					<form onsubmit={createPoll} class="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+						<div>
+							<label for="poll-question" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_question', 'Poll question')}</label>
+							<input id="poll-question" type="text" bind:value={pollQuestion} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={t('forum.poll_question_placeholder', 'Ask a question…')} />
+						</div>
+						<div class="flex items-center gap-2">
+							<input id="poll-multi" type="checkbox" bind:checked={pollMulti} class="h-4 w-4" />
+							<label for="poll-multi" class="text-sm text-[var(--color-text)]">{t('forum.poll_multi_select', 'Allow multiple choices')}</label>
+						</div>
+						<div>
+							<label for="poll-close" class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_close_at', 'Close at (optional)')}</label>
+							<input id="poll-close" type="datetime-local" bind:value={pollCloseAt} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" />
+						</div>
+						<div class="space-y-2">
+							<p class="block text-sm font-medium text-[var(--color-text)]">{t('forum.poll_options', 'Options')}</p>
+							{#each pollOptions as label, i (i)}
+								<div class="flex gap-2">
+									<input type="text" bind:value={pollOptions[i]} class="flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" placeholder={`${t('forum.poll_option', 'Option')} ${i + 1}`} />
+									{#if pollOptions.length > 2}
+										<button type="button" onclick={() => pollOptions = pollOptions.filter((_, idx) => idx !== i)} class="text-[var(--color-error)]"><X size={18} /></button>
+									{/if}
+								</div>
+							{/each}
+							<button type="button" onclick={() => pollOptions = [...pollOptions, '']} class="inline-flex items-center gap-1 text-sm text-[var(--color-primary)]">
+								<Plus size={14} /> {t('forum.poll_add_option', 'Add option')}
+							</button>
+						</div>
+						{#if pollError}
+							<p class="text-sm text-[var(--color-error)]">{pollError}</p>
+						{/if}
+						<div class="flex gap-2">
+							<button type="submit" disabled={pollSubmitting} class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+								{#if pollSubmitting}<Loader2 size={14} class="animate-spin" />{/if}
+								{t('forum.create_poll', 'Create poll')}
+							</button>
+							<button type="button" onclick={() => showPollForm = false} class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)]">{t('common.cancel', 'Cancel')}</button>
+						</div>
+					</form>
+				{:else}
+					<button type="button" onclick={() => showPollForm = true} class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline">
+						<Plus size={14} /> {t('forum.add_poll', 'Add poll')}
+					</button>
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Footer actions -->
@@ -495,7 +602,7 @@ import { contentHref } from '$lib/utils/contentLink';
 			{#if data.canSolve}
 				<button
 					type="button"
-					onclick={toggleSolve}
+					onclick={() => toggleSolve()}
 					disabled={solving}
 					class="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 font-medium transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
@@ -512,11 +619,12 @@ import { contentHref } from '$lib/utils/contentLink';
 		threadId={thread.id}
 		authed={data.authed}
 		canSolve={data.canSolve}
-		acceptedReplyId={data.acceptedReplyId}
+		acceptedReplyId={acceptedReplyId}
 		userVotes={data.userVotes}
 		canModerate={data.canModerate}
 		currentUserId={data.currentUserId}
 		{deletedUserIds}
+		onMarkSolved={toggleSolve}
 	/>
 
 	<!-- Related posts sidebar (Phase 05.14) -->

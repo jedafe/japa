@@ -30,8 +30,10 @@
 		hostUserId?: string;
 		/** §88 AMA: whether the current viewer is the host (for approve UI). */
 		isHost?: boolean;
+		/** Callback to mark a specific reply as the accepted answer. */
+		onMarkSolved?: (replyId: string) => void;
 	}
-	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost }: Props = $props();
+	let { replies, threadId, authed, canSolve, acceptedReplyId, userVotes, canModerate, currentUserId, deletedUserIds, hostUserId, isHost, onMarkSolved }: Props = $props();
 
 	// Build a parent → children map from the flat reply list. Uses $derived so
 	// the tree is computed synchronously during SSR (not deferred to $effect,
@@ -130,6 +132,7 @@
 					{deletedUserIds}
 					{hostUserId}
 					{isHost}
+					onMarkSolved={onMarkSolved}
 				/>
 			{/each}
 		</div>
