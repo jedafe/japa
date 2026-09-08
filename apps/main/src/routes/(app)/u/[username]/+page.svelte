@@ -3,13 +3,14 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin } from 'lucide-svelte';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
+	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SelectField, SearchInput } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
@@ -143,6 +144,12 @@
 		{ value: 'about', label: t('profile.tab.about', 'About') },
 		{ value: 'replies', label: t('profile.tab.replies', 'Replies') },
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
+		// §106 video — Videos tab. Always shown for synthetic (imported)
+		// channels; for real users only when they have video sources or the
+		// viewer is the profile owner (so they can see the empty state).
+		...(user.is_synthetic || (data.videos && data.videos.length > 0) || isOwnProfile
+			? [{ value: 'videos', label: t('profile.tab.videos', 'Videos') }]
+			: []),
 		{ value: 'likes', label: t('profile.tab.likes', 'Likes') },
 		{ value: 'spaces', label: t('profile.tab.spaces', 'Spaces') },
 		// §31 — Follower/following lists are public and expose an `is_following`
@@ -608,6 +615,33 @@ profile is private, or no stage is set. -->
 					{/each}
 				</div>
 				{@render pager(mediaView)}
+			{/if}
+		{:else if activeTab === 'videos'}
+			<!-- §106 video — Videos tab. Synthetic channels surface their banner
+			and location metadata above the grid when present. -->
+			{#if user.is_synthetic && (user.banner_url || user.location)}
+				<div class="mb-4 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					{#if user.banner_url}
+						<div class="h-28 overflow-hidden sm:h-36">
+							<img src={user.banner_url} alt="" class="h-full w-full object-cover" loading="lazy" />
+						</div>
+					{/if}
+					<div class="flex flex-wrap items-center gap-3 p-3 text-sm text-[var(--color-muted)]">
+						{#if user.synthetic_source}
+							<span class="inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+								<Video size={12} /> {user.synthetic_source}
+							</span>
+						{/if}
+						{#if user.location}
+							<span class="inline-flex items-center gap-1"><MapPin size={14} /> {user.location}</span>
+						{/if}
+					</div>
+				</div>
+			{/if}
+			{#if data.videos.length === 0}
+				<EmptyState icon={Video} title={t('profile.videos_empty', 'No videos yet')} />
+			{:else}
+				<VideoGrid videos={data.videos} isChannel={user.is_synthetic ?? false} />
 			{/if}
 		{:else if activeTab === 'likes'}
 			{@render toolbar(likesFilterOptions)}

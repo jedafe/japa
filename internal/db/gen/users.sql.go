@@ -461,10 +461,14 @@ SELECT DISTINCT ON (u.id)
        u.username,
        u.profile_type,
        u.follower_count,
+       u.is_synthetic,
+       u.synthetic_source,
        up.display_name,
        up.avatar_url,
        up.bio,
        up.cover_url,
+       up.location,
+       up.banner_media_id,
        COALESCE(up.created_at, u.created_at) AS created_at,
        COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
        (SELECT COUNT(*)::int
@@ -489,10 +493,14 @@ type GetPublicProfileByUsernameRow struct {
 	Username           string             `json:"username"`
 	ProfileType        string             `json:"profile_type"`
 	FollowerCount      int32              `json:"follower_count"`
+	IsSynthetic        bool               `json:"is_synthetic"`
+	SyntheticSource    *string            `json:"synthetic_source"`
 	DisplayName        *string            `json:"display_name"`
 	AvatarUrl          *string            `json:"avatar_url"`
 	Bio                *string            `json:"bio"`
 	CoverUrl           *string            `json:"cover_url"`
+	Location           *string            `json:"location"`
+	BannerMediaID      pgtype.UUID        `json:"banner_media_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ShowPointsPublicly bool               `json:"show_points_publicly"`
 	FollowingCount     int32              `json:"following_count"`
@@ -501,6 +509,8 @@ type GetPublicProfileByUsernameRow struct {
 // Public profile header for /u/[username]. NO PII (no email/status/last_login/groups).
 // Joins user_privacy_settings to surface show_points_publicly so the service
 // layer can conditionally include the user's Points balance (Section 28).
+// is_synthetic/synthetic_source identify imported video channels; location and
+// banner_media_id carry the channel's public metadata (migration 000633).
 func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicProfileByUsernameParams) (GetPublicProfileByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getPublicProfileByUsername, arg.TenantID, arg.Username)
 	var i GetPublicProfileByUsernameRow
@@ -509,10 +519,14 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 		&i.Username,
 		&i.ProfileType,
 		&i.FollowerCount,
+		&i.IsSynthetic,
+		&i.SyntheticSource,
 		&i.DisplayName,
 		&i.AvatarUrl,
 		&i.Bio,
 		&i.CoverUrl,
+		&i.Location,
+		&i.BannerMediaID,
 		&i.CreatedAt,
 		&i.ShowPointsPublicly,
 		&i.FollowingCount,
@@ -2018,10 +2032,13 @@ SELECT u.id AS user_id,
        u.username,
        u.profile_type,
        u.follower_count,
+       u.is_synthetic,
+       u.synthetic_source,
        up.display_name,
        up.avatar_url,
        up.bio,
        up.cover_url,
+       up.location,
        COALESCE(up.created_at, u.created_at) AS created_at,
        (SELECT COUNT(*)::int
           FROM follows f
@@ -2047,16 +2064,19 @@ type ListPublicUsersParams struct {
 }
 
 type ListPublicUsersRow struct {
-	UserID         pgtype.UUID        `json:"user_id"`
-	Username       string             `json:"username"`
-	ProfileType    string             `json:"profile_type"`
-	FollowerCount  int32              `json:"follower_count"`
-	DisplayName    *string            `json:"display_name"`
-	AvatarUrl      *string            `json:"avatar_url"`
-	Bio            *string            `json:"bio"`
-	CoverUrl       *string            `json:"cover_url"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	FollowingCount int32              `json:"following_count"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	Username        string             `json:"username"`
+	ProfileType     string             `json:"profile_type"`
+	FollowerCount   int32              `json:"follower_count"`
+	IsSynthetic     bool               `json:"is_synthetic"`
+	SyntheticSource *string            `json:"synthetic_source"`
+	DisplayName     *string            `json:"display_name"`
+	AvatarUrl       *string            `json:"avatar_url"`
+	Bio             *string            `json:"bio"`
+	CoverUrl        *string            `json:"cover_url"`
+	Location        *string            `json:"location"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	FollowingCount  int32              `json:"following_count"`
 }
 
 // Public user directory at GET /users — PII-safe (no email/status/last_login/groups).
@@ -2087,10 +2107,13 @@ func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams
 			&i.Username,
 			&i.ProfileType,
 			&i.FollowerCount,
+			&i.IsSynthetic,
+			&i.SyntheticSource,
 			&i.DisplayName,
 			&i.AvatarUrl,
 			&i.Bio,
 			&i.CoverUrl,
+			&i.Location,
 			&i.CreatedAt,
 			&i.FollowingCount,
 		); err != nil {

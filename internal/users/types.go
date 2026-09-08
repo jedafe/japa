@@ -185,6 +185,15 @@ type PublicProfileResponse struct {
 	FollowingCount int32   `json:"following_count"`
 	CreatedAt      string  `json:"created_at"`
 	Points         *int64  `json:"points,omitempty"`
+	// Video channel metadata (migration 000633 / §106). IsSynthetic marks
+	// imported video channels; SyntheticSource identifies the origin
+	// platform (e.g. "youtube"); Location and BannerURL carry the channel's
+	// public profile metadata (BannerURL is resolved from
+	// user_profiles.banner_media_id via the media resolver, best-effort).
+	IsSynthetic     bool    `json:"is_synthetic"`
+	SyntheticSource *string `json:"synthetic_source"`
+	Location        *string `json:"location"`
+	BannerURL       *string `json:"banner_url"`
 }
 
 // DraftResponse is the API response for GET /api/v1/me/drafts/{id}, used by

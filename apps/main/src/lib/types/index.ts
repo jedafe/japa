@@ -841,6 +841,14 @@ export interface PublicUser {
 	created_at: string;
 	/** Section 28 — Points balance, only present when the user has opted in via show_points_publicly. Credits are never exposed. */
 	points?: number;
+	/** §106 video — true when this profile is an imported video channel. */
+	is_synthetic?: boolean;
+	/** §106 video — origin platform for synthetic channels (e.g. 'youtube'). */
+	synthetic_source?: string | null;
+	/** §106 video — channel/profile location metadata. */
+	location?: string | null;
+	/** §106 video — channel banner resolved from user_profiles.banner_media_id. */
+	banner_url?: string | null;
 }
 
 /** GET /users/{id}/followers — mapped row for the profile followers tab. */
