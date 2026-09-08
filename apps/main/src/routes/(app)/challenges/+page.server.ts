@@ -26,6 +26,19 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Badge catalog — used to resolve reward_badge_id to a badge name so the
+	// card can show "badge reward" instead of a bare id. Best-effort: when
+	// badges are disabled or the call fails the chip falls back to a generic
+	// label.
+	let badges: Array<{ id: string; name: string }> = [];
+	if (!disabled && challenges.some((c) => c.reward_badge_id)) {
+		try {
+			badges = (await apiList<{ id: string; name: string }>(ctx, '/gamification/badges')).items;
+		} catch {
+			badges = [];
+		}
+	}
+
 	// Phase 34.04 — fetch the authenticated user's challenge progress so we
 	// can render progress bars and reward details. Best-effort: guests and
 	// any backend error degrade to an empty map (challenges still render
@@ -39,5 +52,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { challenges, disabled, authed, myProgress };
+	return { challenges, disabled, authed, myProgress, badges };
 };

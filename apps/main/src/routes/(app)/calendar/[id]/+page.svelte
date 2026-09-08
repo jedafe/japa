@@ -67,8 +67,15 @@
 		return e.status === 'unverified';
 	}
 
-	let saved = $state(false);
+	const baseSaved = $derived(!!entry?.is_saved);
+	let savedOverride = $state<boolean | null>(null);
+	const saved = $derived(savedOverride ?? baseSaved);
 	let saving = $state(false);
+
+	$effect(() => {
+		entry?.id;
+		savedOverride = null;
+	});
 
 	async function toggleSave() {
 		if (!authed || !entry) return;
@@ -76,10 +83,10 @@
 		try {
 			if (saved) {
 				await api.delete(`/calendar/${entry.id}/save`);
-				saved = false;
+				savedOverride = false;
 			} else {
 				await api.post(`/calendar/${entry.id}/save`);
-				saved = true;
+				savedOverride = true;
 			}
 		} finally {
 			saving = false;

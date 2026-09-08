@@ -205,6 +205,12 @@ export function sanitizeContentHtml(html: string, allowedIframeHosts?: string): 
 			return `<${lower}${safeAttrs.join('')}>`;
 		}
 	);
+
+	// Ref: japaconnect-engineering/sections/23-main-site-frontend.md
+	if (!/<div[^>]*\bclass\s*=\s*["'][^"']*\bprose-table-wrapper\b[^"']*["']/i.test(out)) {
+		out = out.replace(/(<table\b[\s\S]*?<\/table>)/gi, '<div class="prose-table-wrapper">$1</div>');
+	}
+
 	return out;
 }
 

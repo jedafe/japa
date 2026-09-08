@@ -234,18 +234,24 @@ func (s *Store) MarkChallengeRewardClaimed(ctx context.Context, id pgtype.UUID) 
 // Leaderboard
 // =====================================================================
 
-// LeaderboardAllTime returns the all-time points leaderboard from wallet_ledger.
-func (s *Store) LeaderboardAllTime(ctx context.Context, tenantID pgtype.UUID, topN int32) ([]gen.LeaderboardAllTimeRow, error) {
+// LeaderboardAllTime returns the all-time points leaderboard from
+// wallet_ledger. spaceID is optional — when valid, only members of that
+// space are ranked (per-space scope, Section 64).
+func (s *Store) LeaderboardAllTime(ctx context.Context, tenantID, spaceID pgtype.UUID, topN int32) ([]gen.LeaderboardAllTimeRow, error) {
 	return s.queries.LeaderboardAllTime(ctx, gen.LeaderboardAllTimeParams{
 		TenantID: tenantID,
+		SpaceID:  spaceID,
 		TopN:     topN,
 	})
 }
 
-// LeaderboardByPeriod returns the period-scoped leaderboard from platform_events.
-func (s *Store) LeaderboardByPeriod(ctx context.Context, tenantID pgtype.UUID, fromDate pgtype.Timestamptz, topN int32) ([]gen.LeaderboardByPeriodRow, error) {
+// LeaderboardByPeriod returns the period-scoped points leaderboard from
+// wallet_ledger earns since fromDate. spaceID is optional — when valid,
+// only members of that space are ranked.
+func (s *Store) LeaderboardByPeriod(ctx context.Context, tenantID, spaceID pgtype.UUID, fromDate pgtype.Timestamptz, topN int32) ([]gen.LeaderboardByPeriodRow, error) {
 	return s.queries.LeaderboardByPeriod(ctx, gen.LeaderboardByPeriodParams{
 		TenantID: tenantID,
+		SpaceID:  spaceID,
 		FromDate: fromDate,
 		TopN:     topN,
 	})
@@ -276,6 +282,15 @@ func (s *Store) CountUserActivityByKey(ctx context.Context, tenantID, userID pgt
 		TenantID:    tenantID,
 		UserID:      userID,
 		ActivityKey: activityKey,
+	})
+}
+
+// GetUserLifetimePoints returns the sum of positive points earns for a user —
+// the lifetime-points counter used by lifetime_points badge triggers (§28).
+func (s *Store) GetUserLifetimePoints(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+	return s.queries.GetLifetimePoints(ctx, gen.GetLifetimePointsParams{
+		TenantID: tenantID,
+		UserID:   userID,
 	})
 }
 

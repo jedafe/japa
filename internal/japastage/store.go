@@ -146,9 +146,9 @@ LIMIT 1
 // row, so a plain UPDATE would affect 0 rows and 404.
 //
 // The history record uses the spec key `set_at` (§87:
-// `japa_stage_history: [{stage, dest_country_id, set_at}]`); the
-// destination key is `dest_space_id` per the ADR-053 adaptation (countries
-// are spaces with level='country' — no geo_countries table exists).
+// `japa_stage_history: [{stage, dest_space_id, set_at}]`); the destination
+// is stored as a `spaces` row (country-level space per ADR-053) because no
+// `geo_countries` table exists.
 func (s *Store) UpdateStage(ctx context.Context, userID, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
 INSERT INTO user_profiles (tenant_id, user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
@@ -157,7 +157,7 @@ VALUES (
     COALESCE($5::bool, true),
     jsonb_build_array(
         jsonb_build_object(
-            'stage', $3,
+            'stage', $3::text,
             'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
@@ -170,7 +170,7 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
     japa_stage_is_public = CASE WHEN $5::bool IS NULL THEN user_profiles.japa_stage_is_public ELSE $5::bool END,
     japa_stage_history = user_profiles.japa_stage_history || jsonb_build_array(
         jsonb_build_object(
-            'stage', $3,
+            'stage', $3::text,
             'dest_space_id', CASE WHEN $4::uuid IS NULL THEN 'null'::jsonb ELSE to_jsonb($4::uuid) END,
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
@@ -209,57 +209,52 @@ WHERE user_id = $1 AND tenant_id = $2
 	return nil
 }
 
-// ListByStage returns a paginated directory of public profiles for a given
-// stage. Only rows with japa_stage_is_public = true are returned. Joins
-// users + spaces for display fields. destSpaceID, when valid, further
-// filters by destination (geo-aware tool pattern — ?dest= filter, §87).
+// ListByStage returns a paginated directory of public japa stage profiles.
+// stage, when non-empty, filters to that stage; when empty, all public
+// profiles with a set japa_stage are returned. destSpaceID, when valid,
+// further filters by destination (geo-aware ?dest= filter, §87).
 func (s *Store) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, limit, offset int32) ([]DirectoryRow, int64, error) {
-	// When a destination filter is supplied, bind it as an extra positional
-	// parameter and add an AND predicate; otherwise query without it so the
-	// directory lists members across all destinations for the stage.
-	if destSpaceID.Valid {
-		listQuery := `
-SELECT up.user_id, u.username, up.display_name, up.avatar_url,
-       up.japa_stage, up.japa_stage_dest_space_id,
-       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
-       up.japa_stage_updated_at
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id
-LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
-WHERE up.tenant_id = $1
-  AND up.japa_stage = $2
-  AND up.japa_stage_dest_space_id = $3
-  AND up.japa_stage_is_public = true
-ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
-LIMIT $4 OFFSET $5
-`
-
-		rows, err := s.pool.Reader.Query(ctx, listQuery, tenantID, stage, destSpaceID, limit, offset)
-		if err != nil {
-			return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
-		}
-
-		defer rows.Close()
-
-		out, err := scanDirectoryRows(rows)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		const countQuery = `
-SELECT COUNT(*) FROM user_profiles
-WHERE tenant_id = $1 AND japa_stage = $2 AND japa_stage_dest_space_id = $3 AND japa_stage_is_public = true
-`
-
-		var total int64
-		if err := s.pool.Reader.QueryRow(ctx, countQuery, tenantID, stage, destSpaceID).Scan(&total); err != nil {
-			return nil, 0, fmt.Errorf("japastage: count by stage: %w", err)
-		}
-
-		return out, total, nil
+	if limit <= 0 {
+		limit = 20
 	}
 
-	listQuery := `
+	if limit > 100 {
+		limit = 100
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	listPredicates := []string{
+		"up.tenant_id = $1",
+		"up.japa_stage_is_public = true",
+	}
+	countPredicates := []string{
+		"tenant_id = $1",
+		"japa_stage_is_public = true",
+	}
+	listArgs := []any{tenantID}
+	countArgs := []any{tenantID}
+
+	if stage != "" {
+		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_stage = $%d", len(listArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("japa_stage = $%d", len(countArgs)+1))
+		listArgs = append(listArgs, stage)
+		countArgs = append(countArgs, stage)
+	} else {
+		listPredicates = append(listPredicates, "up.japa_stage IS NOT NULL")
+		countPredicates = append(countPredicates, "japa_stage IS NOT NULL")
+	}
+
+	if destSpaceID.Valid {
+		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_stage_dest_space_id = $%d", len(listArgs)+1))
+		countPredicates = append(countPredicates, fmt.Sprintf("japa_stage_dest_space_id = $%d", len(countArgs)+1))
+		listArgs = append(listArgs, destSpaceID)
+		countArgs = append(countArgs, destSpaceID)
+	}
+
+	listQuery := fmt.Sprintf(`
 SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -267,14 +262,13 @@ SELECT up.user_id, u.username, up.display_name, up.avatar_url,
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
-WHERE up.tenant_id = $1
-  AND up.japa_stage = $2
-  AND up.japa_stage_is_public = true
+WHERE %s
 ORDER BY up.japa_stage_updated_at DESC NULLS LAST, up.user_id
-LIMIT $3 OFFSET $4
-`
+LIMIT $%d OFFSET $%d
+`, strings.Join(listPredicates, "\n  AND "), len(listArgs)+1, len(listArgs)+2)
+	listArgs = append(listArgs, limit, offset)
 
-	rows, err := s.pool.Reader.Query(ctx, listQuery, tenantID, stage, limit, offset)
+	rows, err := s.pool.Reader.Query(ctx, listQuery, listArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}
@@ -286,13 +280,10 @@ LIMIT $3 OFFSET $4
 		return nil, 0, err
 	}
 
-	const countQuery = `
-SELECT COUNT(*) FROM user_profiles
-WHERE tenant_id = $1 AND japa_stage = $2 AND japa_stage_is_public = true
-`
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM user_profiles\nWHERE %s", strings.Join(countPredicates, "\n  AND "))
 
 	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, countQuery, tenantID, stage).Scan(&total); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("japastage: count by stage: %w", err)
 	}
 

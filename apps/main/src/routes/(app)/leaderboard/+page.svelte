@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Trophy, Lock, Medal } from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, SelectField, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import type { LeaderboardEntry } from '$lib/types';
 	import type { PageData } from './$types';
@@ -20,20 +20,32 @@
 	const activePeriod = $derived(data.period);
 
 	// Phase 34.05 — scope and period selectors. The backend validates these
-	// (global | space:{id}) and (weekly | monthly | all_time).
-	const periodOptions = $derived([
+	// (global | space:{uuid}) and (weekly | monthly | all_time).
+	const periodTabs = $derived<UrlTab[]>([
 		{ value: 'all_time', label: t('leaderboard.period_all_time', 'All time') },
 		{ value: 'monthly', label: t('leaderboard.period_monthly', 'Monthly') },
 		{ value: 'weekly', label: t('leaderboard.period_weekly', 'Weekly') }
 	]);
 
-	const periodTabs = $derived<UrlTab[]>(periodOptions.map((o) => ({ value: o.value, label: o.label })));
+	// Per-space scope options: Global plus every space the member belongs to.
+	const scopeOptions = $derived([
+		{ value: 'global', label: t('leaderboard.scope_global', 'Global') },
+		...(data.spaces ?? []).map((s) => ({ value: `space:${s.id}`, label: s.name }))
+	]);
 
-	function selectPeriod(period: string) {
+	function navigate(scope: string, period: string) {
 		const params = new URLSearchParams();
-		params.set('scope', activeScope);
+		params.set('scope', scope);
 		params.set('period', period);
 		goto(`/leaderboard?${params.toString()}`, { keepFocus: true, noScroll: true });
+	}
+
+	function selectPeriod(period: string) {
+		navigate(activeScope, period);
+	}
+
+	function selectScope(scope: string) {
+		if (scope) navigate(scope, activePeriod);
 	}
 
 	const medalColor = (rank: number): string => {
@@ -68,6 +80,16 @@
 				{t('leaderboard.heading', 'Leaderboard')}
 			</span>
 		{/if}
+		{#snippet actions()}
+			{#if !disabled && scopeOptions.length > 1}
+				<SelectField
+					value={activeScope}
+					options={scopeOptions}
+					onValueChange={selectScope}
+					class="w-40 !py-1.5 text-xs"
+				/>
+			{/if}
+		{/snippet}
 	</ListPageBar>
 
 	{#if disabled}
@@ -106,12 +128,26 @@
 										</span>
 									</td>
 									<td class="px-3 py-2">
-										<a href="/u/{entry.username}" class="text-[var(--color-text)] hover:underline">
-											@{entry.username}
+										<a href="/u/{entry.username}" class="flex items-center gap-2 text-[var(--color-text)] hover:underline">
+											{#if entry.avatar_url}
+												<img
+													src={entry.avatar_url}
+													alt=""
+													class="h-6 w-6 shrink-0 rounded-full object-cover"
+												/>
+											{/if}
+											<span class="min-w-0 truncate">
+												{#if entry.display_name}
+													<span class="font-medium">{entry.display_name}</span>
+													<span class="text-[var(--color-muted)]">@{entry.username}</span>
+												{:else}
+													@{entry.username}
+												{/if}
+											</span>
 										</a>
 									</td>
 									<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">
-										{entry.points}
+										{entry.points.toLocaleString()}
 									</td>
 								</tr>
 							{/each}

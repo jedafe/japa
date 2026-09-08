@@ -37,8 +37,7 @@ export const load: PageServerLoad = async (event) => {
 	// BUG-009: fetch categories from the API (calendar.categories system_setting).
 	let categories: { value: string; label: string }[] = [];
 	try {
-		const resp = await apiGet<{ data: { value: string; label: string }[] }>(ctx, '/calendar/categories');
-		categories = resp.data ?? [];
+		categories = await apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories');
 	} catch {
 		categories = [];
 	}
@@ -53,15 +52,17 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
+	// Default to upcoming events from today; preserve explicit URL filters.
+	const fromParam = from || new Date().toISOString();
 	const params = new URLSearchParams({ view, page_size: String(PAGE_SIZE) });
 	if (dest) params.set('dest', dest);
 	if (category) params.set('category', category);
-	if (from) params.set('from', from);
+	params.set('from', fromParam);
 	if (to) params.set('to', to);
 
 	try {
 		const { items } = await apiList<CalendarEntry>(ctx, `/calendar?${params.toString()}`);
-		return { entries: items, countries, categories, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, category, from, to, view } };
+		return { entries: items, countries, categories, authed, pageSize: PAGE_SIZE, loadError: false, filters: { dest, category, from: fromParam, to, view } };
 	} catch {
 		return {
 			entries: [] as CalendarEntry[],
@@ -70,7 +71,7 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			pageSize: PAGE_SIZE,
 			loadError: true,
-			filters: { dest, category, from, to, view }
+			filters: { dest, category, from: fromParam, to, view }
 		};
 	}
 };

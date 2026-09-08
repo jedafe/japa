@@ -10,6 +10,11 @@ import type { CalendarEntry } from '$lib/types';
  * and a status badge. On 404, throws a SvelteKit 404.
  */
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['calendar.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Community Calendar is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const id = event.params.id;

@@ -52,17 +52,15 @@
 	}
 </script>
 
-<section
-	class="prose-table-wrapper overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
->
-	<table class="w-full text-sm">
+<section class="prose-table-wrapper">
+	<table class="text-sm">
 		<thead>
-			<tr class="border-b border-[var(--color-border)]">
-				<th class="p-3 text-left text-xs font-medium uppercase text-[var(--color-muted)]">
+			<tr>
+				<th class="text-xs uppercase text-[var(--color-muted)]">
 					{t('compare.detail.dimension', 'Dimension')}
 				</th>
 				{#each sortedItems as item (item.id)}
-					<th class="p-3 text-left text-sm font-medium text-[var(--color-text)]">
+					<th class="text-sm text-[var(--color-text)]">
 						<div class="flex items-center gap-1.5">
 							<span class="min-w-0">{item.title}</span>
 							{#if canManage && onRemove}
@@ -82,11 +80,11 @@
 		</thead>
 		<tbody>
 			{#each sortedDimensions as dimension (dimension.id)}
-				<tr class="border-b border-[var(--color-border)] last:border-b-0">
-					<td class="p-3 text-[var(--color-muted)]">{dimension.label}</td>
+				<tr>
+					<td class="text-[var(--color-muted)]">{dimension.label}</td>
 					{#each sortedItems as item (item.id)}
 						{@const dv = cell(item.id, dimension.id)}
-						<td class="p-3 text-[var(--color-text-subtle)]">
+						<td class="text-[var(--color-text-subtle)]">
 							{#if !dv}
 								<span class="text-[var(--color-muted)]">—</span>
 							{:else if dv.type === 'rating'}

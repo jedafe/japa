@@ -331,7 +331,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "leaderboard",
 		Name:        "Leaderboard",
-		Description: "Top contributors — data fetched from /trending/users",
+		Description: "Top contributors — data fetched from /gamification/leaderboard (hidden when gamification.enabled is off)",
 		Icon:        "trophy",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,

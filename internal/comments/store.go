@@ -13,6 +13,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/notifications"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,13 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 				"parent_id", input.ParentID.String(), "error", err)
 		}
 	}
+
+	// §64: record the comment.created activity so badge/challenge triggers
+	// (e.g. first_comment) can fire. Anonymous comments still carry
+	// author_user_id — anonymity is a display concern, not attribution.
+	s.emitActivity(ctx, tenantID, userID, wallet.ActivityKeyCommentCreated, "comment:"+comment.ID.String(), map[string]interface{}{
+		"content_id": input.ContentID.String(),
+	})
 
 	return comment, nil
 }

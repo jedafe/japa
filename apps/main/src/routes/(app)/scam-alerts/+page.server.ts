@@ -15,6 +15,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const dest = event.url.searchParams.get('dest') ?? '';
 	const scam_type = event.url.searchParams.get('scam_type') ?? '';
+	const submitted = event.url.searchParams.get('submitted') === '1';
 
 	let countries: GeoCountry[] = [];
 	try {
@@ -41,13 +42,14 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const { items } = await apiList<ScamReport>(ctx, `/scam-alerts?${params.toString()}`);
-		return { alerts: items, pageSize: PAGE_SIZE, loadError: false, filters: { dest, scam_type }, countries, scamTypes, scamPlatforms };
+		return { alerts: items, pageSize: PAGE_SIZE, loadError: false, filters: { dest, scam_type }, submitted, countries, scamTypes, scamPlatforms };
 	} catch {
 		return {
 			alerts: [] as ScamReport[],
 			pageSize: PAGE_SIZE,
 			loadError: true,
 			filters: { dest, scam_type },
+			submitted,
 			countries,
 			scamTypes,
 			scamPlatforms

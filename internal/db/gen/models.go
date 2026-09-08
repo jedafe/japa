@@ -1007,6 +1007,7 @@ type Content struct {
 	VisaRoute       *string            `json:"visa_route"`
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -3265,6 +3266,11 @@ type ScamReport struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
+	AiGenerated           bool               `json:"ai_generated"`
+	AiModel               *string            `json:"ai_model"`
+	AiGeneratedAt         pgtype.Timestamptz `json:"ai_generated_at"`
+	HitlReviewedBy        pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt        pgtype.Timestamptz `json:"hitl_reviewed_at"`
 }
 
 type Scholarship struct {
@@ -3909,6 +3915,8 @@ type User struct {
 	PasswordChangedAt   pgtype.Timestamptz `json:"password_changed_at"`
 	AiExempt            bool               `json:"ai_exempt"`
 	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
+	IsSynthetic         bool               `json:"is_synthetic"`
+	SyntheticSource     *string            `json:"synthetic_source"`
 }
 
 type UserAffiliateLink struct {
@@ -4090,6 +4098,8 @@ type UserProfile struct {
 	MentorBio                *string            `json:"mentor_bio"`
 	MentorSince              pgtype.Timestamptz `json:"mentor_since"`
 	MentorEmbedding          *pgvector.Vector   `json:"mentor_embedding"`
+	Location                 *string            `json:"location"`
+	BannerMediaID            pgtype.UUID        `json:"banner_media_id"`
 }
 
 type UserRole struct {
@@ -4099,6 +4109,57 @@ type UserRole struct {
 	Slug      string             `json:"slug"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type VideoChannelClaim struct {
+	ID                pgtype.UUID        `json:"id"`
+	TenantID          pgtype.UUID        `json:"tenant_id"`
+	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`
+	VideoAuthorUserID pgtype.UUID        `json:"video_author_user_id"`
+	ClaimType         string             `json:"claim_type"`
+	EvidenceUrl       *string            `json:"evidence_url"`
+	Notes             *string            `json:"notes"`
+	Status            string             `json:"status"`
+	ReviewedBy        pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote    *string            `json:"resolution_note"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ResolvedAt        pgtype.Timestamptz `json:"resolved_at"`
+}
+
+type VideoImportJob struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+}
+
+type VideoSource struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	AuthorUserID     pgtype.UUID        `json:"author_user_id"`
+	SourceType       string             `json:"source_type"`
+	SourceUrl        string             `json:"source_url"`
+	ExternalID       *string            `json:"external_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	Category         *string            `json:"category"`
+	ThumbnailUrl     *string            `json:"thumbnail_url"`
+	ThumbnailMediaID pgtype.UUID        `json:"thumbnail_media_id"`
+	DurationSecs     *int32             `json:"duration_secs"`
+	Status           string             `json:"status"`
+	FieldValues      []byte             `json:"field_values"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type VisaProcessingStat struct {

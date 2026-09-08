@@ -17,13 +17,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/bookmarkfolders"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/wallet"
 )
 
 // ErrOrgPostForbidden is returned when a caller tries to attribute content to
@@ -237,6 +240,40 @@ type Service struct {
 	spaceChecker   SpacePostChecker
 	folderResolver folderResolver
 	catalog        *literals.Catalog
+	activity       wallet.ActivityEmitter
+}
+
+// SetActivityEmitter injects the wallet activity emitter used to record
+// content.created events so §64 badge/challenge triggers (e.g. first_post)
+// can fire. Optional — nil-safe.
+func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e }
+
+// emitActivity records a wallet activity event and enqueues its processing.
+// Fire-and-forget (Rule 8): failures are logged, never propagated — the
+// content mutation is already settled by the time this runs. A duplicate
+// reference hits ON CONFLICT DO NOTHING and returns ErrNoRows, which is
+// treated as "already recorded" rather than an error.
+func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+	if s.activity == nil || !userID.Valid {
+		return
+	}
+
+	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+		ActivityKey: key,
+		Reference:   reference,
+		Payload:     payload,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("content: emit activity event failed", "activity_key", key, "error", err)
+		}
+
+		return
+	}
+
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+		slog.Warn("content: enqueue activity event failed", "activity_key", key, "error", err)
+	}
 }
 
 // ContentSearcher abstracts full-text search for content IDs.

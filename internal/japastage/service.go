@@ -321,12 +321,12 @@ func (s *Service) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, st
 	return nil
 }
 
-// ListByStage returns a paginated directory of public profiles for a given
-// stage. Only profiles with japa_stage_is_public = true are included.
-// destSpaceID, when non-empty, further filters by destination (geo-aware
-// ?dest= filter, §87).
+// ListByStage returns a paginated directory of public japa stage profiles.
+// stage, when non-empty, filters to that stage; when empty, all public
+// profiles with a set stage are returned. destSpaceID, when non-empty,
+// further filters by destination (geo-aware ?dest= filter, §87).
 func (s *Service) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
-	if !ValidStage(stage) {
+	if stage != "" && !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
 	}
 

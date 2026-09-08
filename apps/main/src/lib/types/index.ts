@@ -2578,11 +2578,20 @@ export interface Challenge {
 	slug: string;
 	name: string;
 	description?: string;
+	/** Optional hero image for the challenge card (media id). */
+	image_media_id?: string;
+	/** Activity key that increments progress (e.g. "content.created"). */
+	activity_key?: string;
+	/** Number of qualifying actions needed to complete the challenge. */
+	target_count?: number;
 	starts_at: string;
 	/** NULL when the challenge has no end date (ongoing). */
 	ends_at?: string | null;
 	reward_points: number;
+	/** Badge id granted on completion, when the challenge awards one. */
+	reward_badge_id?: string;
 	is_active: boolean;
+	created_at?: string;
 }
 
 export interface LeaderboardEntry {
@@ -2836,6 +2845,7 @@ export interface ScamReport {
 	status: string;
 	moderator_note?: string;
 	is_pinned: boolean;
+	is_subscribed?: boolean;
 	pinned_space_id?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
@@ -3070,7 +3080,9 @@ export interface CalendarEntry {
 	ai_generated?: boolean;
 	ai_model?: string;
 	hitl_reviewed_by?: string;
+	hitl_review_notes?: string;
 	ai_generated_at?: string;
+	is_saved?: boolean;
 	created_at: string;
 	updated_at?: string;
 }

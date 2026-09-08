@@ -112,7 +112,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "calendar_entries":
-		return p.calendarSvc.AdminUpdate(ctx, targetID, tenantID, reviewerID, "published")
+		return p.calendarSvc.AdminUpdate(ctx, targetID, tenantID, reviewerID, "published", notes)
 
 	case "doc_pages":
 		if err := p.docsSvc.ApproveDocPage(ctx, tenantID, targetID, reviewerID); err != nil {

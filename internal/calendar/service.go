@@ -61,6 +61,7 @@ type CalendarEntryDTO struct {
 	AiPromptHash    string `json:"ai_prompt_hash,omitempty"`
 	HitlReviewedAt  string `json:"hitl_reviewed_at,omitempty"`
 	HitlReviewNotes string `json:"hitl_review_notes,omitempty"`
+	IsSaved         bool   `json:"is_saved,omitempty"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
 }
@@ -242,7 +243,7 @@ func (s *Service) ValidCategory(ctx context.Context, tenantID pgtype.UUID, categ
 }
 
 // List returns published calendar entries matching the given filters.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, category string, from, to pgtype.Timestamptz, page, limit int32) ([]CalendarEntryDTO, int64, error) {
+func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, category string, from, to pgtype.Timestamptz, page, limit int32, userID pgtype.UUID) ([]CalendarEntryDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -269,14 +270,22 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
 	for _, e := range entries {
-		dtos = append(dtos, entryToDTO(e))
+		dto := entryToDTO(e)
+		if userID.Valid {
+			saved, err := s.store.IsSaved(ctx, userID, e.ID, tenantID)
+			if err != nil {
+				slog.Warn("calendar: list: failed to check is_saved", "entry_id", e.ID, "error", err)
+			}
+			dto.IsSaved = saved
+		}
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
 }
 
 // Get returns a single approved calendar entry by id.
-func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntryDTO, error) {
+func (s *Service) Get(ctx context.Context, id, tenantID, userID pgtype.UUID) (CalendarEntryDTO, error) {
 	entry, err := s.store.GetEntry(ctx, id, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -286,7 +295,16 @@ func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEn
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: get: %w", err)
 	}
 
-	return entryToDTO(entry), nil
+	dto := entryToDTO(entry)
+	if userID.Valid {
+		saved, err := s.store.IsSaved(ctx, userID, entry.ID, tenantID)
+		if err != nil {
+			slog.Warn("calendar: get: failed to check is_saved", "entry_id", entry.ID, "error", err)
+		}
+		dto.IsSaved = saved
+	}
+
+	return dto, nil
 }
 
 // Update edits a calendar entry's content fields. Ownership is enforced unless
@@ -474,7 +492,9 @@ func (s *Service) ListSaved(ctx context.Context, userID, tenantID pgtype.UUID, p
 
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
 	for _, e := range entries {
-		dtos = append(dtos, entryToDTO(e))
+		dto := entryToDTO(e)
+		dto.IsSaved = true
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
@@ -538,14 +558,38 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSp
 
 // AdminUpdate updates the status of a calendar entry (moderator+).
 // Valid statuses: published, archived, unverified.
-func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
+// BUG-003 / ADR-088: AI-generated entries must pass HITL review before
+// publication, and §86 requires a verifiable source_url for every published
+// entry. The reason, when provided, is persisted as hitl_review_notes.
+func (s *Service) AdminUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status, reason string) error {
 	switch status {
 	case "published", "archived", "unverified":
 	default:
 		return fmt.Errorf("invalid status: %s", status)
 	}
 
-	if err := s.store.AdminUpdateEntry(ctx, id, tenantID, reviewerID, status); err != nil {
+	row, err := s.store.GetEntryForReview(ctx, id, tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("calendar: admin update: %w", err)
+	}
+
+	if status == "published" {
+		if row.SourceUrl == "" {
+			return ErrSourceURLRequired
+		}
+
+		if row.AiGenerated && !row.HitlReviewedBy.Valid {
+			if reason == "" {
+				return ErrHITLReviewRequired
+			}
+		}
+	}
+
+	if err := s.store.AdminUpdateEntry(ctx, id, tenantID, reviewerID, status, reason); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -768,8 +812,8 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	category := input.Category
-	if category == "" {
-		category = "general"
+	if category == "" || !s.ValidCategory(ctx, tenantID, category) {
+		category = "other"
 	}
 
 	// Build the prompt sent to the Content Agent.

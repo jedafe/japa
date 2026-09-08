@@ -16,6 +16,7 @@ package gamification
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -103,8 +104,24 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // EvaluateForWallet is a thin wrapper around EvaluateBadges that satisfies
 // the wallet.GamificationEvaluator interface (BUG-GAMMA-001). It discards
 // the returned badge list — the wallet only needs the side effects (badge
-// awards, notifications).
+// awards, notifications). It also re-checks lifetime_points badges on every
+// activity — this is the only call site where points can change, so wiring
+// EvaluatePointsBadges here is what makes lifetime_points triggers fire.
 func (s *Service) EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error {
-	_, err := s.EvaluateBadges(ctx, tenantID, userID, activityKey)
-	return err
+	if _, err := s.EvaluateBadges(ctx, tenantID, userID, activityKey); err != nil {
+		return err
+	}
+
+	// lifetime_points badges — idempotent re-check of thresholds against the
+	// current lifetime total (sum of positive points earns, Section 28).
+	lifetime, err := s.store.GetUserLifetimePoints(ctx, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("gamification: lifetime points lookup: %w", err)
+	}
+
+	if _, err := s.EvaluatePointsBadges(ctx, tenantID, userID, lifetime); err != nil {
+		return err
+	}
+
+	return nil
 }

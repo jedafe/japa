@@ -55,9 +55,15 @@ type ScamReport struct {
 	PinnedSpaceID         pgtype.UUID
 	ReviewedBy            pgtype.UUID
 	ReviewedAt            pgtype.Timestamptz
-	CreatedAt             pgtype.Timestamptz
-	UpdatedAt             pgtype.Timestamptz
-	DeletedAt             pgtype.Timestamptz
+	// ADR-088 universal AI-generation columns.
+	AiGenerated    bool
+	AiModel        *string
+	AiGeneratedAt  pgtype.Timestamptz
+	HitlReviewedBy pgtype.UUID
+	HitlReviewedAt pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
 }
 
 // ScamReportRow is the joined result of scam_reports + spaces (destination +
@@ -105,6 +111,8 @@ SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.ai_generated, sr.ai_model, sr.ai_generated_at,
+       sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -126,6 +134,8 @@ LIMIT 1
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
 		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
+		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.OriginSpaceName, &r.OriginSpaceCode,
@@ -151,6 +161,8 @@ SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.ai_generated, sr.ai_model, sr.ai_generated_at,
+       sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -171,6 +183,8 @@ LIMIT 1
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
 		&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+		&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
+		&r.HitlReviewedBy, &r.HitlReviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.OriginSpaceName, &r.OriginSpaceCode,
@@ -278,6 +292,8 @@ SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.ai_generated, sr.ai_model, sr.ai_generated_at,
+       sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -309,6 +325,8 @@ LIMIT $%d OFFSET $%d
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
 			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
+			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.OriginSpaceName, &r.OriginSpaceCode,
@@ -350,6 +368,22 @@ ON CONFLICT (user_id, destination_space_id) DO NOTHING
 	}
 
 	return nil
+}
+
+// IsSubscribed returns true if the user is subscribed to scam alerts for the
+// given destination space.
+func (s *Store) IsSubscribed(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) (bool, error) {
+	var exists bool
+	err := s.pool.Reader.QueryRow(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM scam_alert_subscriptions
+    WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
+)
+`, userID, tenantID, destSpaceID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("scamalert: is subscribed: %w", err)
+	}
+	return exists, nil
 }
 
 // Unsubscribe deletes a scam-alert subscription for a user + destination space.
@@ -411,9 +445,12 @@ WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed'
 // AdminListReportsFilter holds filter parameters for the admin moderation list.
 type AdminListReportsFilter struct {
 	TenantID           pgtype.UUID
-	Status             string      // optional: pending|confirmed|rejected
+	Status             string      // optional: under_review|confirmed|debunked|duplicate
 	DestinationSpaceID pgtype.UUID // optional
 	ScamType           string      // optional
+	Query              string      // optional: ?q= free-text search (ILIKE)
+	Sort               string      // optional: allowlisted sort key
+	Order              string      // optional: asc|desc (default desc)
 	Limit              int32
 	Offset             int32
 }
@@ -450,6 +487,16 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 		argIdx++
 	}
 
+	// ?q= free-text search across report content columns. The destination
+	// space name is intentionally excluded: the count query has no joins.
+	if q := strings.TrimSpace(f.Query); q != "" {
+		conditions = append(conditions, fmt.Sprintf(
+			"(sr.description ILIKE $%d OR sr.origin_community ILIKE $%d OR sr.scam_type ILIKE $%d)",
+			argIdx, argIdx, argIdx))
+		args = append(args, "%"+q+"%")
+		argIdx++
+	}
+
 	whereClause := strings.Join(conditions, " AND ")
 
 	limit := f.Limit
@@ -466,12 +513,34 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 		offset = 0
 	}
 
+	// Allowlisted sort keys → column expressions. Anything unrecognised falls
+	// back to the default created_at ordering so user input can never inject
+	// into ORDER BY.
+	sortColumn := "sr.created_at"
+	switch f.Sort {
+	case "scam_type":
+		sortColumn = "sr.scam_type"
+	case "status":
+		sortColumn = "sr.status"
+	case "destination_space_name":
+		sortColumn = "ds.name"
+	case "updated_at":
+		sortColumn = "sr.updated_at"
+	}
+
+	sortOrder := "DESC"
+	if f.Order == "asc" {
+		sortOrder = "ASC"
+	}
+
 	listQuery := fmt.Sprintf(`
 SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
        sr.is_pinned, sr.pinned_space_id, sr.reviewed_by, sr.reviewed_at,
+       sr.ai_generated, sr.ai_model, sr.ai_generated_at,
+       sr.hitl_reviewed_by, sr.hitl_reviewed_at,
        sr.created_at, sr.updated_at, sr.deleted_at,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -481,9 +550,9 @@ LEFT JOIN spaces ds ON ds.id = sr.destination_space_id
 LEFT JOIN spaces os ON os.id = sr.origin_space_id
 LEFT JOIN users u ON u.id = sr.reporter_id
 WHERE %s
-ORDER BY sr.created_at DESC
+ORDER BY %s %s, sr.id DESC
 LIMIT $%d OFFSET $%d
-`, whereClause, argIdx, argIdx+1)
+`, whereClause, sortColumn, sortOrder, argIdx, argIdx+1)
 
 	args = append(args, limit, offset)
 
@@ -503,6 +572,8 @@ LIMIT $%d OFFSET $%d
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
 			&r.IsPinned, &r.PinnedSpaceID, &r.ReviewedBy, &r.ReviewedAt,
+			&r.AiGenerated, &r.AiModel, &r.AiGeneratedAt,
+			&r.HitlReviewedBy, &r.HitlReviewedAt,
 			&r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.OriginSpaceName, &r.OriginSpaceCode,
@@ -533,7 +604,10 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 }
 
 // UpdateReportStatus updates the status of a report and stamps the reviewer.
-// status must be 'confirmed' or 'rejected'.
+// status must be 'confirmed', 'debunked' or 'duplicate'.
+// ADR-088: the review action itself is the human-in-the-loop approval — when
+// an AI-generated report is reviewed for the first time, hitl_reviewed_by /
+// hitl_reviewed_at are stamped with the reviewing moderator.
 func (s *Store) UpdateReportStatus(ctx context.Context, id, tenantID pgtype.UUID, status, moderatorNote string, reviewerID pgtype.UUID) error {
 	var notePtr *string
 	if moderatorNote != "" {
@@ -543,6 +617,14 @@ func (s *Store) UpdateReportStatus(ctx context.Context, id, tenantID pgtype.UUID
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET status = $3, moderator_note = $4, reviewed_by = $5, reviewed_at = now(),
+    hitl_reviewed_by = CASE
+        WHEN ai_generated AND hitl_reviewed_by IS NULL THEN $5
+        ELSE hitl_reviewed_by
+    END,
+    hitl_reviewed_at = CASE
+        WHEN ai_generated AND hitl_reviewed_by IS NULL THEN now()
+        ELSE hitl_reviewed_at
+    END,
     updated_at = now()
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `, id, tenantID, status, notePtr, reviewerID)

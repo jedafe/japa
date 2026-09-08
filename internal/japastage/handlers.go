@@ -209,12 +209,7 @@ func (h *Handlers) HandleListByStage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stage := r.URL.Query().Get("stage")
-	if stage == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_stage", "Stage query parameter is required")
-		return
-	}
-
-	if !ValidStage(stage) {
+	if stage != "" && !ValidStage(stage) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_stage", "Invalid stage; must be one of: "+JoinStages())
 		return
 	}
