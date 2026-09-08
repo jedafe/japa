@@ -186,6 +186,20 @@ func RegisterVideoProcessor(p interface {
 	videoProcessor = p
 }
 
+// videoImportProcessor holds the bulk video import processor for the
+// video:import_bulk task.
+var videoImportProcessor interface {
+	ProcessBulkImport(ctx context.Context, payload BulkImportPayload) error
+}
+
+// RegisterVideoImportProcessor sets the bulk video import processor for the
+// video:import_bulk handler.
+func RegisterVideoImportProcessor(p interface {
+	ProcessBulkImport(ctx context.Context, payload BulkImportPayload) error
+}) {
+	videoImportProcessor = p
+}
+
 // geoipUpdater holds the GeoIP database updater for the maintenance task.
 var geoipUpdater interface{ DownloadAndUpdate() error }
 

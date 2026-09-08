@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -45,6 +46,24 @@ type MediaManager interface {
 	MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64
 }
 
+// TaskEnqueuer is the minimal interface needed to enqueue the
+// video:import_bulk Asynq task.
+type TaskEnqueuer interface {
+	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// settingsReader is the subset of the settings service used to read
+// hot-reloadable configuration like youtube.data_api_key.
+type settingsReader interface {
+	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+}
+
+// ContentCreator creates content rows for imported videos.
+// *content.Service satisfies this interface.
+type ContentCreator interface {
+	CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+}
+
 // Service coordinates video URL resolution, synthetic channel creation,
 // thumbnail storage, and source persistence.
 type Service struct {
@@ -52,6 +71,10 @@ type Service struct {
 	resolver    Resolver
 	userManager UserManager
 	media       MediaManager
+	enqueuer    TaskEnqueuer
+	settings    settingsReader
+	content     ContentCreator
+	ytProvider  *YouTubeProvider
 }
 
 // NewService returns a video Service.
@@ -64,6 +87,20 @@ func NewService(store *Store, userManager UserManager, media MediaManager, resol
 	}
 }
 
+// SetEnqueuer injects the Asynq task enqueuer used by StartBulkImport.
+func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
+
+// SetSettings injects the hot-reloadable settings reader.
+func (s *Service) SetSettings(r settingsReader) { s.settings = r }
+
+// SetContentService injects the content creator used to publish imported
+// videos as content_type='video' rows.
+func (s *Service) SetContentService(c ContentCreator) { s.content = c }
+
+// SetYouTubeProvider stores the production YouTube provider so the bulk
+// import worker can reuse its HTTP client and SSRF configuration.
+func (s *Service) SetYouTubeProvider(p *YouTubeProvider) { s.ytProvider = p }
+
 // ResolveURL resolves a public video URL, ensures a synthetic channel user,
 // stores the thumbnail, and persists the canonical video source.
 func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL string) (ResolveResult, error) {
@@ -71,7 +108,12 @@ func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL s
 	if err != nil {
 		return ResolveResult{}, err
 	}
+	return s.createSourceFromMetadata(ctx, tenantID, metadata)
+}
 
+// createSourceFromMetadata persists a video source from already-resolved
+// metadata. It is shared by ResolveURL and the bulk import processor.
+func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.UUID, metadata *VideoMetadata) (ResolveResult, error) {
 	channelKey := metadata.ChannelKey()
 	email := fmt.Sprintf("synthetic-%s@synthetic.local", channelKey)
 
