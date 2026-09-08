@@ -114,7 +114,7 @@ DROP INDEX IF EXISTS idx_contents_video_source;
 ALTER TABLE contents DROP COLUMN IF EXISTS video_source_id;
 ```
 
-- [ ] **Step 9: Run `make migrate-up` and verify no errors**
+- [ ] **Step 9: Run `make migrate` and verify no errors**
 
 - [ ] **Step 10: Run `make sqlc-gen` and verify generated code compiles**
 
@@ -548,6 +548,37 @@ export const VideoNode = Node.create({
 - [ ] **Step 2: Store generated draft as `contents` with `ai_generated = true` and `status = 'in_review'` (HITL gate, ADR-088).**
 
 - [ ] **Step 3: Register `video:generate_summary` Asynq task.**
+
+---
+
+## Follow-up — Admin CRUD for `video_sources` and `video_import_jobs`
+
+Per `jc-backend-develop` conventions, every new entity should have a full admin CRUD surface in `apps/admin` and `apps/control` (where applicable). This is intentionally deferred so the initial implementation can focus on user-facing `/create`, `/studio`, and public channel surfaces.
+
+### Tasks to add after core feature is complete
+
+- **Admin DataTable for `video_sources` (`/admin/content/videos`)**
+  - List, search, filter by `status`, `source_type`, `author_user_id`.
+  - Single-row view with metadata, source URL, thumbnail.
+  - `PATCH` to update `status` (`active` → `removed`) without deleting.
+  - `DELETE` as a soft remove (set `status = 'removed'`, do not hard-delete per Rule 11).
+  - Reuse `DataTable` spec (sort/search/filter/paginate/actions/bulk).
+
+- **Admin DataTable for `video_import_jobs` (`/admin/content/video-imports`)**
+  - List, filter by `status`, `source_type`.
+  - View job summary, error log, retry from admin.
+  - `POST /api/v1/admin/video-imports/:id/retry`.
+
+- **Admin review queue for `video_channel_claims` (`/admin/content/video-claims`)**
+  - Already covered in Phase 4.1; this task tracks the `apps/admin` page that uses `GET /api/v1/admin/video-claims` and `PATCH /api/v1/admin/video-claims/:id`.
+
+- **RBAC nodes to seed:**
+  - `admin:video_sources:read`
+  - `admin:video_sources:manage`
+  - `admin:video_import_jobs:read`
+  - `admin:video_import_jobs:manage`
+  - `admin:video_claims:read`
+  - `admin:video_claims:manage`
 
 ---
 
