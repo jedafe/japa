@@ -90,10 +90,10 @@
 		<div class="mobile-topbar">
 			<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 				{#if logoUrl}
-					<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+					<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto max-w-[120px] object-contain" />
 				{:else}
 					<span
-						class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
+						class="grid h-6 w-6 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-[10px] font-semibold text-[var(--color-primary-contrast)]"
 						>JC</span
 					>
 				{/if}
@@ -102,7 +102,7 @@
 			<button
 				type="button"
 				onclick={() => (mobileNavOpen = true)}
-				class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('a11y.open_menu')}
 			>
 				<MenuIcon size={20} />
@@ -180,7 +180,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		height: var(--nav-height);
+		height: 3rem;
 		padding: env(safe-area-inset-top) 0.75rem 0;
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);

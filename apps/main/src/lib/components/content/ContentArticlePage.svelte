@@ -225,7 +225,7 @@
 			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
 		{/if}
 
-		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] sm:text-5xl" style="font-family: var(--font-serif);">{article.title}</h1>
+		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-serif);">{article.title}</h1>
 
 		{#if article.content_type === 'guide' && article.guide_category || journeyChips.length > 0}
 			<div class="mt-4 flex flex-wrap items-center gap-2">
