@@ -103,6 +103,24 @@ describe('createAvailableTypes', () => {
 		expect(vals).not.toContain('video');
 	});
 
+	it('hides video when the video.enabled public setting is false', () => {
+		const vals = createAvailableTypes(
+			all,
+			{ 'feature.blog': true, 'feature.comparison': true },
+			{ 'video.enabled': false }
+		).map((t) => t.value);
+		expect(vals).not.toContain('video');
+	});
+
+	it('shows video when the video.enabled public setting is true', () => {
+		const vals = createAvailableTypes(
+			all,
+			{ 'feature.blog': true, 'feature.comparison': true },
+			{ 'video.enabled': true }
+		).map((t) => t.value);
+		expect(vals).toContain('video');
+	});
+
 	it('maps story to the standard composer and its feature flag', () => {
 		expect(resolveType('story').formKind).toBe('standard');
 		// Canonical flag key — matches routeFeatureFlags (/stories) and the

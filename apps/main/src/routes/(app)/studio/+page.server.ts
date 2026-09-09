@@ -15,6 +15,13 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, '/login?redirect=/studio');
 	}
 
+	// Gate the whole studio on the public video.enabled setting (Rule 16).
+	const parent = await event.parent();
+	const siteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
+	if (siteSettings['video.enabled'] !== true) {
+		throw redirect(307, '/create');
+	}
+
 	event.depends(STUDIO_CACHE_TAG);
 	const ctx = apiContext(event);
 
