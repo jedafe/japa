@@ -86,6 +86,6 @@
 	{/if}
 
 	{#if error}
-		<p id="{id}-error" class="text-sm text-red-500">{error}</p>
+		<p id="{id}-error" class="text-sm text-red-500">{t(error)}</p>
 	{/if}
 </div>
