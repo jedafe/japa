@@ -484,6 +484,120 @@ func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 	return rows, total, nil
 }
 
+// ListSourcesForAdmin returns the video source admin queue with pagination.
+func (s *Service) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoSourcesForAdminRow, int32, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
+	q = strings.TrimSpace(q)
+	sort = strings.TrimSpace(strings.ToLower(sort))
+	if sort != "title" && sort != "source_type" && sort != "status" && sort != "created_at" {
+		sort = "created_at"
+	}
+	dir = strings.TrimSpace(strings.ToLower(dir))
+	if dir != "asc" && dir != "desc" {
+		dir = "desc"
+	}
+	rows, err := s.store.ListSourcesForAdmin(ctx, tenantID, status, sourceType, q, sort, dir, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountSourcesForAdmin(ctx, tenantID, status, sourceType, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// GetSourceForAdmin returns a single video source for admin review.
+func (s *Service) GetSourceForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
+	return s.store.GetSourceByID(ctx, tenantID, id)
+}
+
+// UpdateSourceStatus sets a video source status (active/removed). Used by
+// admin removal / takedown flows.
+func (s *Service) UpdateSourceStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) (gen.VideoSource, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	if status != "active" && status != "removed" {
+		return gen.VideoSource{}, fmt.Errorf("%w: invalid status", errpkg.ErrInvalid)
+	}
+	return s.store.UpdateVideoSourceStatus(ctx, tenantID, id, status)
+}
+
+// GetImportJobForAdmin returns a single video import job by id without user scoping.
+func (s *Service) GetImportJobForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
+	return s.store.GetImportJobByID(ctx, tenantID, id)
+}
+
+// ListImportJobsForAdmin returns the video import job admin queue with pagination.
+func (s *Service) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoImportJobsForAdminRow, int32, error) {
+	status = strings.TrimSpace(strings.ToLower(status))
+	sourceType = strings.TrimSpace(strings.ToLower(sourceType))
+	q = strings.TrimSpace(q)
+	sort = strings.TrimSpace(strings.ToLower(sort))
+	if sort != "status" && sort != "created_at" {
+		sort = "created_at"
+	}
+	dir = strings.TrimSpace(strings.ToLower(dir))
+	if dir != "asc" && dir != "desc" {
+		dir = "desc"
+	}
+	rows, err := s.store.ListImportJobsForAdmin(ctx, tenantID, status, sourceType, q, sort, dir, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.store.CountImportJobsForAdmin(ctx, tenantID, status, sourceType, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+// RetryImportJob re-enqueues a failed or completed video import job from the admin queue.
+func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtype.UUID) (gen.VideoImportJob, error) {
+	job, err := s.store.GetImportJobByID(ctx, tenantID, id)
+	if err != nil {
+		return gen.VideoImportJob{}, err
+	}
+
+	// Re-queue as the requesting admin user (or the original job owner).
+	enqueueUserID := userID
+	if !enqueueUserID.Valid {
+		enqueueUserID = job.UserID
+	}
+
+	_, err = s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
+		ID:            id,
+		TenantID:      tenantID,
+		Status:        "pending",
+		TotalItems:    0,
+		ImportedCount: 0,
+		FailedCount:   0,
+		ErrorLog:      []byte("[]"),
+		StartedAt:     pgtype.Timestamptz{Valid: false},
+		CompletedAt:   pgtype.Timestamptz{Valid: false},
+	})
+	if err != nil {
+		return gen.VideoImportJob{}, fmt.Errorf("resetting import job: %w", err)
+	}
+
+	if s.enqueuer != nil {
+		payload, err := json.Marshal(worker.BulkImportPayload{
+			ImportJobID: id.String(),
+			TenantID:    tenantID.String(),
+			UserID:      enqueueUserID.String(),
+		})
+		if err != nil {
+			return gen.VideoImportJob{}, fmt.Errorf("encoding bulk import payload: %w", err)
+		}
+		if err := s.enqueuer.Enqueue(worker.TypeVideoImportBulk, payload); err != nil {
+			return gen.VideoImportJob{}, fmt.Errorf("enqueueing import job: %w", err)
+		}
+	}
+
+	// Reload after reset.
+	return s.store.GetImportJobByID(ctx, tenantID, id)
+}
+
 // GenerateDraft uses the AI Gateway to generate a title and body from a
 // video source's metadata, then stores the result as a contents row in
 // 'in_review' status with ai_generated=true (§106, ADR-117 HITL gate).

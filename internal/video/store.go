@@ -31,6 +31,22 @@ func NewStore(writer, reader *pgxpool.Pool) *Store {
 	}
 }
 
+// UpdateVideoSourceStatus sets a video source status by id.
+func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) (gen.VideoSource, error) {
+	row, err := s.write.UpdateVideoSourceStatus(ctx, gen.UpdateVideoSourceStatusParams{
+		ID:       id,
+		TenantID: tenantID,
+		Status:   status,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.VideoSource{}, errpkg.ErrNotFound
+		}
+		return gen.VideoSource{}, fmt.Errorf("updating video source status: %w", err)
+	}
+	return row, nil
+}
+
 // CreateOrUpdateSource upserts a video source keyed by (tenant_id, source_url).
 func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdateVideoSourceParams) (gen.VideoSource, error) {
 	row, err := s.write.CreateOrUpdateVideoSource(ctx, arg)
@@ -65,6 +81,38 @@ func (s *Store) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (ge
 		return gen.VideoSource{}, fmt.Errorf("getting video source: %w", err)
 	}
 	return row, nil
+}
+
+// ListSourcesForAdmin lists video sources for the admin queue.
+func (s *Store) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoSourcesForAdminRow, error) {
+	rows, err := s.read.ListVideoSourcesForAdmin(ctx, gen.ListVideoSourcesForAdminParams{
+		TenantID:   tenantID,
+		Status:     status,
+		SourceType: sourceType,
+		Q:          q,
+		Sort:       sort,
+		Dir:        dir,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing admin video sources: %w", err)
+	}
+	return rows, nil
+}
+
+// CountSourcesForAdmin returns the total filtered video source count for the admin queue.
+func (s *Store) CountSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q string) (int32, error) {
+	total, err := s.read.CountVideoSourcesForAdmin(ctx, gen.CountVideoSourcesForAdminParams{
+		TenantID:   tenantID,
+		Status:     status,
+		SourceType: sourceType,
+		Q:          q,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting admin video sources: %w", err)
+	}
+	return total, nil
 }
 
 // GetSourceByExternalID returns a source by (source_type, external_id).
@@ -237,6 +285,38 @@ func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, s
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting admin video channel claims: %w", err)
+	}
+	return total, nil
+}
+
+// ListImportJobsForAdmin lists video import jobs for the admin queue.
+func (s *Store) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoImportJobsForAdminRow, error) {
+	rows, err := s.read.ListVideoImportJobsForAdmin(ctx, gen.ListVideoImportJobsForAdminParams{
+		TenantID:   tenantID,
+		Status:     status,
+		SourceType: sourceType,
+		Q:          q,
+		Sort:       sort,
+		Dir:        dir,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing admin video import jobs: %w", err)
+	}
+	return rows, nil
+}
+
+// CountImportJobsForAdmin returns the total filtered video import job count for the admin queue.
+func (s *Store) CountImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q string) (int32, error) {
+	total, err := s.read.CountVideoImportJobsForAdmin(ctx, gen.CountVideoImportJobsForAdminParams{
+		TenantID:   tenantID,
+		Status:     status,
+		SourceType: sourceType,
+		Q:          q,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("counting admin video import jobs: %w", err)
 	}
 	return total, nil
 }

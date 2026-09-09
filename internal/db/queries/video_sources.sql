@@ -88,3 +88,38 @@ RETURNING
     id, tenant_id, author_user_id, source_type, source_url, external_id, title,
     description, category, thumbnail_url, thumbnail_media_id, duration_secs,
     status, field_values, created_at, updated_at;
+
+-- name: ListVideoSourcesForAdmin :many
+-- Admin queue with optional status/source_type filters, text search, and sorting.
+SELECT
+    vs.id, vs.tenant_id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id,
+    vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id,
+    vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at,
+    u.username AS author_username
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
+WHERE vs.tenant_id = @tenant_id
+  AND (@status::text = '' OR vs.status = @status)
+  AND (@source_type::text = '' OR vs.source_type = @source_type)
+  AND (@q::text = '' OR vs.title ILIKE '%' || @q || '%' OR vs.source_url ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%')
+ORDER BY
+    CASE WHEN @sort = 'title' AND @dir = 'asc' THEN vs.title END ASC NULLS LAST,
+    CASE WHEN @sort = 'title' AND @dir = 'desc' THEN vs.title END DESC NULLS FIRST,
+    CASE WHEN @sort = 'source_type' AND @dir = 'asc' THEN vs.source_type END ASC NULLS LAST,
+    CASE WHEN @sort = 'source_type' AND @dir = 'desc' THEN vs.source_type END DESC NULLS FIRST,
+    CASE WHEN @sort = 'status' AND @dir = 'asc' THEN vs.status END ASC NULLS LAST,
+    CASE WHEN @sort = 'status' AND @dir = 'desc' THEN vs.status END DESC NULLS FIRST,
+    CASE WHEN @sort = 'created_at' AND @dir = 'asc' THEN vs.created_at END ASC NULLS LAST,
+    CASE WHEN @sort = 'created_at' AND @dir = 'desc' THEN vs.created_at END DESC NULLS FIRST,
+    vs.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountVideoSourcesForAdmin :one
+-- Total for admin video sources list (same filters as ListVideoSourcesForAdmin).
+SELECT COUNT(*)::int AS total
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
+WHERE vs.tenant_id = @tenant_id
+  AND (@status::text = '' OR vs.status = @status)
+  AND (@source_type::text = '' OR vs.source_type = @source_type)
+  AND (@q::text = '' OR vs.title ILIKE '%' || @q || '%' OR vs.source_url ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%');

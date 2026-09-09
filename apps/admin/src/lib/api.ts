@@ -1774,6 +1774,28 @@ export const sharePlatformsAdminApi = {
 		api(`/share-platforms/${key}`, { method: 'DELETE' }),
 };
 
+// ── Video (§106, ADR-117) — admin CRUD for sources, imports, and claims ───
+
+export const videoSourcesAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/video-sources${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/video-sources/${id}`),
+	updateStatus: (id: string, body: { status: string }) =>
+		api(`/admin/video-sources/${id}`, { method: 'PATCH', body }),
+};
+
+export const videoImportJobsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/video-import-jobs${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/video-import-jobs/${id}`),
+	retry: (id: string) =>
+		api(`/admin/video-import-jobs/${id}/retry`, { method: 'POST', body: {} }),
+};
+
+export const videoClaimsAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/video-claims${params ? `?${params}` : ''}`),
+	review: (id: string, body: { status: string; resolution_note?: string }) =>
+		api(`/admin/video-claims/${id}`, { method: 'PATCH', body }),
+};
+
 // ── V2 Community Features (§§79–89, §98) — admin HITL review queues ──────
 // Ref: ADR-088 (universal AI content generation + mandatory HITL review).
 
