@@ -2,7 +2,7 @@
 // Server-side proxy for the 2FA backup-code login path. Accepts a challenge
 // token and a one-time backup code, calls POST /auth/totp/backup, sets the
 // jc_token cookie, and returns { redirect }.
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
 	apiContext,
@@ -20,7 +20,7 @@ export const POST: RequestHandler = async (event) => {
 	const redirect = body?.redirect ?? '/';
 
 	if (!challengeToken || !backupCode) {
-		throw error(400, { code: 'missing_fields', message: 'missing_fields' });
+		return json({ error: { code: 'missing_fields', message: 'Challenge token and backup code are required.', status: 400 } }, { status: 400 });
 	}
 
 	const ctx = apiContext(event);
@@ -36,6 +36,6 @@ export const POST: RequestHandler = async (event) => {
 		const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
 		const code = err instanceof Error && 'code' in err ? (err as { code: string }).code : 'api_error';
 		const message = err instanceof Error ? err.message : 'Backup code verification failed';
-		throw error(status, { code: code || 'api_error', message: message || 'Request failed' });
+		return json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
 	}
 };

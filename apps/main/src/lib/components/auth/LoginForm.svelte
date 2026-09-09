@@ -95,6 +95,7 @@
 	{/if}
 
 	<div class="flex flex-col gap-1.5">
+		<label for="login-email" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.email')}</label>
 		<input
 			id="login-email"
 			type="email"
@@ -103,9 +104,10 @@
 			placeholder={t('auth.fields.email')}
 			aria-label={t('auth.fields.email')}
 			aria-invalid={errors.email ? 'true' : undefined}
+			aria-describedby={errors.email ? 'login-email-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		{#if errors.email}<p class="text-sm text-red-500">{errors.email}</p>{/if}
+		{#if errors.email}<p id="login-email-error" class="text-sm text-red-500">{errors.email}</p>{/if}
 	</div>
 
 	<PasswordField

@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { apiContext, requestPasswordReset } from '$lib/server/auth';
 
@@ -8,7 +8,7 @@ export const POST: RequestHandler = async (event) => {
 	const website = body?.website; // §41 Layer 2 honeypot
 
 	if (!email) {
-		throw error(400, { code: 'missing_fields', message: 'missing_fields' });
+		return json({ error: { code: 'missing_fields', message: 'Email is required.', status: 400 } }, { status: 400 });
 	}
 
 	const ctx = apiContext(event);

@@ -2,7 +2,7 @@
 // Server-side proxy for the modal login flow. Calls the backend, sets the
 // jc_token cookie, and returns { user, redirect }. Routes use form actions
 // that call the same authenticateLogin helper.
-import { json, error } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { apiContext, authenticateLogin, getOnboardingStatus, resolvePostLoginRedirect, setRefreshCookie, setSessionCookie } from '$lib/server/auth';
 
@@ -14,7 +14,7 @@ export const POST: RequestHandler = async (event) => {
 	const website = body?.website; // §41 Layer 2 honeypot
 
 	if (!email || !password) {
-		throw error(400, { code: 'missing_fields', message: 'missing_fields' });
+		return json({ error: { code: 'missing_fields', message: 'Email and password are required.', status: 400 } }, { status: 400 });
 	}
 
 	const ctx = apiContext(event);
@@ -42,6 +42,6 @@ export const POST: RequestHandler = async (event) => {
 		const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
 		const code = err instanceof Error && 'code' in err ? (err as { code: string }).code : 'api_error';
 		const message = err instanceof Error ? err.message : 'Login failed';
-		throw error(status, { code: code || 'api_error', message: message || 'Request failed' });
+		return json({ error: { code: code || 'api_error', message: message || 'Request failed', status } }, { status });
 	}
 };

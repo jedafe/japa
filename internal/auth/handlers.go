@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -249,7 +250,15 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: &passwordHash,
 	})
 	if err != nil {
-		if errors.Is(err, errpkg.ErrDuplicate) {
+		var pgErr *pgconn.PgError
+		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
+		if isDuplicate {
+			// The users table has unique constraints on (tenant_id, email)
+			// and (tenant_id, username). Distinguish them when possible.
+			if pgErr != nil && strings.Contains(pgErr.ConstraintName, "username") {
+				errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
+				return
+			}
 			errpkg.WriteError(w, http.StatusConflict, "email_exists", "Email or username already in use")
 			return
 		}

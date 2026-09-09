@@ -186,6 +186,22 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	return followed, nil
 }
 
+// EnsureFollow is an idempotent follow: it checks whether the caller already
+// follows the entity, and only toggles on when not already following. This
+// avoids onboarding (and other bulk-follow paths) accidentally unfollowing an
+// entity the user is already following, while still preserving count updates,
+// auto-join, notifications, and activity events via ToggleFollow.
+func (s *Service) EnsureFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	following, err := s.IsFollowing(ctx, tenantID, followerID, entityType, entityID)
+	if err != nil {
+		return false, fmt.Errorf("checking follow status: %w", err)
+	}
+	if following {
+		return true, nil
+	}
+	return s.ToggleFollow(ctx, tenantID, followerID, entityType, entityID)
+}
+
 // GetFollow returns the follow row for a specific follower-entity pair.
 func (s *Service) GetFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
 	return s.store.getFollow(ctx, tenantID, followerID, entityType, entityID)

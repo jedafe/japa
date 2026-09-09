@@ -21,6 +21,7 @@
 	const minTags = $derived(Number(data.siteSettings?.['onboarding.min_tags_follow'] ?? 3));
 	const minUsers = $derived(Number(data.siteSettings?.['onboarding.min_users_follow'] ?? 2));
 	const minSpaces = $derived(Number(data.siteSettings?.['onboarding.min_spaces_join'] ?? 2));
+	const minRecs = $derived(minSpaces + minUsers);
 
 	// Step 1: Core Identity — pre-fill location from GeoIP (ADR-037).
 	let name = $state('');
@@ -102,6 +103,20 @@
 
 	// Step 4: Recommended Spaces & Connections
 	let selectedRecs = $state<string[]>([]);
+
+	// Section 09: per-step gating. Step 1 and 2 are mandatory; Step 3/4 must
+	// meet admin-configurable minimums; Step 5 is the terminal finish screen.
+	const canAdvance = $derived(
+		currentStep === 1
+			? name.trim() !== '' && japaStatus !== '' && currentLocation.trim() !== ''
+			: currentStep === 2
+				? destCountryCode !== '' && primaryGoal !== ''
+				: currentStep === 3
+					? selectedTags.length >= minTags
+					: currentStep === 4
+						? selectedRecs.length >= minRecs
+						: true
+	);
 
 	const totalSteps = 5;
 	const stepLabels = $derived([
@@ -233,7 +248,9 @@
 				}
 				currentStep++;
 			} else {
-				await goto('/');
+				// Step 5 "skip" is the same as finishing: complete onboarding
+				// and redirect to the home feed with the product tour.
+				await saveStep();
 			}
 		} catch {
 			error = t('onboarding.error', 'Something went wrong. Please try again.');
@@ -405,7 +422,7 @@
 			<!-- Step 4: Recommended Spaces & Connections -->
 			{#if currentStep === 4}
 				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step4_title', 'Connect with your community')}</h1>
-				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step4_subtitle', 'Follow at least {n} spaces and people to start your journey.').replace('{n}', String(Math.max(minSpaces, minUsers)))}</p>
+				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step4_subtitle', 'Follow at least {n} spaces and people to start your journey.').replace('{n}', String(minRecs))}</p>
 				<div class="space-y-2">
 					{#each data.recommendations as rec (rec.id)}
 						<button
@@ -500,18 +517,31 @@
 
 			<!-- Actions -->
 			<div class="mt-8 flex items-center justify-between">
-				<button
-					type="button"
-					onclick={skipStep}
-					disabled={saving}
-					class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
-				>
-					{t('onboarding.skip', 'Skip')}
-				</button>
+				{#if currentStep === 5}
+					<button
+						type="button"
+						onclick={skipStep}
+						disabled={saving}
+						class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
+					>
+						{t('onboarding.skip', 'Skip')}
+					</button>
+				{:else if currentStep > 2}
+					<button
+						type="button"
+						onclick={skipStep}
+						disabled={saving}
+						class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
+					>
+						{t('onboarding.skip', 'Skip')}
+					</button>
+				{:else}
+					<span></span>
+				{/if}
 				<button
 					type="button"
 					onclick={saveStep}
-					disabled={saving}
+					disabled={saving || !canAdvance}
 					class="flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
 					{saving ? t('onboarding.saving', 'Saving...') : currentStep === totalSteps ? t('onboarding.finish', 'Get started') : t('onboarding.next', 'Next')}

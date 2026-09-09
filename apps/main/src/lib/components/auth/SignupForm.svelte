@@ -95,6 +95,7 @@
 	{/if}
 
 	<div class="flex flex-col gap-1.5">
+		<label for="signup-email" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.email')}</label>
 		<input
 			id="signup-email"
 			type="email"
@@ -103,12 +104,14 @@
 			placeholder={t('auth.fields.email')}
 			aria-label={t('auth.fields.email')}
 			aria-invalid={errors.email ? 'true' : undefined}
+			aria-describedby={errors.email ? 'signup-email-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		{#if errors.email}<p class="text-sm text-red-500">{errors.email}</p>{/if}
+		{#if errors.email}<p id="signup-email-error" class="text-sm text-red-500">{errors.email}</p>{/if}
 	</div>
 
 	<div class="flex flex-col gap-1.5">
+		<label for="signup-username" class="text-sm font-medium text-[var(--color-text)]">{t('auth.fields.username')}</label>
 		<input
 			id="signup-username"
 			type="text"
@@ -117,9 +120,10 @@
 			placeholder={t('auth.fields.username')}
 			aria-label={t('auth.fields.username')}
 			aria-invalid={errors.username ? 'true' : undefined}
+			aria-describedby={errors.username ? 'signup-username-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		{#if errors.username}<p class="text-sm text-red-500">{errors.username}</p>{/if}
+		{#if errors.username}<p id="signup-username-error" class="text-sm text-red-500">{errors.username}</p>{/if}
 	</div>
 
 	<PasswordField

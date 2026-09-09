@@ -2308,6 +2308,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
+	onboardingService.SetFollower(followService)
 	onboardingHandlers := onboarding.NewHandlers(onboardingService)
 
 	// SEO & Performance subsystem (Section 26).
