@@ -2389,6 +2389,8 @@ export interface AssessmentForm {
 	status: string;
 	scoring_config: AssessmentScoringConfig;
 	fields: AssessmentField[];
+	/** Derived union of field scoring dimensions and curated roadmap library keys (§71). */
+	dimensions: string[];
 }
 
 export interface AssessmentRoadmapStep {

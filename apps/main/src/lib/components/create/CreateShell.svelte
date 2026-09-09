@@ -82,9 +82,11 @@
 		maxTags?: number;
 		/** Feature flags map, passed down to gate the AI assistant. */
 		features?: Record<string, boolean>;
+		/** Readiness dimensions from GET /assessment for the Journey panel (§71). */
+		assessmentDimensions?: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {} }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions = [] }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
