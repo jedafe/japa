@@ -263,11 +263,15 @@ func (s *Store) ListClaimsByClaimant(ctx context.Context, tenantID, claimantUser
 	return rows, nil
 }
 
-// ListClaimsForAdmin returns the admin review queue with optional status filter.
-func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, error) {
+// ListClaimsForAdmin returns the admin review queue with optional status/claim_type filters, search, and sorting.
+func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, error) {
 	rows, err := s.read.ListVideoChannelClaimsByTenant(ctx, gen.ListVideoChannelClaimsByTenantParams{
 		TenantID:   tenantID,
 		Status:     status,
+		ClaimType:  claimType,
+		Q:          q,
+		Sort:       sort,
+		Dir:        dir,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -278,10 +282,12 @@ func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, st
 }
 
 // CountClaimsForAdmin returns the total number of claims for the admin queue filter.
-func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string) (int32, error) {
+func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q string) (int32, error) {
 	total, err := s.read.CountVideoChannelClaimsByTenant(ctx, gen.CountVideoChannelClaimsByTenantParams{
-		TenantID: tenantID,
-		Status:   status,
+		TenantID:  tenantID,
+		Status:    status,
+		ClaimType: claimType,
+		Q:         q,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting admin video channel claims: %w", err)

@@ -5,6 +5,7 @@
 	import type { ActionContext } from '$lib/components/ui/data-table/types';
 	import { videoImportJobsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
 
 	type VideoImportJob = {
@@ -46,7 +47,7 @@
 		title: t('video_import_jobs.title', 'Video Import Jobs'),
 		description: t('video_import_jobs.description', 'Monitor and retry bulk YouTube import jobs.'),
 		createPermission: 'admin.video_import_jobs.create',
-		editPermission: 'admin.video_import_jobs.read',
+		editPermission: 'admin.video_import_jobs.manage',
 		deletePermission: 'admin.video_import_jobs.delete',
 		pageSize: 25,
 		columns: [
@@ -115,7 +116,10 @@
 			{
 				label: t('video_import_jobs.retry', 'Retry'),
 				icon: RefreshCw,
-				show: (row: any) => row?.status !== 'running' && row?.status !== 'pending',
+				show: (row: any) =>
+					hasPermission('admin.video_import_jobs.manage') &&
+					row?.status !== 'running' &&
+					row?.status !== 'pending',
 				onclick: async (row: any, ctx?: ActionContext) => {
 					const id = row?.id;
 					if (!id || retryingId) return;
