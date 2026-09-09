@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { setContext, type Snippet } from 'svelte';
-	import { Menu as MenuIcon } from 'lucide-svelte';
+	import { Menu as MenuIcon, Sun, Moon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import ComposeModal from './ComposeModal.svelte';
 	import { t } from '$lib/i18n';
+	import { theme } from '$lib/stores/theme.svelte';
 	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '$lib/types';
 
 	interface Props {
@@ -99,15 +100,25 @@
 				{/if}
 				<span class="hidden md:inline">{t('app.name')}</span>
 			</a>
-			<button
-				type="button"
-				onclick={() => (mobileNavOpen = true)}
+			<div class="flex items-center gap-1">
+				<button
+					type="button"
+					onclick={() => theme.toggle()}
+					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					aria-label={theme.current === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
+				>
+					{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
+				</button>
+				<button
+					type="button"
+					onclick={() => (mobileNavOpen = true)}
 				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('a11y.open_menu')}
 			>
 				<MenuIcon size={20} />
 			</button>
 		</div>
+	</div>
 		{@render children()}
 		{#if composeEnabled && user}
 			<ComposeModal />
