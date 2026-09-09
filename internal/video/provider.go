@@ -101,7 +101,7 @@ func NewDefaultResolver() Resolver {
 func (r *resolver) Resolve(ctx context.Context, rawURL string) (*VideoMetadata, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidVideoURL, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidVideoURL, err)
 	}
 
 	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
