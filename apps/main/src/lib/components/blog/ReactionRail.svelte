@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Check, Heart, Plus } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check, Heart } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { compose } from '$lib/components/shell/compose.svelte';
 
 	interface SharePlatform {
 		key: string;
@@ -392,37 +391,8 @@
 		<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
 	</a>
 
-	{#if isHorizontal}
-		{#if authed}
-			<button
-				type="button"
-				onclick={() => compose.openMenu()}
-				class="flex flex-col items-center gap-0.5 text-[var(--color-primary)] transition-colors"
-				aria-label={t('nav.compose', 'Compose')}
-			>
-				<span
-					class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={20} />
-				</span>
-			</button>
-		{:else}
-			<a
-				href="/login?redirect=/create"
-				class="flex flex-col items-center gap-0.5 text-[var(--color-primary)] transition-colors"
-				aria-label={t('nav.compose', 'Compose')}
-			>
-				<span
-					class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
-				>
-					<Plus size={20} />
-				</span>
-			</a>
-		{/if}
-	{/if}
-
 	<!-- Subtle separator between content actions and utility actions -->
-	<div class="{isHorizontal ? 'hidden' : 'my-1 h-px w-5'} bg-[var(--color-border)]"></div>
+	<div class="{isHorizontal ? 'h-5 w-px' : 'my-1 h-px w-5'} bg-[var(--color-border)]"></div>
 
 	{#if bookmarksEnabled}
 		<button
