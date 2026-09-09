@@ -19,6 +19,8 @@
 		userSpaces?: UserSpaceRef[];
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
+		logoDarkUrl?: string;
 		/** Comma-separated enabled languages from i18n.enabled_languages. */
 		enabledLanguages?: string;
 		children: Snippet;
@@ -45,6 +47,7 @@
 		suggestedSpaces = [],
 		userSpaces = [],
 		logoUrl = '',
+	logoDarkUrl = '',
 		enabledLanguages = 'en,fr',
 		children,
 		hideRightSidebar = false,
