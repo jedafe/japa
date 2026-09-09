@@ -43,6 +43,7 @@
 </script>
 
 <div class="flex flex-col gap-1.5">
+	<label for={id} class="text-sm font-medium text-[var(--color-text)]">{label}</label>
 	<div class="relative">
 		<input
 			{id}
@@ -85,6 +86,6 @@
 	{/if}
 
 	{#if error}
-		<p {id} class="text-sm text-red-500">{error}</p>
+		<p id="{id}-error" class="text-sm text-red-500">{error}</p>
 	{/if}
 </div>

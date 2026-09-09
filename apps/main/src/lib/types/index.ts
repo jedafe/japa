@@ -554,6 +554,7 @@ export type AuthErrorCode =
 	| 'missing_fields'
 	| 'invalid_credentials'
 	| 'email_exists'
+	| 'username_exists'
 	| 'weak_password'
 	| 'password_breached'
 	| 'invalid_body'

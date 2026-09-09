@@ -18,11 +18,18 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
+// Follower is the subset of the follow-system service that onboarding needs
+// to persist tag/space/user selections from the wizard into real follow rows.
+type Follower interface {
+	EnsureFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+}
+
 // Service provides onboarding business logic with reader/writer pool separation.
 type Service struct {
 	store    *Store
 	db       *db.DB
 	settings *config.Settings
+	follower Follower
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -32,6 +39,12 @@ func NewService(database *db.DB, settings *config.Settings) *Service {
 		db:       database,
 		settings: settings,
 	}
+}
+
+// SetFollower wires the follow-system service so onboarding can turn selected
+// tags, spaces, and users into actual follow relationships.
+func (s *Service) SetFollower(f Follower) {
+	s.follower = f
 }
 
 // GetState returns the current onboarding state for the given user.
@@ -142,6 +155,12 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 		}
 	}
 
+	// Persist tag/space/user selections as real follow rows. Failures are
+	// non-fatal — don't block onboarding on a single bad recommendation.
+	if err := s.persistFollows(ctx, tenantID, userID, fields); err != nil {
+		slog.Warn("onboarding: failed to persist follow selections", "error", err)
+	}
+
 	// BUG-001/002 fix: current_step represents the step the user is
 	// currently ON (about to work on), not the last completed step. When
 	// the user submits step N data, they advance to step N+1. Storing
@@ -160,6 +179,74 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
 		return fmt.Errorf("updating onboarding step: %w", err)
+	}
+
+	return nil
+}
+
+// persistFollows turns Step 3 tag slugs and Step 4 recommendation IDs into
+// actual follow rows using the follow-system service. It is best-effort and
+// never blocks onboarding. Recommendations are resolved to their entity type
+// from the same ranked list used by the wizard.
+func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UUID, fields stepDataFields) error {
+	if s.follower == nil {
+		return nil
+	}
+
+	// Step 3: follow selected tags by slug.
+	tagIDs := make([]pgtype.UUID, 0, len(fields.Tags))
+	for _, slug := range fields.Tags {
+		tag, err := s.store.write.GetTagBySlug(ctx, gen.GetTagBySlugParams{
+			TenantID: tenantID,
+			Slug:     slug,
+		})
+		if err != nil {
+			slog.Warn("onboarding: failed to resolve tag slug", "slug", slug, "error", err)
+			continue
+		}
+		tagIDs = append(tagIDs, tag.ID)
+	}
+
+	for _, id := range tagIDs {
+		if _, err := s.follower.EnsureFollow(ctx, tenantID, userID, "tag", id); err != nil {
+			slog.Warn("onboarding: failed to follow tag", "tag_id", id, "error", err)
+		}
+	}
+
+	// Step 4: follow selected recommendations by ID. We resolve type from
+	// the current recommendation list so we don't toggle-unfollow an entity
+	// the user already follows (e.g. an auto-joined geo space).
+	if len(fields.Follows) == 0 {
+		return nil
+	}
+
+	recs, err := s.GetRecommendations(ctx, tenantID, userID)
+	if err != nil {
+		return fmt.Errorf("getting recommendations for follow persistence: %w", err)
+	}
+
+	recTypeByID := make(map[string]string, len(recs))
+	for _, r := range recs {
+		recTypeByID[r.ID] = r.Type
+	}
+
+	for _, rawID := range fields.Follows {
+		var id pgtype.UUID
+		if err := id.Scan(rawID); err != nil {
+			slog.Warn("onboarding: invalid recommendation id in follows", "id", rawID, "error", err)
+			continue
+		}
+
+		entityType, ok := recTypeByID[rawID]
+		if !ok {
+			// Fallback to space when the recommendation is no longer in
+			// the list; the follow service will reject an invalid entity.
+			entityType = "space"
+		}
+
+		if _, err := s.follower.EnsureFollow(ctx, tenantID, userID, entityType, id); err != nil {
+			slog.Warn("onboarding: failed to follow recommendation", "entity_id", rawID, "entity_type", entityType, "error", err)
+		}
 	}
 
 	return nil

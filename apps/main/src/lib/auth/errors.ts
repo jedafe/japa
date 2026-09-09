@@ -14,6 +14,7 @@ export function mapAuthError(code: string, status?: number): FieldError {
 		missing_fields: { field: 'form', messageKey: 'auth.errors.missing_fields' },
 		invalid_credentials: { field: 'form', messageKey: 'auth.errors.invalid_credentials' },
 		email_exists: { field: 'email', messageKey: 'auth.errors.email_exists' },
+		username_exists: { field: 'username', messageKey: 'auth.errors.username_exists' },
 		weak_password: { field: 'password', messageKey: 'auth.errors.weak_password' },
 		password_breached: { field: 'password', messageKey: 'auth.errors.password_breached' },
 		invalid_body: { field: 'form', messageKey: 'auth.errors.invalid_body' },
