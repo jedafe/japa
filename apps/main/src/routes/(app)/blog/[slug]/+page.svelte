@@ -12,6 +12,7 @@
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { PageData } from './$types';
@@ -258,7 +259,7 @@
 		{/if}
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions>
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
 			{@html sanitizedBody}
 		</div>
 

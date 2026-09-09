@@ -116,7 +116,7 @@
 			<input
 				type="url"
 				class="video-input"
-				placeholder={t('create.video.url_placeholder', 'Paste a YouTube or Vimeo URL…')}
+				placeholder={t('create.video.url_placeholder', 'Paste a YouTube, Vimeo, TikTok, or Instagram Reels URL…')}
 				bind:value={url}
 				disabled={busy}
 				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleResolve(); } }}
