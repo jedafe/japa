@@ -15,6 +15,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	japaerrors "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/testdb"
 	"github.com/jedafe/japa/internal/users"
@@ -42,6 +43,7 @@ func TestService_ResolveURL_CreatesSyntheticUser(t *testing.T) {
 			AuthorName:   "Test Author",
 		},
 	})
+	svc.SetSettings(newFakeSettings())
 
 	res1, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=ABC123XYZ")
 	if err != nil {
@@ -90,11 +92,38 @@ func TestService_ResolveURL_Unsupported(t *testing.T) {
 
 	videoStore := NewStore(database.Writer, database.Reader)
 	svc := NewService(videoStore, &fakeUserManager{}, &fakeMediaManager{}, NewDefaultResolver())
+	svc.SetSettings(newFakeSettings())
 
 	_, err := svc.ResolveURL(context.Background(), tenantID, "https://example.com/video")
 	if !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("ResolveURL: err = %v, want ErrUnsupportedPlatform", err)
 	}
+}
+
+type fakeSettings struct {
+	bools map[string]bool
+}
+
+func (f *fakeSettings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+	return fallback
+}
+
+func (f *fakeSettings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+	if f.bools == nil {
+		f.bools = make(map[string]bool)
+	}
+	if v, ok := f.bools[key]; ok {
+		return v
+	}
+	return fallback
+}
+
+func (f *fakeSettings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+	return fallback
+}
+
+func newFakeSettings() *fakeSettings {
+	return &fakeSettings{bools: map[string]bool{"video.enabled": true}}
 }
 
 type fakeResolver struct {
@@ -172,6 +201,7 @@ func TestService_ClaimAndApproveChannel(t *testing.T) {
 			AuthorName:   "Claimable Author",
 		},
 	})
+	svc.SetSettings(newFakeSettings())
 
 	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=CLAIM001")
 	if err != nil {
@@ -254,6 +284,7 @@ func TestService_TakedownAndApprove(t *testing.T) {
 			AuthorName:   "Takedown Author",
 		},
 	})
+	svc.SetSettings(newFakeSettings())
 
 	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=TKD001")
 	if err != nil {
@@ -297,6 +328,7 @@ func TestService_ClaimFailsForRealUser(t *testing.T) {
 
 	videoStore := NewStore(database.Writer, database.Reader)
 	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{})
+	svc.SetSettings(newFakeSettings())
 
 	_, err := svc.SubmitClaim(context.Background(), tenantID, claimantID, "real-target", "claim", "", "", "")
 	if err == nil {
@@ -335,6 +367,7 @@ func TestService_GenerateDraft(t *testing.T) {
 			AuthorName:   "Draft Author",
 		},
 	})
+	svc.SetSettings(newFakeSettings())
 
 	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=DRAFT123")
 	if err != nil {
@@ -375,5 +408,120 @@ func TestService_GenerateDraft(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(created.Body), "{") {
 		t.Errorf("body is not TipTap JSON: %q", created.Body)
+	}
+}
+
+func TestService_ResolveURL_WhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, &fakeUserManager{}, &fakeMediaManager{}, &fakeResolver{})
+	svc.SetSettings(&fakeSettings{bools: map[string]bool{"video.enabled": false}})
+
+	_, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=ANY")
+	if !errors.Is(err, japaerrors.ErrFeatureDisabled) {
+		t.Fatalf("ResolveURL: err = %v, want ErrFeatureDisabled", err)
+	}
+}
+
+func TestService_Upload(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	uploaderID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "uploader"})
+
+	mediaID := newMediaID(t)
+	_, err := database.Writer.Exec(context.Background(),
+		`INSERT INTO media (id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, confirmed)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
+		mediaID, tenantID, uploaderID, "demo.mp4", "video/mp4", 6, "media/demo.mp4")
+	if err != nil {
+		t.Fatalf("seed media: %v", err)
+	}
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{id: mediaID}, &fakeResolver{})
+	svc.SetSettings(newFakeSettings())
+
+	res, err := svc.UploadVideo(context.Background(), tenantID, uploaderID, "demo.mp4", []byte("binary"), "Upload Title", "Upload description")
+	if err != nil {
+		t.Fatalf("UploadVideo: %v", err)
+	}
+
+	if res.Source.SourceType != SourceUpload {
+		t.Errorf("source_type = %q, want %q", res.Source.SourceType, SourceUpload)
+	}
+	if res.Source.AuthorUserID != uploaderID {
+		t.Errorf("author = %v, want %v", res.Source.AuthorUserID, uploaderID)
+	}
+	if res.Source.Title != "Upload Title" {
+		t.Errorf("title = %q, want %q", res.Source.Title, "Upload Title")
+	}
+	if res.Source.ThumbnailMediaID == (pgtype.UUID{}) {
+		t.Error("thumbnail_media_id is empty")
+	}
+	if res.EmbedJSON == nil {
+		t.Error("embed_json is nil")
+	}
+}
+
+func TestService_ReviewClaim_Rejected(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	realUserID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "reject-claimant"})
+	reviewerID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "reject-reviewer"})
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
+		meta: &Metadata{
+			SourceType:   SourceYouTube,
+			SourceURL:    "https://www.youtube.com/watch?v=REJECT01",
+			ExternalID:   "REJECT01",
+			Title:        "Reject Video",
+			Description:  "Test",
+			ThumbnailURL: "https://example.com/thumb.jpg",
+			DurationSecs: 90,
+			ChannelName:  "Reject Channel",
+			AuthorName:   "Reject Author",
+		},
+	})
+	svc.SetSettings(newFakeSettings())
+
+	_, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=REJECT01")
+	if err != nil {
+		t.Fatalf("ResolveURL: %v", err)
+	}
+
+	channelUsername := "youtube:reject-channel"
+	claim, err := svc.SubmitClaim(context.Background(), tenantID, realUserID, channelUsername, "claim", "", "", "")
+	if err != nil {
+		t.Fatalf("SubmitClaim: %v", err)
+	}
+
+	rejected, err := svc.ReviewClaim(context.Background(), tenantID, reviewerID, claim.ID, "rejected", "insufficient evidence")
+	if err != nil {
+		t.Fatalf("ReviewClaim: %v", err)
+	}
+	if rejected.Status != "rejected" {
+		t.Errorf("status = %q, want %q", rejected.Status, "rejected")
+	}
+
+	// A fresh claim for the same synthetic channel can be re-submitted after rejection.
+	claim2, err := svc.SubmitClaim(context.Background(), tenantID, realUserID, channelUsername, "claim", "", "", "")
+	if err != nil {
+		t.Fatalf("SubmitClaim after rejection: %v", err)
+	}
+	if claim2.Status != "pending" {
+		t.Errorf("re-submitted status = %q, want %q", claim2.Status, "pending")
 	}
 }
