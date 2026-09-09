@@ -5,14 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
-
-	"github.com/jedafe/japa/internal/linkpreview"
 )
 
 const vimeoOEmbedEndpoint = "https://vimeo.com/api/oEmbed.json"
@@ -135,42 +131,7 @@ func vimeoDuration(data map[string]any) float64 {
 
 // fetchOEmbed performs a GET request to the oEmbed endpoint and decodes JSON.
 func (p *VimeoProvider) fetchOEmbed(ctx context.Context, u string) (map[string]any, error) {
-	if p.ssrfEnabled {
-		if err := linkpreview.ValidateURL(u); err != nil {
-			return nil, fmt.Errorf("ssrf validation failed: %w", err)
-		}
-	}
-	// #nosec G704 — u is the Vimeo oEmbed endpoint plus a URL-escaped user URL.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("vimeo oembed returned status %d", resp.StatusCode)
-	}
-
-	limited := io.LimitReader(resp.Body, 1<<20)
-
-	var data map[string]any
-
-	dec := json.NewDecoder(limited)
-	dec.UseNumber()
-
-	if err := dec.Decode(&data); err != nil {
-		return nil, err
-	}
-
-	return data, nil
+	return doOEmbedRequest(ctx, p.client, u, p.ssrfEnabled, "vimeo ")
 }
 
 // extractVimeoVideoID pulls the video ID from common Vimeo URL patterns.
