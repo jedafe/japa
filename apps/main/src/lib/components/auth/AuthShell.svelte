@@ -7,14 +7,19 @@
 	import type { Snippet } from 'svelte';
 	import { Compass, ArrowLeft } from 'lucide-svelte';
 	import { t } from '$lib/i18n/store.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { BrandSlide } from '$lib/auth/brandSlides';
 
 	let {
 		children,
-		brandSlides = []
+		brandSlides = [],
+		logoUrl = '',
+		logoDarkUrl = ''
 	}: {
 		children: Snippet;
 		brandSlides?: BrandSlide[];
+		logoUrl?: string;
+		logoDarkUrl?: string;
 	} = $props();
 
 	const wordmark = $derived(t('app.name'));
@@ -98,10 +103,7 @@
 					href="/"
 					class="flex items-center gap-2 text-base font-semibold tracking-tight text-white no-underline"
 				>
-					<span class="grid h-8 w-8 place-items-center rounded-[8px] bg-white/15 backdrop-blur-sm">
-						<Compass size={18} class="text-white" />
-					</span>
-					{wordmark}
+					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>
 				<a
 					href="/"
@@ -158,10 +160,7 @@
 					href="/"
 					class="flex items-center gap-2 text-base font-semibold text-[var(--color-primary)] no-underline"
 				>
-					<span class="grid h-8 w-8 place-items-center rounded-[8px] bg-[var(--color-primary)]/10">
-						<Compass size={18} class="text-[var(--color-primary)]" />
-					</span>
-					{wordmark}
+					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] object-contain" />
 				</a>
 			</div>
 
