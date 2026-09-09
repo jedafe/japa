@@ -16,6 +16,7 @@
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
+	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import type { PageData } from './$types';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
@@ -263,7 +264,7 @@
 
 			<!-- Body: sanitized TipTap HTML with prose styling -->
 			{#if sanitizedBody}
-				<div class="prose mt-8">
+				<div class="prose mt-8" use:hydrateVideoEmbeds>
 					{@html sanitizedBody}
 				</div>
 			{/if}
