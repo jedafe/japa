@@ -636,6 +636,14 @@ var settingsCatalog = map[string]settingMeta{
 	"wallet.credit_purchase_enabled":          {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
 	"wallet.default_currency":                 {Type: "string", DefaultValue: "USD", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
 	"wallet.min_purchase_credits":             {Type: "int", DefaultValue: "100", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Panel: "admin"},
+	// Video (§106, ADR-117)
+	"video.enabled":                       {Type: "bool", DefaultValue: "false", Description: "Feature flag for the video content type and /create composer.", Panel: "admin"},
+	"video.import.allowed_platforms":      {Type: "json", DefaultValue: `["youtube","tiktok","instagram","vimeo"]`, Description: "Platform allowlist for single URL import.", Panel: "admin"},
+	"video.import.youtube_api_key":        {Type: "string", DefaultValue: "", Description: "YouTube Data API v3 key for bulk imports (server-only).", Sensitive: true, Panel: "admin"},
+	"video.import.instagram_access_token": {Type: "string", DefaultValue: "", Description: "Instagram oEmbed access token for Reel/post imports (server-only).", Sensitive: true, Panel: "admin"},
+	"video.import.max_items_per_run":      {Type: "int", DefaultValue: "50", Description: "Max videos resolved per bulk import run.", Panel: "admin"},
+	"video.ai_summary.enabled":            {Type: "bool", DefaultValue: "false", Description: "Allow users to enqueue AI-generated drafts from video metadata.", Panel: "admin"},
+	"video.claim_form_slug":               {Type: "string", DefaultValue: "video-channel-claim", Description: "Form Builder slug for claim/takedown evidence.", Panel: "admin"},
 }
 
 // IsPublicSetting reports whether the given dot-notation key is marked Public
