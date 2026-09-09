@@ -113,13 +113,16 @@
 	.cover-action-btn {
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		gap: 4px;
-		padding: 6px 10px;
+		min-width: 44px;
+		min-height: 44px;
+		padding: 8px 12px;
 		border: 1px solid rgb(255 255 255 / 0.3);
 		border-radius: var(--radius);
 		background: rgb(0 0 0 / 0.6);
 		color: #fff;
-		font-size: 0.75rem;
+		font-size: 0.8125rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: background 0.15s;
@@ -128,7 +131,7 @@
 		background: rgb(0 0 0 / 0.8);
 	}
 	.cover-action-remove {
-		padding: 6px;
+		padding: 8px;
 	}
 
 	/* Empty state */

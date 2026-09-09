@@ -27,6 +27,10 @@
 	);
 </script>
 
+<svelte:head>
+	<title>{t('create.title', 'Create')} — {t('app.name', 'JapaConnect')}</title>
+</svelte:head>
+
 {#if data.loadError}
 	<div class="mx-auto w-full max-w-full py-10">
 		<EmptyState

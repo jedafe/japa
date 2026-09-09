@@ -13,9 +13,11 @@
 	interface Props {
 		/** Called with the selected emoji character. */
 		onselect: (emoji: string) => void;
+		/** Render a smaller 36×36 button instead of 40×40. */
+		compact?: boolean;
 	}
 
-	let { onselect }: Props = $props();
+	let { onselect, compact = false }: Props = $props();
 
 	let open = $state(false);
 	let buttonEl: HTMLButtonElement;
@@ -99,11 +101,11 @@
 		type="button"
 		bind:this={buttonEl}
 		onclick={toggle}
-		class="grid place-items-center rounded p-1 transition-colors text-[var(--color-muted)] hover:text-[var(--color-text)]"
+		class="grid place-items-center rounded p-2 transition-colors text-[var(--color-muted)] hover:text-[var(--color-text)] {compact ? 'h-9 w-9' : 'h-10 w-10'}"
 		aria-label={t('create.editor.toolbar.emoji', 'Emoji')}
 		title={t('create.editor.toolbar.emoji', 'Emoji')}
 	>
-		<Smile size={14} />
+		<Smile size={compact ? 18 : 20} />
 	</button>
 
 	{#if open}

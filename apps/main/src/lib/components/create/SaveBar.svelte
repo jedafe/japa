@@ -171,6 +171,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		flex-wrap: wrap;
 	}
 	.gate-reason {
 		font-size: 0.75rem;
@@ -208,5 +209,43 @@
 	.btn-primary:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
+	}
+
+	/* Mobile: the author selector + action buttons do not fit side by side
+	 * on narrow viewports and overflow the page horizontally. Stack them so
+	 * both take the full width and the primary actions remain easy to tap. */
+	@media (max-width: 767px) {
+		.save-bar {
+			flex-direction: column;
+			align-items: stretch;
+			gap: 8px;
+			padding: 10px 12px;
+		}
+		.author-autocomplete,
+		.status-text {
+			min-width: 0;
+			max-width: none;
+			width: 100%;
+		}
+		.actions {
+			width: 100%;
+			justify-content: flex-start;
+			gap: 8px;
+		}
+		.gate-reason {
+			width: 100%;
+			margin: 0 0 4px 0;
+			font-size: 0.75rem;
+			text-align: left;
+		}
+		.btn-secondary,
+		.btn-primary {
+			flex: 1 1 0;
+			min-width: 0;
+			min-height: 44px;
+			padding: 10px 12px;
+			font-size: 0.875rem;
+			overflow-wrap: break-word;
+		}
 	}
 </style>

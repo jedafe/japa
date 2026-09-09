@@ -427,6 +427,7 @@
 		align-items: center;
 		gap: 8px;
 		width: 100%;
+		min-height: 44px;
 		padding: 10px 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
@@ -447,6 +448,7 @@
 	.autocomplete-input {
 		flex: 1;
 		min-width: 0;
+		min-height: 44px;
 		padding: 0;
 		border: none;
 		background: transparent;
@@ -489,8 +491,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 16px;
-		height: 16px;
+		width: 32px;
+		height: 32px;
 		padding: 0;
 		border: none;
 		border-radius: 50%;
@@ -503,6 +505,10 @@
 	.autocomplete-chip-clear:hover {
 		background: color-mix(in srgb, var(--color-primary) 20%, transparent);
 		color: var(--color-text);
+	}
+	.autocomplete-chip-clear :global(svg) {
+		width: 16px;
+		height: 16px;
 	}
 
 	.autocomplete-spinner {

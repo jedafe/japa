@@ -17,6 +17,7 @@
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
+	import { parseMostUsefulResource } from '$lib/utils/storyResources';
 	import type { PageData } from './$types';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
@@ -108,6 +109,11 @@
 				].filter((r) => r.show)
 			: []
 	);
+
+	// Most Useful Resources are stored as a single joined string (Name — Link; …)
+	// so they can be edited through the text column while the composer stores a
+	// repeater (§79). Parse into display-ready title/URL pairs for the single page.
+	const usefulResources = $derived(parseMostUsefulResource(story?.most_useful_resource));
 
 	// §79 "Integration points" — surface related tools for the story's
 	// destination (visa routes, community locator, processing tracker). All
@@ -281,13 +287,31 @@
 					</div>
 				{/if}
 
-				{#if story?.most_useful_resource}
+				{#if usefulResources.length > 0}
 					<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 							<BookMarked size={16} class="text-[var(--color-primary)]" />
 							{t('stories.most_useful_resource', 'Most Useful Resource')}
 						</h2>
-						<p class="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">{story.most_useful_resource}</p>
+						<ul class="mt-2 space-y-2">
+							{#each usefulResources as resource (resource.name + resource.url)}
+								<li class="text-sm">
+									{#if resource.url}
+										<a
+											href={resource.url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="inline-flex items-center gap-1.5 text-[var(--color-primary)] transition-colors hover:underline"
+										>
+											{resource.name}
+											<ExternalLink size={12} />
+										</a>
+									{:else}
+										<span class="text-[var(--color-text-subtle)]">{resource.name}</span>
+									{/if}
+								</li>
+							{/each}
+						</ul>
 					</div>
 				{/if}
 

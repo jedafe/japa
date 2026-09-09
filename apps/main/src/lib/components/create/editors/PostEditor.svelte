@@ -587,14 +587,10 @@
 				<button type="button" class="tb-btn" title={t("create.editor.toolbar.coupon")} onclick={() => openInsertModal("coupon")}><Ticket size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.divider')} onclick={() => tb('setHorizontalRule')}><Minus size={16} /></button>
 				<span class="tb-sep"></span>
-				<EmojiPicker onselect={insertEmoji} />
+				<EmojiPicker onselect={insertEmoji} compact />
 				<span class="tb-sep"></span>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.undo')} onclick={() => tb('undo')} disabled={!editor.can().undo()}><Undo2 size={16} /></button>
 				<button type="button" class="tb-btn" title={t('create.editor.toolbar.redo')} onclick={() => tb('redo')} disabled={!editor.can().redo()}><Redo2 size={16} /></button>
-				{#if aiTrigger}
-					<span class="tb-sep"></span>
-					{@render aiTrigger()}
-				{/if}
 			</div>
 		{/if}
 		<div
@@ -605,6 +601,13 @@
 			tabindex="-1"
 		></div>
 	</div>
+
+	<!-- AI trigger — floated at the bottom-right, left of the mode switcher -->
+	{#if aiTrigger}
+		<div class="ai-trigger">
+			{@render aiTrigger()}
+		</div>
+	{/if}
 
 	<!-- Mode switcher — floated at bottom-right of the editing surface -->
 	<div class="mode-switcher" role="tablist" aria-label={t('create.title')}>
@@ -666,6 +669,14 @@
 		position: relative;
 	}
 
+	/* ---- AI trigger — floated at the bottom-left of the editing surface ---- */
+	.ai-trigger {
+		position: absolute;
+		bottom: 20px;
+		left: 20px;
+		z-index: 20;
+	}
+
 	/* ---- Mode switcher — floated at bottom-right of the editing surface ---- */
 	.mode-switcher {
 		position: absolute;
@@ -683,8 +694,8 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 28px;
-		height: 28px;
+		width: 40px;
+		height: 40px;
 		padding: 0;
 		border: none;
 		border-radius: 0;
@@ -692,6 +703,10 @@
 		color: var(--color-text-subtle);
 		cursor: pointer;
 		transition: color 0.12s;
+	}
+	.mode-tab :global(svg) {
+		width: 20px;
+		height: 20px;
 	}
 	.mode-tab:hover {
 		color: var(--color-text);
@@ -712,18 +727,40 @@
 		border-radius: var(--radius) var(--radius) 0 0;
 		background: var(--color-surface-subtle);
 	}
+	.toolbar > * {
+		flex-shrink: 0;
+	}
+
+	/* On narrow viewports the full toolbar is a single horizontally-scrollable
+	 * row so the touch-friendly 40×40 buttons do not wrap and take up too much
+	 * vertical space. flex-shrink: 0 is required so items stay at their set
+	 * width instead of being compressed to fit the viewport. */
+	@media (max-width: 767px) {
+		.toolbar {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+		}
+		.toolbar > * {
+			flex-shrink: 0;
+		}
+	}
 	.tb-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 28px;
-		height: 28px;
+		width: 40px;
+		height: 40px;
 		border: none;
 		border-radius: 4px;
 		background: transparent;
 		color: var(--color-text);
 		cursor: pointer;
 		transition: background 0.1s, color 0.1s;
+	}
+	.tb-btn :global(svg) {
+		width: 20px;
+		height: 20px;
 	}
 	.tb-btn:hover:not(:disabled) {
 		background: var(--color-surface-subtle);
@@ -741,6 +778,27 @@
 		height: 18px;
 		margin: 0 4px;
 		background: var(--color-border);
+	}
+
+	/* On desktop the toolbar can be kept to one compact row by shrinking the
+	 * buttons slightly and tightening the gaps and separators. */
+	@media (min-width: 768px) {
+		.toolbar {
+			gap: 1px;
+			padding: 6px 8px;
+		}
+		.tb-btn {
+			width: 36px;
+			height: 36px;
+		}
+		.tb-btn :global(svg) {
+			width: 18px;
+			height: 18px;
+		}
+		.tb-sep {
+			margin: 0 2px;
+		}
+
 	}
 
 	/* ---- Markdown source textarea ---- */

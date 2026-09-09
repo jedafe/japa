@@ -215,7 +215,11 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 	:global(.right-panel-tab) {
-		padding: 8px 12px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		padding: 10px 12px;
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-muted);
