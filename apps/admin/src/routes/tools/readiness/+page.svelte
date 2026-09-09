@@ -50,7 +50,6 @@
 
 	const canManage = $derived(hasPermission('assessment.view_results'));
 	const canEditForm = $derived(hasPermission('assessment.manage'));
-	const canCreate = $derived(hasPermission('content.create'));
 
 	// ── State ───────────────────────────────────────────────────────────────
 	let entityController = $state<EntityPageController | undefined>(undefined);
@@ -266,15 +265,6 @@
 					<Settings size={14} />
 					{t('app.tools.readiness_form_config', 'Form Config')}
 				</button>
-			{/if}
-			{#if canCreate}
-				<a
-					href="/tools/readiness/variants"
-					class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors hover:opacity-80"
-					style="background: var(--color-primary); color: var(--color-primary-contrast, white)"
-				>
-					{t('app.tools.readiness_variants', 'Manage Variants')}
-				</a>
 			{/if}
 		</div>
 
