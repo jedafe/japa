@@ -178,6 +178,35 @@ type AssessmentFormDTO struct {
 	Fields        []AssessmentField `json:"fields"`
 }
 
+// assessmentDimensions returns the distinct readiness dimensions that may be
+// recommended by the active assessment. It is the union of dimensions declared
+// on form fields and the keys of the active/default curated roadmap library.
+// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+func assessmentDimensions(form *AssessmentFormDTO) []string {
+	seen := make(map[string]bool)
+
+	for _, f := range form.Fields {
+		if d := strings.TrimSpace(f.Config.Dimension); d != "" {
+			seen[d] = true
+		}
+	}
+
+	library := form.ScoringConfig.CuratedRoadmap
+	if len(library) == 0 {
+		library = curatedRoadmapLibrary()
+	}
+	for d := range library {
+		seen[d] = true
+	}
+
+	out := make([]string, 0, len(seen))
+	for d := range seen {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // AssessmentField is a single field on the assessment form, with its scoring
 // config resolved from the config JSONB column. Options (for select/multiselect
 // fields) and Placeholder are exposed so the frontend can render the form

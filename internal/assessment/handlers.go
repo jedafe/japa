@@ -221,6 +221,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 			"max_score":     form.ScoringConfig.MaxScore,
 			"thresholds":    thresholds,
 			"fields":        publicFieldDTOs(form.Fields),
+			"dimensions":    assessmentDimensions(form),
 			"scoring_config": map[string]any{
 				"max_score":  form.ScoringConfig.MaxScore,
 				"thresholds": thresholds,
