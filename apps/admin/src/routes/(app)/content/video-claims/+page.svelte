@@ -4,6 +4,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { videoClaimsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { CheckCircle2, XCircle } from 'lucide-svelte';
 
 	type VideoClaim = {
 		id: string;
@@ -29,6 +30,7 @@
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
+	let bulkLoading = $state(false);
 
 	const fields: FieldDef[] = [
 		{
@@ -115,6 +117,53 @@
 					{ value: 'claim', label: t('video_claims.type_claim', 'Ownership Claim') },
 					{ value: 'takedown', label: t('video_claims.type_takedown', 'Takedown') }
 				]
+			}
+		],
+		bulkActions: [
+			{
+				label: t('video_claims.bulk_approve', 'Approve'),
+				icon: CheckCircle2,
+				disabled: (_ids: Set<string>, rows?: any[]) =>
+					bulkLoading || !rows || rows.length === 0 || rows.every((r) => r?.status === 'approved'),
+				onclick: async (ids: Set<string>) => {
+					if (bulkLoading) return;
+					bulkLoading = true;
+					pageError = '';
+					try {
+						await Promise.all(
+							Array.from(ids).map((id) =>
+								videoClaimsAdminApi.review(id, { status: 'approved' })
+							)
+						);
+					} catch (e) {
+						pageError = e instanceof Error ? e.message : t('video_claims.bulk_approve_error', 'Bulk approve failed');
+					} finally {
+						bulkLoading = false;
+					}
+				}
+			},
+			{
+				label: t('video_claims.bulk_reject', 'Reject'),
+				icon: XCircle,
+				variant: 'destructive',
+				disabled: (_ids: Set<string>, rows?: any[]) =>
+					bulkLoading || !rows || rows.length === 0 || rows.every((r) => r?.status === 'rejected'),
+				onclick: async (ids: Set<string>) => {
+					if (bulkLoading) return;
+					bulkLoading = true;
+					pageError = '';
+					try {
+						await Promise.all(
+							Array.from(ids).map((id) =>
+								videoClaimsAdminApi.review(id, { status: 'rejected' })
+							)
+						);
+					} catch (e) {
+						pageError = e instanceof Error ? e.message : t('video_claims.bulk_reject_error', 'Bulk reject failed');
+					} finally {
+						bulkLoading = false;
+					}
+				}
 			}
 		],
 		fields,

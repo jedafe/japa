@@ -3,7 +3,9 @@
 	// Ref: japaconnect-engineering/sections/106-video-content-and-import.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { videoSourcesAdminApi } from '$lib/api';
+	import { escapeHtml } from '$lib/utils/html';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { RotateCcw, Trash2 } from 'lucide-svelte';
 
 	type VideoSource = {
 		id: string;
@@ -31,6 +33,7 @@
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
+	let bulkLoading = $state(false);
 
 	function formatDuration(seconds?: number): string {
 		if (seconds == null || seconds <= 0) return '-';
@@ -69,7 +72,7 @@
 				sortable: false,
 				render: (v: string) =>
 					v
-						? `<img src="${v}" class="h-10 w-16 rounded object-cover" loading="lazy" alt="" />`
+						? `<img src="${escapeHtml(v)}" class="h-10 w-16 rounded object-cover" loading="lazy" alt="" />`
 						: `<span class="text-xs text-muted">-</span>`
 			},
 			{ key: 'title', label: t('video_sources.title', 'Title'), sortable: true },
@@ -109,8 +112,57 @@
 				options: [
 					{ value: 'youtube', label: 'YouTube' },
 					{ value: 'vimeo', label: 'Vimeo' },
+					{ value: 'tiktok', label: 'TikTok' },
+					{ value: 'instagram', label: 'Instagram' },
 					{ value: 'upload', label: t('video_sources.type_upload', 'Upload') }
 				]
+			}
+		],
+		bulkActions: [
+			{
+				label: t('video_sources.bulk_remove', 'Remove'),
+				icon: Trash2,
+				variant: 'destructive',
+				disabled: (_ids: Set<string>, rows?: any[]) =>
+					bulkLoading || !rows || rows.length === 0 || rows.every((r) => r?.status === 'removed'),
+				onclick: async (ids: Set<string>) => {
+					if (bulkLoading) return;
+					bulkLoading = true;
+					pageError = '';
+					try {
+						await Promise.all(
+							Array.from(ids).map((id) =>
+								videoSourcesAdminApi.updateStatus(id, { status: 'removed' })
+							)
+						);
+					} catch (e) {
+						pageError = e instanceof Error ? e.message : t('video_sources.bulk_remove_error', 'Bulk remove failed');
+					} finally {
+						bulkLoading = false;
+					}
+				}
+			},
+			{
+				label: t('video_sources.bulk_restore', 'Restore'),
+				icon: RotateCcw,
+				disabled: (_ids: Set<string>, rows?: any[]) =>
+					bulkLoading || !rows || rows.length === 0 || rows.every((r) => r?.status === 'active'),
+				onclick: async (ids: Set<string>) => {
+					if (bulkLoading) return;
+					bulkLoading = true;
+					pageError = '';
+					try {
+						await Promise.all(
+							Array.from(ids).map((id) =>
+								videoSourcesAdminApi.updateStatus(id, { status: 'active' })
+							)
+						);
+					} catch (e) {
+						pageError = e instanceof Error ? e.message : t('video_sources.bulk_restore_error', 'Bulk restore failed');
+					} finally {
+						bulkLoading = false;
+					}
+				}
 			}
 		],
 		fields,
