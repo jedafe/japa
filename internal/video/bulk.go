@@ -377,6 +377,106 @@ func (s *Service) finalizeBulkImportJob(ctx context.Context, job gen.VideoImport
 	return nil
 }
 
+// BulkImportPreview is the dry-run result for the studio preview step.
+type BulkImportPreview struct {
+	Count      int            `json:"count"`
+	Sample     map[string]any `json:"sample,omitempty"`
+	SourceType string         `json:"source_type"`
+	SourceURL  string         `json:"source_url,omitempty"`
+	Query      string         `json:"query,omitempty"`
+}
+
+// PreviewBulkImport resolves the source list for a bulk import request without
+// creating a job or enqueueing a worker. It returns the number of videos that
+// would be imported (capped by video.import.max_items_per_run) and a sample of
+// the first video so the user can confirm before starting.
+// Ref: .jeos/sections/106-video-content-and-import.md.
+func (s *Service) PreviewBulkImport(ctx context.Context, tenantID, _ pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
+	if !s.IsEnabled(ctx, tenantID) {
+		return BulkImportPreview{}, errpkg.ErrFeatureDisabled
+	}
+
+	dbSourceType, sourceURL, query, err := validateBulkRequest(req)
+	if err != nil {
+		return BulkImportPreview{}, err
+	}
+
+	apiKey, err := s.getYouTubeAPIKey(ctx, tenantID)
+	if err != nil {
+		return BulkImportPreview{}, err
+	}
+
+	provider := s.bulkYouTubeProvider(apiKey)
+
+	tempJob := gen.VideoImportJob{
+		SourceType: dbSourceType,
+		SourceUrl:  stringPtr(sourceURL),
+		Query:      stringPtr(query),
+	}
+
+	urls, err := s.resolveBulkURLs(ctx, provider, tempJob)
+	if err != nil {
+		return BulkImportPreview{}, err
+	}
+
+	limit := s.maxItemsPerRun(ctx, tenantID)
+	if len(urls) > limit {
+		urls = urls[:limit]
+	}
+
+	preview := BulkImportPreview{
+		Count:      len(urls),
+		SourceType: req.SourceType,
+		SourceURL:  sourceURL,
+		Query:      query,
+	}
+
+	if len(urls) > 0 && s.resolver != nil {
+		meta, err := s.resolver.Resolve(ctx, urls[0])
+		if err == nil && meta != nil {
+			preview.Sample = map[string]any{
+				"id":            "preview",
+				"source_type":   meta.SourceType,
+				"source_url":    meta.SourceURL,
+				"external_id":   meta.ExternalID,
+				"title":         meta.Title,
+				"description":   meta.Description,
+				"category":      meta.Category,
+				"thumbnail_url": meta.ThumbnailURL,
+				"duration_secs": meta.DurationSecs,
+				"author_name":   meta.AuthorName,
+				"author_handle": meta.AuthorHandle,
+				"author_avatar": meta.AuthorAvatar,
+				"channel_name":  meta.ChannelName,
+				"channel_url":   meta.ChannelURL,
+				"status":        "active",
+			}
+		}
+	}
+
+	return preview, nil
+}
+
+// RetryMyImportJob re-enqueues an existing import job that the user owns and
+// that is not currently running or pending.
+// Ref: .jeos/sections/106-video-content-and-import.md.
+func (s *Service) RetryMyImportJob(ctx context.Context, tenantID, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
+	if !s.IsEnabled(ctx, tenantID) {
+		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
+	}
+
+	job, err := s.GetImportJob(ctx, tenantID, userID, id)
+	if err != nil {
+		return gen.VideoImportJob{}, err
+	}
+
+	if job.Status == "pending" || job.Status == "running" || job.Status == "processing" {
+		return gen.VideoImportJob{}, fmt.Errorf("%w: cannot retry a job that is %s", errpkg.ErrInvalidStatusTransition, job.Status)
+	}
+
+	return s.RetryImportJob(ctx, tenantID, id, userID)
+}
+
 // GetImportJob returns a single import job scoped to the user and tenant.
 func (s *Service) GetImportJob(ctx context.Context, tenantID, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
 	if !s.IsEnabled(ctx, tenantID) {

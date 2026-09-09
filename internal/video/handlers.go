@@ -53,9 +53,11 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	r.Get("/u/{username}/videos", h.ListChannelVideos)
 	h.postAuth(r, "/video-channels/{username}/claims", h.SubmitChannelClaim)
 	h.getAuth(r, "/me/video-claims", h.ListMyVideoClaims)
+	h.postAuth(r, "/me/video-imports/preview", h.PreviewBulkImport)
 	h.postAuth(r, "/me/video-imports", h.CreateImportJob)
 	h.getAuth(r, "/me/video-imports", h.ListImportJobs)
 	h.getAuth(r, "/me/video-imports/{id}", h.GetImportJob)
+	h.postAuth(r, "/me/video-imports/{id}/retry", h.RetryMyImportJob)
 }
 
 func (h *Handlers) postAuth(r chi.Router, pattern string, fn http.HandlerFunc) {
@@ -454,6 +456,60 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": claim})
+}
+
+// PreviewBulkImport handles POST /api/v1/me/video-imports/preview.
+func (h *Handlers) PreviewBulkImport(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var req BulkImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	preview, err := h.Service.PreviewBulkImport(r.Context(), tenantID, user.UserID, req)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": preview})
+}
+
+// RetryMyImportJob handles POST /api/v1/me/video-imports/{id}/retry.
+func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid import job ID")
+		return
+	}
+
+	job, err := h.Service.RetryMyImportJob(r.Context(), tenantID, user.UserID, id)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
 // ListMyVideoClaims handles GET /api/v1/me/video-claims.
