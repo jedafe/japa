@@ -28,6 +28,8 @@
 	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
+	// The profile page's posts all belong to the same user, so the author
+	// display name and avatar come from the profile header.
 	function toFeedItem(post: ProfilePost): FeedItem {
 		return {
 			id: post.id,
@@ -35,6 +37,8 @@
 			slug: post.slug,
 			content_type: post.content_type,
 			author_id: post.author_id,
+			author_name: data.user.display_name,
+			author_avatar_url: data.user.avatar_url,
 			created_at: post.published_at ?? post.created_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,
@@ -48,6 +52,10 @@
 	const currentUser = $derived(data.currentUser);
 	const isOwnProfile = $derived(data.isOwnProfile);
 	const isAuthenticated = $derived(data.isAuthenticated);
+
+	// §106 video — own video content posts that should also appear on the
+	// profile Videos tab alongside imported/uploaded video_sources.
+	const videoPosts = $derived(data.posts.filter((p) => p.content_type === 'video'));
 	const initiallyFollowing = $derived(data.initiallyFollowing);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
 	let reportOpen = $state(false);
@@ -145,9 +153,9 @@
 		{ value: 'replies', label: t('profile.tab.replies', 'Replies') },
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
 		// §106 video — Videos tab. Always shown for synthetic (imported)
-		// channels; for real users only when they have video sources or the
-		// viewer is the profile owner (so they can see the empty state).
-		...(user.is_synthetic || (data.videos && data.videos.length > 0) || isOwnProfile
+		// channels; for real users only when they have video sources, video
+		// posts, or the viewer is the profile owner (so they can see the empty state).
+		...(user.is_synthetic || (data.videos && data.videos.length > 0) || videoPosts.length > 0 || isOwnProfile
 			? [{ value: 'videos', label: t('profile.tab.videos', 'Videos') }]
 			: []),
 		{ value: 'likes', label: t('profile.tab.likes', 'Likes') },
@@ -638,10 +646,31 @@ profile is private, or no stage is set. -->
 					</div>
 				</div>
 			{/if}
-			{#if data.videos.length === 0}
+			{#if data.videos.length === 0 && videoPosts.length === 0}
 				<EmptyState icon={Video} title={t('profile.videos_empty', 'No videos yet')} />
 			{:else}
-				<VideoGrid videos={data.videos} isChannel={user.is_synthetic ?? false} />
+				{#if data.videos.length > 0}
+					<VideoGrid videos={data.videos} isChannel={user.is_synthetic ?? false} />
+				{/if}
+
+				<!-- §106 video — real users' own video content posts (content_type='video')
+				     are also listed on the Videos tab. They link to /video/{slug}. -->
+				{#if videoPosts.length > 0}
+					{#if data.videos.length > 0}
+						<h2 class="mb-3 mt-6 text-sm font-semibold text-[var(--color-text)]">
+							{t('profile.video_posts', 'Video posts')}
+						</h2>
+					{/if}
+					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+						{#each videoPosts as post (post.id)}
+							<FeedCard
+								item={toFeedItem(post)}
+								style={cardStyleFor('video', cardStyleConfig)}
+								layout="stream"
+							/>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		{:else if activeTab === 'likes'}
 			{@render toolbar(likesFilterOptions)}
