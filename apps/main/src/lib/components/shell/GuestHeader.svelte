@@ -5,9 +5,11 @@
 	// Notifications, left nav) to a logged-out user is incoherent.
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { Search, Sun, Moon, LogIn, UserPlus } from 'lucide-svelte';
+	import { Search, Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
+
+	let mobileMenuOpen = $state(false);
 
 	interface Props {
 		/** Platform logo URL from appearance.logo_url (control panel). */
@@ -46,7 +48,7 @@
 			{/each}
 		</nav>
 
-		<!-- Right cluster: search, theme toggle, auth buttons -->
+		<!-- Right cluster: search, theme toggle, auth buttons, mobile hamburger -->
 		<div class="guest-actions">
 			<div class="guest-search">
 				<SearchAutocomplete />
@@ -55,21 +57,72 @@
 				type="button"
 				class="guest-icon-btn"
 				onclick={() => theme.toggle()}
-				aria-label={theme.current === 'dark' ? t('theme.toggle_light') : t('theme.toggle_dark')}
+				aria-label={theme.current === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
 			>
 				{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
 			</button>
-			<a href="/login" class="guest-login-btn">
+			<a href="/login" class="guest-login-btn guest-auth-link">
 				<LogIn size={16} />
 				<span>{t('landing.login')}</span>
 			</a>
-			<a href="/signup" class="guest-signup-btn">
+			<a href="/signup" class="guest-signup-btn guest-auth-link">
+				<UserPlus size={16} />
+				<span>{t('landing.signup')}</span>
+			</a>
+			<button
+				type="button"
+				class="guest-icon-btn sm:hidden"
+				onclick={() => (mobileMenuOpen = true)}
+				aria-label={t('a11y.open_menu', 'Open menu')}
+			>
+				<MenuIcon size={20} />
+			</button>
+		</div>
+	</div>
+</header>
+
+{#if mobileMenuOpen}
+	<button
+		type="button"
+		class="fixed inset-0 z-40 bg-black/50"
+		aria-label={t('a11y.close_menu', 'Close menu')}
+		onclick={() => (mobileMenuOpen = false)}
+	></button>
+	<div class="fixed right-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-l border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+		<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+			<span class="font-semibold text-[var(--color-text)]">{t('nav.menu', 'Menu')}</span>
+			<button
+				type="button"
+				class="guest-icon-btn"
+				onclick={() => (mobileMenuOpen = false)}
+				aria-label={t('a11y.close_menu', 'Close menu')}
+			>
+				<X size={18} />
+			</button>
+		</div>
+		<nav class="mt-4 flex flex-col gap-2">
+			{#each guestItems as item (item.id)}
+				<a
+					href={item.url}
+					class="rounded-[var(--radius)] px-3 py-2 text-sm font-medium text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+					onclick={() => (mobileMenuOpen = false)}
+				>
+					{item.label}
+				</a>
+			{/each}
+		</nav>
+		<div class="mt-6 flex flex-col gap-2 border-t border-[var(--color-border)] pt-4">
+			<a href="/login" class="guest-login-btn guest-drawer-btn w-full justify-center">
+				<LogIn size={16} />
+				<span>{t('landing.login')}</span>
+			</a>
+			<a href="/signup" class="guest-signup-btn guest-drawer-btn w-full justify-center">
 				<UserPlus size={16} />
 				<span>{t('landing.signup')}</span>
 			</a>
 		</div>
 	</div>
-</header>
+{/if}
 
 <style>
 	.guest-header {
@@ -203,6 +256,10 @@
 		background: var(--color-primary-hover);
 	}
 
+	.guest-drawer-btn span {
+		display: inline !important;
+	}
+
 	/* ---- Responsive ---- */
 	@media (max-width: 1023px) {
 		.guest-search {
@@ -218,6 +275,11 @@
 		}
 		.guest-login-btn span,
 		.guest-signup-btn span {
+			display: none;
+		}
+	}
+	@media (max-width: 639px) {
+		.guest-actions .guest-auth-link {
 			display: none;
 		}
 	}
