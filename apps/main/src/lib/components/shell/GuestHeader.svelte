@@ -88,7 +88,7 @@
 		aria-label={t('a11y.close_menu', 'Close menu')}
 		onclick={() => (mobileMenuOpen = false)}
 	></button>
-	<div class="fixed right-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-l border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
+	<div class="fixed left-0 top-0 z-50 h-screen w-[min(80vw,18rem)] border-r border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl">
 		<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
 			<span class="font-semibold text-[var(--color-text)]">{t('nav.menu', 'Menu')}</span>
 			<button
