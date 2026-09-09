@@ -38,7 +38,7 @@
 			{:else}
 				<span class="guest-brand-mark">JC</span>
 			{/if}
-			<span class="guest-brand-name">{t('app.name')}</span>
+			<span class="guest-brand-name hidden">{t('app.name')}</span>
 		</a>
 
 		<!-- Primary nav links -->
@@ -71,7 +71,7 @@
 			</a>
 			<button
 				type="button"
-				class="guest-icon-btn sm:hidden"
+				class="guest-icon-btn md:hidden"
 				onclick={() => (mobileMenuOpen = true)}
 				aria-label={t('a11y.open_menu', 'Open menu')}
 			>

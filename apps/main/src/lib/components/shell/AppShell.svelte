@@ -98,7 +98,7 @@
 						>JC</span
 					>
 				{/if}
-				<span class="hidden md:inline">{t('app.name')}</span>
+				<span class="hidden">{t('app.name')}</span>
 			</a>
 			<div class="flex items-center gap-1">
 				<button
