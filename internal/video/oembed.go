@@ -15,6 +15,20 @@ import (
 	"github.com/jedafe/japa/internal/linkpreview"
 )
 
+// instagramTokenCtxKey is used to pass an optional Instagram access token
+// through the request context without changing the Resolver interface.
+type instagramTokenCtxKey struct{}
+
+func withInstagramToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, instagramTokenCtxKey{}, token)
+}
+
+func instagramTokenFromContext(ctx context.Context) string {
+	token, _ := ctx.Value(instagramTokenCtxKey{}).(string)
+
+	return token
+}
+
 // oembedProvider resolves video URLs for platforms that expose an oEmbed
 // endpoint (TikTok, Instagram Reels, etc.).
 type oembedProvider struct {
@@ -47,6 +61,12 @@ func (p *oembedProvider) Resolve(ctx context.Context, rawURL string) (*Metadata,
 	}
 
 	oembedURL := fmt.Sprintf("%s?url=%s", p.oembedURL, url.QueryEscape(rawURL))
+
+	if p.platform == SourceInstagramReel {
+		if token := instagramTokenFromContext(ctx); token != "" {
+			oembedURL += "&access_token=" + url.QueryEscape(token)
+		}
+	}
 
 	data, err := p.fetchOEmbed(ctx, oembedURL)
 	if err != nil {

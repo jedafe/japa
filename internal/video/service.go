@@ -172,6 +172,12 @@ func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL s
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
+	if s.settings != nil {
+		if token := s.settings.GetStringOr(ctx, tenantID, "video.import.instagram_access_token", ""); token != "" {
+			ctx = withInstagramToken(ctx, token)
+		}
+	}
+
 	metadata, err := s.resolver.Resolve(ctx, rawURL)
 	if err != nil {
 		return ResolveResult{}, err
