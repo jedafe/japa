@@ -1,9 +1,9 @@
 package video
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -49,27 +49,11 @@ func (h *AdminHandlers) RegisterRoutes(r chi.Router) {
 		Post("/admin/video-import-jobs/{id}/retry", h.RetryImportJob)
 }
 
-// parseAdminPage parses page_size and page_offset query parameters for admin lists.
-func parseAdminPage(r *http.Request) (limit, offset int32) {
-	limit = defaultPageSize
-	if s := r.URL.Query().Get("page_size"); s != "" {
-		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
-			if n > maxPageSize {
-				n = maxPageSize
-			}
-			limit = int32(n)
-		}
-	}
-	if s := r.URL.Query().Get("page_offset"); s != "" {
-		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
-			offset = int32(n)
-		}
-	}
-	return
-}
+// adminListQueryFunc loads a tenant-scoped, paginated list for an admin endpoint.
+type adminListQueryFunc func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error)
 
-// ListClaims handles GET /api/v1/admin/video-claims.
-func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
+// runAdminList is the shared boilerplate for admin list endpoints.
+func (h *AdminHandlers) runAdminList(w http.ResponseWriter, r *http.Request, typeKey string, fetch adminListQueryFunc) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -80,18 +64,30 @@ func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
-	claimType := r.URL.Query().Get("claim_type")
+	typeFilter := r.URL.Query().Get(typeKey)
 	q := r.URL.Query().Get("q")
 	sort := r.URL.Query().Get("sort")
 	dir := r.URL.Query().Get("dir")
-	limit, offset := parseAdminPage(r)
+	limit, offset := parsePage(r, "page_size", "page_offset")
 
-	claims, total, err := h.Service.ListClaimsForAdmin(r.Context(), tenantID, status, claimType, q, sort, dir, limit, offset)
+	items, total, err := fetch(r.Context(), tenantID, status, typeFilter, q, sort, dir, limit, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
 
+	writePagedListResponse(w, items, total, limit, offset)
+}
+
+// ListClaims handles GET /api/v1/admin/video-claims.
+func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
+	h.runAdminList(w, r, "claim_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
+		return h.Service.ListClaimsForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
+	})
+}
+
+// writePagedListResponse writes a standard paginated list envelope.
+func writePagedListResponse(w http.ResponseWriter, items any, total, limit, offset int32) {
 	totalPages := int32(0)
 	if limit > 0 {
 		totalPages = (total + limit - 1) / limit
@@ -99,7 +95,7 @@ func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"items":       claims,
+			"items":       items,
 			"total":       total,
 			"page":        offset / limit,
 			"total_pages": totalPages,
@@ -129,6 +125,7 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		Status         string  `json:"status"`
 		ResolutionNote *string `json:"resolution_note"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -155,45 +152,16 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 
 // ListSources handles GET /api/v1/admin/video-sources.
 func (h *AdminHandlers) ListSources(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	status := r.URL.Query().Get("status")
-	sourceType := r.URL.Query().Get("source_type")
-	q := r.URL.Query().Get("q")
-	sort := r.URL.Query().Get("sort")
-	dir := r.URL.Query().Get("dir")
-	limit, offset := parseAdminPage(r)
-
-	items, total, err := h.Service.ListSourcesForAdmin(r.Context(), tenantID, status, sourceType, q, sort, dir, limit, offset)
-	if err != nil {
-		errpkg.HandleServiceError(w, err)
-		return
-	}
-
-	totalPages := int32(0)
-	if limit > 0 {
-		totalPages = (total + limit - 1) / limit
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"items":       items,
-			"total":       total,
-			"page":        offset / limit,
-			"total_pages": totalPages,
-		},
+	h.runAdminList(w, r, "source_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
+		return h.Service.ListSourcesForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
 	})
 }
 
-// GetSource handles GET /api/v1/admin/video-sources/{id}.
-func (h *AdminHandlers) GetSource(w http.ResponseWriter, r *http.Request) {
+// adminItemFunc fetches a single admin-scoped item by ID.
+type adminItemFunc func(ctx context.Context, tenantID, id pgtype.UUID) (any, error)
+
+// runAdminGet is the shared boilerplate for admin GET-by-ID endpoints.
+func (h *AdminHandlers) runAdminGet(w http.ResponseWriter, r *http.Request, notFoundMsg string, fetch adminItemFunc) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
@@ -205,17 +173,24 @@ func (h *AdminHandlers) GetSource(w http.ResponseWriter, r *http.Request) {
 
 	var id pgtype.UUID
 	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid source ID")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", notFoundMsg)
 		return
 	}
 
-	source, err := h.Service.GetSourceForAdmin(r.Context(), tenantID, id)
+	item, err := fetch(r.Context(), tenantID, id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": source})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+// GetSource handles GET /api/v1/admin/video-sources/{id}.
+func (h *AdminHandlers) GetSource(w http.ResponseWriter, r *http.Request) {
+	h.runAdminGet(w, r, "Invalid source ID", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+		return h.Service.GetSourceForAdmin(ctx, tenantID, id)
+	})
 }
 
 // PatchSource handles PATCH /api/v1/admin/video-sources/{id}.
@@ -238,6 +213,7 @@ func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Status *string `json:"status"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -259,67 +235,16 @@ func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 
 // ListImportJobs handles GET /api/v1/admin/video-import-jobs.
 func (h *AdminHandlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	status := r.URL.Query().Get("status")
-	sourceType := r.URL.Query().Get("source_type")
-	q := r.URL.Query().Get("q")
-	sort := r.URL.Query().Get("sort")
-	dir := r.URL.Query().Get("dir")
-	limit, offset := parseAdminPage(r)
-
-	items, total, err := h.Service.ListImportJobsForAdmin(r.Context(), tenantID, status, sourceType, q, sort, dir, limit, offset)
-	if err != nil {
-		errpkg.HandleServiceError(w, err)
-		return
-	}
-
-	totalPages := int32(0)
-	if limit > 0 {
-		totalPages = (total + limit - 1) / limit
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"items":       items,
-			"total":       total,
-			"page":        offset / limit,
-			"total_pages": totalPages,
-		},
+	h.runAdminList(w, r, "source_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
+		return h.Service.ListImportJobsForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
 	})
 }
 
 // GetImportJob handles GET /api/v1/admin/video-import-jobs/{id}.
 func (h *AdminHandlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	var id pgtype.UUID
-	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid import job ID")
-		return
-	}
-
-	job, err := h.Service.GetImportJobForAdmin(r.Context(), tenantID, id)
-	if err != nil {
-		errpkg.HandleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": job})
+	h.runAdminGet(w, r, "Invalid import job ID", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
+		return h.Service.GetImportJobForAdmin(ctx, tenantID, id)
+	})
 }
 
 // RetryImportJob handles POST /api/v1/admin/video-import-jobs/{id}/retry.

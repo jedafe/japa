@@ -30,7 +30,7 @@ func TestService_ResolveURL_CreatesSyntheticUser(t *testing.T) {
 	videoStore := NewStore(database.Writer, database.Reader)
 
 	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
-		meta: &VideoMetadata{
+		meta: &Metadata{
 			SourceType:   SourceYouTube,
 			SourceURL:    "https://www.youtube.com/watch?v=ABC123XYZ",
 			ExternalID:   "ABC123XYZ",
@@ -98,11 +98,11 @@ func TestService_ResolveURL_Unsupported(t *testing.T) {
 }
 
 type fakeResolver struct {
-	meta *VideoMetadata
+	meta *Metadata
 	err  error
 }
 
-func (f *fakeResolver) Resolve(ctx context.Context, rawURL string) (*VideoMetadata, error) {
+func (f *fakeResolver) Resolve(ctx context.Context, rawURL string) (*Metadata, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -160,7 +160,7 @@ func TestService_ClaimAndApproveChannel(t *testing.T) {
 
 	videoStore := NewStore(database.Writer, database.Reader)
 	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
-		meta: &VideoMetadata{
+		meta: &Metadata{
 			SourceType:   SourceYouTube,
 			SourceURL:    "https://www.youtube.com/watch?v=CLAIM001",
 			ExternalID:   "CLAIM001",
@@ -242,7 +242,7 @@ func TestService_TakedownAndApprove(t *testing.T) {
 
 	videoStore := NewStore(database.Writer, database.Reader)
 	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
-		meta: &VideoMetadata{
+		meta: &Metadata{
 			SourceType:   SourceYouTube,
 			SourceURL:    "https://www.youtube.com/watch?v=TKD001",
 			ExternalID:   "TKD001",
@@ -323,7 +323,7 @@ func TestService_GenerateDraft(t *testing.T) {
 
 	videoStore := NewStore(database.Writer, database.Reader)
 	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
-		meta: &VideoMetadata{
+		meta: &Metadata{
 			SourceType:   SourceYouTube,
 			SourceURL:    "https://www.youtube.com/watch?v=DRAFT123",
 			ExternalID:   "DRAFT123",

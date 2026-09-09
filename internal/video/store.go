@@ -42,8 +42,10 @@ func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoSource{}, errpkg.ErrNotFound
 		}
+
 		return gen.VideoSource{}, fmt.Errorf("updating video source status: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -53,6 +55,7 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 	if err != nil {
 		return gen.VideoSource{}, fmt.Errorf("upserting video source: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -65,6 +68,7 @@ func (s *Store) GetSourceByURL(ctx context.Context, tenantID pgtype.UUID, source
 	if err != nil {
 		return gen.VideoSource{}, fmt.Errorf("getting video source by URL: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -78,8 +82,10 @@ func (s *Store) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (ge
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoSource{}, errpkg.ErrNotFound
 		}
+
 		return gen.VideoSource{}, fmt.Errorf("getting video source: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -98,6 +104,7 @@ func (s *Store) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, s
 	if err != nil {
 		return nil, fmt.Errorf("listing admin video sources: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -112,6 +119,7 @@ func (s *Store) CountSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 	if err != nil {
 		return 0, fmt.Errorf("counting admin video sources: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -126,8 +134,10 @@ func (s *Store) GetSourceByExternalID(ctx context.Context, tenantID pgtype.UUID,
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoSource{}, errpkg.ErrNotFound
 		}
+
 		return gen.VideoSource{}, fmt.Errorf("getting video source by external id: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -143,6 +153,7 @@ func (s *Store) ListSourcesByUsername(ctx context.Context, tenantID pgtype.UUID,
 	if err != nil {
 		return nil, fmt.Errorf("listing video sources by username: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -157,6 +168,7 @@ func (s *Store) ListSourcesByAuthorUserID(ctx context.Context, tenantID, authorU
 	if err != nil {
 		return nil, fmt.Errorf("listing video sources by author id: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -166,6 +178,7 @@ func (s *Store) CreateImportJob(ctx context.Context, arg gen.CreateVideoImportJo
 	if err != nil {
 		return gen.VideoImportJob{}, fmt.Errorf("creating video import job: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -180,6 +193,7 @@ func (s *Store) ListImportJobsByUser(ctx context.Context, tenantID, userID pgtyp
 	if err != nil {
 		return nil, fmt.Errorf("listing video import jobs: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -189,6 +203,7 @@ func (s *Store) CreateChannelClaim(ctx context.Context, arg gen.CreateVideoChann
 	if err != nil {
 		return gen.VideoChannelClaim{}, fmt.Errorf("creating video channel claim: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -203,6 +218,7 @@ func (s *Store) ListChannelClaimsByAuthor(ctx context.Context, tenantID, videoAu
 	if err != nil {
 		return nil, fmt.Errorf("listing video channel claims: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -217,8 +233,10 @@ func (s *Store) GetUserForClaimByUsername(ctx context.Context, tenantID pgtype.U
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetUserForVideoClaimRow{}, errpkg.ErrNotFound
 		}
+
 		return gen.GetUserForVideoClaimRow{}, fmt.Errorf("looking up user for claim: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -232,8 +250,10 @@ func (s *Store) GetUserSyntheticStatusByID(ctx context.Context, tenantID, userID
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, errpkg.ErrNotFound
 		}
+
 		return false, fmt.Errorf("looking up user synthetic status: %w", err)
 	}
+
 	return isSynthetic, nil
 }
 
@@ -246,6 +266,7 @@ func (s *Store) CountOpenClaimsByAuthor(ctx context.Context, tenantID, videoAuth
 	if err != nil {
 		return 0, fmt.Errorf("counting open channel claims: %w", err)
 	}
+
 	return count, nil
 }
 
@@ -260,6 +281,7 @@ func (s *Store) ListClaimsByClaimant(ctx context.Context, tenantID, claimantUser
 	if err != nil {
 		return nil, fmt.Errorf("listing claimant video channel claims: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -278,6 +300,7 @@ func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, st
 	if err != nil {
 		return nil, fmt.Errorf("listing admin video channel claims: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -292,6 +315,7 @@ func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, s
 	if err != nil {
 		return 0, fmt.Errorf("counting admin video channel claims: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -310,6 +334,7 @@ func (s *Store) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID
 	if err != nil {
 		return nil, fmt.Errorf("listing admin video import jobs: %w", err)
 	}
+
 	return rows, nil
 }
 
@@ -324,6 +349,7 @@ func (s *Store) CountImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUI
 	if err != nil {
 		return 0, fmt.Errorf("counting admin video import jobs: %w", err)
 	}
+
 	return total, nil
 }
 
@@ -337,8 +363,10 @@ func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUI
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoChannelClaim{}, errpkg.ErrNotFound
 		}
+
 		return gen.VideoChannelClaim{}, fmt.Errorf("getting video channel claim: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -352,8 +380,10 @@ func (s *Store) GetImportJobByID(ctx context.Context, tenantID, id pgtype.UUID) 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoImportJob{}, errpkg.ErrNotFound
 		}
+
 		return gen.VideoImportJob{}, fmt.Errorf("getting video import job: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -363,6 +393,7 @@ func (s *Store) UpdateImportJob(ctx context.Context, arg gen.UpdateVideoImportJo
 	if err != nil {
 		return gen.VideoImportJob{}, fmt.Errorf("updating video import job: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -376,8 +407,10 @@ func (s *Store) GetUserByUsername(ctx context.Context, tenantID pgtype.UUID, use
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetUserByUsernameRow{}, errpkg.ErrNotFound
 		}
+
 		return gen.GetUserByUsernameRow{}, fmt.Errorf("getting user by username: %w", err)
 	}
+
 	return row, nil
 }
 
@@ -391,8 +424,10 @@ func (s *Store) GetDefaultSpaceForUser(ctx context.Context, tenantID, userID pgt
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("listing spaces for user: %w", err)
 	}
+
 	if len(rows) == 0 {
 		return pgtype.UUID{}, errpkg.ErrNotFound
 	}
+
 	return rows[0].ID, nil
 }

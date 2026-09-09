@@ -17,12 +17,14 @@ type fakeVideoSummaryProcessor struct {
 	err    error
 }
 
-func (f *fakeVideoSummaryProcessor) GenerateDraft(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error) {
+func (f *fakeVideoSummaryProcessor) GenerateDraft(_ context.Context, _, _, _ pgtype.UUID) (gen.CreateContentRow, error) {
 	f.called = true
 	return gen.CreateContentRow{}, f.err
 }
 
 func TestHandleVideoGenerateSummary(t *testing.T) {
+	t.Parallel()
+
 	proc := &fakeVideoSummaryProcessor{}
 	RegisterVideoSummaryProcessor(proc)
 
@@ -34,21 +36,27 @@ func TestHandleVideoGenerateSummary(t *testing.T) {
 	b, _ := json.Marshal(payload)
 
 	task := asynq.NewTask(TypeVideoGenerateSummary, b)
-	err := HandleVideoGenerateSummary(context.Background(), task)
+
+	err := HandleVideoGenerateSummary(t.Context(), task)
 	if err != nil {
 		t.Fatalf("HandleVideoGenerateSummary: %v", err)
 	}
+
 	if !proc.called {
 		t.Error("processor not called")
 	}
 }
 
 func TestHandleVideoGenerateSummary_InvalidPayload(t *testing.T) {
+	t.Parallel()
+
 	task := asynq.NewTask(TypeVideoGenerateSummary, []byte("not json"))
-	err := HandleVideoGenerateSummary(context.Background(), task)
+
+	err := HandleVideoGenerateSummary(t.Context(), task)
 	if err == nil {
 		t.Fatal("expected error for invalid payload")
 	}
+
 	if !errors.Is(err, asynq.SkipRetry) {
 		t.Errorf("expected SkipRetry, got %v", err)
 	}
