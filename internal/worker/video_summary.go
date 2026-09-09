@@ -68,6 +68,7 @@ func HandleVideoGenerateSummary(ctx context.Context, t *asynq.Task) error {
 		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, errpkg.ErrAlreadyExists) {
 			return fmt.Errorf("video generate summary permanent failure: %w: %w", err, asynq.SkipRetry)
 		}
+
 		return fmt.Errorf("task:video:generate_summary: %w", err)
 	}
 

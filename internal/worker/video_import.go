@@ -28,9 +28,11 @@ func HandleVideoImportBulk(ctx context.Context, t *asynq.Task) error {
 	if _, err := scanUUID(p.ImportJobID); err != nil {
 		return fmt.Errorf("import_job_id: %w: %w", asynq.SkipRetry, err)
 	}
+
 	if _, err := scanUUID(p.TenantID); err != nil {
 		return fmt.Errorf("tenant_id: %w: %w", asynq.SkipRetry, err)
 	}
+
 	if _, err := scanUUID(p.UserID); err != nil {
 		return fmt.Errorf("user_id: %w: %w", asynq.SkipRetry, err)
 	}

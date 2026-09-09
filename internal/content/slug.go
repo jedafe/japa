@@ -181,9 +181,11 @@ func ComputeContentHashWithDistinguisher(body, videoSourceID string) string {
 	normalised = strings.TrimSpace(normalised)
 	normalised = whitespaceRun.ReplaceAllString(normalised, " ")
 	normalised = strings.ToLower(normalised)
+
 	if videoSourceID != "" {
 		normalised += "|" + videoSourceID
 	}
+
 	h := sha256.Sum256([]byte(normalised))
 
 	return hex.EncodeToString(h[:])

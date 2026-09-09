@@ -2243,7 +2243,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// media subsystems and registers its own routes.
 	videoStore := video.NewStore(database.Writer, database.Reader)
 	ytProvider := video.NewYouTubeProvider()
-	videoService := video.NewService(videoStore, usersService, mediaService, video.NewResolver(ytProvider))
+	vimeoProvider := video.NewVimeoProvider()
+	videoService := video.NewService(videoStore, usersService, mediaService, video.NewResolver(ytProvider, vimeoProvider))
 	videoService.SetEnqueuer(taskEnqueuer)
 	videoService.SetSettings(settingsService)
 	videoService.SetContentService(contentService)

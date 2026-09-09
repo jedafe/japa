@@ -12,6 +12,8 @@ import (
 )
 
 func TestBuildSummaryPrompt(t *testing.T) {
+	t.Parallel()
+
 	cat := "Travel Tips"
 	src := gen.VideoSource{
 		Title:       "Tokyo Subway Guide",
@@ -39,6 +41,8 @@ func TestBuildSummaryPrompt(t *testing.T) {
 }
 
 func TestParseGeneratedSummary_JSON(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{}
 	src := gen.VideoSource{Title: "Original", Description: "Original body", SourceUrl: "https://x"}
 
@@ -48,12 +52,15 @@ func TestParseGeneratedSummary_JSON(t *testing.T) {
 	if title != "AI Title" {
 		t.Errorf("title = %q, want %q", title, "AI Title")
 	}
+
 	if !strings.Contains(body, "First paragraph") || !strings.Contains(body, "Second paragraph") {
 		t.Errorf("body = %q", body)
 	}
 }
 
 func TestParseGeneratedSummary_CodeBlock(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{}
 	src := gen.VideoSource{Title: "Original", Description: "Original body", SourceUrl: "https://x"}
 
@@ -63,12 +70,15 @@ func TestParseGeneratedSummary_CodeBlock(t *testing.T) {
 	if title != "Block Title" {
 		t.Errorf("title = %q, want %q", title, "Block Title")
 	}
+
 	if body != "Block body" {
 		t.Errorf("body = %q, want %q", body, "Block body")
 	}
 }
 
 func TestParseGeneratedSummary_Narrative(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{}
 	src := gen.VideoSource{Title: "Original", Description: "Original body", SourceUrl: "https://x"}
 
@@ -78,13 +88,17 @@ func TestParseGeneratedSummary_Narrative(t *testing.T) {
 	if title != "Narrative Title" {
 		t.Errorf("title = %q", title)
 	}
+
 	if body != "Narrative body." {
 		t.Errorf("body = %q", body)
 	}
 }
 
 func TestBuildDraftBody(t *testing.T) {
+	t.Parallel()
+
 	svc := &Service{}
+
 	tipTap, htmlBody, err := svc.buildDraftBody("First paragraph.\n\nSecond paragraph.")
 	if err != nil {
 		t.Fatalf("buildDraftBody: %v", err)
@@ -94,6 +108,7 @@ func TestBuildDraftBody(t *testing.T) {
 	if err := json.Unmarshal([]byte(tipTap), &doc); err != nil {
 		t.Fatalf("tipTap is not valid JSON: %v", err)
 	}
+
 	if doc["type"] != "doc" {
 		t.Errorf("tipTap type = %v", doc["type"])
 	}
@@ -106,12 +121,15 @@ func TestBuildDraftBody(t *testing.T) {
 	if !strings.Contains(htmlBody, "<p>First paragraph.</p>") {
 		t.Errorf("htmlBody missing first paragraph: %q", htmlBody)
 	}
+
 	if !strings.Contains(htmlBody, "<p>Second paragraph.</p>") {
 		t.Errorf("htmlBody missing second paragraph: %q", htmlBody)
 	}
 }
 
 func TestExtractTrailingJSONObject(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input string
 		want  string
@@ -138,16 +156,37 @@ func TestExtractTrailingJSONObject(t *testing.T) {
 	}
 }
 
+type fakeSettingsForGenerate struct{}
+
+func (f *fakeSettingsForGenerate) GetStringOr(_ context.Context, _ pgtype.UUID, _, fallback string) string {
+	return fallback
+}
+
+func (f *fakeSettingsForGenerate) GetBoolOr(_ context.Context, _ pgtype.UUID, key string, fallback bool) bool {
+	if key == "video.enabled" || key == "video.ai_summary.enabled" {
+		return true
+	}
+
+	return fallback
+}
+
+func (f *fakeSettingsForGenerate) GetIntOr(_ context.Context, _ pgtype.UUID, _ string, fallback int) int {
+	return fallback
+}
+
 func TestEnqueueGenerateSummary_Payload(t *testing.T) {
+	t.Parallel()
+
 	enq := &fakeEnqueuer{}
 	svc := NewService(nil, nil, nil, nil)
 	svc.SetEnqueuer(enq)
+	svc.SetSettings(&fakeSettingsForGenerate{})
 
 	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	userID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 	sourceID := pgtype.UUID{Bytes: [16]byte{3}, Valid: true}
 
-	err := svc.EnqueueGenerateSummary(context.Background(), tenantID, userID, sourceID)
+	err := svc.EnqueueGenerateSummary(t.Context(), tenantID, userID, sourceID)
 	if err != nil {
 		t.Fatalf("EnqueueGenerateSummary: %v", err)
 	}
@@ -155,6 +194,7 @@ func TestEnqueueGenerateSummary_Payload(t *testing.T) {
 	if len(enq.recorded) != 1 {
 		t.Fatalf("expected 1 enqueued task, got %d", len(enq.recorded))
 	}
+
 	if enq.recorded[0].typeString != "video:generate_summary" {
 		t.Errorf("task type = %q", enq.recorded[0].typeString)
 	}

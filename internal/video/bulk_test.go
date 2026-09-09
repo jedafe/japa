@@ -28,41 +28,67 @@ type recordedTask struct {
 	payload    []byte
 }
 
-func (f *fakeEnqueuer) Enqueue(taskType string, payload []byte, opts ...interface{}) error {
+func (f *fakeEnqueuer) Enqueue(taskType string, payload []byte, _ ...interface{}) error {
 	f.recorded = append(f.recorded, recordedTask{taskType, payload})
 	return nil
 }
 
 type fakeUserManagerForBulk struct{}
 
-func (f *fakeUserManagerForBulk) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID, input users.SyntheticUserInput) (pgtype.UUID, error) {
+func (f *fakeUserManagerForBulk) EnsureSyntheticUser(_ context.Context, _ pgtype.UUID, _ users.SyntheticUserInput) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
 type fakeMediaManagerForBulk struct{}
 
-func (f *fakeMediaManagerForBulk) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
+func (f *fakeMediaManagerForBulk) StoreFromURL(_ context.Context, _, _ pgtype.UUID, _, _ string) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (f *fakeMediaManagerForBulk) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error) {
+func (f *fakeMediaManagerForBulk) StoreFromBytes(_ context.Context, _, _ pgtype.UUID, _ []byte, _ string, _ *media.MediaAttribution) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (f *fakeMediaManagerForBulk) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error) {
+func (f *fakeMediaManagerForBulk) GetMedia(_ context.Context, _, _ pgtype.UUID) (gen.Medium, error) {
 	return gen.Medium{}, errors.New("not implemented")
 }
 
-func (f *fakeMediaManagerForBulk) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
+func (f *fakeMediaManagerForBulk) MaxUploadBytes(_ context.Context, _ pgtype.UUID) int64 {
 	return 50 << 20
 }
 
 type fakeResolverForBulk struct{}
 
-func (f *fakeResolverForBulk) Resolve(ctx context.Context, rawURL string) (*VideoMetadata, error) {
-	return &VideoMetadata{SourceType: SourceYouTube, SourceURL: rawURL}, nil
+func (f *fakeResolverForBulk) Resolve(_ context.Context, rawURL string) (*Metadata, error) {
+	return &Metadata{SourceType: SourceYouTube, SourceURL: rawURL}, nil
 }
 func (f *fakeResolverForBulk) Platform() string { return "" }
+
+type fakeSettingsForBulk struct{}
+
+func (f *fakeSettingsForBulk) GetStringOr(_ context.Context, _ pgtype.UUID, key, fallback string) string {
+	if key == "video.import.youtube_api_key" {
+		return "fake-api-key"
+	}
+
+	return fallback
+}
+
+func (f *fakeSettingsForBulk) GetBoolOr(_ context.Context, _ pgtype.UUID, key string, fallback bool) bool {
+	if key == "video.enabled" {
+		return true
+	}
+
+	return fallback
+}
+
+func (f *fakeSettingsForBulk) GetIntOr(_ context.Context, _ pgtype.UUID, key string, fallback int) int {
+	if key == "video.import.max_items_per_run" {
+		return 50
+	}
+
+	return fallback
+}
 
 type fakeRow struct {
 	values []any
@@ -74,29 +100,36 @@ func (r *fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
+
 	if len(r.values) == 0 {
 		return pgx.ErrNoRows
 	}
+
 	if len(dest) != len(r.values) {
 		return fmt.Errorf("destination count %d does not match value count %d", len(dest), len(r.values))
 	}
+
 	for i, v := range r.values {
 		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
 	}
+
 	r.called = true
+
 	return nil
 }
 
 func mustParseUUID(t *testing.T, s string) pgtype.UUID {
 	t.Helper()
+
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
 		t.Fatalf("parse uuid %q: %v", s, err)
 	}
+
 	return u
 }
 
-func importJobRowValues(t *testing.T, tenantID, userID, jobID pgtype.UUID) []any {
+func importJobRowValues(_ *testing.T, tenantID, userID, jobID pgtype.UUID) []any {
 	sourceURL := "https://www.youtube.com/channel/UCtest"
 	status := "pending"
 	total := int32(0)
@@ -143,8 +176,10 @@ func (f *fakeDBTXForBulk) QueryRow(context.Context, string, ...any) pgx.Row {
 	if len(f.queryRowResults) == 0 {
 		return &fakeRow{err: pgx.ErrNoRows}
 	}
+
 	row := f.queryRowResults[0]
 	f.queryRowResults = f.queryRowResults[1:]
+
 	return row
 }
 
@@ -167,7 +202,7 @@ func (f *fakeRowsForBulk) Conn() *pgx.Conn                              { return
 func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tenantID := mustParseUUID(t, uuid.New().String())
 	userID := mustParseUUID(t, uuid.New().String())
 	jobID := mustParseUUID(t, uuid.New().String())
@@ -178,6 +213,7 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 
 	store := &Store{read: gen.New(fakeDB), write: gen.New(fakeDB)}
 	svc := NewService(store, &fakeUserManagerForBulk{}, &fakeMediaManagerForBulk{}, &fakeResolverForBulk{})
+	svc.SetSettings(&fakeSettingsForBulk{})
 
 	enqueuer := &fakeEnqueuer{}
 	svc.SetEnqueuer(enqueuer)
@@ -194,6 +230,7 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	if job.ID != jobID {
 		t.Errorf("job.ID = %v, want %v", job.ID, jobID)
 	}
+
 	if len(enqueuer.recorded) != 1 {
 		t.Fatalf("expected 1 enqueued task, got %d", len(enqueuer.recorded))
 	}
@@ -211,9 +248,11 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	if payload.ImportJobID != jobID.String() {
 		t.Errorf("payload.import_job_id = %q, want %q", payload.ImportJobID, jobID.String())
 	}
+
 	if payload.TenantID != tenantID.String() {
 		t.Errorf("payload.tenant_id = %q, want %q", payload.TenantID, tenantID.String())
 	}
+
 	if payload.UserID != userID.String() {
 		t.Errorf("payload.user_id = %q, want %q", payload.UserID, userID.String())
 	}

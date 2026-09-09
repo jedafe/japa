@@ -1,11 +1,11 @@
 package video
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -63,6 +63,7 @@ func (h *Handlers) postAuth(r chi.Router, pattern string, fn http.HandlerFunc) {
 		r.With(h.authMW).Post(pattern, fn)
 		return
 	}
+
 	r.Post(pattern, fn)
 }
 
@@ -71,6 +72,7 @@ func (h *Handlers) getAuth(r chi.Router, pattern string, fn http.HandlerFunc) {
 		r.With(h.authMW).Get(pattern, fn)
 		return
 	}
+
 	r.Get(pattern, fn)
 }
 
@@ -89,6 +91,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		URL string `json:"url"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -105,11 +108,14 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", err.Error())
 			return
 		}
+
 		errpkg.HandleServiceError(w, err)
+
 		return
 	}
 
 	_ = user // authenticated user is the actor, but author is the synthetic channel
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
@@ -137,6 +143,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 	if maxBytes <= 0 || maxBytes > hardMaxUploadBytes {
 		maxBytes = hardMaxUploadBytes
 	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadFormHeadroom)
 
 	// #nosec G120 — maxMultipartMemory is a package constant (32 MiB) that caps
@@ -151,6 +158,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "A 'video' file field is required")
 		return
 	}
+
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
@@ -158,10 +166,12 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
 	}
+
 	if len(data) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "empty_file", "The uploaded file is empty")
 		return
 	}
+
 	if int64(len(data)) > maxBytes {
 		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
@@ -267,7 +277,7 @@ func (h *Handlers) ListChannelVideos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePage(r)
+	limit, offset := parsePage(r, "limit", "offset")
 
 	sources, err := h.Service.ListChannelVideosByUsername(r.Context(), tenantID, username, limit, offset)
 	if err != nil {
@@ -297,6 +307,7 @@ func (h *Handlers) CreateImportJob(w http.ResponseWriter, r *http.Request) {
 		TargetUsername *string `json:"target_username"`
 		AutoPublish    bool    `json:"auto_publish"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -335,7 +346,9 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idParam := chi.URLParam(r, "id")
+
 	var id pgtype.UUID
+
 	if err := id.Scan(idParam); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid import job ID")
 		return
@@ -350,8 +363,11 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": job})
 }
 
-// ListImportJobs handles GET /api/v1/me/video-imports.
-func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
+// userListQueryFunc loads a paginated list scoped to the authenticated user.
+type userListQueryFunc func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error)
+
+// runUserList is the shared boilerplate for user-scoped list endpoints.
+func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch userListQueryFunc) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
@@ -362,15 +378,22 @@ func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit, offset := parsePage(r)
+	limit, offset := parsePage(r, "limit", "offset")
 
-	jobs, err := h.Service.ListImportJobsByUser(r.Context(), tenantID, user.UserID, limit, offset)
+	items, err := fetch(r.Context(), tenantID, user.UserID, limit, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": jobs})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// ListImportJobs handles GET /api/v1/me/video-imports.
+func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
+	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
+		return h.Service.ListImportJobsByUser(ctx, tenantID, userID, limit, offset)
+	})
 }
 
 // SubmitChannelClaim handles POST /api/v1/video-channels/{username}/claims.
@@ -398,6 +421,7 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 		Notes         *string `json:"notes"`
 		VideoSourceID *string `json:"video_source_id"`
 	}
+
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -412,10 +436,12 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 	if input.EvidenceURL != nil {
 		evidenceURL = *input.EvidenceURL
 	}
+
 	notes := ""
 	if input.Notes != nil {
 		notes = *input.Notes
 	}
+
 	videoSourceID := ""
 	if input.VideoSourceID != nil {
 		videoSourceID = *input.VideoSourceID
@@ -432,25 +458,9 @@ func (h *Handlers) SubmitChannelClaim(w http.ResponseWriter, r *http.Request) {
 
 // ListMyVideoClaims handles GET /api/v1/me/video-claims.
 func (h *Handlers) ListMyVideoClaims(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
-	limit, offset := parsePage(r)
-
-	claims, err := h.Service.ListClaimsByUser(r.Context(), tenantID, user.UserID, limit, offset)
-	if err != nil {
-		errpkg.HandleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": claims})
+	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
+		return h.Service.ListClaimsByUser(ctx, tenantID, userID, limit, offset)
+	})
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -459,6 +469,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
+
 	return user, true
 }
 
@@ -468,32 +479,15 @@ func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return pgtype.UUID{}, false
 	}
+
 	return t.ID, true
-}
-
-func parsePage(r *http.Request) (limit, offset int32) {
-	limit = defaultPageSize
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.ParseInt(l, 10, 32); err == nil && n > 0 {
-			if n > maxPageSize {
-				n = maxPageSize
-			}
-			limit = int32(n)
-		}
-	}
-
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if n, err := strconv.ParseInt(o, 10, 32); err == nil && n >= 0 {
-			offset = int32(n)
-		}
-	}
-	return
 }
 
 func isVideoClientError(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	return errors.Is(err, ErrUnsupportedPlatform) ||
 		errors.Is(err, ErrInvalidVideoURL) ||
 		errors.Is(err, ErrNoYouTubeID)

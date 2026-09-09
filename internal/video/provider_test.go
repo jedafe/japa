@@ -1,10 +1,8 @@
 package video
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,28 +62,37 @@ func TestYouTubeProviderResolve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			meta, err := provider.Resolve(context.Background(), tt.url)
+			t.Parallel()
+
+			meta, err := provider.Resolve(t.Context(), tt.url)
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
 			}
+
 			if meta.SourceType != SourceYouTube {
 				t.Errorf("SourceType = %q, want %q", meta.SourceType, SourceYouTube)
 			}
+
 			if meta.ExternalID != tt.wantVideo {
 				t.Errorf("ExternalID = %q, want %q", meta.ExternalID, tt.wantVideo)
 			}
+
 			if meta.Title != tt.wantTitle {
 				t.Errorf("Title = %q, want %q", meta.Title, tt.wantTitle)
 			}
+
 			if meta.ChannelName != tt.wantChan {
 				t.Errorf("ChannelName = %q, want %q", meta.ChannelName, tt.wantChan)
 			}
+
 			if meta.Category != tt.wantCat {
 				t.Errorf("Category = %q, want %q", meta.Category, tt.wantCat)
 			}
+
 			if meta.DurationSecs != tt.wantDur {
 				t.Errorf("DurationSecs = %d, want %d", meta.DurationSecs, tt.wantDur)
 			}
+
 			if meta.ChannelURL == "" {
 				t.Error("ChannelURL is empty")
 			}
@@ -97,7 +104,8 @@ func TestYouTubeProviderResolve_NoVideoID(t *testing.T) {
 	t.Parallel()
 
 	p := NewYouTubeProvider()
-	_, err := p.Resolve(context.Background(), "https://www.youtube.com/")
+
+	_, err := p.Resolve(t.Context(), "https://www.youtube.com/")
 	if !errors.Is(err, ErrNoYouTubeID) {
 		t.Fatalf("Resolve: err = %v, want ErrNoYouTubeID", err)
 	}
@@ -107,7 +115,8 @@ func TestResolver_Unsupported(t *testing.T) {
 	t.Parallel()
 
 	r := NewDefaultResolver()
-	_, err := r.Resolve(context.Background(), "https://example.com/video")
+
+	_, err := r.Resolve(t.Context(), "https://example.com/video")
 	if !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("Resolve: err = %v, want ErrUnsupportedPlatform", err)
 	}
@@ -126,10 +135,12 @@ func TestResolver_Valid(t *testing.T) {
 	)
 
 	r := NewResolver(p)
-	meta, err := r.Resolve(context.Background(), "https://www.youtube.com/watch?v=ABC123XYZ")
+
+	meta, err := r.Resolve(t.Context(), "https://www.youtube.com/watch?v=ABC123XYZ")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
+
 	if meta.ExternalID != "ABC123XYZ" {
 		t.Errorf("ExternalID = %q, want ABC123XYZ", meta.ExternalID)
 	}
@@ -157,6 +168,7 @@ func newMockYouTubeServer(t *testing.T) *mockYouTubeServer {
 				"html":          `<iframe src="https://www.youtube.com/embed/ABC123XYZ"></iframe>`,
 			}
 			_ = json.NewEncoder(w).Encode(resp)
+
 			return
 		}
 
@@ -181,6 +193,7 @@ func newMockYouTubeServer(t *testing.T) *mockYouTubeServer {
 				},
 			}
 			_ = json.NewEncoder(w).Encode(resp)
+
 			return
 		}
 
@@ -204,6 +217,7 @@ func newMockYouTubeServer(t *testing.T) *mockYouTubeServer {
 				},
 			}
 			_ = json.NewEncoder(w).Encode(resp)
+
 			return
 		}
 
@@ -220,8 +234,9 @@ func newMockYouTubeServer(t *testing.T) *mockYouTubeServer {
 func TestChannelKey(t *testing.T) {
 	t.Parallel()
 
-	m := &VideoMetadata{SourceType: SourceYouTube, ChannelName: "Awesome Channel!"}
-	want := fmt.Sprintf("%s:awesome-channel", SourceYouTube)
+	m := &Metadata{SourceType: SourceYouTube, ChannelName: "Awesome Channel!"}
+	want := SourceYouTube + ":awesome-channel"
+
 	if got := m.ChannelKey(); got != want {
 		t.Errorf("ChannelKey() = %q, want %q", got, want)
 	}

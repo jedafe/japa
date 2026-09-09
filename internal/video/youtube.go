@@ -35,7 +35,7 @@ type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// YouTubeProvider resolves YouTube URLs to VideoMetadata.
+// YouTubeProvider resolves YouTube URLs to Metadata.
 type YouTubeProvider struct {
 	client         httpClient
 	oembedBaseURL  string
@@ -58,6 +58,7 @@ func NewYouTubeProvider(opts ...ProviderOption) *YouTubeProvider {
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	return p
 }
 
@@ -96,12 +97,13 @@ func (p *YouTubeProvider) Platform() string { return SourceYouTube }
 func (p *YouTubeProvider) CloneWithAPIKey(key string) *YouTubeProvider {
 	c := *p
 	c.apiKey = key
+
 	return &c
 }
 
 // Resolve parses a YouTube URL and resolves metadata first from oEmbed, then
 // optionally from the YouTube Data API v3 when an API key is configured.
-func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*VideoMetadata, error) {
+func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*Metadata, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidVideoURL, err)
@@ -112,8 +114,8 @@ func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*VideoMet
 		return nil, ErrNoYouTubeID
 	}
 
-	canonicalURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
-	meta := &VideoMetadata{
+	canonicalURL := "https://www.youtube.com/watch?v=" + videoID
+	meta := &Metadata{
 		SourceType:    SourceYouTube,
 		SourceURL:     canonicalURL,
 		ExternalID:    videoID,
@@ -147,6 +149,7 @@ func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*VideoMet
 	if meta.ChannelName == "" {
 		meta.ChannelName = meta.AuthorName
 	}
+
 	if meta.ChannelName == "" {
 		meta.ChannelName = "youtube"
 	}
@@ -181,7 +184,7 @@ func extractYouTubeID(u *url.URL) string {
 
 // resolveOEmbed fetches the YouTube oEmbed endpoint and populates title,
 // author, thumbnail, and embed HTML.
-func (p *YouTubeProvider) resolveOEmbed(ctx context.Context, rawURL string, meta *VideoMetadata) error {
+func (p *YouTubeProvider) resolveOEmbed(ctx context.Context, rawURL string, meta *Metadata) error {
 	values := url.Values{}
 	values.Set("url", rawURL)
 	values.Set("format", "json")
@@ -201,17 +204,21 @@ func (p *YouTubeProvider) resolveOEmbed(ctx context.Context, rawURL string, meta
 	if t, ok := data["title"].(string); ok {
 		meta.Title = t
 	}
+
 	if a, ok := data["author_name"].(string); ok {
 		meta.AuthorName = a
 		meta.ChannelName = a
 		meta.AuthorHandle = sanitizeUsername(a)
 	}
+
 	if u, ok := data["author_url"].(string); ok {
 		meta.ChannelURL = u
 	}
+
 	if t, ok := data["thumbnail_url"].(string); ok {
 		meta.ThumbnailURL = t
 	}
+
 	if html, ok := data["html"].(string); ok {
 		meta.EmbedHTML = html
 	}
@@ -220,7 +227,7 @@ func (p *YouTubeProvider) resolveOEmbed(ctx context.Context, rawURL string, meta
 }
 
 // resolveDataAPI enriches metadata from the YouTube Data API v3.
-func (p *YouTubeProvider) resolveDataAPI(ctx context.Context, videoID string, meta *VideoMetadata) error {
+func (p *YouTubeProvider) resolveDataAPI(ctx context.Context, videoID string, meta *Metadata) error {
 	videosURL := fmt.Sprintf("%s/videos?part=snippet,contentDetails&id=%s&key=%s",
 		p.dataAPIBaseURL, url.QueryEscape(videoID), url.QueryEscape(p.apiKey))
 
@@ -245,17 +252,20 @@ func (p *YouTubeProvider) resolveDataAPI(ctx context.Context, videoID string, me
 	if catID, ok := snippet["categoryId"].(string); ok {
 		meta.Category = catID
 	}
+
 	if desc, ok := snippet["description"].(string); ok && meta.Description == "" {
 		meta.Description = desc
 	}
+
 	if chTitle, ok := snippet["channelTitle"].(string); ok {
 		meta.ChannelName = chTitle
 		if meta.AuthorName == "" {
 			meta.AuthorName = chTitle
 		}
 	}
+
 	if chID, ok := snippet["channelId"].(string); ok {
-		meta.ChannelURL = fmt.Sprintf("https://www.youtube.com/channel/%s", chID)
+		meta.ChannelURL = "https://www.youtube.com/channel/" + chID
 		if err := p.resolveChannel(ctx, chID, meta); err != nil {
 			slog.WarnContext(ctx, "youtube channel fetch failed", "channel_id", chID, "error", err)
 		}
@@ -269,7 +279,7 @@ func (p *YouTubeProvider) resolveDataAPI(ctx context.Context, videoID string, me
 }
 
 // resolveChannel fetches channel-level metadata (logo, banner, description).
-func (p *YouTubeProvider) resolveChannel(ctx context.Context, channelID string, meta *VideoMetadata) error {
+func (p *YouTubeProvider) resolveChannel(ctx context.Context, channelID string, meta *Metadata) error {
 	channelURL := fmt.Sprintf("%s/channels?part=snippet,brandingSettings&id=%s&key=%s",
 		p.dataAPIBaseURL, url.QueryEscape(channelID), url.QueryEscape(p.apiKey))
 
@@ -288,32 +298,50 @@ func (p *YouTubeProvider) resolveChannel(ctx context.Context, channelID string, 
 		return errors.New("invalid channel item from data api")
 	}
 
-	snippet, _ := item["snippet"].(map[string]any)
-	branding, _ := item["brandingSettings"].(map[string]any)
+	applyChannelSnippet(item["snippet"], meta)
+	applyChannelBranding(item["brandingSettings"], meta)
+
+	return nil
+}
+
+// applyChannelSnippet extracts snippet fields into the metadata struct.
+func applyChannelSnippet(snippetRaw any, meta *Metadata) {
+	snippet, _ := snippetRaw.(map[string]any)
+	if len(snippet) == 0 {
+		return
+	}
 
 	if desc, ok := snippet["description"].(string); ok {
 		meta.AuthorDesc = desc
 	}
+
 	if country, ok := snippet["country"].(string); ok {
 		meta.AuthorLocation = country
 	}
 
-	thumbs, _ := snippet["thumbnails"].(map[string]any)
-	if len(thumbs) > 0 {
+	if thumbs, _ := snippet["thumbnails"].(map[string]any); len(thumbs) > 0 {
 		meta.ChannelLogo = bestThumbnail(thumbs)
 	}
+}
 
-	if images, _ := branding["image"].(map[string]any); images != nil {
-		if banner, ok := images["bannerExternalUrl"].(string); ok && banner != "" {
-			meta.ChannelBanner = banner
-		} else if banner, ok := images["bannerMobileExtraHdImageUrl"].(string); ok && banner != "" {
-			meta.ChannelBanner = banner
-		} else if banner, ok := images["bannerMobileHdImageUrl"].(string); ok && banner != "" {
-			meta.ChannelBanner = banner
-		}
+// applyChannelBranding extracts banner images into the metadata struct.
+func applyChannelBranding(brandingRaw any, meta *Metadata) {
+	branding, _ := brandingRaw.(map[string]any)
+	if len(branding) == 0 {
+		return
 	}
 
-	return nil
+	images, _ := branding["image"].(map[string]any)
+	if images == nil {
+		return
+	}
+
+	for _, key := range []string{"bannerExternalUrl", "bannerMobileExtraHdImageUrl", "bannerMobileHdImageUrl"} {
+		if banner, ok := images[key].(string); ok && banner != "" {
+			meta.ChannelBanner = banner
+			return
+		}
+	}
 }
 
 // fetchJSON performs a GET request and decodes the JSON body.
@@ -329,12 +357,14 @@ func (p *YouTubeProvider) fetchJSON(ctx context.Context, u string) (map[string]a
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -342,10 +372,13 @@ func (p *YouTubeProvider) fetchJSON(ctx context.Context, u string) (map[string]a
 	}
 
 	limited := io.LimitReader(resp.Body, 1<<20)
+
 	var data map[string]any
+
 	if err := json.NewDecoder(limited).Decode(&data); err != nil {
 		return nil, err
 	}
+
 	return data, nil
 }
 
@@ -357,10 +390,12 @@ func bestThumbnail(thumbs map[string]any) string {
 		if !ok {
 			continue
 		}
+
 		if u, ok := v["url"].(string); ok && u != "" {
 			return u
 		}
 	}
+
 	return ""
 }
 
@@ -399,6 +434,7 @@ func (p *YouTubeProvider) SearchChannel(ctx context.Context, query string) ([]st
 	if err != nil {
 		return nil, err
 	}
+
 	return p.videoURLsFromSearch(data), nil
 }
 
@@ -421,6 +457,7 @@ func (p *YouTubeProvider) SearchPlaylist(ctx context.Context, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
+
 	return p.videoURLsFromPlaylistItems(data), nil
 }
 
@@ -438,6 +475,7 @@ func (p *YouTubeProvider) SearchKeyword(ctx context.Context, query string) ([]st
 	if err != nil {
 		return nil, err
 	}
+
 	return p.videoURLsFromSearch(data), nil
 }
 
@@ -452,10 +490,12 @@ func (p *YouTubeProvider) resolveChannelID(ctx context.Context, query string) (s
 		if id != "" {
 			return id, nil
 		}
+
 		if handle != "" {
 			if ch, err := p.lookupChannelByHandle(ctx, handle); err == nil && ch != "" {
 				return ch, nil
 			}
+
 			return p.fallbackChannelSearch(ctx, handle)
 		}
 	}
@@ -471,6 +511,7 @@ func (p *YouTubeProvider) resolveChannelID(ctx context.Context, query string) (s
 		if ch, err := p.lookupChannelByHandle(ctx, handle); err == nil && ch != "" {
 			return ch, nil
 		}
+
 		return p.fallbackChannelSearch(ctx, handle)
 	}
 
@@ -501,6 +542,7 @@ func (p *YouTubeProvider) lookupChannelByHandle(ctx context.Context, handle stri
 		if err != nil {
 			return "", err
 		}
+
 		items, _ = data["items"].([]any)
 	}
 
@@ -523,10 +565,12 @@ func (p *YouTubeProvider) fallbackChannelSearch(ctx context.Context, query strin
 	if err != nil {
 		return "", err
 	}
+
 	id := p.channelIDFromSearch(data)
 	if id == "" {
 		return "", errors.New("no matching YouTube channel found")
 	}
+
 	return id, nil
 }
 
@@ -537,33 +581,40 @@ func (p *YouTubeProvider) channelIDFromSearch(data map[string]any) string {
 		if !ok {
 			continue
 		}
+
 		if id, ok := item["id"].(map[string]any); ok {
 			if chID, ok := id["channelId"].(string); ok && chID != "" {
 				return chID
 			}
 		}
+
 		snippet, _ := item["snippet"].(map[string]any)
 		if chID, ok := snippet["channelId"].(string); ok && chID != "" {
 			return chID
 		}
 	}
+
 	return ""
 }
 
 func (p *YouTubeProvider) videoURLsFromSearch(data map[string]any) []string {
 	var urls []string
+
 	items, _ := data["items"].([]any)
 	for _, it := range items {
 		item, ok := it.(map[string]any)
 		if !ok {
 			continue
 		}
+
 		videoID := ""
+
 		if id, ok := item["id"].(map[string]any); ok {
 			if v, ok := id["videoId"].(string); ok {
 				videoID = v
 			}
 		}
+
 		snippet, _ := item["snippet"].(map[string]any)
 		if videoID == "" && snippet != nil {
 			if res, ok := snippet["resourceId"].(map[string]any); ok {
@@ -571,41 +622,49 @@ func (p *YouTubeProvider) videoURLsFromSearch(data map[string]any) []string {
 					videoID = v
 				}
 			}
+
 			if v, ok := snippet["videoId"].(string); ok {
 				videoID = v
 			}
 		}
+
 		if videoID != "" {
-			urls = append(urls, fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID))
+			urls = append(urls, "https://www.youtube.com/watch?v="+videoID)
 		}
 	}
+
 	return urls
 }
 
 func (p *YouTubeProvider) videoURLsFromPlaylistItems(data map[string]any) []string {
 	var urls []string
+
 	items, _ := data["items"].([]any)
 	for _, it := range items {
 		item, ok := it.(map[string]any)
 		if !ok {
 			continue
 		}
+
 		snippet, _ := item["snippet"].(map[string]any)
 		if snippet == nil {
 			continue
 		}
+
 		res, _ := snippet["resourceId"].(map[string]any)
 		if res == nil {
 			continue
 		}
+
 		if videoID, ok := res["videoId"].(string); ok && videoID != "" {
-			urls = append(urls, fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID))
+			urls = append(urls, "https://www.youtube.com/watch?v="+videoID)
 		}
 	}
+
 	return urls
 }
 
-func extractYouTubeChannelIDFromURL(u *url.URL) (channelID string, handle string) {
+func extractYouTubeChannelIDFromURL(u *url.URL) (channelID, handle string) {
 	path := strings.TrimPrefix(u.Path, "/")
 	segments := strings.Split(path, "/")
 
@@ -617,12 +676,21 @@ func extractYouTubeChannelIDFromURL(u *url.URL) (channelID string, handle string
 		return segments[0], ""
 	}
 
+	return segmentToChannelID(segments)
+}
+
+func segmentToChannelID(segments []string) (channelID, handle string) {
+	if len(segments) == 0 || segments[0] == "" {
+		return "", ""
+	}
+
 	switch segments[0] {
 	case "channel":
 		if len(segments) > 1 {
 			if strings.HasPrefix(segments[1], "UC") {
 				return segments[1], ""
 			}
+
 			return "", segments[1]
 		}
 	case "user", "c":
@@ -635,12 +703,8 @@ func extractYouTubeChannelIDFromURL(u *url.URL) (channelID string, handle string
 		}
 	}
 
-	if len(segments) > 0 && segments[0] != "" {
-		// Treat any other first path segment as a handle (/@handle).
-		return "", strings.TrimPrefix(segments[0], "@")
-	}
-
-	return "", ""
+	// Treat any other first path segment as a handle (/@handle).
+	return "", strings.TrimPrefix(segments[0], "@")
 }
 
 func extractYouTubePlaylistID(rawURL string) string {
@@ -668,8 +732,10 @@ func parseISO8601Duration(s string) int {
 	if s == "" {
 		return 0
 	}
+
 	s = strings.ToUpper(s)
 	re := regexp.MustCompile(`PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?`)
+
 	m := re.FindStringSubmatch(s)
 	if m == nil {
 		return 0
@@ -679,11 +745,14 @@ func parseISO8601Duration(s string) int {
 	if h, _ := strconv.Atoi(m[1]); h > 0 {
 		total += h * 3600
 	}
+
 	if m, _ := strconv.Atoi(m[2]); m > 0 {
 		total += m * 60
 	}
+
 	if s2, _ := strconv.Atoi(m[3]); s2 > 0 {
 		total += s2
 	}
+
 	return total
 }
