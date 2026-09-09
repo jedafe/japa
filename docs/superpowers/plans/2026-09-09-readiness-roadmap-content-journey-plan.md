@@ -42,7 +42,7 @@
 **Files:**
 - Modify: `internal/assessment/service.go` (add `assessmentDimensions` helper)
 - Modify: `internal/assessment/handlers.go` (`HandleGetAssessment` response)
-- Test: `internal/assessment/handlers_test.go`
+- Create: `internal/assessment/service_test.go`
 
 **Interfaces:**
 - Consumes: `AssessmentFormDTO.Fields[].Config.Dimension`, `ScoringConfig.CuratedRoadmap`, fallback `curatedRoadmapLibrary()`.
@@ -50,41 +50,46 @@
 
 - [ ] **Step 1: Write the failing test**
 
-In `internal/assessment/handlers_test.go`:
+Create `internal/assessment/service_test.go`:
 
 ```go
-func TestHandleGetAssessment_IncludesDimensions(t *testing.T) {
-	// Arrange: build a minimal form with two field dimensions and a default library.
-	form := buildActiveForm(t, []string{"financial", "logistical"})
+package assessment
 
-	// Act: call the handler and parse response.
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/assessment", nil)
-	// tenant context and service wiring omitted; follow existing handler-test pattern.
+import (
+	"sort"
+	"testing"
 
-	h.HandleGetAssessment(rec, req)
+	"github.com/stretchr/testify/assert"
+)
 
-	// Assert: response contains dimensions from fields and default curated library.
-	var body struct {
-		Data struct {
-			Dimensions []string `json:"dimensions"`
-		} `json:"data"`
+func TestAssessmentDimensions(t *testing.T) {
+	form := &AssessmentFormDTO{
+		Fields: []AssessmentField{
+			{Config: FieldScoringConfig{Dimension: "financial"}},
+			{Config: FieldScoringConfig{Dimension: "logistical"}},
+			{Config: FieldScoringConfig{Dimension: ""}},
+		},
+		// Empty CuratedRoadmap falls back to the default library.
+		ScoringConfig: ScoringConfig{},
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	assert.Contains(t, body.Data.Dimensions, "financial")
-	assert.Contains(t, body.Data.Dimensions, "logistical")
-	assert.Contains(t, body.Data.Dimensions, "language") // from default library
-	assert.NotContains(t, body.Data.Dimensions, "")      // no empty dimensions
+
+	got := assessmentDimensions(form)
+	sort.Strings(got)
+
+	assert.Contains(t, got, "financial")
+	assert.Contains(t, got, "logistical")
+	assert.Contains(t, got, "language") // from default library
+	assert.NotContains(t, got, "")      // empty dimensions are skipped
 }
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
 
 ```bash
-go test ./internal/assessment/... -run TestHandleGetAssessment_IncludesDimensions -v
+go test ./internal/assessment/... -run TestAssessmentDimensions -v
 ```
 
-Expected: FAIL with `dimensions` field missing or empty.
+Expected: FAIL because `assessmentDimensions` is not yet defined.
 
 - [ ] **Step 3: Add the helper in `internal/assessment/service.go`**
 
@@ -158,7 +163,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add internal/assessment/service.go internal/assessment/handlers.go internal/assessment/handlers_test.go
+git add internal/assessment/service.go internal/assessment/service_test.go internal/assessment/handlers.go
 git commit -m "feat(assessment): include derived dimensions in GET /assessment response"
 ```
 
@@ -176,91 +181,146 @@ git commit -m "feat(assessment): include derived dimensions in GET /assessment r
 
 - [ ] **Step 1: Write the failing test**
 
-In `internal/assessment/service_test.go`:
+Add to `internal/assessment/service_test.go`:
 
 ```go
-func TestResolveRoadmapContent_PrefersNonFamilyGuideWithBetterMatch(t *testing.T) {
-	// Setup: one generic guide at slug "guide-generic-finance" with no context,
-	// and one specific guide at slug "canada-study-finance" with target_country=CA, visa_route=student.
-	// Visitor context: destination=CA, visa=student.
-	// The specific guide is not a variant of the generic slug family.
-	steps := []RoadmapStep{
-		{Title: "Build savings", ContentSlug: "guide-generic-finance", Dimension: "financial"},
+func ptr(s string) *string { return &s }
+
+func TestPickBestRoadmapContent_PrefersStrongestContextMatch(t *testing.T) {
+	base := "guide-generic-finance"
+	rows := []gen.FindRoadmapContentByDimensionRow{
+		{Slug: base},
+		{Slug: "canada-study-finance", TargetCountry: ptr("CA"), VisaRoute: ptr("student")},
 	}
-
-	svc := newTestService(t)
-	ctx := context.Background()
-
 	journey := JourneyContext{
 		DestinationCountry: "CA",
 		VisaRoute:          "student",
 		JourneyStage:       "planning",
 	}
 
-	resolved := svc.resolveRoadmapContent(ctx, testTenantID, steps, journey)
+	best, score := pickBestRoadmapContent(rows, base, map[string]bool{}, journey)
 
-	require.Len(t, resolved, 1)
-	assert.Equal(t, "canada-study-finance", resolved[0].ContentSlug,
-		"a guide with the same dimension and a stronger journey match should win even if not a slug-family variant")
+	assert.Equal(t, "canada-study-finance", best.Slug)
+	assert.Equal(t, 6, score, "target match (4) + visa match (2)")
 }
 
-func TestResolveRoadmapContent_KeepsOriginalOnTie(t *testing.T) {
-	// Setup: generic guide and another guide both have the same context score
-	// because both only match the journey_stage. The original curated slug must win.
-	steps := []RoadmapStep{
-		{Title: "Build savings", ContentSlug: "guide-generic-finance", Dimension: "financial"},
+func TestPickBestRoadmapContent_KeepsOriginalOnTie(t *testing.T) {
+	base := "guide-generic-finance"
+	rows := []gen.FindRoadmapContentByDimensionRow{
+		{Slug: "another-planning-finance", JourneyStage: ptr("planning")},
+		{Slug: base, JourneyStage: ptr("planning")},
 	}
-
-	svc := newTestService(t)
-	ctx := context.Background()
 	journey := JourneyContext{JourneyStage: "planning"}
 
-	resolved := svc.resolveRoadmapContent(ctx, testTenantID, steps, journey)
-	require.Len(t, resolved, 1)
-	assert.Equal(t, "guide-generic-finance", resolved[0].ContentSlug,
-		"when scores tie, the original curated slug is kept")
+	best, _ := pickBestRoadmapContent(rows, base, map[string]bool{}, journey)
+	assert.Equal(t, base, best.Slug, "when scores tie, the original curated slug wins")
+}
+
+func TestPickBestRoadmapContent_SkipsUsedSlugs(t *testing.T) {
+	base := "guide-generic-finance"
+	rows := []gen.FindRoadmapContentByDimensionRow{
+		{Slug: "used-already", TargetCountry: ptr("CA")},
+		{Slug: base, TargetCountry: ptr("CA")},
+	}
+	journey := JourneyContext{DestinationCountry: "CA"}
+
+	best, _ := pickBestRoadmapContent(rows, base, map[string]bool{"used-already": true}, journey)
+	assert.Equal(t, base, best.Slug, "already-used slugs are skipped")
 }
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
 
 ```bash
-go test ./internal/assessment/... -run TestResolveRoadmapContent -v
+go test ./internal/assessment/... -run TestPickBestRoadmapContent -v
 ```
 
-Expected: FAIL because the slug-family guard rejects the non-family guide.
+Expected: FAIL because `pickBestRoadmapContent` is not yet defined.
 
-- [ ] **Step 3: Modify `resolveRoadmapContent` in `internal/assessment/service.go`**
+- [ ] **Step 3: Extract `pickBestRoadmapContent` and remove the slug-family guard**
 
-Inside the candidate loop, replace:
+In `internal/assessment/service.go`, add a new pure helper above `resolveRoadmapContent`:
 
 ```go
-if row.Slug != base && !strings.HasPrefix(row.Slug, base+"-") {
-    continue
+// pickBestRoadmapContent selects the highest-scoring, unused published guide for a
+// roadmap step. It does not restrict candidates to the original step's slug family,
+// so any guide with the same dimension and a better journey match can win.
+//
+// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base string, used map[string]bool, journeyCtx JourneyContext) (gen.FindRoadmapContentByDimensionRow, int) {
+	best := gen.FindRoadmapContentByDimensionRow{}
+	bestScore := 0
+
+	for _, row := range rows {
+		if row.Slug == "" || used[row.Slug] {
+			continue
+		}
+
+		score := 0
+		if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
+			score += 4
+		}
+		if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
+			score += 1
+		}
+		if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
+			score += 2
+		}
+		if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
+			score += 2
+		}
+		if p := stringFromAny(row.Purpose); journeyCtx.Purpose != "" && p != "" && p == journeyCtx.Purpose {
+			score += 1
+		}
+
+		if score <= 0 {
+			continue
+		}
+
+		// Tie-breaker: when two guides are equally specific, keep the original.
+		if score == bestScore && bestScore > 0 && row.Slug == base && best.Slug != base {
+			best = row
+		}
+
+		if score > bestScore {
+			best = row
+			bestScore = score
+		}
+	}
+
+	return best, bestScore
 }
 ```
 
-with the tie-breaker logic:
+Then simplify `resolveRoadmapContent` to call the helper:
 
 ```go
-if score == bestScore && bestScore > 0 && row.Slug == base && best.Slug != base {
-    // Prefer the original curated slug when the match is equally specific.
-    best = row
-    bestScore = score
-}
+for i := range steps {
+    // ... existing guards ...
 
-if score > bestScore {
-    best = row
-    bestScore = score
+    rows, err := s.store.FindRoadmapContentByDimension(...)
+    if err != nil {
+        slog.Warn(...)
+        continue
+    }
+
+    best, bestScore := pickBestRoadmapContent(rows, steps[i].ContentSlug, used, journeyCtx)
+    if bestScore == 0 {
+        continue
+    }
+
+    used[best.Slug] = true
+    steps[i].ContentSlug = best.Slug
+    // ... existing metadata updates ...
 }
 ```
 
-Leave the existing score calculation and the `bestScore > 0` replacement gate unchanged.
+Remove the old inline scoring loop and the slug-family guard.
 
 - [ ] **Step 4: Run the test and confirm it passes**
 
 ```bash
-go test ./internal/assessment/... -run TestResolveRoadmapContent -v
+go test ./internal/assessment/... -run TestPickBestRoadmapContent -v
 ```
 
 Expected: PASS.
@@ -337,7 +397,7 @@ return {
 - [ ] **Step 2: Run typecheck and verify no errors**
 
 ```bash
-bun run check --cwd apps/main
+bun --cwd apps/main run check
 ```
 
 Expected: PASS (may have pre-existing issues, but no new ones).
@@ -402,13 +462,13 @@ let roadmapDimension = $state<string | null>(untrack(() => (draft?.field_values?
 let roadmapPurpose = $state<string | null>(untrack(() => (draft?.field_values?.purpose as string) ?? null));
 ```
 
-Update the `snapshot` `field_values` for guide content:
+Update the `snapshot` `field_values` for guide content so `dimension`/`purpose` are only present when non-null:
 
 ```ts
 field_values: {
 	...activeFieldValues,
-	dimension: isGuide ? roadmapDimension : null,
-	purpose: isGuide ? roadmapPurpose : null
+	...(isGuide && roadmapDimension ? { dimension: roadmapDimension } : {}),
+	...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {})
 }
 ```
 
@@ -439,8 +499,8 @@ Also wire through `CreateRightPanel` props.
 - [ ] **Step 3: Run typecheck and build**
 
 ```bash
-bun run check --cwd apps/main
-bun run build --cwd apps/main
+bun --cwd apps/main run check
+bun --cwd apps/main run build
 ```
 
 Expected: typecheck and build pass (or only pre-existing issues).
@@ -485,8 +545,8 @@ Check `apps/admin/src/lib/components/layout/sidebar.svelte` for any `/tools/read
 - [ ] **Step 4: Run typecheck and build**
 
 ```bash
-bun run check --cwd apps/admin
-bun run build --cwd apps/admin
+bun --cwd apps/admin run check
+bun --cwd apps/admin run build
 ```
 
 Expected: no new errors.
@@ -544,10 +604,10 @@ Expected: PASS.
 - [ ] **Step 2: Frontend typecheck and build**
 
 ```bash
-bun run check --cwd apps/main
-bun run check --cwd apps/admin
-bun run build --cwd apps/main
-bun run build --cwd apps/admin
+bun --cwd apps/main run check
+bun --cwd apps/admin run check
+bun --cwd apps/main run build
+bun --cwd apps/admin run build
 ```
 
 Expected: no new errors.
