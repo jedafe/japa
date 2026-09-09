@@ -566,7 +566,6 @@ Add two field rows inside the `.journey-panel` div, after the existing four. Use
 			selectedLabel={optionLabel(dimensionOptions, dimension ?? '')}
 			onSelect={setDimension}
 			onClear={() => { ondimension(null); onedit(); }}
-			allowFreeText
 		/>
 	{:else}
 		<input
