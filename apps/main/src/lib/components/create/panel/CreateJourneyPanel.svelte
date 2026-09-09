@@ -172,12 +172,6 @@
 		onpurpose(item.id);
 		onedit();
 	}
-
-	function setDimensionText(v: string) {
-		const trimmed = v.trim() || null;
-		ondimension(trimmed);
-		onedit();
-	}
 </script>
 
 <div class="journey-panel">
@@ -262,28 +256,17 @@
 
 	<div class="field-row">
 		<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}</label>
-		{#if dimensionOptions.length > 0}
-			<Autocomplete
-				id="journey-dimension"
-				placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
-				emptyMessage={t('journey.banner.no_options', 'No matching option')}
-				fetcher={optionFetcher(dimensionOptions)}
-				initialFetcher={() => optionInitial(dimensionOptions, dimension)}
-				selectedId={dimension}
-				selectedLabel={optionLabel(dimensionOptions, dimension ?? '')}
-				onSelect={setDimension}
-				onClear={() => { ondimension(null); onedit(); }}
-			/>
-		{:else}
-			<input
-				id="journey-dimension"
-				type="text"
-				class="field-input"
-				placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
-				value={dimension ?? ''}
-				oninput={(e) => setDimensionText(e.currentTarget.value)}
-			/>
-		{/if}
+		<Autocomplete
+			id="journey-dimension"
+			placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
+			emptyMessage={t('journey.banner.no_options', 'No matching option')}
+			fetcher={optionFetcher(dimensionOptions)}
+			initialFetcher={() => optionInitial(dimensionOptions, dimension)}
+			selectedId={dimension}
+			selectedLabel={optionLabel(dimensionOptions, dimension ?? '')}
+			onSelect={setDimension}
+			onClear={() => { ondimension(null); onedit(); }}
+		/>
 	</div>
 
 	{#if dimension === null || dimension === ''}
