@@ -35,9 +35,23 @@ export function hydrateVideoEmbeds(node: HTMLElement) {
 			});
 			mounted.set(el, comp);
 		} catch (err) {
-			// Degrade gracefully — leave the placeholder if the source cannot
-			// be resolved or has been removed.
+			// §106 video — the source was removed or cannot be resolved. Replace
+			// the stale placeholder with an unavailable notice instead of leaving
+			// the thumbnail/player markup in place.
 			el.setAttribute('data-hydrated', 'error');
+			el.replaceChildren();
+			const fallback: VideoSource = {
+				id,
+				source_type: 'other',
+				source_url: '',
+				title: '',
+				status: 'removed'
+			};
+			const comp = mount(VideoEmbed, {
+				target: el,
+				props: { source: fallback }
+			});
+			mounted.set(el, comp);
 			// eslint-disable-next-line no-console
 			console.warn('hydrateVideoEmbeds: failed to load source', id, err);
 		} finally {

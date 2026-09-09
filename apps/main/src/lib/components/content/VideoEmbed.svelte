@@ -52,6 +52,7 @@
 	}
 
 	const isUpload = $derived(source.source_type === 'upload');
+	const unavailable = $derived(['removed', 'takedown_requested'].includes(source.status ?? ''));
 	const externalId = $derived(extractExternalId(source));
 	const iframeSrc = $derived.by(() => {
 		if (!externalId) return null;
@@ -71,8 +72,16 @@
 	const duration = $derived(formatDuration(source.duration_secs));
 </script>
 
-<div class="video-embed-player">
-	{#if isUpload}
+<div class="video-embed-player" class:video-embed-unavailable={unavailable}>
+	{#if unavailable}
+		<!-- §106 video — removed/takedown notice replaces the player. -->
+		<div class="video-embed-unavailable-panel">
+			<p class="video-embed-unavailable-title">{t('content.video.unavailable', 'Video unavailable')}</p>
+			<p class="video-embed-unavailable-body">
+				{t('content.video.unavailable_body', 'This video has been removed or is unavailable, possibly due to a takedown request.')}
+			</p>
+		</div>
+	{:else if isUpload}
 		<!-- Uploaded videos are served same-origin via /api/v1/media/serve.
 		     No captions track exists for user uploads. -->
 		<!-- svelte-ignore a11y_media_has_caption -->
@@ -91,7 +100,7 @@
 			{source.title || source.source_url}
 		</a>
 	{/if}
-	{#if duration}
+	{#if duration && !unavailable}
 		<span class="video-embed-duration">{duration}</span>
 	{/if}
 </div>
@@ -133,5 +142,28 @@
 		color: #fff;
 		font-variant-numeric: tabular-nums;
 		pointer-events: none;
+	}
+	.video-embed-unavailable {
+		background: var(--color-surface-elevated, #1a1a1a);
+	}
+	.video-embed-unavailable-panel {
+		display: grid;
+		place-items: center;
+		place-content: center;
+		width: 100%;
+		height: 100%;
+		padding: 1rem;
+		text-align: center;
+		gap: 0.5rem;
+	}
+	.video-embed-unavailable-title {
+		font-weight: 600;
+		font-size: 0.875rem;
+		color: var(--color-text, #fff);
+	}
+	.video-embed-unavailable-body {
+		font-size: 0.75rem;
+		color: var(--color-muted, #aaa);
+		max-width: 24rem;
 	}
 </style>

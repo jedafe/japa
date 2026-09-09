@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo } from 'lucide-svelte';
+	import { Clapperboard, CheckCircle2, AlertCircle, Loader2, Video, Search, ListVideo, RefreshCw } from 'lucide-svelte';
 	import { EmptyState, RelativeTime } from '$lib/components/ui';
 	import { enhance } from '$app/forms';
 	import { invalidate } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { previewBulkImport, retryImportJob, type BulkImportPreview } from '$lib/api/videos';
+	import { formatDuration } from '$lib/utils/duration';
 	import type { VideoImportJob } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -30,6 +32,11 @@
 	let result = $state<{ ok?: boolean; error?: string; message?: string; job?: VideoImportJob } | null>(null);
 	let submitting = $state(false);
 
+	// §106 video — bulk import preview before enqueue.
+	let preview = $state<BulkImportPreview | null>(null);
+	let previewing = $state(false);
+	let retryingId = $state<string | null>(null);
+
 	const currentTab = $derived(TABS.find((t) => t.id === tab)!);
 
 	const statusColor = (status: string): string => {
@@ -44,6 +51,53 @@
 	};
 
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+	async function doPreview() {
+		if (previewing) return;
+		previewing = true;
+		preview = null;
+		result = null;
+
+		const body: Parameters<typeof previewBulkImport>[0] = {
+			source_type: tab,
+			auto_publish: autoPublish
+		};
+		if (currentTab.requiresUrl) body.source_url = sourceUrl;
+		else body.query = query;
+		if (targetUsername) body.target_username = targetUsername;
+
+		try {
+			const r = await previewBulkImport(body);
+			if (r.error) {
+				result = { error: r.error.code, message: r.error.message };
+			} else if (r.data) {
+				preview = r.data;
+			}
+		} catch (e) {
+			result = { error: 'preview_failed', message: e instanceof Error ? e.message : t('studio.preview_error', 'Preview failed') };
+		} finally {
+			previewing = false;
+		}
+	}
+
+	async function retryJob(job: VideoImportJob) {
+		if (retryingId) return;
+		retryingId = job.id;
+		try {
+			const r = await retryImportJob(job.id);
+			if (r.error) {
+				result = { error: r.error.code, message: r.error.message };
+			} else if (r.data) {
+				result = { ok: true, job: r.data };
+				await invalidate(STUDIO_CACHE_TAG);
+				startPolling(r.data);
+			}
+		} catch (e) {
+			result = { error: 'retry_failed', message: e instanceof Error ? e.message : t('studio.retry_error', 'Retry failed') };
+		} finally {
+			retryingId = null;
+		}
+	}
 
 	function startPolling(job: VideoImportJob) {
 		if (pollInterval) clearInterval(pollInterval);
@@ -199,14 +253,69 @@
 					{t('studio.auto_publish', 'Publish videos as public content automatically')}
 				</label>
 
-				<button
-					type="submit"
-					disabled={submitting || (currentTab.requiresUrl ? !sourceUrl : !query)}
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
-				>
-					{submitting ? t('common.submitting', 'Submitting…') : t('studio.start_btn', 'Start import')}
-				</button>
+				<div class="flex flex-wrap items-center gap-2">
+					<button
+						type="submit"
+						disabled={submitting || (currentTab.requiresUrl ? !sourceUrl : !query)}
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+					>
+						{submitting ? t('common.submitting', 'Submitting…') : t('studio.start_btn', 'Start import')}
+					</button>
+
+					<button
+						type="button"
+						disabled={previewing || (currentTab.requiresUrl ? !sourceUrl : !query)}
+						onclick={doPreview}
+						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-elevated)] disabled:opacity-50"
+					>
+						{previewing ? t('common.loading', 'Loading…') : t('studio.preview_btn', 'Preview')}
+					</button>
+				</div>
 			</form>
+
+			<!-- §106 video — bulk import preview before enqueue. -->
+			{#if preview}
+				<div class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<h3 class="mb-2 text-sm font-medium text-[var(--color-text)]">
+						{t('studio.preview_title', 'Import preview')}
+					</h3>
+					<p class="text-sm text-[var(--color-muted)]">
+						{t('studio.preview_count', 'Found {count} videos to import').replace('{count}', String(preview.count))}
+					</p>
+
+					{#if preview.sample}
+						<div class="mt-3 flex gap-3">
+							{#if preview.sample.thumbnail_url}
+								<img
+									src={preview.sample.thumbnail_url}
+									alt={preview.sample.title ?? ''}
+									class="h-20 w-32 shrink-0 rounded-[var(--radius)] object-cover"
+									loading="lazy"
+								/>
+							{/if}
+							<div class="min-w-0 flex-1">
+								<p class="line-clamp-2 text-sm font-medium text-[var(--color-text)]">
+									{preview.sample.title || t('studio.preview_untitled', 'Untitled video')}
+								</p>
+								<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+									<span class="capitalize">{preview.sample.source_type}</span>
+									{#if preview.sample.duration_secs}
+										· {formatDuration(preview.sample.duration_secs)}
+									{/if}
+								</p>
+							</div>
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						onclick={() => { preview = null; }}
+						class="mt-3 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+					>
+						{t('studio.clear_preview', 'Clear preview')}
+					</button>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Import history -->
@@ -244,17 +353,43 @@
 										{/if}
 									</span>
 								{/if}
-							</div>
-							<span class="flex shrink-0 items-center gap-1 text-xs font-medium capitalize {statusColor(job.status)}">
-								{#if job.status === 'completed'}
-									<CheckCircle2 size={12} />
-								{:else if job.status === 'failed'}
-									<AlertCircle size={12} />
-								{:else}
-									<Loader2 size={12} class={['running', 'processing'].includes(job.status) ? 'animate-spin' : ''} />
+
+								{#if job.error_log && Array.isArray(job.error_log) && job.error_log.length > 0}
+									{@const firstError = job.error_log[0]}
+									{@const errorText = typeof firstError === 'string'
+										? firstError
+										: (firstError && typeof firstError === 'object' && 'message' in firstError
+											? (firstError as { message?: string }).message
+											: JSON.stringify(firstError))}
+									<p class="mt-1 text-xs text-[var(--color-danger)]">
+										{errorText ?? t('studio.unknown_error', 'Error')}
+									</p>
 								{/if}
-								{job.status}
-							</span>
+							</div>
+							<div class="flex shrink-0 flex-col items-end gap-1.5">
+								<span class="flex items-center gap-1 text-xs font-medium capitalize {statusColor(job.status)}">
+									{#if job.status === 'completed'}
+										<CheckCircle2 size={12} />
+									{:else if job.status === 'failed'}
+										<AlertCircle size={12} />
+									{:else}
+										<Loader2 size={12} class={['running', 'processing'].includes(job.status) ? 'animate-spin' : ''} />
+									{/if}
+									{job.status}
+								</span>
+
+								{#if !['pending', 'running', 'processing'].includes(job.status)}
+									<button
+										type="button"
+										disabled={retryingId === job.id}
+										onclick={() => retryJob(job)}
+										class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline disabled:opacity-50"
+									>
+										<RefreshCw size={12} class={retryingId === job.id ? 'animate-spin' : ''} />
+										{t('studio.retry', 'Retry')}
+									</button>
+								{/if}
+							</div>
 						</div>
 					</div>
 				{/each}
