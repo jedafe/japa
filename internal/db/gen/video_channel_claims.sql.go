@@ -36,18 +36,31 @@ func (q *Queries) CountOpenVideoChannelClaimsByAuthor(ctx context.Context, arg C
 const countVideoChannelClaimsByTenant = `-- name: CountVideoChannelClaimsByTenant :one
 SELECT COUNT(*)::int AS total
 FROM video_channel_claims vcc
+JOIN users cu ON cu.id = vcc.claimant_user_id AND cu.tenant_id = vcc.tenant_id
+JOIN users au ON au.id = vcc.video_author_user_id AND au.tenant_id = vcc.tenant_id
 WHERE vcc.tenant_id = $1
   AND ($2::text = '' OR vcc.status = $2)
+  AND ($3::text = '' OR vcc.claim_type = $3)
+  AND ($4::text = '' OR cu.username ILIKE '%' || $4 || '%' OR au.username ILIKE '%' || $4 || '%'
+       OR vcc.notes ILIKE '%' || $4 || '%' OR vcc.evidence_url ILIKE '%' || $4 || '%'
+       OR vcc.resolution_note ILIKE '%' || $4 || '%')
 `
 
 type CountVideoChannelClaimsByTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	Status    string      `json:"status"`
+	ClaimType string      `json:"claim_type"`
+	Q         string      `json:"q"`
 }
 
-// Total for admin queue pagination (same filter as ListVideoChannelClaimsByTenant).
+// Total for admin queue pagination (same filters as ListVideoChannelClaimsByTenant).
 func (q *Queries) CountVideoChannelClaimsByTenant(ctx context.Context, arg CountVideoChannelClaimsByTenantParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countVideoChannelClaimsByTenant, arg.TenantID, arg.Status)
+	row := q.db.QueryRow(ctx, countVideoChannelClaimsByTenant,
+		arg.TenantID,
+		arg.Status,
+		arg.ClaimType,
+		arg.Q,
+	)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -272,13 +285,28 @@ JOIN users cu ON cu.id = vcc.claimant_user_id AND cu.tenant_id = vcc.tenant_id
 JOIN users au ON au.id = vcc.video_author_user_id AND au.tenant_id = vcc.tenant_id
 WHERE vcc.tenant_id = $1
   AND ($2::text = '' OR vcc.status = $2)
-ORDER BY vcc.created_at DESC
-LIMIT $4 OFFSET $3
+  AND ($3::text = '' OR vcc.claim_type = $3)
+  AND ($4::text = '' OR cu.username ILIKE '%' || $4 || '%' OR au.username ILIKE '%' || $4 || '%'
+       OR vcc.notes ILIKE '%' || $4 || '%' OR vcc.evidence_url ILIKE '%' || $4 || '%'
+       OR vcc.resolution_note ILIKE '%' || $4 || '%')
+ORDER BY
+    CASE WHEN $5 = 'created_at' AND $6 = 'asc' THEN vcc.created_at END ASC NULLS LAST,
+    CASE WHEN $5 = 'created_at' AND $6 = 'desc' THEN vcc.created_at END DESC NULLS FIRST,
+    CASE WHEN $5 = 'status' AND $6 = 'asc' THEN vcc.status END ASC NULLS LAST,
+    CASE WHEN $5 = 'status' AND $6 = 'desc' THEN vcc.status END DESC NULLS FIRST,
+    CASE WHEN $5 = 'claim_type' AND $6 = 'asc' THEN vcc.claim_type END ASC NULLS LAST,
+    CASE WHEN $5 = 'claim_type' AND $6 = 'desc' THEN vcc.claim_type END DESC NULLS FIRST,
+    vcc.created_at DESC
+LIMIT $8 OFFSET $7
 `
 
 type ListVideoChannelClaimsByTenantParams struct {
 	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
+	ClaimType  string      `json:"claim_type"`
+	Q          string      `json:"q"`
+	Sort       interface{} `json:"sort"`
+	Dir        interface{} `json:"dir"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -301,11 +329,15 @@ type ListVideoChannelClaimsByTenantRow struct {
 	AuthorUsername    string             `json:"author_username"`
 }
 
-// Admin queue with optional status filter and pagination.
+// Admin queue with optional status/claim_type filters, text search, and sorting.
 func (q *Queries) ListVideoChannelClaimsByTenant(ctx context.Context, arg ListVideoChannelClaimsByTenantParams) ([]ListVideoChannelClaimsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listVideoChannelClaimsByTenant,
 		arg.TenantID,
 		arg.Status,
+		arg.ClaimType,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

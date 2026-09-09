@@ -471,13 +471,23 @@ func (s *Service) ListClaimsByUser(ctx context.Context, tenantID, claimantUserID
 }
 
 // ListClaimsForAdmin returns the admin review queue with pagination.
-func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
+func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, int32, error) {
 	status = strings.TrimSpace(strings.ToLower(status))
-	rows, err := s.store.ListClaimsForAdmin(ctx, tenantID, status, limit, offset)
+	claimType = strings.TrimSpace(strings.ToLower(claimType))
+	q = strings.TrimSpace(q)
+	sort = strings.TrimSpace(strings.ToLower(sort))
+	if sort != "created_at" && sort != "status" && sort != "claim_type" {
+		sort = "created_at"
+	}
+	dir = strings.TrimSpace(strings.ToLower(dir))
+	if dir != "asc" && dir != "desc" {
+		dir = "desc"
+	}
+	rows, err := s.store.ListClaimsForAdmin(ctx, tenantID, status, claimType, q, sort, dir, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.store.CountClaimsForAdmin(ctx, tenantID, status)
+	total, err := s.store.CountClaimsForAdmin(ctx, tenantID, status, claimType, q)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -80,9 +80,13 @@ func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
+	claimType := r.URL.Query().Get("claim_type")
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	dir := r.URL.Query().Get("dir")
 	limit, offset := parseAdminPage(r)
 
-	claims, total, err := h.Service.ListClaimsForAdmin(r.Context(), tenantID, status, limit, offset)
+	claims, total, err := h.Service.ListClaimsForAdmin(r.Context(), tenantID, status, claimType, q, sort, dir, limit, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

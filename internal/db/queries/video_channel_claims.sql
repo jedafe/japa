@@ -52,7 +52,7 @@ WHERE tenant_id = @tenant_id
   AND status IN ('pending', 'approved');
 
 -- name: ListVideoChannelClaimsByTenant :many
--- Admin queue with optional status filter and pagination.
+-- Admin queue with optional status/claim_type filters, text search, and sorting.
 SELECT
     vcc.id, vcc.tenant_id, vcc.claimant_user_id, vcc.video_author_user_id, vcc.claim_type,
     vcc.evidence_url, vcc.notes, vcc.status, vcc.reviewed_by, vcc.resolution_note, vcc.created_at, vcc.resolved_at,
@@ -64,15 +64,32 @@ JOIN users cu ON cu.id = vcc.claimant_user_id AND cu.tenant_id = vcc.tenant_id
 JOIN users au ON au.id = vcc.video_author_user_id AND au.tenant_id = vcc.tenant_id
 WHERE vcc.tenant_id = @tenant_id
   AND (@status::text = '' OR vcc.status = @status)
-ORDER BY vcc.created_at DESC
+  AND (@claim_type::text = '' OR vcc.claim_type = @claim_type)
+  AND (@q::text = '' OR cu.username ILIKE '%' || @q || '%' OR au.username ILIKE '%' || @q || '%'
+       OR vcc.notes ILIKE '%' || @q || '%' OR vcc.evidence_url ILIKE '%' || @q || '%'
+       OR vcc.resolution_note ILIKE '%' || @q || '%')
+ORDER BY
+    CASE WHEN @sort = 'created_at' AND @dir = 'asc' THEN vcc.created_at END ASC NULLS LAST,
+    CASE WHEN @sort = 'created_at' AND @dir = 'desc' THEN vcc.created_at END DESC NULLS FIRST,
+    CASE WHEN @sort = 'status' AND @dir = 'asc' THEN vcc.status END ASC NULLS LAST,
+    CASE WHEN @sort = 'status' AND @dir = 'desc' THEN vcc.status END DESC NULLS FIRST,
+    CASE WHEN @sort = 'claim_type' AND @dir = 'asc' THEN vcc.claim_type END ASC NULLS LAST,
+    CASE WHEN @sort = 'claim_type' AND @dir = 'desc' THEN vcc.claim_type END DESC NULLS FIRST,
+    vcc.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountVideoChannelClaimsByTenant :one
--- Total for admin queue pagination (same filter as ListVideoChannelClaimsByTenant).
+-- Total for admin queue pagination (same filters as ListVideoChannelClaimsByTenant).
 SELECT COUNT(*)::int AS total
 FROM video_channel_claims vcc
+JOIN users cu ON cu.id = vcc.claimant_user_id AND cu.tenant_id = vcc.tenant_id
+JOIN users au ON au.id = vcc.video_author_user_id AND au.tenant_id = vcc.tenant_id
 WHERE vcc.tenant_id = @tenant_id
-  AND (@status::text = '' OR vcc.status = @status);
+  AND (@status::text = '' OR vcc.status = @status)
+  AND (@claim_type::text = '' OR vcc.claim_type = @claim_type)
+  AND (@q::text = '' OR cu.username ILIKE '%' || @q || '%' OR au.username ILIKE '%' || @q || '%'
+       OR vcc.notes ILIKE '%' || @q || '%' OR vcc.evidence_url ILIKE '%' || @q || '%'
+       OR vcc.resolution_note ILIKE '%' || @q || '%');
 
 -- name: UpdateVideoChannelClaimStatus :one
 -- Records the review decision and stamps resolved_at.
