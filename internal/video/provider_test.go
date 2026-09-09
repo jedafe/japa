@@ -241,3 +241,153 @@ func TestChannelKey(t *testing.T) {
 		t.Errorf("ChannelKey() = %q, want %q", got, want)
 	}
 }
+
+func TestOEmbedProviderResolve(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		provider    Provider
+		endpoint    string
+		rawURL      string
+		wantSource  string
+		wantID      string
+		wantTitle   string
+		wantChannel string
+	}{
+		{
+			name:        "TikTok",
+			provider:    NewTikTokProvider(),
+			endpoint:    "/tiktok",
+			rawURL:      "https://www.tiktok.com/@scout2015/video/6718335390845095173",
+			wantSource:  SourceTikTok,
+			wantID:      "6718335390845095173",
+			wantTitle:   "Mock TikTok",
+			wantChannel: "scout2015",
+		},
+		{
+			name:        "Instagram Reel",
+			provider:    NewInstagramProvider(),
+			endpoint:    "/instagram",
+			rawURL:      "https://www.instagram.com/reel/DFT12345abc",
+			wantSource:  SourceInstagramReel,
+			wantID:      "DFT12345abc",
+			wantTitle:   "Mock Instagram",
+			wantChannel: "mockuser",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := newMockOEmbedServer(t)
+			provider := mustOEmbedProvider(t, tt.provider)
+			provider.client = srv.Client()
+			provider.ssrfEnabled = false
+			provider.oembedURL = srv.URL + tt.endpoint
+
+			meta, err := provider.Resolve(t.Context(), tt.rawURL)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+
+			if meta.SourceType != tt.wantSource {
+				t.Errorf("SourceType = %q, want %q", meta.SourceType, tt.wantSource)
+			}
+
+			if meta.ExternalID != tt.wantID {
+				t.Errorf("ExternalID = %q, want %q", meta.ExternalID, tt.wantID)
+			}
+
+			if meta.Title != tt.wantTitle {
+				t.Errorf("Title = %q, want %q", meta.Title, tt.wantTitle)
+			}
+
+			if meta.ChannelName != tt.wantChannel {
+				t.Errorf("ChannelName = %q, want %q", meta.ChannelName, tt.wantChannel)
+			}
+		})
+	}
+}
+
+func TestResolver_TikTokAndInstagram(t *testing.T) {
+	t.Parallel()
+
+	srv := newMockOEmbedServer(t)
+
+	tiktokProvider := mustOEmbedProvider(t, NewTikTokProvider())
+	tiktokProvider.client = srv.Client()
+	tiktokProvider.ssrfEnabled = false
+	tiktokProvider.oembedURL = srv.URL + "/tiktok"
+
+	instagramProvider := mustOEmbedProvider(t, NewInstagramProvider())
+	instagramProvider.client = srv.Client()
+	instagramProvider.ssrfEnabled = false
+	instagramProvider.oembedURL = srv.URL + "/instagram"
+
+	r := NewResolver(tiktokProvider, instagramProvider)
+
+	meta, err := r.Resolve(t.Context(), "https://www.tiktok.com/@scout2015/video/6718335390845095173")
+	if err != nil {
+		t.Fatalf("Resolve tiktok: %v", err)
+	}
+
+	if meta.ExternalID != "6718335390845095173" {
+		t.Errorf("TikTok ExternalID = %q, want %q", meta.ExternalID, "6718335390845095173")
+	}
+
+	meta, err = r.Resolve(t.Context(), "https://www.instagram.com/reel/DFT12345abc")
+	if err != nil {
+		t.Fatalf("Resolve instagram: %v", err)
+	}
+
+	if meta.ExternalID != "DFT12345abc" {
+		t.Errorf("Instagram ExternalID = %q, want %q", meta.ExternalID, "DFT12345abc")
+	}
+}
+
+// mustOEmbedProvider type-asserts a Provider to *oembedProvider for tests.
+func mustOEmbedProvider(t *testing.T, p Provider) *oembedProvider {
+	t.Helper()
+
+	op, ok := p.(*oembedProvider)
+	if !ok {
+		t.Fatalf("provider is %T, want *oembedProvider", p)
+	}
+
+	return op
+}
+
+func newMockOEmbedServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Determine response by the requested URL path; TikTok and Instagram
+		// oEmbed requests are identical in shape, so we reuse the same handler.
+		var resp map[string]any
+
+		switch r.URL.Path {
+		case "/tiktok":
+			resp = map[string]any{
+				"title":         "Mock TikTok",
+				"author_name":   "Scout & Suki",
+				"author_url":    "https://www.tiktok.com/@scout2015",
+				"thumbnail_url": "https://example.com/tiktok-thumb.jpg",
+				"html":          `<blockquote cite="https://www.tiktok.com/@scout2015/video/6718335390845095173"></blockquote>`,
+			}
+		case "/instagram":
+			resp = map[string]any{
+				"title":         "Mock Instagram",
+				"author_name":   "mockuser",
+				"author_url":    "https://www.instagram.com/mockuser",
+				"thumbnail_url": "https://example.com/ig-thumb.jpg",
+				"html":          `<blockquote cite="https://www.instagram.com/reel/DFT12345abc"></blockquote>`,
+			}
+		}
+
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+}

@@ -90,10 +90,10 @@ func NewResolver(providers ...Provider) Resolver {
 	return r
 }
 
-// NewDefaultResolver returns a Resolver pre-populated with the YouTube and
-// Vimeo providers.
+// NewDefaultResolver returns a Resolver pre-populated with the default
+// supported providers.
 func NewDefaultResolver() Resolver {
-	return NewResolver(NewYouTubeProvider(), NewVimeoProvider())
+	return NewResolver(NewYouTubeProvider(), NewVimeoProvider(), NewTikTokProvider(), NewInstagramProvider())
 }
 
 // Resolve identifies the platform from the URL and dispatches to the matching
@@ -116,6 +116,18 @@ func (r *resolver) Resolve(ctx context.Context, rawURL string) (*Metadata, error
 		return p.Resolve(ctx, rawURL)
 	case "vimeo.com":
 		if p, ok := r.providers[SourceVimeo]; ok {
+			return p.Resolve(ctx, rawURL)
+		}
+
+		return nil, ErrUnsupportedPlatform
+	case "tiktok.com", "vm.tiktok.com":
+		if p, ok := r.providers[SourceTikTok]; ok {
+			return p.Resolve(ctx, rawURL)
+		}
+
+		return nil, ErrUnsupportedPlatform
+	case "instagram.com":
+		if p, ok := r.providers[SourceInstagramReel]; ok {
 			return p.Resolve(ctx, rawURL)
 		}
 
