@@ -73,7 +73,7 @@
 
 <form onsubmit={submit} class="flex flex-col gap-5" novalidate>
 	<HoneypotField bind:value={honeypot} />
-	<div class="flex items-start justify-between gap-4">
+	<div class="flex flex-col items-center gap-2 text-center sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:text-left">
 		<div>
 			<h1 class="text-2xl font-semibold text-[var(--color-text)]">{t('auth.signup.title')}</h1>
 			<p class="mt-1 text-sm text-[var(--color-muted)]">{t('auth.signup.subtitle')}</p>
@@ -81,7 +81,7 @@
 		{#if showSwitchLink}
 			<a
 				href="/login"
-				class="shrink-0 text-sm text-[var(--color-primary)] transition hover:underline whitespace-nowrap"
+				class="text-sm text-[var(--color-primary)] transition hover:underline"
 			>
 				{t('auth.signup.switch_to_login')}
 			</a>
