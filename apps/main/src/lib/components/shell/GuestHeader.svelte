@@ -71,7 +71,7 @@
 			</a>
 			<button
 				type="button"
-				class="guest-icon-btn md:hidden"
+				class="guest-icon-btn guest-hamburger"
 				onclick={() => (mobileMenuOpen = true)}
 				aria-label={t('a11y.open_menu', 'Open menu')}
 			>
@@ -208,6 +208,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		flex-shrink: 0;
+		margin-left: auto;
 	}
 	.guest-search {
 		width: 200px;
@@ -278,6 +279,11 @@
 		}
 		.guest-login-btn span,
 		.guest-signup-btn span {
+			display: none;
+		}
+	}
+	@media (min-width: 768px) {
+		.guest-hamburger {
 			display: none;
 		}
 	}
