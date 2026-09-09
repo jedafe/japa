@@ -35,6 +35,7 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let retryingId = $state<string | null>(null);
+	let bulkLoading = $state(false);
 
 	function errorSummary(job: VideoImportJob): string {
 		if (!job.error_log || !Array.isArray(job.error_log) || job.error_log.length === 0) return '';
@@ -136,6 +137,30 @@
 						pageError = e instanceof Error ? e.message : t('common.error', 'Failed to retry job');
 					} finally {
 						retryingId = null;
+					}
+				}
+			}
+		],
+		bulkActions: [
+			{
+				label: t('video_import_jobs.bulk_retry', 'Retry'),
+				icon: RefreshCw,
+				disabled: (_ids: Set<string>, rows?: any[]) =>
+					bulkLoading || !rows || rows.length === 0 || rows.every((r) => r?.status === 'running' || r?.status === 'pending'),
+				onclick: async (ids: Set<string>) => {
+					if (bulkLoading) return;
+					bulkLoading = true;
+					pageError = '';
+					try {
+						await Promise.all(
+							Array.from(ids).map((id) =>
+								videoImportJobsAdminApi.retry(id)
+							)
+						);
+					} catch (e) {
+						pageError = e instanceof Error ? e.message : t('video_import_jobs.bulk_retry_error', 'Bulk retry failed');
+					} finally {
+						bulkLoading = false;
 					}
 				}
 			}
