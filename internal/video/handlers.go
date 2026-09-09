@@ -43,6 +43,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 	h.postAuth(r, "/videos/resolve", h.Resolve)
 	h.postAuth(r, "/videos/upload", h.Upload)
 	r.Get("/videos/{id}", h.GetByID)
+	h.postAuth(r, "/videos/{id}/summarize", h.Summarize)
 	r.Get("/u/{username}/videos", h.ListChannelVideos)
 	h.postAuth(r, "/video-channels/{username}/claims", h.SubmitChannelClaim)
 	h.getAuth(r, "/me/video-claims", h.ListMyVideoClaims)
@@ -203,6 +204,39 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": source})
+}
+
+// Summarize handles POST /api/v1/videos/{id}/summarize. It enqueues an
+// asynchronous video:generate_summary Asynq task that uses the AI Gateway to
+// draft a title/body for the video and store it as an in_review contents row.
+// Requires authentication. Gated by the video.ai_summary.enabled setting.
+func (h *Handlers) Summarize(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID, ok := requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, "id")); err != nil || !id.Valid {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid video source ID")
+		return
+	}
+
+	if err := h.Service.EnqueueGenerateSummary(r.Context(), tenantID, user.UserID, id); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{
+		"data": map[string]any{
+			"status": "queued",
+		},
+	})
 }
 
 // ListChannelVideos handles GET /api/v1/u/{username}/videos.

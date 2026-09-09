@@ -63,6 +63,12 @@ type CreateContentInput struct {
 	// content.edit_any, super-admin) set published/scheduled directly on
 	// content_type='story' — author-facing writes always clamp to in_review.
 	SkipStoryModeration bool
+	// AI provenance fields (ADR-088). When AIGenerated is true, the service
+	// stamps ai_generated_at with the current time if the caller leaves it
+	// empty. AIModel records the model/category used for the draft.
+	AIGenerated   bool
+	AIGeneratedAt pgtype.Timestamptz
+	AIModel       *string
 }
 
 // resolveSpaceCountryCode walks a space's parent_id chain until it reaches
@@ -424,6 +430,13 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		input.Visibility = VisibilityPublic
 	}
 
+	// Stamp AI generation time when the caller marks a draft as AI-generated
+	// but does not provide the generation timestamp (ADR-088 / §106).
+	aiGeneratedAt := input.AIGeneratedAt
+	if input.AIGenerated && !aiGeneratedAt.Valid {
+		aiGeneratedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	}
+
 	// Validate status/visibility for non-HTTP callers (agent tools, imports,
 	// domain services like comparison) that bypass handler-level validation.
 	// Without this, a bad value surfaces as a raw contents_*_check violation
@@ -543,6 +556,9 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		VisaRoute:       input.VisaRoute,
 		SourceCountry:   input.SourceCountry,
 		TargetCountry:   input.TargetCountry,
+		AiGenerated:     input.AIGenerated,
+		AiModel:         input.AIModel,
+		AiGeneratedAt:   aiGeneratedAt,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
