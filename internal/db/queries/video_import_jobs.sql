@@ -46,3 +46,35 @@ RETURNING
     id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
     status, total_items, imported_count, failed_count, error_log, created_at,
     completed_at, auto_publish, started_at;
+
+-- name: ListVideoImportJobsForAdmin :many
+-- Admin queue with optional status/source_type filters, text search, and sorting.
+SELECT
+    vj.id, vj.tenant_id, vj.user_id, vj.source_type, vj.source_url, vj.query,
+    vj.target_author_user_id, vj.status, vj.total_items, vj.imported_count,
+    vj.failed_count, vj.error_log, vj.created_at, vj.completed_at, vj.auto_publish,
+    vj.started_at,
+    u.username AS owner_username
+FROM video_import_jobs vj
+JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
+WHERE vj.tenant_id = @tenant_id
+  AND (@status::text = '' OR vj.status = @status)
+  AND (@source_type::text = '' OR vj.source_type = @source_type)
+  AND (@q::text = '' OR vj.query ILIKE '%' || @q || '%' OR vj.source_url ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%')
+ORDER BY
+    CASE WHEN @sort = 'created_at' AND @dir = 'asc' THEN vj.created_at END ASC NULLS LAST,
+    CASE WHEN @sort = 'created_at' AND @dir = 'desc' THEN vj.created_at END DESC NULLS FIRST,
+    CASE WHEN @sort = 'status' AND @dir = 'asc' THEN vj.status END ASC NULLS LAST,
+    CASE WHEN @sort = 'status' AND @dir = 'desc' THEN vj.status END DESC NULLS FIRST,
+    vj.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountVideoImportJobsForAdmin :one
+-- Total for admin video import jobs list (same filters as ListVideoImportJobsForAdmin).
+SELECT COUNT(*)::int AS total
+FROM video_import_jobs vj
+JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
+WHERE vj.tenant_id = @tenant_id
+  AND (@status::text = '' OR vj.status = @status)
+  AND (@source_type::text = '' OR vj.source_type = @source_type)
+  AND (@q::text = '' OR vj.query ILIKE '%' || @q || '%' OR vj.source_url ILIKE '%' || @q || '%' OR u.username ILIKE '%' || @q || '%');

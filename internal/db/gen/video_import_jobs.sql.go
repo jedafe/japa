@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countVideoImportJobsForAdmin = `-- name: CountVideoImportJobsForAdmin :one
+SELECT COUNT(*)::int AS total
+FROM video_import_jobs vj
+JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
+WHERE vj.tenant_id = $1
+  AND ($2::text = '' OR vj.status = $2)
+  AND ($3::text = '' OR vj.source_type = $3)
+  AND ($4::text = '' OR vj.query ILIKE '%' || $4 || '%' OR vj.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+`
+
+type CountVideoImportJobsForAdminParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	SourceType string      `json:"source_type"`
+	Q          string      `json:"q"`
+}
+
+// Total for admin video import jobs list (same filters as ListVideoImportJobsForAdmin).
+func (q *Queries) CountVideoImportJobsForAdmin(ctx context.Context, arg CountVideoImportJobsForAdminParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countVideoImportJobsForAdmin,
+		arg.TenantID,
+		arg.Status,
+		arg.SourceType,
+		arg.Q,
+	)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createVideoImportJob = `-- name: CreateVideoImportJob :one
 
 INSERT INTO video_import_jobs (
@@ -167,6 +197,107 @@ func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoIm
 			&i.CompletedAt,
 			&i.AutoPublish,
 			&i.StartedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVideoImportJobsForAdmin = `-- name: ListVideoImportJobsForAdmin :many
+SELECT
+    vj.id, vj.tenant_id, vj.user_id, vj.source_type, vj.source_url, vj.query,
+    vj.target_author_user_id, vj.status, vj.total_items, vj.imported_count,
+    vj.failed_count, vj.error_log, vj.created_at, vj.completed_at, vj.auto_publish,
+    vj.started_at,
+    u.username AS owner_username
+FROM video_import_jobs vj
+JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
+WHERE vj.tenant_id = $1
+  AND ($2::text = '' OR vj.status = $2)
+  AND ($3::text = '' OR vj.source_type = $3)
+  AND ($4::text = '' OR vj.query ILIKE '%' || $4 || '%' OR vj.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+ORDER BY
+    CASE WHEN $5 = 'created_at' AND $6 = 'asc' THEN vj.created_at END ASC NULLS LAST,
+    CASE WHEN $5 = 'created_at' AND $6 = 'desc' THEN vj.created_at END DESC NULLS FIRST,
+    CASE WHEN $5 = 'status' AND $6 = 'asc' THEN vj.status END ASC NULLS LAST,
+    CASE WHEN $5 = 'status' AND $6 = 'desc' THEN vj.status END DESC NULLS FIRST,
+    vj.created_at DESC
+LIMIT $8 OFFSET $7
+`
+
+type ListVideoImportJobsForAdminParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	SourceType string      `json:"source_type"`
+	Q          string      `json:"q"`
+	Sort       interface{} `json:"sort"`
+	Dir        interface{} `json:"dir"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListVideoImportJobsForAdminRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+	OwnerUsername      string             `json:"owner_username"`
+}
+
+// Admin queue with optional status/source_type filters, text search, and sorting.
+func (q *Queries) ListVideoImportJobsForAdmin(ctx context.Context, arg ListVideoImportJobsForAdminParams) ([]ListVideoImportJobsForAdminRow, error) {
+	rows, err := q.db.Query(ctx, listVideoImportJobsForAdmin,
+		arg.TenantID,
+		arg.Status,
+		arg.SourceType,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVideoImportJobsForAdminRow
+	for rows.Next() {
+		var i ListVideoImportJobsForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.UserID,
+			&i.SourceType,
+			&i.SourceUrl,
+			&i.Query,
+			&i.TargetAuthorUserID,
+			&i.Status,
+			&i.TotalItems,
+			&i.ImportedCount,
+			&i.FailedCount,
+			&i.ErrorLog,
+			&i.CreatedAt,
+			&i.CompletedAt,
+			&i.AutoPublish,
+			&i.StartedAt,
+			&i.OwnerUsername,
 		); err != nil {
 			return nil, err
 		}

@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countVideoSourcesForAdmin = `-- name: CountVideoSourcesForAdmin :one
+SELECT COUNT(*)::int AS total
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
+WHERE vs.tenant_id = $1
+  AND ($2::text = '' OR vs.status = $2)
+  AND ($3::text = '' OR vs.source_type = $3)
+  AND ($4::text = '' OR vs.title ILIKE '%' || $4 || '%' OR vs.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+`
+
+type CountVideoSourcesForAdminParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	SourceType string      `json:"source_type"`
+	Q          string      `json:"q"`
+}
+
+// Total for admin video sources list (same filters as ListVideoSourcesForAdmin).
+func (q *Queries) CountVideoSourcesForAdmin(ctx context.Context, arg CountVideoSourcesForAdminParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countVideoSourcesForAdmin,
+		arg.TenantID,
+		arg.Status,
+		arg.SourceType,
+		arg.Q,
+	)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createOrUpdateVideoSource = `-- name: CreateOrUpdateVideoSource :one
 
 INSERT INTO video_sources (
@@ -321,6 +351,110 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 			&i.FieldValues,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVideoSourcesForAdmin = `-- name: ListVideoSourcesForAdmin :many
+SELECT
+    vs.id, vs.tenant_id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id,
+    vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id,
+    vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at,
+    u.username AS author_username
+FROM video_sources vs
+JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
+WHERE vs.tenant_id = $1
+  AND ($2::text = '' OR vs.status = $2)
+  AND ($3::text = '' OR vs.source_type = $3)
+  AND ($4::text = '' OR vs.title ILIKE '%' || $4 || '%' OR vs.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+ORDER BY
+    CASE WHEN $5 = 'title' AND $6 = 'asc' THEN vs.title END ASC NULLS LAST,
+    CASE WHEN $5 = 'title' AND $6 = 'desc' THEN vs.title END DESC NULLS FIRST,
+    CASE WHEN $5 = 'source_type' AND $6 = 'asc' THEN vs.source_type END ASC NULLS LAST,
+    CASE WHEN $5 = 'source_type' AND $6 = 'desc' THEN vs.source_type END DESC NULLS FIRST,
+    CASE WHEN $5 = 'status' AND $6 = 'asc' THEN vs.status END ASC NULLS LAST,
+    CASE WHEN $5 = 'status' AND $6 = 'desc' THEN vs.status END DESC NULLS FIRST,
+    CASE WHEN $5 = 'created_at' AND $6 = 'asc' THEN vs.created_at END ASC NULLS LAST,
+    CASE WHEN $5 = 'created_at' AND $6 = 'desc' THEN vs.created_at END DESC NULLS FIRST,
+    vs.created_at DESC
+LIMIT $8 OFFSET $7
+`
+
+type ListVideoSourcesForAdminParams struct {
+	TenantID   pgtype.UUID `json:"tenant_id"`
+	Status     string      `json:"status"`
+	SourceType string      `json:"source_type"`
+	Q          string      `json:"q"`
+	Sort       interface{} `json:"sort"`
+	Dir        interface{} `json:"dir"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type ListVideoSourcesForAdminRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	TenantID         pgtype.UUID        `json:"tenant_id"`
+	AuthorUserID     pgtype.UUID        `json:"author_user_id"`
+	SourceType       string             `json:"source_type"`
+	SourceUrl        string             `json:"source_url"`
+	ExternalID       *string            `json:"external_id"`
+	Title            string             `json:"title"`
+	Description      string             `json:"description"`
+	Category         *string            `json:"category"`
+	ThumbnailUrl     *string            `json:"thumbnail_url"`
+	ThumbnailMediaID pgtype.UUID        `json:"thumbnail_media_id"`
+	DurationSecs     *int32             `json:"duration_secs"`
+	Status           string             `json:"status"`
+	FieldValues      []byte             `json:"field_values"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	AuthorUsername   string             `json:"author_username"`
+}
+
+// Admin queue with optional status/source_type filters, text search, and sorting.
+func (q *Queries) ListVideoSourcesForAdmin(ctx context.Context, arg ListVideoSourcesForAdminParams) ([]ListVideoSourcesForAdminRow, error) {
+	rows, err := q.db.Query(ctx, listVideoSourcesForAdmin,
+		arg.TenantID,
+		arg.Status,
+		arg.SourceType,
+		arg.Q,
+		arg.Sort,
+		arg.Dir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVideoSourcesForAdminRow
+	for rows.Next() {
+		var i ListVideoSourcesForAdminRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.AuthorUserID,
+			&i.SourceType,
+			&i.SourceUrl,
+			&i.ExternalID,
+			&i.Title,
+			&i.Description,
+			&i.Category,
+			&i.ThumbnailUrl,
+			&i.ThumbnailMediaID,
+			&i.DurationSecs,
+			&i.Status,
+			&i.FieldValues,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AuthorUsername,
 		); err != nil {
 			return nil, err
 		}
