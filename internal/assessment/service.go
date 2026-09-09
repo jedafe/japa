@@ -1074,17 +1074,65 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 	return roadmap
 }
 
+// pickBestRoadmapContent selects the highest-scoring, unused published guide for a
+// roadmap step. It does not restrict candidates to the original step's slug family,
+// so any guide with the same dimension and a better journey match can win.
+//
+// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base string, used map[string]bool, journeyCtx JourneyContext) (gen.FindRoadmapContentByDimensionRow, int) {
+	best := gen.FindRoadmapContentByDimensionRow{}
+	bestScore := 0
+
+	for _, row := range rows {
+		// The current step's own curated slug is allowed as a candidate even if it
+		// is already in `used`, so the tie-breaker can keep the original on equal
+		// context scores. Other steps' slugs remain blocked to avoid duplicates.
+		if row.Slug == "" || (used[row.Slug] && row.Slug != base) {
+			continue
+		}
+
+		score := 0
+		if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
+			score += 4
+		}
+		if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
+			score += 1
+		}
+		if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
+			score += 2
+		}
+		if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
+			score += 2
+		}
+		if p := stringFromAny(row.Purpose); journeyCtx.Purpose != "" && p != "" && p == journeyCtx.Purpose {
+			score += 1
+		}
+
+		if score <= 0 {
+			continue
+		}
+
+		// Tie-breaker: when two guides are equally specific, keep the original.
+		if score == bestScore && bestScore > 0 && row.Slug == base && best.Slug != base {
+			best = row
+		}
+
+		if score > bestScore {
+			best = row
+			bestScore = score
+		}
+	}
+
+	return best, bestScore
+}
+
 // resolveRoadmapContent resolves each curated roadmap step to the most specific
 // published content for the visitor's journey context when
 // assessment.geo_content_resolution_enabled is true. It mutates the provided
 // steps in place and returns the same slice.
 //
 // A step whose content_slug is empty (e.g. AI-generated prose without a link)
-// is skipped. Candidates are restricted to the step's own slug family — the
-// base slug itself or a geo/journey variant named "<base>-<suffix>" (see
-// migration 000587) — so a step can only be re-pointed to a variant of its own
-// guide, never to an unrelated guide that merely shares its dimension. A query
-// that returns no matching rows leaves the original step unchanged.
+// is skipped. The original curated step is kept when no candidate is specific.
 func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUID, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
 	if s.store == nil || s.settings == nil {
 		return steps
@@ -1127,59 +1175,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 			continue
 		}
 
-		// Pick the unused candidate with the highest journey-context match score.
-		// Match weights mirror the feed ranking in GetRoadmapFeedWithContext so
-		// destination+origin specific content beats destination-only or stage-only
-		// content, and a guide matching multiple signals beats one matching a single
-		// signal. The original curated step is kept when no candidate is specific.
-		best := gen.FindRoadmapContentByDimensionRow{}
-		bestScore := 0
-
-		base := steps[i].ContentSlug
-
-		for _, row := range rows {
-			if row.Slug == "" || used[row.Slug] {
-				continue
-			}
-
-			// Only variants of the step's own guide are eligible: the base slug
-			// itself or a "<base>-<suffix>" variant (e.g. "<base>-us-ng").
-			if row.Slug != base && !strings.HasPrefix(row.Slug, base+"-") {
-				continue
-			}
-
-			score := 0
-			if journeyCtx.DestinationCountry != "" && row.TargetCountry != nil && *row.TargetCountry == journeyCtx.DestinationCountry {
-				score += 4
-			}
-
-			if journeyCtx.OriginCountry != "" && row.SourceCountry != nil && *row.SourceCountry == journeyCtx.OriginCountry {
-				score += 1
-			}
-
-			if journeyCtx.JourneyStage != "" && row.JourneyStage != nil && *row.JourneyStage == journeyCtx.JourneyStage {
-				score += 2
-			}
-
-			if journeyCtx.VisaRoute != "" && row.VisaRoute != nil && *row.VisaRoute == journeyCtx.VisaRoute {
-				score += 2
-			}
-
-			rowPurpose := stringFromAny(row.Purpose)
-			if journeyCtx.Purpose != "" && rowPurpose != "" && rowPurpose == journeyCtx.Purpose {
-				score += 1
-			}
-
-			if score <= 0 {
-				continue
-			}
-
-			if score > bestScore {
-				bestScore = score
-				best = row
-			}
-		}
-
+		best, bestScore := pickBestRoadmapContent(rows, steps[i].ContentSlug, used, journeyCtx)
 		if bestScore == 0 {
 			continue
 		}
@@ -1188,27 +1184,21 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		if best.Title != "" {
 			steps[i].Title = best.Title
 		}
-
 		if best.Description != "" {
 			steps[i].Description = best.Description
 		}
-
 		if best.TargetCountry != nil && *best.TargetCountry != "" {
 			steps[i].TargetCountry = *best.TargetCountry
 		}
-
 		if best.JourneyStage != nil && *best.JourneyStage != "" {
 			steps[i].JourneyStage = *best.JourneyStage
 		}
-
 		if best.VisaRoute != nil && *best.VisaRoute != "" {
 			steps[i].VisaRoute = *best.VisaRoute
 		}
-
 		if best.SourceCountry != nil && *best.SourceCountry != "" {
 			steps[i].SourceCountry = *best.SourceCountry
 		}
-
 		if p := stringFromAny(best.Purpose); p != "" {
 			steps[i].Purpose = p
 		}
