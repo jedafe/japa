@@ -24,11 +24,13 @@
 |---|---|
 | `internal/assessment/service.go` | Compute dimensions for `GET /assessment`; relax `resolveRoadmapContent`. |
 | `internal/assessment/handlers.go` | Include `dimensions` in `HandleGetAssessment` JSON response. |
-| `internal/assessment/handlers_test.go` or `service_test.go` | Tests for `dimensions` output and `resolveRoadmapContent` global resolution. |
-| `apps/main/src/routes/(app)/create/+page.server.ts` | Load `GET /assessment` and pass `assessmentDimensions` to the page. |
+| `internal/assessment/service_test.go` | Tests for `dimensions` output and `pickBestRoadmapContent` global resolution. |
+| `apps/main/src/routes/(app)/create/+page.server.ts` | Load `GET /assessment` and return `assessmentDimensions`. |
+| `apps/main/src/routes/(app)/create/+page.svelte` | Pass `data.assessmentDimensions` into `CreateShell`. |
+| `apps/main/src/lib/components/create/CreateShell.svelte` | Accept `assessmentDimensions`; manage `roadmapDimension`/`roadmapPurpose`; pass through to `CreateRightPanel`. |
+| `apps/main/src/lib/components/create/panel/CreateRightPanel.svelte` | Forward new props to `CreateJourneyPanel`. |
 | `apps/main/src/lib/components/create/panel/CreateJourneyPanel.svelte` | Render `Roadmap dimension` and `Purpose` selects. |
-| `apps/main/src/lib/components/create/CreateShell.svelte` | Manage `roadmapDimension`/`roadmapPurpose` state and merge them into `field_values`. |
-| `apps/main/src/lib/types.ts` (if needed) | Add `Assessment`/`AssessmentDimensions` types. |
+| `apps/main/src/lib/types/index.ts` | Add `dimensions: string[]` to the existing `AssessmentForm` type. |
 | `apps/admin/src/routes/tools/readiness/variants/+page.svelte` | Delete. |
 | `apps/admin/src/routes/tools/readiness/+page.svelte` | Remove the "Manage Variants" button. |
 | `apps/admin/src/lib/components/layout/sidebar.svelte` | Remove variants entry if it exists. |
@@ -227,6 +229,20 @@ func TestPickBestRoadmapContent_SkipsUsedSlugs(t *testing.T) {
 	best, _ := pickBestRoadmapContent(rows, base, map[string]bool{"used-already": true}, journey)
 	assert.Equal(t, base, best.Slug, "already-used slugs are skipped")
 }
+
+func TestPickBestRoadmapContent_BaseWinsTieEvenWhenUsed(t *testing.T) {
+	base := "guide-generic-finance"
+	rows := []gen.FindRoadmapContentByDimensionRow{
+		{Slug: "another-planning-finance", JourneyStage: ptr("planning")},
+		{Slug: base, JourneyStage: ptr("planning")},
+	}
+	journey := JourneyContext{JourneyStage: "planning"}
+
+	// base is in used (as it would be at runtime from the seed map), but it is
+	// still allowed to compete and win on a tie.
+	best, _ := pickBestRoadmapContent(rows, base, map[string]bool{base: true}, journey)
+	assert.Equal(t, base, best.Slug, "the original base slug wins ties even if it is in the used set")
+}
 ```
 
 - [ ] **Step 2: Run the test and confirm it fails**
@@ -252,7 +268,10 @@ func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base st
 	bestScore := 0
 
 	for _, row := range rows {
-		if row.Slug == "" || used[row.Slug] {
+		// The current step's own curated slug is allowed as a candidate even if it
+		// is already in `used`, so the tie-breaker can keep the original on equal
+		// context scores. Other steps' slugs remain blocked to avoid duplicates.
+		if row.Slug == "" || (used[row.Slug] && row.Slug != base) {
 			continue
 		}
 
@@ -292,15 +311,27 @@ func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base st
 }
 ```
 
-Then simplify `resolveRoadmapContent` to call the helper:
+Then simplify `resolveRoadmapContent` to call the helper (keep the existing step metadata update block):
 
 ```go
 for i := range steps {
-    // ... existing guards ...
+    if steps[i].ContentSlug == "" {
+        continue
+    }
 
-    rows, err := s.store.FindRoadmapContentByDimension(...)
+    rows, err := s.store.FindRoadmapContentByDimension(
+        ctx, tenantID,
+        steps[i].Dimension,
+        journeyCtx.DestinationCountry,
+        journeyCtx.JourneyStage,
+        journeyCtx.VisaRoute,
+        journeyCtx.OriginCountry,
+        journeyCtx.Purpose,
+    )
     if err != nil {
-        slog.Warn(...)
+        slog.Warn("assessment: resolve roadmap content failed",
+            "dimension", steps[i].Dimension,
+            "error", err)
         continue
     }
 
@@ -309,13 +340,36 @@ for i := range steps {
         continue
     }
 
-    used[best.Slug] = true
     steps[i].ContentSlug = best.Slug
-    // ... existing metadata updates ...
+    if best.Title != "" {
+        steps[i].Title = best.Title
+    }
+    if best.Description != "" {
+        steps[i].Description = best.Description
+    }
+    if best.TargetCountry != nil && *best.TargetCountry != "" {
+        steps[i].TargetCountry = *best.TargetCountry
+    }
+    if best.JourneyStage != nil && *best.JourneyStage != "" {
+        steps[i].JourneyStage = *best.JourneyStage
+    }
+    if best.VisaRoute != nil && *best.VisaRoute != "" {
+        steps[i].VisaRoute = *best.VisaRoute
+    }
+    if best.SourceCountry != nil && *best.SourceCountry != "" {
+        steps[i].SourceCountry = *best.SourceCountry
+    }
+    if p := stringFromAny(best.Purpose); p != "" {
+        steps[i].Purpose = p
+    }
+
+    used[best.Slug] = true
 }
 ```
 
 Remove the old inline scoring loop and the slug-family guard.
+
+**Note:** `FindRoadmapContentByDimension` only returns content whose `field_values->>'dimension'` matches. If the original base guide is not tagged with that dimension, it will not be in the candidate set and cannot win ties. Either tag base curated guides with their dimensions or explicitly include the base content as a fallback candidate.
 
 - [ ] **Step 4: Run the test and confirm it passes**
 
@@ -337,53 +391,56 @@ git commit -m "feat(assessment): resolve roadmap from any matching guide by dime
 ### Task 3: Frontend — load dimensions into the create page
 
 **Files:**
+- Modify: `apps/main/src/lib/types/index.ts`
 - Modify: `apps/main/src/routes/(app)/create/+page.server.ts`
-- Modify: `apps/main/src/lib/types.ts` (if needed)
+- Modify: `apps/main/src/routes/(app)/create/+page.svelte`
 
 **Interfaces:**
 - Consumes: `GET /assessment` response `dimensions`.
 - Produces: `page.data.assessmentDimensions: string[]`.
 
-- [ ] **Step 1: Add `assessment` type and load call**
+- [ ] **Step 1: Extend the existing `AssessmentForm` type**
 
-In `apps/main/src/lib/types.ts` (or a new `assessment.ts` type file if preferred), add:
+In `apps/main/src/lib/types/index.ts`, the `AssessmentForm` interface already exists. Add one field:
 
 ```ts
 export interface AssessmentForm {
-	id: string;
-	name: string;
-	slug: string;
-	description: string;
-	is_multi_step: boolean;
-	submit_label: string;
-	status: string;
-	max_score: number;
-	thresholds: Array<{ min: number; max: number; label: string; color: string }>;
-	fields: Array<{
-		id: string;
-		label: string;
-		key: string;
-		field_type: string;
-		is_required: boolean;
-		position: number;
-		placeholder: string;
-		options: unknown;
-		config: { weight: number; dimension: string };
-	}>;
+	// ...existing fields...
 	dimensions: string[];
 }
 ```
 
-In `apps/main/src/routes/(app)/create/+page.server.ts`, add to the parallel fetch:
+- [ ] **Step 2: Load the assessment in `+page.server.ts`**
+
+Add `assessmentRes` to the `Promise.allSettled` destructuring and to the fetch list:
 
 ```ts
-const [assessmentRes] = await Promise.allSettled([
-	// ...existing calls...
+const [
+	typesRes,
+	flagsRes,
+	spacesRes,
+	groupsRes,
+	seriesRes,
+	orgsRes,
+	compTypesRes,
+	dimTypesRes,
+	visibilityRes,
+	assessmentRes
+] = await Promise.allSettled([
+	apiList<ContentTypeMeta>(ctx, '/content-types'),
+	apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
+	apiList<MeSpace>(ctx, '/me/spaces'),
+	apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
+	apiList<BlogSeries>(ctx, '/blog/series'),
+	apiList<ComposerOrganization>(ctx, '/me/organizations'),
+	apiList<ComparisonType>(ctx, '/jce/comparison-types?page_size=50'),
+	apiList<{ value: string; label: string }>(ctx, '/jce/comparisons/dimension-types'),
+	apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options'),
 	apiGet<AssessmentForm>(ctx, '/assessment')
 ]);
 ```
 
-Then include in the returned data:
+Then add to the returned data:
 
 ```ts
 const assessment = assessmentRes.status === 'fulfilled' ? assessmentRes.value : null;
@@ -394,7 +451,11 @@ return {
 };
 ```
 
-- [ ] **Step 2: Run typecheck and verify no errors**
+- [ ] **Step 3: Pass `assessmentDimensions` into `CreateShell`**
+
+In `apps/main/src/routes/(app)/create/+page.svelte`, add `assessmentDimensions={data.assessmentDimensions}` to the existing `<CreateShell ... />` call.
+
+- [ ] **Step 4: Run typecheck and verify no errors**
 
 ```bash
 bun --cwd apps/main run check
@@ -402,10 +463,10 @@ bun --cwd apps/main run check
 
 Expected: PASS (may have pre-existing issues, but no new ones).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add apps/main/src/routes/(app)/create/+page.server.ts apps/main/src/lib/types.ts
+git add apps/main/src/lib/types/index.ts apps/main/src/routes/(app)/create/+page.server.ts apps/main/src/routes/(app)/create/+page.svelte
 git commit -m "feat(create): load assessment dimensions into create page data"
 ```
 
@@ -415,15 +476,16 @@ git commit -m "feat(create): load assessment dimensions into create page data"
 
 **Files:**
 - Modify: `apps/main/src/lib/components/create/panel/CreateJourneyPanel.svelte`
+- Modify: `apps/main/src/lib/components/create/panel/CreateRightPanel.svelte`
 - Modify: `apps/main/src/lib/components/create/CreateShell.svelte`
 
 **Interfaces:**
-- Consumes: `assessmentDimensions: string[]`, `purposeOptions: JourneyOption[]`, `journeyOptions` already fetched.
-- Produces: `roadmapDimension` and `roadmapPurpose` values sent through `onroadmapdimension` / `onroadmappurpose` callbacks.
+- Consumes: `assessmentDimensions: string[]`, `journeyOptions` already fetched inside `CreateJourneyPanel`.
+- Produces: `roadmapDimension` and `roadmapPurpose` values sent through `ondimension` / `onpurpose` callbacks.
 
-- [ ] **Step 1: Update `CreateJourneyPanel.svelte` props and render**
+- [ ] **Step 1: Update `CreateJourneyPanel.svelte`**
 
-Add to the `Props` interface:
+Update the `Props` interface and destructure:
 
 ```ts
 interface Props {
@@ -434,7 +496,6 @@ interface Props {
 	dimension: string | null;
 	purpose: string | null;
 	assessmentDimensions: string[];
-	purposeOptions?: { value: string; label: string }[];
 	onjourney: (v: string | null) => void;
 	onvisa: (v: string | null) => void;
 	onsource: (v: string | null) => void;
@@ -443,17 +504,164 @@ interface Props {
 	onpurpose: (v: string | null) => void;
 	onedit: () => void;
 }
+
+let {
+	journeyStage,
+	visaRoute,
+	sourceCountry,
+	targetCountry,
+	dimension,
+	purpose,
+	assessmentDimensions,
+	onjourney,
+	onvisa,
+	onsource,
+	ontarget,
+	ondimension,
+	onpurpose,
+	onedit
+}: Props = $props();
 ```
 
-Add two field rows after the existing four. For `Roadmap dimension` use a select with the `assessmentDimensions` array. For `Purpose` use the existing `optionFetcher` pattern with `purposeOptions`. Add a small nudge label when `dimension` is empty:
+Derive option lists locally (purpose comes from the already-fetched `journeyOptions`):
+
+```ts
+let dimensionOptions = $derived(assessmentDimensions.map((d) => ({ value: d, label: d })));
+let purposeOptions = $derived(options?.purposes ?? []);
+```
+
+Add handler helpers after the existing setters:
+
+```ts
+function setDimension(item: AutocompleteItem) {
+	ondimension(item.id);
+	onedit();
+}
+
+function setPurpose(item: AutocompleteItem) {
+	onpurpose(item.id);
+	onedit();
+}
+
+function setDimensionText(v: string) {
+	const trimmed = v.trim() || null;
+	ondimension(trimmed);
+	onedit();
+}
+```
+
+Add two field rows inside the `.journey-panel` div, after the existing four. Use the existing `Autocomplete` component and `optionFetcher`/`optionLabel`/`optionInitial` helpers:
 
 ```svelte
+<div class="field-row">
+	<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}</label>
+	{#if dimensionOptions.length > 0}
+		<Autocomplete
+			id="journey-dimension"
+			placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
+			emptyMessage={t('journey.banner.no_options', 'No matching option')}
+			fetcher={optionFetcher(dimensionOptions)}
+			initialFetcher={() => optionInitial(dimensionOptions, dimension)}
+			selectedId={dimension}
+			selectedLabel={optionLabel(dimensionOptions, dimension ?? '')}
+			onSelect={setDimension}
+			onClear={() => { ondimension(null); onedit(); }}
+			allowFreeText
+		/>
+	{:else}
+		<input
+			id="journey-dimension"
+			type="text"
+			class="field-input"
+			placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
+			value={dimension ?? ''}
+			oninput={(e) => setDimensionText(e.currentTarget.value)}
+		/>
+	{/if}
+</div>
+
 {#if dimension === null || dimension === ''}
 	<p class="journey-hint">{t('create.journey.dimension_nudge', 'Set a roadmap dimension so this guide can appear in readiness roadmaps.')}</p>
 {/if}
+
+<div class="field-row">
+	<label class="field-label" for="journey-purpose">{t('create.journey.purpose', 'Purpose')}</label>
+	{#if purposeOptions.length > 0}
+		<Autocomplete
+			id="journey-purpose"
+			placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
+			emptyMessage={t('journey.banner.no_options', 'No matching option')}
+			fetcher={optionFetcher(purposeOptions)}
+			initialFetcher={() => optionInitial(purposeOptions, purpose)}
+			selectedId={purpose}
+			selectedLabel={optionLabel(purposeOptions, purpose ?? '')}
+			onSelect={setPurpose}
+			onClear={() => { onpurpose(null); onedit(); }}
+		/>
+	{:else}
+		<input
+			id="journey-purpose"
+			type="text"
+			class="field-input"
+			placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
+			value={purpose ?? ''}
+			oninput={(e) => { onpurpose(e.currentTarget.value.trim() || null); onedit(); }}
+		/>
+	{/if}
+</div>
 ```
 
-- [ ] **Step 2: Update `CreateShell.svelte`**
+- [ ] **Step 2: Update `CreateRightPanel.svelte`**
+
+Add to the `Props` interface and destructure:
+
+```ts
+interface Props {
+	// ...existing props...
+	dimension: string | null;
+	purpose: string | null;
+	assessmentDimensions: string[];
+	ondimension: (v: string | null) => void;
+	onpurpose: (v: string | null) => void;
+}
+```
+
+Pass the new props into `CreateJourneyPanel`:
+
+```svelte
+<CreateJourneyPanel
+	{journeyStage}
+	{visaRoute}
+	{sourceCountry}
+	{targetCountry}
+	{dimension}
+	{purpose}
+	{assessmentDimensions}
+	onjourney
+	onvisa
+	onsource
+	ontarget
+	ondimension
+	onpurpose
+	onedit
+/>
+```
+
+- [ ] **Step 3: Update `CreateShell.svelte`**
+
+Add to the `Props` interface and destructure:
+
+```ts
+interface Props {
+	// ...existing props...
+	assessmentDimensions: string[];
+}
+
+let {
+	// ...existing destructured props...
+	assessmentDimensions
+}: Props = $props();
+```
 
 Add runes after the existing journey runes:
 
@@ -472,31 +680,20 @@ field_values: {
 }
 ```
 
-Pass the new props through `CreateRightPanel` and then into `CreateJourneyPanel`:
+Pass the new props to `CreateRightPanel`:
 
 ```svelte
-<CreateJourneyPanel
-	{journeyStage}
-	{visaRoute}
-	{sourceCountry}
-	{targetCountry}
+<CreateRightPanel
+	// ...existing props...
 	dimension={roadmapDimension}
 	purpose={roadmapPurpose}
-	assessmentDimensions={data.assessmentDimensions}
-	purposeOptions={journeyOptions?.purposes ?? []}
-	onjourney={(v) => { journeyStage = v; markDirty(); }}
-	onvisa={(v) => { visaRoute = v; markDirty(); }}
-	onsource={(v) => { sourceCountry = v; markDirty(); }}
-	ontarget={(v) => { targetCountry = v; markDirty(); }}
+	assessmentDimensions={assessmentDimensions}
 	ondimension={(v) => { roadmapDimension = v; markDirty(); }}
 	onpurpose={(v) => { roadmapPurpose = v; markDirty(); }}
-	onedit={markDirty}
 />
 ```
 
-Also wire through `CreateRightPanel` props.
-
-- [ ] **Step 3: Run typecheck and build**
+- [ ] **Step 4: Run typecheck and build**
 
 ```bash
 bun --cwd apps/main run check
@@ -505,7 +702,7 @@ bun --cwd apps/main run build
 
 Expected: typecheck and build pass (or only pre-existing issues).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add apps/main/src/lib/components/create/CreateShell.svelte \
@@ -530,17 +727,23 @@ git commit -m "feat(create): add roadmap dimension and purpose to journey panel"
 - [ ] **Step 1: Delete the variants page**
 
 ```bash
-rm apps/admin/src/routes/tools/readiness/variants/+page.svelte
-rmdir apps/admin/src/routes/tools/readiness/variants
+git rm -r apps/admin/src/routes/tools/readiness/variants
 ```
 
-- [ ] **Step 2: Remove the "Manage Variants" button**
+- [ ] **Step 2: Remove the "Manage Variants" button and unused `canCreate` derived**
 
-In `apps/admin/src/routes/tools/readiness/+page.svelte`, delete the button/link that opens the variants page (around the "Manage Variants" text). Ensure the remaining page still works.
+In `apps/admin/src/routes/tools/readiness/+page.svelte`, delete the `<a href="/tools/readiness/variants">` block (around the "Manage Variants" text). Then remove the `canCreate` derived, which is only used for that button:
+
+```ts
+// Remove this line:
+const canCreate = $derived(hasPermission('content.create'));
+```
+
+Also remove the `{#if canCreate}` wrapper around the deleted link.
 
 - [ ] **Step 3: Remove sidebar entry if present**
 
-Check `apps/admin/src/lib/components/layout/sidebar.svelte` for any `/tools/readiness/variants` route. Remove it if it exists.
+Check `apps/admin/src/lib/components/layout/sidebar.svelte` for any `/tools/readiness/variants` route. It does not currently exist, but remove it if it appears.
 
 - [ ] **Step 4: Run typecheck and build**
 
@@ -554,7 +757,7 @@ Expected: no new errors.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A apps/admin/src/routes/tools/readiness/variants apps/admin/src/routes/tools/readiness/+page.svelte
+git add apps/admin/src/routes/tools/readiness/+page.svelte
 git commit -m "chore(admin): remove readiness roadmap variants management page"
 ```
 
@@ -569,6 +772,8 @@ git commit -m "chore(admin): remove readiness roadmap variants management page"
 **Interfaces:**
 - Consumes: the spec and current code behavior.
 - Produces: JEOS/ADR text matching the implemented behavior.
+
+**Important:** Per AGENTS.md, JEOS is always updated before code. Draft the section and ADR changes **before** merging the corresponding implementation tasks (Tasks 1–5). Do not let the docs and code diverge.
 
 - [ ] **Step 1: Update Section 71**
 
@@ -593,13 +798,15 @@ git commit -m "docs: update JEOS for content-journey readiness roadmap resolutio
 
 ### Task 7: Verification
 
-- [ ] **Step 1: Go tests**
+- [ ] **Step 1: Go tests, build, and vet**
 
 ```bash
 go test ./internal/assessment/...
+go build ./...
+go vet ./...
 ```
 
-Expected: PASS.
+Expected: PASS and no build/vet errors.
 
 - [ ] **Step 2: Frontend typecheck and build**
 
@@ -614,6 +821,13 @@ Expected: no new errors.
 
 - [ ] **Step 3: Manual / Playwright smoke test**
 
+Run Playwright if the project has an e2e suite (otherwise perform the steps manually in the running dev servers):
+
+```bash
+bun --cwd apps/main run test:e2e
+```
+
+Manual steps:
 1. Create a guide with `dimension=financial`, `target_country=CA`, `source_country=NG`, `journey_stage=planning`, `visa_route=work`.
 2. Submit a readiness assessment with matching context and a weak `financial` score.
 3. Verify `/tools/readiness?result=<id>` resolves to the new guide.
@@ -639,9 +853,9 @@ Ensure only pre-existing, unrelated working-tree changes remain.
    - JEOS/ADR updates — Task 6.
    - Verification — Task 7.
 
-2. **Placeholder scan:** No `TBD`, `TODO`, or vague steps; code snippets and commands are provided.
+2. **Placeholder scan:** No `TBD`, `TODO`, or vague steps; code snippets and commands are provided. The frontend data-flow chain, the `CreateRightPanel` wiring, and the `CreateJourneyPanel` markup are now explicit.
 
-3. **Type consistency:** `AssessmentForm`, `roadmapDimension`/`roadmapPurpose` state, and `ondimension`/`onpurpose` callbacks match the component interfaces defined in Task 4.
+3. **Type consistency:** `AssessmentForm`, `roadmapDimension`/`roadmapPurpose` state, `ondimension`/`onpurpose` callbacks, and `assessmentDimensions` prop passing match across `+page.server.ts`, `+page.svelte`, `CreateShell`, `CreateRightPanel`, and `CreateJourneyPanel`.
 
 ## Execution handoff
 
