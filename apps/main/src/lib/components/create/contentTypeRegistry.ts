@@ -100,11 +100,20 @@ export function resolveType(value: string, backendLabel?: string, categories?: G
  */
 export function availableTypes(
 	types: ContentTypeMeta[],
-	flags: Record<string, boolean>
+	flags: Record<string, boolean>,
+	settings?: Record<string, unknown>
 ): TypeEntry[] {
 	return types
 		.map((t) => resolveType(t.value, t.label ?? t.value, t.categories))
-		.filter((entry) => entry.featureFlag === null || flags[entry.featureFlag] !== false);
+		.filter((entry) => {
+			if (entry.featureFlag === null) return true;
+			// Feature flags are canonical for most toggles, but some §106 video
+			// settings are public system settings (e.g. video.enabled) rather than
+			// feature_flags rows. A key that is explicitly false in either map
+			// disables the type; missing means enabled (Rule 16 fallbacks).
+			if (flags[entry.featureFlag] === false) return false;
+			return settings?.[entry.featureFlag] !== false;
+		});
 }
 
 /** Content types that can be created through the /create page composer. */
@@ -123,10 +132,11 @@ const CREATE_TYPE_ORDER = Object.fromEntries(
  */
 export function createAvailableTypes(
 	types: ContentTypeMeta[],
-	flags: Record<string, boolean>
+	flags: Record<string, boolean>,
+	settings?: Record<string, unknown>
 ): TypeEntry[] {
 	const allowed = new Set<string>(CREATE_ALLOWED_TYPES);
-	return availableTypes(types, flags)
+	return availableTypes(types, flags, settings)
 		.filter((entry) => allowed.has(entry.value))
 		.sort((a, b) => (CREATE_TYPE_ORDER[a.value] ?? 0) - (CREATE_TYPE_ORDER[b.value] ?? 0));
 }

@@ -25,11 +25,21 @@ export function hydrateVideoEmbeds(node: HTMLElement) {
 			if (!res.data) return;
 
 			el.setAttribute('data-hydrated', 'true');
+			// Replace the placeholder markup (thumbnail image + any fallback
+			// children) with the player so we don't render both the poster and
+			// the interactive player.
+			el.replaceChildren();
 			const comp = mount(VideoEmbed, {
 				target: el,
 				props: { source: res.data as VideoSource }
 			});
 			mounted.set(el, comp);
+		} catch (err) {
+			// Degrade gracefully — leave the placeholder if the source cannot
+			// be resolved or has been removed.
+			el.setAttribute('data-hydrated', 'error');
+			// eslint-disable-next-line no-console
+			console.warn('hydrateVideoEmbeds: failed to load source', id, err);
 		} finally {
 			inFlight.delete(el);
 		}

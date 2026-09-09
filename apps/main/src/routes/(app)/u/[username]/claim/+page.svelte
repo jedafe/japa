@@ -29,7 +29,9 @@
 	const isSynthetic = $derived(!!target?.is_synthetic);
 
 	$effect(() => {
-		if (!isAuthed) {
+		// Track both auth and username so navigation from /u/foo/claim to
+		// /u/bar/claim re-fetches the new target.
+		if (!isAuthed || !username) {
 			loading = false;
 			return;
 		}

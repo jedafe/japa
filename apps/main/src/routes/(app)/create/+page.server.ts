@@ -25,12 +25,24 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
+	// Shell data (feature flags and public site settings) is fetched by the
+	// root layout and reused here so the composer can gate the §106 video
+	// content type on the public system setting video.enabled (Rule 16).
+	const parent = await event.parent();
+	const flags = (parent as { features?: Record<string, boolean> }).features ?? {};
+	const rawSiteSettings = (parent as { siteSettings?: Record<string, unknown> }).siteSettings ?? {};
+	// video.enabled defaults to false in the backend catalog; a missing public
+	// setting must be treated as disabled (not "missing = enabled").
+	const siteSettings = { ...rawSiteSettings };
+	if (siteSettings['video.enabled'] !== true) {
+		siteSettings['video.enabled'] = false;
+	}
+
 	const ctx = apiContext(event);
 	const draftId = event.url.searchParams.get('draft');
 
 	const [
 		typesRes,
-		flagsRes,
 		spacesRes,
 		groupsRes,
 		seriesRes,
@@ -40,7 +52,6 @@ export const load: PageServerLoad = async (event) => {
 		visibilityRes
 	] = await Promise.allSettled([
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
-		apiGet<Record<string, boolean>>(ctx, '/feature-flags'),
 		apiList<MeSpace>(ctx, '/me/spaces'),
 		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
 		apiList<BlogSeries>(ctx, '/blog/series'),
@@ -59,7 +70,6 @@ export const load: PageServerLoad = async (event) => {
 	]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
-	const flags = flagsRes.status === 'fulfilled' ? flagsRes.value : {};
 	const spaces = spacesRes.status === 'fulfilled' ? spacesRes.value.items : [];
 
 	// Blog posts, comparisons, guides, and stories are authored through
@@ -200,7 +210,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
-		types: createAvailableTypes(rawTypes, flags),
+		types: createAvailableTypes(rawTypes, flags, siteSettings),
 		spaces,
 		fieldGroups,
 		series,
