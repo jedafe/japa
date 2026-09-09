@@ -49,6 +49,7 @@
 		comparisonTypes={data.comparisonTypes}
 		dimensionTypes={data.dimensionTypes}
 		visibilityOptions={data.visibilityOptions}
+		assessmentDimensions={data.assessmentDimensions}
 		coverMedia={data.coverMedia}
 		draftSeriesId={data.draftSeriesId}
 		draftSpaces={data.draftSpaces}

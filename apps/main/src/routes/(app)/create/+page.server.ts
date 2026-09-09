@@ -15,7 +15,8 @@ import type {
 	ContentSpace,
 	MediaAsset,
 	Visibility,
-	JCEComparison
+	JCEComparison,
+	AssessmentForm
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -49,7 +50,8 @@ export const load: PageServerLoad = async (event) => {
 		orgsRes,
 		compTypesRes,
 		dimTypesRes,
-		visibilityRes
+		visibilityRes,
+		assessmentRes
 	] = await Promise.allSettled([
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
 		apiList<MeSpace>(ctx, '/me/spaces'),
@@ -66,7 +68,9 @@ export const load: PageServerLoad = async (event) => {
 		apiList<{ value: string; label: string }>(ctx, '/jce/comparisons/dimension-types'),
 		// Visibility options (Section 14) — canonical visibility values for
 		// the composer settings panel (Rule 16 — no hardcoded option lists).
-		apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options')
+		apiGet<{ value: Visibility; label: string }[]>(ctx, '/content/visibility-options'),
+		// Active assessment form and derived dimensions (§71) for the Journey panel.
+		apiGet<AssessmentForm>(ctx, '/assessment')
 	]);
 
 	const rawTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
@@ -109,6 +113,7 @@ export const load: PageServerLoad = async (event) => {
 	const dimensionTypes = dimTypesRes.status === 'fulfilled' ? dimTypesRes.value.items : [];
 	const visibilityOptions =
 		visibilityRes.status === 'fulfilled' ? visibilityRes.value : [];
+	const assessment = assessmentRes.status === 'fulfilled' ? assessmentRes.value : null;
 
 	let draft: ContentRecord | null = null;
 	let comparisonDetail: ComparisonDetail | null = null;
@@ -221,6 +226,7 @@ export const load: PageServerLoad = async (event) => {
 		comparisonTypes,
 		dimensionTypes,
 		visibilityOptions,
+		assessmentDimensions: assessment?.dimensions ?? [],
 		coverMedia,
 		draftSeriesId,
 		draftSpaces,
