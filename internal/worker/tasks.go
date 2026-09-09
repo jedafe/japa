@@ -50,6 +50,7 @@ const (
 	TypeJCERefreshValues              = "jce:refresh_values"
 	TypeVideoProcessing               = "content:process_video"
 	TypeVideoImportBulk               = "video:import_bulk"
+	TypeVideoGenerateSummary          = "video:generate_summary"
 	TypeWalletProcessActivityEvent    = "wallet:process_activity_event"
 	TypeWalletProcessCreditPurchase   = "wallet:process_credit_purchase"
 	TypeWalletAwardPoints             = "wallet:award_points"
@@ -174,6 +175,7 @@ var handlerRegistry = []struct {
 	{TypeJCERefreshValues, HandleJceRefreshValues},
 	{TypeVideoProcessing, HandleVideoProcessing},
 	{TypeVideoImportBulk, HandleVideoImportBulk},
+	{TypeVideoGenerateSummary, HandleVideoGenerateSummary},
 	{TypeWalletProcessActivityEvent, HandleWalletProcessActivityEvent},
 	{TypeWalletProcessCreditPurchase, HandleWalletProcessCreditPurchase},
 	{TypeWalletAwardPoints, HandleWalletAwardPoints},

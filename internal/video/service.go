@@ -2,21 +2,27 @@ package video
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/users"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // ResolveResult is the combined payload returned by ResolveURL and
@@ -56,6 +62,13 @@ type TaskEnqueuer interface {
 // hot-reloadable configuration like youtube.data_api_key.
 type settingsReader interface {
 	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
+}
+
+// AIDispatcher is the subset of the AI Gateway the video service needs to
+// generate draft summaries (content_generation category, §106 / ADR-117).
+type AIDispatcher interface {
+	Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error)
 }
 
 // ContentCreator creates content rows for imported videos.
@@ -74,6 +87,7 @@ type Service struct {
 	enqueuer    TaskEnqueuer
 	settings    settingsReader
 	content     ContentCreator
+	dispatcher  AIDispatcher
 	ytProvider  *YouTubeProvider
 }
 
@@ -96,6 +110,10 @@ func (s *Service) SetSettings(r settingsReader) { s.settings = r }
 // SetContentService injects the content creator used to publish imported
 // videos as content_type='video' rows.
 func (s *Service) SetContentService(c ContentCreator) { s.content = c }
+
+// SetDispatcher injects the AI Gateway dispatcher used to generate video
+// draft summaries.
+func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // SetYouTubeProvider stores the production YouTube provider so the bulk
 // import worker can reuse its HTTP client and SSRF configuration.
@@ -464,6 +482,344 @@ func (s *Service) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 		return nil, 0, err
 	}
 	return rows, total, nil
+}
+
+// GenerateDraft uses the AI Gateway to generate a title and body from a
+// video source's metadata, then stores the result as a contents row in
+// 'in_review' status with ai_generated=true (§106, ADR-117 HITL gate).
+func (s *Service) GenerateDraft(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error) {
+	if !videoSourceID.Valid {
+		return gen.CreateContentRow{}, fmt.Errorf("%w: video_source_id is required", errpkg.ErrRequired)
+	}
+
+	source, err := s.store.GetSourceByID(ctx, tenantID, videoSourceID)
+	if err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("loading video source: %w", err)
+	}
+
+	if s.dispatcher == nil {
+		return gen.CreateContentRow{}, fmt.Errorf("AI dispatcher not wired")
+	}
+
+	prompt := s.buildSummaryPrompt(source)
+
+	// ai_prompt_hash for audit traceability (ADR-088).
+	sum := sha256.Sum256([]byte(prompt))
+	promptHash := hex.EncodeToString(sum[:])
+
+	resp, err := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
+		Category: "content_generation",
+		Payload: map[string]any{
+			"prompt":                prompt,
+			"tenant_id":             tenantID,
+			"max_completion_tokens": 1024,
+		},
+	})
+	if err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("video: AI generation failed: %w", err)
+	}
+
+	reply := ai.ExtractReplyText(resp)
+	title, bodyText := s.parseGeneratedSummary(reply, source)
+
+	tipTapBody, bodyHTML, err := s.buildDraftBody(bodyText)
+	if err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("building draft body: %w", err)
+	}
+
+	contentHash := content.ComputeContentHashWithDistinguisher(tipTapBody, source.ID.String())
+
+	// Merge source field_values with AI provenance metadata.
+	fieldValues := map[string]any{}
+	if len(source.FieldValues) > 0 {
+		_ = json.Unmarshal(source.FieldValues, &fieldValues)
+	}
+	fieldValues["_ai_provenance"] = map[string]any{
+		"ai_generated":        true,
+		"ai_model":            "video_summary_v1",
+		"prompted_by_user_id": userID.String(),
+		"source_type":         "video_source",
+		"video_source_id":     source.ID.String(),
+		"prompt_hash":         promptHash,
+		"prompted_at":         time.Now().UTC().Format(time.RFC3339),
+	}
+	fvJSON, err := json.Marshal(fieldValues)
+	if err != nil {
+		return gen.CreateContentRow{}, fmt.Errorf("marshaling field_values: %w", err)
+	}
+
+	aiModel := "video_summary_v1"
+	created, err := s.content.CreateContentWithQueries(ctx, s.store.write, tenantID, content.CreateContentInput{
+		AuthorID:        userID,
+		ContentType:     content.TypeVideo,
+		Title:           title,
+		Body:            tipTapBody,
+		BodyHtml:        bodyHTML,
+		FieldValues:     fvJSON,
+		ContentHash:     &contentHash,
+		FeaturedImageID: source.ThumbnailMediaID,
+		VideoSourceID:   source.ID,
+		Status:          content.StatusInReview,
+		Visibility:      content.VisibilityPublic,
+		AIGenerated:     true,
+		AIGeneratedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		AIModel:         &aiModel,
+	})
+	if err != nil {
+		if errors.Is(err, content.ErrDuplicateContent) {
+			return gen.CreateContentRow{}, fmt.Errorf("%w: an AI draft already exists for this video source", errpkg.ErrAlreadyExists)
+		}
+		return gen.CreateContentRow{}, fmt.Errorf("creating video draft content: %w", err)
+	}
+
+	slog.InfoContext(ctx, "video: AI draft generated",
+		"content_id", created.ID.String(),
+		"video_source_id", source.ID.String(),
+		"tenant_id", tenantID.String(),
+		"prompt_hash", promptHash)
+
+	return created, nil
+}
+
+// EnqueueGenerateSummary enqueues a video:generate_summary Asynq task for
+// background AI draft generation. It is gated by the video.ai_summary.enabled
+// system setting (§106, ADR-117).
+func (s *Service) EnqueueGenerateSummary(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) error {
+	if !videoSourceID.Valid {
+		return fmt.Errorf("%w: video_source_id is required", errpkg.ErrRequired)
+	}
+
+	if s.settings != nil && !s.settings.GetBoolOr(ctx, tenantID, "video.ai_summary.enabled", false) {
+		return fmt.Errorf("%w: video AI summary is disabled", errpkg.ErrFeatureDisabled)
+	}
+
+	if s.enqueuer == nil {
+		return nil
+	}
+
+	payload, err := json.Marshal(worker.GenerateSummaryPayload{
+		TenantID:      tenantID.String(),
+		UserID:        userID.String(),
+		VideoSourceID: videoSourceID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("encoding summary payload: %w", err)
+	}
+
+	return s.enqueuer.Enqueue(worker.TypeVideoGenerateSummary, payload)
+}
+
+// buildSummaryPrompt assembles the prompt sent to the content_generation
+// category. It includes the title, description, category, transcript, and
+// thumbnail context so the model can draft a relevant title/body pair.
+func (s *Service) buildSummaryPrompt(source gen.VideoSource) string {
+	var fieldValues map[string]any
+	if len(source.FieldValues) > 0 {
+		_ = json.Unmarshal(source.FieldValues, &fieldValues)
+	}
+
+	var transcript string
+	if t, ok := fieldValues["transcript"].(string); ok {
+		transcript = t
+	}
+	const maxTranscript = 4000
+	if len(transcript) > maxTranscript {
+		transcript = transcript[:maxTranscript] + "..."
+	}
+
+	var duration int
+	if d, ok := fieldValues["duration_secs"].(float64); ok {
+		duration = int(d)
+	}
+
+	category := ""
+	if source.Category != nil {
+		category = *source.Category
+	}
+
+	thumbnailURL := ""
+	if source.ThumbnailUrl != nil {
+		thumbnailURL = *source.ThumbnailUrl
+	}
+
+	var b strings.Builder
+	b.WriteString("You are a JapaConnect content assistant. Write a draft post to accompany the following video.\n\n")
+	fmt.Fprintf(&b, "Source title: %s\n", source.Title)
+	fmt.Fprintf(&b, "Description: %s\n", source.Description)
+	fmt.Fprintf(&b, "Category: %s\n", category)
+	fmt.Fprintf(&b, "Duration: %d seconds\n", duration)
+	fmt.Fprintf(&b, "Source URL: %s\n", source.SourceUrl)
+	fmt.Fprintf(&b, "Thumbnail URL: %s\n", thumbnailURL)
+	if transcript != "" {
+		fmt.Fprintf(&b, "Transcript excerpt: %s\n", transcript)
+	}
+	b.WriteString("\nGenerate a concise, engaging title and a 2-3 paragraph body summary. " +
+		"Return a JSON object with \"title\" and \"body\" keys. " +
+		"The body should be plain text (no markdown, no HTML, no citations). " +
+		"Do not include markdown code fences, chain-of-thought, or extra commentary.")
+
+	return b.String()
+}
+
+// parseGeneratedSummary extracts title and body from the AI reply. It first
+// tries to parse the reply as a JSON object with title/body keys; if that
+// fails it falls back to using the source title and the raw reply as the body.
+func (s *Service) parseGeneratedSummary(reply string, source gen.VideoSource) (title, body string) {
+	title = source.Title
+	if title == "" {
+		title = "AI Video Draft"
+	}
+
+	body = source.Description
+	if body == "" {
+		body = source.SourceUrl
+	}
+
+	reply = strings.TrimSpace(stripMarkdownCodeBlocks(reply))
+	if reply == "" {
+		return title, body
+	}
+
+	jsonText := extractTrailingJSONObject(reply)
+	if jsonText == "" {
+		// Some providers return plain text; try the whole reply as the body.
+		jsonText = reply
+	}
+
+	var parsed struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(jsonText), &parsed); err == nil {
+		if strings.TrimSpace(parsed.Title) != "" {
+			title = strings.TrimSpace(parsed.Title)
+		}
+		if strings.TrimSpace(parsed.Body) != "" {
+			body = strings.TrimSpace(parsed.Body)
+		}
+	} else {
+		// No parseable JSON; use the trimmed reply as the generated body.
+		body = reply
+	}
+
+	return title, body
+}
+
+// buildDraftBody converts plain text into a TipTap doc for the contents.body
+// column and a matching simple HTML representation for body_html.
+func (s *Service) buildDraftBody(bodyText string) (string, string, error) {
+	paragraphs := splitParagraphs(bodyText)
+
+	content := make([]any, 0, len(paragraphs))
+	htmlParts := make([]string, 0, len(paragraphs))
+
+	for _, p := range paragraphs {
+		if p == "" {
+			continue
+		}
+		content = append(content, map[string]any{
+			"type": "paragraph",
+			"content": []any{
+				map[string]any{
+					"type": "text",
+					"text": p,
+				},
+			},
+		})
+		htmlParts = append(htmlParts, fmt.Sprintf("<p>%s</p>", html.EscapeString(p)))
+	}
+
+	doc := map[string]any{
+		"type":    "doc",
+		"content": content,
+	}
+	tipTap, err := json.Marshal(doc)
+	if err != nil {
+		return "", "", err
+	}
+
+	return string(tipTap), strings.Join(htmlParts, "\n"), nil
+}
+
+// splitParagraphs splits plain text on blank lines and normalises inner
+// line breaks to spaces so each paragraph fits a TipTap paragraph node.
+func splitParagraphs(text string) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	parts := strings.Split(text, "\n\n")
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		p = strings.ReplaceAll(p, "\n", " ")
+		parts[i] = p
+	}
+	return parts
+}
+
+// stripMarkdownCodeBlocks removes leading/trailing triple-backtick fences and
+// the optional "json" language tag so the inner JSON/plain text can be parsed.
+func stripMarkdownCodeBlocks(text string) string {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "```") {
+		return text
+	}
+
+	// Skip the opening fence and optional language name.
+	afterOpen := strings.TrimPrefix(text, "```")
+	afterOpen = strings.TrimSpace(afterOpen)
+	afterOpen = strings.TrimPrefix(afterOpen, "json")
+	afterOpen = strings.TrimPrefix(afterOpen, "JSON")
+
+	end := strings.LastIndex(afterOpen, "```")
+	if end == -1 {
+		// No closing fence; return the remainder.
+		return strings.TrimSpace(afterOpen)
+	}
+
+	return strings.TrimSpace(afterOpen[:end])
+}
+
+// extractTrailingJSONObject finds the last top-level JSON object in a string.
+// It is useful for reasoning models that emit narrative before the final JSON.
+func extractTrailingJSONObject(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	end := strings.LastIndex(text, "}")
+	if end == -1 {
+		return ""
+	}
+
+	nest := 0
+	start := -1
+	for i := end; i >= 0; i-- {
+		switch text[i] {
+		case '}':
+			nest++
+		case '{':
+			nest--
+			if nest == 0 {
+				start = i
+				i = -1 // break out of the loop
+			}
+		}
+	}
+
+	if start == -1 {
+		return ""
+	}
+
+	candidate := text[start : end+1]
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(candidate), &obj); err == nil {
+		return candidate
+	}
+
+	return ""
 }
 
 func buildEmbedJSON(sourceID pgtype.UUID, metadata *VideoMetadata) json.RawMessage {

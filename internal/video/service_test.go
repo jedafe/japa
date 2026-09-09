@@ -6,11 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/testdb"
@@ -298,5 +301,79 @@ func TestService_ClaimFailsForRealUser(t *testing.T) {
 	_, err := svc.SubmitClaim(context.Background(), tenantID, claimantID, "real-target", "claim", "", "", "")
 	if err == nil {
 		t.Error("expected claim against real user to fail")
+	}
+}
+
+type fakeDispatcher struct {
+	reply string
+}
+
+func (f *fakeDispatcher) Dispatch(ctx context.Context, category string, req ai.Request) (ai.Response, error) {
+	return ai.Response{Raw: map[string]any{"reply": f.reply}}, nil
+}
+
+func TestService_GenerateDraft(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+
+	userSvc := users.NewService(database)
+	realUserID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "video-drafter"})
+
+	videoStore := NewStore(database.Writer, database.Reader)
+	svc := NewService(videoStore, userSvc, &fakeMediaManager{}, &fakeResolver{
+		meta: &VideoMetadata{
+			SourceType:   SourceYouTube,
+			SourceURL:    "https://www.youtube.com/watch?v=DRAFT123",
+			ExternalID:   "DRAFT123",
+			Title:        "Draft Test Video",
+			Description:  "A video to be summarized by the AI gateway.",
+			ThumbnailURL: "https://example.com/thumb.jpg",
+			DurationSecs: 120,
+			ChannelName:  "Draft Channel",
+			AuthorName:   "Draft Author",
+		},
+	})
+
+	res, err := svc.ResolveURL(context.Background(), tenantID, "https://www.youtube.com/watch?v=DRAFT123")
+	if err != nil {
+		t.Fatalf("ResolveURL: %v", err)
+	}
+
+	contentSvc := content.NewService(database)
+	svc.SetContentService(contentSvc)
+	svc.SetDispatcher(&fakeDispatcher{
+		reply: `{"title":"AI Draft Title","body":"First paragraph.\n\nSecond paragraph."}`,
+	})
+
+	created, err := svc.GenerateDraft(context.Background(), tenantID, realUserID, res.Source.ID)
+	if err != nil {
+		t.Fatalf("GenerateDraft: %v", err)
+	}
+
+	if created.Title != "AI Draft Title" {
+		t.Errorf("title = %q, want %q", created.Title, "AI Draft Title")
+	}
+	if created.ContentType != content.TypeVideo {
+		t.Errorf("content_type = %q, want %q", created.ContentType, content.TypeVideo)
+	}
+	if created.Status != content.StatusInReview {
+		t.Errorf("status = %q, want %q", created.Status, content.StatusInReview)
+	}
+	if !created.AiGenerated {
+		t.Error("ai_generated = false, want true")
+	}
+	if created.VideoSourceID != res.Source.ID {
+		t.Errorf("video_source_id mismatch")
+	}
+	if created.AuthorID != realUserID {
+		t.Errorf("author_id mismatch")
+	}
+	if !strings.Contains(created.Body, "First paragraph") || !strings.Contains(created.Body, "Second paragraph") {
+		t.Errorf("body missing paragraphs: %q", created.Body)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(created.Body), "{") {
+		t.Errorf("body is not TipTap JSON: %q", created.Body)
 	}
 }
