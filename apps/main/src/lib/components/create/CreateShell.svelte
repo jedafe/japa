@@ -83,10 +83,10 @@
 		/** Feature flags map, passed down to gate the AI assistant. */
 		features?: Record<string, boolean>;
 		/** Readiness dimensions from GET /assessment for the Journey panel (§71). */
-		assessmentDimensions?: string[];
+		assessmentDimensions: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions = [] }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -168,6 +168,8 @@
 	let visaRoute = $state<string | null>(untrack(() => draft?.visa_route ?? null));
 	let sourceCountry = $state<string | null>(untrack(() => draft?.source_country ?? null));
 	let targetCountry = $state<string | null>(untrack(() => draft?.target_country ?? null));
+	let roadmapDimension = $state<string | null>(untrack(() => (draft?.field_values?.dimension as string) ?? null));
+	let roadmapPurpose = $state<string | null>(untrack(() => (draft?.field_values?.purpose as string) ?? null));
 	// Category-specific field groups loaded on-demand when a guide category is selected.
 	// These are merged with the base content field groups for rendering in the settings panel.
 	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
@@ -215,7 +217,11 @@
 		title,
 		slug,
 		body_html: bodyHtml,
-		field_values: activeFieldValues,
+		field_values: {
+			...activeFieldValues,
+			...(isGuide && roadmapDimension ? { dimension: roadmapDimension } : {}),
+			...(isGuide && roadmapPurpose ? { purpose: roadmapPurpose } : {})
+		},
 		canonical_url: canonicalUrl || null,
 		featured_image_id: featuredImageId,
 		// §106 video — link the resolved/uploaded video_sources row. Only
@@ -569,10 +575,15 @@
 			{visaRoute}
 			{sourceCountry}
 			{targetCountry}
+			dimension={roadmapDimension}
+			purpose={roadmapPurpose}
+			assessmentDimensions={assessmentDimensions}
 			onjourney={(v) => { journeyStage = v; markDirty(); }}
 			onvisa={(v) => { visaRoute = v; markDirty(); }}
 			onsource={(v) => { sourceCountry = v; markDirty(); }}
 			ontarget={(v) => { targetCountry = v; markDirty(); }}
+			ondimension={(v) => { roadmapDimension = v; markDirty(); }}
+			onpurpose={(v) => { roadmapPurpose = v; markDirty(); }}
 			{slug}
 			{visibility}
 			{canonicalUrl}
