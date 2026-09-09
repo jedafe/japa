@@ -23,11 +23,13 @@ Remove the `/admin/tools/readiness/variants` admin page and its workflow. Guide 
 ## Decisions from clarification
 
 - **Resolution is global by `dimension` + journey context**, not restricted to the curated step’s slug family (Option A).
-- **`dimension` is the primary key** that links a guide to a readiness weakness. A guide must have a `dimension` to be eligible for roadmap resolution, but the column itself remains optional in the data model (no DB-level constraint). The UI should nudge authors to set it for guide content.
+- **`dimension` is the primary key** that links a guide to a readiness weakness. A guide must have a `dimension` to be eligible for roadmap resolution, but the column itself remains optional in the data model (no DB-level constraint). The UI should warn/nudge authors to set it for guide content, not block publishing.
 - **`purpose` is optional** but supported, since the existing `FindRoadmapContentByDimension` query already considers it.
 - The **main content composer’s Journey tab** is the canonical place to set these fields. No dedicated admin CRUD page remains.
 - Existing `draft` placeholder rows from migration `000587` can remain; they are ignored because all resolution queries require `status='published'`. A cleanup migration is out of scope unless requested.
 - `sections/71-readiness-assessment.md` and `ADR-071-japa-readiness-assessment.md` must be updated to remove variant-page references and describe the new content-journey tagging workflow.
+- **Dimension option source (Option B)** — the `GET /assessment` response is extended with a `dimensions` array, computed as the union of `fields[].config.dimension` and the active/default curated roadmap library keys. The create Journey panel consumes this array.
+- **Tie-breaker** — when two guides have the same context score, the original curated `content_slug` wins, so the engine only swaps when there is a genuine improvement.
 
 ## Domain model
 
@@ -89,7 +91,7 @@ Files:
 
 Add two new controls to the Journey tab when the content type is `guide`:
 
-1. **Roadmap dimension** (necessary for roadmap inclusion, but not a hard publish requirement): a select/autocomplete populated from the active assessment form’s configured dimensions. Falls back to the canonical default dimensions if the form has none.
+1. **Roadmap dimension** (necessary for roadmap inclusion, but not a hard publish requirement): a select/autocomplete populated from the `GET /assessment` response’s `dimensions` array. The backend returns the union of the active form’s `fields[].config.dimension` values and the active/default curated roadmap library keys, so the list always matches the dimensions the assessment can actually score.
 2. **Purpose** (optional): a select populated from `GET /feed/journey-options`.
 
 `CreateShell` should:
@@ -137,6 +139,7 @@ An optional future migration could clean up the `draft` placeholder rows created
 ## API behavior
 
 - `POST /content` and `PATCH /content/{id}` already accept `field_values` and the `journey_*` columns. No API changes are needed.
+- `GET /assessment` returns a `dimensions` array in addition to the form fields and thresholds. The array is the union of `fields[].config.dimension` and the active/default curated roadmap library keys, and is used by the create Journey panel.
 - `GET /assessment/result/{id}/roadmap` continues to return the ranked roadmap; internally it now uses global dimension+context resolution.
 - `GET /content?type=guide&sort=roadmap` continues to work unchanged; it already ranks by journey context.
 
@@ -168,9 +171,7 @@ An optional future migration could clean up the `draft` placeholder rows created
 
 ## Open questions
 
-1. **Dimension option source.** Recommended: add a `dimensions` array to the `GET /assessment` response or a small `GET /assessment/dimensions` endpoint that returns the distinct dimensions from the active form fields and `scoring_config.curated_roadmap` keys. The create UI then stays in sync with the assessment configuration. If that is too heavy, the UI can fall back to the canonical default library keys.
-2. **Tie-breaker behavior.** Should the original curated `content_slug` win when scores are tied? Recommended: yes, to avoid unnecessary swaps.
-3. **Should `dimension` be required for all `guide` content?** Recommended: no, but it should be required when a guide is intended for readiness roadmap inclusion. A UI nudge or admin validation is enough for now.
+All clarification questions resolved before this design was written.
 
 ## Risks and mitigations
 
