@@ -347,6 +347,40 @@ func TestResolver_TikTokAndInstagram(t *testing.T) {
 	}
 }
 
+func TestInstagramProviderAccessToken(t *testing.T) {
+	t.Parallel()
+
+	var gotToken string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotToken = r.URL.Query().Get("access_token")
+
+		w.Header().Set("Content-Type", "application/json")
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"title":         "Mock Reel",
+			"author_name":   "u",
+			"author_url":    "https://www.instagram.com/u",
+			"thumbnail_url": "https://example.com/t.jpg",
+			"html":          `<blockquote cite="https://www.instagram.com/reel/ABC"></blockquote>`,
+		})
+	}))
+
+	provider := mustOEmbedProvider(t, NewInstagramProvider())
+	provider.client = srv.Client()
+	provider.ssrfEnabled = false
+	provider.oembedURL = srv.URL
+
+	_, err := provider.Resolve(withInstagramToken(t.Context(), "appid|secret"), "https://www.instagram.com/reel/ABC")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if gotToken != "appid|secret" {
+		t.Errorf("access_token = %q, want %q", gotToken, "appid|secret")
+	}
+}
+
 // mustOEmbedProvider type-asserts a Provider to *oembedProvider for tests.
 func mustOEmbedProvider(t *testing.T, p Provider) *oembedProvider {
 	t.Helper()
