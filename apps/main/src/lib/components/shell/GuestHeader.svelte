@@ -157,6 +157,9 @@
 		max-width: 140px;
 		object-fit: contain;
 	}
+	:global([data-theme='dark']) .guest-logo {
+		filter: invert(1) hue-rotate(180deg);
+	}
 	.guest-brand-mark {
 		display: inline-grid;
 		place-items: center;
