@@ -564,7 +564,9 @@ export type AuthErrorCode =
 	| 'invalid_state'
 	| 'missing_email'
 	| 'create_failed'
-	| 'token_error';
+	| 'token_error'
+	| 'missing_provider'
+	| 'rate_limited';
 
 /** Onboarding status from GET /onboarding/status. */
 export interface OnboardingStatus {

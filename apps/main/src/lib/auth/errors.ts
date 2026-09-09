@@ -24,7 +24,9 @@ export function mapAuthError(code: string, status?: number): FieldError {
 		invalid_state: { field: 'form', messageKey: 'auth.errors.oauth_state_error' },
 		missing_email: { field: 'form', messageKey: 'auth.errors.oauth_missing_email' },
 		create_failed: { field: 'form', messageKey: 'auth.errors.create_failed' },
-		token_error: { field: 'form', messageKey: 'auth.errors.token_error' }
+		token_error: { field: 'form', messageKey: 'auth.errors.token_error' },
+		missing_provider: { field: 'form', messageKey: 'auth.errors.oauth_missing_provider' },
+		rate_limited: { field: 'form', messageKey: 'auth.errors.rate_limited' }
 	};
 
 	const mapped = map[code as AuthErrorCode];

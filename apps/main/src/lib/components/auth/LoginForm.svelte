@@ -90,7 +90,7 @@
 
 	{#if errors.form}
 		<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
-			{errors.form}
+			{t(errors.form)}
 		</p>
 	{/if}
 
@@ -107,7 +107,7 @@
 			aria-describedby={errors.email ? 'login-email-error' : undefined}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 		/>
-		{#if errors.email}<p id="login-email-error" class="text-sm text-red-500">{errors.email}</p>{/if}
+		{#if errors.email}<p id="login-email-error" class="text-sm text-red-500">{t(errors.email)}</p>{/if}
 	</div>
 
 	<PasswordField
