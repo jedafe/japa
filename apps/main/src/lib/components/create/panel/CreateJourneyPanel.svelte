@@ -18,10 +18,15 @@
 		visaRoute: string | null;
 		sourceCountry: string | null;
 		targetCountry: string | null;
+		dimension: string | null;
+		purpose: string | null;
+		assessmentDimensions: string[];
 		onjourney: (v: string | null) => void;
 		onvisa: (v: string | null) => void;
 		onsource: (v: string | null) => void;
 		ontarget: (v: string | null) => void;
+		ondimension: (v: string | null) => void;
+		onpurpose: (v: string | null) => void;
 		onedit: () => void;
 	}
 
@@ -30,10 +35,15 @@
 		visaRoute,
 		sourceCountry,
 		targetCountry,
+		dimension,
+		purpose,
+		assessmentDimensions,
 		onjourney,
 		onvisa,
 		onsource,
 		ontarget,
+		ondimension,
+		onpurpose,
 		onedit
 	}: Props = $props();
 
@@ -42,6 +52,8 @@
 	let options = $state<JourneyOptions | null>(null);
 	let stageOptions = $derived(options?.stages ?? []);
 	let visaOptions = $derived(options?.visa_routes ?? []);
+	let dimensionOptions = $derived(assessmentDimensions.map((d) => ({ value: d, label: d })));
+	let purposeOptions = $derived(options?.purposes ?? []);
 
 	$effect(() => {
 		if (loaded) return;
@@ -150,6 +162,22 @@
 		ontarget(item?.id ?? null);
 		onedit();
 	}
+
+	function setDimension(item: AutocompleteItem) {
+		ondimension(item.id);
+		onedit();
+	}
+
+	function setPurpose(item: AutocompleteItem) {
+		onpurpose(item.id);
+		onedit();
+	}
+
+	function setDimensionText(v: string) {
+		const trimmed = v.trim() || null;
+		ondimension(trimmed);
+		onedit();
+	}
 </script>
 
 <div class="journey-panel">
@@ -230,6 +258,62 @@
 			onSelect={setTarget}
 			onClear={() => setTarget(null)}
 		/>
+	</div>
+
+	<div class="field-row">
+		<label class="field-label" for="journey-dimension">{t('create.journey.dimension', 'Roadmap dimension')}</label>
+		{#if dimensionOptions.length > 0}
+			<Autocomplete
+				id="journey-dimension"
+				placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
+				emptyMessage={t('journey.banner.no_options', 'No matching option')}
+				fetcher={optionFetcher(dimensionOptions)}
+				initialFetcher={() => optionInitial(dimensionOptions, dimension)}
+				selectedId={dimension}
+				selectedLabel={optionLabel(dimensionOptions, dimension ?? '')}
+				onSelect={setDimension}
+				onClear={() => { ondimension(null); onedit(); }}
+			/>
+		{:else}
+			<input
+				id="journey-dimension"
+				type="text"
+				class="field-input"
+				placeholder={t('create.journey.dimension_placeholder', 'Select a readiness dimension')}
+				value={dimension ?? ''}
+				oninput={(e) => setDimensionText(e.currentTarget.value)}
+			/>
+		{/if}
+	</div>
+
+	{#if dimension === null || dimension === ''}
+		<p class="journey-hint">{t('create.journey.dimension_nudge', 'Set a roadmap dimension so this guide can appear in readiness roadmaps.')}</p>
+	{/if}
+
+	<div class="field-row">
+		<label class="field-label" for="journey-purpose">{t('create.journey.purpose', 'Purpose')}</label>
+		{#if purposeOptions.length > 0}
+			<Autocomplete
+				id="journey-purpose"
+				placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
+				emptyMessage={t('journey.banner.no_options', 'No matching option')}
+				fetcher={optionFetcher(purposeOptions)}
+				initialFetcher={() => optionInitial(purposeOptions, purpose)}
+				selectedId={purpose}
+				selectedLabel={optionLabel(purposeOptions, purpose ?? '')}
+				onSelect={setPurpose}
+				onClear={() => { onpurpose(null); onedit(); }}
+			/>
+		{:else}
+			<input
+				id="journey-purpose"
+				type="text"
+				class="field-input"
+				placeholder={t('create.journey.purpose_placeholder', 'Select a purpose')}
+				value={purpose ?? ''}
+				oninput={(e) => { onpurpose(e.currentTarget.value.trim() || null); onedit(); }}
+			/>
+		{/if}
 	</div>
 
 	<p class="journey-hint">{t('create.journey.hint')}</p>

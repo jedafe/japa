@@ -13,10 +13,15 @@
 		visaRoute: string | null;
 		sourceCountry: string | null;
 		targetCountry: string | null;
+		dimension: string | null;
+		purpose: string | null;
+		assessmentDimensions: string[];
 		onjourney: (v: string | null) => void;
 		onvisa: (v: string | null) => void;
 		onsource: (v: string | null) => void;
 		ontarget: (v: string | null) => void;
+		ondimension: (v: string | null) => void;
+		onpurpose: (v: string | null) => void;
 		slug: string;
 		visibility: Visibility;
 		canonicalUrl: string;
@@ -63,10 +68,15 @@
 		visaRoute,
 		sourceCountry,
 		targetCountry,
+		dimension,
+		purpose,
+		assessmentDimensions,
 		onjourney,
 		onvisa,
 		onsource,
 		ontarget,
+		ondimension,
+		onpurpose,
 		slug,
 		visibility,
 		canonicalUrl,
@@ -151,10 +161,15 @@
 			{visaRoute}
 			{sourceCountry}
 			{targetCountry}
+			{dimension}
+			{purpose}
+			{assessmentDimensions}
 			{onjourney}
 			{onvisa}
 			{onsource}
 			{ontarget}
+			{ondimension}
+			{onpurpose}
 			{onedit}
 		/>
 	</Tabs.Content>
