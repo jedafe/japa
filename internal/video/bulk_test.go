@@ -44,12 +44,15 @@ type fakeMediaManagerForBulk struct{}
 func (f *fakeMediaManagerForBulk) StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
+
 func (f *fakeMediaManagerForBulk) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
+
 func (f *fakeMediaManagerForBulk) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error) {
 	return gen.Medium{}, errors.New("not implemented")
 }
+
 func (f *fakeMediaManagerForBulk) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
 	return 50 << 20
 }

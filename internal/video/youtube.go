@@ -104,7 +104,7 @@ func (p *YouTubeProvider) CloneWithAPIKey(key string) *YouTubeProvider {
 func (p *YouTubeProvider) Resolve(ctx context.Context, rawURL string) (*VideoMetadata, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidVideoURL, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidVideoURL, err)
 	}
 
 	videoID := extractYouTubeID(u)
@@ -318,6 +318,13 @@ func (p *YouTubeProvider) resolveChannel(ctx context.Context, channelID string, 
 
 // fetchJSON performs a GET request and decodes the JSON body.
 func (p *YouTubeProvider) fetchJSON(ctx context.Context, u string) (map[string]any, error) {
+	if p.ssrfEnabled {
+		if err := linkpreview.ValidateURL(u); err != nil {
+			return nil, fmt.Errorf("ssrf validation failed: %w", err)
+		}
+	}
+	// #nosec G704 — u is constructed from the YouTube Data/OEmbed API base URL
+	// and validated URL-escaped identifiers; the client is SSRF-safe.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err

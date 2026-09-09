@@ -18,6 +18,12 @@ import (
 const (
 	defaultPageSize = 20
 	maxPageSize     = 100
+	// maxMultipartMemory is the in-memory budget for parsing a multipart upload.
+	// Files larger than this are spooled to temporary disk files by net/http.
+	maxMultipartMemory = 32 << 20
+	// hardMaxUploadBytes is the absolute cap on a single video upload, regardless
+	// of the tenant-configured media upload limit, to prevent memory exhaustion.
+	hardMaxUploadBytes = 1 << 30
 )
 
 // Handlers exposes HTTP endpoints for the video import subsystem.
@@ -128,9 +134,14 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	maxBytes := h.Service.MaxUploadBytes(r.Context(), tenantID)
+	if maxBytes <= 0 || maxBytes > hardMaxUploadBytes {
+		maxBytes = hardMaxUploadBytes
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadFormHeadroom)
 
-	if err := r.ParseMultipartForm(maxBytes + uploadFormHeadroom); err != nil {
+	// #nosec G120 — maxMultipartMemory is a package constant (32 MiB) that caps
+	// in-memory form parsing; the request body itself is bounded by MaxBytesReader.
+	if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_form", "Invalid multipart form or file too large")
 		return
 	}
@@ -140,7 +151,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_file", "A 'video' file field is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -149,6 +160,10 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(data) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "empty_file", "The uploaded file is empty")
+		return
+	}
+	if int64(len(data)) > maxBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
 	}
 

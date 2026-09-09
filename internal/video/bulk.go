@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -190,6 +191,11 @@ func (s *Service) ProcessBulkImport(ctx context.Context, payload BulkImportPaylo
 		return fmt.Errorf("resolving bulk urls: %w", err)
 	}
 
+	if len(urls) > math.MaxInt32 {
+		urls = urls[:math.MaxInt32]
+	}
+	// #nosec G115 — len(urls) is bounded by the configured max_items_per_run
+	// (default 50) and the guard above ensures it fits in int32.
 	total := int32(len(urls))
 	job, err = s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
 		ID:            job.ID,

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -175,7 +176,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 		thumbnailURL = &metadata.ThumbnailURL
 	}
 	var durationSecs *int32
-	if metadata.DurationSecs > 0 {
+	if metadata.DurationSecs > 0 && metadata.DurationSecs <= math.MaxInt32 {
 		d := int32(metadata.DurationSecs)
 		durationSecs = &d
 	}
