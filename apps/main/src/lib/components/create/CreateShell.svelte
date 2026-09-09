@@ -420,7 +420,7 @@
 
 {#snippet aiButtonSnippet()}
 	{#if canUseAI(user, features)}
-		<AiBodyButton onclick={() => (aiPanelOpen = true)} />
+		<AiBodyButton floating onclick={() => (aiPanelOpen = true)} />
 	{/if}
 {/snippet}
 
@@ -689,6 +689,7 @@
 		color: var(--color-text);
 	}
 	.composer-type-select {
+		min-height: 44px;
 		padding: 6px 12px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);

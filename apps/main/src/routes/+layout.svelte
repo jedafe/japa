@@ -178,7 +178,7 @@
 
 <a
 	href="#main-content"
-	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-3 focus:py-1.5 focus:text-white"
+	class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:inline-flex focus:min-h-11 focus:min-w-11 focus:items-center focus:justify-center focus:rounded-[var(--radius)] focus:bg-[var(--color-primary)] focus:px-4 focus:py-3 focus:text-white"
 >
 	Skip to content
 </a>

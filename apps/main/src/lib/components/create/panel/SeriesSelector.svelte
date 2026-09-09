@@ -129,7 +129,9 @@
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		width: 40px;
+		width: 44px;
+		min-width: 44px;
+		min-height: 44px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
@@ -163,14 +165,22 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		min-width: 32px;
+		min-height: 32px;
 		padding: 0;
 		border: none;
+		border-radius: 50%;
 		background: transparent;
 		color: var(--color-text-subtle);
 		cursor: pointer;
-		transition: color 0.15s;
+		transition: color 0.15s, background 0.15s;
 	}
 	.chip-remove:hover {
 		color: var(--destructive);
+		background: color-mix(in srgb, var(--destructive) 8%, transparent);
+	}
+	.chip-remove :global(svg) {
+		width: 14px;
+		height: 14px;
 	}
 </style>

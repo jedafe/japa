@@ -219,6 +219,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		min-height: 44px;
 		padding: 10px 14px;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
@@ -246,6 +247,7 @@
 	.tag-input {
 		flex: 1;
 		min-width: 100px;
+		min-height: 44px;
 		border: none;
 		background: transparent;
 		color: var(--color-text);
@@ -277,15 +279,23 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		min-width: 32px;
+		min-height: 32px;
 		padding: 0;
 		border: none;
+		border-radius: 50%;
 		background: transparent;
 		color: var(--color-muted);
 		cursor: pointer;
-		transition: color 0.15s;
+		transition: color 0.15s, background 0.15s;
 	}
 	.tag-chip button:hover {
 		color: var(--color-text);
+		background: color-mix(in srgb, var(--color-text) 8%, transparent);
+	}
+	.tag-chip button :global(svg) {
+		width: 14px;
+		height: 14px;
 	}
 
 	/* Dropdown */
