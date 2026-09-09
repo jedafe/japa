@@ -97,7 +97,7 @@
 						>JC</span
 					>
 				{/if}
-				<span>{t('app.name')}</span>
+				<span class="hidden md:inline">{t('app.name')}</span>
 			</a>
 			<button
 				type="button"
@@ -181,7 +181,7 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 		height: var(--nav-height);
-		padding: 0 0.75rem;
+		padding: env(safe-area-inset-top) 0.75rem 0;
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
 	}
