@@ -196,6 +196,9 @@
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
 	}
+	:global([data-theme='dark']) .mobile-topbar img {
+		filter: invert(1) hue-rotate(180deg);
+	}
 
 	.drawer-backdrop {
 		position: fixed;
