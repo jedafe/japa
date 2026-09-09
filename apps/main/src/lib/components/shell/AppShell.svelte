@@ -88,14 +88,6 @@
 
 	<main class="shell-center">
 		<div class="mobile-topbar">
-			<button
-				type="button"
-				onclick={() => (mobileNavOpen = true)}
-				class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				aria-label={t('a11y.open_menu')}
-			>
-				<MenuIcon size={20} />
-			</button>
 			<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 				{#if logoUrl}
 					<img src={logoUrl} alt={t('app.name')} class="h-7 w-auto max-w-[120px] object-contain" />
@@ -107,6 +99,14 @@
 				{/if}
 				<span>{t('app.name')}</span>
 			</a>
+			<button
+				type="button"
+				onclick={() => (mobileNavOpen = true)}
+				class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				aria-label={t('a11y.open_menu')}
+			>
+				<MenuIcon size={20} />
+			</button>
 		</div>
 		{@render children()}
 		{#if composeEnabled && user}
@@ -178,6 +178,7 @@
 		top: 0;
 		z-index: 20;
 		align-items: center;
+		justify-content: space-between;
 		gap: 0.5rem;
 		height: var(--nav-height);
 		padding: 0 0.75rem;
