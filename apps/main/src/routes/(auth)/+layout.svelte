@@ -13,6 +13,10 @@
 	let brandSlides = $derived(parseBrandSlides(data.siteSettings));
 </script>
 
-<AuthShell {brandSlides}>
+<AuthShell
+	{brandSlides}
+	logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+	logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
+>
 	{@render children()}
 </AuthShell>

@@ -262,7 +262,8 @@ var settingsCatalog = map[string]settingMeta{
 	// and render the logo from the control panel settings.
 	"appearance.dark_mode_default": {Type: "bool", DefaultValue: "false", Description: "Default theme for new visitors (false = light).", Public: true, Panel: "admin"},
 	"appearance.default_editor":    {Type: "string", DefaultValue: "block", Description: "Default editor mode for the post composer: block | wysiwyg | markdown.", Options: `[{"value":"block","label":"Block"},{"value":"wysiwyg","label":"Rich text"},{"value":"markdown","label":"Markdown"}]`, Public: true, Panel: "admin"},
-	"appearance.logo_url":          {Type: "string", DefaultValue: "", Description: "URL to the platform logo image.", Public: true, Panel: "admin"},
+	"appearance.logo_url":          {Type: "string", DefaultValue: "", Description: "URL to the platform logo image for light theme.", Public: true, Panel: "admin"},
+	"appearance.logo_url_dark":     {Type: "string", DefaultValue: "", Description: "URL to the platform logo image for dark theme; falls back to logo_url.", Public: true, Panel: "admin"},
 	"appearance.favicon_url":       {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
 	"appearance.primary_color":     {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides": {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},

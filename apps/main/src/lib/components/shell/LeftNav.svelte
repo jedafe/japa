@@ -18,6 +18,7 @@
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
 	import { routeFeatureFlagForPath } from '$lib/components/shell/routeFeatureFlags';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 
 	interface Props {
 		menu: Menu | null;
@@ -25,14 +26,16 @@
 		collapsed: boolean;
 		userSpaces?: UserSpaceRef[];
 		/** Platform logo URL from appearance.logo_url (control panel). */
+		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
 		logoUrl?: string;
+		logoDarkUrl?: string;
 		/** Feature flags from /feature-flags — used to hide nav items for
 		 *  disabled features so no trace of a toggled-off feature leaks. */
 		features?: Record<string, boolean>;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', features = {}, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -71,15 +74,7 @@
 	<!-- Logo + collapse toggle -->
 	<div class={clsx('flex h-[var(--nav-height)] shrink-0 items-center gap-2 px-3', collapsed && 'justify-center')}>
 		<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-			{#if logoUrl}
-				<img src={logoUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
-			{:else}
-				<span
-					class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]"
-					>JC</span
-				>
-			{/if}
-			{#if !collapsed && !logoUrl}<span>{t('app.name')}</span>{/if}
+			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
 		</a>
 		{#if !collapsed}
 			<button

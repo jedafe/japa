@@ -122,6 +122,7 @@
 	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
 	<GuestHeader
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		menu={data.menu}
 	/>
 	{@render children()}
@@ -143,6 +144,7 @@
 		suggestedSpaces={data.suggestedSpaces}
 		userSpaces={data.userSpaces}
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}

@@ -5,6 +5,7 @@
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import ComposeModal from './ComposeModal.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
 	import type { Menu, SessionUser, TrendingTag, SpaceSuggestion, UserSpaceRef } from '$lib/types';
@@ -83,7 +84,7 @@
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
 	<div class="shell-nav">
-		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} {features} onToggle={onToggleCollapse} />
+		<LeftNav {menu} {user} {collapsed} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={onToggleCollapse} />
 	</div>
 
 	{#if showLeftRail}
@@ -92,22 +93,15 @@
 
 	<main class="shell-center">
 		<div class="mobile-topbar">
-			<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-				{#if logoUrl}
-					<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto max-w-[120px] object-contain" />
-				{:else}
-					<span
-						class="grid h-6 w-6 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-						>JC</span
-					>
-				{/if}
-				<span class="hidden">{t('app.name')}</span>
+			<a href="/" class="flex min-h-11 min-w-11 items-center justify-center gap-2 font-medium text-[var(--color-text)]">
+				<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-9 w-auto max-w-[120px] object-contain" />
+			<span class="hidden">{t('app.name')}</span>
 			</a>
 			<div class="flex items-center gap-1">
 				<button
 					type="button"
 					onclick={() => theme.toggle()}
-					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					class="grid h-11 w-11 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 					aria-label={theme.current === 'dark' ? t('theme.toggle_light', 'Switch to light') : t('theme.toggle_dark', 'Switch to dark')}
 				>
 					{#if theme.current === 'dark'}<Sun size={18} />{:else}<Moon size={18} />{/if}
@@ -115,7 +109,7 @@
 				<button
 					type="button"
 					onclick={() => (mobileNavOpen = true)}
-				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				class="grid h-11 w-11 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				aria-label={t('a11y.open_menu')}
 			>
 				<MenuIcon size={20} />
@@ -143,7 +137,7 @@
 		onclick={() => (mobileNavOpen = false)}
 	></button>
 	<div class="drawer">
-		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} {features} onToggle={() => (mobileNavOpen = false)} />
+		<LeftNav {menu} {user} collapsed={false} {userSpaces} {logoUrl} {logoDarkUrl} {features} onToggle={() => (mobileNavOpen = false)} />
 	</div>
 {/if}
 
@@ -194,14 +188,12 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		height: 3rem;
-		padding: env(safe-area-inset-top) 0.75rem 0;
+		min-height: 3.5rem;
+		padding: env(safe-area-inset-top) 0.75rem 0.5rem;
 		border-bottom: 1px solid var(--color-border);
 		background-color: var(--color-surface);
 	}
-	:global([data-theme='dark']) .mobile-topbar img {
-		filter: invert(1) hue-rotate(180deg);
-	}
+
 
 	.drawer-backdrop {
 		position: fixed;

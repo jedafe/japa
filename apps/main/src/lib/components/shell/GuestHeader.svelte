@@ -7,6 +7,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { Search, Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
 
 	let mobileMenuOpen = $state(false);
@@ -14,11 +15,12 @@
 	interface Props {
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		logoDarkUrl?: string;
 		/** Navigation menu from GET /menus/main_sidebar — filtered to guest-visible items. */
 		menu: Menu | null;
 	}
 
-	let { logoUrl = '', menu }: Props = $props();
+	let { logoUrl = '', logoDarkUrl = '', menu }: Props = $props();
 
 	// Filter to guest-visible items only (visibility === 'guest' or 'all').
 	const guestItems = $derived(
@@ -33,12 +35,7 @@
 	<div class="guest-header-inner">
 		<!-- Logo + brand -->
 		<a href="/" class="guest-brand" aria-label={t('app.name')}>
-			{#if logoUrl}
-				<img src={logoUrl} alt={t('app.name')} class="guest-logo" />
-			{:else}
-				<span class="guest-brand-mark">JC</span>
-			{/if}
-			<span class="guest-brand-name hidden">{t('app.name')}</span>
+			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-7 w-auto max-w-[140px] object-contain" />
 		</a>
 
 		<!-- Primary nav links -->
@@ -151,29 +148,7 @@
 		color: var(--color-text);
 		white-space: nowrap;
 	}
-	.guest-logo {
-		height: 1.75rem;
-		width: auto;
-		max-width: 140px;
-		object-fit: contain;
-	}
-	:global([data-theme='dark']) .guest-logo {
-		filter: invert(1) hue-rotate(180deg);
-	}
-	.guest-brand-mark {
-		display: inline-grid;
-		place-items: center;
-		height: 2rem;
-		width: 2rem;
-		border-radius: var(--radius);
-		background: var(--color-primary);
-		color: var(--color-primary-contrast);
-		font-size: 0.8125rem;
-		font-weight: 700;
-	}
-	.guest-brand-name {
-		font-size: 1rem;
-	}
+
 
 	/* ---- Nav ---- */
 	.guest-nav {
@@ -271,9 +246,6 @@
 		}
 	}
 	@media (max-width: 767px) {
-		.guest-brand-name {
-			display: none;
-		}
 		.guest-nav {
 			display: none;
 		}
