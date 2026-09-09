@@ -33,6 +33,18 @@
 				const seg = u.pathname.split('/').filter(Boolean);
 				if (seg[0]) return seg[0];
 			}
+			if (host === 'tiktok.com') {
+				const seg = u.pathname.split('/').filter(Boolean);
+				for (let i = seg.length - 1; i >= 0; i--) {
+					if (/^\d+$/.test(seg[i])) return seg[i];
+				}
+			}
+			if (host === 'instagram.com') {
+				const seg = u.pathname.split('/').filter(Boolean);
+				for (let i = 0; i < seg.length - 1; i++) {
+					if (['p', 'reel', 'reels'].includes(seg[i]) && seg[i + 1]) return seg[i + 1];
+				}
+			}
 		} catch {
 			// fall through — return empty
 		}
@@ -48,6 +60,10 @@
 				return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(externalId)}`;
 			case 'vimeo':
 				return `https://player.vimeo.com/video/${encodeURIComponent(externalId)}`;
+			case 'tiktok':
+				return `https://www.tiktok.com/player/v1/${encodeURIComponent(externalId)}`;
+			case 'instagram_reel':
+				return `https://www.instagram.com/p/${encodeURIComponent(externalId)}/embed`;
 			default:
 				return null;
 		}

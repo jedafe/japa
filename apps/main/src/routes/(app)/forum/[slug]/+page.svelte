@@ -14,6 +14,7 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { ForumThread } from '$lib/types';
 	import type { PageData } from './$types';
@@ -516,7 +517,7 @@ import { contentHref } from '$lib/utils/contentLink';
 				</div>
 			</div>
 		{:else}
-			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions>
+			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
 				{@html bodyHtml}
 			</div>
 		{/if}

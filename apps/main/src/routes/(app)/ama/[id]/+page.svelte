@@ -12,6 +12,7 @@
 	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import type { AMAThread, ForumReply } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -218,7 +219,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</div>
 
 			<!-- Body -->
-			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions>
+			<div class="prose mt-5 max-w-none text-[var(--color-text)]" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
 				{@html bodyHtml}
 			</div>
 		</article>
