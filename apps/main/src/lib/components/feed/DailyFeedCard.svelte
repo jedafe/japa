@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import {
 		Bookmark,
+		ChevronRight,
 		Flag,
 		Heart,
 		Link,
@@ -24,6 +25,8 @@
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
 	import EntityHoverChip from './EntityHoverChip.svelte';
+	import ShareMenu from './ShareMenu.svelte';
+	import ShareMenuItems from './ShareMenuItems.svelte';
 	import type { FeedItem } from '$lib/types';
 
 	interface Props {
@@ -107,20 +110,6 @@
 
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
 
-	async function sharePost(e: Event) {
-		e.stopPropagation();
-		const data = { title: item.title, text: item.excerpt ?? '', url: shareUrl };
-		if (navigator.share) {
-			try {
-				await navigator.share(data);
-			} catch {
-				// User cancelled or share failed — ignore.
-			}
-		} else {
-			await copyPostLink(e);
-		}
-	}
-
 	async function copyPostLink(e: Event) {
 		e.stopPropagation();
 		try {
@@ -185,12 +174,25 @@
 						sideOffset={8}
 						class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 					>
-						<DropdownMenu.Item
-							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							onclick={sharePost}
-						>
-							<Share2 size={14} /> {t('feed.card.share', 'Share')}
-						</DropdownMenu.Item>
+						<DropdownMenu.Sub>
+							<DropdownMenu.SubTrigger
+								class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+							>
+								<Share2 size={14} /> {t('feed.card.share', 'Share')}
+								<ChevronRight size={14} class="ml-auto" />
+							</DropdownMenu.SubTrigger>
+							<DropdownMenu.Portal>
+								<DropdownMenu.SubContent
+									sideOffset={8}
+									class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+								>
+									<div class="mb-1 px-3 py-1.5 text-xs font-semibold uppercase text-[var(--color-muted)]">
+										{t('feed.share_to', 'Share to')}
+									</div>
+									<ShareMenuItems contentId={item.id} url={shareUrl} title={item.title} />
+								</DropdownMenu.SubContent>
+							</DropdownMenu.Portal>
+						</DropdownMenu.Sub>
 						<DropdownMenu.Item
 							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
 							onclick={copyPostLink}
@@ -286,16 +288,7 @@
 						<Bookmark size={16} />
 					</span>
 				</button>
-				<button
-					type="button"
-					class="group/btn flex items-center transition-colors"
-					onclick={openPost}
-					aria-label={t('feed.card.share', 'Share')}
-				>
-					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Share2 size={16} />
-					</span>
-				</button>
+				<ShareMenu contentId={item.id} url={shareUrl} title={item.title} size={16} />
 			</div>
 		</div>
 
