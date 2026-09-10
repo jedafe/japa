@@ -6,6 +6,7 @@
 	 * descriptions are available without over-fetching in the feed list.
 	 */
 	import { LinkPreview } from 'bits-ui';
+	import type { Snippet } from 'svelte';
 	import { BadgeCheck, Calendar, Globe, MapPin } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -29,6 +30,8 @@
 		variant?: 'chip' | 'row';
 		/** Secondary line shown under the name when variant='row'. */
 		secondary?: string;
+		/** Optional custom trigger content. When provided, the default chip/row markup is skipped. */
+		trigger?: Snippet;
 	}
 
 	let {
@@ -41,7 +44,8 @@
 		count,
 		isFollowing = false,
 		variant = 'chip',
-		secondary
+		secondary,
+		trigger
 	}: Props = $props();
 
 	let open = $state(false);
@@ -218,7 +222,9 @@
 			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
 		onclick={onTriggerClick}
 	>
-		{#if variant === 'row'}
+		{#if trigger}
+			{@render trigger()}
+		{:else if variant === 'row'}
 			{#if avatar}
 				<img src={avatar} alt="" class="h-10 w-10 rounded-full object-cover" />
 			{:else}
