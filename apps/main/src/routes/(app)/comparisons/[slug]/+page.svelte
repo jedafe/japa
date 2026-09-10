@@ -111,7 +111,7 @@
 	</div>
 {/snippet}
 
-<div class="mx-auto grid max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8 lg:grid-cols-[4rem_1fr] xl:grid-cols-[4rem_1fr_20rem]">
+<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
 	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail
@@ -123,7 +123,7 @@
 	</div>
 
 	<!-- Center: comparison -->
-	<article class="min-w-0 max-w-5xl">
+	<article class="min-w-0 flex-1 max-w-5xl">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
 			<a
 				href="/comparisons"
@@ -317,7 +317,7 @@
 
 <!-- Right: CreatorCard + widgets. Hidden on mobile because a stacked copy
      is rendered inside the article body. -->
-<aside class="hidden w-full min-w-0 xl:col-span-1 xl:col-start-3 xl:block xl:w-80 xl:shrink-0">
+<aside class="hidden w-80 shrink-0 xl:block">
 	<div class="sticky top-24 flex flex-col gap-4">
 		{@render rightSidebar()}
 	</div>
