@@ -6,7 +6,7 @@
 	 * descriptions are available without over-fetching in the feed list.
 	 */
 	import { LinkPreview } from 'bits-ui';
-	import { Users, Loader2 } from 'lucide-svelte';
+	import { BadgeCheck, Calendar, Globe, Loader2, MapPin, Users } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -51,38 +51,120 @@
 	let detailDescription = $state<string | null | undefined>(description);
 	// svelte-ignore state_referenced_locally
 	let detailCount = $state<number | undefined>(count);
+	let detailName = $state<string | undefined>(undefined);
+	let detailAvatar = $state<string | undefined>(undefined);
+	let detailLocation = $state<string | undefined>(undefined);
+	let detailWebsite = $state<string | undefined>(undefined);
+	let detailCreatedAt = $state<string | undefined>(undefined);
+	let detailVerified = $state<boolean | undefined>(undefined);
+
+	const joinedDate = $derived(
+		detailCreatedAt
+			? new Date(detailCreatedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+			: null
+	);
+	const websiteHref = $derived(
+		detailWebsite
+			? detailWebsite.startsWith('http')
+				? detailWebsite
+				: `https://${detailWebsite}`
+			: undefined
+	);
+	const websiteHostname = $derived(
+		websiteHref
+			? (() => {
+					try {
+						return new URL(websiteHref).hostname;
+					} catch {
+						return detailWebsite ?? '';
+					}
+				})()
+			: null
+	);
+	const avatarSrc = $derived(detailAvatar ?? avatar ?? undefined);
+	const displayName = $derived(detailName ?? name);
 
 	const href = $derived(
 		type === 'user' ? `/u/${slug}` : type === 'space' ? `/spaces/${slug}` : `/org/${slug}`
 	);
 	const followType: FollowableType = $derived(type === 'user' ? 'user' : type === 'space' ? 'space' : 'organization');
-	const followSlug = $derived(type === 'space' ? slug : undefined);
-	const entitySlug = $derived(type === 'space' ? slug : type === 'organization' ? slug : undefined);
 	const countLabel = $derived(
 		type === 'space'
 			? t('entity.members', 'members')
 			: t('entity.followers', 'followers')
 	);
 
+	function pick(obj: Record<string, unknown>, ...keys: string[]) {
+		for (const key of keys) {
+			const v = obj[key];
+			if (v != null) return v;
+		}
+		return undefined;
+	}
+	function pickString(obj: Record<string, unknown>, ...keys: string[]) {
+		const v = pick(obj, ...keys);
+		return typeof v === 'string' && v ? v : undefined;
+	}
+	function pickNumber(obj: Record<string, unknown>, ...keys: string[]) {
+		const v = pick(obj, ...keys);
+		return typeof v === 'number' ? v : undefined;
+	}
+	function pickBool(obj: Record<string, unknown>, ...keys: string[]) {
+		const v = pick(obj, ...keys);
+		return typeof v === 'boolean' ? v : undefined;
+	}
+
 	async function loadDetail() {
 		if (fetched || loading) return;
 		loading = true;
 		const path = type === 'user' ? `/users/${slug}` : type === 'space' ? `/spaces/${slug}` : `/organizations/${slug}`;
-		const res = await api.get<unknown>(path);
+		const res = await api.get<Record<string, unknown>>(path);
 		if (!res.error && res.data && typeof res.data === 'object') {
-			const d = res.data as Record<string, unknown>;
-			// Try to extract description/bio and count from the public detail shape.
-			if (typeof d.bio === 'string' && d.bio) detailDescription = d.bio;
-			else if (typeof d.description === 'string' && d.description) detailDescription = d.description;
-			else if (typeof d.tagline === 'string' && d.tagline) detailDescription = d.tagline;
+			const d = res.data;
+			// Unwrap nested entity payloads (d.space, d.organization, d.user, d.profile).
+			const entity = (d.space && typeof d.space === 'object'
+				? d.space
+				: d.organization && typeof d.organization === 'object'
+					? d.organization
+					: d.user && typeof d.user === 'object'
+						? d.user
+						: d) as Record<string, unknown>;
+			const profile = (entity.profile && typeof entity.profile === 'object'
+				? entity.profile
+				: entity) as Record<string, unknown>;
 
-			if (typeof d.follower_count === 'number') detailCount = d.follower_count;
-			else if (typeof d.member_count === 'number') detailCount = d.member_count;
-			else if (type === 'space' && d.space && typeof d.space === 'object') {
-				const s = d.space as Record<string, unknown>;
-				if (typeof s.member_count === 'number') detailCount = s.member_count;
-				if (typeof s.description === 'string' && s.description) detailDescription = s.description;
-			}
+			const displayName =
+				pickString(entity, 'name', 'display_name', 'title') ??
+				pickString(profile, 'display_name', 'name');
+			if (displayName) detailName = displayName;
+			const avatarUrl =
+				pickString(entity, 'avatar_url', 'logo_url', 'logo', 'image_url') ??
+				pickString(profile, 'avatar_url', 'image_url');
+			if (avatarUrl) detailAvatar = avatarUrl;
+			const desc =
+				pickString(profile, 'bio', 'description', 'tagline') ??
+				pickString(entity, 'bio', 'description', 'tagline');
+			if (desc) detailDescription = desc;
+			const c =
+				pickNumber(entity, 'follower_count', 'member_count', 'followers', 'members') ??
+				pickNumber(profile, 'follower_count', 'member_count');
+			if (c != null) detailCount = c;
+			const loc =
+				pickString(entity, 'location', 'country', 'city') ??
+				pickString(profile, 'location', 'country', 'city');
+			if (loc) detailLocation = loc;
+			const site =
+				pickString(entity, 'website', 'website_url', 'url') ??
+				pickString(profile, 'website', 'website_url', 'url');
+			if (site) detailWebsite = site;
+			const created =
+				pickString(entity, 'created_at', 'createdAt') ??
+				pickString(profile, 'created_at', 'createdAt');
+			if (created) detailCreatedAt = created;
+			const verified =
+				pickBool(entity, 'verified', 'is_verified') ??
+				pickBool(profile, 'verified', 'is_verified');
+			if (verified != null) detailVerified = verified;
 		}
 		fetched = true;
 		loading = false;
@@ -135,27 +217,61 @@
 		side="top"
 		align="start"
 		sideOffset={8}
-		class="z-50 w-72 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+		class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
 	>
 		<div class="flex items-start gap-3">
-			{#if avatar}
-				<img src={avatar} alt="" class="h-10 w-10 rounded-full object-cover" />
+			{#if avatarSrc}
+				<img src={avatarSrc} alt="" class="h-12 w-12 rounded-full object-cover" />
 			{:else}
-				<span class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
-					{name.slice(0, 2).toUpperCase()}
+				<span class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+					{displayName.slice(0, 2).toUpperCase()}
 				</span>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
-				<p class="truncate text-xs text-[var(--color-muted)]">{type === 'user' ? `@${slug}` : slug}</p>
+				<div class="flex items-center gap-1">
+					<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
+					{#if detailVerified}
+						<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+					{/if}
+				</div>
+				<p class="truncate text-xs text-[var(--color-muted)]">{type === 'user' && slug ? `@${slug}` : slug}</p>
 			</div>
 		</div>
 
 		{#if detailDescription}
-			<p class="mt-2 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
+			<p class="mt-3 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
 		{/if}
 
-		<div class="mt-3 flex items-center justify-between gap-2">
+		{#if detailLocation || detailWebsite || joinedDate}
+			<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
+				{#if detailLocation}
+					<span class="inline-flex items-center gap-1">
+						<MapPin size={12} />
+						{detailLocation}
+					</span>
+				{/if}
+				{#if websiteHref && websiteHostname}
+					<a
+						href={websiteHref}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
+						onclick={(e) => e.stopPropagation()}
+					>
+						<Globe size={12} />
+						{websiteHostname}
+					</a>
+				{/if}
+				{#if joinedDate}
+					<span class="inline-flex items-center gap-1">
+						<Calendar size={12} />
+						{t('entity.joined', 'Joined {date}', { date: joinedDate })}
+					</span>
+				{/if}
+			</div>
+		{/if}
+
+		<div class="mt-4 flex items-center justify-between gap-2">
 			<div class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
 				<Users size={13} />
 				{#if loading}
@@ -177,7 +293,7 @@
 
 		<button
 			type="button"
-			class="mt-3 w-full rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-border)]"
+			class="mt-4 w-full rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
 			onclick={(e) => {
 				e.stopPropagation();
 				goto(href);

@@ -116,6 +116,10 @@
 			{item.title}
 		</h2>
 
+		{#if item.excerpt}
+			<p class="line-clamp-2 text-sm text-[var(--color-text-subtle)]">{item.excerpt}</p>
+		{/if}
+
 		<!-- Tags -->
 		{#if item.tags && item.tags.length > 0}
 			<div class="flex flex-wrap items-center gap-2">
@@ -160,7 +164,7 @@
 			</button>
 			<button
 				type="button"
-				class="flex items-center gap-1.5 transition-colors hover:text-rose-500"
+				class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-primary)]"
 				onclick={openPost}
 				aria-label={t('feed.card.reactions', 'Reactions')}
 			>
