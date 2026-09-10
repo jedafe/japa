@@ -354,7 +354,7 @@
 				disabled={reactionPending !== null}
 			>
 				<span
-					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+					class="grid h-9 w-9 place-items-center rounded-full text-lg transition-colors {primaryActive ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 				>
 					<Heart size={20} fill={primaryActive ? 'currentColor' : 'none'} />
 				</span>
@@ -406,10 +406,10 @@
 		class="flex {isHorizontal ? 'flex-1 flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
-		<span class="grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
+		<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
 			<MessageCircle size={18} />
 		</span>
-		<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium [font-variant-numeric:tabular-nums]">{commentCount}</span>
+		<span class="{isHorizontal ? 'text-sm' : 'text-[11px]'} font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{commentCount}</span>
 	</a>
 
 	<!-- Subtle separator between content actions and utility actions -->
@@ -424,7 +424,7 @@
 			aria-pressed={isBookmarked}
 		>
 			<span
-				class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
+				class="grid h-9 w-9 place-items-center rounded-full transition-colors {isBookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 			>
 				<Bookmark size={18} fill={isBookmarked ? 'currentColor' : 'none'} />
 			</span>
@@ -440,7 +440,7 @@
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
-			<span class="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
+			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
 				{#if shared}
 					<Check size={18} class="text-[var(--color-success)]" />
 				{:else}
@@ -479,7 +479,7 @@
 					onclick={nativeShare}
 					class="flex w-full items-center gap-3 rounded-[var(--radius)] px-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
-					<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text-subtle)]">
+					<span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-text)]">
 						<Share2 size={14} />
 					</span>
 					<span class="flex-1 text-left">{t('blog.copy_link', 'Copy link / Native share')}</span>
@@ -495,7 +495,7 @@
 			class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('blog.copy_link', 'Copy link')}
 		>
-			<span class="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
+			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
 				{#if copied}
 					<Check size={18} class="text-[var(--color-success)]" />
 				{:else}
