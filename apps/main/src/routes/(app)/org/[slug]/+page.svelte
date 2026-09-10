@@ -142,7 +142,7 @@
 			{#if data.posts.length === 0}
 				<EmptyState icon={FileText} title={t('profile.posts_empty', 'No posts yet')} />
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="flex flex-col gap-3">
 					{#each data.posts as post (post.id)}
 						<FeedCard
 							item={toFeedItem(post)}

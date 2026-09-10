@@ -563,7 +563,7 @@
 						{/each}
 					</div>
 				{:else}
-					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					<div class="flex flex-col gap-3">
 						{#each allFeedItems as item (item.id)}
 							<FeedCard {item} style="daily" layout="stream" />
 						{/each}

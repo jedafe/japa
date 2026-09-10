@@ -589,7 +589,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if feedItems.length === 0}
 				<EmptyState icon={Rss} title={t('space.feed_empty', 'No posts yet')} />
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="flex flex-col gap-3">
 					{#each feedItems as item (item.id)}
 						<div class="group relative block">
 							<FeedCard
@@ -665,7 +665,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{#if pinnedItems.length === 0}
 				<EmptyState icon={Pin} title={t('space.pinned_empty', 'No pinned posts yet')} />
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="flex flex-col gap-3">
 					{#each pinnedItems as item (item.id)}
 						<div class="group relative block">
 							<FeedCard

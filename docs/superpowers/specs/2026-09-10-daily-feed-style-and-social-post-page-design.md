@@ -32,12 +32,12 @@ Update `apps/main/src/lib/components/feed/FeedCard.svelte` with a new `daily` br
 │                                                           Read post · ⋮     │
 ├──────────────────────────────────────────────┬──────────────────────────────┤
 │                                              │                              │
-│  [Blog] Title of the post                    │        Cover image           │
+│  Title of the post                           │        Cover image           │
 │                                              │                              │
-│  Excerpt text goes here...                   │                              │
+│  #tag #tag +1                                │                              │
 │                                              │                              │
 ├──────────────────────────────────────────────┴──────────────────────────────┤
-│  ❤ 24    💬 8    👁 1.2k    🔖 3                                            │
+│  💬 8    ▲ 24    ▼    🔖    ↗                                                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +63,7 @@ Update `apps/main/src/lib/components/feed/FeedCard.svelte` with a new `daily` br
   | other / custom | `FileText` | `--color-primary` |
 - **Top-right:** relative time, read time, a context-aware "Read {type}" or "View {type}" arrow (e.g. "Read guide", "View comparison", "Read blog", "View video", "Read story", "View discussion"), and a `⋮` action menu (share, bookmark, report). Labels are i18n keys so they are localizable.
 - **Middle:** content type badge, title, and excerpt on the left; cover image on the right (video play overlay preserved).
-- **Bottom metric bar:** heart icon + `reaction_count`, comments, views, bookmarks. No upvote/downvote arrows for posts. Hovering the heart opens a compact reaction picker; clicking the heart navigates to `/post/[content_type]/[slug]` and toggles the default reaction.
+- **Bottom metric bar:** comment count, `reaction_count` (with an up-arrow), a down-arrow icon, bookmark, and share. Post-level upvote/downvote controls are not present; the arrows are visual only. Hovering a chip opens a compact entity card; clicking the card body navigates to `/post/[content_type]/[slug]`.
 
 The entire card body (outside the chips, menu, and explicit links) is clickable and navigates to `/post/[content_type]/[slug]`.
 
