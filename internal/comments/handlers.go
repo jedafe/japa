@@ -308,6 +308,9 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+		if replies == nil {
+			replies = []gen.ListRepliesByParentRow{}
+		}
 
 		// BUG-002: redact author identity on anonymous replies.
 		redactAnonymousComments(replies,
@@ -328,6 +331,9 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if comments == nil {
+		comments = []gen.ListCommentsByContentRow{}
 	}
 
 	// BUG-002: redact author identity on anonymous comments.
