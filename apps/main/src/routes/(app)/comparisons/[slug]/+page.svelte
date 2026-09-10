@@ -264,6 +264,14 @@
 					</tbody>
 				</table>
 			</div>
+
+			{#if user && features['feature.jce.ai_advisor']}
+				<AIAdvisorDrawer
+					bind:open={advisorOpen}
+					comparisonID={comparison.content.id}
+					items={comparison.items ?? []}
+				/>
+			{/if}
 		</section>
 	{/if}
 
@@ -305,14 +313,6 @@
 		loadError={data.commentsLoadError}
 		deletedUserIds={deletedUserIds}
 	/>
-
-	{#if user && features['feature.jce.ai_advisor']}
-		<AIAdvisorDrawer
-			bind:open={advisorOpen}
-			comparisonID={comparison.content.id}
-			items={comparison.items ?? []}
-		/>
-	{/if}
 </article>
 
 <!-- Right: CreatorCard + widgets. Hidden on mobile because a stacked copy
