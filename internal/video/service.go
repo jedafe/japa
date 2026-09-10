@@ -142,7 +142,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "video.enabled", false)
+	return s.settings.GetBoolOr(ctx, tenantID, "video.enabled", true)
 }
 
 // isPlatformAllowed checks the tenant's video.import.allowed_platforms setting.
