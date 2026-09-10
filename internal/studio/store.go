@@ -48,7 +48,7 @@ type Job struct {
 	TargetSpaceID  pgtype.UUID        `json:"target_space_id"`
 	TargetTags     []string           `json:"target_tags"`
 	IntelRecordID  pgtype.UUID        `json:"intel_record_id"`
-	AIModel        string             `json:"ai_model"`
+	AIModel        *string            `json:"ai_model"`
 	VoiceID        pgtype.UUID        `json:"voice_id"`
 	Status         string             `json:"status"`
 	DraftContentID pgtype.UUID        `json:"draft_content_id"`

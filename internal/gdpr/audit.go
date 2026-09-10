@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -33,14 +32,7 @@ func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, para
 		targetType = &params.TargetType
 	}
 
-	var ipAddress *netip.Addr
-
-	if params.IPAddress != nil {
-		addr, err := netip.ParseAddr(*params.IPAddress)
-		if err == nil {
-			ipAddress = &addr
-		}
-	}
+	ipAddress := parseIPAddress(params.IPAddress)
 
 	_, err := store.createAuditLog(ctx, gen.CreateAuditLogParams{
 		TenantID:           tenantID,

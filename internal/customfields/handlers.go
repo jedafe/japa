@@ -139,6 +139,25 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
+// parseIPPrefix parses an IP string into a netip.Prefix.
+// Plain IPs are expanded to their host-prefix (e.g. 192.168.0.1/32, ::1/128).
+func parseIPPrefix(s string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p, nil
+	}
+
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+
+	bits := 128
+	if addr.Is4() {
+		bits = 32
+	}
+	return addr.Prefix(bits)
+}
+
 // requireTenant resolves the tenant from the request context and writes a 503
 // error when none is available. The boolean return is false when the caller
 // should abort (the error has already been written).
@@ -2100,11 +2119,11 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 	// Parse the client IP for abuse tracking; an unparseable address is
 	// recorded as nil rather than failing the submission.
-	var ipAddr *netip.Addr
+	var ipAddr *netip.Prefix
 
 	if ip := clientip.FromRequest(r); ip != "" {
-		if addr, err := netip.ParseAddr(ip); err == nil {
-			ipAddr = &addr
+		if p, err := parseIPPrefix(ip); err == nil {
+			ipAddr = &p
 		}
 	}
 

@@ -133,7 +133,7 @@ RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, creat
 
 type CreateIPBlockParams struct {
 	TenantID  pgtype.UUID        `json:"tenant_id"`
-	Cidr      netip.Addr         `json:"cidr"`
+	Cidr      netip.Prefix       `json:"cidr"`
 	BlockType string             `json:"block_type"`
 	Reason    *string            `json:"reason"`
 	BlockedBy pgtype.UUID        `json:"blocked_by"`
@@ -391,8 +391,8 @@ WHERE tenant_id = $1
 `
 
 type GetIPBlockByCIDRParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Cidr     netip.Addr  `json:"cidr"`
+	TenantID pgtype.UUID  `json:"tenant_id"`
+	Cidr     netip.Prefix `json:"cidr"`
 }
 
 func (q *Queries) GetIPBlockByCIDR(ctx context.Context, arg GetIPBlockByCIDRParams) (IpBlock, error) {
@@ -457,8 +457,8 @@ SELECT COALESCE(
 `
 
 type GetIPBlockTypeForIPParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Ip       netip.Addr  `json:"ip"`
+	TenantID pgtype.UUID  `json:"tenant_id"`
+	Ip       netip.Prefix `json:"ip"`
 }
 
 // Returns the most severe block_type for a matched IP. 'full' takes priority
@@ -538,8 +538,8 @@ SELECT EXISTS(
 `
 
 type IsIPBlockedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Ip       netip.Addr  `json:"ip"`
+	TenantID pgtype.UUID  `json:"tenant_id"`
+	Ip       netip.Prefix `json:"ip"`
 }
 
 func (q *Queries) IsIPBlocked(ctx context.Context, arg IsIPBlockedParams) (bool, error) {
@@ -973,7 +973,7 @@ RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, creat
 `
 
 type UpdateIPBlockParams struct {
-	Cidr      netip.Addr         `json:"cidr"`
+	Cidr      netip.Prefix       `json:"cidr"`
 	BlockType string             `json:"block_type"`
 	Reason    *string            `json:"reason"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`

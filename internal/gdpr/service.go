@@ -2094,14 +2094,7 @@ func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, param
 		targetType = &params.TargetType
 	}
 
-	var ipAddress *netip.Addr
-
-	if params.IPAddress != nil {
-		addr, err := netip.ParseAddr(*params.IPAddress)
-		if err == nil {
-			ipAddress = &addr
-		}
-	}
+	ipAddress := parseIPAddress(params.IPAddress)
 
 	_, err := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
 		TenantID:           tenantID,
@@ -2158,10 +2151,15 @@ func (s *Service) ListAuditLogs(ctx context.Context, tenantID, actorUserID pgtyp
 	})
 }
 
-// parseIPAddress converts a string IP address to a netip.Addr pointer.
-func parseIPAddress(s *string) *netip.Addr {
+// parseIPAddress converts a string IP address to a netip.Prefix pointer.
+// Plain IPs are expanded to their host-prefix so they scan into PG inet.
+func parseIPAddress(s *string) *netip.Prefix {
 	if s == nil {
 		return nil
+	}
+
+	if p, err := netip.ParsePrefix(*s); err == nil {
+		return &p
 	}
 
 	addr, err := netip.ParseAddr(*s)
@@ -2169,7 +2167,12 @@ func parseIPAddress(s *string) *netip.Addr {
 		return nil
 	}
 
-	return &addr
+	bits := 128
+	if addr.Is4() {
+		bits = 32
+	}
+	p, _ := addr.Prefix(bits)
+	return &p
 }
 
 // UserDataExport represents the complete user data export.

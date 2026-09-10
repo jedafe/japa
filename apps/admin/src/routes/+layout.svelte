@@ -292,7 +292,6 @@
 
 		<div class="flex flex-1 flex-col overflow-hidden">
 			<TopBar onMenuClick={() => sidebarMobileOpen = !sidebarMobileOpen} onCollapseToggle={toggleSidebar} />
-			<ImpersonationBanner />
 			<main class="flex-1 overflow-y-auto" style="background-color: var(--color-background)">
 				<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8">
 					<Breadcrumb />
@@ -303,6 +302,7 @@
 							{/each}
 						</div>
 					{:else if hasAccess}
+						<ImpersonationBanner />
 						{@render children()}
 					{:else}
 						<AccessDenied {requiredPermission} />

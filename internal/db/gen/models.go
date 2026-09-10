@@ -401,7 +401,7 @@ type ApiKey struct {
 type ApiKeyIpAllowlist struct {
 	ID          pgtype.UUID        `json:"id"`
 	ApiKeyID    pgtype.UUID        `json:"api_key_id"`
-	Cidr        netip.Addr         `json:"cidr"`
+	Cidr        netip.Prefix       `json:"cidr"`
 	Description *string            `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
@@ -515,7 +515,7 @@ type AuditLog struct {
 	TargetType         *string            `json:"target_type"`
 	TargetID           pgtype.UUID        `json:"target_id"`
 	Metadata           []byte             `json:"metadata"`
-	IpAddress          *netip.Addr        `json:"ip_address"`
+	IpAddress          *netip.Prefix      `json:"ip_address"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -956,7 +956,7 @@ type ConsentRecord struct {
 	ConsentType   string             `json:"consent_type"`
 	Granted       bool               `json:"granted"`
 	PolicyVersion string             `json:"policy_version"`
-	IpAddress     *netip.Addr        `json:"ip_address"`
+	IpAddress     *netip.Prefix      `json:"ip_address"`
 	UserAgent     *string            `json:"user_agent"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
@@ -1711,7 +1711,7 @@ type FormSubmission struct {
 	FormID      pgtype.UUID        `json:"form_id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	IpAddress   *netip.Addr        `json:"ip_address"`
+	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -2026,7 +2026,7 @@ type IntelSource struct {
 type IpBlock struct {
 	ID        pgtype.UUID        `json:"id"`
 	TenantID  pgtype.UUID        `json:"tenant_id"`
-	Cidr      netip.Addr         `json:"cidr"`
+	Cidr      netip.Prefix       `json:"cidr"`
 	BlockType string             `json:"block_type"`
 	Reason    *string            `json:"reason"`
 	BlockedBy pgtype.UUID        `json:"blocked_by"`

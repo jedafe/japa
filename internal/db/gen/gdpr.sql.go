@@ -469,14 +469,14 @@ RETURNING id, tenant_id, actor_user_id, impersonated_user_id, action_type,
 `
 
 type CreateAuditLogParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	ActorUserID        pgtype.UUID `json:"actor_user_id"`
-	ImpersonatedUserID pgtype.UUID `json:"impersonated_user_id"`
-	ActionType         string      `json:"action_type"`
-	TargetType         *string     `json:"target_type"`
-	TargetID           pgtype.UUID `json:"target_id"`
-	Metadata           []byte      `json:"metadata"`
-	IpAddress          *netip.Addr `json:"ip_address"`
+	TenantID           pgtype.UUID   `json:"tenant_id"`
+	ActorUserID        pgtype.UUID   `json:"actor_user_id"`
+	ImpersonatedUserID pgtype.UUID   `json:"impersonated_user_id"`
+	ActionType         string        `json:"action_type"`
+	TargetType         *string       `json:"target_type"`
+	TargetID           pgtype.UUID   `json:"target_id"`
+	Metadata           []byte        `json:"metadata"`
+	IpAddress          *netip.Prefix `json:"ip_address"`
 }
 
 // =====================
@@ -3179,24 +3179,24 @@ FROM audit_logs
 WHERE tenant_id = $1
   AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = $2)
   AND ($3 = '' OR action_type = $3)
-  AND ($4 IS NULL OR target_type = $4)
-  AND ($5 IS NULL OR created_at >= $5)
-  AND ($6 IS NULL OR created_at <= $6)
+  AND ($4::text IS NULL OR target_type = $4::text)
+  AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR created_at <= $6::timestamptz)
   AND ($7::text = '' OR action_type ILIKE '%' || $7 || '%' OR target_type ILIKE '%' || $7 || '%' OR target_id::text ILIKE '%' || $7 || '%' OR actor_user_id::text ILIKE '%' || $7 || '%')
 ORDER BY created_at DESC
 LIMIT $9 OFFSET $8
 `
 
 type ListAuditLogsParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ActorUserID interface{} `json:"actor_user_id"`
-	ActionType  interface{} `json:"action_type"`
-	TargetType  interface{} `json:"target_type"`
-	StartDate   interface{} `json:"start_date"`
-	EndDate     interface{} `json:"end_date"`
-	Q           string      `json:"q"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	TenantID    pgtype.UUID        `json:"tenant_id"`
+	ActorUserID interface{}        `json:"actor_user_id"`
+	ActionType  interface{}        `json:"action_type"`
+	TargetType  *string            `json:"target_type"`
+	StartDate   pgtype.Timestamptz `json:"start_date"`
+	EndDate     pgtype.Timestamptz `json:"end_date"`
+	Q           *string            `json:"q"`
+	PageOffset  int32              `json:"page_offset"`
+	PageLimit   int32              `json:"page_limit"`
 }
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
@@ -3269,7 +3269,7 @@ type ListConsentsByTenantRow struct {
 	ConsentType   string             `json:"consent_type"`
 	Granted       bool               `json:"granted"`
 	PolicyVersion string             `json:"policy_version"`
-	IpAddress     *netip.Addr        `json:"ip_address"`
+	IpAddress     *netip.Prefix      `json:"ip_address"`
 	UserAgent     *string            `json:"user_agent"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	Username      *string            `json:"username"`
@@ -3940,13 +3940,13 @@ RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
 `
 
 type RecordConsentParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	UserID        pgtype.UUID `json:"user_id"`
-	ConsentType   string      `json:"consent_type"`
-	Granted       bool        `json:"granted"`
-	PolicyVersion string      `json:"policy_version"`
-	IpAddress     *netip.Addr `json:"ip_address"`
-	UserAgent     *string     `json:"user_agent"`
+	TenantID      pgtype.UUID   `json:"tenant_id"`
+	UserID        pgtype.UUID   `json:"user_id"`
+	ConsentType   string        `json:"consent_type"`
+	Granted       bool          `json:"granted"`
+	PolicyVersion string        `json:"policy_version"`
+	IpAddress     *netip.Prefix `json:"ip_address"`
+	UserAgent     *string       `json:"user_agent"`
 }
 
 // GDPR / NDPR Compliance — Section 19
@@ -3988,12 +3988,12 @@ INSERT INTO consent_records (
 `
 
 type RevokeConsentParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	UserID        pgtype.UUID `json:"user_id"`
-	ConsentType   string      `json:"consent_type"`
-	PolicyVersion string      `json:"policy_version"`
-	IpAddress     *netip.Addr `json:"ip_address"`
-	UserAgent     *string     `json:"user_agent"`
+	TenantID      pgtype.UUID   `json:"tenant_id"`
+	UserID        pgtype.UUID   `json:"user_id"`
+	ConsentType   string        `json:"consent_type"`
+	PolicyVersion string        `json:"policy_version"`
+	IpAddress     *netip.Prefix `json:"ip_address"`
+	UserAgent     *string       `json:"user_agent"`
 }
 
 func (q *Queries) RevokeConsent(ctx context.Context, arg RevokeConsentParams) error {

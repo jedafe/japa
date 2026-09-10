@@ -193,7 +193,7 @@ func (s *Store) GetActiveIPBlocks(ctx context.Context, tenantID pgtype.UUID) ([]
 // active CIDR block for the tenant. This uses PostgreSQL's <<= operator
 // which correctly handles inet containment.
 func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string) (bool, error) {
-	parsedIP, err := netip.ParseAddr(ip)
+	parsedIP, err := netipParseAddrOrCIDR(ip)
 	if err != nil {
 		return false, nil //nolint:nilerr // intentional: invalid IPs are not blocked
 	}
@@ -214,7 +214,7 @@ func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string
 // 'registration'/'posting'/'api'. Per §41, non-full types are scoped to
 // specific route groups rather than blocking all requests (BUG-003).
 func (s *Store) GetIPBlockTypeForIP(ctx context.Context, tenantID pgtype.UUID, ip string) (string, error) {
-	parsedIP, err := netip.ParseAddr(ip)
+	parsedIP, err := netipParseAddrOrCIDR(ip)
 	if err != nil {
 		return "", nil //nolint:nilerr // intentional: invalid IPs are not blocked
 	}
@@ -419,21 +419,24 @@ func (s *Store) CheckDuplicateHash(ctx context.Context, tenantID pgtype.UUID, ha
 
 // --- helpers ---
 
-// netipParseAddrOrCIDR parses a CIDR or IP string into a netip.Addr.
-// For CIDR notation like "192.168.0.0/24", it extracts just the address.
+// netipParseAddrOrCIDR parses a CIDR or IP string into a netip.Prefix.
+// For plain IPs it uses the host-prefix (e.g. /32 for IPv4, /128 for IPv6).
 // Returns an error for invalid input instead of panicking.
-func netipParseAddrOrCIDR(s string) (netip.Addr, error) {
-	// Try parsing as a plain IP first
+func netipParseAddrOrCIDR(s string) (netip.Prefix, error) {
+	// Try parsing as a CIDR first.
+	if p, err := netip.ParsePrefix(s); err == nil {
+		return p, nil
+	}
+
+	// Fall back to plain IP and expand to host-prefix.
 	addr, err := netip.ParseAddr(s)
-	if err == nil {
-		return addr, nil
-	}
-
-	// Try parsing as CIDR and extract the address
-	cidr, err := netip.ParsePrefix(s)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("invalid CIDR or IP: %s", s)
+		return netip.Prefix{}, fmt.Errorf("invalid CIDR or IP: %s", s)
 	}
 
-	return cidr.Addr(), nil
+	bits := 128
+	if addr.Is4() {
+		bits = 32
+	}
+	return addr.Prefix(bits)
 }

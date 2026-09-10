@@ -2778,6 +2778,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.create")).
 				Get("/admin/space-types", spaceHandlers.ListSpaceTypes)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.create")).
+				Get("/admin/space-type-categories", spaceHandlers.ListSpaceTypeCategories)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.create")).
 				Post("/admin/space-types", spaceHandlers.CreateSpaceType)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "spaces.types.edit")).
 				Patch("/admin/space-types/{id}", spaceHandlers.UpdateSpaceType)

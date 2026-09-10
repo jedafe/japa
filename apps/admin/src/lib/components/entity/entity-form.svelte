@@ -47,7 +47,8 @@
 					placeholder={field.placeholder}
 					disabled={disabled}
 					readonly={field.readonlyInEdit && editing}
-					bind:value={value[field.key]}
+					value={value[field.key] ?? ''}
+					oninput={(e) => value[field.key] = e.currentTarget.value}
 					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:opacity-70"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				></textarea>
@@ -56,7 +57,8 @@
 					id={field.key}
 					aria-label={field.label}
 					disabled={disabled}
-					bind:value={value[field.key]}
+					value={value[field.key] ?? ''}
+					onchange={(e) => value[field.key] = e.currentTarget.value}
 					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				>
@@ -83,7 +85,8 @@
 					type="checkbox"
 					aria-label={field.label}
 					disabled={disabled}
-					bind:checked={value[field.key]}
+					checked={value[field.key] ?? false}
+					onchange={(e) => value[field.key] = e.currentTarget.checked}
 					class="h-4 w-4 rounded disabled:cursor-not-allowed disabled:opacity-50"
 					style="accent-color: var(--color-primary)"
 				/>
@@ -93,7 +96,8 @@
 					type="color"
 					aria-label={field.label}
 					disabled={disabled}
-					bind:value={value[field.key]}
+					value={value[field.key] ?? ''}
+					oninput={(e) => value[field.key] = e.currentTarget.value}
 					class="h-10 w-full cursor-pointer rounded-lg border p-1 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				/>
@@ -108,7 +112,8 @@
 					min={field.min}
 					max={field.max}
 					step={field.step}
-					bind:value={value[field.key]}
+					value={value[field.key] ?? ''}
+					oninput={(e) => value[field.key] = field.type === 'number' ? e.currentTarget.valueAsNumber : e.currentTarget.value}
 					class="rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:opacity-70"
 					style="border-color: var(--color-border-input); background-color: var(--color-surface); color: var(--color-foreground)"
 				/>

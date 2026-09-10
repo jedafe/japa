@@ -63,6 +63,22 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": types})
 }
 
+// ListSpaceTypeCategories handles GET /api/v1/admin/space-type-categories.
+func (h *Handlers) ListSpaceTypeCategories(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.requireTenant(w, r)
+	if !ok {
+		return
+	}
+
+	categories, err := h.Service.ListSpaceTypeCategories(r.Context(), tenantID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": categories})
+}
+
 // GetSpaceType handles GET /api/v1/space-types/{id}.
 func (h *Handlers) GetSpaceType(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")

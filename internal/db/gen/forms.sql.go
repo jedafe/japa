@@ -135,13 +135,13 @@ RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, pay
 `
 
 type CreateFormSubmissionParams struct {
-	FormID      pgtype.UUID `json:"form_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	UserID      pgtype.UUID `json:"user_id"`
-	IpAddress   *netip.Addr `json:"ip_address"`
-	FieldValues []byte      `json:"field_values"`
-	Status      string      `json:"status"`
-	PaymentID   pgtype.UUID `json:"payment_id"`
+	FormID      pgtype.UUID   `json:"form_id"`
+	TenantID    pgtype.UUID   `json:"tenant_id"`
+	UserID      pgtype.UUID   `json:"user_id"`
+	IpAddress   *netip.Prefix `json:"ip_address"`
+	FieldValues []byte        `json:"field_values"`
+	Status      string        `json:"status"`
+	PaymentID   pgtype.UUID   `json:"payment_id"`
 }
 
 type CreateFormSubmissionRow struct {
@@ -149,7 +149,7 @@ type CreateFormSubmissionRow struct {
 	FormID      pgtype.UUID        `json:"form_id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	IpAddress   *netip.Addr        `json:"ip_address"`
+	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	PaymentID   pgtype.UUID        `json:"payment_id"`
@@ -386,7 +386,7 @@ type GetFormSubmissionByIDRow struct {
 	FormID      pgtype.UUID        `json:"form_id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	IpAddress   *netip.Addr        `json:"ip_address"`
+	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	PaymentID   pgtype.UUID        `json:"payment_id"`
@@ -426,7 +426,7 @@ type GetFormSubmissionByPaymentIDRow struct {
 	FormID      pgtype.UUID        `json:"form_id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	IpAddress   *netip.Addr        `json:"ip_address"`
+	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	PaymentID   pgtype.UUID        `json:"payment_id"`
@@ -549,7 +549,7 @@ type ListFormSubmissionsByFormRow struct {
 	FormID      pgtype.UUID        `json:"form_id"`
 	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	IpAddress   *netip.Addr        `json:"ip_address"`
+	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
 	Status      string             `json:"status"`
 	PaymentID   pgtype.UUID        `json:"payment_id"`
