@@ -27,9 +27,3 @@ export function contentHref(item: { slug: string; content_type?: string | null }
 	const prefix = (item.content_type && CONTENT_ROUTE_PREFIX[item.content_type]) || '/content';
 	return `${prefix}/${item.slug}`;
 }
-
-/** Social post page href for a feed item. */
-export function postHref(item: { slug: string; content_type?: string | null }): string {
-	const type = item.content_type ?? 'content';
-	return `/post/${type}/${item.slug}`;
-}

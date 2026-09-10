@@ -20,7 +20,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { contentTypeMeta, readPostLabel } from '$lib/feed/contentTypeMeta';
-	import { contentHref, postHref } from '$lib/utils/contentLink';
+	import { contentHref } from '$lib/utils/contentLink';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
 	import EntityHoverChip from './EntityHoverChip.svelte';
@@ -35,13 +35,9 @@
 	let copied = $state(false);
 	let reported = $state(false);
 
-	const menuItem =
-		'flex w-full items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]';
-
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
 	const duration = $derived(formatDuration(item.duration_secs));
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
-	const socialHref = $derived(postHref(item));
 	const canonicalHref = $derived(contentHref(item));
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
@@ -97,16 +93,16 @@
 	function navigate(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target && (target.closest('a') || target.closest('button'))) return;
-		goto(socialHref);
+		goto(canonicalHref);
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
-		if (e.key === 'Enter') goto(socialHref);
+		if (e.key === 'Enter') goto(canonicalHref);
 	}
 
 	function openPost(e: Event) {
 		e.stopPropagation();
-		goto(socialHref);
+		goto(canonicalHref);
 	}
 
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
@@ -179,7 +175,6 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					class="flex shrink-0 items-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-					onclick={(e) => e.stopPropagation()}
 					aria-label={t('feed.card.menu', 'More actions')}
 				>
 					<MoreVertical size={16} />
@@ -190,26 +185,24 @@
 						sideOffset={8}
 						class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 					>
-						<DropdownMenu.Item class={menuItem}>
-							{#snippet child({ props })}
-								<button type="button" onclick={sharePost} {...props}>
-									<Share2 size={14} /> {t('feed.card.share', 'Share')}
-								</button>
-							{/snippet}
+						<DropdownMenu.Item
+							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+							onclick={sharePost}
+						>
+							<Share2 size={14} /> {t('feed.card.share', 'Share')}
 						</DropdownMenu.Item>
-						<DropdownMenu.Item class={menuItem}>
-							{#snippet child({ props })}
-								<button type="button" onclick={copyPostLink} {...props}>
-									<Link size={14} /> {copied ? t('feed.copied', 'Link copied') : t('feed.card.copy_link', 'Copy link')}
-								</button>
-							{/snippet}
+						<DropdownMenu.Item
+							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
+							onclick={copyPostLink}
+						>
+							<Link size={14} /> {copied ? t('feed.copied', 'Link copied') : t('feed.card.copy_link', 'Copy link')}
 						</DropdownMenu.Item>
-						<DropdownMenu.Item class={menuItem} disabled={reported}>
-							{#snippet child({ props })}
-								<button type="button" onclick={reportPost} disabled={reported} {...props}>
-									<Flag size={14} /> {reported ? t('feed.reported', 'Reported') : t('feed.card.report', 'Report')}
-								</button>
-							{/snippet}
+						<DropdownMenu.Item
+							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)] data-[disabled]:opacity-50"
+							onclick={reportPost}
+							disabled={reported}
+						>
+							<Flag size={14} /> {reported ? t('feed.reported', 'Reported') : t('feed.card.report', 'Report')}
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>
