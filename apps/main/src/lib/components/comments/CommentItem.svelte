@@ -296,7 +296,7 @@
 				/>
 			{:else}
 				<span
-					class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]"
+					class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
 				>
 					{authorName.charAt(0).toUpperCase()}
 				</span>
@@ -369,7 +369,7 @@
 						<button
 							type="button"
 							onclick={() => (collapsed = true)}
-							class="{iconBtn} absolute -left-12 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							class="{iconBtn} absolute -left-12 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
 							aria-label={t('comments.collapse')}
 							title={t('comments.collapse')}
 						>
@@ -533,16 +533,22 @@
 						type="button"
 						onclick={loadReplies}
 						disabled={repliesLoading}
-						class="relative -left-8 mt-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
+						class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-hover)] disabled:opacity-50"
 					>
+						<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+							<Plus size={14} />
+						</span>
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
 				{/if}
 			{:else if allReplies.length > 0}
 				<a
 					href={`#comment-${allReplies[0].id}`}
-					class="relative -left-8 mt-2 inline-block text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -left-12 mt-2 inline-flex items-center gap-2 text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
+					<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary)]">
+						<Plus size={14} />
+					</span>
 					{t('comments.continue_thread')}
 				</a>
 			{/if}
@@ -550,9 +556,12 @@
 			<button
 				type="button"
 				onclick={() => (collapsed = false)}
-				class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				class="relative -left-12 inline-flex items-center gap-2 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>
-				<Plus size={14} /> {t('comments.expand')}
+				<span class="{iconBtn} rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]">
+					<Plus size={14} />
+				</span>
+				{t('comments.expand')}
 			</button>
 		{/if}
 	</div>
