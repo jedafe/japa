@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import type { DocNavTree as DocNavTreeType, DocAudience, DocNavItem } from '$lib/types';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import AudienceSwitcher from './AudienceSwitcher.svelte';
 
 	interface Props {
@@ -14,9 +15,11 @@
 		onToggleCollapse: () => void;
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
+		logoDarkUrl?: string;
 	}
 
-	let { nav, accessibleAudiences, activeAudience, collapsed, onToggleCollapse, logoUrl = '' }: Props = $props();
+	let { nav, accessibleAudiences, activeAudience, collapsed, onToggleCollapse, logoUrl = '', logoDarkUrl = '' }: Props = $props();
 
 	// Expand/collapse state per audience section (keyed by audience slug).
 	// Default: the active audience is expanded, others collapsed.
@@ -60,7 +63,7 @@
 	<div class="nav-header">
 		<a href="/docs" class="nav-brand" class:hidden={collapsed}>
 			{#if logoUrl}
-				<img src={logoUrl} alt={t('app.name')} class="brand-logo" />
+				<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[160px] object-contain shrink-0" />
 			{:else}
 				<span class="brand-mark">JC</span>
 			{/if}
@@ -214,13 +217,6 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-	.brand-logo {
-		height: 2rem;
-		width: auto;
-		max-width: 160px;
-		object-fit: contain;
-		flex-shrink: 0;
 	}
 	.collapse-btn {
 		display: grid;

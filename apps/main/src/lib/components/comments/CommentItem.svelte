@@ -310,12 +310,12 @@
 						<img
 							src={comment.avatar_url}
 							alt=""
-							class="h-10 w-10 rounded-full object-cover"
+							class="h-10 w-10 shrink-0 rounded-full object-cover"
 							loading="lazy"
 						/>
 					{:else}
 						<span
-							class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
+							class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
 						>
 							{authorName.charAt(0).toUpperCase()}
 						</span>
@@ -345,12 +345,12 @@
 					<img
 						src={comment.avatar_url}
 						alt=""
-						class="h-10 w-10 rounded-full object-cover"
+						class="h-10 w-10 shrink-0 rounded-full object-cover"
 						loading="lazy"
 					/>
 				{:else}
 					<span
-						class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
+						class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
 					>
 						{authorName.charAt(0).toUpperCase()}
 					</span>

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/state';
 	import { Menu as MenuIcon, PanelLeftClose, PanelLeft } from 'lucide-svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import DocNavTree from './DocNavTree.svelte';
 	import TableOfContents from './TableOfContents.svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
@@ -32,6 +34,8 @@
 		apiPane?: Snippet;
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
+		logoDarkUrl?: string;
 		/** Footer menu from GET /menus/docs_footer — ADR-054. */
 		footerMenu?: Menu | null;
 		/** Sidebar widgets from the Sidebar Management System (Section 59, ADR-066).
@@ -54,6 +58,7 @@
 		variant = 'doc',
 		apiPane,
 		logoUrl = '',
+		logoDarkUrl = '',
 		footerMenu = null,
 		rightSidebarWidgets = [],
 		leftSidebarWidgets = [],
@@ -104,6 +109,13 @@
 	);
 	const rightWidth = $derived(variant === 'api' ? 'var(--api-pane-width)' : 'var(--sidebar-width)');
 	const isFull = $derived(variant === 'full');
+
+	// Pages pass `logoUrl` from siteSettings; use the explicit `logoDarkUrl` prop
+	// or fall back to the layout's public site settings so every route gets both.
+	const resolvedLogoDarkUrl = $derived(
+		logoDarkUrl ||
+			((page.data.siteSettings?.['appearance.logo_url_dark'] as string | undefined) ?? '')
+	);
 </script>
 
 {#if isFull}
@@ -112,7 +124,7 @@
 		<div class="full-topbar">
 			<a href="/docs" class="full-brand">
 				{#if logoUrl}
-					<img src={logoUrl} alt={t('app.name')} class="full-brand-logo" />
+					<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-7 w-auto max-w-[140px] object-contain" />
 				{:else}
 					<span class="brand-mark">JC</span>
 				{/if}
@@ -144,6 +156,7 @@
 				{collapsed}
 				{onToggleCollapse}
 				{logoUrl}
+				logoDarkUrl={resolvedLogoDarkUrl}
 			/>
 		</div>
 
@@ -164,7 +177,7 @@
 				</button>
 				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
+						<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
 					{:else}
 						<span class="brand-mark">JC</span>
 					{/if}
@@ -220,6 +233,7 @@
 				collapsed={false}
 				onToggleCollapse={() => (mobileNavOpen = false)}
 				{logoUrl}
+				logoDarkUrl={resolvedLogoDarkUrl}
 			/>
 		</div>
 	{/if}
@@ -238,6 +252,7 @@
 				{collapsed}
 				{onToggleCollapse}
 				{logoUrl}
+				logoDarkUrl={resolvedLogoDarkUrl}
 			/>
 		</div>
 
@@ -258,7 +273,7 @@
 				</button>
 				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
+						<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
 					{:else}
 						<span class="brand-mark">JC</span>
 					{/if}
@@ -314,6 +329,7 @@
 				collapsed={false}
 				onToggleCollapse={() => (mobileNavOpen = false)}
 				{logoUrl}
+				logoDarkUrl={resolvedLogoDarkUrl}
 			/>
 		</div>
 	{/if}
@@ -438,12 +454,6 @@
 		font-weight: 600;
 		color: var(--color-text);
 		flex-shrink: 0;
-	}
-	.full-brand-logo {
-		height: 1.75rem;
-		width: auto;
-		max-width: 140px;
-		object-fit: contain;
 	}
 	.full-main {
 		min-width: 0;

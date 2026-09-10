@@ -65,7 +65,7 @@
 	</div>
 {:else}
 	<div class="flex flex-col min-h-screen">
-		<HubHeader user={data.user} logoUrl={data.logoUrl} />
+		<HubHeader user={data.user} logoUrl={data.logoUrl} logoDarkUrl={data.logoDarkUrl} />
 		<main class="flex-1">
 			{@render children()}
 		</main>

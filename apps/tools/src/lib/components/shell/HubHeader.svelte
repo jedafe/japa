@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
@@ -14,10 +15,12 @@
 	 */
 	let {
 		user,
-		logoUrl = ''
+		logoUrl = '',
+		logoDarkUrl = ''
 	}: {
 		user: SessionUser | null;
 		logoUrl?: string;
+		logoDarkUrl?: string;
 	} = $props();
 </script>
 
@@ -28,7 +31,7 @@
 		<div class="flex items-center gap-3">
 			<a href="/" class="flex items-center gap-2 font-bold text-text text-lg">
 				{#if logoUrl}
-					<img src={logoUrl} alt="JapaConnect" class="h-7 w-auto" />
+					<ThemeLogo {logoUrl} {logoDarkUrl} alt="JapaConnect" class="h-7 w-auto" />
 				{:else}
 					<span class="flex items-center gap-1.5">
 						<span
