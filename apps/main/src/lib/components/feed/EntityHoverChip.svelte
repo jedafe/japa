@@ -93,18 +93,18 @@
 		if (next) loadDetail();
 	}
 
-	function stopPropagation(e: Event) {
+	function onTriggerClick(e: MouseEvent) {
 		e.stopPropagation();
+		goto(href);
 	}
 </script>
 
 <LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
 	<LinkPreview.Trigger
-		{href}
 		class={variant === 'row'
 			? 'group/row flex w-full min-w-0 items-center gap-3 rounded-[var(--radius)] p-1 -m-1 text-left transition-colors hover:bg-[var(--color-surface-subtle)]'
 			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
-		onclick={stopPropagation}
+		onclick={onTriggerClick}
 	>
 		{#if variant === 'row'}
 			{#if avatar}
