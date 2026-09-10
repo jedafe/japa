@@ -218,7 +218,7 @@
 <LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
 	<LinkPreview.Trigger
 		class={variant === 'row'
-			? 'flex w-full min-w-0 items-center gap-3 text-left'
+			? 'inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-left'
 			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
 		onclick={onTriggerClick}
 	>
@@ -232,7 +232,7 @@
 					{name.slice(0, 2).toUpperCase()}
 				</span>
 			{/if}
-			<div class="min-w-0 flex-1">
+			<div class="min-w-0 w-full">
 				<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
 				{#if secondary}
 					<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
