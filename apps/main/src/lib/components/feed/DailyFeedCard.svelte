@@ -263,7 +263,7 @@
 			<div class="flex flex-wrap items-center gap-5 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
 				<button
 					type="button"
-					class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+					class="flex items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 					onclick={openPost}
 					aria-label={t('feed.card.comments', 'Comments')}
 				>
@@ -272,7 +272,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-primary)]"
+					class="flex items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 					onclick={openPost}
 					aria-label={t('feed.card.reactions', 'Reactions')}
 				>
@@ -281,7 +281,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+					class="flex items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 					onclick={openPost}
 					aria-label={t('feed.card.bookmark', 'Bookmark')}
 				>
@@ -289,7 +289,7 @@
 				</button>
 				<button
 					type="button"
-					class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+					class="flex items-center gap-1.5 rounded-full px-2 py-1 transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 					onclick={openPost}
 					aria-label={t('feed.card.share', 'Share')}
 				>
