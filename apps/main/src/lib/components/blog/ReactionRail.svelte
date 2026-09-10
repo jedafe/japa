@@ -5,6 +5,7 @@
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { shareContrastColor } from '$lib/utils/shareColor';
 
 	interface SharePlatform {
 		key: string;
@@ -443,8 +444,9 @@
 						class="flex w-full items-center gap-3 rounded-[var(--radius)] px-2 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						<span
-							class="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-[var(--color-primary-contrast)]"
-							style="background-color: {platform.color || 'var(--color-muted)'}"
+							class="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold"
+							style:backgroundColor={platform.color || 'var(--color-muted)'}
+							style:color={platform.color ? shareContrastColor(platform.color) : 'var(--color-text)'}
 						>
 							{platform.label.charAt(0)}
 						</span>
