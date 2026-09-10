@@ -95,14 +95,14 @@
 
 	function onTriggerClick(e: MouseEvent) {
 		e.stopPropagation();
-		goto(href);
+		if (slug) goto(href);
 	}
 </script>
 
 <LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
 	<LinkPreview.Trigger
 		class={variant === 'row'
-			? 'group/row flex w-full min-w-0 items-center gap-3 rounded-[var(--radius)] p-1 -m-1 text-left transition-colors hover:bg-[var(--color-surface-subtle)]'
+			? 'flex w-full min-w-0 items-center gap-3 text-left'
 			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
 		onclick={onTriggerClick}
 	>
@@ -115,7 +115,7 @@
 				</span>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<p class="truncate text-sm font-semibold text-[var(--color-text)] transition-colors group-hover/row:text-[var(--color-primary)]">{name}</p>
+				<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
 				{#if secondary}
 					<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
 				{/if}
