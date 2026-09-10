@@ -66,7 +66,9 @@
 		item.organization || item.space_name
 			? item.author_name
 				? `${item.author_name} • ${time}`
-				: time
+				: item.reading_time_minutes
+					? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
+					: time
 			: item.reading_time_minutes
 				? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
 				: time
