@@ -205,7 +205,7 @@
 				{#if isAuthor || data.canEdit}
 					<div class="flex shrink-0 items-center gap-1">
 						<a
-							href="/story/{story.slug}/edit"
+							href="/create?draft={story.id}&type=story"
 							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 						>
 							<Pencil size={14} /> {t('stories.edit', 'Edit')}

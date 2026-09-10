@@ -28,6 +28,9 @@
 		initialItems?: ComparisonItem[];
 		/** Existing dimensions when restoring a comparison draft. */
 		initialDimensions?: ComparisonDimension[];
+		/** §30 existing cell values indexed as `${dimIdx}:${itemIdx}` so the
+		 *  matrix is not blank when editing a comparison. */
+		initialCells?: Record<string, string>;
 		/** Admin-defined comparison types (Section 30) for the type selector. */
 		comparisonTypes?: ComparisonType[];
 	/** Valid dimension types from GET /jce/comparisons/dimension-types (Rule 16). */
@@ -51,6 +54,7 @@
 		onEnsureContent,
 		initialItems = [],
 		initialDimensions = [],
+		initialCells = {},
 		comparisonTypes = [],
 		dimensionTypes = [],
 		bodyHtml = '',
@@ -85,7 +89,7 @@
 			}))
 		)
 	);
-	let cells = $state<Record<string, string>>({}); // `${dimIdx}:${itemIdx}` → value
+	let cells = $state<Record<string, string>>(untrack(() => initialCells)); // `${dimIdx}:${itemIdx}` → value
 
 	// Debounce timers for cell-value writes (avoid N api calls per keystroke).
 	// Plain variable — timers are not reactive state.
@@ -319,11 +323,32 @@
 		const item = items[itemIdx];
 		const key = cellKey(dimIdx, itemIdx);
 		delete valueTimers[key];
-		if (dim?.id && item?.id) {
-			apiError = '';
-			const res = await setDimensionValues(dim.id, [{ item_id: item.id, value: cells[key] ?? '' }]);
-			if (res.error) apiError = res.error.message;
+		if (!dim?.id || !item?.id) return;
+
+		const raw = (cells[key] ?? '').trim();
+		const payload: { item_id: string; value?: string; value_rating?: number; value_boolean?: boolean } = {
+			item_id: item.id
+		};
+
+		if (dim.dimension_type === 'rating') {
+			const n = Number(raw);
+			if (raw !== '' && !Number.isNaN(n)) {
+				payload.value_rating = n;
+			}
+		} else if (dim.dimension_type === 'boolean') {
+			const lower = raw.toLowerCase();
+			if (lower === 'true' || lower === 'yes' || lower === '1') {
+				payload.value_boolean = true;
+			} else if (lower === 'false' || lower === 'no' || lower === '0') {
+				payload.value_boolean = false;
+			}
+		} else {
+			payload.value = raw;
 		}
+
+		apiError = '';
+		const res = await setDimensionValues(dim.id, [payload]);
+		if (res.error) apiError = res.error.message;
 	}
 </script>
 

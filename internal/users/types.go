@@ -216,6 +216,7 @@ type DraftResponse struct {
 	CanonicalURL    *string         `json:"canonical_url"`
 	HeaderImageID   *string         `json:"header_image_id"`
 	FeaturedImageID *string         `json:"featured_image_id"`
+	VideoSourceID   *string         `json:"video_source_id"`
 	MetaTitle       *string         `json:"meta_title"`
 	MetaDescription *string         `json:"meta_description"`
 	OgImageURL      *string         `json:"og_image_url"`

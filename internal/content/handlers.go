@@ -1755,10 +1755,23 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// BUG-001: enforce author-or-admin before allowing edits.
+	// BUG-001: enforce author-or-admin before allowing edits. Type-specific
+	// moderator nodes (story.edit_any for §79, comparison.edit_any for §30)
+	// are also honoured so those moderators can use the unified composer.
 	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
-		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit your own content")
-		return
+		letCanEdit := false
+		if resolver := rbac.FromContext(r.Context()); resolver != nil {
+			switch prevContent.ContentType {
+			case "story":
+				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, tenantID, "story.edit_any")
+			case "comparison":
+				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, tenantID, "comparison.edit_any")
+			}
+		}
+		if !letCanEdit {
+			errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only edit your own content")
+			return
+		}
 	}
 
 	// Super admins and content.edit_any holders bypass the edit-window

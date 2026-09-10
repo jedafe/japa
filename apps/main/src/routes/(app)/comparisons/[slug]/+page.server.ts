@@ -58,10 +58,18 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// §30 edit affordance: the author or a comparison moderator can jump
+	// straight to the unified composer for this comparison.
+	const isOwner = !!event.locals.user?.id && comparison.content.author_id === event.locals.user.id;
+	const canEdit =
+		isOwner ||
+		!!event.locals.user?.permissions?.includes('comparison.edit_any');
+
 	return {
 		comparison,
 		matrix,
 		resolvedItems: resolvedItems(comparison),
-		analytics
+		analytics,
+		canEdit
 	};
 };

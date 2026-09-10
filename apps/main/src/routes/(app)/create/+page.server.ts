@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
+import type { MatrixItem } from '$lib/types/jce';
 import type {
 	ContentTypeMeta,
 	MeSpace,
@@ -16,7 +17,8 @@ import type {
 	MediaAsset,
 	Visibility,
 	JCEComparison,
-	AssessmentForm
+	AssessmentForm,
+	VideoSource
 } from '$lib/types';
 
 /** Load everything the composer needs; every fetch degrades independently. */
@@ -121,6 +123,7 @@ export const load: PageServerLoad = async (event) => {
 	let coverMedia: MediaAsset | null = null;
 	let draftSeriesId: string | null = null;
 	let draftSpaces: ContentSpace[] = [];
+	let videoSource: VideoSource | null = null;
 	if (draftId) {
 		try {
 			// Ownership-scoped: GET /me/content/{id} returns the caller's own
@@ -151,6 +154,39 @@ export const load: PageServerLoad = async (event) => {
 						items: jce.items,
 						dimensions: jce.dimensions
 					};
+					// §30 — restore the existing comparison matrix so the
+					// ComparisonBuilder can display and continue editing cell values.
+					try {
+						const matrix = await apiGet<MatrixItem[]>(ctx, `/jce/comparisons/${draft.id}/matrix`);
+						const itemIndex = new Map<string, number>(comparisonDetail.items.map((it, i) => [it.id, i]));
+						const dimIndex = new Map<string, number>(
+							comparisonDetail.dimensions.map((d, i) => [d.id, i])
+						);
+						const matrixValues: Record<string, string> = {};
+						for (const row of matrix ?? []) {
+							const itemIdx = itemIndex.get(row.id);
+							if (itemIdx === undefined) continue;
+							for (const cell of row.dimensions) {
+								const dimIdx = dimIndex.get(cell.dimension_id);
+								if (dimIdx === undefined) continue;
+								let v = '';
+								if (cell.type === 'rating' && cell.value_rating != null) {
+									v = String(cell.value_rating);
+								} else if (cell.type === 'boolean' && cell.value_boolean != null) {
+									v = String(cell.value_boolean);
+								} else if (cell.value != null) {
+									v = String(cell.value);
+								}
+								if (v !== '') {
+									matrixValues[`${dimIdx}:${itemIdx}`] = v;
+								}
+							}
+						}
+						comparisonDetail.matrixValues = matrixValues;
+					} catch {
+						// Degrade gracefully — missing matrix values is not a blocker
+						// for editing item/dimension metadata and body.
+					}
 				} catch {
 					comparisonDetail = null;
 				}
@@ -209,6 +245,15 @@ export const load: PageServerLoad = async (event) => {
 			} catch {
 				draftSpaces = [];
 			}
+			// §106 video — restore the linked video source so the VideoField
+			// can show the thumbnail/title when editing an existing video.
+			if (draft?.video_source_id) {
+				try {
+					videoSource = await apiGet<VideoSource>(ctx, `/videos/${draft.video_source_id}`);
+				} catch {
+					videoSource = null;
+				}
+			}
 		} catch {
 			draft = null;
 		}
@@ -222,6 +267,7 @@ export const load: PageServerLoad = async (event) => {
 		organizations,
 		draft,
 		draftTags,
+		videoSource,
 		comparisonDetail,
 		comparisonTypes,
 		dimensionTypes,
