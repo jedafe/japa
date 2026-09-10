@@ -4,7 +4,7 @@
 	import { TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { feedQueryString, type FeedTab, type SortValue } from '$lib/feed/endpoint';
-	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 	import { EmptyState, LoadingSkeleton, PaginationControls } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import type { FeedItem } from '$lib/types';
@@ -60,8 +60,9 @@
 		});
 	});
 
-	// Layout mode is fixed from the initial SSR page (never flips mid-scroll).
-	const gridLayout = $derived(gridMode(initial.map((i) => i.content_type), config));
+	// Feeds always render the daily card in a stream; dedicated list pages may
+	// use other cards, but FeedList is only used for unified feed surfaces.
+	const gridLayout = false;
 
 	$effect(() => {
 		const el = sentinel;
@@ -144,7 +145,7 @@
 	{#if gridLayout}
 		<div class="grid grid-cols-1 gap-3.5 p-3 sm:grid-cols-2">
 			{#each items as item (item.id)}
-				<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
+				<FeedCard {item} style="daily" layout="grid-cell" />
 			{/each}
 		</div>
 	{:else}
@@ -152,7 +153,7 @@
 			class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 		>
 			{#each items as item (item.id)}
-				<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+				<FeedCard {item} style="daily" layout="stream" />
 			{/each}
 		</div>
 	{/if}
