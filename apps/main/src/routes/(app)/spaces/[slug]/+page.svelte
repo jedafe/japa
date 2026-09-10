@@ -17,7 +17,6 @@
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import DigestWidget from '$lib/components/digest/DigestWidget.svelte';
@@ -33,7 +32,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const space = $derived(data.space);
 	const authed = $derived(!!page.data.user);
-	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 	const wikiEnabled = $derived(!!data.wikiEnabled);
 	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
 	const isDestinationWiki = $derived(['country', 'state', 'city'].includes(space.level));
@@ -596,7 +594,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(item)}
-								style={cardStyleFor(item.content_type, cardStyleConfig)}
+								style="daily"
 								layout="stream"
 							/>
 							{#if item.is_pinned}
@@ -672,7 +670,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(item)}
-								style={cardStyleFor(item.content_type, cardStyleConfig)}
+								style="daily"
 								layout="stream"
 							/>
 							<span class="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">

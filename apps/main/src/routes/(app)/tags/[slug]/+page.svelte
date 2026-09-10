@@ -9,7 +9,7 @@
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import { gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { MediaAsset, FeedItem } from '$lib/types';
 	import type { SearchResult } from '$lib/types/search';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -559,13 +559,13 @@
 				{#if allGridLayout}
 					<div class="grid gap-3.5 sm:grid-cols-2">
 						{#each allFeedItems as item (item.id)}
-							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
+							<FeedCard {item} style="daily" layout="grid-cell" />
 						{/each}
 					</div>
 				{:else}
 					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 						{#each allFeedItems as item (item.id)}
-							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+							<FeedCard {item} style="daily" layout="stream" />
 						{/each}
 					</div>
 				{/if}

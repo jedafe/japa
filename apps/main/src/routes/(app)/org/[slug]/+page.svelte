@@ -11,7 +11,6 @@
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfilePost, FeedItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
@@ -19,8 +18,6 @@
 	const org = $derived(data.org);
 	const canManage = $derived(data.canManage);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
-	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'daily', byType: {} });
-
 	// Map ProfilePost → FeedItem so org posts render through the shared FeedCard.
 	function toFeedItem(post: ProfilePost): FeedItem {
 		return {
@@ -149,7 +146,7 @@
 					{#each data.posts as post (post.id)}
 						<FeedCard
 							item={toFeedItem(post)}
-							style={cardStyleFor(post.content_type, cardStyleConfig)}
+							style="daily"
 							layout="stream"
 						/>
 					{/each}

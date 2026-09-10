@@ -13,7 +13,6 @@
 	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SelectField, SearchInput } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { formatMetric } from '$lib/components/hub/charts/format';
@@ -24,8 +23,6 @@
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
-
-	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'daily', byType: {} });
 
 	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
 	// The profile page's posts all belong to the same user, so the author
@@ -557,7 +554,7 @@ profile is private, or no stage is set. -->
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(post)}
-								style={cardStyleFor(post.content_type, cardStyleConfig)}
+								style="daily"
 								layout="stream"
 							/>
 							{#if post.is_pinned}
@@ -681,7 +678,7 @@ profile is private, or no stage is set. -->
 						{#each videoPosts as post (post.id)}
 							<FeedCard
 								item={toFeedItem(post)}
-								style={cardStyleFor('video', cardStyleConfig)}
+								style="daily"
 								layout="stream"
 							/>
 						{/each}
