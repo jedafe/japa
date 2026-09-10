@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
 import type { JCEComparisonDetail, MatrixItem, ResolvedItem } from '$lib/types/jce';
+import type { Comment } from '$lib/types';
 import type { ContentAnalytics } from '$lib/types/content';
 import type { PageServerLoad } from './$types';
 
@@ -20,6 +21,8 @@ function resolvedItems(cmp: JCEComparisonDetail): ResolvedItem[] {
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const slug = event.params.slug;
+	const authed = !!event.locals.user;
+	const currentUserId = event.locals.user?.id ?? null;
 
 	let comparison: JCEComparisonDetail | null = null;
 	let matrix: MatrixItem[] = [];
@@ -46,6 +49,18 @@ export const load: PageServerLoad = async (event) => {
 		matrix = [];
 	}
 
+	// Unified comment engine (Section 49) — top-level comments are SSR-seeded.
+	let comments: Comment[] = [];
+	let commentsLoadError = false;
+	let commentDeletedUserIds: string[] | null = null;
+	try {
+		const envelope = await apiGetEnvelope<Comment[]>(ctx, `/content/${comparison.content.id}/comments?page_size=50`);
+		comments = envelope.data ?? [];
+		commentDeletedUserIds = envelope.deleted_user_ids ?? null;
+	} catch {
+		commentsLoadError = true;
+	}
+
 	// Owner analytics (Section 40 — GET /content/{id}/analytics is owner or
 	// analytics.admin only). Fetch only for the author to avoid guaranteed
 	// 403s for other viewers; a failure degrades to no stats card.
@@ -65,11 +80,27 @@ export const load: PageServerLoad = async (event) => {
 		isOwner ||
 		!!event.locals.user?.permissions?.includes('comparison.edit_any');
 
+	// Moderation affordances: comment pinning needs comments.pin; the Edit
+	// affordance is already handled by canEdit. Backend enforces actual permissions.
+	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
+		(g) => g === 'super_admin' || g === 'Super Admin'
+	);
+	const canModerate =
+		isOwner ||
+		isSuperAdmin ||
+		!!event.locals.user?.permissions?.includes('comments.pin');
+
 	return {
 		comparison,
 		matrix,
 		resolvedItems: resolvedItems(comparison),
 		analytics,
-		canEdit
+		canEdit,
+		authed,
+		currentUserId,
+		canModerate,
+		comments,
+		commentsLoadError,
+		deletedUserIds: commentDeletedUserIds
 	};
 };
