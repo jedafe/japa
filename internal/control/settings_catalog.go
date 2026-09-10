@@ -640,7 +640,7 @@ var settingsCatalog = map[string]settingMeta{
 	// Video (§106, ADR-117)
 	// Public because the main /create composer and studio surfaces gate
 	// themselves on this setting (Rule 16).
-	"video.enabled":                       {Type: "bool", DefaultValue: "false", Public: true, Description: "Feature flag for the video content type and /create composer.", Panel: "admin"},
+	"video.enabled":                       {Type: "bool", DefaultValue: "true", Public: true, Description: "Feature flag for the video content type and /create composer.", Panel: "admin"},
 	"video.import.allowed_platforms":      {Type: "json", DefaultValue: `["youtube","tiktok","instagram","vimeo"]`, Description: "Platform allowlist for single URL import.", Panel: "admin"},
 	"video.import.youtube_api_key":        {Type: "string", DefaultValue: "", Description: "YouTube Data API v3 key for bulk imports (server-only).", Sensitive: true, Panel: "admin"},
 	"video.import.instagram_access_token": {Type: "string", DefaultValue: "", Description: "Instagram oEmbed access token for Reel/post imports (server-only).", Sensitive: true, Panel: "admin"},
