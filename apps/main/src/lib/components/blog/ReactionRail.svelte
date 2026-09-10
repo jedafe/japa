@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Bookmark, MessageCircle, Share2, Check, Heart } from 'lucide-svelte';
+	import { Bookmark, MessageCircle, Share2, Check, Heart, Copy } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -72,6 +72,7 @@
 	let reactionPending = $state<string | null>(null);
 	let bookmarkPending = $state(false);
 	let shared = $state(false);
+	let copied = $state(false);
 	let showShareMenu = $state(false);
 	let showReactions = $state(false);
 	let reactionCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -278,6 +279,17 @@
 		setTimeout(() => (shared = false), 2000);
 	}
 
+	async function copyOnly() {
+		const url = window.location.href;
+		try {
+			await navigator.clipboard.writeText(url);
+			copied = true;
+		} catch {
+			// Clipboard failed — silently ignore
+		}
+		setTimeout(() => (copied = false), 2000);
+	}
+
 	function toggleShareMenu() {
 		showShareMenu = !showShareMenu;
 	}
@@ -308,11 +320,19 @@
 	);
 </script>
 
-<!-- ADR-058 Exception #1: borderless, transparent vertical strip in the article's LEFT margin.
-     Must read as distinct from the bordered 72px nav — separated by a clear gap.
-     `horizontal` re-uses the same controls in a compact row for the mobile action bar.
-     `bottom` renders a fixed bottom bar with popovers opening upward, like the shell's mobile menu. -->
-<div class="{bottom ? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur' : (isHorizontal ? 'relative z-40 flex flex-row items-center gap-4' : 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4')}">
+<!--
+	ADR-058 Exception #1 (vertical rail): borderless, transparent vertical strip in the article's
+	LEFT margin, distinct from the 72px nav. `horizontal` re-uses the same controls in a compact
+	row for a bottom action bar under the article body. `bottom` renders a fixed bottom bar with
+	popovers opening upward, like the shell's mobile menu.
+-->
+<div
+	class="{bottom
+		? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur'
+		: horizontal
+			? 'relative z-30 flex flex-row items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
+			: 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4'}"
+>
 	{#if reactionsEnabled}
 		<div
 			class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
@@ -467,4 +487,21 @@
 			</div>
 		{/if}
 	</div>
+
+	{#if isHorizontal}
+		<button
+			type="button"
+			onclick={copyOnly}
+			class="flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			aria-label={t('blog.copy_link', 'Copy link')}
+		>
+			<span class="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
+				{#if copied}
+					<Check size={18} class="text-[var(--color-success)]" />
+				{:else}
+					<Copy size={18} />
+				{/if}
+			</span>
+		</button>
+	{/if}
 </div>

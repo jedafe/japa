@@ -5,6 +5,8 @@
 
 	interface Props {
 		authorName?: string;
+		/** Author username for the profile link. When absent, the avatar/name is not linked. */
+		authorUsername?: string | null;
 		authorAvatarUrl?: string | null;
 		spaceName?: string | null;
 		/** Slug of the primary space so the "Writing in" text can link to it. */
@@ -22,6 +24,7 @@
 	}
 	let {
 		authorName,
+		authorUsername = null,
 		authorAvatarUrl,
 		spaceName,
 		spaceSlug = null,
@@ -36,7 +39,7 @@
 
 <!-- ADR-058 Exception #1: CreatorCard REPLACES the search/avatar bar in the right sidebar. -->
 <div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-	<div class="flex flex-col items-center text-center">
+	{#snippet authorIdentity()}
 		{#if authorAvatarUrl}
 			<img src={authorAvatarUrl} alt={authorName ?? ''} class="h-20 w-20 rounded-full object-cover" />
 		{:else}
@@ -44,7 +47,19 @@
 				{authorName?.charAt(0) ?? '?'}
 			</span>
 		{/if}
-		<h3 class="mt-3 font-semibold text-[var(--color-text)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
+		<h3 class="mt-3 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]">{authorName ?? t('blog.anonymous', 'Anonymous')}</h3>
+	{/snippet}
+
+	<div class="flex flex-col items-center text-center">
+		{#if authorUsername}
+			<a href="/u/{authorUsername}" class="group flex flex-col items-center transition-colors hover:text-[var(--color-primary)]">
+				{@render authorIdentity()}
+			</a>
+		{:else}
+			<div class="flex flex-col items-center">
+				{@render authorIdentity()}
+			</div>
+		{/if}
 		{#if spaceName}
 			{#if spaceSlug}
 				<a href="/spaces/{spaceSlug}" class="mt-1 block text-sm text-[var(--color-primary)] hover:underline">

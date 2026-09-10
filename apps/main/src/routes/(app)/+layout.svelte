@@ -39,6 +39,11 @@
 	// left rails. The user can still expand via the toggle.
 	const isDashboard = $derived(page.route.id?.startsWith('/(app)/dashboard') ?? false);
 
+	// ADR-058 Exception #1: content single pages (blog, content, guide,
+	// story, comparisons) still render the unified shell's left ad rail. /create
+	// is the exception exception: it owns its own layout and hides the left rail.
+	const isCreateRoute = $derived(page.route.id === '/(app)/create');
+
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
@@ -131,10 +136,10 @@
 	<!-- AppShell handles both authenticated and guest users. The LeftNav
 	     shows a Login button for guests and filters menu items by visibility.
 	     The RightSidebar renders admin-managed widgets for all users.
-	     The left rail is suppressed on exception routes AND the auto-collapse
-	     zones (/settings, /dashboard) — those already run with the nav
-	     collapsed for their own rails, so a widget rail there would
-	     compete for the same space. -->
+	     The left rail is suppressed on /create and the auto-collapse zones
+	     (/settings, /dashboard). Content single pages (exception #1) keep the
+	     left ad rail so the article body can devote its full center column to
+	     the reading layout. -->
 	<AppShell
 		menu={data.menu}
 		user={data.user}
@@ -148,7 +153,7 @@
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
-		leftSidebarWidgets={exception || isSettings || isDashboard ? [] : data.leftSidebarWidgets}
+		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard ? [] : data.leftSidebarWidgets}
 
 		composeEnabled={!exception && !!data.user}
 		features={data.features}

@@ -169,7 +169,8 @@
 	{#snippet rightSidebar()}
 		<div class="flex flex-col gap-4">
 			<CreatorCard
-				authorName={story.author_name}
+				authorName={story.author_display_name ?? story.author_name}
+				authorUsername={story.author_username ?? story.author_name}
 				authorAvatarUrl={story.author_avatar}
 				spaceName={story.destination_space_name}
 				authorId={story.author_id}
@@ -190,12 +191,11 @@
 		</div>
 	{/snippet}
 
+	<!--
+		Content single pages render the unified shell's left ad rail (Section 59) instead of a
+		page-owned left reaction rail. The action bar is now a horizontal rail under the body.
+	-->
 	<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
-		<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
-		<div class="hidden w-14 shrink-0 lg:block">
-			<ReactionRail contentId={story.id} commentCount={story.comment_count} authed={data.authed} />
-		</div>
-
 		<!-- Center: story -->
 		<article class="min-w-0 flex-1 max-w-3xl">
 			<div class="mb-8 flex items-center justify-between gap-3">
@@ -243,14 +243,20 @@
 			<!-- Author + date + views -->
 			<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 				{#if story.author_name}
-					<a href="/u/{story.author_name}" class="flex items-center gap-2 transition-colors hover:text-[var(--color-primary)]">
+					{@const authorDisplay = story.author_display_name ?? story.author_name}
+					{@const authorHref = story.author_username ?? story.author_name}
+					<svelte:element
+						this={authorHref ? 'a' : 'span'}
+						href={authorHref ? `/u/${authorHref}` : undefined}
+						class="flex items-center gap-2 {authorHref ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+					>
 						{#if story.author_avatar}
 							<img src={story.author_avatar} alt="" class="h-9 w-9 rounded-full object-cover" />
 						{:else}
-							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{story.author_name.charAt(0)}</span>
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorDisplay.charAt(0)}</span>
 						{/if}
-						<span class="font-medium text-[var(--color-text)]">@{story.author_name}</span>
-					</a>
+						<span class="font-medium text-[var(--color-text)]">{authorDisplay}</span>
+					</svelte:element>
 					<span>·</span>
 				{/if}
 				<span>{publishedDate || relativeTime(story.created_at, new Date(), i18n.locale)}</span>
@@ -350,13 +356,13 @@
 				</nav>
 			{/if}
 
-			<!-- Mobile reaction/action bar (fixed at the bottom) -->
-			<div class="lg:hidden">
+			<!-- Horizontal reaction/action bar under the article body. -->
+			<div class="mt-8">
 			<ReactionRail
 				contentId={story.id}
 				commentCount={story.comment_count}
 				authed={data.authed}
-				bottom
+				horizontal
 			/>
 			</div>
 

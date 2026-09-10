@@ -74,9 +74,11 @@ type StoryDTO struct {
 	BiggestChallenge string `json:"biggest_challenge,omitempty"`
 	MostUsefulRes    string `json:"most_useful_resource,omitempty"`
 	BestAdvice       string `json:"best_advice,omitempty"`
-	Verified         bool   `json:"verified"`
-	AuthorName       string `json:"author_name,omitempty"`
-	AuthorAvatar     string `json:"author_avatar,omitempty"`
+	Verified          bool   `json:"verified"`
+	AuthorName        string `json:"author_name,omitempty"`
+	AuthorUsername    string `json:"author_username,omitempty"`
+	AuthorDisplayName string `json:"author_display_name,omitempty"`
+	AuthorAvatar      string `json:"author_avatar,omitempty"`
 	// Series membership (shared blog_series model — the story single renders
 	// the same series navigation card as the blog single).
 	SeriesID    string `json:"series_id,omitempty"`
@@ -703,6 +705,14 @@ func rowToDTO(r StoryRow) StoryDTO {
 
 	if r.AuthorName != nil {
 		dto.AuthorName = *r.AuthorName
+	}
+
+	if r.AuthorUsername != nil {
+		dto.AuthorUsername = *r.AuthorUsername
+	}
+
+	if r.AuthorDisplayName != nil {
+		dto.AuthorDisplayName = *r.AuthorDisplayName
 	}
 
 	if r.AuthorAvatar != nil {

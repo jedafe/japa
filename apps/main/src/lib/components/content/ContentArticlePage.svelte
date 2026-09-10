@@ -173,6 +173,7 @@
 	<div class="flex flex-col gap-4">
 		<CreatorCard
 			authorName={article.author_name}
+			authorUsername={article.author_username}
 			authorAvatarUrl={article.author_avatar_url}
 			spaceName={article.space_name}
 			spaceSlug={article.space_slug}
@@ -194,12 +195,11 @@
 	</div>
 {/snippet}
 
+<!--
+	Content single pages render the unified shell's left ad rail (Section 59) instead of a
+	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
+-->
 <div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
-	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
-	<div class="hidden w-14 shrink-0 lg:block">
-		<ReactionRail contentId={article.id} voteScore={article.reshare_count} commentCount={article.comment_count} authed={data.authed} />
-	</div>
-
 	<!-- Center: article -->
 	<article class="min-w-0 flex-1 max-w-3xl">
 		<div class="mb-8 flex items-center justify-between gap-3">
@@ -246,14 +246,18 @@
 
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if article.author_name}
-				<span class="flex items-center gap-2">
+				<svelte:element
+					this={article.author_username ? 'a' : 'span'}
+					href={article.author_username ? `/u/${article.author_username}` : undefined}
+					class="flex items-center gap-2 {article.author_username ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+				>
 					{#if article.author_avatar_url}
 						<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
 					{:else}
 						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{article.author_name.charAt(0)}</span>
 					{/if}
 					<span class="font-medium text-[var(--color-text)]">{article.author_name}</span>
-				</span>
+				</svelte:element>
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>
@@ -304,14 +308,14 @@
 			{@html sanitizedBody}
 		</div>
 
-		<!-- Mobile reaction/action bar (fixed at the bottom) -->
-		<div class="lg:hidden">
+		<!-- Horizontal reaction/action bar under the article body. -->
+		<div class="mt-8">
 			<ReactionRail
 				contentId={article.id}
 				voteScore={article.reshare_count}
 				commentCount={article.comment_count}
 				authed={data.authed}
-				bottom
+				horizontal
 			/>
 		</div>
 

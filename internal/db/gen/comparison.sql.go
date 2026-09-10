@@ -414,6 +414,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
        u.username AS author_name,
+       u.username AS author_username,
        up.display_name AS author_display_name,
        up.avatar_url AS author_avatar_url,
        s.name AS space_name,
@@ -477,6 +478,7 @@ type GetComparisonBySlugOrIDRow struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	AuthorName            *string            `json:"author_name"`
+	AuthorUsername        *string            `json:"author_username"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
 	AuthorAvatarUrl       *string            `json:"author_avatar_url"`
 	SpaceName             *string            `json:"space_name"`
@@ -536,6 +538,7 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AuthorName,
+		&i.AuthorUsername,
 		&i.AuthorDisplayName,
 		&i.AuthorAvatarUrl,
 		&i.SpaceName,

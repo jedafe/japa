@@ -2833,6 +2833,8 @@ export interface Story {
 	best_advice?: string;
 	verified: boolean;
 	author_name?: string;
+	author_username?: string;
+	author_display_name?: string;
 	author_avatar?: string;
 	/** Series membership (shared blog_series model — §14 series nav on the
 	 *  story single mirrors the blog single). */
