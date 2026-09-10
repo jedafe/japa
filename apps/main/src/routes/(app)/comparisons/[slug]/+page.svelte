@@ -20,7 +20,6 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
-	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -290,11 +289,6 @@
 	<div class="mt-8 flex flex-col gap-4 xl:hidden">
 		{@render rightSidebar()}
 	</div>
-
-	<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
-	{#if data.analytics}
-		<OwnerStatsCard stats={data.analytics} />
-	{/if}
 
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
 	<CommentThread
