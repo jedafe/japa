@@ -32,6 +32,30 @@
 	const hasPreview = $derived(!!post.excerpt);
 	let showFull = $state(false);
 	const preview = $derived(post.excerpt ? sanitizeContentHtml(post.excerpt, undefined) : sanitizedBody);
+
+	const regionNames = $derived(
+		(() => {
+			try {
+				return new Intl.DisplayNames([i18n.locale], { type: 'region' });
+			} catch {
+				return null;
+			}
+		})()
+	);
+	function countryName(code?: string | null) {
+		if (!code) return '';
+		const upper = code.toUpperCase();
+		return regionNames?.of(upper) ?? upper;
+	}
+	const routeLabel = $derived(
+		post.source_country && post.target_country
+			? `${countryName(post.source_country)} → ${countryName(post.target_country)}`
+			: post.target_country
+				? countryName(post.target_country)
+				: post.source_country
+					? countryName(post.source_country)
+					: null
+	);
 </script>
 
 <svelte:head>
@@ -58,6 +82,11 @@
 			<Icon size={14} />
 			<a href={canonicalHref} class="hover:underline">{actionLabel}</a>
 		</span>
+		{#if routeLabel}
+			<span class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-subtle)]">
+				{routeLabel}
+			</span>
+		{/if}
 		{#if post.organization}
 			<EntityHoverChip
 				type="organization"
@@ -66,7 +95,7 @@
 				name={post.organization.name}
 				avatar={post.organization.logo_url}
 			/>
-		{:else if post.space_name && post.space_slug}
+		{:else if !routeLabel && post.space_name && post.space_slug}
 			<EntityHoverChip
 				type="space"
 				id={post.space_id ?? post.space_slug}
