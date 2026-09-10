@@ -28,8 +28,7 @@ Update `apps/main/src/lib/components/feed/FeedCard.svelte` with a new `daily` br
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ [Avatar] Author Name  ·  [Avatar] Space/Org Name          6m · 3 min read   │
-│                                                           Read post · ⋮     │
+│ [Avatar] Author Name         Space/Org • 6m                Read post · ⋮    │
 ├──────────────────────────────────────────────┬──────────────────────────────┤
 │                                              │                              │
 │  Title of the post                           │        Cover image           │
@@ -37,14 +36,11 @@ Update `apps/main/src/lib/components/feed/FeedCard.svelte` with a new `daily` br
 │  #tag #tag +1                                │                              │
 │                                              │                              │
 ├──────────────────────────────────────────────┴──────────────────────────────┤
-│  💬 8    ▲ 24    ▼    🔖    ↗                                                │
+│  💬 8    ♥ 24    🔖    ↗                                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Top-left:** Author chip and source chip. Each chip is a hover trigger and a link.
-  - If `organization` is set, the source chip is the org.
-  - Else if `space_id` is set, the source chip is the space.
-  - The author chip is always the user.
+- **Top-left:** Author chip. The user is the primary entity for feed cards; the secondary line under the author shows the publishing organization/space (when present), the read time, or the date.
 - **Content-type identity:** Because the same `daily` card is used for blog, guide, video, story, discussion, etc., each card must clearly identify its content type. The type badge is rendered as a pill with a Lucide icon and a label, using a distinct accent color per type. Unknown or custom types fall back to a generic icon. The icon and color make each type scannable at a glance without forking the card layout.
 
   Proposed default icon map (overridable by admin CSS variables / settings later):
@@ -63,7 +59,7 @@ Update `apps/main/src/lib/components/feed/FeedCard.svelte` with a new `daily` br
   | other / custom | `FileText` | `--color-primary` |
 - **Top-right:** relative time, read time, a context-aware "Read {type}" or "View {type}" arrow (e.g. "Read guide", "View comparison", "Read blog", "View video", "Read story", "View discussion"), and a `⋮` action menu (share, bookmark, report). Labels are i18n keys so they are localizable.
 - **Middle:** content type badge, title, and excerpt on the left; cover image on the right (video play overlay preserved).
-- **Bottom metric bar:** comment count, `reaction_count` (with an up-arrow), a down-arrow icon, bookmark, and share. Post-level upvote/downvote controls are not present; the arrows are visual only. Hovering a chip opens a compact entity card; clicking the card body navigates to `/post/[content_type]/[slug]`.
+- **Bottom metric bar:** comment count, `reaction_count` (heart icon), bookmark, and share. Post-level upvote/downvote controls are not present; the heart is a visual metric only. Each bottom icon opens `/post/[content_type]/[slug]` on click. Hovering a chip opens a compact entity card.
 
 The entire card body (outside the chips, menu, and explicit links) is clickable and navigates to `/post/[content_type]/[slug]`.
 

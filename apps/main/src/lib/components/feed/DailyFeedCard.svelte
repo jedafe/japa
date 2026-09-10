@@ -6,10 +6,9 @@
 	 */
 	import { goto } from '$app/navigation';
 	import {
-		ArrowDown,
-		ArrowUp,
 		Bookmark,
 		ExternalLink,
+		Heart,
 		MessageSquare,
 		MoreVertical,
 		Play,
@@ -36,42 +35,22 @@
 	const canonicalHref = $derived(contentHref(item));
 	const actionLabel = $derived(readPostLabel(item.content_type));
 
-	const sourceEntity = $derived(
-		item.organization
-			? {
-					type: 'organization' as const,
-					id: item.organization.id,
-					slug: item.organization.slug,
-					name: item.organization.name,
-					avatar: item.organization.logo_url
-				}
-			: item.space_name && item.space_slug
-				? {
-						type: 'space' as const,
-						id: item.space_id ?? item.space_slug,
-						slug: item.space_slug,
-						name: item.space_name,
-						avatar: item.space_avatar_url
-					}
-				: {
-						type: 'user' as const,
-						id: item.author_id,
-						slug: item.author_username ?? '',
-						name: item.author_name ?? t('feed.anonymous', 'Unknown'),
-						avatar: item.author_avatar_url
-					}
-	);
+	const sourceEntity = $derived({
+		type: 'user' as const,
+		id: item.author_id,
+		slug: item.author_username ?? '',
+		name: item.author_name ?? t('feed.anonymous', 'Unknown'),
+		avatar: item.author_avatar_url
+	});
 
 	const secondary = $derived(
-		item.organization || item.space_name
-			? item.author_name
-				? `${item.author_name} • ${time}`
+		item.organization
+			? `${item.organization.name} • ${time}`
+			: item.space_name
+				? `${item.space_name} • ${time}`
 				: item.reading_time_minutes
 					? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
 					: time
-			: item.reading_time_minutes
-				? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
-				: time
 	);
 
 	const visibleTags = $derived(item.tags?.slice(0, 3) ?? []);
@@ -87,11 +66,9 @@
 		if (e.key === 'Enter') goto(socialHref);
 	}
 
-	function sharePost(e: Event) {
+	function openPost(e: Event) {
 		e.stopPropagation();
-		if (typeof navigator !== 'undefined' && navigator.clipboard) {
-			navigator.clipboard.writeText(window.location.origin + canonicalHref).catch(() => {});
-		}
+		goto(socialHref);
 	}
 </script>
 
@@ -172,24 +149,36 @@
 
 		<!-- Metrics / actions -->
 		<div class="flex flex-wrap items-center gap-5 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
-			<span class="flex items-center gap-1.5">
-				<MessageSquare size={14} />
-				{item.comment_count ?? 0}
-			</span>
-			<span class="flex items-center gap-1.5">
-				<ArrowUp size={14} />
-				{item.reaction_count ?? 0}
-			</span>
-			<span class="flex items-center gap-1.5">
-				<ArrowDown size={14} />
-			</span>
-			<span class="flex items-center gap-1.5">
-				<Bookmark size={14} />
-			</span>
 			<button
 				type="button"
 				class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
-				onclick={sharePost}
+				onclick={openPost}
+				aria-label={t('feed.card.comments', 'Comments')}
+			>
+				<MessageSquare size={14} />
+				{item.comment_count ?? 0}
+			</button>
+			<button
+				type="button"
+				class="flex items-center gap-1.5 transition-colors hover:text-rose-500"
+				onclick={openPost}
+				aria-label={t('feed.card.reactions', 'Reactions')}
+			>
+				<Heart size={14} />
+				{item.reaction_count ?? 0}
+			</button>
+			<button
+				type="button"
+				class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+				onclick={openPost}
+				aria-label={t('feed.card.bookmark', 'Bookmark')}
+			>
+				<Bookmark size={14} />
+			</button>
+			<button
+				type="button"
+				class="flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+				onclick={openPost}
 				aria-label={t('feed.card.share', 'Share')}
 			>
 				<Share2 size={14} />
