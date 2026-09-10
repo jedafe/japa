@@ -21,6 +21,7 @@
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
+	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import { ArrowLeft, ExternalLink, Pencil } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -31,6 +32,9 @@
 	let resolvedItems = $derived(uniqueResolvedItems(data.resolvedItems ?? []));
 	let user = $derived(data.user ?? null);
 	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
+	let deletedUserIds = $derived(
+		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
 
 	let freshness = $state<FreshnessSummary | null>(null);
 	let advisorOpen = $state(false);
@@ -198,6 +202,19 @@
 			</div>
 		</section>
 	{/if}
+
+	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
+	<CommentThread
+		comments={data.comments}
+		totalCount={comparison.content.comment_count}
+		contentId={comparison.content.id}
+		contentType="comparison"
+		authed={data.authed}
+		currentUserId={data.currentUserId}
+		canModerate={data.canModerate}
+		loadError={data.commentsLoadError}
+		deletedUserIds={deletedUserIds}
+	/>
 
 	<div class="flex gap-4">
 		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
