@@ -46,7 +46,6 @@
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
 	const Icon = $derived(meta.icon);
-	const accentVar = $derived(`var(${meta.accentVar})`);
 
 	const sourceEntity = $derived({
 		type: 'user' as const,
@@ -172,10 +171,9 @@
 			<a
 				href={canonicalHref}
 				class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--color-surface-subtle)]"
-				style:color={accentVar}
-				style:borderColor={`color-mix(in srgb, ${meta.accentVar} 30%, transparent)`}
-				style:backgroundColor={`color-mix(in srgb, ${meta.accentVar} 12%, transparent)`}
-				onclick={(e) => e.stopPropagation()}
+				style:color={`color-mix(in srgb, ${meta.accentVar} 55%, var(--color-text))`}
+				style:borderColor={`color-mix(in srgb, ${meta.accentVar} 18%, transparent)`}
+				style:backgroundColor={`color-mix(in srgb, ${meta.accentVar} 8%, transparent)`}
 			>
 				<Icon size={12} />
 				{actionLabel}
