@@ -198,7 +198,7 @@
 	Content single pages render the unified shell's left ad rail (Section 59) instead of a
 	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 -->
-<div class="mx-auto flex max-w-[65rem] gap-8 px-4 py-8 pb-24 lg:pb-8">
+<div class="mx-auto flex max-w-[63rem] gap-8 py-8 pb-24 lg:pb-8">
 	<!-- Center: article -->
 	<article class="min-w-0 flex-1 max-w-[41rem]">
 		<div class="mb-8 flex items-center justify-between gap-3">
