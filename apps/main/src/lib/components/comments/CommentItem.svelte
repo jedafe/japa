@@ -1,11 +1,23 @@
 <script lang="ts">
-	import { ChevronDown, ChevronRight, CornerUpLeft, Pin, ArrowUp, ArrowDown, Pencil, Trash2 } from 'lucide-svelte';
+	import {
+		ArrowUp,
+		ArrowDown,
+		CornerUpLeft,
+		Pin,
+		Pencil,
+		Trash2,
+		Minus,
+		Plus,
+		Share2,
+		MoreHorizontal,
+		Check
+	} from 'lucide-svelte';
+	import { DropdownMenu } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
-	// Self-import replaces the deprecated <svelte:self> for recursive nesting.
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
 
@@ -13,7 +25,7 @@
 		comment: Comment;
 		/** Content id (for posting replies via POST /content/{id}/comments). */
 		contentId: string;
-		/** Parent content type — controls vote vs emoji-reaction display (Section 49). */
+		/** Parent content type — retained for backwards compatibility; no longer gates voting. */
 		contentType: string;
 		/** Current nesting depth (0 = top-level). */
 		depth: number;
@@ -30,20 +42,35 @@
 		/** Called when this comment or any nested reply is deleted. */
 		onDelete?: () => void;
 	}
-	let { comment, contentId, contentType, depth, authed, currentUserId, canModerate, deletedUserIds, onReply = () => {}, onDelete = () => {} }: Props = $props();
+	let {
+		comment,
+		contentId,
+		contentType,
+		depth,
+		authed,
+		currentUserId,
+		canModerate,
+		deletedUserIds,
+		onReply = () => {},
+		onDelete = () => {}
+	}: Props = $props();
 
 	const MAX_DEPTH = 3;
-	// Section 49: voting is forum-discussions-only; other content types use
-	// emoji reactions (Section 14). BUG-003: hide vote rail for non-discussion.
-	const canVote = $derived(contentType === 'discussion');
 	const time = $derived(relativeTime(comment.created_at, new Date(), i18n.locale));
-	// BUG-002: show "Anonymous" for anonymous comments (author redacted by backend).
-	const authorLabel = $derived(
+	const authorName = $derived(
 		comment.is_anonymous
 			? t('comments.anonymous', 'Anonymous')
 			: comment.display_name || comment.username || t('forum.member', 'Member')
 	);
-	const isAuthor = $derived(!!currentUserId && !!comment.author_user_id && currentUserId === comment.author_user_id);
+	const authorHandle = $derived(
+		comment.is_anonymous || !comment.username ? '' : `@${comment.username}`
+	);
+	const authorHref = $derived(
+		comment.is_anonymous || !comment.username ? '#' : `/u/${comment.username}`
+	);
+	const isAuthor = $derived(
+		!!currentUserId && !!comment.author_user_id && currentUserId === comment.author_user_id
+	);
 	const beyondMaxDepth = $derived(depth >= MAX_DEPTH);
 	const bodyHtml = $derived(
 		tiptapBodyToHtml(comment.body, {
@@ -52,38 +79,64 @@
 		})
 	);
 
-	// Vote state (optimistic + rollback). The backend uses upsert semantics;
-	// DELETE /comments/{id}/vote retracts. We track the user's current vote
-	// locally because the list endpoint does not return it.
-	let score = $state(0);
+	// Vote state (optimistic + rollback). The list endpoint now returns the
+	// viewer's user_vote and the denormalized upvote/downvote counts, so the
+	// optimistic math is always anchored to the real baseline.
+	let upvotes = $state(0);
+	let downvotes = $state(0);
 	let userVote = $state<1 | -1 | 0>(0);
 	let votePending = $state(false);
 	let voteError = $state<string | null>(null);
 
-	// Sync from the server payload on mount and whenever the prop reference
-	// changes (e.g. a parent re-fetch). Mirrors the VoteRail pattern.
 	$effect(() => {
-		score = comment.vote_score;
-		userVote = 0;
+		upvotes = comment.upvote_count ?? 0;
+		downvotes = comment.downvote_count ?? 0;
+		userVote = comment.user_vote ?? 0;
 	});
 
 	async function vote(value: 1 | -1) {
 		if (!authed || votePending) return;
 		voteError = null;
 		const prev = userVote;
-		const optimisticScore = score + (value - prev);
-		score = optimisticScore;
-		userVote = value === prev ? 0 : value;
+
+		let nextUp = upvotes;
+		let nextDown = downvotes;
+		let nextVote: 1 | -1 | 0 = 0;
+
+		if (value === 1) {
+			if (prev === 1) {
+				nextUp--;
+				nextVote = 0;
+			} else {
+				if (prev === -1) nextDown--;
+				nextUp++;
+				nextVote = 1;
+			}
+		} else {
+			if (prev === -1) {
+				nextDown--;
+				nextVote = 0;
+			} else {
+				if (prev === 1) nextUp--;
+				nextDown++;
+				nextVote = -1;
+			}
+		}
+
+		upvotes = nextUp;
+		downvotes = nextDown;
+		userVote = nextVote;
 		votePending = true;
 
-		const res = value === prev
+		const res = nextVote === 0
 			? await api.delete(`/comments/${comment.id}/vote`)
 			: await api.post(`/comments/${comment.id}/vote`, { value });
 		votePending = false;
 
 		if (res.error) {
-			score = comment.vote_score;
-			userVote = prev;
+			upvotes = comment.upvote_count ?? 0;
+			downvotes = comment.downvote_count ?? 0;
+			userVote = comment.user_vote ?? 0;
 			voteError = res.error.message;
 		}
 	}
@@ -175,11 +228,11 @@
 	let editPending = $state(false);
 	let deleted = $state(false);
 	let deletePending = $state(false);
-	// BUG-006: error feedback for failed actions.
 	let repliesError = $state<string | null>(null);
 	let replyError = $state<string | null>(null);
 	let editError = $state<string | null>(null);
 	let deleteError = $state<string | null>(null);
+	let copied = $state(false);
 
 	function startEdit() {
 		editBody = comment.body;
@@ -214,65 +267,70 @@
 		onDelete();
 	}
 
-	const upActive = $derived(userVote === 1);
-	const downActive = $derived(userVote === -1);
-	const baseBtn = 'grid place-items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-	const upClass = $derived(
-		`${baseBtn} ${upActive ? 'text-[var(--color-success)]' : 'text-[var(--color-muted)] hover:text-[var(--color-success)]'}`
-	);
-	const downClass = $derived(
-		`${baseBtn} ${downActive ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)] hover:text-[var(--color-danger)]'}`
-	);
+	function shareComment() {
+		if (typeof window === 'undefined' || !navigator.clipboard) return;
+		const url = `${window.location.origin}${window.location.pathname}#comment-${comment.id}`;
+		navigator.clipboard.writeText(url).catch(() => {});
+		copied = true;
+		setTimeout(() => (copied = false), 2000);
+	}
+
+	const iconBtn =
+		'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors disabled:opacity-50';
+	const menuItem =
+		'flex w-full cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
 </script>
 
-<div class="flex gap-3" class:pl-1={depth > 0}>
-	<!-- Vertical vote rail — forum discussions only (Section 49, BUG-003) -->
-	{#if canVote}
-	<div class="flex w-7 flex-col items-center gap-0.5 pt-0.5 text-[var(--color-muted)]">
-		<button
-			type="button"
-			onclick={() => vote(1)}
-			disabled={!authed || votePending}
-			aria-pressed={upActive}
-			aria-label={t('comments.upvote')}
-			class={upClass}
-		>
-			<ArrowUp size={16} />
-		</button>
-		<span class="text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{score}</span>
-		<button
-			type="button"
-			onclick={() => vote(-1)}
-			disabled={!authed || votePending}
-			aria-pressed={downActive}
-			aria-label={t('comments.downvote')}
-			class={downClass}
-		>
-			<ArrowDown size={16} />
-		</button>
-		{#if voteError}
-			<span class="text-[10px] text-[var(--color-danger)]" title={voteError}>!</span>
-		{/if}
-	</div>
-	{/if}
-
-	<div class="min-w-0 flex-1">
-		<div class="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-			{#if pinned}
-				<span class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]">
-					<Pin size={11} /> {t('comments.pinned')}
+<article
+	id={`comment-${comment.id}`}
+	class="relative flex flex-col rounded-[var(--radius-card)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]/60"
+>
+	<header class="z-1 flex w-full flex-row self-start gap-3">
+		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
+			{#if comment.avatar_url && !comment.is_anonymous}
+				<img
+					src={comment.avatar_url}
+					alt=""
+					class="h-10 w-10 rounded-[var(--radius-card)] object-cover"
+					loading="lazy"
+				/>
+			{:else}
+				<span
+					class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]"
+				>
+					{authorName.charAt(0).toUpperCase()}
 				</span>
 			{/if}
-			{#if comment.avatar_url && !comment.is_anonymous}
-				<img src={comment.avatar_url} alt="" class="h-5 w-5 rounded-full object-cover" />
-			{/if}
-			<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
-			{#if time}<span>·</span><span>{time}</span>{/if}
-			{#if comment.is_edited}<span>·</span><span class="italic">{t('comments.edited')}</span>{/if}
+		</a>
+		<div class="flex min-w-0 flex-1 flex-col justify-center">
+			<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+				{#if pinned}
+					<span
+						class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+					>
+						<Pin size={10} /> {t('comments.pinned')}
+					</span>
+				{/if}
+				<a
+					href={authorHref}
+					class="font-bold text-[var(--color-text)] no-underline hover:underline"
+				>
+					{authorName}
+				</a>
+				{#if authorHandle}
+					<a href={authorHref} class="text-[var(--color-text-subtle)] no-underline hover:underline">
+						{authorHandle}
+					</a>
+				{/if}
+				{#if time}<span>•</span><span>{time}</span>{/if}
+				{#if comment.is_edited}<span>•</span><span class="italic">{t('comments.edited')}</span>{/if}
+			</div>
 		</div>
+	</header>
 
+	<div class="break-words z-1 mt-1 ml-[52px]">
 		{#if deleted}
-			<p class="mt-1.5 text-sm italic text-[var(--color-muted)]">{t('comments.deleted')}</p>
+			<p class="text-sm italic text-[var(--color-muted)]">{t('comments.deleted')}</p>
 		{:else if !collapsed}
 			{#if editing}
 				<div class="mt-2">
@@ -299,64 +357,125 @@
 					{/if}
 				</div>
 			{:else}
-				<!-- Body: TipTap JSON rendered to HTML (Section 49). -->
-				<div class="mt-1.5 break-words text-[14px] leading-relaxed text-[var(--color-text)] prose-comment">{@html bodyHtml}</div>
+				<div class="prose-comment text-[0.9375rem] leading-[1.55] text-[var(--color-text)]">
+					{@html bodyHtml}
+				</div>
 			{/if}
 
 			<!-- Actions -->
-			<div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]">
-				{#if authed}
+			{#if !editing}
+				<div class="relative mt-2 flex flex-row items-center gap-0.5">
+					{#if allReplies.length > 0}
+						<button
+							type="button"
+							onclick={() => (collapsed = true)}
+							class="{iconBtn} absolute -left-12 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('comments.collapse')}
+							title={t('comments.collapse')}
+						>
+							<Minus size={16} />
+						</button>
+					{/if}
+
 					<button
 						type="button"
-						onclick={() => (composing = !composing)}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+						onclick={() => vote(1)}
+						disabled={!authed || votePending}
+						aria-pressed={userVote === 1}
+						aria-label={t('comments.upvote')}
+						class="{iconBtn} {userVote === 1 ? 'text-[var(--color-success)] bg-[var(--color-success)]/10' : 'text-[var(--color-muted)] hover:text-[var(--color-success)]'}"
 					>
-						<CornerUpLeft size={12} /> {t('comments.reply')}
+						<ArrowUp size={18} />
 					</button>
+					<button
+						type="button"
+						onclick={() => vote(-1)}
+						disabled={!authed || votePending}
+						aria-pressed={userVote === -1}
+						aria-label={t('comments.downvote')}
+						class="{iconBtn} {userVote === -1 ? 'text-[var(--color-danger)] bg-[var(--color-danger)]/10' : 'text-[var(--color-muted)] hover:text-[var(--color-danger)]'}"
+					>
+						<ArrowDown size={18} />
+					</button>
+
+					{#if authed}
+						<button
+							type="button"
+							onclick={() => (composing = !composing)}
+							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('comments.reply')}
+							title={t('comments.reply')}
+						>
+							<CornerUpLeft size={18} />
+						</button>
+					{/if}
+
+					<button
+						type="button"
+						onclick={shareComment}
+						class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+						aria-label={copied ? t('comments.copied', 'Link copied') : t('comments.share', 'Share comment')}
+						title={copied ? t('comments.copied', 'Link copied') : t('comments.share', 'Share comment')}
+					>
+						{#if copied}<Check size={18} class="text-[var(--color-success)]" />{:else}<Share2 size={18} />{/if}
+					</button>
+
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger
+							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							aria-label={t('comments.options', 'More options')}
+							title={t('comments.options', 'More options')}
+						>
+							<MoreHorizontal size={18} />
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Portal>
+							<DropdownMenu.Content
+								align="end"
+								sideOffset={8}
+								class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+							>
+								{#if isAuthor && !deleted}
+									<DropdownMenu.Item class={menuItem}>
+										{#snippet child({ props })}
+											<button type="button" onclick={startEdit} {...props}>
+												<Pencil size={16} /> {t('comments.edit')}
+											</button>
+										{/snippet}
+									</DropdownMenu.Item>
+									<DropdownMenu.Item class={menuItem}>
+										{#snippet child({ props })}
+											<button type="button" onclick={deleteComment} disabled={deletePending} {...props}>
+												<Trash2 size={16} /> {t('comments.delete')}
+											</button>
+										{/snippet}
+									</DropdownMenu.Item>
+								{/if}
+								{#if canModerate && !deleted}
+									<DropdownMenu.Item class={menuItem}>
+										{#snippet child({ props })}
+											<button type="button" onclick={togglePin} disabled={pinPending} {...props}>
+												<Pin size={16} /> {pinned ? t('comments.unpin') : t('comments.pin')}
+											</button>
+										{/snippet}
+									</DropdownMenu.Item>
+								{/if}
+							</DropdownMenu.Content>
+						</DropdownMenu.Portal>
+					</DropdownMenu.Root>
+
+					<span class="ml-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
+						{t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}
+					</span>
+				</div>
+
+				{#if voteError}
+					<p class="mt-1 text-xs text-[var(--color-danger)]">{voteError}</p>
 				{/if}
-				{#if isAuthor && !deleted}
-					<button
-						type="button"
-						onclick={startEdit}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
-					>
-						<Pencil size={12} /> {t('comments.edit')}
-					</button>
-					<button
-						type="button"
-						onclick={deleteComment}
-						disabled={deletePending}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-danger)] disabled:opacity-50"
-					>
-						<Trash2 size={12} /> {t('comments.delete')}
-					</button>
-				{/if}
-				{#if canModerate && !deleted}
-					<button
-						type="button"
-						onclick={togglePin}
-						disabled={pinPending}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
-					>
-						<Pin size={12} /> {pinned ? t('comments.unpin') : t('comments.pin')}
-					</button>
-				{/if}
-				{#if allReplies.length > 0}
-					<button
-						type="button"
-						onclick={() => (collapsed = !collapsed)}
-						class="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
-						aria-expanded={!collapsed}
-					>
-						{#if collapsed}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
-						{allReplies.length} {t('comments.replies')}
-					</button>
-				{/if}
-			</div>
+			{/if}
 
 			<!-- Inline reply composer -->
 			{#if composing && authed}
-				<div class="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-2.5">
+				<div class="mt-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5">
 					<CommentEditor placeholder={t('comments.reply_placeholder')} oninput={(b) => (replyBody = b)} />
 					<div class="mt-2 flex items-center justify-end gap-2">
 						<button
@@ -375,27 +494,32 @@
 							{submitting ? t('common.loading') : t('comments.post_reply')}
 						</button>
 					</div>
+					{#if replyError}
+						<p class="mt-1.5 text-xs text-[var(--color-danger)]">{replyError}</p>
+					{/if}
 				</div>
 			{/if}
 
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="mt-3 space-y-3 border-l border-[var(--color-border)] pl-3">
-						{#each allReplies as child (child.id)}
-							<CommentItem
-								comment={child}
-								{contentId}
-								{contentType}
-								depth={depth + 1}
-								{authed}
-								{currentUserId}
-								{canModerate}
-								{deletedUserIds}
-								onReply={() => onReply()}
-								onDelete={() => onDelete()}
-							/>
-						{/each}
+					<div class="mt-3 border-l-2 border-[var(--color-border)] pl-5">
+						<div class="space-y-3">
+							{#each allReplies as child (child.id)}
+								<CommentItem
+									comment={child}
+									{contentId}
+									{contentType}
+									depth={depth + 1}
+									{authed}
+									{currentUserId}
+									{canModerate}
+									{deletedUserIds}
+									onReply={() => onReply()}
+									onDelete={() => onDelete()}
+								/>
+							{/each}
+						</div>
 					</div>
 				{/if}
 				{#if !repliesLoaded && allReplies.length === 0 && comment.reply_count > 0}
@@ -403,7 +527,7 @@
 						type="button"
 						onclick={loadReplies}
 						disabled={repliesLoading}
-						class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
+						class="mt-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
 					>
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
@@ -419,11 +543,31 @@
 		{:else}
 			<button
 				type="button"
-				onclick={() => (collapsed = !collapsed)}
-				class="mt-1 inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				onclick={() => (collapsed = false)}
+				class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
 			>
-				<ChevronRight size={12} /> {t('comments.expand')}
+				<Plus size={14} /> {t('comments.expand')}
 			</button>
 		{/if}
 	</div>
-</div>
+</article>
+
+<style>
+	:global(.prose-comment p) {
+		margin: 0.65rem 0;
+	}
+	:global(.prose-comment p:first-child) {
+		margin-top: 0;
+	}
+	:global(.prose-comment p:last-child) {
+		margin-bottom: 0;
+	}
+	:global(.prose-comment a) {
+		color: var(--color-primary);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	:global(.prose-comment a:hover) {
+		color: var(--color-primary-hover);
+	}
+</style>

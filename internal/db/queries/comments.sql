@@ -11,7 +11,7 @@ RETURNING *;
 
 -- name: GetComment :one
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.status,
        c.is_anonymous,
        u.username,
@@ -24,8 +24,16 @@ WHERE c.id = @id AND c.tenant_id = @tenant_id;
 
 -- name: ListCommentsByContent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.reply_count,
+       COALESCE((
+           SELECT cv.value
+           FROM comment_votes cv
+           WHERE cv.comment_id = c.id
+             AND cv.tenant_id = c.tenant_id
+             AND cv.user_id = @viewer_id
+           LIMIT 1
+       ), 0)::smallint AS user_vote,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -46,8 +54,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- consumers.
 -- Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.reply_count,
+       COALESCE((
+           SELECT cv.value
+           FROM comment_votes cv
+           WHERE cv.comment_id = c.id
+             AND cv.tenant_id = c.tenant_id
+             AND cv.user_id = @viewer_id
+           LIMIT 1
+       ), 0)::smallint AS user_vote,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -70,8 +86,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListCommentsByContentNew :many
 -- Section 49 ?sort=new — newest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.reply_count,
+       COALESCE((
+           SELECT cv.value
+           FROM comment_votes cv
+           WHERE cv.comment_id = c.id
+             AND cv.tenant_id = c.tenant_id
+             AND cv.user_id = @viewer_id
+           LIMIT 1
+       ), 0)::smallint AS user_vote,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -88,8 +112,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListCommentsByContentOldest :many
 -- Section 49 ?sort=oldest — oldest first (pinned still surface on top).
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.reply_count,
+       COALESCE((
+           SELECT cv.value
+           FROM comment_votes cv
+           WHERE cv.comment_id = c.id
+             AND cv.tenant_id = c.tenant_id
+             AND cv.user_id = @viewer_id
+           LIMIT 1
+       ), 0)::smallint AS user_vote,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -105,8 +137,16 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListRepliesByParent :many
 SELECT c.id, c.tenant_id, c.content_id, c.author_user_id, c.parent_id, c.body, c.depth,
-       c.vote_score, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
+       c.vote_score, c.upvote_count, c.downvote_count, c.is_pinned, c.is_edited, c.edited_at, c.created_at, c.updated_at, c.deleted_at,
        c.reply_count,
+       COALESCE((
+           SELECT cv.value
+           FROM comment_votes cv
+           WHERE cv.comment_id = c.id
+             AND cv.tenant_id = c.tenant_id
+             AND cv.user_id = @viewer_id
+           LIMIT 1
+       ), 0)::smallint AS user_vote,
        c.is_anonymous,
        u.username,
        COALESCE(up.display_name, '') AS display_name,
@@ -207,6 +247,16 @@ SET vote_score = COALESCE((
     SELECT SUM(cv.value)::int
     FROM comment_votes cv
     WHERE cv.comment_id = @comment_id AND cv.tenant_id = @tenant_id
+), 0),
+upvote_count = COALESCE((
+    SELECT COUNT(*)::int
+    FROM comment_votes cv
+    WHERE cv.comment_id = @comment_id AND cv.tenant_id = @tenant_id AND cv.value = 1
+), 0),
+downvote_count = COALESCE((
+    SELECT COUNT(*)::int
+    FROM comment_votes cv
+    WHERE cv.comment_id = @comment_id AND cv.tenant_id = @tenant_id AND cv.value = -1
 ), 0),
 updated_at = now()
 WHERE id = @comment_id AND tenant_id = @tenant_id;

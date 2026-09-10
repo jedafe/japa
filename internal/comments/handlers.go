@@ -232,6 +232,15 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
+// viewerIDFromRequest returns the authenticated user's ID, or a zero UUID for
+// anonymous requests. It is used to compute per-row user_vote in list queries.
+func viewerIDFromRequest(r *http.Request) pgtype.UUID {
+	if user := auth.FromContext(r.Context()); user != nil {
+		return user.UserID
+	}
+	return pgtype.UUID{}
+}
+
 // ---------------------------------------------------------------------------
 // Comment Handlers
 // ---------------------------------------------------------------------------
@@ -286,6 +295,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parentIDStr := r.URL.Query().Get("parent_id")
+	viewerID := viewerIDFromRequest(r)
 	if parentIDStr != "" {
 		var parentID pgtype.UUID
 		if err := parentID.Scan(parentIDStr); err != nil {
@@ -293,7 +303,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		replies, err := h.Service.ListRepliesByParent(r.Context(), tenantID, parentID, limit, offset)
+		replies, err := h.Service.ListRepliesByParent(r.Context(), tenantID, parentID, viewerID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -314,7 +324,7 @@ func (h *Handlers) ListComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comments, err := h.Service.ListCommentsByContent(r.Context(), tenantID, contentID, sort, limit, offset)
+	comments, err := h.Service.ListCommentsByContent(r.Context(), tenantID, contentID, viewerID, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -653,8 +663,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 // VoteComment handles POST /api/v1/comments/{id}/vote.
 //
-// Section 49 — comment voting (upvote/downvote) is forum-discussions-only.
-// Other content types use emoji reactions via /reactions (BL-002).
+// Section 49 — all comments support upvote/downvote.
 func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -669,20 +678,6 @@ func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	commentID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
-		return
-	}
-
-	// Section 49: voting is only supported on forum discussion replies.
-	// Non-discussion content types use emoji reactions (Section 14).
-	isDiscussion, err := h.Service.IsCommentOnDiscussion(r.Context(), tenantID, commentID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	if !isDiscussion {
-		errpkg.WriteError(w, http.StatusBadRequest, "voting_not_supported",
-			"Voting is only supported on forum discussion replies")
 		return
 	}
 

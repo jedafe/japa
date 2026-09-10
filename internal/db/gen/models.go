@@ -704,6 +704,8 @@ type Comment struct {
 	RemovedBy     pgtype.UUID        `json:"removed_by"`
 	RemovedReason *string            `json:"removed_reason"`
 	ViewCount     int32              `json:"view_count"`
+	UpvoteCount   int32              `json:"upvote_count"`
+	DownvoteCount int32              `json:"downvote_count"`
 }
 
 type CommentView struct {
