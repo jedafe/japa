@@ -389,11 +389,19 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
+       u.username AS author_name,
+       up.display_name AS author_display_name,
+       up.avatar_url AS author_avatar_url,
+       s.name AS space_name,
+       s.slug AS space_slug,
        m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
        fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
        hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
 LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id

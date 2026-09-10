@@ -605,12 +605,21 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 		zeroTime,                 // published_at
 		zeroTime,                 // created_at
 		zeroTime,                 // updated_at
+		nullStr,                  // author_name
+		nullStr,                  // author_display_name
+		nullStr,                  // author_avatar_url
+		nullStr,                  // space_name
+		nullStr,                  // space_slug
 		"quick",                  // depth
 		nullUUID,                 // promoted_from_id
 		zeroTime,                 // promoted_at
 		nullStr,                  // smart_mode
 		int32(1),                 // score_version
 		[]byte("{}"),             // metadata_config
+		nullStr,                  // featured_storage_bucket
+		nullStr,                  // featured_storage_path
+		nullStr,                  // header_storage_bucket
+		nullStr,                  // header_storage_path
 	}
 }
 

@@ -38,7 +38,7 @@ export function statusLabel(status: ComposerStatus): string {
 
 export function isExceptionRoute(routeId: string | null): boolean {
 	// ADR-058 Exception #1: blog single & CPT singles collapse the left nav.
-	// /story/[slug] is a CPT single (content_type 'story', §79).
+	// /story/[slug] and /comparisons/[slug] are CPT singles (§79 / §30).
 	// ADR-058 Exception #2: /create collapses the nav and hides the right sidebar.
-	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]';
+	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]';
 }
