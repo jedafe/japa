@@ -18,6 +18,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
+	import EntityHoverChip from '$lib/components/feed/EntityHoverChip.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
 
@@ -295,46 +296,91 @@
 	{/if}
 
 	<header class="z-[1] flex w-full flex-row self-start gap-3">
-		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
-			{#if comment.avatar_url && !comment.is_anonymous}
-				<img
-					src={comment.avatar_url}
-					alt=""
-					class="h-10 w-10 rounded-[var(--radius-card)] object-cover"
-					loading="lazy"
-				/>
-			{:else}
-				<span
-					class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
-				>
-					{authorName.charAt(0).toUpperCase()}
-				</span>
-			{/if}
-		</a>
-		<div class="flex min-w-0 flex-1 flex-col justify-center">
-			<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
-				{#if pinned}
+		{#if !comment.is_anonymous && comment.username && comment.author_user_id}
+			<EntityHoverChip
+				type="user"
+				id={comment.author_user_id}
+				slug={comment.username}
+				name={authorName}
+				avatar={comment.avatar_url}
+				variant="row"
+			>
+				{#snippet trigger()}
+					{#if comment.avatar_url}
+						<img
+							src={comment.avatar_url}
+							alt=""
+							class="h-10 w-10 rounded-[var(--radius-card)] object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<span
+							class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
+						>
+							{authorName.charAt(0).toUpperCase()}
+						</span>
+					{/if}
+					<div class="flex min-w-0 flex-1 flex-col justify-center">
+						<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+							{#if pinned}
+								<span
+									class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+								>
+									<Pin size={10} /> {t('comments.pinned')}
+								</span>
+							{/if}
+							<span class="font-bold text-[var(--color-text)]">{authorName}</span>
+							{#if authorHandle}
+								<span class="text-[var(--color-text-subtle)]">{authorHandle}</span>
+							{/if}
+							{#if time}<span>•</span><span>{time}</span>{/if}
+							{#if comment.is_edited}<span>•</span><span class="italic">{t('comments.edited')}</span>{/if}
+						</div>
+					</div>
+				{/snippet}
+			</EntityHoverChip>
+		{:else}
+			<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
+				{#if comment.avatar_url && !comment.is_anonymous}
+					<img
+						src={comment.avatar_url}
+						alt=""
+						class="h-10 w-10 rounded-[var(--radius-card)] object-cover"
+						loading="lazy"
+					/>
+				{:else}
 					<span
-						class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+						class="grid h-10 w-10 place-items-center rounded-[var(--radius-card)] bg-[var(--color-primary)] text-sm font-bold text-[var(--color-primary-contrast)]"
 					>
-						<Pin size={10} /> {t('comments.pinned')}
+						{authorName.charAt(0).toUpperCase()}
 					</span>
 				{/if}
-				<a
-					href={authorHref}
-					class="font-bold text-[var(--color-text)] no-underline hover:underline"
-				>
-					{authorName}
-				</a>
-				{#if authorHandle}
-					<a href={authorHref} class="text-[var(--color-text-subtle)] no-underline hover:underline">
-						{authorHandle}
+			</a>
+			<div class="flex min-w-0 flex-1 flex-col justify-center">
+				<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					{#if pinned}
+						<span
+							class="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-semibold text-[var(--color-primary)]"
+						>
+							<Pin size={10} /> {t('comments.pinned')}
+						</span>
+					{/if}
+					<a
+						href={authorHref}
+						class="font-bold text-[var(--color-text)] no-underline hover:underline"
+					>
+						{authorName}
 					</a>
-				{/if}
-				{#if time}<span>•</span><span>{time}</span>{/if}
-				{#if comment.is_edited}<span>•</span><span class="italic">{t('comments.edited')}</span>{/if}
+					{#if authorHandle}
+						<a href={authorHref} class="text-[var(--color-text-subtle)] no-underline hover:underline">
+							{authorHandle}
+						</a>
+					{/if}
+					{#if time}<span>•</span><span>{time}</span>{/if}
+					{#if comment.is_edited}<span>•</span><span class="italic">{t('comments.edited')}</span>{/if}
+				</div>
 			</div>
-		</div>
+		{/if}
 	</header>
 
 	<div class="break-words z-[1] mt-1 ml-[52px]">
