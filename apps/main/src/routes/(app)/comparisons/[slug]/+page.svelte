@@ -89,6 +89,7 @@
 	<div class="flex flex-col gap-4">
 		<CreatorCard
 			{authorName}
+			authorUsername={comparison.content.author_username ?? comparison.content.author_name}
 			authorAvatarUrl={comparison.content.author_avatar_url}
 			spaceName={comparison.content.space_name}
 			spaceSlug={comparison.content.space_slug}
@@ -111,17 +112,11 @@
 	</div>
 {/snippet}
 
+<!--
+	Content single pages render the unified shell's left ad rail (Section 59) instead of a
+	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
+-->
 <div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
-	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
-	<div class="hidden w-14 shrink-0 lg:block">
-		<ReactionRail
-			contentId={comparison.content.id}
-			commentCount={comparison.content.comment_count}
-			voteScore={comparison.content.reshare_count}
-			authed={data.authed}
-		/>
-	</div>
-
 	<!-- Center: comparison -->
 	<article class="min-w-0 flex-1 max-w-3xl">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
@@ -160,14 +155,19 @@
 
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if authorName}
-				<span class="flex items-center gap-2">
+				{@const authorHref = comparison.content.author_username ?? comparison.content.author_name}
+				<svelte:element
+					this={authorHref ? 'a' : 'span'}
+					href={authorHref ? `/u/${authorHref}` : undefined}
+					class="flex items-center gap-2 {authorHref ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+				>
 					{#if comparison.content.author_avatar_url}
 						<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
 					{:else}
 						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
 					{/if}
 					<span class="font-medium text-[var(--color-text)]">{authorName}</span>
-				</span>
+				</svelte:element>
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>
@@ -275,14 +275,14 @@
 		</section>
 	{/if}
 
-	<!-- Mobile reaction/action bar (fixed at the bottom) -->
-	<div class="lg:hidden">
+	<!-- Horizontal reaction/action bar under the article body. -->
+	<div class="mt-8">
 		<ReactionRail
 			contentId={comparison.content.id}
 			commentCount={comparison.content.comment_count}
 			voteScore={comparison.content.reshare_count}
 			authed={data.authed}
-			bottom
+			horizontal
 		/>
 	</div>
 

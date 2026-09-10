@@ -95,6 +95,8 @@ type StoryRow struct {
 	BestAdvice            *string
 	Verified              bool
 	AuthorName            *string
+	AuthorUsername        *string
+	AuthorDisplayName     *string
 	AuthorAvatar          *string
 	// Series membership — stories may belong to a blog_series like any other
 	// content type (series nav on the single page mirrors the blog layout).
@@ -433,7 +435,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -466,7 +468,7 @@ LIMIT $%d OFFSET $%d
 			&r.RelocationYear, &r.VisaCategory, &r.Profession,
 			&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 			&r.Verified,
-			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorName, &r.AuthorUsername, &r.AuthorDisplayName, &r.AuthorAvatar,
 		); err != nil {
 			return nil, 0, fmt.Errorf("story: scan story row: %w", err)
 		}
@@ -509,7 +511,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar,
        bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
@@ -541,7 +543,7 @@ LIMIT 1
 		&r.RelocationYear, &r.VisaCategory, &r.Profession,
 		&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 		&r.Verified,
-		&r.AuthorName, &r.AuthorAvatar,
+		&r.AuthorName, &r.AuthorUsername, &r.AuthorDisplayName, &r.AuthorAvatar,
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
 		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
@@ -570,7 +572,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar,
+       u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar,
        bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
        bsp.position AS series_part,
        (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
@@ -602,7 +604,7 @@ LIMIT 1
 		&r.RelocationYear, &r.VisaCategory, &r.Profession,
 		&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 		&r.Verified,
-		&r.AuthorName, &r.AuthorAvatar,
+		&r.AuthorName, &r.AuthorUsername, &r.AuthorDisplayName, &r.AuthorAvatar,
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
 		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
 		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
@@ -708,7 +710,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.relocation_year, sm.visa_category, sm.profession,
        sm.biggest_challenge, sm.most_useful_resource, sm.best_advice,
        sm.verified,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -741,7 +743,7 @@ LIMIT $%d OFFSET $%d
 			&r.RelocationYear, &r.VisaCategory, &r.Profession,
 			&r.BiggestChallenge, &r.MostUsefulResource, &r.BestAdvice,
 			&r.Verified,
-			&r.AuthorName, &r.AuthorAvatar,
+			&r.AuthorName, &r.AuthorUsername, &r.AuthorDisplayName, &r.AuthorAvatar,
 		); err != nil {
 			return nil, 0, fmt.Errorf("story: admin scan story row: %w", err)
 		}

@@ -64,6 +64,7 @@ export interface JCEComparisonContent {
 	visibility: 'public' | 'unlisted' | 'private';
 	author_id?: string;
 	author_name?: string | null;
+	author_username?: string | null;
 	author_display_name?: string | null;
 	author_avatar_url?: string | null;
 	space_name?: string | null;
