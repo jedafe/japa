@@ -184,6 +184,14 @@ export interface SpaceSuggestion {
  * Feed items — GET /feed (auth) and GET /explore (guest)
  * ------------------------------------------------------------------ */
 
+/** Lean organization badge surfaced on feed/profile cards. */
+export interface FeedOrganization {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+}
+
 export type ContentType =
 	| 'blog_post'
 	| 'discussion'
@@ -198,19 +206,23 @@ export interface FeedItem {
 	slug: string;
 	content_type: ContentType;
 	author_id: string;
-	author_name?: string;
+	author_name?: string | null;
+	author_username?: string | null;
 	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	space_slug?: string | null;
+	space_avatar_url?: string | null;
 	excerpt?: string;
 	created_at: string;
 	view_count?: number;
 	comment_count?: number;
 	vote_score?: number;
 	velocity_score?: number;
+	reaction_count?: number;
 	bookmark_count?: number;
 	reading_time_minutes?: number;
+	organization?: FeedOrganization | null;
 	cover_image_url?: string | null;
 	tags?: string[];
 	// Journey-aware recommendation metadata surfaced on feed cards (§32).
@@ -873,13 +885,21 @@ export interface ProfileFollowing {
 	entity_type?: string;
 }
 
-/** GET /users/{id}/content — PostCard row (profile Posts tab). */
+/** GET /users/{id}/content and /organizations/{id}/content — PostCard row.
+ *  Carries the same fields as a feed item so profile/org tabs can render
+ *  through FeedCard with the `daily` style. Ref: 2026-09-10 daily feed design. */
 export interface ProfilePost {
 	id: string;
 	author_id: string;
+	author_name?: string | null;
+	author_username?: string | null;
+	author_avatar_url?: string | null;
 	organization_id: string | null;
-	organization?: { id: string; name: string; slug: string } | null;
+	organization?: FeedOrganization | null;
 	space_id: string | null;
+	space_name?: string | null;
+	space_slug?: string | null;
+	space_avatar_url?: string | null;
 	content_type: string;
 	title: string;
 	slug: string;
@@ -887,11 +907,22 @@ export interface ProfilePost {
 	excerpt?: string;
 	header_image_id: string | null;
 	featured_image_id: string | null;
+	cover_image_url?: string | null;
 	read_time_minutes: number;
 	view_count: number;
 	comment_count: number;
 	share_count: number;
+	reaction_count?: number;
+	bookmark_count?: number;
 	is_pinned: boolean;
+	tags?: string[];
+	journey_stage?: string | null;
+	visa_route?: string | null;
+	source_country?: string | null;
+	target_country?: string | null;
+	guide_category?: string | null;
+	video_source_id?: string | null;
+	duration_secs?: number | null;
 	published_at: string;
 	created_at: string;
 }

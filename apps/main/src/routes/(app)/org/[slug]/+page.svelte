@@ -9,13 +9,53 @@
 	import { EmptyState, FollowButton, UrlTabs } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import type { ProfilePost, FeedItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
 	const org = $derived(data.org);
 	const canManage = $derived(data.canManage);
 	const initiallyFollowing = $derived(data.initiallyFollowing ?? false);
+	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'daily', byType: {} });
+
+	// Map ProfilePost → FeedItem so org posts render through the shared FeedCard.
+	function toFeedItem(post: ProfilePost): FeedItem {
+		return {
+			id: post.id,
+			title: post.title,
+			slug: post.slug,
+			content_type: post.content_type,
+			author_id: post.author_id,
+			author_name: post.author_name,
+			author_username: post.author_username,
+			author_avatar_url: post.author_avatar_url,
+			organization: post.organization,
+			space_id: post.space_id,
+			space_name: post.space_name,
+			space_slug: post.space_slug,
+			space_avatar_url: post.space_avatar_url,
+			created_at: post.published_at ?? post.created_at,
+			view_count: post.view_count,
+			comment_count: post.comment_count,
+			reaction_count: post.reaction_count,
+			bookmark_count: post.bookmark_count,
+			reading_time_minutes: post.read_time_minutes,
+			excerpt: post.excerpt,
+			cover_image_url: post.cover_image_url,
+			tags: post.tags,
+			journey_stage: post.journey_stage,
+			visa_route: post.visa_route,
+			source_country: post.source_country,
+			target_country: post.target_country,
+			guide_category: post.guide_category,
+			video_source_id: post.video_source_id,
+			duration_secs: post.duration_secs
+		};
+	}
+
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'about'));
 
 	// Section 39 — university-type orgs get a "Compare" tab that links to
@@ -107,17 +147,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{:else}
 				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
 					{#each data.posts as post (post.id)}
-						<a href="/content/{post.slug}" class="block p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-							<div class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium text-[var(--color-text-subtle)]">{post.content_type}</span>
-								<span>· {post.read_time_minutes} {t('feed.min_read')}</span>
-							</div>
-							<h3 class="mt-1.5 text-sm font-medium text-[var(--color-text)]">{post.title}</h3>
-							<div class="mt-2 flex items-center gap-4 text-xs text-[var(--color-muted)]">
-								<span>{post.view_count} {t('profile.views', 'views')}</span>
-								<span>{post.comment_count} {t('profile.comments', 'comments')}</span>
-							</div>
-						</a>
+						<FeedCard
+							item={toFeedItem(post)}
+							style={cardStyleFor(post.content_type, cardStyleConfig)}
+							layout="stream"
+						/>
 					{/each}
 				</div>
 			{/if}

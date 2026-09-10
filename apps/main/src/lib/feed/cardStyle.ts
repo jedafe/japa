@@ -1,11 +1,11 @@
-export type CardStyle = 'reddit' | 'compact' | 'grid' | 'magazine';
+export type CardStyle = 'reddit' | 'compact' | 'grid' | 'magazine' | 'daily';
 
 export interface CardStyleConfig {
 	default: CardStyle;
 	byType: Partial<Record<string, CardStyle>>;
 }
 
-const STYLES: CardStyle[] = ['reddit', 'compact', 'grid', 'magazine'];
+const STYLES: CardStyle[] = ['reddit', 'compact', 'grid', 'magazine', 'daily'];
 
 function isStyle(v: unknown): v is CardStyle {
 	return typeof v === 'string' && (STYLES as string[]).includes(v);
@@ -17,12 +17,12 @@ function isStyle(v: unknown): v is CardStyle {
  *   - `{ default, by_type }`  — the per-type shape (Layer 1)
  *   - `{ card_style }`        — the current backend's legacy scalar-under-key
  *   - a bare `"magazine"`     — an even older legacy scalar
- * Anything else (null/number/garbage) degrades to the reddit default.
+ * Anything else (null/number/garbage) degrades to the daily default.
  */
 export function normalizeConfig(raw: unknown): CardStyleConfig {
-	const fallback: CardStyleConfig = { default: 'reddit', byType: {} };
+	const fallback: CardStyleConfig = { default: 'daily', byType: {} };
 	if (!raw) return fallback;
-	if (typeof raw === 'string') return { default: isStyle(raw) ? raw : 'reddit', byType: {} };
+	if (typeof raw === 'string') return { default: isStyle(raw) ? raw : 'daily', byType: {} };
 	if (typeof raw !== 'object') return fallback;
 
 	const r = raw as { default?: unknown; card_style?: unknown; by_type?: unknown };
@@ -34,7 +34,7 @@ export function normalizeConfig(raw: unknown): CardStyleConfig {
 	}
 	// The default is `default` (Layer 1) or, failing that, the legacy `card_style`.
 	const rawDefault = r.default ?? r.card_style;
-	return { default: isStyle(rawDefault) ? rawDefault : 'reddit', byType };
+	return { default: isStyle(rawDefault) ? rawDefault : 'daily', byType };
 }
 
 /** The style for a given content type: its override, else the default. */

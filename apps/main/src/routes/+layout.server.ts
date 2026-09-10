@@ -126,7 +126,7 @@ export const load: LayoutServerLoad = async (event) => {
 		// the (app) group.
 		apiGet<unknown>(ctx, '/feed/card-style')
 			.then((v) => ({ ok: true as const, value: normalizeConfig(v) }))
-			.catch(() => ({ ok: false as const, value: { default: 'reddit', byType: {} } as CardStyleConfig })),
+			.catch(() => ({ ok: false as const, value: { default: 'daily', byType: {} } as CardStyleConfig })),
 		// Onboarding tour dismissal status — authed only. Guards the ?tour=1
 		// auto-trigger in (app)/+layout.svelte (Section 09).
 		user
@@ -163,7 +163,7 @@ export const load: LayoutServerLoad = async (event) => {
 
 	const cardStyleConfig = cardStyleResult.ok
 		? (cardStyleResult.value as CardStyleConfig)
-		: { default: 'reddit', byType: {} };
+		: { default: 'daily', byType: {} };
 	const tourDismissed = tourResult.value;
 
 	return {

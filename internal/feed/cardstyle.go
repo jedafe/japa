@@ -8,10 +8,11 @@ const (
 	CardStyleCompact  = "compact"
 	CardStyleGrid     = "grid"
 	CardStyleMagazine = "magazine"
+	CardStyleDaily    = "daily"
 )
 
 // DefaultCardStyle applies when no setting is present or a value is invalid.
-const DefaultCardStyle = CardStyleReddit
+const DefaultCardStyle = CardStyleDaily
 
 // CardStyleConfig is a tenant's feed card-style configuration: a default
 // style plus optional per-content-type overrides.
@@ -20,10 +21,10 @@ type CardStyleConfig struct {
 	ByType  map[string]string `json:"by_type"`
 }
 
-// validCardStyle reports whether s is one of the four allowed styles.
+// validCardStyle reports whether s is one of the allowed styles.
 func validCardStyle(s string) bool {
 	switch s {
-	case CardStyleReddit, CardStyleCompact, CardStyleGrid, CardStyleMagazine:
+	case CardStyleReddit, CardStyleCompact, CardStyleGrid, CardStyleMagazine, CardStyleDaily:
 		return true
 	default:
 		return false
@@ -33,8 +34,8 @@ func validCardStyle(s string) bool {
 // resolveCardStyleConfig normalizes the raw JSONB value of the feed.card_style
 // setting. It accepts an empty string (no setting), a legacy JSON string
 // ("reddit"), or a JSON object {default, by_type}. Any invalid style is
-// coerced: an invalid default becomes reddit; an invalid per-type entry is
-// dropped. ByType is always non-nil.
+// coerced: an invalid default becomes DefaultCardStyle; an invalid per-type
+// entry is dropped. ByType is always non-nil.
 func resolveCardStyleConfig(raw string) CardStyleConfig {
 	cfg := CardStyleConfig{Default: DefaultCardStyle, ByType: map[string]string{}}
 
