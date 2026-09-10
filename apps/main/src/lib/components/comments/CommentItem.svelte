@@ -175,6 +175,10 @@
 
 	const allReplies = $derived([...loadedReplies, ...localReplies]);
 
+	// Whether this comment has (or may have) nested replies. Controls the
+	// vertical thread rail and the collapse/expand affordances.
+	const hasChildren = $derived(comment.reply_count > 0 || allReplies.length > 0);
+
 	// Label for the lazy-load replies button. Hidden when the comment has no
 	// published replies. "View reply" for exactly one, "View X replies" otherwise.
 	const viewRepliesLabel = $derived(
@@ -285,6 +289,11 @@
 	id={`comment-${comment.id}`}
 	class="relative flex flex-col rounded-[var(--radius-card)] p-4 {depth > 0 ? 'comment-reply' : ''}"
 >
+	{#if hasChildren}
+		<!-- Vertical thread rail: runs from the commenter avatar down through descendants. -->
+		<div class="thread-rail absolute left-9 top-9 -z-10 w-px bottom-0 bg-[var(--color-border)]"></div>
+	{/if}
+
 	<header class="z-[1] flex w-full flex-row self-start gap-3">
 		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
 			{#if comment.avatar_url && !comment.is_anonymous}
@@ -509,7 +518,7 @@
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="relative -left-8 mt-3 border-l-2 border-[var(--color-border)] pl-5">
+					<div class="relative -left-8 mt-3 pl-5">
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
@@ -586,16 +595,16 @@
 		color: var(--color-primary-hover);
 	}
 
-	/* L-shaped thread connector: a short horizontal line from the parent thread
-	 * rail to the reply avatar. The rail itself comes from the parent
-	 * .border-l-2 children container. Ref: daily.dev thread line style. */
+	/* Horizontal thread branch: connects the parent rail (left-9 / avatar center)
+	 * to the child reply avatar. Paired with the .thread-rail vertical line. */
 	.comment-reply::before {
 		content: '';
 		position: absolute;
-		left: -36px;
+		left: -20px;
 		top: 35px;
 		width: 36px;
-		height: 2px;
+		height: 1px;
 		background: var(--color-border);
+		z-index: -10;
 	}
 </style>
