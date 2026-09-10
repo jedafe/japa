@@ -63,10 +63,17 @@ export interface JCEComparisonContent {
 	status: 'draft' | 'published' | 'unlisted' | 'private';
 	visibility: 'public' | 'unlisted' | 'private';
 	author_id?: string;
+	author_name?: string | null;
+	author_display_name?: string | null;
+	author_avatar_url?: string | null;
+	space_name?: string | null;
+	space_slug?: string | null;
 	created_at?: string;
 	updated_at?: string;
 	view_count?: number;
 	comment_count?: number;
+	share_count?: number;
+	reshare_count?: number;
 	/** §34 cover/hero media — resolved by the JCE detail endpoint. */
 	featured_image_url?: string | null;
 	header_image_url?: string | null;

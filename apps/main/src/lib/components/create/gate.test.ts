@@ -35,6 +35,10 @@ describe('isExceptionRoute', () => {
 	it('matches the create route', () => {
 		expect(isExceptionRoute('/(app)/create')).toBe(true);
 	});
+	it('matches CPT single routes including comparisons', () => {
+		expect(isExceptionRoute('/(app)/comparisons/[slug]')).toBe(true);
+		expect(isExceptionRoute('/(app)/story/[slug]')).toBe(true);
+	});
 	it('does not match the home route', () => {
 		expect(isExceptionRoute('/(app)')).toBe(false);
 		expect(isExceptionRoute(null)).toBe(false);

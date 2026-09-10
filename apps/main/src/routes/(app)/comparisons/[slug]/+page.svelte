@@ -23,6 +23,8 @@
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
+	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
+	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import { ArrowLeft, ExternalLink, Pencil } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -35,6 +37,15 @@
 	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
 	let deletedUserIds = $derived(
 		data.deletedUserIds ? new Set<string>(data.deletedUserIds as string[]) : undefined
+	);
+	let authorName = $derived(
+		comparison.content.author_display_name ??
+			comparison.content.author_name ??
+			t('jce.comparisons.anonymous', 'Anonymous')
+	);
+	let sidebarWidgets = $derived(
+		(data.rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]) ??
+			[]
 	);
 
 	let freshness = $state<FreshnessSummary | null>(null);
@@ -67,18 +78,47 @@
 	}
 </script>
 
-<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
-	<!-- Left margin: borderless ReactionRail (ADR-058, distinct from the collapsed nav) -->
+<!-- ADR-058 Exception #1: dev.to reading layout. Left nav auto-collapses;
+     right sidebar is CreatorCard + widgets; on mobile it is stacked below the body. -->
+{#snippet rightSidebar()}
+	<div class="flex flex-col gap-4">
+		<CreatorCard
+			{authorName}
+			authorAvatarUrl={comparison.content.author_avatar_url}
+			spaceName={comparison.content.space_name}
+			spaceSlug={comparison.content.space_slug}
+			authorId={comparison.content.author_id}
+			initiallyFollowing={data.initiallyFollowing}
+			authed={data.authed}
+			currentUserId={data.currentUserId}
+		/>
+		<!-- Admin-managed sidebar widgets (Section 59, ADR-066). -->
+		{#each sidebarWidgets as widget (widget.id)}
+			<SidebarWidgetRenderer
+				{widget}
+				user={data.user}
+				trendingTags={data.trendingTags}
+				suggestedSpaces={data.suggestedSpaces}
+				enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
+				isDashboard={false}
+			/>
+		{/each}
+	</div>
+{/snippet}
+
+<div class="mx-auto grid max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8 lg:grid-cols-[4rem_1fr] xl:grid-cols-[4rem_1fr_20rem]">
+	<!-- Left margin: borderless ReactionRail (distinct from the collapsed nav) -->
 	<div class="hidden w-14 shrink-0 lg:block">
 		<ReactionRail
 			contentId={comparison.content.id}
 			commentCount={comparison.content.comment_count}
+			voteScore={comparison.content.reshare_count}
 			authed={data.authed}
 		/>
 	</div>
 
 	<!-- Center: comparison -->
-	<article class="min-w-0 flex-1 max-w-5xl space-y-6">
+	<article class="min-w-0 max-w-5xl">
 		<div class="space-y-1">
 		<a
 			href="/comparisons"
@@ -241,14 +281,28 @@
 		/>
 	{/if}
 
+	<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
+	<div class="mt-8 flex flex-col gap-4 xl:hidden">
+		{@render rightSidebar()}
+	</div>
+
 	<!-- Mobile reaction/action bar (fixed at the bottom) -->
 	<div class="lg:hidden">
 		<ReactionRail
 			contentId={comparison.content.id}
 			commentCount={comparison.content.comment_count}
+			voteScore={comparison.content.reshare_count}
 			authed={data.authed}
 			bottom
 		/>
 	</div>
 </article>
+
+<!-- Right: CreatorCard + widgets. Hidden on mobile because a stacked copy
+     is rendered inside the article body. -->
+<aside class="hidden w-full min-w-0 xl:col-span-1 xl:col-start-3 xl:block xl:w-80 xl:shrink-0">
+	<div class="sticky top-24 flex flex-col gap-4">
+		{@render rightSidebar()}
+	</div>
+</aside>
 </div>

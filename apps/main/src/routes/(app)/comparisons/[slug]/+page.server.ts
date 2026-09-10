@@ -80,6 +80,17 @@ export const load: PageServerLoad = async (event) => {
 		isOwner ||
 		!!event.locals.user?.permissions?.includes('comparison.edit_any');
 
+	// Hydrate the CreatorCard follow button's initial state. Best-effort:
+	// a failure degrades to `false` (not following). Skip when the viewer
+	// is the author (no self-follow) or the author is unknown.
+	const isOwnComparison = !!currentUserId && comparison.content.author_id === currentUserId;
+	const initiallyFollowing =
+		authed && comparison.content.author_id && !isOwnComparison
+			? apiGet<{ following: boolean }>(ctx, `/users/${comparison.content.author_id}/follow-status`)
+					.then((r) => r.following)
+					.catch(() => false)
+			: Promise.resolve(false);
+
 	// Moderation affordances: comment pinning needs comments.pin; the Edit
 	// affordance is already handled by canEdit. Backend enforces actual permissions.
 	const isSuperAdmin = (event.locals.user?.groups ?? []).some(
@@ -89,6 +100,8 @@ export const load: PageServerLoad = async (event) => {
 		isOwner ||
 		isSuperAdmin ||
 		!!event.locals.user?.permissions?.includes('comments.pin');
+
+	const isFollowing = await initiallyFollowing;
 
 	return {
 		comparison,
@@ -101,6 +114,7 @@ export const load: PageServerLoad = async (event) => {
 		canModerate,
 		comments,
 		commentsLoadError,
-		deletedUserIds: commentDeletedUserIds
+		deletedUserIds: commentDeletedUserIds,
+		initiallyFollowing: isFollowing
 	};
 };
