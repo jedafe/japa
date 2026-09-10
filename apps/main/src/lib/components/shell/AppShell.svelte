@@ -178,6 +178,7 @@
 		position: sticky;
 		top: 0;
 		height: 100vh;
+		padding-right: 1rem;
 	}
 
 	.mobile-topbar {

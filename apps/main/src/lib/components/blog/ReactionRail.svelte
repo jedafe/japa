@@ -77,6 +77,7 @@
 	let showReactions = $state(false);
 	let reactionCloseTimer: ReturnType<typeof setTimeout> | null = null;
 	let sharePlatforms = $state<SharePlatform[]>([]);
+	const shareIconColor = $derived(sharePlatforms[0]?.color || '');
 	let reactionTypes = $state<ReactionType[]>([]);
 
 	// Fetch admin-configured reaction types (Section 14 — reactions are
@@ -440,7 +441,10 @@
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
-			<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+			<span
+				class="grid h-9 w-9 place-items-center rounded-full text-[var(--share-color,var(--color-primary))] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]"
+				style:--share-color={shareIconColor}
+			>
 				{#if shared}
 					<Check size={18} class="text-[var(--color-success)]" />
 				{:else}
