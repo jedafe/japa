@@ -54,14 +54,40 @@
 		avatar: item.author_avatar_url
 	});
 
+	const regionNames = $derived(
+		(() => {
+			try {
+				return new Intl.DisplayNames([i18n.locale], { type: 'region' });
+			} catch {
+				return null;
+			}
+		})()
+	);
+	function countryName(code?: string | null) {
+		if (!code) return '';
+		const upper = code.toUpperCase();
+		return regionNames?.of(upper) ?? upper;
+	}
+	const route = $derived(
+		item.source_country && item.target_country
+			? `${countryName(item.source_country)} → ${countryName(item.target_country)}`
+			: item.target_country
+				? countryName(item.target_country)
+				: item.source_country
+					? countryName(item.source_country)
+					: null
+	);
+
 	const secondary = $derived(
 		item.organization
 			? `${item.organization.name} • ${time}`
-			: item.space_name
-				? `${item.space_name} • ${time}`
-				: item.reading_time_minutes
-					? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
-					: time
+			: route
+				? `${route} • ${time}`
+				: item.space_name
+					? `${item.space_name} • ${time}`
+					: item.reading_time_minutes
+						? `${item.reading_time_minutes} ${t('feed.min_read', 'min read')} • ${time}`
+						: time
 	);
 
 	const visibleTags = $derived(item.tags?.slice(0, 3) ?? []);
