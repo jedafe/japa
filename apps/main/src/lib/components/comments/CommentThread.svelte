@@ -163,8 +163,7 @@
 			title={t('comments.empty')}
 		/>
 	{:else}
-		<section class="relative space-y-1" aria-label={t('comments.heading')}>
-			<div class="absolute top-3 bottom-8 left-5 w-px bg-[var(--color-border)]"></div>
+		<section class="space-y-1" aria-label={t('comments.heading')}>
 			{#each comments as comment (comment.id)}
 				<div id={`comment-${comment.id}`} class="relative">
 					<CommentItem

@@ -283,7 +283,7 @@
 
 <article
 	id={`comment-${comment.id}`}
-	class="relative flex flex-col rounded-[var(--radius-card)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]/60"
+	class="relative flex flex-col rounded-[var(--radius-card)] p-4"
 >
 	<header class="z-[1] flex w-full flex-row self-start gap-3">
 		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
@@ -509,7 +509,7 @@
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="mt-3 border-l-2 border-[var(--color-border)] pl-5">
+					<div class="mt-3 pl-5">
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
