@@ -36,13 +36,26 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.vote_score, cs.velocity_score,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -54,7 +67,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
@@ -64,11 +81,14 @@ WHERE c.tenant_id = @tenant_id
   -- imported channel content does not surface as normal user activity.
   -- COALESCE keeps rows whose author join produced no users row.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.vote_score DESC
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.reaction_count DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetPrimaryFeed :many
@@ -79,14 +99,27 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        c.title, c.slug, c.author_id, c.created_at AS content_created_at,
        c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -98,7 +131,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -110,14 +147,17 @@ WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
   )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
-         c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          c.read_time_minutes, m.storage_bucket, m.storage_path,
          c.journey_stage, c.visa_route, c.source_country, c.target_country,
-         c.guide_category
+         c.guide_category,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
     f.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -131,14 +171,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -149,7 +202,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -161,12 +218,15 @@ WHERE c.tenant_id = @tenant_id AND c.space_id = @space_id
               OR (ub.blocker_id = c.author_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid))
       )
   )
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -182,14 +242,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -200,7 +273,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -213,12 +290,15 @@ WHERE c.tenant_id = @tenant_id AND c.author_id = @author_id
               OR (ub.blocker_id = c.author_id AND ub.blocked_id = sqlc.narg(viewer_id)::uuid))
       )
   )
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN @sort = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN @sort = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN @sort = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
@@ -251,14 +331,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -270,7 +363,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
@@ -279,11 +376,14 @@ WHERE c.tenant_id = @tenant_id
   AND c.created_at > now() - interval '7 days'
   -- §106: exclude synthetic video channel content from discovery feeds.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.vote_score DESC
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.reaction_count DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetRisingFeed :many
@@ -314,14 +414,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -333,7 +446,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = @tenant_id
   AND c.status = 'published'
@@ -341,10 +458,13 @@ WHERE c.tenant_id = @tenant_id
   AND c.visibility = 'public'
   -- §106: exclude synthetic video channel content from discovery feeds.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -355,6 +475,7 @@ SET vote_score = @vote_score,
     comment_count = @comment_count,
     view_count = @view_count,
     bookmark_count = @bookmark_count,
+    reaction_count = @reaction_count,
     last_scored_at = now()
 WHERE content_id = @content_id;
 
@@ -367,7 +488,7 @@ WHERE content_id = @content_id;
 UPDATE content_scores cs
 SET velocity_score = CASE
     WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-    THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
+    THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
          / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, @gravity))
     ELSE 0
 END,
@@ -487,13 +608,26 @@ content_geo AS (
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path   AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -512,14 +646,21 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug, s.geo_code,
          c.journey_stage, c.visa_route, c.source_country, c.target_country,
          m.storage_bucket, m.storage_path,
-         cg.geo_proximity
+         cg.geo_proximity,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 LIMIT @candidate_cap;
 
 -- name: ListDigestFeedItems :many

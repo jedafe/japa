@@ -39,8 +39,8 @@ func TestRankCandidates_SortModes(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	a := Candidate{Item: FeedItem{ID: "a"}, CreatedAt: now.Add(-1 * time.Hour), VoteScore: 1, VelocityScore: 9}
-	b := Candidate{Item: FeedItem{ID: "b"}, CreatedAt: now.Add(-5 * time.Hour), VoteScore: 9, VelocityScore: 1}
+	a := Candidate{Item: FeedItem{ID: "a"}, CreatedAt: now.Add(-1 * time.Hour), ReactionCount: 1, VelocityScore: 9}
+	b := Candidate{Item: FeedItem{ID: "b"}, CreatedAt: now.Add(-5 * time.Hour), ReactionCount: 9, VelocityScore: 1}
 
 	if got := rankCandidates([]Candidate{a, b}, SortLatest, now, nil, nil, defaultRankingWeights()); got[0].Item.ID != "a" {
 		t.Errorf("latest: want a first, got %s", got[0].Item.ID)

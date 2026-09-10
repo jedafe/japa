@@ -989,8 +989,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the video_processing handler can invoke it asynchronously.
 	worker.RegisterVideoProcessor(media.NewVideoProcessor())
 
-
-
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
 	webhookService := webhooks.NewService(database, cfg.SiteName)
@@ -2899,6 +2897,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// visibility filter restricts anonymous callers (§14 public read).
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content", contentHandlers.ListContent)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/content/{slug}", contentHandlers.GetContent)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/post/{content_type}/{slug}", contentHandlers.GetPost)
 			// Content types (public — for frontend content type selection)
 			// OptionalAuth: static type metadata + guide category labels are
 			// public (needed by the guest-facing /guides hub filter — §14).
