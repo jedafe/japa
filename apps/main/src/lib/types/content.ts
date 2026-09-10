@@ -93,6 +93,37 @@ export interface GuideListItem {
 	created_at: string;
 }
 
+/** Lightweight organization badge used by the social post wrapper. */
+export interface PostOrganization {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+}
+
+/**
+ * GET /post/{content_type}/{slug} — social wrapper detail row.
+ * Mirrors ContentArticle but adds the normalized identity/reaction fields
+ * needed by the daily feed card and the social post page. Ref: §23 daily card
+ * amendment and docs/superpowers/specs/2026-09-10-daily-feed-style-and-social-post-page-design.md
+ */
+export interface PostDetail extends ContentArticle {
+	status: string;
+	visibility: string;
+	is_pinned?: boolean;
+	is_locked?: boolean;
+	canonical_url?: string | null;
+	meta_title?: string | null;
+	meta_description?: string | null;
+	og_image_url?: string | null;
+	seo_indexable?: boolean;
+	reaction_count?: number;
+	bookmark_count?: number;
+	space_avatar_url?: string | null;
+	organization?: PostOrganization | null;
+	duration_secs?: number | null;
+}
+
 /**
  * GET /content/{id}/analytics — owner/admin content stats (Section 40).
  * Consumed by the content single page for the author only.
