@@ -4,6 +4,7 @@
 	import { PanelLeftClose, PanelLeftOpen, LogIn, GraduationCap } from 'lucide-svelte';
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import { t } from '$lib/i18n';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { loginUrl, profileUrl } from '$lib/appOrigins';
 	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
@@ -12,10 +13,11 @@
 		user: SessionUser | null;
 		collapsed: boolean;
 		logoUrl?: string;
+		logoDarkUrl?: string;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, logoUrl = '', onToggle }: Props = $props();
+	let { menu, user, collapsed, logoUrl = '', logoDarkUrl = '', onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -60,7 +62,7 @@
 	<div class={clsx('flex h-[var(--nav-height)] shrink-0 items-center gap-2 px-3', collapsed && 'justify-center')}>
 		<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 			{#if logoUrl}
-				<img src={logoUrl} alt={brandLabel} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+				<ThemeLogo {logoUrl} {logoDarkUrl} alt={brandLabel} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
 			{:else}
 				<span
 					class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]"

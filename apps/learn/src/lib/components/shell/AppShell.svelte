@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { Menu as MenuIcon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import { t } from '$lib/i18n';
@@ -16,6 +17,8 @@
 		onToggleCollapse: () => void;
 		/** Platform logo URL from appearance.logo_url (control panel). */
 		logoUrl?: string;
+		/** Platform dark-theme logo URL from appearance.logo_url_dark (control panel). */
+		logoDarkUrl?: string;
 		children: Snippet;
 		/** Route-specific right-sidebar widgets. */
 		sidebar?: Snippet;
@@ -37,6 +40,7 @@
 		collapsed,
 		onToggleCollapse,
 		logoUrl = '',
+		logoDarkUrl = '',
 		children,
 		sidebar,
 		hideRightSidebar = false,
@@ -89,7 +93,7 @@
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {logoDarkUrl} onToggle={onNavToggle} />
 		</div>
 
 		{#if showLeftRail}
@@ -108,7 +112,7 @@
 				</button>
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+						<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
 					{:else}
 						<span
 							class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
@@ -136,7 +140,7 @@
 			onclick={() => (mobileNavOpen = false)}
 		></button>
 		<div class="drawer">
-			<LeftNav {menu} {user} collapsed={false} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
+			<LeftNav {menu} {user} collapsed={false} {logoUrl} {logoDarkUrl} onToggle={() => (mobileNavOpen = false)} />
 		</div>
 	{/if}
 {:else}
@@ -147,7 +151,7 @@
 		style="--current-nav-width: {navWidth}"
 	>
 		<div class="shell-nav">
-			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} onToggle={onNavToggle} />
+			<LeftNav {menu} {user} collapsed={effectiveCollapsed} {logoUrl} {logoDarkUrl} onToggle={onNavToggle} />
 		</div>
 
 		{#if showLeftRail}
@@ -166,7 +170,7 @@
 				</button>
 				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
 					{#if logoUrl}
-						<img src={logoUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
+						<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('university.name')} class="h-7 w-auto max-w-[120px] object-contain" />
 					{:else}
 						<span
 							class="grid h-7 w-7 place-items-center rounded-[var(--radius)] bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]"
@@ -194,7 +198,7 @@
 			onclick={() => (mobileNavOpen = false)}
 		></button>
 		<div class="drawer">
-			<LeftNav {menu} {user} collapsed={false} {logoUrl} onToggle={() => (mobileNavOpen = false)} />
+			<LeftNav {menu} {user} collapsed={false} {logoUrl} {logoDarkUrl} onToggle={() => (mobileNavOpen = false)} />
 		</div>
 	{/if}
 {/if}

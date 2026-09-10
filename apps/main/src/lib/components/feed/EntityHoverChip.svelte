@@ -226,9 +226,9 @@
 			{@render trigger()}
 		{:else if variant === 'row'}
 			{#if avatar}
-				<img src={avatar} alt="" class="h-10 w-10 rounded-full object-cover" />
+				<img src={avatar} alt="" class="h-10 w-10 shrink-0 rounded-full object-cover" />
 			{:else}
-				<span class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
 					{name.slice(0, 2).toUpperCase()}
 				</span>
 			{/if}
@@ -240,9 +240,9 @@
 			</div>
 		{:else}
 			{#if avatar}
-				<img src={avatar} alt="" class="h-4 w-4 rounded-full object-cover" />
+				<img src={avatar} alt="" class="h-4 w-4 shrink-0 rounded-full object-cover" />
 			{:else}
-				<span class="grid h-4 w-4 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
+				<span class="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
 					{name.slice(0, 1).toUpperCase()}
 				</span>
 			{/if}
@@ -259,9 +259,9 @@
 		<div class="flex items-start gap-3">
 			<div class="flex min-w-0 flex-1 items-center gap-3">
 				{#if avatarSrc}
-					<img src={avatarSrc} alt="" class="h-12 w-12 rounded-full object-cover" />
+					<img src={avatarSrc} alt="" class="h-12 w-12 shrink-0 rounded-full object-cover" />
 				{:else}
-					<span class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+					<span class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
 						{displayName.slice(0, 2).toUpperCase()}
 					</span>
 				{/if}

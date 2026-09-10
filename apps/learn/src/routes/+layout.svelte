@@ -94,6 +94,7 @@
 	{collapsed}
 	onToggleCollapse={toggleCollapse}
 	logoUrl={data.logoUrl}
+	logoDarkUrl={data.logoDarkUrl}
 	sidebar={routeSidebar ?? undefined}
 	rightSidebarWidgets={data.rightSidebarWidgets}
 	leftSidebarWidgets={isLessonPlayer ? [] : data.leftSidebarWidgets}

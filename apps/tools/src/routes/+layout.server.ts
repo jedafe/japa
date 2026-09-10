@@ -25,7 +25,8 @@ export const load: LayoutServerLoad = async (event) => {
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
 		features: event.locals.features,
-		// Platform logo from appearance.logo_url (control panel).
-		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? ''
+		// Platform logo from appearance.logo_url / appearance.logo_url_dark (control panel).
+		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? '',
+		logoDarkUrl: (siteSettings['appearance.logo_url_dark'] as string | undefined) ?? ''
 	};
 };
