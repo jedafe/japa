@@ -283,7 +283,7 @@
 
 <article
 	id={`comment-${comment.id}`}
-	class="relative flex flex-col rounded-[var(--radius-card)] p-4"
+	class="relative flex flex-col rounded-[var(--radius-card)] p-4 {depth > 0 ? 'comment-reply' : ''}"
 >
 	<header class="z-[1] flex w-full flex-row self-start gap-3">
 		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
@@ -575,5 +575,18 @@
 	}
 	:global(.prose-comment a:hover) {
 		color: var(--color-primary-hover);
+	}
+
+	/* L-shaped thread connector: a short horizontal line from the parent thread
+	 * rail to the reply avatar. The rail itself comes from the parent
+	 * .border-l-2 children container. Ref: daily.dev thread line style. */
+	.comment-reply::before {
+		content: '';
+		position: absolute;
+		left: -36px;
+		top: 35px;
+		width: 36px;
+		height: 2px;
+		background: var(--color-border);
 	}
 </style>
