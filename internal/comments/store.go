@@ -300,30 +300,6 @@ func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgt
 	return content.SpaceID, nil
 }
 
-// IsCommentOnDiscussion returns true when the comment's parent content has
-// content_type = 'discussion'. Section 49: comment voting (upvote/downvote)
-// is forum-discussions-only; other content types use emoji reactions (Section
-// 14). Used by VoteComment to enforce the constraint (BL-002).
-func (s *Service) IsCommentOnDiscussion(ctx context.Context, tenantID, commentID pgtype.UUID) (bool, error) {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return false, fmt.Errorf("getting comment for content-type check: %w", err)
-	}
-
-	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       comment.ContentID,
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return false, fmt.Errorf("getting content for content-type check: %w", err)
-	}
-
-	return content.ContentType == "discussion", nil
-}
-
 // GetCommentContentAuthorID returns the author_user_id of the parent content
 // for the given comment. Used by PinComment to allow the content author to
 // pin comments on their own content (Section 49, BL-003).
@@ -364,7 +340,7 @@ func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUI
 // honoring the Section 49 ?sort=top|new|oldest query parameter. "top" (the
 // default) orders by pin then vote score then recency; "new" by recency;
 // "oldest" by ascending creation time. Pinned comments always surface first.
-func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
+func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -372,6 +348,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 	switch sort {
 	case "new":
 		rows, err := s.read.ListCommentsByContentNew(ctx, gen.ListCommentsByContentNewParams{
+			ViewerID:   viewerID,
 			ContentID:  contentID,
 			TenantID:   tenantID,
 			PageLimit:  limit,
@@ -385,6 +362,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 
 	case "oldest":
 		rows, err := s.read.ListCommentsByContentOldest(ctx, gen.ListCommentsByContentOldestParams{
+			ViewerID:   viewerID,
 			ContentID:  contentID,
 			TenantID:   tenantID,
 			PageLimit:  limit,
@@ -398,6 +376,7 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 
 	default: // "top" and any unrecognized value
 		comments, err := s.read.ListCommentsByContent(ctx, gen.ListCommentsByContentParams{
+			ViewerID:   viewerID,
 			ContentID:  contentID,
 			TenantID:   tenantID,
 			PageLimit:  limit,
@@ -418,23 +397,28 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 	out := make([]gen.ListCommentsByContentRow, len(rows))
 	for i := range rows {
 		out[i] = gen.ListCommentsByContentRow{
-			ID:           rows[i].ID,
-			TenantID:     rows[i].TenantID,
-			ContentID:    rows[i].ContentID,
-			AuthorUserID: rows[i].AuthorUserID,
-			ParentID:     rows[i].ParentID,
-			Body:         rows[i].Body,
-			Depth:        rows[i].Depth,
-			VoteScore:    rows[i].VoteScore,
-			IsPinned:     rows[i].IsPinned,
-			IsEdited:     rows[i].IsEdited,
-			EditedAt:     rows[i].EditedAt,
-			CreatedAt:    rows[i].CreatedAt,
-			UpdatedAt:    rows[i].UpdatedAt,
-			DeletedAt:    rows[i].DeletedAt,
-			Username:     rows[i].Username,
-			DisplayName:  rows[i].DisplayName,
-			AvatarUrl:    rows[i].AvatarUrl,
+			ID:            rows[i].ID,
+			TenantID:      rows[i].TenantID,
+			ContentID:     rows[i].ContentID,
+			AuthorUserID:  rows[i].AuthorUserID,
+			ParentID:      rows[i].ParentID,
+			Body:          rows[i].Body,
+			Depth:         rows[i].Depth,
+			VoteScore:     rows[i].VoteScore,
+			UpvoteCount:   rows[i].UpvoteCount,
+			DownvoteCount: rows[i].DownvoteCount,
+			IsPinned:      rows[i].IsPinned,
+			IsEdited:      rows[i].IsEdited,
+			EditedAt:      rows[i].EditedAt,
+			CreatedAt:     rows[i].CreatedAt,
+			UpdatedAt:     rows[i].UpdatedAt,
+			DeletedAt:     rows[i].DeletedAt,
+			ReplyCount:    rows[i].ReplyCount,
+			UserVote:      rows[i].UserVote,
+			IsAnonymous:   rows[i].IsAnonymous,
+			Username:      rows[i].Username,
+			DisplayName:   rows[i].DisplayName,
+			AvatarUrl:     rows[i].AvatarUrl,
 		}
 	}
 
@@ -445,23 +429,28 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 	out := make([]gen.ListCommentsByContentRow, len(rows))
 	for i := range rows {
 		out[i] = gen.ListCommentsByContentRow{
-			ID:           rows[i].ID,
-			TenantID:     rows[i].TenantID,
-			ContentID:    rows[i].ContentID,
-			AuthorUserID: rows[i].AuthorUserID,
-			ParentID:     rows[i].ParentID,
-			Body:         rows[i].Body,
-			Depth:        rows[i].Depth,
-			VoteScore:    rows[i].VoteScore,
-			IsPinned:     rows[i].IsPinned,
-			IsEdited:     rows[i].IsEdited,
-			EditedAt:     rows[i].EditedAt,
-			CreatedAt:    rows[i].CreatedAt,
-			UpdatedAt:    rows[i].UpdatedAt,
-			DeletedAt:    rows[i].DeletedAt,
-			Username:     rows[i].Username,
-			DisplayName:  rows[i].DisplayName,
-			AvatarUrl:    rows[i].AvatarUrl,
+			ID:            rows[i].ID,
+			TenantID:      rows[i].TenantID,
+			ContentID:     rows[i].ContentID,
+			AuthorUserID:  rows[i].AuthorUserID,
+			ParentID:      rows[i].ParentID,
+			Body:          rows[i].Body,
+			Depth:         rows[i].Depth,
+			VoteScore:     rows[i].VoteScore,
+			UpvoteCount:   rows[i].UpvoteCount,
+			DownvoteCount: rows[i].DownvoteCount,
+			IsPinned:      rows[i].IsPinned,
+			IsEdited:      rows[i].IsEdited,
+			EditedAt:      rows[i].EditedAt,
+			CreatedAt:     rows[i].CreatedAt,
+			UpdatedAt:     rows[i].UpdatedAt,
+			DeletedAt:     rows[i].DeletedAt,
+			ReplyCount:    rows[i].ReplyCount,
+			UserVote:      rows[i].UserVote,
+			IsAnonymous:   rows[i].IsAnonymous,
+			Username:      rows[i].Username,
+			DisplayName:   rows[i].DisplayName,
+			AvatarUrl:     rows[i].AvatarUrl,
 		}
 	}
 
@@ -469,12 +458,13 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 }
 
 // ListRepliesByParent returns replies for a given parent comment.
-func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
+func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
 	replies, err := s.read.ListRepliesByParent(ctx, gen.ListRepliesByParentParams{
+		ViewerID:   viewerID,
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		PageLimit:  limit,

@@ -805,6 +805,12 @@ export interface Comment {
 	/** Nesting depth (0 = top-level, max 3). */
 	depth: number;
 	vote_score: number;
+	/** Denormalized count of value=1 votes (Section 49 — daily.dev-style "N upvotes" label). */
+	upvote_count: number;
+	/** Denormalized count of value=-1 votes. */
+	downvote_count: number;
+	/** The authenticated viewer's current vote on this comment (1, -1, or 0). */
+	user_vote: 1 | -1 | 0;
 	is_pinned: boolean;
 	is_edited: boolean;
 	edited_at: string | null;

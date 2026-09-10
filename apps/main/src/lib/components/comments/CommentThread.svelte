@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { CornerUpLeft, MessageCircle, TriangleAlert } from 'lucide-svelte';
+	import { MessageCircle, TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState } from '$lib/components/ui';
 	import type { Comment } from '$lib/types';
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
@@ -23,7 +23,7 @@
 		totalCount?: number;
 		/** Content id — used for POST /content/{id}/comments and reply fetches. */
 		contentId: string;
-		/** Parent content type — controls vote vs emoji-reaction display (Section 49). */
+		/** Parent content type — retained for backwards compatibility; no longer gates voting. */
 		contentType: string;
 		/** Auth gating. */
 		authed: boolean;
@@ -40,19 +40,41 @@
 
 	let comments = $state<Comment[]>(untrack(() => initial));
 
-	// Tracks optimistic local adjustments to the total comment count. When a
-	// published comment is created or deleted we bump this, while the SSR total
-	// stays fixed until the next page navigation. Reset on a new SSR payload.
-	let localDelta = $state(0);
-
 	// Re-seed on a new SSR payload (navigation between articles).
 	$effect(() => {
 		const seed = initial;
 		untrack(() => {
 			comments = seed;
+			sort = 'top';
 			localDelta = 0;
 		});
 	});
+
+	// Tracks optimistic local adjustments to the total comment count.
+	let localDelta = $state(0);
+
+	// Sort state (daily.dev-style dropdown). Backend supports top/new/oldest.
+	let sort = $state<'top' | 'new' | 'oldest'>('top');
+	let sortLoading = $state(false);
+	let sortError = $state<string | null>(null);
+
+	async function changeSort(value: 'top' | 'new' | 'oldest') {
+		if (value === sort || sortLoading) return;
+		sort = value;
+		sortLoading = true;
+		sortError = null;
+		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?sort=${encodeURIComponent(value)}`);
+		sortLoading = false;
+		if (res.error || !res.data) {
+			sortError = res.error?.message ?? t('comments.load_error');
+			return;
+		}
+		comments = res.data;
+		const ids = (res.envelope as Record<string, unknown> | null)?.deleted_user_ids;
+		if (Array.isArray(ids) && deletedUserIds) {
+			for (const id of ids as string[]) deletedUserIds.add(id);
+		}
+	}
 
 	// Top-level composer state — body is base64 TipTap JSON.
 	let draftBody = $state<string>('');
@@ -71,8 +93,6 @@
 		}
 		comments = [res.data, ...comments];
 		draftBody = '';
-		// When a totalCount prop is supplied, the count no longer derives from
-		// comments.length, so we must bump the total for a new top-level comment.
 		if (totalCount != null) {
 			localDelta++;
 		}
@@ -84,24 +104,43 @@
 </script>
 
 <div id="comments" class="mt-12 border-t border-[var(--color-border)] pt-8">
-	<h2 class="mb-4 flex items-center gap-2 text-xl font-bold text-[var(--color-text)]">
-		<MessageCircle size={20} />
-		{t('comments.heading')}
-		<span class="text-sm font-normal text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">{count}</span>
-	</h2>
+	<div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+		<h2 class="flex items-center gap-2 text-xl font-bold text-[var(--color-text)]">
+			<MessageCircle size={20} />
+			{t('comments.heading')}
+			<span class="text-sm font-normal text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">{count}</span>
+		</h2>
+
+		{#if comments.length > 0}
+			<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+				<span>{t('comments.sort_by', 'Sort by:')}</span>
+				<select
+					bind:value={sort}
+					onchange={(e) => changeSort(e.currentTarget.value as 'top' | 'new' | 'oldest')}
+					disabled={sortLoading}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[var(--color-text)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+				>
+					<option value="top">{t('comments.sort.top', 'Top')}</option>
+					<option value="new">{t('comments.sort.new', 'New')}</option>
+					<option value="oldest">{t('comments.sort.oldest', 'Oldest')}</option>
+				</select>
+			</div>
+		{/if}
+	</div>
+
+	{#if sortError}
+		<p class="mb-4 text-xs text-[var(--color-danger)]">{sortError}</p>
+	{/if}
 
 	{#if authed}
-		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<div class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<CommentEditor placeholder={t('comments.placeholder')} oninput={(b) => (draftBody = b)} />
-			<div class="mt-2 flex items-center justify-between">
-				<span class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)]">
-					<CornerUpLeft size={12} /> {t('comments.replying_to')}
-				</span>
+			<div class="mt-3 flex items-center justify-end">
 				<button
 					type="button"
 					onclick={submitComment}
 					disabled={!draftBody || submitting}
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
 					{submitting ? t('common.loading') : t('comments.post')}
 				</button>
@@ -124,9 +163,10 @@
 			title={t('comments.empty')}
 		/>
 	{:else}
-		<div class="space-y-5">
+		<section class="relative space-y-1" aria-label={t('comments.heading')}>
+			<div class="absolute top-3 bottom-8 left-5 w-px bg-[var(--color-border)]"></div>
 			{#each comments as comment (comment.id)}
-				<div id={`comment-${comment.id}`}>
+				<div id={`comment-${comment.id}`} class="relative">
 					<CommentItem
 						{comment}
 						{contentId}
@@ -141,6 +181,6 @@
 					/>
 				</div>
 			{/each}
-		</div>
+		</section>
 	{/if}
 </div>
