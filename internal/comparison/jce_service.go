@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 )
@@ -1119,15 +1120,28 @@ func marshalJSONB(v any) []byte {
 
 // jceComparisonResponse builds an API-friendly response map from a JCE comparison.
 // It decodes JSONB item_ref fields so they are returned as JSON objects rather
-// than base64-encoded byte arrays.
+// than base64-encoded byte arrays, and resolves cover media storage refs into
+// signed imgproxy URLs (§34).
 func jceComparisonResponse(cmp JCEComparison) map[string]any {
 	items := make([]map[string]any, 0, len(cmp.Items))
 	for _, it := range cmp.Items {
 		items = append(items, jceComparisonItemResponse(it))
 	}
 
+	// Marshal the typed content row to a map so we can attach computed URLs.
+	contentBytes, _ := json.Marshal(cmp.Content)
+	contentMap := map[string]any{}
+	_ = json.Unmarshal(contentBytes, &contentMap)
+
+	if cmp.Content.FeaturedStorageBucket != nil && cmp.Content.FeaturedStoragePath != nil {
+		contentMap["featured_image_url"] = media.MediaURL(*cmp.Content.FeaturedStorageBucket, *cmp.Content.FeaturedStoragePath, media.ImageProxyOpts{})
+	}
+	if cmp.Content.HeaderStorageBucket != nil && cmp.Content.HeaderStoragePath != nil {
+		contentMap["header_image_url"] = media.MediaURL(*cmp.Content.HeaderStorageBucket, *cmp.Content.HeaderStoragePath, media.ImageProxyOpts{})
+	}
+
 	res := map[string]any{
-		"content":    cmp.Content,
+		"content":    contentMap,
 		"metadata":   cmp.Metadata,
 		"items":      items,
 		"dimensions": cmp.Dimensions,

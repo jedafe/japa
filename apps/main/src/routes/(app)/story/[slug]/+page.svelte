@@ -236,6 +236,10 @@
 				{/if}
 			</div>
 
+			{#if story.featured_image_url}
+				<img src={story.featured_image_url} alt={story.title} class="mt-6 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
+			{/if}
+
 			<!-- Author + date + views -->
 			<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 				{#if story.author_name}

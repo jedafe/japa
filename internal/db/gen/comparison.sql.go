@@ -413,9 +413,13 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
        c.view_count, c.comment_count, c.share_count, c.reshare_count,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
-       m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
+       m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
+       fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
+       hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
 WHERE c.tenant_id = $1
   AND c.content_type = 'comparison'
   AND c.deleted_at IS NULL
@@ -429,47 +433,51 @@ type GetComparisonBySlugOrIDParams struct {
 }
 
 type GetComparisonBySlugOrIDRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
-	AuthorID        pgtype.UUID        `json:"author_id"`
-	SpaceID         pgtype.UUID        `json:"space_id"`
-	ContentType     string             `json:"content_type"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	Body            string             `json:"body"`
-	BodyHtml        string             `json:"body_html"`
-	FieldValues     []byte             `json:"field_values"`
-	ContentHash     *string            `json:"content_hash"`
-	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
-	SourceCountry   *string            `json:"source_country"`
-	TargetCountry   *string            `json:"target_country"`
-	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl    *string            `json:"canonical_url"`
-	MetaTitle       *string            `json:"meta_title"`
-	MetaDescription *string            `json:"meta_description"`
-	OgImageUrl      *string            `json:"og_image_url"`
-	SeoIndexable    bool               `json:"seo_indexable"`
-	AiExempt        bool               `json:"ai_exempt"`
-	Status          string             `json:"status"`
-	Visibility      string             `json:"visibility"`
-	IsLocked        bool               `json:"is_locked"`
-	IsPinned        bool               `json:"is_pinned"`
-	ReadTimeMinutes int32              `json:"read_time_minutes"`
-	ViewCount       int32              `json:"view_count"`
-	CommentCount    int32              `json:"comment_count"`
-	ShareCount      int32              `json:"share_count"`
-	ReshareCount    int32              `json:"reshare_count"`
-	PublishAt       pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt     pgtype.Timestamptz `json:"published_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	Depth           string             `json:"depth"`
-	PromotedFromID  pgtype.UUID        `json:"promoted_from_id"`
-	PromotedAt      pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode       *string            `json:"smart_mode"`
-	ScoreVersion    int32              `json:"score_version"`
-	MetadataConfig  []byte             `json:"metadata_config"`
+	ID                    pgtype.UUID        `json:"id"`
+	TenantID              pgtype.UUID        `json:"tenant_id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	SpaceID               pgtype.UUID        `json:"space_id"`
+	ContentType           string             `json:"content_type"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	FieldValues           []byte             `json:"field_values"`
+	ContentHash           *string            `json:"content_hash"`
+	GeoSpaceID            pgtype.UUID        `json:"geo_space_id"`
+	SourceCountry         *string            `json:"source_country"`
+	TargetCountry         *string            `json:"target_country"`
+	HeaderImageID         pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl          *string            `json:"canonical_url"`
+	MetaTitle             *string            `json:"meta_title"`
+	MetaDescription       *string            `json:"meta_description"`
+	OgImageUrl            *string            `json:"og_image_url"`
+	SeoIndexable          bool               `json:"seo_indexable"`
+	AiExempt              bool               `json:"ai_exempt"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	IsLocked              bool               `json:"is_locked"`
+	IsPinned              bool               `json:"is_pinned"`
+	ReadTimeMinutes       int32              `json:"read_time_minutes"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int32              `json:"comment_count"`
+	ShareCount            int32              `json:"share_count"`
+	ReshareCount          int32              `json:"reshare_count"`
+	PublishAt             pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	Depth                 string             `json:"depth"`
+	PromotedFromID        pgtype.UUID        `json:"promoted_from_id"`
+	PromotedAt            pgtype.Timestamptz `json:"promoted_at"`
+	SmartMode             *string            `json:"smart_mode"`
+	ScoreVersion          int32              `json:"score_version"`
+	MetadataConfig        []byte             `json:"metadata_config"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	HeaderStorageBucket   *string            `json:"header_storage_bucket"`
+	HeaderStoragePath     *string            `json:"header_storage_path"`
 }
 
 // =====================
@@ -520,6 +528,10 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 		&i.SmartMode,
 		&i.ScoreVersion,
 		&i.MetadataConfig,
+		&i.FeaturedStorageBucket,
+		&i.FeaturedStoragePath,
+		&i.HeaderStorageBucket,
+		&i.HeaderStoragePath,
 	)
 	return i, err
 }

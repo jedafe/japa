@@ -2841,6 +2841,9 @@ export interface Story {
 	series_slug?: string;
 	series_part?: number;
 	series_total?: number;
+	/** §34 cover/hero media — rendered on the story single when set. */
+	featured_image_url?: string | null;
+	header_image_url?: string | null;
 }
 
 /** Structured meta subset of a Story (origin/destination/year/visa/highlights). */

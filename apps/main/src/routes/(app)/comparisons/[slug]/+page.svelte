@@ -87,6 +87,14 @@
 		</p>
 	</div>
 
+	{#if comparison.content.featured_image_url}
+		<img
+			src={comparison.content.featured_image_url}
+			alt={comparison.content.title}
+			class="aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover"
+		/>
+	{/if}
+
 	{#if comparison.content.body_html}
 		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage. Ref: Rule 12, Section 30. -->
 		<article
