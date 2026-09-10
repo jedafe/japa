@@ -3,7 +3,7 @@
 -- keep accurate counts when the feed switches to reaction-driven ranking.
 
 ALTER TABLE content_scores
-    ADD COLUMN reaction_count int NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS reaction_count int NOT NULL DEFAULT 0;
 
 UPDATE content_scores
 SET reaction_count = COALESCE(
