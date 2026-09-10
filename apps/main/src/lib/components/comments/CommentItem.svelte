@@ -509,7 +509,7 @@
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="mt-3 pl-5">
+					<div class="mt-3 border-l-2 border-[var(--color-border)] pl-5">
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
