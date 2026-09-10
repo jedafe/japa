@@ -1922,6 +1922,9 @@ export interface ComparisonDetail {
 	space_id: string | null;
 	items: ComparisonItem[];
 	dimensions: ComparisonDimension[];
+	/** §30 matrix cell values indexed as `${dimIdx}:${itemIdx}` for the
+	 *  ComparisonBuilder so existing values are restored when editing. */
+	matrixValues?: Record<string, string>;
 }
 
 /** A comparison item (entity being compared, e.g. a university). */

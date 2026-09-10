@@ -49,6 +49,7 @@
 		organizations={data.organizations}
 		draft={data.draft}
 		draftTags={data.draftTags}
+		videoSource={data.videoSource}
 		comparisonDetail={data.comparisonDetail}
 		comparisonTypes={data.comparisonTypes}
 		dimensionTypes={data.dimensionTypes}

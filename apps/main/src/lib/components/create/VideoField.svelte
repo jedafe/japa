@@ -3,6 +3,7 @@
 	// video file, then links the resulting video_sources row to the draft.
 	// On success it fills title/description/featured image and asks the parent
 	// to append the backend-built TipTap `video` node to the editor body.
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { Link2, Upload, Loader2, CheckCircle2, Play } from 'lucide-svelte';
 	import { resolveVideo, uploadVideo, type VideoResolveResult } from '$lib/api/videos';
@@ -15,6 +16,8 @@
 		description?: string | null;
 		featuredImageId?: string | null;
 		videoSourceId?: string | null;
+		/** §106 video source restored when editing an existing video. */
+		initialSource?: VideoSource | null;
 		/** Called with the backend-built TipTap doc ({type:'doc',content:[video node]})
 		 *  so the parent can append it to the editor body. */
 		onBodyAppend?: (bodyJSON: Record<string, unknown>) => void;
@@ -27,16 +30,18 @@
 		description = $bindable<string | null>(null),
 		featuredImageId = $bindable<string | null>(null),
 		videoSourceId = $bindable<string | null>(null),
+		initialSource = null,
 		onBodyAppend,
 		onResolved
 	}: Props = $props();
+
+	let linked = $state<VideoSource | null>(untrack(() => initialSource ?? null));
 
 	let tab = $state<'import' | 'upload'>('import');
 	let url = $state('');
 	let file = $state<File | null>(null);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
-	let linked = $state<VideoSource | null>(null);
 
 	function applyResult(res: VideoResolveResult) {
 		const src = res.source;

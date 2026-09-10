@@ -578,16 +578,24 @@ func (h *Handlers) GetMyContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
-	if !canEditAny {
+	editorContent, err := h.Service.GetContentForEditor(r.Context(), tenantID, contentID)
+	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	editorContent, err := h.Service.GetContentForEditor(r.Context(), tenantID, contentID)
-	if err != nil {
-		handleServiceError(w, err)
+	canEditAny := h.permResolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
+		h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+	if !canEditAny {
+		switch editorContent.ContentType {
+		case "story":
+			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "story.edit_any")
+		case "comparison":
+			canEditAny = h.permResolver.HasPermission(r.Context(), user.UserID, tenantID, "comparison.edit_any")
+		}
+	}
+	if !canEditAny {
+		handleServiceError(w, pgx.ErrNoRows)
 		return
 	}
 

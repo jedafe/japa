@@ -68,6 +68,9 @@
 		/** Space assignments restored from GET /content/{id}/spaces so the
 		 *  multi-space selector restores when editing existing content. */
 		draftSpaces?: ContentSpace[];
+		/** §106 video source restored from GET /videos/{id} so the VideoField
+		 *  shows the linked source when editing an existing video. */
+		videoSource?: VideoSource | null;
 		/** Content type value from ?type — used to preselect the composer type
 		 *  when creating new content. Ignored when restoring a draft. */
 		initialType?: string | null;
@@ -86,7 +89,7 @@
 		assessmentDimensions: string[];
 	}
 
-	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
+	let { types, spaces, fieldGroups, series = $bindable(), organizations, draft, draftTags = [], comparisonDetail = null, comparisonTypes = [], dimensionTypes = [], coverMedia = null, draftSeriesId = null, draftSpaces = [], videoSource = null, initialType = null, initialSpaceId = null, user, defaultEditor = 'block', visibilityOptions = [], maxTags = 5, features = {}, assessmentDimensions }: Props = $props();
 
 	// ---- form state ----
 	let selectedType = $state<TypeEntry>(
@@ -479,6 +482,7 @@
 				bind:description={metaDescription}
 				bind:featuredImageId
 				bind:videoSourceId
+				initialSource={videoSource}
 				onBodyAppend={handleVideoBodyAppend}
 				onResolved={handleVideoResolved}
 			/>
@@ -490,6 +494,7 @@
 				onEnsureContent={ensureContentId}
 				initialItems={comparisonDetail?.items ?? []}
 				initialDimensions={comparisonDetail?.dimensions ?? []}
+				initialCells={comparisonDetail?.matrixValues ?? {}}
 				{comparisonTypes}
 				{dimensionTypes}
 				{bodyHtml}

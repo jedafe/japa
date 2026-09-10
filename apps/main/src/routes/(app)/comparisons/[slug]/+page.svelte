@@ -21,7 +21,7 @@
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
-	import { ArrowLeft, ExternalLink } from 'lucide-svelte';
+	import { ArrowLeft, ExternalLink, Pencil } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -71,7 +71,17 @@
 		>
 			<ArrowLeft size={14} /> {t('jce.comparisons.back')}
 		</a>
-		<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">{comparison.content.title}</h1>
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">{comparison.content.title}</h1>
+			{#if data.canEdit}
+				<a
+					href="/create?type=comparison&draft={comparison.content.id}"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+				>
+					<Pencil size={14} /> {t('common.edit', 'Edit')}
+				</a>
+			{/if}
+		</div>
 		<p class="text-sm capitalize" style="color: var(--color-muted)">
 			{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}
 		</p>

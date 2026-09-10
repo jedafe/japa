@@ -348,6 +348,7 @@ const getContentByIDForEditor = `-- name: GetContentByIDForEditor :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.video_source_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
        c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -379,6 +380,7 @@ type GetContentByIDForEditorRow struct {
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
 	MetaTitle       *string            `json:"meta_title"`
 	MetaDescription *string            `json:"meta_description"`
@@ -428,6 +430,7 @@ func (q *Queries) GetContentByIDForEditor(ctx context.Context, arg GetContentByI
 		&i.GeoSpaceID,
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
+		&i.VideoSourceID,
 		&i.CanonicalUrl,
 		&i.MetaTitle,
 		&i.MetaDescription,
@@ -794,6 +797,7 @@ const getUserContent = `-- name: GetUserContent :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.video_source_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
        c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -826,6 +830,7 @@ type GetUserContentRow struct {
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
 	MetaTitle       *string            `json:"meta_title"`
 	MetaDescription *string            `json:"meta_description"`
@@ -876,6 +881,7 @@ func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) 
 		&i.GeoSpaceID,
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
+		&i.VideoSourceID,
 		&i.CanonicalUrl,
 		&i.MetaTitle,
 		&i.MetaDescription,
@@ -1183,6 +1189,7 @@ const getUserDraft = `-- name: GetUserDraft :one
 SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
        c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
        c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.video_source_id,
        c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned,
        c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
@@ -1215,6 +1222,7 @@ type GetUserDraftRow struct {
 	GeoSpaceID      pgtype.UUID        `json:"geo_space_id"`
 	HeaderImageID   pgtype.UUID        `json:"header_image_id"`
 	FeaturedImageID pgtype.UUID        `json:"featured_image_id"`
+	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 	CanonicalUrl    *string            `json:"canonical_url"`
 	MetaTitle       *string            `json:"meta_title"`
 	MetaDescription *string            `json:"meta_description"`
@@ -1263,6 +1271,7 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 		&i.GeoSpaceID,
 		&i.HeaderImageID,
 		&i.FeaturedImageID,
+		&i.VideoSourceID,
 		&i.CanonicalUrl,
 		&i.MetaTitle,
 		&i.MetaDescription,
