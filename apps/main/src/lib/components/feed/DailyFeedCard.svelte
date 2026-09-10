@@ -260,26 +260,26 @@
 			{/if}
 
 			<!-- Metrics / actions -->
-			<div class="flex flex-wrap items-center gap-5 text-xs text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
+			<div class="flex flex-wrap items-center gap-6 text-sm text-[var(--color-muted)] [font-variant-numeric:tabular-nums]">
 				<button
 					type="button"
-					class="group/btn flex items-center gap-1.5 transition-colors"
+					class="group/btn flex items-center gap-2 transition-colors"
 					onclick={openPost}
 					aria-label={t('feed.card.comments', 'Comments')}
 				>
-					<span class="rounded-full p-1.5 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<MessageSquare size={14} />
+					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
+						<MessageSquare size={16} />
 					</span>
 					<span class="transition-colors group-hover/btn:text-[var(--color-primary)]">{item.comment_count ?? 0}</span>
 				</button>
 				<button
 					type="button"
-					class="group/btn flex items-center gap-1.5 transition-colors"
+					class="group/btn flex items-center gap-2 transition-colors"
 					onclick={openPost}
 					aria-label={t('feed.card.reactions', 'Reactions')}
 				>
-					<span class="rounded-full p-1.5 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Heart size={14} />
+					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
+						<Heart size={16} />
 					</span>
 					<span class="transition-colors group-hover/btn:text-[var(--color-primary)]">{item.reaction_count ?? 0}</span>
 				</button>
@@ -289,8 +289,8 @@
 					onclick={openPost}
 					aria-label={t('feed.card.bookmark', 'Bookmark')}
 				>
-					<span class="rounded-full p-1.5 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Bookmark size={14} />
+					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
+						<Bookmark size={16} />
 					</span>
 				</button>
 				<button
@@ -299,8 +299,8 @@
 					onclick={openPost}
 					aria-label={t('feed.card.share', 'Share')}
 				>
-					<span class="rounded-full p-1.5 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Share2 size={14} />
+					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
+						<Share2 size={16} />
 					</span>
 				</button>
 			</div>
