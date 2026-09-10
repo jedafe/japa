@@ -6,7 +6,7 @@
 	 * descriptions are available without over-fetching in the feed list.
 	 */
 	import { LinkPreview } from 'bits-ui';
-	import { BadgeCheck, Calendar, Globe, Loader2, MapPin, Users } from 'lucide-svelte';
+	import { BadgeCheck, Calendar, Globe, MapPin } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
@@ -57,6 +57,9 @@
 	let detailWebsite = $state<string | undefined>(undefined);
 	let detailCreatedAt = $state<string | undefined>(undefined);
 	let detailVerified = $state<boolean | undefined>(undefined);
+	let detailFollowingCount = $state<number | undefined>(undefined);
+	let detailPostsCount = $state<number | undefined>(undefined);
+	let detailUsername = $state<string | undefined>(undefined);
 
 	const joinedDate = $derived(
 		detailCreatedAt
@@ -83,16 +86,32 @@
 	);
 	const avatarSrc = $derived(detailAvatar ?? avatar ?? undefined);
 	const displayName = $derived(detailName ?? name);
+	const handle = $derived(
+		type === 'user' ? (detailUsername ?? slug) : slug
+	);
+	const stats = $derived(
+		type === 'user'
+			? [
+					{ label: t('entity.stat_following', 'following'), value: detailFollowingCount },
+					{ label: t('entity.stat_followers', 'followers'), value: detailCount },
+					{ label: t('entity.stat_posts', 'posts'), value: detailPostsCount }
+				]
+			: type === 'space'
+				? [
+						{ label: t('entity.stat_members', 'members'), value: detailCount },
+						{ label: t('entity.stat_posts', 'posts'), value: detailPostsCount }
+					]
+				: [
+						{ label: t('entity.stat_followers', 'followers'), value: detailCount },
+						{ label: t('entity.stat_posts', 'posts'), value: detailPostsCount }
+					]
+	);
+	const visibleStats = $derived(stats.filter((s) => s.value != null));
 
 	const href = $derived(
-		type === 'user' ? `/u/${slug}` : type === 'space' ? `/spaces/${slug}` : `/org/${slug}`
+		type === 'user' ? (handle ? `/u/${handle}` : '') : type === 'space' ? `/spaces/${slug}` : `/org/${slug}`
 	);
 	const followType: FollowableType = $derived(type === 'user' ? 'user' : type === 'space' ? 'space' : 'organization');
-	const countLabel = $derived(
-		type === 'space'
-			? t('entity.members', 'members')
-			: t('entity.followers', 'followers')
-	);
 
 	function pick(obj: Record<string, unknown>, ...keys: string[]) {
 		for (const key of keys) {
@@ -116,6 +135,7 @@
 
 	async function loadDetail() {
 		if (fetched || loading) return;
+		if (!slug) return;
 		loading = true;
 		const path = type === 'user' ? `/users/${slug}` : type === 'space' ? `/spaces/${slug}` : `/organizations/${slug}`;
 		const res = await api.get<Record<string, unknown>>(path);
@@ -137,6 +157,8 @@
 				pickString(entity, 'name', 'display_name', 'title') ??
 				pickString(profile, 'display_name', 'name');
 			if (displayName) detailName = displayName;
+			const username = pickString(entity, 'username') ?? pickString(profile, 'username');
+			if (username) detailUsername = username;
 			const avatarUrl =
 				pickString(entity, 'avatar_url', 'logo_url', 'logo', 'image_url') ??
 				pickString(profile, 'avatar_url', 'image_url');
@@ -165,6 +187,14 @@
 				pickBool(entity, 'verified', 'is_verified') ??
 				pickBool(profile, 'verified', 'is_verified');
 			if (verified != null) detailVerified = verified;
+			const following =
+				pickNumber(entity, 'following_count', 'following', 'follows_count') ??
+				pickNumber(profile, 'following_count', 'following', 'follows_count');
+			if (following != null) detailFollowingCount = following;
+			const posts =
+				pickNumber(entity, 'post_count', 'posts_count', 'content_count', 'posts') ??
+				pickNumber(profile, 'post_count', 'posts_count', 'content_count', 'posts');
+			if (posts != null) detailPostsCount = posts;
 		}
 		fetched = true;
 		loading = false;
@@ -177,7 +207,7 @@
 
 	function onTriggerClick(e: MouseEvent) {
 		e.stopPropagation();
-		if (slug) goto(href);
+		if (href) goto(href);
 	}
 </script>
 
@@ -220,67 +250,23 @@
 		class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
 	>
 		<div class="flex items-start gap-3">
-			{#if avatarSrc}
-				<img src={avatarSrc} alt="" class="h-12 w-12 rounded-full object-cover" />
-			{:else}
-				<span class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
-					{displayName.slice(0, 2).toUpperCase()}
-				</span>
-			{/if}
-			<div class="min-w-0 flex-1">
-				<div class="flex items-center gap-1">
-					<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
-					{#if detailVerified}
-						<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
-					{/if}
-				</div>
-				<p class="truncate text-xs text-[var(--color-muted)]">{type === 'user' && slug ? `@${slug}` : slug}</p>
-			</div>
-		</div>
-
-		{#if detailDescription}
-			<p class="mt-3 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
-		{/if}
-
-		{#if detailLocation || detailWebsite || joinedDate}
-			<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
-				{#if detailLocation}
-					<span class="inline-flex items-center gap-1">
-						<MapPin size={12} />
-						{detailLocation}
-					</span>
-				{/if}
-				{#if websiteHref && websiteHostname}
-					<a
-						href={websiteHref}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
-						onclick={(e) => e.stopPropagation()}
-					>
-						<Globe size={12} />
-						{websiteHostname}
-					</a>
-				{/if}
-				{#if joinedDate}
-					<span class="inline-flex items-center gap-1">
-						<Calendar size={12} />
-						{t('entity.joined', 'Joined {date}', { date: joinedDate })}
-					</span>
-				{/if}
-			</div>
-		{/if}
-
-		<div class="mt-4 flex items-center justify-between gap-2">
-			<div class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-				<Users size={13} />
-				{#if loading}
-					<Loader2 size={12} class="animate-spin" />
-				{:else if detailCount != null}
-					<span>{detailCount.toLocaleString()} {countLabel}</span>
+			<div class="flex min-w-0 flex-1 items-center gap-3">
+				{#if avatarSrc}
+					<img src={avatarSrc} alt="" class="h-12 w-12 rounded-full object-cover" />
 				{:else}
-					<span>—</span>
+					<span class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+						{displayName.slice(0, 2).toUpperCase()}
+					</span>
 				{/if}
+				<div class="min-w-0">
+					<div class="flex items-center gap-1">
+						<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
+						{#if detailVerified}
+							<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+						{/if}
+					</div>
+					<p class="truncate text-xs text-[var(--color-muted)]">{handle ? (type === 'user' ? `@${handle}` : handle) : ''}</p>
+				</div>
 			</div>
 			<FollowButton
 				entityType={followType}
@@ -290,6 +276,53 @@
 				compact
 			/>
 		</div>
+
+		{#if detailDescription}
+			<p class="mt-3 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
+		{/if}
+
+		{#if visibleStats.length > 0 || detailLocation || websiteHostname || joinedDate}
+			<div class="mt-4 flex flex-col gap-2">
+				{#if visibleStats.length > 0}
+					<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
+						{#each visibleStats as stat (stat.label)}
+							<span class="flex items-baseline gap-1">
+								<span class="font-semibold text-[var(--color-text)]">{stat.value?.toLocaleString()}</span>
+								{stat.label}
+							</span>
+						{/each}
+					</div>
+				{/if}
+				{#if detailLocation || websiteHostname || joinedDate}
+					<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
+						{#if detailLocation}
+							<span class="inline-flex items-center gap-1">
+								<MapPin size={12} />
+								{detailLocation}
+							</span>
+						{/if}
+						{#if websiteHref && websiteHostname}
+							<a
+								href={websiteHref}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
+								onclick={(e) => e.stopPropagation()}
+							>
+								<Globe size={12} />
+								{websiteHostname}
+							</a>
+						{/if}
+						{#if joinedDate}
+							<span class="inline-flex items-center gap-1">
+								<Calendar size={12} />
+								{t('entity.joined', 'Joined {date}', { date: joinedDate })}
+							</span>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<button
 			type="button"
