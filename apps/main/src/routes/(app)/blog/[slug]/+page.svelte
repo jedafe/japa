@@ -150,9 +150,9 @@
 	Content single pages render the unified shell's left ad rail (Section 59) instead of a
 	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 -->
-<div class="mx-auto grid max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_20rem]">
+<div class="mx-auto grid max-w-[65rem] gap-8 px-4 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_20rem]">
 	<!-- Center: article -->
-	<article class="min-w-0 max-w-3xl">
+	<article class="min-w-0 max-w-[41rem]">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
 			<a href="/blog" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]">
 				<ArrowLeft size={16} /> {t('blog.back', 'Back to blog')}
