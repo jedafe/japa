@@ -46,6 +46,7 @@
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
 	const Icon = $derived(meta.icon);
+	const accentVar = $derived(`var(${meta.accentVar})`);
 
 	const sourceEntity = $derived({
 		type: 'user' as const,
@@ -170,12 +171,11 @@
 		<div class="ml-auto flex shrink-0 items-center gap-3">
 			<a
 				href={canonicalHref}
-				class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--color-surface-subtle)]"
-				style:color={`color-mix(in srgb, ${meta.accentVar} 55%, var(--color-text))`}
-				style:borderColor={`color-mix(in srgb, ${meta.accentVar} 18%, transparent)`}
-				style:backgroundColor={`color-mix(in srgb, ${meta.accentVar} 8%, transparent)`}
+				class="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-semibold uppercase tracking-wide transition-colors hover:opacity-80"
+				style:color={accentVar}
+				aria-label={actionLabel}
 			>
-				<Icon size={12} />
+				<Icon size={13} />
 				{actionLabel}
 			</a>
 			<DropdownMenu.Root>
