@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // ContentService is the subset of content.Service the story package needs.
@@ -83,6 +84,9 @@ type StoryDTO struct {
 	SeriesSlug  string `json:"series_slug,omitempty"`
 	SeriesPart  *int32 `json:"series_part,omitempty"`
 	SeriesTotal int64  `json:"series_total,omitempty"`
+	// §34 cover/hero media — resolved from joined media storage refs.
+	FeaturedImageURL string `json:"featured_image_url,omitempty"`
+	HeaderImageURL   string `json:"header_image_url,omitempty"`
 }
 
 // SubmitStoryInput is the request body for POST /stories.
@@ -723,6 +727,13 @@ func rowToDTO(r StoryRow) StoryDTO {
 	}
 
 	dto.SeriesTotal = r.SeriesTotal
+
+	if r.FeaturedStorageBucket != nil && r.FeaturedStoragePath != nil {
+		dto.FeaturedImageURL = media.MediaURL(*r.FeaturedStorageBucket, *r.FeaturedStoragePath, media.ImageProxyOpts{})
+	}
+	if r.HeaderStorageBucket != nil && r.HeaderStoragePath != nil {
+		dto.HeaderImageURL = media.MediaURL(*r.HeaderStorageBucket, *r.HeaderStoragePath, media.ImageProxyOpts{})
+	}
 
 	return dto
 }

@@ -65,6 +65,9 @@ export interface JCEComparisonContent {
 	author_id?: string;
 	created_at?: string;
 	updated_at?: string;
+	/** §34 cover/hero media — resolved by the JCE detail endpoint. */
+	featured_image_url?: string | null;
+	header_image_url?: string | null;
 }
 
 export interface JCEComparisonMetadata {

@@ -67,42 +67,49 @@ type StoryMeta struct {
 //
 //nolint:revive // exported: stutter naming is intentional
 type StoryRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
-	AuthorID           pgtype.UUID
-	Title              string
-	Slug               string
-	Body               string
-	BodyHTML           string
-	Status             string
-	Visibility         string
-	ViewCount          int32
-	CommentCount       int32
-	PublishedAt        pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	OriginSpaceID      pgtype.UUID
-	OriginSpaceName    *string
-	OriginSpaceCode    *string
-	DestSpaceID        pgtype.UUID
-	DestSpaceName      *string
-	DestSpaceCode      *string
-	RelocationYear     pgtype.Int2
-	VisaCategory       *string
-	Profession         *string
-	BiggestChallenge   *string
-	MostUsefulResource *string
-	BestAdvice         *string
-	Verified           bool
-	AuthorName         *string
-	AuthorAvatar       *string
+	ID                    pgtype.UUID
+	TenantID              pgtype.UUID
+	AuthorID              pgtype.UUID
+	Title                 string
+	Slug                  string
+	Body                  string
+	BodyHTML              string
+	Status                string
+	Visibility            string
+	ViewCount             int32
+	CommentCount          int32
+	PublishedAt           pgtype.Timestamptz
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	OriginSpaceID         pgtype.UUID
+	OriginSpaceName       *string
+	OriginSpaceCode       *string
+	DestSpaceID           pgtype.UUID
+	DestSpaceName         *string
+	DestSpaceCode         *string
+	RelocationYear        pgtype.Int2
+	VisaCategory          *string
+	Profession            *string
+	BiggestChallenge      *string
+	MostUsefulResource    *string
+	BestAdvice            *string
+	Verified              bool
+	AuthorName            *string
+	AuthorAvatar          *string
 	// Series membership — stories may belong to a blog_series like any other
 	// content type (series nav on the single page mirrors the blog layout).
-	SeriesID    pgtype.UUID
-	SeriesTitle *string
-	SeriesSlug  *string
-	SeriesPart  pgtype.Int4
-	SeriesTotal int64
+	SeriesID              pgtype.UUID
+	SeriesTitle           *string
+	SeriesSlug            *string
+	SeriesPart            pgtype.Int4
+	SeriesTotal           int64
+	// §34 cover media — resolved into signed URLs by the service layer.
+	FeaturedImageID       pgtype.UUID
+	FeaturedStorageBucket *string
+	FeaturedStoragePath   *string
+	HeaderImageID         pgtype.UUID
+	HeaderStorageBucket   *string
+	HeaderStoragePath     *string
 }
 
 // CreateStoryMeta inserts a new story_meta row linked to a contents row.
@@ -505,7 +512,9 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        u.username AS author_name, up.avatar_url AS author_avatar,
        bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
        bsp.position AS series_part,
-       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
+       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -514,6 +523,8 @@ LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
@@ -532,6 +543,8 @@ LIMIT 1
 		&r.Verified,
 		&r.AuthorName, &r.AuthorAvatar,
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
+		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
+		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -560,7 +573,9 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        u.username AS author_name, up.avatar_url AS author_avatar,
        bs.id AS series_id, bs.title AS series_title, bs.slug AS series_slug,
        bsp.position AS series_part,
-       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
+       c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
 JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
@@ -569,6 +584,8 @@ LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
@@ -587,6 +604,8 @@ LIMIT 1
 		&r.Verified,
 		&r.AuthorName, &r.AuthorAvatar,
 		&r.SeriesID, &r.SeriesTitle, &r.SeriesSlug, &r.SeriesPart, &r.SeriesTotal,
+		&r.FeaturedImageID, &r.FeaturedStorageBucket, &r.FeaturedStoragePath,
+		&r.HeaderImageID, &r.HeaderStorageBucket, &r.HeaderStoragePath,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
