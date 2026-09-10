@@ -244,7 +244,7 @@
 		{/if}
 	</LinkPreview.Trigger>
 	<LinkPreview.Content
-		side="top"
+		side="bottom"
 		align="start"
 		sideOffset={8}
 		class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
