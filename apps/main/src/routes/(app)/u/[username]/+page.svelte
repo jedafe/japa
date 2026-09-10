@@ -549,7 +549,7 @@ profile is private, or no stage is set. -->
 			{:else if postsView.total === 0}
 				<EmptyState icon={FileText} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="flex flex-col gap-3">
 					{#each postsView.items as post (post.id)}
 						<div class="group relative block">
 							<FeedCard
@@ -674,7 +674,7 @@ profile is private, or no stage is set. -->
 							{t('profile.video_posts', 'Video posts')}
 						</h2>
 					{/if}
-					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+					<div class="flex flex-col gap-3">
 						{#each videoPosts as post (post.id)}
 							<FeedCard
 								item={toFeedItem(post)}

@@ -25,6 +25,10 @@
 		count?: number;
 		/** Viewer already follows this entity. */
 		isFollowing?: boolean;
+		/** Visual treatment: 'chip' (compact pill) or 'row' (source row with large avatar). */
+		variant?: 'chip' | 'row';
+		/** Secondary line shown under the name when variant='row'. */
+		secondary?: string;
 	}
 
 	let {
@@ -35,7 +39,9 @@
 		avatar,
 		description,
 		count,
-		isFollowing = false
+		isFollowing = false,
+		variant = 'chip',
+		secondary
 	}: Props = $props();
 
 	let open = $state(false);
@@ -95,17 +101,35 @@
 <LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
 	<LinkPreview.Trigger
 		{href}
-		class="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+		class={variant === 'row'
+			? 'group/row flex w-full min-w-0 items-center gap-3 rounded-[var(--radius)] p-1 -m-1 text-left transition-colors hover:bg-[var(--color-surface-subtle)]'
+			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
 		onclick={stopPropagation}
 	>
-		{#if avatar}
-			<img src={avatar} alt="" class="h-4 w-4 rounded-full object-cover" />
+		{#if variant === 'row'}
+			{#if avatar}
+				<img src={avatar} alt="" class="h-10 w-10 rounded-full object-cover" />
+			{:else}
+				<span class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+					{name.slice(0, 2).toUpperCase()}
+				</span>
+			{/if}
+			<div class="min-w-0 flex-1">
+				<p class="truncate text-sm font-semibold text-[var(--color-text)] transition-colors group-hover/row:text-[var(--color-primary)]">{name}</p>
+				{#if secondary}
+					<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
+				{/if}
+			</div>
 		{:else}
-			<span class="grid h-4 w-4 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
-				{name.slice(0, 1).toUpperCase()}
-			</span>
+			{#if avatar}
+				<img src={avatar} alt="" class="h-4 w-4 rounded-full object-cover" />
+			{:else}
+				<span class="grid h-4 w-4 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
+					{name.slice(0, 1).toUpperCase()}
+				</span>
+			{/if}
+			<span class="truncate">{name}</span>
 		{/if}
-		<span class="truncate">{name}</span>
 	</LinkPreview.Trigger>
 	<LinkPreview.Content
 		side="top"
