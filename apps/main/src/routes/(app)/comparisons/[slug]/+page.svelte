@@ -296,11 +296,6 @@
 		<OwnerStatsCard stats={data.analytics} />
 	{/if}
 
-	<div class="flex gap-4">
-		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
-		<a href="/compare" class="text-sm underline" style="color: var(--color-muted)">{t('jce.comparisons.create_your_own')}</a>
-	</div>
-
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
 	<CommentThread
 		comments={data.comments}
@@ -313,6 +308,11 @@
 		loadError={data.commentsLoadError}
 		deletedUserIds={deletedUserIds}
 	/>
+
+	<div class="mt-6 flex gap-4">
+		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
+		<a href="/compare" class="text-sm underline" style="color: var(--color-muted)">{t('jce.comparisons.create_your_own')}</a>
+	</div>
 </article>
 
 <!-- Right: CreatorCard + widgets. Hidden on mobile because a stacked copy
