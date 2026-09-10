@@ -117,7 +117,7 @@
 			<div class="ml-auto flex items-center gap-3">
 				<a
 					href={canonicalHref}
-					class="flex items-center gap-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+					class="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 					onclick={(e) => e.stopPropagation()}
 				>
 					{actionLabel}
@@ -135,7 +135,7 @@
 		</div>
 
 		<!-- Title -->
-		<h2 class="text-balance text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)] group-hover:text-[var(--color-primary)]">
+		<h2 class="text-balance text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)]">
 			{item.title}
 		</h2>
 
