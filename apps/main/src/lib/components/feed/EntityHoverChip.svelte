@@ -249,12 +249,13 @@
 			<span class="truncate">{name}</span>
 		{/if}
 	</LinkPreview.Trigger>
-	<LinkPreview.Content
-		side="bottom"
-		align="start"
-		sideOffset={8}
-		class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
-	>
+	<LinkPreview.Portal>
+		<LinkPreview.Content
+			side="bottom"
+			align="start"
+			sideOffset={8}
+			class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+		>
 		<div class="flex items-start gap-3">
 			<div class="flex min-w-0 flex-1 items-center gap-3">
 				{#if avatarSrc}
@@ -340,5 +341,6 @@
 		>
 			{t('entity.view_profile', 'View profile')}
 		</button>
-	</LinkPreview.Content>
+		</LinkPreview.Content>
+	</LinkPreview.Portal>
 </LinkPreview.Root>
