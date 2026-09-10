@@ -18,11 +18,18 @@ const CONTENT_ROUTE_PREFIX: Record<string, string> = {
 	achievement: '/achievements',
 	page: '/pages',
 	job_listing: '/jobs',
-	service_listing: '/services'
+	service_listing: '/services',
+	video: '/video'
 };
 
 /** Canonical detail href for a content item, keyed by content_type. */
 export function contentHref(item: { slug: string; content_type?: string | null }): string {
 	const prefix = (item.content_type && CONTENT_ROUTE_PREFIX[item.content_type]) || '/content';
 	return `${prefix}/${item.slug}`;
+}
+
+/** Social post page href for a feed item. */
+export function postHref(item: { slug: string; content_type?: string | null }): string {
+	const type = item.content_type ?? 'content';
+	return `/post/${type}/${item.slug}`;
 }

@@ -53,7 +53,7 @@ var settingsCatalog = map[string]settingMeta{
 	"feed.fanout_threshold":            {Type: "int", DefaultValue: "5000", Description: "Max space members for push fan-out.", Panel: "admin"},
 	"feed.velocity.gravity":            {Type: "float", DefaultValue: "1.8", Description: "HN gravity constant for Rising sort.", Panel: "admin"},
 	"feed.max_followed_spaces_in_feed": {Type: "int", DefaultValue: "50", Description: "Cap on spaces contributing to feed.", Panel: "admin"},
-	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"reddit","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine — active feed card style, resolved per content type (tolerates a legacy scalar).", Panel: "admin"},
+	"feed.card_style":                  {Type: "json", DefaultValue: `{"default":"daily","by_type":{}}`, Description: "{default, by_type} map; each style ∈ reddit|compact|grid|magazine|daily — active feed card style, resolved per content type (tolerates a legacy scalar).", Panel: "admin"},
 	"content.edit_window_minutes":      {Type: "int", DefaultValue: "1440", Description: "Content edit window (24hr default).", Panel: "admin"},
 	"content.link_preview.blacklist":   {Type: "json", DefaultValue: "[]", Description: "JSON array of blocked domains for link previews.", Panel: "admin"},
 	"content.min_length":               {Type: "int", DefaultValue: "10", Description: "Minimum content body length.", Panel: "admin"},
@@ -560,7 +560,7 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Generic Comparison System (§30, ADR-030)
 	"comparison.auto_dimension_hints":         {Type: "json", DefaultValue: `{"default":["Overview","Key features","Pros","Cons","Overall rating"],"groups":[{"hints":["price","cost","plan","package","version","edition","model"],"dimensions":["Price","Value for money"],"prepend":true},{"hints":["course","university","school","program","degree","certification"],"dimensions":["Curriculum","Duration","Cost","Accreditation"],"prepend":false}]}`, Description: "Heuristic hints used by POST /comparisons/auto-dimensions to derive dimension suggestions from item names. Admin-configurable per tenant.", Panel: "control"},
-	"appearance.feed_card_style":              {Type: "string", DefaultValue: "reddit", Description: `Default feed card style: ` + "`" + `reddit` + "`" + `|` + "`" + `compact` + "`" + `|` + "`" + `grid` + "`" + `|` + "`" + `magazine` + "`" + ``, Panel: "admin", Public: true},
+	"appearance.feed_card_style":              {Type: "string", DefaultValue: "daily", Description: `Default feed card style: ` + "`" + `reddit` + "`" + `|` + "`" + `compact` + "`" + `|` + "`" + `grid` + "`" + `|` + "`" + `magazine` + "`" + `|` + "`" + `daily` + "`" + ``, Panel: "admin", Public: true},
 	"campaign.enabled":                        {Type: "bool", DefaultValue: "true", Description: "Global campaign toggle", Panel: "control"},
 	"campaign.max_count":                      {Type: "int", DefaultValue: "50", Description: "Max pieces per campaign", Panel: "control"},
 	"content.pagination.style":                {Type: "string", DefaultValue: "infinite_scroll", Description: `Default feed/list pagination style: ` + "`" + `infinite_scroll` + "`" + `|` + "`" + `load_more` + "`" + `|` + "`" + `pagination` + "`" + ``, Panel: "admin"},

@@ -25,7 +25,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+	const cardStyleConfig = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'daily', byType: {} });
 
 	// Map ProfilePost → FeedItem so profile posts render through FeedCard.
 	// The profile page's posts all belong to the same user, so the author
@@ -38,13 +38,29 @@
 			content_type: post.content_type,
 			author_id: post.author_id,
 			author_name: data.user.display_name,
+			author_username: data.user.username,
 			author_avatar_url: data.user.avatar_url,
 			created_at: post.published_at ?? post.created_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,
+			reaction_count: post.reaction_count,
+			bookmark_count: post.bookmark_count,
 			reading_time_minutes: post.read_time_minutes,
 			excerpt: post.excerpt,
-			space_id: post.space_id
+			space_id: post.space_id,
+			space_name: post.space_name,
+			space_slug: post.space_slug,
+			space_avatar_url: post.space_avatar_url,
+			organization: post.organization,
+			cover_image_url: post.cover_image_url,
+			tags: post.tags,
+			journey_stage: post.journey_stage,
+			visa_route: post.visa_route,
+			source_country: post.source_country,
+			target_country: post.target_country,
+			guide_category: post.guide_category,
+			video_source_id: post.video_source_id,
+			duration_secs: post.duration_secs
 		};
 	}
 

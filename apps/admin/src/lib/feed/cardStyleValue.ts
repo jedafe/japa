@@ -3,7 +3,7 @@ export interface ParsedCardStyle {
 	byType: Record<string, string>;
 }
 
-const STYLES = ['reddit', 'compact', 'grid', 'magazine'];
+const STYLES = ['reddit', 'compact', 'grid', 'magazine', 'daily'];
 
 /**
  * Parse the stored feed.card_style value. Accepts:
@@ -74,7 +74,7 @@ export function buildCardStyleValue(def: string, byType: Record<string, string>)
 	return JSON.stringify({ default: STYLES.includes(def) ? def : 'reddit', by_type: cleaned });
 }
 
-export const CARD_STYLE_VALUES = ['reddit', 'compact', 'grid', 'magazine'] as const;
+export const CARD_STYLE_VALUES = ['reddit', 'compact', 'grid', 'magazine', 'daily'] as const;
 
 // Backward-compat: still exported, but labels are i18n keys — consumers should
 // translate via t(labelKey, fallback). Prefer CARD_STYLE_VALUES + t() at call site.
@@ -83,4 +83,5 @@ export const CARD_STYLE_OPTIONS = [
 	{ value: 'compact', labelKey: 'content_types.style_compact', label: 'Compact' },
 	{ value: 'grid', labelKey: 'content_types.style_grid', label: 'Grid' },
 	{ value: 'magazine', labelKey: 'content_types.style_magazine', label: 'Magazine' },
+	{ value: 'daily', labelKey: 'content_types.style_daily', label: 'Daily' }
 ];

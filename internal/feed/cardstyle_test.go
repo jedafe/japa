@@ -22,7 +22,7 @@ func TestResolveCardStyleConfig(t *testing.T) {
 		{
 			name: "empty -> default",
 			raw:  "",
-			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{}},
+			want: CardStyleConfig{Default: DefaultCardStyle, ByType: map[string]string{}},
 		},
 		{
 			name: "legacy scalar",
@@ -30,9 +30,9 @@ func TestResolveCardStyleConfig(t *testing.T) {
 			want: CardStyleConfig{Default: "magazine", ByType: map[string]string{}},
 		},
 		{
-			name: "legacy invalid scalar coerced to reddit",
+			name: "legacy invalid scalar coerced to default",
 			raw:  `"devto"`,
-			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{}},
+			want: CardStyleConfig{Default: DefaultCardStyle, ByType: map[string]string{}},
 		},
 		{
 			name: "object with per-type overrides",
@@ -42,7 +42,7 @@ func TestResolveCardStyleConfig(t *testing.T) {
 		{
 			name: "object invalid default coerced",
 			raw:  `{"default":"bogus","by_type":{}}`,
-			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{}},
+			want: CardStyleConfig{Default: DefaultCardStyle, ByType: map[string]string{}},
 		},
 		{
 			name: "object drops invalid per-type entry",
@@ -57,7 +57,7 @@ func TestResolveCardStyleConfig(t *testing.T) {
 		{
 			name: "unparseable -> default",
 			raw:  `not json`,
-			want: CardStyleConfig{Default: "reddit", ByType: map[string]string{}},
+			want: CardStyleConfig{Default: DefaultCardStyle, ByType: map[string]string{}},
 		},
 		{
 			// The control UI + settings PATCH store every value as a JSONB
@@ -107,8 +107,8 @@ func TestGetCardStyleDefaultShape(t *testing.T) {
 		t.Fatalf("decode body: %v", err)
 	}
 
-	if body.Data.Default != "reddit" {
-		t.Errorf("data.default = %q, want reddit", body.Data.Default)
+	if body.Data.Default != DefaultCardStyle {
+		t.Errorf("data.default = %q, want %q", body.Data.Default, DefaultCardStyle)
 	}
 
 	if body.Data.ByType == nil || len(body.Data.ByType) != 0 {

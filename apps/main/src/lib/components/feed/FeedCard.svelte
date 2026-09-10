@@ -7,6 +7,7 @@
 	import { formatDuration } from '$lib/utils/duration';
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
+	import DailyFeedCard from './DailyFeedCard.svelte';
 
 	interface Props {
 		item: FeedItem;
@@ -109,7 +110,9 @@
 	</div>
 {/snippet}
 
-{#if layout === 'grid-cell' || style === 'grid'}
+{#if style === 'daily'}
+	<DailyFeedCard {item} />
+{:else if layout === 'grid-cell' || style === 'grid'}
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
 	<a href={href(item)} class="flex flex-col overflow-hidden {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
 		{#if item.cover_image_url}
