@@ -63,8 +63,8 @@
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
 
 	const isHorizontal = $derived(horizontal || bottom);
-	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-0 top-10' : 'left-12 top-0'));
-	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-0 top-10' : 'left-12 top-0'));
+	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
+	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
 
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
@@ -330,12 +330,12 @@
 	class="{bottom
 		? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur'
 		: horizontal
-			? 'relative z-30 flex flex-row items-center gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
+			? 'relative z-30 flex w-full flex-row items-stretch gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
 			: 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4'}"
 >
 	{#if reactionsEnabled}
 		<div
-			class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}"
+			class="relative {isHorizontal ? 'flex flex-1 items-center justify-center' : 'flex flex-col items-center gap-1'}"
 			role="group"
 			aria-label={t('blog.reactions', 'Reactions')}
 			onmouseenter={openReactions}
@@ -346,7 +346,7 @@
 			<button
 				type="button"
 				onclick={() => toggleReaction(primaryKey)}
-				class="flex {isHorizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
+				class="flex {isHorizontal ? 'w-full flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} transition-colors"
 				aria-label={primaryReaction.label}
 				aria-pressed={primaryActive}
 				aria-expanded={showReactions}
@@ -403,7 +403,7 @@
 
 	<a
 		href="#comments"
-		class="flex {isHorizontal ? 'flex-row items-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+		class="flex {isHorizontal ? 'flex-1 flex-row items-center justify-center gap-1.5' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		aria-label={t('blog.comments', 'Comments')}
 	>
 		<span class="grid h-9 w-9 place-items-center rounded-full hover:bg-[var(--color-surface-subtle)]">
@@ -419,7 +419,7 @@
 		<button
 			type="button"
 			onclick={toggleBookmark}
-			class="flex {isHorizontal ? 'items-center' : 'flex-col items-center gap-1'} transition-colors"
+			class="flex {isHorizontal ? 'flex-1 items-center justify-center' : 'flex-col items-center gap-1'} transition-colors"
 			aria-label={t('blog.bookmark', 'Bookmark')}
 			aria-pressed={isBookmarked}
 		>
@@ -432,11 +432,11 @@
 	{/if}
 
 	<!-- Share button with social media dropdown -->
-	<div class="relative {isHorizontal ? 'flex items-center' : 'flex flex-col items-center gap-1'}" data-share-menu>
+	<div class="relative {isHorizontal ? 'flex flex-1 items-center justify-center' : 'flex flex-col items-center gap-1'}" data-share-menu>
 		<button
 			type="button"
 			onclick={toggleShareMenu}
-			class="flex {isHorizontal ? 'items-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			class="flex {isHorizontal ? 'w-full items-center justify-center' : 'flex-col items-center gap-1'} text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('blog.share', 'Share')}
 			aria-expanded={showShareMenu}
 		>
@@ -492,7 +492,7 @@
 		<button
 			type="button"
 			onclick={copyOnly}
-			class="flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			aria-label={t('blog.copy_link', 'Copy link')}
 		>
 			<span class="grid h-9 w-9 place-items-center rounded-full transition-colors hover:bg-[var(--color-surface-subtle)]">
