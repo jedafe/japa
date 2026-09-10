@@ -150,7 +150,7 @@
 	Content single pages render the unified shell's left ad rail (Section 59) instead of a
 	page-owned left reaction rail. The action bar is now a horizontal rail under the body.
 -->
-<div class="mx-auto grid max-w-[63rem] gap-8 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_20rem]">
+<div class="mx-auto grid max-w-[65rem] gap-8 py-8 pb-24 lg:pb-8 lg:grid-cols-1 xl:grid-cols-[1fr_20rem]">
 	<!-- Center: article -->
 	<article class="min-w-0 max-w-[41rem]">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
