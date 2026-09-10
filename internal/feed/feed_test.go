@@ -59,10 +59,10 @@ func TestComputeVelocity(t *testing.T) {
 	t.Parallel()
 
 	// Formula mirrors the SQL in feeds.sql (UpdateVelocityScores):
-	//   (vote_score*2 + comment_count + view_count/100) / hours^1.8
+	//   (reaction_count*2 + comment_count + view_count/100) / hours^1.8
 	tests := []struct {
 		name          string
-		voteScore     int32
+		reactionCount int32
 		commentCount  int32
 		viewCount     int32
 		bookmarkCount int32
@@ -71,7 +71,7 @@ func TestComputeVelocity(t *testing.T) {
 	}{
 		{
 			name:          "fresh post with engagement",
-			voteScore:     10,
+			reactionCount: 10,
 			commentCount:  5,
 			viewCount:     100,
 			bookmarkCount: 3,
@@ -80,7 +80,7 @@ func TestComputeVelocity(t *testing.T) {
 		},
 		{
 			name:          "old post with engagement",
-			voteScore:     50,
+			reactionCount: 50,
 			commentCount:  20,
 			viewCount:     500,
 			bookmarkCount: 10,
@@ -89,7 +89,7 @@ func TestComputeVelocity(t *testing.T) {
 		},
 		{
 			name:          "no engagement",
-			voteScore:     0,
+			reactionCount: 0,
 			commentCount:  0,
 			viewCount:     0,
 			bookmarkCount: 0,
@@ -98,7 +98,7 @@ func TestComputeVelocity(t *testing.T) {
 		},
 		{
 			name:          "very new post",
-			voteScore:     1,
+			reactionCount: 1,
 			commentCount:  0,
 			viewCount:     10,
 			bookmarkCount: 0,
@@ -111,10 +111,10 @@ func TestComputeVelocity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := ComputeVelocity(tt.voteScore, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld)
+			got := ComputeVelocity(tt.reactionCount, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld)
 			if math.Abs(got-tt.want) > 1e-6 {
 				t.Errorf("ComputeVelocity(%d, %d, %d, %d, %f) = %f, want %f",
-					tt.voteScore, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld, got, tt.want)
+					tt.reactionCount, tt.commentCount, tt.viewCount, tt.bookmarkCount, tt.hoursOld, got, tt.want)
 			}
 		})
 	}

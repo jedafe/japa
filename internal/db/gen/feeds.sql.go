@@ -67,13 +67,26 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        cs.vote_score, cs.velocity_score,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -85,7 +98,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
@@ -95,11 +112,14 @@ WHERE c.tenant_id = $1
   -- imported channel content does not surface as normal user activity.
   -- COALESCE keeps rows whose author join produced no users row.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.vote_score DESC
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.reaction_count DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -112,33 +132,46 @@ type GetExploreFeedParams struct {
 }
 
 type GetExploreFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          int32              `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
-	GeoProximity       interface{}        `json:"geo_proximity"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     int32              `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	BookmarkCount                 int32              `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
+	GeoProximity                  interface{}        `json:"geo_proximity"`
 }
 
 // Trending content for guests (no user_id filter), pull from content_scores.
@@ -173,16 +206,29 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 			&i.VelocityScore,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.ReadTimeMinutes,
 			&i.JourneyStage,
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -328,13 +374,26 @@ content_geo AS (
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path   AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -353,14 +412,21 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug, s.geo_code,
          c.journey_stage, c.visa_route, c.source_country, c.target_country,
          m.storage_bucket, m.storage_path,
-         cg.geo_proximity
+         cg.geo_proximity,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 LIMIT $4
 `
 
@@ -379,36 +445,49 @@ type GetForYouCandidatesParams struct {
 }
 
 type GetForYouCandidatesRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          *int32             `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      *int32             `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
-	IsAuthorFollowed   bool               `json:"is_author_followed"`
-	IsSpaceFollowed    bool               `json:"is_space_followed"`
-	FollowedTagOverlap int32              `json:"followed_tag_overlap"`
-	SpaceGeoCode       *string            `json:"space_geo_code"`
-	GeoProximity       interface{}        `json:"geo_proximity"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     *int32             `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 *int32             `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
+	IsAuthorFollowed              bool               `json:"is_author_followed"`
+	IsSpaceFollowed               bool               `json:"is_space_followed"`
+	FollowedTagOverlap            int32              `json:"followed_tag_overlap"`
+	SpaceGeoCode                  *string            `json:"space_geo_code"`
+	GeoProximity                  interface{}        `json:"geo_proximity"`
 }
 
 // Bounded personalized candidate pool = UNION of (a) recent content from
@@ -450,8 +529,10 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -460,6 +541,17 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 			&i.VisaRoute,
 			&i.SourceCountry,
 			&i.TargetCountry,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -517,14 +609,27 @@ SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
        c.title, c.slug, c.author_id, c.created_at AS content_created_at,
        c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score, cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -536,7 +641,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE f.tenant_id = $1 AND f.user_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -548,14 +657,17 @@ WHERE f.tenant_id = $1 AND f.user_id = $2
   )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
          c.title, c.slug, c.author_id, c.created_at,
-         c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+         c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
          c.read_time_minutes, m.storage_bucket, m.storage_path,
          c.journey_stage, c.visa_route, c.source_country, c.target_country,
-         c.guide_category
+         c.guide_category,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $3 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
     f.created_at DESC
 LIMIT $5 OFFSET $4
@@ -570,35 +682,48 @@ type GetPrimaryFeedParams struct {
 }
 
 type GetPrimaryFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ContentID          pgtype.UUID        `json:"content_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	ContentType        string             `json:"content_type"`
-	Score              pgtype.Numeric     `json:"score"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	ContentCreatedAt   pgtype.Timestamptz `json:"content_created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          *int32             `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      *int32             `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
+	ID                            pgtype.UUID        `json:"id"`
+	ContentID                     pgtype.UUID        `json:"content_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	ContentType                   string             `json:"content_type"`
+	Score                         pgtype.Numeric     `json:"score"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	ContentCreatedAt              pgtype.Timestamptz `json:"content_created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     *int32             `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 *int32             `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
 }
 
 // User's personalized feed from feeds table (push side).
@@ -635,8 +760,10 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -646,6 +773,17 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -665,14 +803,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -683,7 +834,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.author_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -696,12 +851,15 @@ WHERE c.tenant_id = $1 AND c.author_id = $2
               OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
       )
   )
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $4 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $4 = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
 LIMIT $6 OFFSET $5
@@ -717,32 +875,45 @@ type GetProfileFeedParams struct {
 }
 
 type GetProfileFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          int32              `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     int32              `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 int32              `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
 }
 
 // All public posts by a specific user.
@@ -780,8 +951,10 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -791,6 +964,17 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -832,14 +1016,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -851,7 +1048,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
@@ -859,10 +1060,13 @@ WHERE c.tenant_id = $1
   AND c.visibility = 'public'
   -- §106: exclude synthetic video channel content from discovery feeds.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC
 LIMIT $3 OFFSET $2
 `
@@ -876,33 +1080,46 @@ type GetRisingFeedParams struct {
 }
 
 type GetRisingFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          int32              `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
-	GeoProximity       interface{}        `json:"geo_proximity"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     int32              `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 int32              `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
+	GeoProximity                  interface{}        `json:"geo_proximity"`
 }
 
 // Rising content sorted by velocity score, ranked by geo proximity.
@@ -934,8 +1151,10 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -945,6 +1164,17 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -965,14 +1195,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
@@ -983,7 +1226,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 WHERE c.tenant_id = $1 AND c.space_id = $2
   AND c.status = 'published'
   AND c.deleted_at IS NULL
@@ -995,12 +1242,15 @@ WHERE c.tenant_id = $1 AND c.space_id = $2
               OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
       )
   )
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $4 = 'top' THEN cs.vote_score END DESC,
+    CASE WHEN $4 = 'top' THEN cs.reaction_count END DESC,
     CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
     c.created_at DESC
 LIMIT $6 OFFSET $5
@@ -1016,31 +1266,44 @@ type GetSpaceFeedParams struct {
 }
 
 type GetSpaceFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          int32              `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     int32              `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 int32              `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
 }
 
 // Posts in a specific space.
@@ -1075,8 +1338,10 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -1086,6 +1351,17 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -1127,14 +1403,27 @@ SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
        c.created_at, c.view_count, c.comment_count,
        cs.vote_score, cs.velocity_score,
        cs.bookmark_count,
+       COALESCE(cs.reaction_count, 0) AS reaction_count,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(u.username, '') AS author_username,
        COALESCE(s.name, '') AS space_name,
        COALESCE(s.slug, '') AS space_slug,
        MAX(LEFT(c.body, 200))::text AS excerpt,
        c.read_time_minutes,
        c.journey_stage, c.visa_route, c.source_country, c.target_country,
        c.guide_category,
+       c.organization_id,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
        m.storage_bucket AS cover_storage_bucket,
        m.storage_path AS cover_storage_path,
        COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
@@ -1146,7 +1435,11 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
-LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 WHERE c.tenant_id = $1
   AND c.status = 'published'
@@ -1155,11 +1448,14 @@ WHERE c.tenant_id = $1
   AND c.created_at > now() - interval '7 days'
   -- §106: exclude synthetic video channel content from discovery feeds.
   AND COALESCE(u.is_synthetic, false) = false
-GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count,
+GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
-         m.storage_bucket, m.storage_path
-ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.vote_score DESC
+         m.storage_bucket, m.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         sm.storage_bucket, sm.storage_path,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.reaction_count DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -1172,33 +1468,46 @@ type GetTopFeedParams struct {
 }
 
 type GetTopFeedRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	ContentType        string             `json:"content_type"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	SpaceID            pgtype.UUID        `json:"space_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	VoteScore          int32              `json:"vote_score"`
-	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
-	BookmarkCount      int32              `json:"bookmark_count"`
-	AuthorName         string             `json:"author_name"`
-	AuthorAvatarUrl    string             `json:"author_avatar_url"`
-	SpaceName          string             `json:"space_name"`
-	SpaceSlug          string             `json:"space_slug"`
-	Excerpt            string             `json:"excerpt"`
-	ReadTimeMinutes    int32              `json:"read_time_minutes"`
-	JourneyStage       *string            `json:"journey_stage"`
-	VisaRoute          *string            `json:"visa_route"`
-	SourceCountry      *string            `json:"source_country"`
-	TargetCountry      *string            `json:"target_country"`
-	GuideCategory      *string            `json:"guide_category"`
-	CoverStorageBucket *string            `json:"cover_storage_bucket"`
-	CoverStoragePath   *string            `json:"cover_storage_path"`
-	Tags               interface{}        `json:"tags"`
-	GeoProximity       interface{}        `json:"geo_proximity"`
+	ID                            pgtype.UUID        `json:"id"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	ContentType                   string             `json:"content_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int32              `json:"comment_count"`
+	VoteScore                     int32              `json:"vote_score"`
+	VelocityScore                 pgtype.Numeric     `json:"velocity_score"`
+	BookmarkCount                 int32              `json:"bookmark_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	AuthorUsername                string             `json:"author_username"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	Excerpt                       string             `json:"excerpt"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	GuideCategory                 *string            `json:"guide_category"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	VideoSourceUrl                *string            `json:"video_source_url"`
+	VideoSourceType               *string            `json:"video_source_type"`
+	VideoDurationSecs             *int32             `json:"video_duration_secs"`
+	VideoThumbnailUrl             *string            `json:"video_thumbnail_url"`
+	CoverStorageBucket            *string            `json:"cover_storage_bucket"`
+	CoverStoragePath              *string            `json:"cover_storage_path"`
+	Tags                          interface{}        `json:"tags"`
+	GeoProximity                  interface{}        `json:"geo_proximity"`
 }
 
 // Top content in 7-day rolling window (for top sort), ranked by geo proximity.
@@ -1230,8 +1539,10 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.VoteScore,
 			&i.VelocityScore,
 			&i.BookmarkCount,
+			&i.ReactionCount,
 			&i.AuthorName,
 			&i.AuthorAvatarUrl,
+			&i.AuthorUsername,
 			&i.SpaceName,
 			&i.SpaceSlug,
 			&i.Excerpt,
@@ -1241,6 +1552,17 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 			&i.SourceCountry,
 			&i.TargetCountry,
 			&i.GuideCategory,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.OrganizationSlug,
+			&i.OrganizationLogoStorageBucket,
+			&i.OrganizationLogoStoragePath,
+			&i.SpaceAvatarStorageBucket,
+			&i.SpaceAvatarStoragePath,
+			&i.VideoSourceUrl,
+			&i.VideoSourceType,
+			&i.VideoDurationSecs,
+			&i.VideoThumbnailUrl,
 			&i.CoverStorageBucket,
 			&i.CoverStoragePath,
 			&i.Tags,
@@ -1349,8 +1671,9 @@ SET vote_score = $1,
     comment_count = $2,
     view_count = $3,
     bookmark_count = $4,
+    reaction_count = $5,
     last_scored_at = now()
-WHERE content_id = $5
+WHERE content_id = $6
 `
 
 type UpdateContentScoreParams struct {
@@ -1358,6 +1681,7 @@ type UpdateContentScoreParams struct {
 	CommentCount  int32       `json:"comment_count"`
 	ViewCount     int32       `json:"view_count"`
 	BookmarkCount int32       `json:"bookmark_count"`
+	ReactionCount int32       `json:"reaction_count"`
 	ContentID     pgtype.UUID `json:"content_id"`
 }
 
@@ -1368,6 +1692,7 @@ func (q *Queries) UpdateContentScore(ctx context.Context, arg UpdateContentScore
 		arg.CommentCount,
 		arg.ViewCount,
 		arg.BookmarkCount,
+		arg.ReactionCount,
 		arg.ContentID,
 	)
 	return err
@@ -1377,7 +1702,7 @@ const updateVelocityScores = `-- name: UpdateVelocityScores :exec
 UPDATE content_scores cs
 SET velocity_score = CASE
     WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-    THEN GREATEST(0, (cs.vote_score * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
+    THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
          / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
     ELSE 0
 END,

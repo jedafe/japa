@@ -2394,9 +2394,9 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A new reaction was created (not an idempotent duplicate) — update the
-	// content_scores.vote_score so feed cards show an accurate vote count.
+	// content_scores.reaction_count so feed cards show an accurate reaction count.
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "vote", 1)
+	h.enqueueEngagementUpdate("content", contentID, "reaction", 1)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": reaction})
 }
@@ -2474,9 +2474,9 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decrement the vote_score to keep feed card counts accurate.
+	// Decrement the reaction_count to keep feed card counts accurate.
 	// Fire-and-forget per Rule 8. Ref: Section 32, Guide §21.
-	h.enqueueEngagementUpdate("content", contentID, "vote", -1)
+	h.enqueueEngagementUpdate("content", contentID, "reaction", -1)
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

@@ -21,23 +21,28 @@ import (
 )
 
 // FeedItem represents a single item in a feed response, normalized across
-// all feed types (explore, primary, space, profile).
+// all feed types (explore, primary, space, profile) for the daily card.
+// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md
 type FeedItem struct { //nolint:revive // stuttering type name preserved for API compatibility
 	ID                 string   `json:"id"`
 	Title              string   `json:"title"`
 	Slug               string   `json:"slug"`
 	ContentType        string   `json:"content_type"`
 	AuthorID           string   `json:"author_id"`
+	AuthorUsername     string   `json:"author_username,omitempty"`
+	AuthorName         string   `json:"author_name,omitempty"`
+	AuthorAvatarURL    string   `json:"author_avatar_url,omitempty"`
 	SpaceID            *string  `json:"space_id,omitempty"`
 	SpaceName          string   `json:"space_name,omitempty"`
 	SpaceSlug          string   `json:"space_slug,omitempty"`
+	SpaceAvatarURL     string   `json:"space_avatar_url,omitempty"`
+	Organization       *OrgRef  `json:"organization,omitempty"`
 	CreatedAt          string   `json:"created_at"`
 	ViewCount          int32    `json:"view_count"`
 	CommentCount       int32    `json:"comment_count"`
+	ReactionCount      int32    `json:"reaction_count"`
 	VoteScore          int32    `json:"vote_score"`
 	VelocityScore      float64  `json:"velocity_score"`
-	AuthorName         string   `json:"author_name,omitempty"`
-	AuthorAvatarURL    string   `json:"author_avatar_url,omitempty"`
 	Excerpt            string   `json:"excerpt,omitempty"`
 	Tags               []string `json:"tags,omitempty"`
 	ReadingTimeMinutes int      `json:"reading_time_minutes,omitempty"`
@@ -52,6 +57,22 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	// §14 guide amendment: the guide category slug so feed cards can render
 	// a category badge for content_type='guide' items.
 	GuideCategory *string `json:"guide_category,omitempty"`
+	// Video-aware fields for daily video cards.
+	VideoSourceID     string `json:"video_source_id,omitempty"`
+	VideoSourceURL    string `json:"video_source_url,omitempty"`
+	VideoSourceType   string `json:"video_source_type,omitempty"`
+	VideoDurationSecs int32  `json:"video_duration_secs,omitempty"`
+	VideoThumbnailURL string `json:"video_thumbnail_url,omitempty"`
+}
+
+// OrgRef is the lean org badge surfaced on daily feed cards when a post was
+// published on behalf of an organization.
+// Ref: japaconnect-engineering/sections/07-organization-profiles.md
+type OrgRef struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	LogoURL string `json:"logo_url,omitempty"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -245,13 +266,14 @@ func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID
 }
 
 // UpdateContentScore updates a single content's score.
-func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID, voteScore, commentCount, viewCount, bookmarkCount int32) error {
+func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID, voteScore, commentCount, viewCount, bookmarkCount, reactionCount int32) error {
 	return s.store.updateContentScore(ctx, gen.UpdateContentScoreParams{
 		ContentID:     contentID,
 		VoteScore:     voteScore,
 		CommentCount:  commentCount,
 		ViewCount:     viewCount,
 		BookmarkCount: bookmarkCount,
+		ReactionCount: reactionCount,
 	})
 }
 
@@ -364,13 +386,47 @@ func derefStr(p *string) string {
 	return *p
 }
 
-// coverImageURL resolves the cover image URL from storage bucket and path.
-func coverImageURL(bucket, path *string) string {
+// orgRefFrom builds a feed OrgRef from the joined organization columns, or nil
+// when the post is not org-attributed.
+func orgRefFrom(orgID pgtype.UUID, name, slug, logoBucket, logoPath *string) *OrgRef {
+	if !orgID.Valid {
+		return nil
+	}
+
+	ref := &OrgRef{ID: uuidToString(orgID)}
+	if name != nil {
+		ref.Name = *name
+	}
+	if slug != nil {
+		ref.Slug = *slug
+	}
+	ref.LogoURL = mediaURLFromPtr(logoBucket, logoPath)
+
+	return ref
+}
+
+// mediaURLFromPtr returns a media URL from nullable storage refs, or "".
+func mediaURLFromPtr(bucket, path *string) string {
 	if bucket == nil || path == nil || *bucket == "" || *path == "" {
 		return ""
 	}
 
 	return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
+}
+
+// coverImageURL resolves the cover image URL from storage bucket and path,
+// falling back to the provided URL (e.g. a video thumbnail) when no stored
+// media cover is present.
+func coverImageURL(bucket, path *string, fallback ...*string) string {
+	if bucket != nil && path != nil && *bucket != "" && *path != "" {
+		return media.MediaURL(*bucket, *path, media.ImageProxyOpts{})
+	}
+
+	if len(fallback) > 0 && fallback[0] != nil && *fallback[0] != "" {
+		return *fallback[0]
+	}
+
+	return ""
 }
 
 func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
@@ -560,26 +616,34 @@ func exploreRowsToItems(rows []gen.GetExploreFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      r.BookmarkCount,
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -595,26 +659,34 @@ func topRowsToItems(rows []gen.GetTopFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      r.BookmarkCount,
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -630,26 +702,34 @@ func risingRowsToItems(rows []gen.GetRisingFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      r.BookmarkCount,
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -665,26 +745,34 @@ func primaryRowsToItems(rows []gen.GetPrimaryFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.ContentCreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      derefInt32(r.BookmarkCount),
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -700,25 +788,34 @@ func spaceRowsToItems(rows []gen.GetSpaceFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
+			SpaceID:            nil,
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      r.BookmarkCount,
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -734,26 +831,34 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         r.AuthorName,
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          r.VoteScore,
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         r.AuthorName,
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      r.BookmarkCount,
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
 			GuideCategory:      r.GuideCategory,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		}
 	}
 
@@ -765,13 +870,13 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 // so the cron-written content_scores.velocity_score and any in-process
 // computation agree. Formula:
 //
-//	(vote_score*2 + comment_count + view_count/100) / hours^gravity
+//	(reaction_count*2 + comment_count + view_count/100) / hours^gravity
 //
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
-func ComputeVelocity(voteScore, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
-	// Match the SQL formula: vote*2 + comment + view/100.
+func ComputeVelocity(reactionCount, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
+	// Match the SQL formula: reactions*2 + comment + view/100.
 	// bookmark_count is not in the SQL formula; kept as a param for API compat.
-	engagement := float64(voteScore*2) + float64(commentCount) + float64(viewCount)/100.0
+	engagement := float64(reactionCount*2) + float64(commentCount) + float64(viewCount)/100.0
 
 	if hoursOld <= 0 {
 		hoursOld = 1 // avoid division by zero for very fresh posts

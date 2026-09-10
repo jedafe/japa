@@ -1165,6 +1165,7 @@ type ContentScore struct {
 	VelocityScore      pgtype.Numeric     `json:"velocity_score"`
 	RelevanceEmbedding *pgvector.Vector   `json:"relevance_embedding"`
 	LastScoredAt       pgtype.Timestamptz `json:"last_scored_at"`
+	ReactionCount      int32              `json:"reaction_count"`
 }
 
 type ContentShare struct {

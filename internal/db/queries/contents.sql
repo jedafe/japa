@@ -146,6 +146,94 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          bs.id, bs.title, bs.slug, bsp.position,
          prev_c.slug, next_c.slug, c.video_source_id;
 
+
+-- name: GetContentDetailBySlugAndType :one
+-- Enriched single-content row for the public /post/{content_type}/{slug} social
+-- page. Disambiguates by content_type so the same slug can exist for multiple
+-- content types. Mirrors GetContentDetailBySlug with org/space/video details.
+SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
+       c.content_type, c.title, c.slug, c.body, c.body_html,
+       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+       c.view_count,
+       (SELECT COUNT(*)
+        FROM comments
+        WHERE content_id = c.id
+          AND tenant_id = c.tenant_id
+          AND deleted_at IS NULL
+          AND status = 'published') AS comment_count,
+       c.share_count,
+       c.reshare_count,
+       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+       c.publish_at, c.published_at,
+       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       m.storage_bucket AS featured_storage_bucket,
+       m.storage_path AS featured_storage_path,
+       hm.storage_bucket AS header_storage_bucket,
+       hm.storage_path AS header_storage_path,
+       o.name AS organization_name,
+       o.slug AS organization_slug,
+       om.storage_bucket AS organization_logo_storage_bucket,
+       om.storage_path AS organization_logo_storage_path,
+       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
+       bs.id AS series_id,
+       bs.title AS series_title,
+       bs.slug AS series_slug,
+       bsp.position AS series_part,
+       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+       COALESCE(prev_c.slug, '') AS series_prev_slug,
+       COALESCE(next_c.slug, '') AS series_next_slug
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN content_tags ct ON ct.content_id = c.id
+LEFT JOIN tags t ON t.id = ct.tag_id
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
+LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT c3.slug
+    FROM blog_series_posts bsp4
+    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+    ORDER BY bsp4.position DESC
+    LIMIT 1
+) prev_c ON true
+LEFT JOIN LATERAL (
+    SELECT c2.slug
+    FROM blog_series_posts bsp3
+    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+    ORDER BY bsp3.position ASC
+    LIMIT 1
+) next_c ON true
+WHERE c.slug = @slug AND c.tenant_id = @tenant_id AND c.content_type = @content_type AND c.deleted_at IS NULL
+GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
+         sm.storage_bucket, sm.storage_path,
+         m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
+         o.name, o.slug, om.storage_bucket, om.storage_path,
+         bs.id, bs.title, bs.slug, bsp.position,
+         prev_c.slug, next_c.slug, c.video_source_id,
+         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url;
+
 -- name: ContentSlugExists :one
 -- Returns true if any contents row (including soft-deleted) in the tenant
 -- uses the given slug. The unique index on (tenant_id, slug) is not partial,
@@ -684,7 +772,7 @@ ON CONFLICT (content_id) DO UPDATE
 SET vote_score = EXCLUDED.vote_score, comment_count = EXCLUDED.comment_count,
     view_count = EXCLUDED.view_count, bookmark_count = EXCLUDED.bookmark_count,
     velocity_score = EXCLUDED.velocity_score, last_scored_at = now()
-RETURNING content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, relevance_embedding, last_scored_at;
+RETURNING content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, reaction_count, relevance_embedding, last_scored_at;
 
 -- name: EnsureContentScore :exec
 -- Creates a zero-default content_scores row if one does not yet exist.
@@ -722,8 +810,14 @@ UPDATE content_scores
 SET bookmark_count = bookmark_count + @delta, last_scored_at = now()
 WHERE content_id = @content_id;
 
+-- name: IncrementScoreReaction :exec
+-- Atomically adjusts reaction_count by delta (clamped at 0).
+UPDATE content_scores
+SET reaction_count = GREATEST(0, reaction_count + @delta), last_scored_at = now()
+WHERE content_id = @content_id;
+
 -- name: GetContentScore :one
-SELECT content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, relevance_embedding, last_scored_at
+SELECT content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, reaction_count, relevance_embedding, last_scored_at
 FROM content_scores
 WHERE content_id = @content_id;
 
@@ -929,11 +1023,43 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
        c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
-       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+       c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
+       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+                 FROM content_tags ct
+                 JOIN tags t ON t.id = ct.tag_id
+                 WHERE ct.content_id = c.id), '') AS tags,
+       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+       COALESCE(cs.velocity_score, 0) AS velocity_score,
+       LEFT(c.body, 200)::text AS excerpt,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+       om.storage_bucket AS org_logo_storage_bucket,
+       om.storage_path AS org_logo_storage_path
 FROM contents c
 LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.author_id = @author_id
   AND c.status = 'published'
@@ -952,11 +1078,43 @@ SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_
        c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
        c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
        c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
+       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
        c.publish_at, c.published_at, c.created_at, c.updated_at,
-       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id
+       c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
+       COALESCE(up.display_name, u.username, '') AS author_name,
+       COALESCE(u.username, '') AS author_username,
+       COALESCE(up.avatar_url, '') AS author_avatar_url,
+       COALESCE(s.name, '') AS space_name,
+       COALESCE(s.slug, '') AS space_slug,
+       sm.storage_bucket AS space_avatar_storage_bucket,
+       sm.storage_path AS space_avatar_storage_path,
+       m.storage_bucket AS cover_storage_bucket,
+       m.storage_path AS cover_storage_path,
+       vs.source_url AS video_source_url,
+       vs.source_type AS video_source_type,
+       vs.duration_secs AS video_duration_secs,
+       vs.thumbnail_url AS video_thumbnail_url,
+       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+                 FROM content_tags ct
+                 JOIN tags t ON t.id = ct.tag_id
+                 WHERE ct.content_id = c.id), '') AS tags,
+       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+       COALESCE(cs.velocity_score, 0) AS velocity_score,
+       LEFT(c.body, 200)::text AS excerpt,
+       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+       om.storage_bucket AS org_logo_storage_bucket,
+       om.storage_path AS org_logo_storage_path
 FROM contents c
 LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
+LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN video_sources vs ON vs.id = c.video_source_id
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
 WHERE c.tenant_id = @tenant_id
   AND c.organization_id = @organization_id
   AND c.status = 'published'

@@ -62,6 +62,7 @@ type Candidate struct {
 	Item               FeedItem
 	CreatedAt          time.Time
 	VoteScore          int32
+	ReactionCount      int32
 	VelocityScore      float64
 	IsAuthorFollowed   bool
 	IsSpaceFollowed    bool
@@ -205,7 +206,7 @@ func rankCandidates(cands []Candidate, sortMode string, now time.Time, vc *visit
 		case SortLatest:
 			return cands[i].CreatedAt.After(cands[j].CreatedAt)
 		case SortTop:
-			return cands[i].VoteScore > cands[j].VoteScore
+			return cands[i].ReactionCount > cands[j].ReactionCount
 		case SortRising:
 			return cands[i].VelocityScore > cands[j].VelocityScore
 		default: // SortRelevant
@@ -264,6 +265,7 @@ func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string, vc *visitor.V
 // candidateFromRow maps a generated candidate row into a scored Candidate.
 // vote_score and bookmark_count are nullable (*int32) here because the outer
 // SELECT LEFT JOINs content_scores, so they are dereferenced via derefInt32.
+// reaction_count is the authoritative engagement metric for the daily card.
 func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 	return Candidate{
 		Item: FeedItem{
@@ -272,28 +274,37 @@ func candidateFromRow(r gen.GetForYouCandidatesRow) Candidate {
 			Slug:               r.Slug,
 			ContentType:        r.ContentType,
 			AuthorID:           uuidToString(r.AuthorID),
+			AuthorUsername:     r.AuthorUsername,
+			AuthorName:         asString(r.AuthorName),
+			AuthorAvatarURL:    r.AuthorAvatarUrl,
 			SpaceID:            nullableUUIDToString(r.SpaceID),
+			SpaceName:          asString(r.SpaceName),
+			SpaceSlug:          r.SpaceSlug,
+			SpaceAvatarURL:     mediaURLFromPtr(r.SpaceAvatarStorageBucket, r.SpaceAvatarStoragePath),
+			Organization:       orgRefFrom(r.OrganizationID, r.OrganizationName, r.OrganizationSlug, r.OrganizationLogoStorageBucket, r.OrganizationLogoStoragePath),
 			CreatedAt:          r.CreatedAt.Time.String(),
 			ViewCount:          r.ViewCount,
 			CommentCount:       r.CommentCount,
+			ReactionCount:      r.ReactionCount,
 			VoteScore:          derefInt32(r.VoteScore),
 			VelocityScore:      pgNumericToFloat64(r.VelocityScore),
-			AuthorName:         asString(r.AuthorName),
-			AuthorAvatarURL:    r.AuthorAvatarUrl,
-			SpaceName:          asString(r.SpaceName),
-			SpaceSlug:          r.SpaceSlug,
 			Excerpt:            r.Excerpt,
 			Tags:               splitTags(r.Tags),
 			ReadingTimeMinutes: int(r.ReadTimeMinutes),
-			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath),
+			CoverImageURL:      coverImageURL(r.CoverStorageBucket, r.CoverStoragePath, r.VideoThumbnailUrl),
 			BookmarkCount:      derefInt32(r.BookmarkCount),
 			JourneyStage:       r.JourneyStage,
 			VisaRoute:          r.VisaRoute,
 			SourceCountry:      r.SourceCountry,
 			TargetCountry:      r.TargetCountry,
+			VideoSourceURL:     derefStr(r.VideoSourceUrl),
+			VideoSourceType:    derefStr(r.VideoSourceType),
+			VideoDurationSecs:  derefInt32(r.VideoDurationSecs),
+			VideoThumbnailURL:  derefStr(r.VideoThumbnailUrl),
 		},
 		CreatedAt:          r.CreatedAt.Time,
 		VoteScore:          derefInt32(r.VoteScore),
+		ReactionCount:      r.ReactionCount,
 		VelocityScore:      pgNumericToFloat64(r.VelocityScore),
 		IsAuthorFollowed:   r.IsAuthorFollowed,
 		IsSpaceFollowed:    r.IsSpaceFollowed,

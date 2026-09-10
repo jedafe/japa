@@ -680,6 +680,21 @@ func (s *Service) GetContentDetailBySlug(ctx context.Context, slug string, tenan
 	return content, nil
 }
 
+// GetContentDetailBySlugAndType returns the enriched single-content row for the
+// public /post/{content_type}/{slug} social page. Disambiguates by content_type.
+func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType, slug string, tenantID pgtype.UUID) (gen.GetContentDetailBySlugAndTypeRow, error) {
+	content, err := s.read.GetContentDetailBySlugAndType(ctx, gen.GetContentDetailBySlugAndTypeParams{
+		ContentType: contentType,
+		Slug:        slug,
+		TenantID:    tenantID,
+	})
+	if err != nil {
+		return gen.GetContentDetailBySlugAndTypeRow{}, fmt.Errorf("getting content detail by slug and type: %w", err)
+	}
+
+	return content, nil
+}
+
 // ListContents returns a page of content for the given tenant, newest first.
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
@@ -746,7 +761,7 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 
 // ListFeaturedContentsByType returns rows from the generic content_featured
 // junction (Section 14 — generic featured list powering the Featured tabs
-// on /guides, /stories, /forum). contentType '' means all types.
+// on /guides, /stories, /forum). contentType ” means all types.
 func (s *Service) ListFeaturedContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, offset, limit int32, filter visibility.VisibilityFilter) ([]gen.ListFeaturedContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -1852,7 +1867,17 @@ func (s *Service) UpsertContentScore(ctx context.Context, contentID pgtype.UUID,
 		return gen.ContentScore{}, fmt.Errorf("upserting content score: %w", err)
 	}
 
-	return score, nil
+	return gen.ContentScore{
+		ContentID:          score.ContentID,
+		VoteScore:          score.VoteScore,
+		CommentCount:       score.CommentCount,
+		ViewCount:          score.ViewCount,
+		BookmarkCount:      score.BookmarkCount,
+		VelocityScore:      score.VelocityScore,
+		ReactionCount:      score.ReactionCount,
+		RelevanceEmbedding: score.RelevanceEmbedding,
+		LastScoredAt:       score.LastScoredAt,
+	}, nil
 }
 
 // GetContentScore returns the score row for a content item.
@@ -1862,7 +1887,17 @@ func (s *Service) GetContentScore(ctx context.Context, contentID pgtype.UUID) (g
 		return gen.ContentScore{}, fmt.Errorf("getting content score: %w", err)
 	}
 
-	return score, nil
+	return gen.ContentScore{
+		ContentID:          score.ContentID,
+		VoteScore:          score.VoteScore,
+		CommentCount:       score.CommentCount,
+		ViewCount:          score.ViewCount,
+		BookmarkCount:      score.BookmarkCount,
+		VelocityScore:      score.VelocityScore,
+		ReactionCount:      score.ReactionCount,
+		RelevanceEmbedding: score.RelevanceEmbedding,
+		LastScoredAt:       score.LastScoredAt,
+	}, nil
 }
 
 // ---------------------------------------------------------------------------

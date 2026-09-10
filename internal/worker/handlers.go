@@ -1627,6 +1627,9 @@ var engagementIncrements = map[string]func(q *gen.Queries, ctx context.Context, 
 	"vote": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
 		return q.IncrementScoreVote(ctx, gen.IncrementScoreVoteParams{Delta: delta, ContentID: contentID})
 	},
+	"reaction": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
+		return q.IncrementScoreReaction(ctx, gen.IncrementScoreReactionParams{Delta: delta, ContentID: contentID})
+	},
 	"bookmark": func(q *gen.Queries, ctx context.Context, delta int32, contentID pgtype.UUID) error {
 		return q.IncrementScoreBookmark(ctx, gen.IncrementScoreBookmarkParams{Delta: delta, ContentID: contentID})
 	},
