@@ -37,8 +37,43 @@
 
 	let copied = $state(false);
 	let reported = $state(false);
+	let liked = $state(false);
+	let bookmarked = $state(false);
+	let reactionCount = $state(0);
+	let bookmarkCount = $state(0);
+	let likePending = $state(false);
+	let bookmarkPending = $state(false);
+	let engagementInitialized = $state(false);
+
+	const authed = $derived(page.data.isAuthed as boolean);
 
 	const time = $derived(relativeTime(item.created_at, new Date(), i18n.locale));
+
+	$effect(() => {
+		reactionCount = item.reaction_count ?? 0;
+		bookmarkCount = item.bookmark_count ?? 0;
+		liked = false;
+		bookmarked = false;
+		engagementInitialized = false;
+	});
+
+	$effect(() => {
+		if (engagementInitialized || !authed) return;
+		engagementInitialized = true;
+		(async () => {
+			const [reactionRes, bookmarkRes] = await Promise.all([
+				api.get<{ reaction_key: string }[]>(`/content/${item.id}/reactions/me`),
+				api.get<{ bookmarked: boolean }>(`/content/${item.id}/bookmark`)
+			]);
+			if (reactionRes.data) {
+				liked = reactionRes.data.some((r) => r.reaction_key === 'like');
+			}
+			if (bookmarkRes.data) {
+				bookmarked = bookmarkRes.data.bookmarked;
+				bookmarkCount = item.bookmark_count ?? 0;
+			}
+		})();
+	});
 	const duration = $derived(formatDuration(item.duration_secs));
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
 	const canonicalHref = $derived(contentHref(item));
@@ -109,6 +144,60 @@
 	}
 
 	const shareUrl = $derived(`${page.url.origin}${canonicalHref}`);
+
+	function requireAuth(): boolean {
+		if (!authed) {
+			goto(`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`);
+			return false;
+		}
+		return true;
+	}
+
+	async function toggleLike(e: Event) {
+		e.stopPropagation();
+		if (!requireAuth() || likePending) return;
+		likePending = true;
+		const next = !liked;
+		liked = next;
+		reactionCount += next ? 1 : -1;
+		try {
+			if (next) {
+				const res = await api.post(`/content/${item.id}/react`, { reaction_key: 'like' });
+				if (res.error) throw new Error(res.error.message);
+			} else {
+				const res = await api.delete(`/content/${item.id}/react?key=like`);
+				if (res.error) throw new Error(res.error.message);
+			}
+		} catch {
+			liked = !next;
+			reactionCount += next ? -1 : 1;
+		} finally {
+			likePending = false;
+		}
+	}
+
+	async function toggleBookmark(e: Event) {
+		e.stopPropagation();
+		if (!requireAuth() || bookmarkPending) return;
+		bookmarkPending = true;
+		const next = !bookmarked;
+		bookmarked = next;
+		bookmarkCount += next ? 1 : -1;
+		try {
+			if (next) {
+				const res = await api.post(`/content/${item.id}/bookmark`, {});
+				if (res.error) throw new Error(res.error.message);
+			} else {
+				const res = await api.delete(`/content/${item.id}/bookmark`);
+				if (res.error) throw new Error(res.error.message);
+			}
+		} catch {
+			bookmarked = !next;
+			bookmarkCount += next ? -1 : 1;
+		} finally {
+			bookmarkPending = false;
+		}
+	}
 
 	async function copyPostLink(e: Event) {
 		e.stopPropagation();
@@ -269,23 +358,27 @@
 				</button>
 				<button
 					type="button"
-					class="group/btn flex items-center gap-2 transition-colors"
-					onclick={openPost}
-					aria-label={t('feed.card.reactions', 'Reactions')}
+					class="group/btn flex items-center gap-2 transition-colors {liked ? 'text-[var(--color-primary)]' : ''}"
+					onclick={toggleLike}
+					disabled={likePending}
+					aria-label={t('feed.card.like', 'Like')}
+					aria-pressed={liked}
 				>
-					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Heart size={16} />
+					<span class="rounded-full p-2 transition-colors {liked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]'}">
+						<Heart size={16} fill={liked ? 'currentColor' : 'none'} />
 					</span>
-					<span class="transition-colors group-hover/btn:text-[var(--color-primary)]">{item.reaction_count ?? 0}</span>
+					<span class="transition-colors {liked ? 'text-[var(--color-primary)]' : 'group-hover/btn:text-[var(--color-primary)]'}">{reactionCount > 0 ? reactionCount : ''}</span>
 				</button>
 				<button
 					type="button"
-					class="group/btn flex items-center transition-colors"
-					onclick={openPost}
+					class="group/btn flex items-center transition-colors {bookmarked ? 'text-[var(--color-primary)]' : ''}"
+					onclick={toggleBookmark}
+					disabled={bookmarkPending}
 					aria-label={t('feed.card.bookmark', 'Bookmark')}
+					aria-pressed={bookmarked}
 				>
-					<span class="rounded-full p-2 transition-colors group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]">
-						<Bookmark size={16} />
+					<span class="rounded-full p-2 transition-colors {bookmarked ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]' : 'group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]'}">
+						<Bookmark size={16} fill={bookmarked ? 'currentColor' : 'none'} />
 					</span>
 				</button>
 				<ShareMenu contentId={item.id} url={shareUrl} title={item.title} size={16} />
