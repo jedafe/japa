@@ -22,6 +22,7 @@
 	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import { ArrowLeft, ExternalLink, Pencil } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -66,8 +67,19 @@
 	}
 </script>
 
-<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-	<div class="space-y-1">
+<div class="mx-auto flex max-w-full gap-8 px-4 py-8 pb-24 lg:pb-8">
+	<!-- Left margin: borderless ReactionRail (ADR-058, distinct from the collapsed nav) -->
+	<div class="hidden w-14 shrink-0 lg:block">
+		<ReactionRail
+			contentId={comparison.content.id}
+			commentCount={comparison.content.comment_count}
+			authed={data.authed}
+		/>
+	</div>
+
+	<!-- Center: comparison -->
+	<article class="min-w-0 flex-1 max-w-5xl space-y-6">
+		<div class="space-y-1">
 		<a
 			href="/comparisons"
 			class="inline-flex items-center gap-1 text-sm transition-colors hover:opacity-80"
@@ -228,4 +240,15 @@
 			items={comparison.items ?? []}
 		/>
 	{/if}
+
+	<!-- Mobile reaction/action bar (fixed at the bottom) -->
+	<div class="lg:hidden">
+		<ReactionRail
+			contentId={comparison.content.id}
+			commentCount={comparison.content.comment_count}
+			authed={data.authed}
+			bottom
+		/>
+	</div>
+</article>
 </div>
