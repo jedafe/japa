@@ -70,6 +70,9 @@ export interface JCEComparisonContent {
 	space_slug?: string | null;
 	created_at?: string;
 	updated_at?: string;
+	publish_at?: string;
+	published_at?: string;
+	read_time_minutes?: number;
 	view_count?: number;
 	comment_count?: number;
 	share_count?: number;

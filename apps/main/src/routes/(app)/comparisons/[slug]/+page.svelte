@@ -25,7 +25,7 @@
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
-	import { ArrowLeft, ExternalLink, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -42,6 +42,11 @@
 		comparison.content.author_display_name ??
 			comparison.content.author_name ??
 			t('jce.comparisons.anonymous', 'Anonymous')
+	);
+	let publishedDate = $derived(
+		new Date(
+			comparison.content.published_at ?? comparison.content.created_at ?? Date.now()
+		).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
 	);
 	let sidebarWidgets = $derived(
 		(data.rightSidebarWidgets as { id: string; widget_type: string; label: string; props: Record<string, unknown>; sort_order: number }[]) ??
@@ -119,58 +124,65 @@
 
 	<!-- Center: comparison -->
 	<article class="min-w-0 max-w-5xl">
-		<div class="space-y-1">
-		<a
-			href="/comparisons"
-			class="inline-flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-			style="color: var(--color-muted)"
-		>
-			<ArrowLeft size={14} /> {t('jce.comparisons.back')}
-		</a>
-		<div class="flex flex-wrap items-start justify-between gap-3">
-			<h1 class="text-2xl sm:text-3xl font-bold" style="color: var(--color-text)">{comparison.content.title}</h1>
-			{#if data.canEdit}
-				<a
-					href="/create?type=comparison&draft={comparison.content.id}"
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
-				>
-					<Pencil size={14} /> {t('common.edit', 'Edit')}
-				</a>
-			{/if}
+		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
+			<a
+				href="/comparisons"
+				class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+			>
+				<ArrowLeft size={16} /> {t('jce.comparisons.back')}
+			</a>
+			<div class="flex flex-wrap items-center gap-2">
+				{#if data.canEdit}
+					<a
+						href="/create?type=comparison&draft={comparison.content.id}"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+					>
+						<Pencil size={14} /> {t('common.edit', 'Edit')}
+					</a>
+				{/if}
+			</div>
 		</div>
-		<p class="text-sm capitalize" style="color: var(--color-muted)">
-			{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}
-		</p>
-	</div>
 
-	{#if comparison.content.featured_image_url}
-		<img
-			src={comparison.content.featured_image_url}
-			alt={comparison.content.title}
-			class="aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover"
-		/>
-	{/if}
+		{#if comparison.content.featured_image_url}
+			<img
+				src={comparison.content.featured_image_url}
+				alt={comparison.content.title}
+				class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover"
+			/>
+		{/if}
 
-	{#if comparison.content.body_html}
+		<h1
+			class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl"
+			style="font-family: var(--font-serif)"
+		>
+			{comparison.content.title}
+		</h1>
+
+		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
+			{#if authorName}
+				<span class="flex items-center gap-2">
+					{#if comparison.content.author_avatar_url}
+						<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+					{:else}
+						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+					{/if}
+					<span class="font-medium text-[var(--color-text)]">{authorName}</span>
+				</span>
+			{/if}
+			<span>·</span>
+			<span>{publishedDate}</span>
+			{#if comparison.content.read_time_minutes && comparison.content.read_time_minutes > 0}
+				<span class="flex items-center gap-1"><Clock size={14} /> {comparison.content.read_time_minutes} {t('blog.min_read', 'min read')}</span>
+			{/if}
+			<span class="flex items-center gap-1"><Eye size={14} /> {comparison.content.view_count} {t('content.views', 'views')}</span>
+			<span class="ml-auto capitalize">{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}</span>
+		</div>
+
+	{#if comparison.content.body_html || comparison.content.body}
 		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage. Ref: Rule 12, Section 30. -->
-		<article
-			class="prose prose-invert max-w-none rounded-[var(--radius-card)] border p-4"
-			style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
-		>
-			{@html comparison.content.body_html}
-		</article>
-	{:else if comparison.content.body}
-		<article
-			class="prose prose-invert max-w-none rounded-[var(--radius-card)] border p-4"
-			style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
-		>
-			{comparison.content.body}
-		</article>
-	{/if}
-
-	<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
-	{#if data.analytics}
-		<OwnerStatsCard stats={data.analytics} />
+		<div class="prose mt-8">
+			{@html comparison.content.body_html ?? comparison.content.body}
+		</div>
 	{/if}
 
 	<section>
@@ -255,6 +267,27 @@
 		</section>
 	{/if}
 
+	<!-- Mobile reaction/action bar (fixed at the bottom) -->
+	<div class="lg:hidden">
+		<ReactionRail
+			contentId={comparison.content.id}
+			commentCount={comparison.content.comment_count}
+			voteScore={comparison.content.reshare_count}
+			authed={data.authed}
+			bottom
+		/>
+	</div>
+
+	<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
+	<div class="mt-8 flex flex-col gap-4 xl:hidden">
+		{@render rightSidebar()}
+	</div>
+
+	<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
+	{#if data.analytics}
+		<OwnerStatsCard stats={data.analytics} />
+	{/if}
+
 	<!-- Unified comment engine (Section 49) — top-level comments are SSR-seeded. -->
 	<CommentThread
 		comments={data.comments}
@@ -268,11 +301,6 @@
 		deletedUserIds={deletedUserIds}
 	/>
 
-	<div class="flex gap-4">
-		<a href="/comparisons" class="text-sm underline" style="color: var(--color-text)">← {t('jce.comparisons.back')}</a>
-		<a href="/compare" class="text-sm underline" style="color: var(--color-muted)">{t('jce.comparisons.create_your_own')}</a>
-	</div>
-
 	{#if user && features['feature.jce.ai_advisor']}
 		<AIAdvisorDrawer
 			bind:open={advisorOpen}
@@ -280,22 +308,6 @@
 			items={comparison.items ?? []}
 		/>
 	{/if}
-
-	<!-- Mobile right sidebar: author card + widgets, stacked below the body on small screens. -->
-	<div class="mt-8 flex flex-col gap-4 xl:hidden">
-		{@render rightSidebar()}
-	</div>
-
-	<!-- Mobile reaction/action bar (fixed at the bottom) -->
-	<div class="lg:hidden">
-		<ReactionRail
-			contentId={comparison.content.id}
-			commentCount={comparison.content.comment_count}
-			voteScore={comparison.content.reshare_count}
-			authed={data.authed}
-			bottom
-		/>
-	</div>
 </article>
 
 <!-- Right: CreatorCard + widgets. Hidden on mobile because a stacked copy
