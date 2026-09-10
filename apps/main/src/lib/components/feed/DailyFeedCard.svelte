@@ -8,7 +8,6 @@
 	import { page } from '$app/state';
 	import {
 		Bookmark,
-		ExternalLink,
 		Flag,
 		Heart,
 		Link,
@@ -20,7 +19,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
-	import { readPostLabel } from '$lib/feed/contentTypeMeta';
+	import { contentTypeMeta, readPostLabel } from '$lib/feed/contentTypeMeta';
 	import { contentHref, postHref } from '$lib/utils/contentLink';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
@@ -45,6 +44,9 @@
 	const socialHref = $derived(postHref(item));
 	const canonicalHref = $derived(contentHref(item));
 	const actionLabel = $derived(readPostLabel(item.content_type));
+	const meta = $derived(contentTypeMeta(item.content_type));
+	const Icon = $derived(meta.icon);
+	const accentVar = $derived(`var(${meta.accentVar})`);
 
 	const sourceEntity = $derived({
 		type: 'user' as const,
@@ -169,11 +171,14 @@
 		<div class="ml-auto flex shrink-0 items-center gap-3">
 			<a
 				href={canonicalHref}
-				class="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+				class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-[var(--color-surface-subtle)]"
+				style:color={accentVar}
+				style:borderColor={`color-mix(in srgb, ${meta.accentVar} 30%, transparent)`}
+				style:backgroundColor={`color-mix(in srgb, ${meta.accentVar} 12%, transparent)`}
 				onclick={(e) => e.stopPropagation()}
 			>
+				<Icon size={12} />
 				{actionLabel}
-				<ExternalLink size={13} />
 			</a>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
