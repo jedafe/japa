@@ -2,6 +2,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
+	import { shareContrastColor } from '$lib/utils/shareColor';
 
 	interface SharePlatform {
 		key: string;
@@ -50,8 +51,9 @@
 		onclick={() => shareToPlatform(platform)}
 	>
 		<span
-			class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold text-[var(--color-primary-contrast)]"
-			style:backgroundColor={platform.color || 'var(--color-muted)'}
+			class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold"
+			style:background-color={platform.color || 'var(--color-muted)'}
+			style:color={platform.color ? shareContrastColor(platform.color) : 'var(--color-text)'}
 		>
 			{platform.label.charAt(0)}
 		</span>
