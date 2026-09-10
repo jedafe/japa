@@ -123,7 +123,7 @@
 	</div>
 
 	<!-- Center: comparison -->
-	<article class="min-w-0 flex-1 max-w-5xl">
+	<article class="min-w-0 flex-1 max-w-3xl">
 		<div class="mb-8 flex flex-wrap items-center justify-between gap-3">
 			<a
 				href="/comparisons"
