@@ -509,7 +509,7 @@
 			<!-- Nested children -->
 			{#if !beyondMaxDepth}
 				{#if allReplies.length > 0}
-					<div class="mt-3 border-l-2 border-[var(--color-border)] pl-5">
+					<div class="relative -left-8 mt-3 border-l-2 border-[var(--color-border)] pl-5">
 						<div class="space-y-3">
 							{#each allReplies as child (child.id)}
 								<CommentItem
@@ -533,7 +533,7 @@
 						type="button"
 						onclick={loadReplies}
 						disabled={repliesLoading}
-						class="mt-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
+						class="relative -left-8 mt-2 text-xs font-medium text-[var(--color-primary)] transition-colors hover:underline disabled:opacity-50"
 					>
 						{repliesLoading ? t('common.loading') : viewRepliesLabel}
 					</button>
@@ -541,7 +541,7 @@
 			{:else if allReplies.length > 0}
 				<a
 					href={`#comment-${allReplies[0].id}`}
-					class="mt-2 inline-block text-xs font-medium text-[var(--color-primary)] hover:underline"
+					class="relative -left-8 mt-2 inline-block text-xs font-medium text-[var(--color-primary)] hover:underline"
 				>
 					{t('comments.continue_thread')}
 				</a>
