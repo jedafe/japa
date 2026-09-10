@@ -9,7 +9,6 @@
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
-	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -282,11 +281,6 @@
 		<div class="mt-8 flex flex-col gap-4 xl:hidden">
 			{@render rightSidebar()}
 		</div>
-
-		<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
-		{#if data.analytics}
-			<OwnerStatsCard stats={data.analytics} />
-		{/if}
 
 		<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
 		<CommentThread

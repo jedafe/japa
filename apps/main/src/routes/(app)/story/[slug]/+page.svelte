@@ -13,7 +13,6 @@
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
-	import OwnerStatsCard from '$lib/components/content/OwnerStatsCard.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -385,11 +384,6 @@
 						basePath="/story"
 					/>
 				</div>
-			{/if}
-
-			<!-- Owner analytics (Section 40 — GET /content/{id}/analytics). -->
-			{#if data.analytics}
-				<OwnerStatsCard stats={data.analytics} />
 			{/if}
 
 			<!-- Unified comment engine (Section 49) — Reddit-style nested comments. -->
