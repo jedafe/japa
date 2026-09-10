@@ -58,6 +58,50 @@ func (s *Service) UpdatePermissionPreset(ctx context.Context, params gen.UpdateP
 // Space Types
 // ---------------------------------------------------------------------------
 
+// SpaceTypeCategory is a distinct category value used by space types.
+type SpaceTypeCategory struct {
+	Value      string `json:"value"`
+	Selectable bool   `json:"selectable"`
+}
+
+// ListSpaceTypeCategories returns the distinct categories used by space types
+// for this tenant, plus the global system geo categories that are not selectable
+// when creating custom types.
+func (s *Service) ListSpaceTypeCategories(ctx context.Context, tenantID pgtype.UUID) ([]SpaceTypeCategory, error) {
+	query := `
+		SELECT DISTINCT COALESCE(category, '') AS value
+		FROM space_types
+		WHERE tenant_id = $1
+		ORDER BY value`
+
+	rows, err := s.db.Reader.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("listing space type categories: %w", err)
+	}
+	defer rows.Close()
+
+	var categories []SpaceTypeCategory
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, fmt.Errorf("scanning space type category: %w", err)
+		}
+		if value == "" {
+			continue
+		}
+		categories = append(categories, SpaceTypeCategory{
+			Value:      value,
+			Selectable: isAllowedCategory(value),
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating space type categories: %w", err)
+	}
+
+	return categories, nil
+}
+
 // ListSpaceTypes returns every space type owned by the given tenant,
 // oldest first.
 func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.SpaceType, error) {

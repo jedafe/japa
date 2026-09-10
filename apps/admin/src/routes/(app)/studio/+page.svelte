@@ -13,6 +13,7 @@
 	import { Wand, Plus, RefreshCw, BarChart3, RotateCcw, X, Eye, Link2, Megaphone } from 'lucide-svelte';
 	import { api, apiRaw, aiApi, personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 
 	type StudioJob = {
 		id: string;
@@ -541,7 +542,7 @@
 		loadCreateOptions();
 		createJobSlideOverOpen = true;
 		// Clean the URL so a refresh doesn't re-trigger the pre-fill.
-		history.replaceState({}, '', '/studio');
+		replaceState('/studio', {});
 	});
 
 	load();

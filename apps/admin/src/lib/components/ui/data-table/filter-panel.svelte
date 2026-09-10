@@ -58,9 +58,10 @@
               />
             {:else}
               <Select
-                bind:value={value[filter.key]}
+                value={value[filter.key]}
                 options={filter.options ?? []}
                 placeholder={filter.label}
+                onchange={(val) => { value[filter.key] = val; }}
               />
             {/if}
           </div>

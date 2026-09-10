@@ -2,6 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-svelte';
 	import { Select } from '$lib/components/ui/select';
+	import { replaceState } from '$app/navigation';
 
 	let {
 		page = $bindable(0),
@@ -31,7 +32,7 @@
 		const qs = params.toString();
 		const url = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
 		try {
-			history.replaceState({}, '', url);
+			replaceState(url, {});
 		} catch {
 			// Fallback for SSR or edge cases
 		}

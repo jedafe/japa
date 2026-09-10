@@ -1985,8 +1985,8 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 		"prompt":    prompt,
 		"tenant_id": tenantID,
 	}
-	if job.AIModel != "" {
-		payload["model"] = job.AIModel
+	if job.AIModel != nil && *job.AIModel != "" {
+		payload["model"] = *job.AIModel
 	}
 
 	resp, err := a.dispatcher.Dispatch(ctx, "content_generation", ai.Request{

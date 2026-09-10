@@ -573,7 +573,7 @@ func (s *Service) ListAuditLogsWithQuery(ctx context.Context, tenantID, actorUse
 		TargetType:  targetTypePtr,
 		StartDate:   startDateTZ,
 		EndDate:     endDateTZ,
-		Q:           q,
+		Q:           &q,
 		PageLimit:   limit,
 		PageOffset:  offset,
 	})

@@ -443,10 +443,10 @@ FROM audit_logs
 WHERE tenant_id = @tenant_id
   AND (@actor_user_id = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = @actor_user_id)
   AND (@action_type = '' OR action_type = @action_type)
-  AND (sqlc.narg(target_type) IS NULL OR target_type = @target_type)
-  AND (sqlc.narg(start_date) IS NULL OR created_at >= @start_date)
-  AND (sqlc.narg(end_date) IS NULL OR created_at <= @end_date)
-  AND (@q::text = '' OR action_type ILIKE '%' || @q || '%' OR target_type ILIKE '%' || @q || '%' OR target_id::text ILIKE '%' || @q || '%' OR actor_user_id::text ILIKE '%' || @q || '%')
+  AND (sqlc.narg('target_type')::text IS NULL OR target_type = sqlc.narg('target_type')::text)
+  AND (sqlc.narg('start_date')::timestamptz IS NULL OR created_at >= sqlc.narg('start_date')::timestamptz)
+  AND (sqlc.narg('end_date')::timestamptz IS NULL OR created_at <= sqlc.narg('end_date')::timestamptz)
+  AND (sqlc.narg('q')::text = '' OR action_type ILIKE '%' || sqlc.narg('q') || '%' OR target_type ILIKE '%' || sqlc.narg('q') || '%' OR target_id::text ILIKE '%' || sqlc.narg('q') || '%' OR actor_user_id::text ILIKE '%' || sqlc.narg('q') || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 

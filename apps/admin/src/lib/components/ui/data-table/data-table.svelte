@@ -30,7 +30,7 @@
     try {
       replaceState(url, {});
     } catch {
-      window.history.replaceState({}, '', url);
+      // ignore URL sync failures in non-browser contexts
     }
   }
 
