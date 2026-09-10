@@ -656,7 +656,7 @@ WHERE f.tenant_id = $1 AND f.user_id = $2
           OR (ub.blocker_id = c.author_id AND ub.blocked_id = $2))
   )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
-         c.title, c.slug, c.author_id, c.created_at,
+         c.id, c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,

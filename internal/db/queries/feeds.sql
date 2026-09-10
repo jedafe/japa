@@ -146,7 +146,7 @@ WHERE f.tenant_id = @tenant_id AND f.user_id = @user_id
           OR (ub.blocker_id = c.author_id AND ub.blocked_id = @user_id))
   )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
-         c.title, c.slug, c.author_id, c.created_at,
+         c.id, c.title, c.slug, c.author_id, c.created_at,
          c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
          u.username, up.display_name, up.avatar_url,
          s.name, s.slug,
