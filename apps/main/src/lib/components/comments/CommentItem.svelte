@@ -285,7 +285,7 @@
 	id={`comment-${comment.id}`}
 	class="relative flex flex-col rounded-[var(--radius-card)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]/60"
 >
-	<header class="z-1 flex w-full flex-row self-start gap-3">
+	<header class="z-[1] flex w-full flex-row self-start gap-3">
 		<a href={authorHref} class="shrink-0 no-underline" aria-label={authorName}>
 			{#if comment.avatar_url && !comment.is_anonymous}
 				<img
@@ -328,7 +328,7 @@
 		</div>
 	</header>
 
-	<div class="break-words z-1 mt-1 ml-[52px]">
+	<div class="break-words z-[1] mt-1 ml-[52px]">
 		{#if deleted}
 			<p class="text-sm italic text-[var(--color-muted)]">{t('comments.deleted')}</p>
 		{:else if !collapsed}
@@ -464,12 +464,18 @@
 					</DropdownMenu.Root>
 
 					<span class="ml-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
-						{t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}
+						{upvotes === 1 ? '1 upvote' : t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}
 					</span>
 				</div>
 
 				{#if voteError}
 					<p class="mt-1 text-xs text-[var(--color-danger)]">{voteError}</p>
+				{/if}
+				{#if deleteError}
+					<p class="mt-1 text-xs text-[var(--color-danger)]">{deleteError}</p>
+				{/if}
+				{#if repliesError}
+					<p class="mt-1 text-xs text-[var(--color-danger)]">{repliesError}</p>
 				{/if}
 			{/if}
 
