@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull, apiList } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { ScholarshipDetail, SavedScholarship, CatalogOption } from '$lib/types';
 
 /**
@@ -15,6 +16,11 @@ import type { ScholarshipDetail, SavedScholarship, CatalogOption } from '$lib/ty
  * Ref: §73 (Scholarship Finder), ROADMAP-TOOLS 02.05.
  */
 export const load: PageServerLoad = async (event) => {
+	const tool = getTool('scholarships')!;
+	if (!isToolEnabled(tool, event.locals.features)) {
+		return { enabled: false, tool, scholarship: null, savedItem: null, statusOptions: [], user: null };
+	}
+
 	const ctx = apiContext(event);
 	const guideId = event.params.guide_id;
 
@@ -53,6 +59,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		enabled: true,
+		tool,
 		scholarship,
 		savedItem,
 		statusOptions,

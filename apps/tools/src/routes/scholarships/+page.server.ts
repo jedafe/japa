@@ -35,6 +35,9 @@ export const load: PageServerLoad = async (event) => {
 
 	// Pass through any filter params from the URL for SSR + shareability.
 	const searchParams = event.url.searchParams;
+	if (!searchParams.has('page_size')) {
+		searchParams.set('page_size', '100');
+	}
 	const filterQuery = searchParams.toString();
 	const filterPath = filterQuery ? `/scholarships?${filterQuery}` : '/scholarships';
 

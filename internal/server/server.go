@@ -6255,6 +6255,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
 					Get("/admin/scholarships/deadlines", scholarshipsHandlers.HandleAdminUpcomingDeadlines)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
+					Get("/admin/scholarships/top-saved", scholarshipsHandlers.HandleAdminTopSaved)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
 					Get("/admin/scholarships/reminder-log", scholarshipsHandlers.HandleAdminReminderLog)
 				// Admin CRUD for scholarship records — scholarship.manage
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scholarship.manage")).
@@ -6314,6 +6316,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/sources/proposed", intelHandlers.HandleListProposedSources)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
 				Post("/intel/sources/{id}/approve", intelHandlers.HandleApproveProposedSource)
+
+			// Public source directory and source detail.
+			// These are intentionally not under /intel/ and are public so they can
+			// be linked from tools and external surfaces (Rule 16).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sources", intelHandlers.HandlePublicSourcesDirectory)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sources/{slug}", intelHandlers.HandleGetSource)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+				Post("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
+				Delete("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
+
 			// Crawl-now — triggers an immediate fetch of a source (INTEL-011 fix).
 			// RBAC-gated by intel.sources.crawl_now (migration 000431).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.crawl_now")).

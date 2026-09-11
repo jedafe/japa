@@ -1121,3 +1121,107 @@ func (s *Store) GetCredentialProfessionByName(ctx context.Context, name string) 
 
 	return row, nil
 }
+
+// ---------------------------------------------------------------------------
+// Public Source Directory
+// ---------------------------------------------------------------------------
+
+// GetPublicSourceBySlugWithLinkedEntity loads an enabled source by slug,
+// joining any linked space, organization, or user.
+func (s *Store) GetPublicSourceBySlugWithLinkedEntity(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetIntelSourceBySlugWithLinkedEntityRow, error) {
+	row, err := s.queries.GetIntelSourceBySlugWithLinkedEntity(ctx, gen.GetIntelSourceBySlugWithLinkedEntityParams{
+		TenantID: tenantID,
+		Slug:     &slug,
+	})
+	if err != nil {
+		return gen.GetIntelSourceBySlugWithLinkedEntityRow{}, fmt.Errorf("stores: get public source by slug: %w", err)
+	}
+
+	return row, nil
+}
+
+// ListPublicSources returns a paginated list of public sources ordered by
+// the requested sort mode. It returns the source rows and the total count.
+func (s *Store) ListPublicSources(ctx context.Context, tenantID pgtype.UUID, category, sourceKind, q, sort string, limit, offset int32) ([]gen.IntelSource, int64, error) {
+	count, err := s.queries.CountPublicSources(ctx, gen.CountPublicSourcesParams{
+		TenantID: tenantID,
+		Column2:  category,
+		Column3:  sourceKind,
+		Column4:  q,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("stores: count public sources: %w", err)
+	}
+
+	var rows []gen.IntelSource
+
+	switch sort {
+	case "recent":
+		rows, err = s.queries.ListPublicSourcesRecent(ctx, gen.ListPublicSourcesRecentParams{
+			TenantID: tenantID,
+			Column2:  category,
+			Column3:  sourceKind,
+			Column4:  q,
+			Limit:    limit,
+			Offset:   offset,
+		})
+	case "trending":
+		rows, err = s.queries.ListPublicSourcesTrending(ctx, gen.ListPublicSourcesTrendingParams{
+			TenantID: tenantID,
+			Column2:  category,
+			Column3:  sourceKind,
+			Column4:  q,
+			Limit:    limit,
+			Offset:   offset,
+		})
+	default:
+		rows, err = s.queries.ListPublicSourcesPopular(ctx, gen.ListPublicSourcesPopularParams{
+			TenantID: tenantID,
+			Column2:  category,
+			Column3:  sourceKind,
+			Column4:  q,
+			Limit:    limit,
+			Offset:   offset,
+		})
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("stores: list public sources: %w", err)
+	}
+
+	return rows, count, nil
+}
+
+// ListIntelRecordsBySource returns published intel records for a source,
+// optionally filtered by entity_type.
+func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType string, limit, offset int32) ([]gen.IntelRecord, error) {
+	rows, err := s.queries.ListIntelRecordsBySource(ctx, gen.ListIntelRecordsBySourceParams{
+		TenantID: tenantID,
+		SourceID: sourceID,
+		Column3:  entityType,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stores: list intel records by source: %w", err)
+	}
+
+	return rows, nil
+}
+
+// IncrementSourcePostCount bumps the post_count for a source.
+func (s *Store) IncrementSourcePostCount(ctx context.Context, tenantID, sourceID pgtype.UUID) error {
+	if err := s.queries.IncrementSourcePostCount(ctx, gen.IncrementSourcePostCountParams{TenantID: tenantID, ID: sourceID}); err != nil {
+		return fmt.Errorf("stores: increment source post count: %w", err)
+	}
+
+	return nil
+}
+
+// DecrementSourcePostCount decrements the post_count for a source, never below 0.
+func (s *Store) DecrementSourcePostCount(ctx context.Context, tenantID, sourceID pgtype.UUID) error {
+	if err := s.queries.DecrementSourcePostCount(ctx, gen.DecrementSourcePostCountParams{TenantID: tenantID, ID: sourceID}); err != nil {
+		return fmt.Errorf("stores: decrement source post count: %w", err)
+	}
+
+	return nil
+}
