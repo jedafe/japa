@@ -2505,6 +2505,16 @@ export interface ColComparisonMatrix {
 	overall_index: Record<string, number>;
 }
 
+// --- Source attribution (scholarships, jobs, remittance, content, feed) ---
+export interface SourceAttribution {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+	source_url: string;
+	trust_level: number;
+}
+
 // --- Section 73: Scholarship Finder ---
 export interface Scholarship {
 	guide_id: string;
@@ -2524,6 +2534,7 @@ export interface Scholarship {
 	how_to_apply: string;
 	contact_email: string;
 	field_values: Record<string, string>;
+	source?: SourceAttribution;
 }
 
 export interface SavedScholarship {
@@ -2618,6 +2629,7 @@ export interface JobListing {
 	field_values: Record<string, string>;
 	published_at: string;
 	org_id?: string;
+	source?: SourceAttribution;
 }
 
 export interface JobDetail {
@@ -2629,6 +2641,7 @@ export interface JobDetail {
 	field_values: Record<string, string>;
 	published_at: string;
 	org_id?: string;
+	source?: SourceAttribution;
 }
 
 export interface JobApplication {
