@@ -1010,6 +1010,8 @@ type Content struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
@@ -2676,6 +2678,7 @@ type Organization struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	SourceID         pgtype.UUID        `json:"source_id"`
 }
 
 type OrganizationBoost struct {
@@ -3442,6 +3445,7 @@ type Space struct {
 	CreatorUserID  pgtype.UUID        `json:"creator_user_id"`
 	Region         *string            `json:"region"`
 	Subregion      *string            `json:"subregion"`
+	SourceID       pgtype.UUID        `json:"source_id"`
 }
 
 type SpaceMember struct {
@@ -3926,6 +3930,7 @@ type User struct {
 	CurrentGeoSpaceID   pgtype.UUID        `json:"current_geo_space_id"`
 	IsSynthetic         bool               `json:"is_synthetic"`
 	SyntheticSource     *string            `json:"synthetic_source"`
+	SourceID            pgtype.UUID        `json:"source_id"`
 }
 
 type UserAffiliateLink struct {

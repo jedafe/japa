@@ -207,10 +207,11 @@ func renewableFromFunding(funding []byte) (bool, bool) {
 }
 
 // mergeContentFieldValues flattens a contents.field_values JSONB blob
-// (values may be plain strings or {"value": "..."} objects) into the
-// destination map. This lets backfilled scholarship guides keep their
-// original custom-field values (eligibility, how_to_apply, contact_email,
-// award_amount_usd, is_renewable) alongside the structured scholarships table.
+// (values may be plain strings, numbers, booleans, or {"value": "..."}
+// objects) into the destination map. This lets backfilled scholarship
+// guides keep their original custom-field values (eligibility, how_to_apply,
+// contact_email, award_amount_usd, is_renewable) alongside the structured
+// scholarships table.
 func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
 	if len(fieldValues) == 0 || string(fieldValues) == "{}" {
 		return
@@ -227,6 +228,14 @@ func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
 			if s := strings.TrimSpace(t); s != "" {
 				dst[k] = s
 			}
+		case float64:
+			dst[k] = strconv.FormatFloat(t, 'f', -1, 64)
+		case int:
+			dst[k] = strconv.Itoa(t)
+		case int64:
+			dst[k] = strconv.FormatInt(t, 10)
+		case bool:
+			dst[k] = strconv.FormatBool(t)
 		case map[string]interface{}:
 			if s, ok := t["value"].(string); ok && strings.TrimSpace(s) != "" {
 				dst[k] = strings.TrimSpace(s)
@@ -524,6 +533,27 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 
 	whereClause := strings.Join(conditions, " AND ")
 
+	fieldValueKeys := []string{
+		"'eligibility_criteria'",
+		"'how_to_apply'",
+		"'contact_email'",
+		"'award_amount_usd'",
+		"'is_renewable'",
+		"'provider_institution'",
+		"'countries_eligible'",
+		"'level_of_study'",
+		"'application_deadline'",
+		"'application_link'",
+		"'description'",
+	}
+	fieldValuesSQL := fmt.Sprintf(`(
+		SELECT COALESCE(jsonb_object_agg(cf.key, cfv.value_text), '{}'::jsonb) || COALESCE(c.field_values, '{}'::jsonb)
+		FROM custom_field_values cfv
+		JOIN custom_fields cf ON cf.id = cfv.field_id
+		WHERE cfv.entity_id = c.id AND cfv.entity_type = 'content'
+		  AND cf.key IN (%s)
+	)`, strings.Join(fieldValueKeys, ", "))
+
 	// Single query with COUNT(*) OVER() to get the total count and the
 	// page rows in one pass. The window function appends the full-result
 	// count to every row; we read it from the first row (identical across
@@ -531,14 +561,14 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	dataQuery := fmt.Sprintf(`
 		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
-		       s.university, s.eligible_countries, s.funding, s.description, c.field_values,
+		       s.university, s.eligible_countries, s.funding, s.description, %s AS field_values,
 		       COUNT(*) OVER() AS total_count
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
-		whereClause, orderBy, argIdx, argIdx+1)
+		fieldValuesSQL, whereClause, orderBy, argIdx, argIdx+1)
 
 	args = append(args, filters.Limit, offset)
 
@@ -635,7 +665,14 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	query := `
 		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
-		       s.university, s.eligible_countries, s.funding, s.description, c.field_values
+		       s.university, s.eligible_countries, s.funding, s.description,
+		       (
+				   SELECT COALESCE(jsonb_object_agg(cf.key, cfv.value_text), '{}'::jsonb) || COALESCE(c.field_values, '{}'::jsonb)
+				   FROM custom_field_values cfv
+				   JOIN custom_fields cf ON cf.id = cfv.field_id
+				   WHERE cfv.entity_id = c.id AND cfv.entity_type = 'content'
+				     AND cf.key IN ('eligibility_criteria','how_to_apply','contact_email','award_amount_usd','is_renewable','provider_institution','countries_eligible','level_of_study','application_deadline','application_link','description')
+		       ) AS field_values
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
 		WHERE s.tenant_id = $1 AND s.guide_id = $2

@@ -2530,7 +2530,7 @@ func (q *Queries) GdprExportUserNotifications(ctx context.Context, arg GdprExpor
 
 const gdprExportUserOrganizations = `-- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations WHERE owner_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations WHERE owner_user_id = $1 AND tenant_id = $2) t
 `
 
 type GdprExportUserOrganizationsParams struct {

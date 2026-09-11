@@ -488,6 +488,8 @@ func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID
 		table = "tags"
 	case EntityTypeOrganization:
 		table = "organizations"
+	case EntityTypeSource:
+		table = "intel_sources"
 	default:
 		return fmt.Errorf("invalid entity type: %s", entityType)
 	}
@@ -543,6 +545,13 @@ func (s *Service) updateFollowerCountTx(ctx context.Context, db gen.DBTX, entity
 		if err != nil {
 			return fmt.Errorf("updating follower count on organizations: %w", err)
 		}
+	case EntityTypeSource:
+		_, err := db.Exec(ctx,
+			"UPDATE intel_sources SET follower_count = GREATEST(0, follower_count + $1) WHERE id = $2",
+			delta, entityID)
+		if err != nil {
+			return fmt.Errorf("updating follower count on intel_sources: %w", err)
+		}
 	default:
 		return nil
 	}
@@ -553,7 +562,7 @@ func (s *Service) updateFollowerCountTx(ctx context.Context, db gen.DBTX, entity
 // isValidEntityType returns true if the entity type is a known follow target.
 func isValidEntityType(entityType string) bool {
 	switch entityType {
-	case EntityTypeUser, EntityTypeSpace, EntityTypeTag, EntityTypeOrganization:
+	case EntityTypeUser, EntityTypeSpace, EntityTypeTag, EntityTypeOrganization, EntityTypeSource:
 		return true
 	default:
 		return false

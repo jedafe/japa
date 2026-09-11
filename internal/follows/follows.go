@@ -25,6 +25,7 @@ const (
 	EntityTypeSpace        = "space"
 	EntityTypeTag          = "tag"
 	EntityTypeOrganization = "organization"
+	EntityTypeSource       = "source"
 )
 
 // DefaultPageSize is the default number of items returned by list queries.
