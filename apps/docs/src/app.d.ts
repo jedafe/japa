@@ -33,11 +33,22 @@ declare global {
 			 */
 			audienceGates: Record<string, string>;
 			/**
+			 * Canonical audience order fetched from GET /docs/audiences.
+			 * Used in place of the hardcoded AUDIENCE_ORDER constant (Rule 16).
+			 */
+			audienceOrder: DocAudience[];
+			/**
 			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2).
 			 * Threaded through ApiContext so server-side mutations attach
 			 * X-CSRF-Token. Null for guests or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/**
+			 * Whether the left navigation rail is collapsed. Persisted via a
+			 * `jc_nav_collapsed` cookie (ADR-058). The backend /me/account endpoint
+			 * does not currently store UI preferences, so a cookie is used.
+			 */
+			navCollapsed: boolean;
 		}
 		interface PageData {
 			user: SessionUser | null;
@@ -47,6 +58,10 @@ declare global {
 			audienceGates: Record<string, string>;
 			/** Feature flags from GET /feature-flags (public endpoint). */
 			features?: Record<string, boolean>;
+			/** Canonical audience order from GET /docs/audiences (Rule 16). */
+			audienceOrder: DocAudience[];
+			/** Left navigation collapsed state from the `jc_nav_collapsed` cookie. */
+			navCollapsed: boolean;
 		}
 		// interface PageState {}
 		// interface Platform {}

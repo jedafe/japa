@@ -3,7 +3,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocAudience } from '$lib/types';
-import { AUDIENCE_ORDER, AUDIENCE_LABEL_KEY } from '$lib/types';
+import { AUDIENCE_LABEL_KEY } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
 
 /**

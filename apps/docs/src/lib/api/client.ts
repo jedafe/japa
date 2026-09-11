@@ -23,6 +23,7 @@ export async function apiGet<T>(path: string): Promise<T | null> {
 	try {
 		const url = apiUrl(path);
 		const res = await fetch(url, {
+			credentials: 'include',
 			headers: { Accept: 'application/json' }
 		});
 		if (!res.ok) return null;
@@ -44,7 +45,7 @@ export async function apiGetList<T>(path: string): Promise<T[]> {
 	return [];
 }
 
-function getCookie(name: string): string | undefined {
+export function getCookie(name: string): string | undefined {
 	if (typeof document === 'undefined') return undefined;
 	const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(name).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '=([^;]+)'));
 	return match ? decodeURIComponent(match[1]) : undefined;

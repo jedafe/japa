@@ -32,11 +32,16 @@
 		expanded[audience] = !expanded[audience];
 	}
 
+	// Canonical audience order from the backend (Rule 16).
+	const audienceOrder = $derived(page.data?.audienceOrder ?? []);
+
 	// Filter the nav tree to only audiences the session can access (ADR-060:
 	// server-side gating — the switcher only offers accessibleAudiences, and
 	// we never render gated section groups).
 	let visibleTrees = $derived(
-		nav.filter((tree) => accessibleAudiences.includes(tree.audience))
+		nav
+			.filter((tree) => accessibleAudiences.includes(tree.audience))
+			.sort((a, b) => (audienceOrder.indexOf(a.audience) - audienceOrder.indexOf(b.audience)))
 	);
 
 	// Ensure the API audience is always visible in the nav tree (ADR-060:

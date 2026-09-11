@@ -49,7 +49,10 @@
 			try {
 				const params = new URLSearchParams({ q, limit: '10' });
 				if (resolvedAudience) params.set('audience', resolvedAudience);
-				const res = await fetch(`/api/v1/docs/search?${params}`);
+				// Use a same-origin SvelteKit proxy so the request carries the
+				// user's session cookie server-side (the backend requires a Bearer
+				// token; client JS cannot read the HttpOnly jc_token cookie).
+				const res = await fetch(`/api/docs/search?${params}`, { credentials: 'include' });
 				if (!res.ok) throw new Error('search failed');
 				const json = await res.json();
 				results = (json.data as DocSearchResult[]) ?? [];

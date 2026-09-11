@@ -3,7 +3,7 @@
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
 	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { AUDIENCE_LABEL_KEY, AUDIENCE_ORDER } from '$lib/types';
+	import { AUDIENCE_LABEL_KEY } from '$lib/types';
 	import type { DocAudience } from '$lib/types';
 	import type { PageData } from './$types';
 	import { ArrowRight } from 'lucide-svelte';
@@ -77,7 +77,7 @@
 		<div class="audiences">
 			<h2>{t('landing.audiences')}</h2>
 			<div class="audience-grid">
-				{#each AUDIENCE_ORDER.filter((a) => data.accessibleAudiences.includes(a)) as audience (audience)}
+				{#each data.audienceOrder.filter((a) => data.accessibleAudiences.includes(a)) as audience (audience)}
 					<a href={audienceHref(audience)} class="audience-card">
 						<div class="audience-card-body">
 							<span class="audience-name">{t(AUDIENCE_LABEL_KEY[audience], audience)}</span>
