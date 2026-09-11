@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
+	import MetricCard from '$lib/components/MetricCard.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Tabs, Select, Dialog } from 'bits-ui';
@@ -39,6 +40,9 @@
 	let scanPageSize = $state(10);
 	let scanLoading = $state(true);
 	let apiAvailable = $state(true);
+
+	let activeIpBlocks = $state(0);
+	let overviewLoading = $state(true);
 
 	let filterSeverity = $state('all');
 	let searchQuery = $state('');
@@ -349,9 +353,27 @@
 		}
 	}
 
+	async function loadOverview() {
+		overviewLoading = true;
+		try {
+			const result = await api<{ active_ip_blocks: number }>('/control/security');
+			if (result.ok && result.data) {
+				activeIpBlocks = result.data.active_ip_blocks ?? 0;
+				apiAvailable = true;
+			} else {
+				apiAvailable = false;
+			}
+		} catch {
+			apiAvailable = false;
+		} finally {
+			overviewLoading = false;
+		}
+	}
+
 	$effect(() => {
 		loadScanResults();
 		loadIpBlocks();
+		loadOverview();
 
 		// Background refresh every 2h — keeps the page from going stale when
 		// left open, without hammering the API on a short interval. The
@@ -360,6 +382,7 @@
 			if (document.visibilityState === 'visible') {
 				loadScanResults();
 				loadIpBlocks();
+				loadOverview();
 			}
 		}, 2 * 60 * 60 * 1000);
 
@@ -367,6 +390,7 @@
 			if (document.visibilityState === 'visible') {
 				loadScanResults();
 				loadIpBlocks();
+				loadOverview();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisible);
@@ -607,6 +631,12 @@
 		{t('security.unavailable')}
 	</div>
 {/if}
+
+<div class="mb-4 grid gap-3 sm:grid-cols-3">
+	<MetricCard label={t('security.active_ip_blocks', 'Active IP Blocks')} value={activeIpBlocks} />
+	<MetricCard label={t('security.scan_findings', 'Scan Findings')} value={results.length} />
+	<MetricCard label={t('security.ip_blocks', 'IP Blocks')} value={ipBlocks.length} />
+</div>
 
 <Tabs.Root bind:value={activeTab}>
 	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
