@@ -27,6 +27,11 @@ declare global {
 			 * for guests (no mutations) or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/**
+			 * Public site settings fetched once per request (cached) and reused by
+			 * page load functions. Ref: conventions/system-settings-catalog.md.
+			 */
+			siteSettings: Record<string, unknown>;
 		}
 		interface PageData {
 			user: SessionUser | null;

@@ -608,6 +608,16 @@ func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (g
 	return row, nil
 }
 
+// GetContentByIntelRecord fetches a contents row by its linked intel record.
+func (s *Store) GetContentByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.GetContentByIntelRecordRow, error) {
+	row, err := s.queries.GetContentByIntelRecord(ctx, gen.GetContentByIntelRecordParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.GetContentByIntelRecordRow{}, fmt.Errorf("stores: get content by intel record: %w", err)
+	}
+
+	return row, nil
+}
+
 // GetContentBySlug fetches a single contents row by slug and tenant. Used by
 // the promoter (Task 3) to check whether an existing non-deleted guide already
 // occupies a candidate slug.

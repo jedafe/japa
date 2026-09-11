@@ -27,7 +27,7 @@
 	let editingNotes = $state(false);
 	let notesDraft = $state('');
 	let editingReminder = $state(false);
-	let reminderDraft = $state(14);
+	let reminderDraft = $state(untrack(() => data.defaultReminderDays));
 	let updating = $state(false);
 
 	// Scholarship application status options are loaded from
@@ -71,7 +71,7 @@
 					scholarship,
 					status: 'saved' as ScholarshipStatus,
 					notes: null,
-					remind_before_days: 14,
+					remind_before_days: data.defaultReminderDays,
 					last_reminded_at: null,
 					created_at: new Date().toISOString(),
 					updated_at: new Date().toISOString()
@@ -113,7 +113,7 @@
 	}
 
 	function startEditReminder() {
-		reminderDraft = savedItem?.remind_before_days ?? 14;
+		reminderDraft = savedItem?.remind_before_days ?? data.defaultReminderDays;
 		editingReminder = true;
 	}
 
@@ -147,10 +147,6 @@
 	}
 </script>
 
-{#if !data.enabled}
-	<ToolDisabled tool={data.tool} />
-{:else}
-
 <svelte:head>
 	<title>{seo.title}</title>
 	<meta name="description" content={seo.description} />
@@ -163,6 +159,10 @@
 		<script type="application/ld+json">{seo.jsonLdString}</script>
 	{/if}
 </svelte:head>
+
+{#if !data.enabled}
+	<ToolDisabled tool={data.tool} />
+{:else}
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<a href="/scholarships" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-6">

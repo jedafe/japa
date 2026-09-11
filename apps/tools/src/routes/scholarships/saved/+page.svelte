@@ -48,6 +48,20 @@
 		}
 	}
 
+	async function updateNotes(guideId: string, notes: string) {
+		const res = await api.patch(`/scholarships/${guideId}/save`, { notes });
+		if (!res.error) {
+			saved = saved.map((s) => (s.scholarship.guide_id === guideId ? { ...s, notes } : s));
+		}
+	}
+
+	async function updateReminder(guideId: string, remindBeforeDays: number) {
+		const res = await api.patch(`/scholarships/${guideId}/save`, { remind_before_days: remindBeforeDays });
+		if (!res.error) {
+			saved = saved.map((s) => (s.scholarship.guide_id === guideId ? { ...s, remind_before_days: remindBeforeDays } : s));
+		}
+	}
+
 	function formatAmount(amount: number | null | undefined): string {
 		if (amount === null || amount === undefined) return '—';
 		return new Intl.NumberFormat('en-US', {
@@ -133,6 +147,28 @@
 							{#if item.notes}
 								<p class="text-sm text-muted mt-2 italic">{item.notes}</p>
 							{/if}
+							<div class="mt-3 space-y-2">
+								<textarea
+									value={item.notes ?? ''}
+									onchange={(e) => updateNotes(item.scholarship.guide_id, e.currentTarget.value)}
+									rows="2"
+									placeholder={t('scholarships.notes_placeholder', 'Add notes...')}
+									class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none resize-none"
+								></textarea>
+								<div class="flex items-center gap-2">
+									<label for="reminder-{item.id}" class="text-xs text-muted">{t('scholarships.reminder_days', 'Remind')}:</label>
+									<input
+										id="reminder-{item.id}"
+										type="number"
+										value={item.remind_before_days ?? data.defaultReminderDays}
+										onchange={(e) => updateReminder(item.scholarship.guide_id, parseInt(e.currentTarget.value, 10) || 0)}
+										min="0"
+										max="90"
+										class="w-24 px-2 py-1 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
+									/>
+									<span class="text-xs text-muted">{t('scholarships.days_before', 'days before')}</span>
+								</div>
+							</div>
 						</div>
 						<div class="flex-shrink-0 flex items-center gap-2">
 							<select

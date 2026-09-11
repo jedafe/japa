@@ -157,6 +157,29 @@
 								{#if item.notes}
 									<p class="mt-2 text-xs text-[var(--color-text-subtle)] whitespace-pre-line">{item.notes}</p>
 								{/if}
+								<div class="mt-3 space-y-2">
+									<textarea
+										value={item.notes ?? ''}
+										onchange={(e) => updateNotes(item, e.currentTarget.value)}
+										disabled={updating[item.id]}
+										rows="2"
+										placeholder={t('scholarships.notes_placeholder', 'Add notes...')}
+										class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none resize-none"
+									></textarea>
+									<div class="flex items-center gap-2">
+										<label for="reminder-{item.id}" class="text-xs text-[var(--color-muted)]">{t('scholarships.reminder_days', 'Remind')}:</label>
+										<input
+											type="number"
+											value={item.remind_before_days ?? data.defaultReminderDays}
+											onchange={(e) => updateReminder(item, parseInt(e.currentTarget.value, 10) || 0)}
+											disabled={updating[item.id]}
+											min="0"
+											max="90"
+											class="w-20 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+										/>
+										<span class="text-xs text-[var(--color-muted)]">{t('scholarships.days_before', 'days before')}</span>
+									</div>
+								</div>
 							</div>
 							<div class="flex flex-col gap-2">
 								<select

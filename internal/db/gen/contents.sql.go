@@ -917,6 +917,64 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 	return i, err
 }
 
+const getContentByIntelRecord = `-- name: GetContentByIntelRecord :one
+SELECT id, tenant_id, title, slug, content_type, body, meta_description, canonical_url, view_count, comment_count, share_count, reshare_count, publish_at, published_at, created_at, updated_at, intel_source_id, intel_record_id
+FROM contents
+WHERE tenant_id = $1 AND intel_record_id = $2 AND deleted_at IS NULL
+`
+
+type GetContentByIntelRecordParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+type GetContentByIntelRecordRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TenantID        pgtype.UUID        `json:"tenant_id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	ContentType     string             `json:"content_type"`
+	Body            string             `json:"body"`
+	MetaDescription *string            `json:"meta_description"`
+	CanonicalUrl    *string            `json:"canonical_url"`
+	ViewCount       int32              `json:"view_count"`
+	CommentCount    int32              `json:"comment_count"`
+	ShareCount      int32              `json:"share_count"`
+	ReshareCount    int32              `json:"reshare_count"`
+	PublishAt       pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt     pgtype.Timestamptz `json:"published_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
+}
+
+func (q *Queries) GetContentByIntelRecord(ctx context.Context, arg GetContentByIntelRecordParams) (GetContentByIntelRecordRow, error) {
+	row := q.db.QueryRow(ctx, getContentByIntelRecord, arg.TenantID, arg.IntelRecordID)
+	var i GetContentByIntelRecordRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Title,
+		&i.Slug,
+		&i.ContentType,
+		&i.Body,
+		&i.MetaDescription,
+		&i.CanonicalUrl,
+		&i.ViewCount,
+		&i.CommentCount,
+		&i.ShareCount,
+		&i.ReshareCount,
+		&i.PublishAt,
+		&i.PublishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
+	)
+	return i, err
+}
+
 const getContentBySlug = `-- name: GetContentBySlug :one
 SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
        c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,

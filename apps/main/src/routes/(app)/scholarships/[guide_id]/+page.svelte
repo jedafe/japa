@@ -35,7 +35,7 @@
 	let editingNotes = $state(false);
 	let notesDraft = $state('');
 	let editingReminder = $state(false);
-	let reminderDraft = $state(14);
+	let reminderDraft = $state(untrack(() => data.defaultReminderDays));
 	let updating = $state(false);
 
 	const statusOptions = $derived(
@@ -75,7 +75,7 @@
 					scholarship,
 					status: 'saved',
 					notes: null,
-					remind_before_days: 14,
+					remind_before_days: data.defaultReminderDays,
 					last_reminded_at: null,
 					created_at: new Date().toISOString(),
 					updated_at: new Date().toISOString()
@@ -109,7 +109,7 @@
 	}
 
 	function startEditReminder() {
-		reminderDraft = savedItem?.remind_before_days ?? 14;
+		reminderDraft = savedItem?.remind_before_days ?? data.defaultReminderDays;
 		editingReminder = true;
 	}
 

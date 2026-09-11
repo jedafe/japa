@@ -28,17 +28,26 @@
 	let statusOptions = $state<CatalogOption[]>(untrack(() => data.statusOptions));
 	let renewableOptions = $state<CatalogOption[]>(untrack(() => data.renewableOptions));
 
-	// Filter state
-	let filterCountry = $state('');
-	let filterLevel = $state('');
-	let filterMinAmount = $state('');
-	let filterMaxAmount = $state('');
-	let filterRenewable = $state('');
-	let filterDeadlineFrom = $state('');
-	let filterDeadlineTo = $state('');
-	let filterQuery = $state('');
+	// Filter state — initialized from URL so pagination and shareable links work.
+	const initialParams = page.url.searchParams;
+	let filterCountry = $state(initialParams.get('country') ?? '');
+	let filterLevel = $state(initialParams.get('level') ?? '');
+	let filterMinAmount = $state(initialParams.get('min_amount') ?? '');
+	let filterMaxAmount = $state(initialParams.get('max_amount') ?? '');
+	let filterRenewable = $state(initialParams.get('renewable') ?? '');
+	let filterDeadlineFrom = $state(initialParams.get('deadline_from') ?? '');
+	let filterDeadlineTo = $state(initialParams.get('deadline_to') ?? '');
+	let filterQuery = $state(initialParams.get('q') ?? '');
 	let loading = $state(false);
 	let showRegisterPrompt = $state(false);
+
+	// Pagination state from SSR metadata.
+	let currentPage = $state(untrack(() => data.currentPage ?? 1));
+	let pageSize = $state(untrack(() => data.pageSize ?? 20));
+	let total = $state(untrack(() => data.total ?? 0));
+	const totalPages = $derived(Math.max(1, Math.ceil(total / (pageSize || 1))));
+	const showingStart = $derived((currentPage - 1) * pageSize + 1);
+	const showingEnd = $derived(Math.min(currentPage * pageSize, total));
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -58,8 +67,9 @@
 		})
 	);
 
-	async function applyFilters() {
+	async function applyFilters(resetPage = true) {
 		loading = true;
+		if (resetPage) currentPage = 1;
 		const params = new URLSearchParams();
 		if (filterCountry) params.set('country', filterCountry);
 		if (filterLevel) params.set('level', filterLevel);
@@ -69,16 +79,24 @@
 		if (filterDeadlineFrom) params.set('deadline_from', filterDeadlineFrom);
 		if (filterDeadlineTo) params.set('deadline_to', filterDeadlineTo);
 		if (filterQuery) params.set('q', filterQuery);
-		params.set('page_size', '100');
+		params.set('page', String(currentPage));
+		params.set('page_size', String(pageSize));
 		const qs = params.toString();
 		const res = await api.get<Scholarship[]>(`/scholarships${qs ? `?${qs}` : ''}`);
 		loading = false;
 		if (res.error) return;
 		scholarships = res.data ?? [];
+		total = res.meta?.total ?? res.data?.length ?? 0;
 		// Update URL for shareability (SvelteKit replaceState, not window.history)
 		const url = new URL(page.url);
 		url.search = qs;
 		replaceState(url, {});
+	}
+
+	async function changePage(newPage: number) {
+		if (newPage < 1 || newPage > totalPages) return;
+		currentPage = newPage;
+		await applyFilters(false);
 	}
 
 	function isSaved(guideId: string): SavedScholarship | undefined {
@@ -106,7 +124,7 @@
 						scholarship,
 						status: 'saved' as ScholarshipStatus,
 						notes: null,
-						remind_before_days: 14,
+						remind_before_days: data.defaultReminderDays,
 						last_reminded_at: null,
 						created_at: new Date().toISOString(),
 						updated_at: new Date().toISOString()
@@ -342,7 +360,7 @@
 				</div>
 
 				<button
-					onclick={applyFilters}
+					onclick={() => applyFilters()}
 					disabled={loading}
 					class="w-full px-4 py-2 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors disabled:opacity-50"
 				>
@@ -467,6 +485,40 @@
 							</div>
 						</div>
 					{/each}
+				</div>
+			{/if}
+
+			{#if totalPages > 1}
+				<div class="mt-6 flex items-center justify-between gap-4 border-t border-border pt-4">
+					<div class="text-sm text-muted">
+						{t('scholarships.showing', 'Showing {start}–{end} of {total}')
+							.replace('{start}', String(showingStart))
+							.replace('{end}', String(showingEnd))
+							.replace('{total}', String(total))}
+					</div>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							disabled={currentPage <= 1}
+							onclick={() => changePage(currentPage - 1)}
+							class="px-3 py-1.5 text-sm rounded-lg border border-border bg-surface text-text hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{t('common.previous', 'Previous')}
+						</button>
+						<span class="text-sm text-muted">
+							{t('scholarships.page_of', 'Page {page} of {totalPages}')
+								.replace('{page}', String(currentPage))
+								.replace('{totalPages}', String(totalPages))}
+						</span>
+						<button
+							type="button"
+							disabled={currentPage >= totalPages}
+							onclick={() => changePage(currentPage + 1)}
+							class="px-3 py-1.5 text-sm rounded-lg border border-border bg-surface text-text hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+						>
+							{t('common.next', 'Next')}
+						</button>
+					</div>
 				</div>
 			{/if}
 		</div>

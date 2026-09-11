@@ -175,7 +175,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					summary: s.summary,
 					status: data.statuses[0] ?? 'saved',
 					notes: '',
-					remind_before_days: null,
+					remind_before_days: data.defaultReminderDays,
 					updated_at: new Date().toISOString()
 				}
 			];
