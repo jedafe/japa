@@ -390,6 +390,11 @@
 												</span>
 											{/if}
 										</div>
+										{#if rate.source?.slug}
+											<a href={mainAppUrl(`/sources/${rate.source.slug}`)} class="inline-flex items-center gap-0.5 text-primary hover:underline">
+												{t('remittance.source', 'Source')}: {rate.source.name}
+											</a>
+										{/if}
 									</div>
 								</div>
 								<div class="text-right flex-shrink-0">
