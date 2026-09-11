@@ -11,7 +11,8 @@ INSERT INTO contents (
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
     ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-    journey_stage, visa_route, source_country, target_country, video_source_id
+    journey_stage, visa_route, source_country, target_country, video_source_id,
+    intel_source_id, intel_record_id
 ) VALUES (
     @tenant_id, @author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html,
     @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id),
@@ -23,7 +24,8 @@ INSERT INTO contents (
     COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at),
     sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at),
     sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country),
-    sqlc.narg(video_source_id)
+    sqlc.narg(video_source_id),
+    sqlc.narg(intel_source_id), sqlc.narg(intel_record_id)
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -32,7 +34,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
           ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-          journey_stage, visa_route, source_country, target_country, video_source_id;
+          journey_stage, visa_route, source_country, target_country, video_source_id,
+          intel_source_id, intel_record_id;
 
 -- name: GetContentByID :one
 SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
