@@ -1632,6 +1632,66 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 	return items, nil
 }
 
+const listSourcesByRecordIDs = `-- name: ListSourcesByRecordIDs :many
+SELECT
+    ir.id AS record_id,
+    s.id AS source_id,
+    s.name,
+    s.slug,
+    s.logo_url,
+    s.source_url,
+    s.trust_level
+FROM intel_records ir
+JOIN intel_sources s ON s.id = ir.source_id AND s.tenant_id = ir.tenant_id
+WHERE ir.tenant_id = $1
+  AND ir.id = ANY($2::uuid[])
+`
+
+type ListSourcesByRecordIDsParams struct {
+	TenantID pgtype.UUID   `json:"tenant_id"`
+	Column2  []pgtype.UUID `json:"column_2"`
+}
+
+type ListSourcesByRecordIDsRow struct {
+	RecordID   pgtype.UUID `json:"record_id"`
+	SourceID   pgtype.UUID `json:"source_id"`
+	Name       string      `json:"name"`
+	Slug       *string     `json:"slug"`
+	LogoUrl    *string     `json:"logo_url"`
+	SourceUrl  string      `json:"source_url"`
+	TrustLevel int16       `json:"trust_level"`
+}
+
+// Returns a map-friendly list of sources for a batch of intel record IDs.
+// Used by scholarship, job, and remittance responses to attach attribution.
+func (q *Queries) ListSourcesByRecordIDs(ctx context.Context, arg ListSourcesByRecordIDsParams) ([]ListSourcesByRecordIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSourcesByRecordIDs, arg.TenantID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSourcesByRecordIDsRow
+	for rows.Next() {
+		var i ListSourcesByRecordIDsRow
+		if err := rows.Scan(
+			&i.RecordID,
+			&i.SourceID,
+			&i.Name,
+			&i.Slug,
+			&i.LogoUrl,
+			&i.SourceUrl,
+			&i.TrustLevel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaleIntelRecords = `-- name: ListStaleIntelRecords :many
 SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records WHERE tenant_id = $1 AND freshness_score <= 40 AND status = 'published' LIMIT $2
 `

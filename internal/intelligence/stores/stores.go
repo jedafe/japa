@@ -1235,3 +1235,63 @@ func (s *Store) DecrementSourcePostCount(ctx context.Context, tenantID, sourceID
 
 	return nil
 }
+
+// DomainSourceAttribution is a lightweight source snapshot used by domain
+// responses (scholarship, job, remittance, etc.).
+type DomainSourceAttribution struct {
+	RecordID   string `json:"-"`
+	SourceID   string `json:"id"`
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	LogoUrl    string `json:"logo_url"`
+	SourceUrl  string `json:"source_url"`
+	TrustLevel int16  `json:"trust_level"`
+}
+
+// ListSourcesByRecordIDs returns source attribution for a batch of intel record IDs.
+func (s *Store) ListSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) ([]DomainSourceAttribution, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
+		TenantID: tenantID,
+		Column2:  recordIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stores: list sources by record ids: %w", err)
+	}
+
+	result := make([]DomainSourceAttribution, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, DomainSourceAttribution{
+			RecordID:   r.RecordID.String(),
+			SourceID:   r.SourceID.String(),
+			Name:       r.Name,
+			Slug:       maybeString(r.Slug),
+			LogoUrl:    maybeString(r.LogoUrl),
+			SourceUrl:  r.SourceUrl,
+			TrustLevel: r.TrustLevel,
+		})
+	}
+
+	return result, nil
+}
+
+// MapSourcesByRecordIDs returns a map from record ID to source attribution.
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]DomainSourceAttribution, error) {
+	rows, err := s.ListSourcesByRecordIDs(ctx, tenantID, recordIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	m := make(map[string]DomainSourceAttribution, len(rows))
+	for _, r := range rows {
+		m[r.RecordID] = r
+	}
+
+	return m, nil
+}
+
+func maybeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
