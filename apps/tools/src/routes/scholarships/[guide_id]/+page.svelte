@@ -7,6 +7,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type { ScholarshipDetail, SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
 
 	/**
@@ -145,6 +146,10 @@
 		return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 	}
 </script>
+
+{#if !data.enabled}
+	<ToolDisabled tool={data.tool} />
+{:else}
 
 <svelte:head>
 	<title>{seo.title}</title>
@@ -362,3 +367,4 @@
 		/>
 	{/if}
 </div>
+{/if}

@@ -101,9 +101,9 @@ SELECT COUNT(*) FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
-  AND ($2::text IS NULL OR category = $2)
-  AND ($3::text IS NULL OR source_kind = $3)
-  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND ($2::text IS NULL OR $2 = '' OR category = $2)
+  AND ($3::text IS NULL OR $3 = '' OR source_kind = $3)
+  AND ($4::text IS NULL OR $4 = '' OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
 `
 
 type CountPublicSourcesParams struct {
@@ -960,7 +960,7 @@ SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, con
 WHERE tenant_id = $1
   AND source_id = $2
   AND status = 'published'
-  AND ($3::text IS NULL OR entity_type = $3)
+  AND ($3::text IS NULL OR $3 = '' OR entity_type = $3)
 ORDER BY extracted_at DESC
 LIMIT $4 OFFSET $5
 `
@@ -1378,9 +1378,9 @@ SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_m
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
-  AND ($2::text IS NULL OR category = $2)
-  AND ($3::text IS NULL OR source_kind = $3)
-  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND ($2::text IS NULL OR $2 = '' OR category = $2)
+  AND ($3::text IS NULL OR $3 = '' OR source_kind = $3)
+  AND ($4::text IS NULL OR $4 = '' OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
 ORDER BY follower_count DESC, name ASC
 LIMIT $5 OFFSET $6
 `
@@ -1464,9 +1464,9 @@ SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_m
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
-  AND ($2::text IS NULL OR category = $2)
-  AND ($3::text IS NULL OR source_kind = $3)
-  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND ($2::text IS NULL OR $2 = '' OR category = $2)
+  AND ($3::text IS NULL OR $3 = '' OR source_kind = $3)
+  AND ($4::text IS NULL OR $4 = '' OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
 ORDER BY created_at DESC, name ASC
 LIMIT $5 OFFSET $6
 `
@@ -1550,9 +1550,9 @@ SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_m
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
-  AND ($2::text IS NULL OR category = $2)
-  AND ($3::text IS NULL OR source_kind = $3)
-  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND ($2::text IS NULL OR $2 = '' OR category = $2)
+  AND ($3::text IS NULL OR $3 = '' OR source_kind = $3)
+  AND ($4::text IS NULL OR $4 = '' OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
   AND created_at > now() - interval '30 days'
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $5 OFFSET $6

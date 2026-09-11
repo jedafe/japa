@@ -1,6 +1,7 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 import { buildApiUrl } from '@japaconnect/api-url';
+import type { ListMeta } from '$lib/types';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.
@@ -20,6 +21,7 @@ import { buildApiUrl } from '@japaconnect/api-url';
 
 export interface ClientResult<T> {
 	data: T | null;
+	meta?: ListMeta;
 	error: { code: string; message: string; status: number } | null;
 	status: number;
 }
@@ -93,7 +95,7 @@ async function clientFetch<T>(path: string, init: RequestInit = {}): Promise<Cli
 		}
 
 		const ok = body as ApiOk<T>;
-		return { data: ok.data ?? (body as T), error: null, status: res.status };
+		return { data: ok.data ?? (body as T), meta: ok.meta as ListMeta | undefined, error: null, status: res.status };
 	} catch (err) {
 		return {
 			data: null,

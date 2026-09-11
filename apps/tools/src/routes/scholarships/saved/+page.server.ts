@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { SavedScholarship, CatalogOption } from '$lib/types';
 
 /**
@@ -17,6 +18,11 @@ import type { SavedScholarship, CatalogOption } from '$lib/types';
  * Ref: §73 (Scholarship Finder), ROADMAP-TOOLS 02.05.
  */
 export const load: PageServerLoad = async (event) => {
+	const tool = getTool('scholarships')!;
+	if (!isToolEnabled(tool, event.locals.features)) {
+		return { enabled: false, tool, saved: [], statusOptions: [], user: null };
+	}
+
 	if (!event.locals.user) {
 		throw redirect(302, '/scholarships');
 	}
@@ -25,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let saved: SavedScholarship[] = [];
 	try {
-		const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved');
+		const res = await apiList<SavedScholarship>(ctx, '/scholarships/saved?page_size=100');
 		saved = res.items;
 	} catch {
 		saved = [];
@@ -41,6 +47,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return {
+		enabled: true,
+		tool,
 		saved,
 		statusOptions,
 		user: event.locals.user

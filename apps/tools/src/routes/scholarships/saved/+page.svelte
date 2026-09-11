@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type { SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
 
 	/**
@@ -75,6 +76,10 @@
 		<meta name="robots" content="noindex" />
 	{/if}
 </svelte:head>
+
+{#if !data.enabled}
+	<ToolDisabled tool={data.tool} />
+{:else}
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	<div class="mb-8">
@@ -153,3 +158,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

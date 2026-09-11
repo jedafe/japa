@@ -69,6 +69,7 @@
 		if (filterDeadlineFrom) params.set('deadline_from', filterDeadlineFrom);
 		if (filterDeadlineTo) params.set('deadline_to', filterDeadlineTo);
 		if (filterQuery) params.set('q', filterQuery);
+		params.set('page_size', '100');
 		const qs = params.toString();
 		const res = await api.get<Scholarship[]>(`/scholarships${qs ? `?${qs}` : ''}`);
 		loading = false;
