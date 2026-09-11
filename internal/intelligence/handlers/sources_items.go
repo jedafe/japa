@@ -58,6 +58,8 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		tenantID = h.defaultTenant
 	}
 
+	userID, authed := optionalUser(w, r)
+
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
@@ -86,7 +88,103 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
-	records, err := h.intelStores.ListIntelRecordsBySource(r.Context(), tenantID, src.ID, entityType, clampInt32(limit), offset)
+	// If the caller has blocked this source, return an empty feed (v2 Task 2).
+	if authed && h.intelSources != nil {
+		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+		if err != nil {
+			slog.Error("intel: source items block check failed", "slug", slug, "error", err)
+		} else if blocked {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"data": sourceItemEnvelope{
+					Items:      []sourceItem{},
+					Meta:       sourceListMeta{PageSize: limit, PageOffset: int(offset), Total: 0},
+					Sort:       sortMode,
+					EntityType: entityType,
+				},
+			})
+			return
+		}
+	}
+
+	pageOffset := (page - 1) * limit
+
+	// v2 source directory: for the default "latest" sort, merge intel_records
+	// with linked video_sources and comparison contents so the source item feed
+	// is not limited to extracted content. The merge fetches (offset + limit)
+	// items from each source, then sorts and slices in memory. To keep the DB
+	// cost bounded, this mixed path is only used when the requested window fits
+	// inside max_page_size * mixed_fetch_page_multiplier.
+	if entityType == "" && sortMode == "latest" && h.canUseMixedFetch(r.Context(), pageOffset+limit) {
+		items, total, err := h.listMixedSourceItems(r.Context(), w, r, tenantID, src.ID, page, limit, pageOffset)
+		if err != nil {
+			return
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"data": sourceItemEnvelope{
+				Items:      items,
+				Meta:       sourceListMeta{PageSize: limit, PageOffset: pageOffset, Total: total},
+				Sort:       sortMode,
+				EntityType: entityType,
+			},
+		})
+		return
+	}
+
+	// v2 source directory: if the source is a linked video source, the item
+	// feed is served directly from video_sources for the "video" entity type.
+	if entityType == "video" && h.videos != nil {
+		videos, total, err := h.videos.ListBySourceID(r.Context(), tenantID, src.ID, clampInt32(limit), offset)
+		if err != nil {
+			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+			return
+		}
+
+		items := make([]sourceItem, 0, len(videos))
+		for _, v := range videos {
+			items = append(items, videoSourceToItem(v))
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"data": sourceItemEnvelope{
+				Items:      items,
+				Meta:       sourceListMeta{PageSize: limit, PageOffset: (page - 1) * limit, Total: total},
+				Sort:       sortMode,
+				EntityType: entityType,
+			},
+		})
+		return
+	}
+
+	// v2 source directory: if the source is a linked comparison data source,
+	// the item feed is served directly from contents for the "comparison"
+	// entity type.
+	if entityType == "comparison" && h.contents != nil {
+		comparisons, total, err := h.contents.ListComparisonContentsBySourceID(r.Context(), tenantID, src.ID, clampInt32(limit), offset)
+		if err != nil {
+			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+			return
+		}
+
+		items := make([]sourceItem, 0, len(comparisons))
+		for _, c := range comparisons {
+			items = append(items, comparisonContentToItem(c))
+		}
+
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"data": sourceItemEnvelope{
+				Items:      items,
+				Meta:       sourceListMeta{PageSize: limit, PageOffset: (page - 1) * limit, Total: total},
+				Sort:       sortMode,
+				EntityType: entityType,
+			},
+		})
+		return
+	}
+
+	records, err := h.intelStores.ListIntelRecordsBySource(r.Context(), tenantID, src.ID, entityType, sortMode, clampInt32(limit), offset)
 	if err != nil {
 		slog.Error("intel: source records list failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
@@ -111,8 +209,6 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 			items = append(items, item)
 		}
 	}
-
-	sortSourceItems(items, sortMode)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": sourceItemEnvelope{
@@ -299,6 +395,7 @@ func (h *Handlers) contentRecordToSourceItem(ctx context.Context, tenantID pgtyp
 		ViewCount:    content.ViewCount,
 		CommentCount: content.CommentCount,
 		ShareCount:   content.ShareCount,
+		VoteScore:    content.VoteScore,
 	}, true, nil
 }
 
@@ -353,6 +450,130 @@ func sortSourceItems(items []sourceItem, sortMode string) {
 		}
 		return a.PublishedAt.Valid
 	})
+}
+
+func (h *Handlers) canUseMixedFetch(ctx context.Context, needed int) bool {
+	maxSize := 100
+	if h.settings != nil {
+		maxSize = h.settings.GetIntOr(ctx, h.defaultTenant, "intel.radar.max_page_size", 100)
+	}
+	multiplier := 10
+	if h.settings != nil {
+		multiplier = h.settings.GetIntOr(ctx, h.defaultTenant, "intel.radar.mixed_fetch_page_multiplier", 10)
+	}
+	return needed <= maxSize*multiplier
+}
+
+func (h *Handlers) listMixedSourceItems(ctx context.Context, w http.ResponseWriter, r *http.Request, tenantID, sourceID pgtype.UUID, page, limit, pageOffset int) ([]sourceItem, int64, error) {
+	slug := chi.URLParam(r, "slug")
+
+	innerLimit := clampInt32(pageOffset + limit)
+	records, err := h.intelStores.ListIntelRecordsBySource(ctx, tenantID, sourceID, "", "latest", innerLimit, 0)
+	if err != nil {
+		slog.Error("intel: source records list failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+		return nil, 0, err
+	}
+
+	recordTotal, err := h.intelStores.CountIntelRecordsBySource(ctx, tenantID, sourceID, "")
+	if err != nil {
+		slog.Error("intel: source records count failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+		return nil, 0, err
+	}
+
+	items := make([]sourceItem, 0, len(records))
+	for _, rec := range records {
+		item, ok, convErr := h.recordToSourceItem(ctx, tenantID, rec)
+		if convErr != nil {
+			slog.Warn("intel: source item conversion failed", "record_id", rec.ID, "entity_type", rec.EntityType, "error", convErr)
+			continue
+		}
+		if ok {
+			items = append(items, item)
+		}
+	}
+
+	var videoTotal int64
+	if h.videos != nil {
+		videos, vTotal, err := h.videos.ListBySourceID(ctx, tenantID, sourceID, innerLimit, 0)
+		if err != nil {
+			slog.Error("intel: source video items list failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+			return nil, 0, err
+		}
+		videoTotal = vTotal
+		for _, v := range videos {
+			items = append(items, videoSourceToItem(v))
+		}
+	}
+
+	var comparisonTotal int64
+	if h.contents != nil {
+		comparisons, cTotal, err := h.contents.ListComparisonContentsBySourceID(ctx, tenantID, sourceID, innerLimit, 0)
+		if err != nil {
+			slog.Error("intel: source comparison items list failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+			return nil, 0, err
+		}
+		comparisonTotal = cTotal
+		for _, c := range comparisons {
+			items = append(items, comparisonContentToItem(c))
+		}
+	}
+
+	sortSourceItems(items, "latest")
+
+	start := pageOffset
+	if start > len(items) {
+		start = len(items)
+	}
+	end := start + limit
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[start:end], int64(recordTotal) + videoTotal + comparisonTotal, nil
+}
+
+func videoSourceToItem(v gen.VideoSource) sourceItem {
+	excerpt := ""
+	if v.Description != "" {
+		excerpt = v.Description
+	}
+
+	return sourceItem{
+		ID:          pgtypeUUIDString(v.ID),
+		EntityType:  "video",
+		Title:       v.Title,
+		Excerpt:     &excerpt,
+		OriginalURL: v.SourceUrl,
+		Href:        v.SourceUrl,
+		PublishedAt: v.CreatedAt,
+	}
+}
+
+func comparisonContentToItem(c gen.ListComparisonContentsBySourceIDRow) sourceItem {
+	excerpt := excerptFromBody(c.Body, 280)
+
+	publishedAt := c.PublishedAt
+	if !publishedAt.Valid || publishedAt.Time.IsZero() {
+		publishedAt = c.CreatedAt
+	}
+
+	return sourceItem{
+		ID:           pgtypeUUIDString(c.ID),
+		EntityType:   "comparison",
+		Title:        c.Title,
+		Excerpt:      &excerpt,
+		OriginalURL:  "",
+		Href:         "/comparisons/" + c.Slug,
+		PublishedAt:  publishedAt,
+		ViewCount:    c.ViewCount,
+		CommentCount: c.CommentCount,
+		ShareCount:   c.ShareCount,
+		VoteScore:    c.VoteScore,
+	}
 }
 
 // excerptFromBody returns a short plain-text excerpt from a markdown body,

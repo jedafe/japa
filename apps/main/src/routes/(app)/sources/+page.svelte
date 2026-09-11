@@ -5,7 +5,7 @@
 	import { Rss, Globe, Users, FileText } from 'lucide-svelte';
 	import { DirectoryCard, UrlTabs, type UrlTab, type CardMetaItem } from '$lib/components/ui';
 	import type { PageData } from './$types';
-	import type { Source } from '$lib/types/sources';
+	import type { Source, SourceCollection } from '$lib/types/sources';
 
 	let { data }: { data: PageData } = $props();
 
@@ -59,6 +59,38 @@
 		<h1 class="text-xl font-bold">{t('sources.heading', 'Sources')}</h1>
 		<p class="text-sm text-[var(--color-text-muted)]">{description}</p>
 	</div>
+
+	{#if data.collections && data.collections.length > 0}
+		<div class="flex flex-col gap-6">
+			{#each data.collections as collection (collection.slug)}
+				<div class="flex flex-col gap-2">
+					<div class="flex items-baseline justify-between">
+						<h2 class="text-lg font-semibold">{collection.name}</h2>
+					</div>
+					{#if collection.description}
+						<p class="text-sm text-[var(--color-text-muted)]">{collection.description}</p>
+					{/if}
+					<div class="flex gap-3 overflow-x-auto pb-2">
+						{#each collection.sources as source (source.slug)}
+							<div class="min-w-[260px]">
+								<DirectoryCard
+									href="/sources/{source.slug}"
+									title={source.name}
+									subtitle={source.domain}
+									description={source.description}
+									imageUrl={source.logo_url}
+									fallback={source.name.charAt(0).toUpperCase()}
+									icon={sourceIcon(source)}
+									meta={sourceMeta(source)}
+									hueSeed={source.slug}
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
 
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 		<form

@@ -135,6 +135,14 @@ export interface CatalogOption {
 	label: string;
 }
 
+/** Track marketplace category — GET /learn/university/categories. */
+export interface TrackCategory {
+	id: string;
+	slug: string;
+	name: string;
+	sort_order?: number;
+}
+
 /** Social / share platform — GET /share-platforms/enabled. */
 export interface SharePlatform {
 	key: string;
@@ -387,6 +395,7 @@ export interface TrackReview {
 	author_displayName?: string;
 	author_avatar_url?: string | null;
 	rating: number;
+	title?: string | null;
 	body?: string | null;
 	created_at: string;
 	updated_at?: string | null;

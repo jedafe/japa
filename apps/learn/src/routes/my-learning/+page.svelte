@@ -113,7 +113,7 @@
 					{t('learn.in_progress')}
 				</div>
 				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{inProgress.length}</p>
-				<p class="text-xs text-[var(--color-muted)]">{t('learn.lessons')}</p>
+				<p class="text-xs text-[var(--color-muted)]">{t('learn.courses')}</p>
 			</div>
 		</div>
 

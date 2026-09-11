@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Globe, ExternalLink, Users, FileText } from 'lucide-svelte';
 	import { FollowButton, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import SourceBlockButton from '$lib/components/source/SourceBlockButton.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -110,13 +111,14 @@
 			</div>
 
 			{#if page.data.user}
-				<div class="mt-3">
+				<div class="mt-3 flex flex-wrap items-center gap-2">
 					<FollowButton
 						entityType="source"
 						entityId={source.id}
 						entitySlug={source.slug}
 						initiallyFollowing={source.is_following ?? false}
 					/>
+					<SourceBlockButton slug={source.slug} initial={source.is_blocked ?? false} />
 				</div>
 			{:else}
 				<p class="mt-2 text-xs text-[var(--color-text-muted)]">

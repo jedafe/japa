@@ -888,6 +888,12 @@ SELECT is_synthetic
 FROM users
 WHERE tenant_id = @tenant_id AND id = @user_id;
 
+-- name: UpdateUserSourceID :exec
+-- Link a user to its canonical intel_sources row (v2 source directory).
+UPDATE users
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3;
+
 -- name: UpdateUserSyntheticToReal :exec
 -- Promote a synthetic channel user to a real user after a claim is approved.
 -- The user row is kept; only the synthetic flag and source marker are cleared.

@@ -2,12 +2,14 @@ package university
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/auth"
@@ -172,6 +174,13 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 
 	prof, err := h.service.GetMyProfile(r.Context(), tenantID, user.UserID)
 	if err != nil {
+		// A user with no instructor profile is not an error — it just means they
+		// have not applied yet. Return an empty 200 so the dashboard can render
+		// the "Become an Instructor" state without a 404 console log.
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
+			return
+		}
 		handleServiceError(w, err)
 		return
 	}

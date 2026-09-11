@@ -47,11 +47,17 @@ type radarItem struct {
 	// so the save button can seed its initial state. It is nil/omitted in
 	// list responses to avoid an N+1 saved-status check per item.
 	Saved *bool `json:"saved,omitempty"`
+
+	// Internal fields used for source-blocking (Task 2 v2). Not exposed in the
+	// JSON envelope.
+	IntelRecordID pgtype.UUID `json:"-"`
+	SourceID      string      `json:"-"`
 }
 
 func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 	return radarItem{
 		ID:                s.ID,
+		IntelRecordID:     s.IntelRecordID,
 		Type:              "scholarship",
 		Title:             s.Title,
 		Description:       s.Description,
@@ -72,6 +78,7 @@ func scholarshipToRadarItem(s gen.Scholarship) radarItem {
 func jobToRadarItem(j gen.IntelJob) radarItem {
 	return radarItem{
 		ID:                j.ID,
+		IntelRecordID:     j.IntelRecordID,
 		Type:              "job",
 		Title:             j.Title,
 		Description:       j.Description,
@@ -95,6 +102,7 @@ func visaRouteToRadarItem(v gen.VisaRoute) radarItem {
 
 	return radarItem{
 		ID:                v.ID,
+		IntelRecordID:     v.IntelRecordID,
 		Type:              "visa",
 		Title:             v.Name,
 		Description:       v.EligibilitySummary,
@@ -117,6 +125,7 @@ func housingGuideToRadarItem(h gen.HousingGuide) radarItem {
 
 	return radarItem{
 		ID:                h.ID,
+		IntelRecordID:     h.IntelRecordID,
 		Type:              "housing",
 		Title:             title,
 		Description:       h.Tips,
@@ -140,6 +149,7 @@ func remittanceRateToRadarItem(r gen.RemittanceRate) radarItem {
 
 	return radarItem{
 		ID:                r.ID,
+		IntelRecordID:     r.IntelRecordID,
 		Type:              "remittance",
 		Title:             title,
 		ConfidenceOverall: r.ConfidenceOverall,
@@ -155,6 +165,7 @@ func remittanceRateToRadarItem(r gen.RemittanceRate) radarItem {
 func comparisonItemToRadarItem(c gen.ComparisonItem) radarItem {
 	return radarItem{
 		ID:                c.ID,
+		IntelRecordID:     c.IntelRecordID,
 		Type:              "cost_of_living",
 		Title:             c.Title,
 		ConfidenceOverall: c.ConfidenceOverall,
@@ -243,6 +254,55 @@ func countByCountry(items []radarItem) map[string]int {
 	}
 
 	return counts
+}
+
+// filterBlockedRadarItems removes radar items whose source has been blocked by
+// the caller. It batch-loads source attribution from the intel_record links.
+func (h *Handlers) filterBlockedRadarItems(ctx context.Context, tenantID, userID pgtype.UUID, items []radarItem) ([]radarItem, error) {
+	if !userID.Valid || h.intelSources == nil || h.intelStores == nil {
+		return items, nil
+	}
+
+	blocked, err := h.intelSources.ListBlockedSourceIDs(ctx, tenantID, userID)
+	if err != nil || len(blocked) == 0 {
+		return items, err
+	}
+
+	blockedSet := make(map[string]struct{}, len(blocked))
+	for _, id := range blocked {
+		if id.Valid {
+			blockedSet[id.String()] = struct{}{}
+		}
+	}
+
+	recordIDs := make([]pgtype.UUID, 0, len(items))
+	for _, it := range items {
+		if it.IntelRecordID.Valid {
+			recordIDs = append(recordIDs, it.IntelRecordID)
+		}
+	}
+
+	if len(recordIDs) > 0 {
+		sourceMap, err := h.intelStores.MapSourcesByRecordIDs(ctx, tenantID, recordIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range items {
+			if attr, ok := sourceMap[items[i].IntelRecordID.String()]; ok {
+				items[i].SourceID = attr.SourceID
+			}
+		}
+	}
+
+	filtered := make([]radarItem, 0, len(items))
+	for _, it := range items {
+		if _, isBlocked := blockedSet[it.SourceID]; isBlocked {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+
+	return filtered, nil
 }
 
 // HandleRadarFeed returns the geo-scoped radar feed. The feed unions
@@ -334,6 +394,14 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	// Sort the merged items by created_at desc (stable sort to preserve
 	// domain insertion order for same-timestamp items).
 	sortRadarItems(items)
+
+	// Filter out items from sources the caller has blocked (v2 Task 2).
+	items, err = h.filterBlockedRadarItems(r.Context(), tenantID, userID, items)
+	if err != nil {
+		slog.Error("intel: radar feed block filter failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
+		return
+	}
 
 	// Trim to the page limit.
 	if len(items) > limit {

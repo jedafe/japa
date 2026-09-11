@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,10 +29,17 @@ const (
 	dataSourceViewPerm     = "jce.data_source.view"
 )
 
+// dataSourceRegistry is the small surface of intelligence/sources needed to
+// link comparison data sources to the canonical intel_sources registry.
+type dataSourceRegistry interface {
+	CreateAutoForComparison(ctx context.Context, tenantID, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (gen.IntelSource, error)
+}
+
 // dataSourceStore provides persistence for comparison_data_sources.
 type dataSourceStore struct {
-	read  *gen.Queries
-	write *gen.Queries
+	read           *gen.Queries
+	write          *gen.Queries
+	sourceRegistry dataSourceRegistry
 }
 
 // newDataSourceStore creates a dataSourceStore backed by the supplied database pools.
@@ -40,6 +48,10 @@ func newDataSourceStore(database *db.DB) *dataSourceStore {
 		read:  gen.New(database.Reader),
 		write: gen.New(database.Writer),
 	}
+}
+
+func (s *dataSourceStore) setSourceRegistry(r dataSourceRegistry) {
+	s.sourceRegistry = r
 }
 
 // dataSourceMapped holds the validated, DB-ready fields of a DataSourceInput.
@@ -55,15 +67,37 @@ type dataSourceMapped struct {
 }
 
 // create inserts a new data source and returns the populated domain model.
-func (s *dataSourceStore) create(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (s *dataSourceStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	params, err := dataSourceCreateParams(tenantID, in)
 	if err != nil {
 		return DataSource{}, err
 	}
 
+	if s.sourceRegistry != nil {
+		src, sErr := s.sourceRegistry.CreateAutoForComparison(ctx, tenantID, userID, &in.SourceName, in.SourceURL, int32(in.TrustLevel))
+		if sErr == nil {
+			params.SourceID = src.ID
+		} else {
+			slog.Warn("jce: failed to create canonical source for data source", "source_name", in.SourceName, "error", sErr)
+		}
+	}
+
 	row, err := s.write.CreateDataSource(ctx, params)
 	if err != nil {
 		return DataSource{}, fmt.Errorf("creating data source: %w", err)
+	}
+
+	// v2 source directory: when a data source is attached directly to a
+	// comparison content, back-fill the content's intel_source_id so the
+	// source's item feed can surface the comparison.
+	if row.SourceID.Valid && row.EntityID.Valid && row.EntityType != nil && *row.EntityType == "content" {
+		if err := s.write.UpdateContentIntelSourceID(ctx, gen.UpdateContentIntelSourceIDParams{
+			TenantID:      row.TenantID,
+			ID:            row.EntityID,
+			IntelSourceID: row.SourceID,
+		}); err != nil {
+			slog.Warn("jce: failed to back-fill content intel_source_id", "content_id", row.EntityID, "source_id", row.SourceID, "error", err)
+		}
 	}
 
 	return toDataSource(row)
@@ -478,7 +512,7 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 		return DataSource{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceManagePerm)
 	}
 
-	ds, err := s.dataSources.create(ctx, tenantID, in)
+	ds, err := s.dataSources.create(ctx, tenantID, userID, in)
 	if err != nil {
 		return DataSource{}, fmt.Errorf("creating data source: %w", err)
 	}

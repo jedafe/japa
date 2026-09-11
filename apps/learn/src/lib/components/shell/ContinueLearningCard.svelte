@@ -39,7 +39,7 @@
 {:else if continueItem}
 	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
-			{t('university.dashboard')}
+			{t('learn.continue_learning')}
 		</h2>
 		<a
 			href="/tracks/{continueItem.track_slug}"

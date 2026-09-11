@@ -85,12 +85,11 @@
 			<p class="text-xs text-[var(--color-text-subtle)]">
 				{#if track.instructor_id}
 					<span
-						role="link"
-						tabindex="0"
 						class="cursor-pointer hover:text-[var(--color-primary)] hover:underline"
 						onclick={(e) => { e.stopPropagation(); e.preventDefault(); goto(`/instructors/${track.instructor_id}`); }}
-						onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); goto(`/instructors/${track.instructor_id}`); } }}
+						aria-hidden="true"
 					>{track.instructor_name}</span>
+					<span class="sr-only">{t('learn.instructor')}: {track.instructor_name}</span>
 				{:else}
 					{track.instructor_name}
 				{/if}

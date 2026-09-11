@@ -38,7 +38,7 @@ let sessionRedirecting = false;
 // authenticated sessions (httpOnly:false, so it is readable here). Its
 // presence is a safe proxy for "has session" — guests never receive it, so a
 // 403 read carrying this cookie is a genuinely-forbidden authed request.
-function clientHasSession(): boolean {
+export function clientHasSession(): boolean {
 	if (typeof document === 'undefined') return false;
 	return document.cookie
 		.split(';')
@@ -55,7 +55,8 @@ function withCsrfHeader(method: string, headers: Record<string, string>): Record
 
 async function clientFetch<T>(
 	path: string,
-	init: RequestInit = {}
+	init: RequestInit = {},
+	extractData = true
 ): Promise<ClientResult<T>> {
 	const method = (init.method ?? 'GET').toString().toUpperCase();
 	const baseHeaders: Record<string, string> = {
@@ -136,8 +137,12 @@ async function clientFetch<T>(
 			};
 		}
 
+		const resultData = extractData
+			? (body as { data: T } | null)?.data ?? null
+			: (body as T | null) ?? null;
+
 		return {
-			data: (body as { data: T } | null)?.data ?? null,
+			data: resultData,
 			error: null,
 			status: res.status
 		};
@@ -157,6 +162,10 @@ async function clientFetch<T>(
 export const api = {
 	get: <T>(path: string, headers?: Record<string, string>) =>
 		clientFetch<T>(path, { method: 'GET', headers }),
+	// Raw body (no `data` envelope extraction) — for endpoints that return
+	// sibling top-level fields such as `aggregate` alongside `data`.
+	getBody: <T>(path: string, headers?: Record<string, string>) =>
+		clientFetch<T>(path, { method: 'GET', headers }, false),
 	post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
 		clientFetch<T>(path, {
 			method: 'POST',

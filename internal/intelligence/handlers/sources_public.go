@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
+	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -33,6 +35,7 @@ type publicSource struct {
 	PostCount     int32          `json:"post_count"`
 	LogoURL       *string        `json:"logo_url,omitempty"`
 	IsFollowing   bool           `json:"is_following"`
+	IsBlocked     bool           `json:"is_blocked"`
 	LinkedEntity  *linkedEntity  `json:"linked_entity,omitempty"`
 }
 
@@ -48,6 +51,124 @@ type sourceListMeta struct {
 	PageSize   int   `json:"page_size"`
 	PageOffset int   `json:"page_offset"`
 	Total      int64 `json:"total"`
+}
+
+type sourceCollection struct {
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	Description *string        `json:"description,omitempty"`
+	Sources     []publicSource `json:"sources"`
+}
+
+type collectionQuery struct {
+	Category      string `json:"category"`
+	SourceKind    string `json:"source_kind"`
+	Sort          string `json:"sort"`
+	Search        string `json:"q"`
+	CreatedAfter  string `json:"created_after"`
+}
+
+// HandleListSourceCollections returns the curated directory sections for the
+// current tenant. Manual collections read source_collection_items; query-based
+// collections execute stored filters against ListPublicSources.
+//
+// GET /api/v1/sources/collections
+func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	userID, authed := optionalUser(w, r)
+
+	rows, err := h.intelStores.ListSourceCollections(r.Context(), tenantID)
+	if err != nil {
+		slog.Error("intel: list source collections failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_collections_failed", "Failed to load source collections")
+		return
+	}
+
+	// Build blocked set for authenticated users (v2 Task 2).
+	blockedSet := make(map[string]struct{})
+	if authed && h.intelSources != nil {
+		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+		if err != nil {
+			slog.Error("intel: collections blocked ids failed", "error", err)
+		} else {
+			for _, id := range blockedIDs {
+				if id.Valid {
+					blockedSet[id.String()] = struct{}{}
+				}
+			}
+		}
+	}
+
+	collections := make([]sourceCollection, 0, len(rows))
+	for _, c := range rows {
+		var sources []gen.IntelSource
+
+		switch c.CollectionType {
+		case "manual":
+			items, err := h.intelStores.ListSourceCollectionItems(r.Context(), tenantID, c.ID)
+			if err != nil {
+				slog.Error("intel: list collection items failed", "collection_id", c.ID, "error", err)
+				continue
+			}
+			sources = items
+		case "query":
+			var q collectionQuery
+			if len(c.QueryJson) > 0 {
+				_ = json.Unmarshal(c.QueryJson, &q)
+			}
+			sort := q.Sort
+			if sort == "" {
+				sort = derefString(c.Sort)
+			}
+			if sort == "" {
+				sort = "popular"
+			}
+			queryItems, _, err := h.intelStores.ListPublicSources(r.Context(), tenantID, q.Category, q.SourceKind, q.Search, sort, int32(c.Limit), 0)
+			if err != nil {
+				slog.Error("intel: query collection sources failed", "collection_id", c.ID, "error", err)
+				continue
+			}
+			sources = queryItems
+		default:
+			continue
+		}
+
+		public := make([]publicSource, 0, len(sources))
+		for _, s := range sources {
+			if _, isBlocked := blockedSet[s.ID.String()]; isBlocked {
+				continue
+			}
+			isFollowing := false
+			if authed && h.followsSvc != nil {
+				isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, s.ID)
+			}
+			public = append(public, intelSourceToPublic(s, isFollowing, false, nil))
+		}
+
+		if len(public) == 0 && c.CollectionType == "manual" {
+			// Keep manual collections visible even when empty.
+			public = []publicSource{}
+		}
+
+		coll := sourceCollection{
+			Slug:        c.Slug,
+			Name:        c.Name,
+			Description: c.Description,
+			Sources:     public,
+		}
+		collections = append(collections, coll)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": collections})
 }
 
 // HandlePublicSourcesDirectory returns the public source directory.
@@ -85,13 +206,31 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 
 	userID, authed := optionalUser(w, r)
 
+	// Build a set of blocked sources for the authenticated caller (v2 Task 2).
+	blockedSet := make(map[string]struct{})
+	if authed && h.intelSources != nil {
+		blockedIDs, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+		if err != nil {
+			slog.Error("intel: public sources blocked ids failed", "error", err)
+		} else {
+			for _, id := range blockedIDs {
+				if id.Valid {
+					blockedSet[id.String()] = struct{}{}
+				}
+			}
+		}
+	}
+
 	entries := make([]publicSource, 0, len(rows))
 	for _, s := range rows {
+		if _, isBlocked := blockedSet[s.ID.String()]; isBlocked {
+			continue
+		}
 		isFollowing := false
 		if authed && h.followsSvc != nil {
 			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, s.ID)
 		}
-		entries = append(entries, intelSourceToPublic(s, isFollowing, nil))
+		entries = append(entries, intelSourceToPublic(s, isFollowing, false, nil))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -139,9 +278,12 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 
 	userID, authed := optionalUser(w, r)
 
-	var isFollowing bool
+	var isFollowing, isBlocked bool
 	if authed {
 		isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, row.ID)
+		if h.intelSources != nil {
+			isBlocked, _ = h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, row.ID)
+		}
 	}
 
 	linked := buildLinkedEntity(row)
@@ -160,6 +302,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		PostCount:     row.PostCount,
 		LogoURL:       row.LogoUrl,
 		IsFollowing:   isFollowing,
+		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
 	}
 
@@ -196,7 +339,7 @@ func buildLinkedEntity(row gen.GetIntelSourceBySlugWithLinkedEntityRow) *linkedE
 	return nil
 }
 
-func intelSourceToPublic(s gen.IntelSource, isFollowing bool, linked *linkedEntity) publicSource {
+func intelSourceToPublic(s gen.IntelSource, isFollowing, isBlocked bool, linked *linkedEntity) publicSource {
 	return publicSource{
 		ID:            pgtypeUUIDString(s.ID),
 		Slug:          derefString(s.Slug),
@@ -211,6 +354,7 @@ func intelSourceToPublic(s gen.IntelSource, isFollowing bool, linked *linkedEnti
 		PostCount:     s.PostCount,
 		LogoURL:       s.LogoUrl,
 		IsFollowing:   isFollowing,
+		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
 	}
 }
@@ -289,4 +433,223 @@ func pgtypeUUIDString(id pgtype.UUID) string {
 		return ""
 	}
 	return id.String()
+}
+
+type proposeSourceRequest struct {
+	Name        string  `json:"name"`
+	Domain      string  `json:"domain"`
+	SourceURL   string  `json:"source_url"`
+	Category    string  `json:"category"`
+	SourceType  string  `json:"source_type"`
+	Description *string `json:"description"`
+}
+
+// HandleGetSourcesMeta returns the public source form metadata: allowed
+// categories and source types. The values are the v2 directory catalog and are
+// intentionally exposed so the frontend proposal form can render selects without
+// hardcoding options (Rule 16).
+//
+// GET /api/v1/sources/meta
+func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"categories": []string{
+				"scholarship", "job", "visa", "remittance", "news",
+				"cost_of_living", "university", "video", "organization", "people",
+			},
+			"source_types": []string{"rss", "youtube", "api", "static"},
+		},
+	})
+}
+
+// HandleProposeSource accepts a public source proposal from an authenticated user.
+//
+// POST /api/v1/sources/propose
+func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	var req proposeSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	src, err := h.intelSources.Propose(r.Context(), tenantID, userID, sources.ProposeInput{
+		Name:        req.Name,
+		Domain:      req.Domain,
+		SourceURL:   req.SourceURL,
+		Category:    req.Category,
+		SourceType:  req.SourceType,
+		Description: req.Description,
+	})
+	if err != nil {
+		slog.Error("intel: propose source failed", "error", err)
+
+		switch {
+		case errors.Is(err, errpkg.ErrRequired):
+			errpkg.WriteError(w, http.StatusBadRequest, "missing_required", "Name and source_url are required")
+		case errors.Is(err, errpkg.ErrInvalid):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_source_url", "source_url must be a valid http/https URL")
+		case errors.Is(err, errpkg.ErrAlreadyExists), errors.Is(err, errpkg.ErrDuplicate):
+			errpkg.WriteError(w, http.StatusConflict, "duplicate_source", "A source with this URL already exists")
+		default:
+			errpkg.WriteError(w, http.StatusInternalServerError, "propose_source_failed", "Failed to propose source")
+		}
+		return
+	}
+
+	slug := derefString(src.Slug)
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"data": map[string]interface{}{
+			"id":               pgtypeUUIDString(src.ID),
+			"slug":             slug,
+			"name":             src.Name,
+			"status":           src.Status,
+			"admin_review_url": "/admin/sources/proposed", // surfaced for UI navigation
+		},
+	})
+}
+
+type blockedSource struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+// HandleListBlockedSources returns the sources the current user has blocked.
+//
+// GET /api/v1/me/blocked-sources
+func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	ids, err := h.intelSources.ListBlockedSourceIDs(r.Context(), tenantID, userID)
+	if err != nil {
+		slog.Error("intel: list blocked sources failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_blocked_sources_failed", "Failed to load blocked sources")
+		return
+	}
+
+	sources := make([]blockedSource, 0, len(ids))
+	for _, id := range ids {
+		src, err := h.intelSources.Get(r.Context(), tenantID, id)
+		if err != nil {
+			continue
+		}
+		sources = append(sources, blockedSource{
+			ID:   pgtypeUUIDString(src.ID),
+			Slug: derefString(src.Slug),
+			Name: src.Name,
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": sources})
+}
+
+// HandleToggleSourceBlock toggles a user's block on a source.
+// POST blocks, DELETE unblocks. Returns the new block state.
+//
+// POST /api/v1/sources/{slug}/block
+// DELETE /api/v1/sources/{slug}/block
+func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil || h.intelStores == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source blocking is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
+		return
+	}
+
+	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: source block lookup failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_block_lookup_failed", "Failed to load source")
+		return
+	}
+
+	// POST blocks; DELETE unblocks. For other methods, default to the method.
+	var wantBlock bool
+	switch r.Method {
+	case http.MethodPost:
+		wantBlock = true
+	case http.MethodDelete:
+		wantBlock = false
+	default:
+		// Should not happen with chi routing; treat as toggle.
+		blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+		if err != nil {
+			slog.Error("intel: source block state failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
+			return
+		}
+		wantBlock = !blocked
+	}
+
+	// Toggle the service to the desired state.
+	blocked, err := h.intelSources.IsSourceBlocked(r.Context(), tenantID, userID, src.ID)
+	if err != nil {
+		slog.Error("intel: source block state failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_block_state_failed", "Failed to check block state")
+		return
+	}
+
+	isBlocked := blocked
+	if blocked != wantBlock {
+		isBlocked, err = h.intelSources.ToggleSourceBlock(r.Context(), tenantID, userID, src.ID)
+		if err != nil {
+			slog.Error("intel: source block toggle failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "source_block_toggle_failed", "Failed to toggle block")
+			return
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"is_blocked": isBlocked,
+		},
+	})
 }

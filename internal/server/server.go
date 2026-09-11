@@ -2009,6 +2009,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
 	agentDeps.IntelSourceManager = intelSourcesService
+	jceService.SetSourceRegistry(intelSourcesService)
+	orgService.SetSourceManager(intelSourcesService)
+	spaceService.SetSourceManager(intelSourcesService)
+	spaceService.SetSiteURL(cfg.SiteURL)
+	spaceService.SetSettings(settingsService)
+	authHandlers.SetSourceManager(intelSourcesService)
+	oauthHandlers.SetSourceManager(intelSourcesService)
 	intelScheduler := scheduler.NewScheduler(&intelSchedulerSourceAdapter{store: intelSourcesStore, tenantID: defaultTenantID}, vkClient.Redis(), defaultTenantID)
 	intelDedupService := dedup.NewService(intelStores, defaultTenantID)
 	intelEventPublisher := events.NewAsynqEventPublisher(asynqClient)
@@ -2246,11 +2253,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tiktokProvider := video.NewTikTokProvider()
 	instagramProvider := video.NewInstagramProvider()
 	videoService := video.NewService(videoStore, usersService, mediaService, video.NewResolver(ytProvider, vimeoProvider, tiktokProvider, instagramProvider))
+	videoService.SetSourceRegistry(intelSourcesService)
 	videoService.SetEnqueuer(taskEnqueuer)
 	videoService.SetSettings(settingsService)
 	videoService.SetContentService(contentService)
 	videoService.SetYouTubeProvider(ytProvider)
 	videoService.SetDispatcher(aiDispatcher)
+	intelHandlers.SetVideoStore(videoStore)
+	intelHandlers.SetContentStore(contentService)
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
 	videoHandlers := video.NewHandlers(videoService)
@@ -6324,9 +6334,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources", intelHandlers.HandlePublicSourcesDirectory)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sources/collections", intelHandlers.HandleListSourceCollections)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+				Get("/sources/meta", intelHandlers.HandleGetSourcesMeta)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/{slug}", intelHandlers.HandleGetSource)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/sources/propose", intelHandlers.HandleProposeSource)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Delete("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/me/blocked-sources", intelHandlers.HandleListBlockedSources)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).
 				Post("/sources/{slug}/follow", intelHandlers.HandleToggleSourceFollow)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).

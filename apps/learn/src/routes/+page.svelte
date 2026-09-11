@@ -2,36 +2,51 @@
 	// Course Catalog — SSR track grid + CSR enrollment state.
 	// Ref: ADR-060 (Explore is the center column), ADR-060 SSR/CSR boundary.
 	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { Compass, GraduationCap, ArrowRight } from 'lucide-svelte';
+	import { Compass, GraduationCap, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
-	import type { Enrollment } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
-	// CSR ONLY — fetch the user's enrollments to drive TrackCard action state.
-	// Never in +page.server.ts (ADR-060 SSR/CSR boundary).
-	let enrollments = $state<Enrollment[]>([]);
-	let loadingEnrollments = $state(true);
-
+	// CSR ONLY — use the shared enrollment store so TrackCard action state stays
+	// in sync with sidebar widgets and avoids duplicate /me/enrollments calls.
 	$effect(() => {
-		if (!data.user) {
-			loadingEnrollments = false;
-			return;
+		if (data.user) {
+			enrollmentsStore.fetch();
 		}
-		(async () => {
-			const r = await api.get<Enrollment[]>('/me/enrollments');
-			loadingEnrollments = false;
-			if (r.data) enrollments = r.data;
-		})();
 	});
+
+	const enrollments = $derived(enrollmentsStore.enrollments ?? []);
+	const loadingEnrollments = $derived(enrollmentsStore.loading && enrollments.length === 0);
 
 	// Build a lookup map for the TrackCard action state.
 	const enrollmentMap = $derived(
 		new Map(enrollments.map((e) => [e.track_id, e]))
 	);
+
+	// Build a query string that preserves the current active filters, so users
+	// can combine level, category, and free filters plus pagination.
+	function buildHref(partial: Record<string, string | number | boolean> = {}) {
+		const qs = new URLSearchParams();
+		if (data.query) qs.set('q', data.query);
+		if (data.levelFilter) qs.set('level', data.levelFilter);
+		if (data.categoryFilter) qs.set('category', data.categoryFilter);
+		if (data.isFreeFilter) qs.set('is_free', 'true');
+		if (data.offset) qs.set('offset', String(data.offset));
+
+		for (const [key, value] of Object.entries(partial)) {
+			if (value === false) qs.delete(key);
+			else qs.set(key, String(value));
+		}
+
+		const s = qs.toString();
+		return s ? `/?${s}` : '/';
+	}
+
+	const canGoPrev = $derived(data.offset > 0);
+	const canGoNext = $derived(data.offset + data.tracks.length < data.total);
 </script>
 
 <svelte:head>
@@ -50,14 +65,18 @@
 		{#if data.query}
 			<p class="mt-1 text-sm text-[var(--color-muted)]">
 				{t('learn.results_for_query', '{count} results for "{query}"')
-					.replace('{count}', String(data.tracks.length))
+					.replace('{count}', String(data.total))
 					.replace('{query}', data.query)}
+			</p>
+		{:else if data.total > 0}
+			<p class="mt-1 text-sm text-[var(--color-muted)]">
+				{t('learn.course_count', '{count} courses').replace('{count}', String(data.total))}
 			</p>
 		{/if}
 	</header>
 
 	<!-- Become an Instructor CTA -->
-	{#if !data.query && !data.levelFilter}
+	{#if !data.query && !data.levelFilter && !data.categoryFilter && !data.isFreeFilter}
 		<div class="mb-6 flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-4">
 			<div class="flex items-center gap-3">
 				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10">
@@ -78,22 +97,47 @@
 		</div>
 	{/if}
 
-	<!-- Level filter -->
-	<div class="mb-6 flex flex-wrap gap-2">
+	<!-- Filters: level, category, free -->
+	<div class="mb-6 flex flex-wrap items-center gap-2">
 		<a
-			href="/"
+			href={buildHref({ level: false })}
 			class="rounded-full px-3 py-1 text-sm {!data.levelFilter ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 		>
-			{t('learn.overview')}
+			{t('learn.all_levels')}
 		</a>
 		{#each data.difficultyLevels as opt (opt.value)}
 			<a
-				href="/?level={opt.value}"
+				href={buildHref({ level: opt.value, offset: false })}
 				class="rounded-full px-3 py-1 text-sm {data.levelFilter === opt.value ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
 			>
 				{t(`level.${opt.value}`)}
 			</a>
 		{/each}
+
+		{#if data.categories.length > 0}
+			<span class="mx-1 hidden h-5 w-px bg-[var(--color-border)] md:block"></span>
+			<a
+				href={buildHref({ category: false, offset: false })}
+				class="rounded-full px-3 py-1 text-sm {!data.categoryFilter ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+			>
+				{t('learn.all_categories')}
+			</a>
+			{#each data.categories as cat (cat.slug)}
+				<a
+					href={buildHref({ category: cat.slug, offset: false })}
+					class="rounded-full px-3 py-1 text-sm {data.categoryFilter === cat.slug ? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+				>
+					{cat.name}
+				</a>
+			{/each}
+		{/if}
+
+		<a
+			href={buildHref({ is_free: !data.isFreeFilter, offset: false })}
+			class="ml-auto rounded-full px-3 py-1 text-sm {data.isFreeFilter ? 'bg-[var(--level-beginner)] text-[var(--level-beginner-contrast)]' : 'border border-[var(--color-border)] text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+		>
+			{t(data.isFreeFilter ? 'learn.free_only' : 'learn.show_free_only')}
+		</a>
 	</div>
 
 	<!-- Catalog grid -->
@@ -105,7 +149,7 @@
 				: t('learn.no_courses_yet', 'No courses published yet.')}
 		>
 			{#snippet action()}
-				{#if data.query || data.levelFilter}
+				{#if data.query || data.levelFilter || data.categoryFilter || data.isFreeFilter}
 					<a
 						href="/"
 						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
@@ -138,5 +182,30 @@
 				{/if}
 			{/each}
 		</div>
+
+		<!-- Pagination -->
+		{#if data.total > data.limit}
+			<div class="mt-8 flex items-center justify-between">
+				<a
+					href={buildHref({ offset: Math.max(0, data.offset - data.limit) })}
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {canGoPrev ? '' : 'pointer-events-none opacity-40'}"
+					aria-disabled={!canGoPrev}
+				>
+					<ChevronLeft size={16} />
+					{t('common.previous')}
+				</a>
+				<span class="text-sm text-[var(--color-muted)]">
+					{data.offset + 1} – {Math.min(data.offset + data.tracks.length, data.total)} of {data.total}
+				</span>
+				<a
+					href={buildHref({ offset: data.offset + data.limit })}
+					class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {canGoNext ? '' : 'pointer-events-none opacity-40'}"
+					aria-disabled={!canGoNext}
+				>
+					{t('common.next')}
+					<ChevronRight size={16} />
+				</a>
+			</div>
+		{/if}
 	{/if}
 </div>

@@ -606,6 +606,7 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 		zeroTime,                 // created_at
 		zeroTime,                 // updated_at
 		nullStr,                  // author_name
+		nullStr,                  // author_username
 		nullStr,                  // author_display_name
 		nullStr,                  // author_avatar_url
 		nullStr,                  // space_name

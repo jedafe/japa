@@ -17,22 +17,60 @@
 	let earnings = $state<EarningsSummary | null>(null);
 	let payouts = $state<Payout[]>([]);
 	let loading = $state(true);
+	let error = $state<string | null>(null);
 	let submittingTrackId = $state<string | null>(null);
+	let submitError = $state<string | null>(null);
+	let initialized = $state(false);
 
-	$effect(() => {
-		(async () => {
-			const [profileR, tracksR, earningsR, payoutsR] = await Promise.all([
-				api.get<InstructorProfile>('/learn/university/instructor/me'),
+	async function loadDashboard() {
+		// Avoid duplicate fetches when the data prop updates after hydration.
+		if (initialized) return;
+		initialized = true;
+
+		loading = true;
+		error = null;
+
+		// Resolve the instructor profile first. A 404 means the user has not
+		// applied or been approved yet — that is not an error, it just drives
+		// the empty-state path. Any other error is genuine.
+		const profileR = await api.get<InstructorProfile>('/learn/university/instructor/me');
+		if (profileR.error && profileR.error.status !== 404) {
+			error = profileR.error.message;
+			loading = false;
+			return;
+		}
+		if (!profileR.data) {
+			loading = false;
+			return;
+		}
+		profile = profileR.data;
+
+		// Only fetch creator-scoped data once we know an approved profile exists.
+		try {
+			const [tracksR, earningsR, payoutsR] = await Promise.all([
 				api.get<InstructorTrack[]>('/learn/university/my/tracks'),
 				api.get<EarningsSummary>('/learn/university/my/earnings'),
 				api.get<Payout[]>('/learn/university/my/payouts')
 			]);
-			loading = false;
-			if (profileR.data) profile = profileR.data;
 			if (tracksR.data) tracks = tracksR.data;
 			if (earningsR.data) earnings = earningsR.data;
 			if (payoutsR.data) payouts = payoutsR.data;
-		})();
+
+			const errs: string[] = [
+				tracksR.error?.message,
+				earningsR.error?.message,
+				payoutsR.error?.message
+			].filter((m): m is string => !!m);
+			if (errs.length) error = errs.join('; ');
+		} catch (e) {
+			error = e instanceof Error ? e.message : t('common.error');
+		} finally {
+			loading = false;
+		}
+	}
+
+	$effect(() => {
+		loadDashboard();
 	});
 
 	// Revenue chart data (dates → Date for LayerChart).
@@ -60,9 +98,19 @@
 	async function submitTrack(id: string) {
 		if (submittingTrackId) return;
 		submittingTrackId = id;
-		await api.post(`/learn/university/my/tracks/${id}/submit`);
-		submittingTrackId = null;
-		goto('/dashboard/instructor');
+		submitError = null;
+		try {
+			const r = await api.post(`/learn/university/my/tracks/${id}/submit`);
+			if (r.error) {
+				submitError = r.error.message;
+				return;
+			}
+			goto('/dashboard/instructor');
+		} catch (e) {
+			submitError = e instanceof Error ? e.message : t('common.error');
+		} finally {
+			submittingTrackId = null;
+		}
 	}
 
 	function submissionStatusColor(status: string): string {
@@ -101,6 +149,21 @@
 				</div>
 			{/each}
 		</div>
+	{:else if error}
+		<EmptyState
+			title={t('common.error')}
+			description={error}
+		>
+			{#snippet action()}
+				<button
+					type="button"
+					onclick={loadDashboard}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+			{/snippet}
+		</EmptyState>
 	{:else if profile?.status === 'pending'}
 		<EmptyState
 			title={t('university.application_pending')}
@@ -177,6 +240,12 @@
 					/>
 				</div>
 			</section>
+		{/if}
+
+		{#if submitError}
+			<p class="mb-3 rounded-[var(--radius)] border border-[var(--color-destructive)]/20 bg-[var(--color-destructive)]/10 p-3 text-sm text-[var(--color-destructive)]">
+				{submitError}
+			</p>
 		{/if}
 
 		<!-- My tracks -->

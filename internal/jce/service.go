@@ -127,6 +127,7 @@ type Service struct {
 	ingestion       *ingestionStore
 	engine          ScoringEngine
 	defaultTenantID pgtype.UUID
+	sources         dataSourceRegistry
 }
 
 // NewService creates a JCE service backed by the given dependencies. The
@@ -176,6 +177,13 @@ func (s *Service) SetEnqueuer(e taskEnqueuer) {
 // The service does not own it.
 func (s *Service) SetAIDispatcher(d aiDispatcher) {
 	s.dispatcher = d
+}
+
+// SetSourceRegistry links JCE data sources to the canonical intel_sources
+// registry (v2 source directory).
+func (s *Service) SetSourceRegistry(r dataSourceRegistry) {
+	s.sources = r
+	s.dataSources.setSourceRegistry(r)
 }
 
 // SetDefaultTenant injects the platform default tenant ID. This is used by

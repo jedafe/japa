@@ -80,18 +80,24 @@ type ContentCreator interface {
 	CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 }
 
+// SourceRegistry links a video source to the canonical intel_sources registry.
+type SourceRegistry interface {
+	CreateAutoForVideo(ctx context.Context, tenantID, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (gen.IntelSource, error)
+}
+
 // Service coordinates video URL resolution, synthetic channel creation,
 // thumbnail storage, and source persistence.
 type Service struct {
-	store       *Store
-	resolver    Resolver
-	userManager UserManager
-	media       MediaManager
-	enqueuer    TaskEnqueuer
-	settings    settingsReader
-	content     ContentCreator
-	dispatcher  AIDispatcher
-	ytProvider  *YouTubeProvider
+	store        *Store
+	resolver     Resolver
+	userManager  UserManager
+	media        MediaManager
+	enqueuer     TaskEnqueuer
+	settings     settingsReader
+	content      ContentCreator
+	dispatcher   AIDispatcher
+	ytProvider   *YouTubeProvider
+	sources      SourceRegistry
 }
 
 // NewService returns a video Service.
@@ -113,6 +119,9 @@ func (s *Service) SetSettings(r settingsReader) { s.settings = r }
 // SetContentService injects the content creator used to publish imported
 // videos as content_type='video' rows.
 func (s *Service) SetContentService(c ContentCreator) { s.content = c }
+
+// SetSourceRegistry links the video service to the canonical source registry.
+func (s *Service) SetSourceRegistry(sr SourceRegistry) { s.sources = sr }
 
 // SetDispatcher injects the AI Gateway dispatcher used to generate video
 // draft summaries.
@@ -252,6 +261,16 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 
 	description := metadata.Description
 
+	var intelSourceID pgtype.UUID
+	if s.sources != nil {
+		src, sErr := s.sources.CreateAutoForVideo(ctx, tenantID, authorID, &metadata.Title, &metadata.SourceURL, thumbnailURL)
+		if sErr != nil {
+			slog.Warn("video: failed to register canonical source", "source_url", metadata.SourceURL, "error", sErr)
+		} else {
+			intelSourceID = src.ID
+		}
+	}
+
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
 		TenantID:         tenantID,
 		AuthorUserID:     authorID,
@@ -265,6 +284,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 		ThumbnailMediaID: thumbnailMediaID,
 		DurationSecs:     durationSecs,
 		FieldValues:      fieldValues,
+		SourceID:         intelSourceID,
 	})
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing video source: %w", err)
@@ -303,6 +323,16 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 		title = filename
 	}
 
+	var intelSourceID pgtype.UUID
+	if s.sources != nil {
+		src, sErr := s.sources.CreateAutoForVideo(ctx, tenantID, uploaderID, &title, &sourceURL, nil)
+		if sErr != nil {
+			slog.Warn("video: failed to register canonical source for upload", "source_url", sourceURL, "error", sErr)
+		} else {
+			intelSourceID = src.ID
+		}
+	}
+
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
 		TenantID:         tenantID,
 		AuthorUserID:     uploaderID,
@@ -312,6 +342,7 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 		Description:      description,
 		ThumbnailMediaID: mediaID,
 		FieldValues:      []byte("{}"),
+		SourceID:         intelSourceID,
 	})
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing video source: %w", err)

@@ -979,6 +979,9 @@ type UpdateContentInput struct {
 	VisaRoute     *string
 	SourceCountry *string
 	TargetCountry *string
+	// Source provenance for promoted/ingested content (v1 sources directory).
+	IntelSourceID pgtype.UUID
+	IntelRecordID pgtype.UUID
 }
 
 // inferJourneyMetadataForUpdate fills in source/target country for an existing
@@ -1220,6 +1223,8 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		VisaRoute:       input.VisaRoute,
 		SourceCountry:   input.SourceCountry,
 		TargetCountry:   input.TargetCountry,
+		IntelSourceID:   input.IntelSourceID,
+		IntelRecordID:   input.IntelRecordID,
 		ID:              id,
 		TenantID:        tenantID,
 	})

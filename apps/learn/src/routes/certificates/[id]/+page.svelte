@@ -14,16 +14,21 @@
 	async function downloadCertificate() {
 		downloading = true;
 		downloadError = '';
-		const r = await api.get<{ download_url?: string; message?: string }>(`/certificates/${cert.id}/download`);
-		downloading = false;
-		if (r.error) {
-			downloadError = r.error.message;
-			return;
-		}
-		if (r.data?.download_url) {
-			window.open(r.data.download_url, '_blank');
-		} else if (r.data?.message) {
-			downloadError = r.data.message;
+		try {
+			const r = await api.get<{ download_url?: string; message?: string }>(`/certificates/${cert.id}/download`);
+			if (r.error) {
+				downloadError = r.error.message;
+				return;
+			}
+			if (r.data?.download_url) {
+				window.open(r.data.download_url, '_blank');
+			} else if (r.data?.message) {
+				downloadError = r.data.message;
+			}
+		} catch (e) {
+			downloadError = e instanceof Error ? e.message : t('common.error');
+		} finally {
+			downloading = false;
 		}
 	}
 </script>

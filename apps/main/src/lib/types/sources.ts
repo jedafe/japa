@@ -24,6 +24,7 @@ export interface Source {
 	follower_count: number;
 	post_count: number;
 	is_following?: boolean;
+	is_blocked?: boolean;
 	linked_entity?: LinkedEntity | null;
 }
 
@@ -46,4 +47,16 @@ export interface SourceItemEnvelope {
 	meta: { page_size?: number; page_offset?: number; total?: number };
 	sort: string;
 	entity_type: string;
+}
+
+export interface SourceMeta {
+	categories: string[];
+	source_types: string[];
+}
+
+export interface SourceCollection {
+	slug: string;
+	name: string;
+	description?: string | null;
+	sources: Source[];
 }

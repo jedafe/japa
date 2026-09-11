@@ -9,7 +9,6 @@
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { MediaAsset, FeedItem } from '$lib/types';
 	import type { SearchResult } from '$lib/types/search';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
@@ -17,8 +16,6 @@
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
-
-	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	// Map ContentArticle → FeedItem so tagged posts render through FeedCard.
 	function toFeedItem(post: typeof data.items[number]): FeedItem {
@@ -67,7 +64,6 @@
 
 	const allItems = $derived([...data.items, ...extraItems]);
 	const allFeedItems = $derived(allItems.map(toFeedItem));
-	const allGridLayout = $derived(gridMode(allFeedItems.map((i) => i.content_type), config));
 
 	async function loadMore() {
 		if (!nextCursor || loadingMore) return;
@@ -556,19 +552,11 @@
 			{:else if allItems.length === 0}
 				<EmptyState icon={Hash} title={t('tag.empty', 'No content with this tag yet.')} />
 			{:else}
-				{#if allGridLayout}
-					<div class="grid gap-3.5 sm:grid-cols-2">
-						{#each allFeedItems as item (item.id)}
-							<FeedCard {item} style="daily" layout="grid-cell" />
-						{/each}
-					</div>
-				{:else}
-					<div class="flex flex-col gap-3">
-						{#each allFeedItems as item (item.id)}
-							<FeedCard {item} style="daily" layout="stream" />
-						{/each}
-					</div>
-				{/if}
+				<div class="flex flex-col gap-3">
+					{#each allFeedItems as item (item.id)}
+						<FeedCard {item} style="daily" layout="stream" />
+					{/each}
+				</div>
 
 				{#if nextCursor}
 					<div class="mt-6 flex justify-center">

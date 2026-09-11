@@ -1202,14 +1202,16 @@ func (s *Store) ListPublicSources(ctx context.Context, tenantID pgtype.UUID, cat
 }
 
 // ListIntelRecordsBySource returns published intel records for a source,
-// optionally filtered by entity_type.
-func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType string, limit, offset int32) ([]gen.IntelRecord, error) {
+// optionally filtered by entity_type and sorted at the DB level. Valid sort
+// values are: latest, popular, discussed, upvoted.
+func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType, sort string, limit, offset int32) ([]gen.IntelRecord, error) {
 	rows, err := s.queries.ListIntelRecordsBySource(ctx, gen.ListIntelRecordsBySourceParams{
 		TenantID: tenantID,
 		SourceID: sourceID,
 		Column3:  entityType,
 		Limit:    limit,
 		Offset:   offset,
+		Column6:  sort,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stores: list intel records by source: %w", err)
@@ -1310,4 +1312,71 @@ func maybeString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// ListSourceCollections returns tenant collections ordered by slug.
+func (s *Store) ListSourceCollections(ctx context.Context, tenantID pgtype.UUID) ([]gen.SourceCollection, error) {
+	rows, err := s.queries.ListSourceCollections(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("stores: list source collections: %w", err)
+	}
+	return rows, nil
+}
+
+// ListSourceCollectionItems returns the sources in a manual collection, ordered
+// by position. It returns the full intel_sources rows so the handler can reuse
+// the public-source mapping.
+func (s *Store) ListSourceCollectionItems(ctx context.Context, tenantID, collectionID pgtype.UUID) ([]gen.IntelSource, error) {
+	rows, err := s.queries.ListSourceCollectionItems(ctx, gen.ListSourceCollectionItemsParams{
+		TenantID:     tenantID,
+		CollectionID: collectionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stores: list source collection items: %w", err)
+	}
+
+	sources := make([]gen.IntelSource, 0, len(rows))
+	for _, r := range rows {
+		sources = append(sources, gen.IntelSource{
+			ID:                  r.ID,
+			Name:                r.Name,
+			Domain:              r.Domain,
+			SourceUrl:           r.SourceUrl,
+			Category:            r.Category,
+			SourceType:          r.SourceType,
+			TrustLevel:          r.TrustLevel,
+			CrawlMethod:         r.CrawlMethod,
+			CrawlFrequency:      r.CrawlFrequency,
+			CrawlFrequencyMins:  r.CrawlFrequencyMins,
+			RobotsPolicy:        r.RobotsPolicy,
+			SourceLicense:       r.SourceLicense,
+			AttributionRequired: r.AttributionRequired,
+			UsageRestriction:    r.UsageRestriction,
+			ProviderConfig:      r.ProviderConfig,
+			Enabled:             r.Enabled,
+			LastCrawledAt:       r.LastCrawledAt,
+			LastSuccessAt:       r.LastSuccessAt,
+			LastErrorAt:         r.LastErrorAt,
+			LastErrorMessage:    r.LastErrorMessage,
+			LastChangedAt:       r.LastChangedAt,
+			ConsecutiveFailures: r.ConsecutiveFailures,
+			CreatedAt:           r.CreatedAt,
+			UpdatedAt:           r.UpdatedAt,
+			TenantID:            r.TenantID,
+			PersonaID:           r.PersonaID,
+			Status:              r.Status,
+			ProposedBy:          r.ProposedBy,
+			ProposedAt:          r.ProposedAt,
+			ApprovedBy:          r.ApprovedBy,
+			ApprovedAt:          r.ApprovedAt,
+			Slug:                r.Slug,
+			Description:         r.Description,
+			LogoUrl:             r.LogoUrl,
+			FollowerCount:       r.FollowerCount,
+			PostCount:           r.PostCount,
+			SourceKind:          r.SourceKind,
+		})
+	}
+
+	return sources, nil
 }
