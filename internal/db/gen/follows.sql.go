@@ -280,6 +280,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
         WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
         WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
@@ -287,6 +288,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
         WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
         WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_slug,
     COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_display_name,
@@ -360,6 +362,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
         WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
         WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_name,
     CASE f.entity_type
@@ -367,6 +370,7 @@ SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_a
         WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
         WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
         WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
+        WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
         ELSE ''
     END AS entity_slug,
     COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_display_name,

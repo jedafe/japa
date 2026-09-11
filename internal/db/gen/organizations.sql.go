@@ -174,7 +174,7 @@ func (q *Queries) CountPublicOrganizations(ctx context.Context, arg CountPublicO
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (tenant_id, owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id
 `
 
 type CreateOrganizationParams struct {
@@ -227,6 +227,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.SourceID,
 	)
 	return i, err
 }
@@ -404,7 +405,7 @@ func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizat
 }
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
@@ -439,12 +440,13 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, arg GetOrganizationBy
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.SourceID,
 	)
 	return i, err
 }
 
 const getOrganizationByIDOnly = `-- name: GetOrganizationByIDOnly :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -476,12 +478,13 @@ func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.SourceID,
 	)
 	return i, err
 }
 
 const getOrganizationBySlug = `-- name: GetOrganizationBySlug :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
 
@@ -516,6 +519,7 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, arg GetOrganization
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.SourceID,
 	)
 	return i, err
 }
@@ -730,7 +734,7 @@ func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype
 }
 
 const getPublicOrganizationBySlug = `-- name: GetPublicOrganizationBySlug :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at FROM organizations
+SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE slug = $1 AND tenant_id = $2
   AND status = 'active' AND deleted_at IS NULL
 `
@@ -768,6 +772,7 @@ func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, arg GetPublic
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.SourceID,
 	)
 	return i, err
 }
@@ -908,7 +913,7 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizat
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, u.username AS owner_username
+SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
 WHERE o.tenant_id = $1 AND o.deleted_at IS NULL
@@ -953,6 +958,7 @@ type ListOrganizationsRow struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	SourceID         pgtype.UUID        `json:"source_id"`
 	OwnerUsername    *string            `json:"owner_username"`
 }
 
@@ -996,6 +1002,7 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.SourceID,
 			&i.OwnerUsername,
 		); err != nil {
 			return nil, err
@@ -1009,7 +1016,7 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 }
 
 const listOrganizationsByMember = `-- name: ListOrganizationsByMember :many
-SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, om.role AS member_role
+SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, om.role AS member_role
 FROM organizations o
 JOIN organization_members om ON om.organization_id = o.id AND om.user_id = $1
 WHERE o.tenant_id = $2 AND o.deleted_at IS NULL
@@ -1047,6 +1054,7 @@ type ListOrganizationsByMemberRow struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	SourceID         pgtype.UUID        `json:"source_id"`
 	MemberRole       string             `json:"member_role"`
 }
 
@@ -1089,6 +1097,7 @@ func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganiz
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.SourceID,
 			&i.MemberRole,
 		); err != nil {
 			return nil, err

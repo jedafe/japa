@@ -343,6 +343,8 @@ func mapTypeFilter(t string) (string, bool) {
 		return EntityTypeTag, true
 	case "organization":
 		return EntityTypeOrganization, true
+	case "source":
+		return EntityTypeSource, true
 	default:
 		return "", false
 	}
@@ -407,7 +409,7 @@ func (h *Handlers) GetFollowStatus(w http.ResponseWriter, r *http.Request) {
 		if _, valid := mapTypeFilter(et); valid {
 			entityType, _ = mapTypeFilter(et)
 		} else {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be one of: user, space, tag, organization")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_entity_type", "entity_type must be one of: user, space, tag, organization, source")
 			return
 		}
 	}
