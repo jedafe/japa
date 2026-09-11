@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { buildSeoMeta } from '$lib/seo';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -401,6 +401,14 @@
 									{#if s.institution}
 										<p class="text-sm text-text-subtle mt-0.5">{s.institution}</p>
 									{/if}
+								{#if s.source?.slug}
+									<a
+										href={mainAppUrl(`/sources/${s.source.slug}`)}
+										class="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-1"
+									>
+										{t('scholarships.source', 'Source')}: {s.source.name}
+									</a>
+								{/if}
 									<div class="flex flex-wrap gap-2 mt-2">
 										{#if s.country}
 											<span class="text-xs px-2 py-0.5 bg-surface-subtle text-muted rounded">

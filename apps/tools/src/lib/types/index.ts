@@ -316,6 +316,15 @@ export type ScholarshipStatus =
 	| 'rejected'
 	| 'withdrawn';
 
+export interface SourceAttribution {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+	source_url: string;
+	trust_level: number;
+}
+
 export interface Scholarship {
 	id: string;
 	/** Canonical contents guide id — used for detail/save/status routes. */
@@ -334,6 +343,7 @@ export interface Scholarship {
 	application_url?: string | null;
 	field_values?: Record<string, string>;
 	tags?: string[];
+	source?: SourceAttribution;
 }
 
 export interface ScholarshipDetail extends Scholarship {
@@ -380,6 +390,7 @@ export interface RemittanceRate {
 	transfer_time?: string | null;
 	fetched_at: string;
 	is_manual: boolean;
+	source?: SourceAttribution;
 }
 
 export interface RemittanceCorridor {
