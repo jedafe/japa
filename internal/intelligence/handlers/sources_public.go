@@ -230,7 +230,60 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 // POST /api/v1/sources/{slug}/follow
 // DELETE /api/v1/sources/{slug}/follow
 func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Request) {
-	errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Source follow is coming in the next phase")
+	if h.intelStores == nil || h.followsSvc == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source follow is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
+		return
+	}
+
+	row, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: source follow lookup failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_lookup_failed", "Failed to load source")
+		return
+	}
+
+	isFollowing, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSource, row.ID)
+	if err != nil {
+		slog.Error("intel: source follow toggle failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_failed", "Failed to follow source")
+		return
+	}
+
+	// Re-fetch the source to get the updated follower_count.
+	src, err := h.intelSources.Get(r.Context(), tenantID, row.ID)
+	if err != nil {
+		slog.Error("intel: source follow reload failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_reload_failed", "Failed to load updated source")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"is_following":   isFollowing,
+			"follower_count": src.FollowerCount,
+		},
+	})
 }
 
 func pgtypeUUIDString(id pgtype.UUID) string {

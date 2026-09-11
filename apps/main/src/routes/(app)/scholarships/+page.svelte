@@ -50,6 +50,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	let q = $state(page.url.searchParams.get('q') ?? '');
 	let country = $state(page.url.searchParams.get('country') ?? '');
 	let level = $state(page.url.searchParams.get('level') ?? '');
+	let minAmount = $state(page.url.searchParams.get('min_amount') ?? '');
+	let maxAmount = $state(page.url.searchParams.get('max_amount') ?? '');
+	let renewable = $state(page.url.searchParams.get('renewable') ?? '');
+	let deadlineFrom = $state(page.url.searchParams.get('deadline_from') ?? '');
+	let deadlineTo = $state(page.url.searchParams.get('deadline_to') ?? '');
+	let includeExpired = $state(page.url.searchParams.get('include_expired') === 'true');
+	let sort = $state(page.url.searchParams.get('sort') ?? '');
 	let savedIds = $state<Set<string>>(untrack(() => new Set(data.savedIds ?? [])));
 
 	// JCE quick-comparison selection (Section 73): select up to 4 scholarships.
@@ -90,6 +97,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
 		if (level) params.set('level', level);
+		if (minAmount) params.set('min_amount', minAmount);
+		if (maxAmount) params.set('max_amount', maxAmount);
+		if (renewable) params.set('renewable', renewable);
+		if (deadlineFrom) params.set('deadline_from', deadlineFrom);
+		if (deadlineTo) params.set('deadline_to', deadlineTo);
+		if (sort) params.set('sort', sort);
+		if (includeExpired) params.set('include_expired', 'true');
 		goto(`/scholarships?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
@@ -104,10 +118,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		q = '';
 		country = '';
 		level = '';
+		minAmount = '';
+		maxAmount = '';
+		renewable = '';
+		deadlineFrom = '';
+		deadlineTo = '';
+		sort = '';
+		includeExpired = false;
 		goto('/scholarships');
 	}
 
-	const hasActiveFilters = $derived(!!q || !!country || !!level);
+	const hasActiveFilters = $derived(
+		!!q || !!country || !!level || !!minAmount || !!maxAmount || !!renewable || !!deadlineFrom || !!deadlineTo || !!sort || includeExpired
+	);
 
 	// level is a free-text filter — suggest levels present in the loaded page,
 	// allow arbitrary input via allowFreeText.
@@ -296,6 +319,69 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					onSelect={(item) => { level = item.id; applyFilters(); }}
 					onClear={() => { level = ''; applyFilters(); }}
 				/>
+				<input
+					type="number"
+					min="0"
+					step="1"
+					placeholder={t('scholarships.min_amount', 'Min amount (USD)')}
+					aria-label={t('scholarships.min_amount', 'Min amount (USD)')}
+					bind:value={minAmount}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+				<input
+					type="number"
+					min="0"
+					step="1"
+					placeholder={t('scholarships.max_amount', 'Max amount (USD)')}
+					aria-label={t('scholarships.max_amount', 'Max amount (USD)')}
+					bind:value={maxAmount}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+				<select
+					aria-label={t('scholarships.renewable', 'Renewable')}
+					bind:value={renewable}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">{t('scholarships.renewable_any', 'Any renewable')}</option>
+					<option value="true">{t('scholarships.renewable_yes', 'Yes')}</option>
+					<option value="false">{t('scholarships.renewable_no', 'No')}</option>
+				</select>
+				<input
+					type="date"
+					aria-label={t('scholarships.deadline_from', 'Deadline from')}
+					bind:value={deadlineFrom}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+				<input
+					type="date"
+					aria-label={t('scholarships.deadline_to', 'Deadline to')}
+					bind:value={deadlineTo}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				/>
+				<select
+					aria-label={t('scholarships.sort', 'Sort by')}
+					bind:value={sort}
+					onchange={applyFilters}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+				>
+					<option value="">{t('scholarships.sort_default', 'Default')}</option>
+					<option value="deadline_asc">{t('scholarships.sort_deadline_asc', 'Deadline (earliest)')}</option>
+					<option value="amount_desc">{t('scholarships.sort_amount_desc', 'Award amount (highest)')}</option>
+				</select>
+				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+					<input
+						type="checkbox"
+						bind:checked={includeExpired}
+						onchange={applyFilters}
+						class="rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
+					/>
+					{t('scholarships.include_expired', 'Include expired')}
+				</label>
 			</form>
 			{#if hasActiveFilters}
 				<button

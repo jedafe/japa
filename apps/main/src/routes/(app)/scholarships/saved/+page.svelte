@@ -53,6 +53,24 @@
 		updating[savedItem.id] = false;
 	}
 
+	async function updateNotes(savedItem: SavedScholarship, notes: string) {
+		updating[savedItem.id] = true;
+		const res = await api.patch(`/scholarships/${savedItem.scholarship.guide_id}/save`, { notes });
+		if (!res.error) {
+			saved = saved.map((s) => (s.id === savedItem.id ? { ...s, notes } : s));
+		}
+		updating[savedItem.id] = false;
+	}
+
+	async function updateReminder(savedItem: SavedScholarship, remindBeforeDays: number) {
+		updating[savedItem.id] = true;
+		const res = await api.patch(`/scholarships/${savedItem.scholarship.guide_id}/save`, { remind_before_days: remindBeforeDays });
+		if (!res.error) {
+			saved = saved.map((s) => (s.id === savedItem.id ? { ...s, remind_before_days: remindBeforeDays } : s));
+		}
+		updating[savedItem.id] = false;
+	}
+
 	function formatDate(date: string | null | undefined): string {
 		if (!date) return '—';
 		return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });

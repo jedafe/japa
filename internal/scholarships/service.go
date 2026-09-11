@@ -299,6 +299,16 @@ func populateScholarshipResult(
 	if len(eligibleCountries) > 0 {
 		fv["eligible_countries"] = strings.Join(eligibleCountries, ", ")
 	}
+	// Title fallback: some guides have an empty title column. Prefer the
+	// contents slug as a last resort so the UI never renders a blank card.
+	if r.Title == "" {
+		if r.Slug != "" {
+			r.Title = strings.ReplaceAll(r.Slug, "-", " ")
+		} else {
+			r.Title = "Untitled Scholarship"
+		}
+	}
+
 	// Award amount: best-effort extraction from the funding jsonb
 	// `award_amount_usd` field. Backfilled rows have empty funding.
 	if amt, ok := awardAmountFromFunding(funding); ok {
