@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Briefcase, MapPin, Clock, CheckCircle2, AlertCircle } from 'lucide-svelte';
+	import { Briefcase, MapPin, Clock, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { enhance } from '$app/forms';
 	import type { JobDetail } from '$lib/types';
@@ -87,6 +87,27 @@
 				← {t('jobs.back', 'Back to jobs')}
 			</a>
 			<h1 class="mt-2 text-lg font-semibold text-[var(--color-text)]">{job.title}</h1>
+			{#if job.source?.slug}
+				<div class="mt-1.5 flex items-center gap-1 text-sm">
+					<a
+						href="/sources/{job.source.slug}"
+						class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+					>
+						{t('jobs.source', 'Source')}: {job.source.name}
+					</a>
+					{#if job.source.source_url}
+						<a
+							href={job.source.source_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+							aria-label={t('jobs.original_source', 'View original source')}
+						>
+							<ExternalLink size={14} />
+						</a>
+					{/if}
+				</div>
+			{/if}
 			<div class="mt-2 flex flex-wrap gap-3 text-xs text-[var(--color-muted)]">
 				{#if field('company_name')}
 					<span class="flex items-center gap-1"><Briefcase size={12} /> {field('company_name')}</span>

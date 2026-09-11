@@ -10,7 +10,8 @@
 		ExternalLink,
 		ArrowLeft,
 		ClipboardList,
-		Bell
+		Bell,
+		BookOpen
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { EmptyState } from '$lib/components/ui';
@@ -185,6 +186,27 @@
 						{#if scholarship.institution}
 							<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{scholarship.institution}</p>
 						{/if}
+						{#if scholarship.source?.slug}
+							<div class="mt-1.5 flex items-center gap-1 text-sm">
+								<a
+									href="/sources/{scholarship.source.slug}"
+									class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+								>
+									{t('scholarships.source', 'Source')}: {scholarship.source.name}
+								</a>
+								{#if scholarship.source.source_url}
+									<a
+										href={scholarship.source.source_url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+										aria-label={t('scholarships.original_source', 'View original source')}
+									>
+										<ExternalLink size={14} />
+									</a>
+								{/if}
+							</div>
+						{/if}
 						<div class="mt-2 flex flex-wrap gap-2">
 							{#if scholarship.country}
 								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
@@ -202,6 +224,18 @@
 								</span>
 							{/if}
 						</div>
+
+						{#if scholarship.summary}
+							<p class="mt-3 text-sm text-[var(--color-text-subtle)] line-clamp-3">{scholarship.summary}</p>
+						{/if}
+
+						<a
+							href={`/guide/${scholarship.slug}`}
+							class="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-primary)] hover:underline"
+						>
+							<BookOpen size={16} />
+							{t('scholarships.read_more_details', 'Read more details')}
+						</a>
 					</div>
 					<button
 						type="button"

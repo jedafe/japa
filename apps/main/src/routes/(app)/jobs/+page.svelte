@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2 } from 'lucide-svelte';
+	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2, ExternalLink } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -303,6 +303,27 @@
 											{/if}
 										</div>
 									</a>
+								{#if job.source?.slug}
+									<div class="mt-1.5 flex items-center gap-1 text-xs">
+										<a
+											href="/sources/{job.source.slug}"
+											class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+										>
+											{t('jobs.source', 'Source')}: {job.source.name}
+										</a>
+										{#if job.source.source_url}
+											<a
+												href={job.source.source_url}
+												target="_blank"
+												rel="noopener noreferrer"
+												class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+												aria-label={t('jobs.original_source', 'View original source')}
+											>
+												<ExternalLink size={12} />
+											</a>
+										{/if}
+									</div>
+								{/if}
 								</div>
 								<a href="/jobs/{job.slug}" class="shrink-0 text-[var(--color-muted)] transition-colors group-hover:text-[var(--color-text)]">
 									<ArrowRight size={16} />

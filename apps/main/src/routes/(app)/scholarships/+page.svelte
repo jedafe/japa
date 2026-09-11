@@ -3,7 +3,7 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList, GitCompare, Loader2 } from 'lucide-svelte';
+	import { GraduationCap, Lock, Bookmark, BookmarkCheck, Search, ClipboardList, GitCompare, Loader2, ExternalLink } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, SearchInput, ListPageBar, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -290,11 +290,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<SearchInput
 					bind:value={q}
-					placeholder={t('scholarships.search', 'Search scholarships…')}
+					placeholder={t('scholarships.search', 'Search')}
 					ariaLabel={t('tools.scholarships', 'Scholarship Finder')}
 					fetcher={scholarshipSearchFetcher}
 					onInput={queueApply}
-					inputClass="focus:ring-2 focus:ring-[var(--color-primary)]"
+					inputClass="min-h-[44px] py-[11px] focus:ring-2 focus:ring-[var(--color-primary)]"
 				/>
 				<Autocomplete
 					placeholder={t('scholarships.country', 'Country')}
@@ -304,6 +304,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					initialFetcher={fetchCountriesInitial}
 					selectedId={country || null}
 					selectedLabel={selectedCountryLabel}
+					class="h-[44px] box-border"
+					inputClass="!min-h-0 !h-full"
 					onSelect={(item) => { country = item.id; applyFilters(); }}
 					onClear={() => { country = ''; applyFilters(); }}
 				/>
@@ -316,6 +318,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					selectedId={level || null}
 					selectedLabel={level || null}
 					allowFreeText
+					class="h-[44px] box-border"
+					inputClass="!min-h-0 !h-full"
 					onSelect={(item) => { level = item.id; applyFilters(); }}
 					onClear={() => { level = ''; applyFilters(); }}
 				/>
@@ -327,7 +331,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					aria-label={t('scholarships.min_amount', 'Min amount (USD)')}
 					bind:value={minAmount}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<input
 					type="number"
@@ -337,13 +341,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					aria-label={t('scholarships.max_amount', 'Max amount (USD)')}
 					bind:value={maxAmount}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<select
 					aria-label={t('scholarships.renewable', 'Renewable')}
 					bind:value={renewable}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
 					<option value="">{t('scholarships.renewable_any', 'Any renewable')}</option>
 					<option value="true">{t('scholarships.renewable_yes', 'Yes')}</option>
@@ -354,20 +358,20 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					aria-label={t('scholarships.deadline_from', 'Deadline from')}
 					bind:value={deadlineFrom}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<input
 					type="date"
 					aria-label={t('scholarships.deadline_to', 'Deadline to')}
 					bind:value={deadlineTo}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<select
 					aria-label={t('scholarships.sort', 'Sort by')}
 					bind:value={sort}
 					onchange={applyFilters}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
+					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				>
 					<option value="">{t('scholarships.sort_default', 'Default')}</option>
 					<option value="deadline_asc">{t('scholarships.sort_deadline_asc', 'Deadline (earliest)')}</option>
@@ -492,6 +496,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 											</span>
 										{/if}
 									</div>
+								{#if s.source?.slug}
+									<div class="mt-1.5 flex items-center gap-1 text-xs">
+										<a
+											href="/sources/{s.source.slug}"
+											class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+										>
+											{t('scholarships.source', 'Source')}: {s.source.name}
+										</a>
+										{#if s.source.source_url}
+											<a
+												href={s.source.source_url}
+												target="_blank"
+												rel="noopener noreferrer"
+												class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+												aria-label={t('scholarships.original_source', 'View original source')}
+											>
+												<ExternalLink size={12} />
+											</a>
+										{/if}
+									</div>
+								{/if}
 								</div>
 								<div class="flex shrink-0 flex-col items-end gap-2">
 									<label class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text-subtle)]">
