@@ -229,7 +229,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		intelStatus := "review_required"
 
 		if autoPublish || hasReviewer {
-			g, err := p.createScholarshipGuide(ctx, tx, source, ext, hasReviewer, reviewerID, countrySpaceID, now)
+			g, err := p.createScholarshipGuide(ctx, tx, record, source, ext, hasReviewer, reviewerID, countrySpaceID, now)
 			if err != nil {
 				return err
 			}
@@ -291,7 +291,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 // createScholarshipGuide creates the published contents guide for a
 // scholarship inside the promotion transaction and returns the content row
 // ID to link through scholarships.guide_id.
-func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxStore, source gen.IntelSource, ext extractor.Extraction, hasReviewer bool, reviewerID, countrySpaceID pgtype.UUID, now time.Time) (pgtype.UUID, error) {
+func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxStore, record gen.IntelRecord, source gen.IntelSource, ext extractor.Extraction, hasReviewer bool, reviewerID, countrySpaceID pgtype.UUID, now time.Time) (pgtype.UUID, error) {
 	title := stringField(ext, fieldTitle)
 	if title == "" {
 		title = source.Name
@@ -338,6 +338,8 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 		AiGenerated:     true,
 		AiModel:         p.aiModel,
 		AiGeneratedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		IntelSourceID:   source.ID,
+		IntelRecordID:   record.ID,
 	}
 	if hasReviewer {
 		contentParams.HitlReviewedBy = reviewerID

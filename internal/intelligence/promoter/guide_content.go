@@ -163,6 +163,8 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 		AiGenerated:     true,      // ADR-088: mark as AI-generated (INTEL-003)
 		AiModel:         p.aiModel, // from intel.extraction_model system setting
 		AiGeneratedAt:   pgtype.Timestamptz{Time: p.now(), Valid: true},
+		IntelSourceID:   source.ID,
+		IntelRecordID:   record.ID,
 	}
 	// INTEL-026 fix: stamp hitl_reviewed_by when a human approved the record.
 	if reviewerID, ok := reviewerctx.ReviewerFromContext(ctx); ok {

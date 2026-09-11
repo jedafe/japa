@@ -211,7 +211,8 @@ INSERT INTO contents (
     canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
     status, visibility, read_time_minutes, publish_at, published_at, guide_category,
     ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-    journey_stage, visa_route, source_country, target_country, video_source_id
+    journey_stage, visa_route, source_country, target_country, video_source_id,
+    intel_source_id, intel_record_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12,
@@ -223,7 +224,8 @@ INSERT INTO contents (
     COALESCE($26, false), $27, $28,
     $29, $30,
     $31, $32, $33, $34,
-    $35
+    $35,
+    $36, $37
 )
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
@@ -232,7 +234,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
           ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-          journey_stage, visa_route, source_country, target_country, video_source_id
+          journey_stage, visa_route, source_country, target_country, video_source_id,
+          intel_source_id, intel_record_id
 `
 
 type CreateContentParams struct {
@@ -271,6 +274,8 @@ type CreateContentParams struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
 type CreateContentRow struct {
@@ -318,6 +323,8 @@ type CreateContentRow struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
 // Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
@@ -361,6 +368,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		arg.SourceCountry,
 		arg.TargetCountry,
 		arg.VideoSourceID,
+		arg.IntelSourceID,
+		arg.IntelRecordID,
 	)
 	var i CreateContentRow
 	err := row.Scan(
@@ -408,6 +417,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 		&i.SourceCountry,
 		&i.TargetCountry,
 		&i.VideoSourceID,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
 	)
 	return i, err
 }
