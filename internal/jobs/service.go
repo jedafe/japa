@@ -82,6 +82,17 @@ type JobFilters struct {
 	Limit           int
 }
 
+// SourceAttribution is a lightweight source snapshot attached to job listings
+// so the UI can link back to /sources/[slug].
+type SourceAttribution struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	LogoURL    string `json:"logo_url"`
+	SourceURL  string `json:"source_url"`
+	TrustLevel int16  `json:"trust_level"`
+}
+
 // JobResult is a single job listing in the finder results.
 type JobResult struct {
 	ID          string            `json:"id"`
@@ -90,6 +101,9 @@ type JobResult struct {
 	Summary     string            `json:"summary"`
 	FieldValues map[string]string `json:"field_values"`
 	PublishedAt string            `json:"published_at"`
+	Source      SourceAttribution `json:"source"`
+
+	intelRecordID pgtype.UUID
 }
 
 // JobDetail is a single job listing with all its custom field values.
@@ -102,6 +116,7 @@ type JobDetail struct {
 	FieldValues    map[string]string `json:"field_values"`
 	PublishedAt    string            `json:"published_at"`
 	OrganizationID string            `json:"organization_id,omitempty"`
+	Source         SourceAttribution `json:"source"`
 }
 
 // UpdateJobListingInput is the request body for the public PATCH
@@ -392,7 +407,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	// aggregation joins custom_fields to resolve the key (EAV schema).
 	dataSQL := fmt.Sprintf(`
 		SELECT
-			c.id, c.title, c.slug,
+			c.id, c.title, c.slug, c.intel_record_id,
 			COALESCE(
 				(SELECT json_object_agg(cf.key,
 					CASE
@@ -441,14 +456,15 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 
 	for rows.Next() {
 		var (
-			id          pgtype.UUID
-			title       string
-			slug        string
-			fieldValues []byte
-			publishedAt pgtype.Timestamptz
+			id            pgtype.UUID
+			title         string
+			slug          string
+			intelRecordID pgtype.UUID
+			fieldValues   []byte
+			publishedAt   pgtype.Timestamptz
 		)
 
-		if err := rows.Scan(&id, &title, &slug, &fieldValues, &publishedAt); err != nil {
+		if err := rows.Scan(&id, &title, &slug, &intelRecordID, &fieldValues, &publishedAt); err != nil {
 			return nil, 0, fmt.Errorf("jobs: find: scan: %w", err)
 		}
 
@@ -463,17 +479,37 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 		}
 
 		results = append(results, JobResult{
-			ID:          id.String(),
-			Title:       title,
-			Slug:        slug,
-			Summary:     "",
-			FieldValues: fvMap,
-			PublishedAt: publishedStr,
+			ID:            id.String(),
+			Title:         title,
+			Slug:          slug,
+			Summary:       "",
+			FieldValues:   fvMap,
+			PublishedAt:   publishedStr,
+			intelRecordID: intelRecordID,
 		})
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("jobs: find: rows: %w", err)
+	}
+
+	recordIDs := make([]pgtype.UUID, 0, len(results))
+	for _, r := range results {
+		if r.intelRecordID.Valid {
+			recordIDs = append(recordIDs, r.intelRecordID)
+		}
+	}
+
+	if len(recordIDs) > 0 {
+		if sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs); err == nil {
+			for i := range results {
+				if src, ok := sources[results[i].intelRecordID.String()]; ok {
+					results[i].Source = sourceAttributionFromRow(src)
+				}
+			}
+		} else {
+			slog.Warn("jobs: failed to load source attribution", "error", err)
+		}
 	}
 
 	return results, total, nil
@@ -483,7 +519,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (JobDetail, error) {
 	query := `
 		SELECT
-			c.id, c.title, c.slug, c.body, c.organization_id,
+			c.id, c.title, c.slug, c.body, c.organization_id, c.intel_record_id,
 			COALESCE(
 				(SELECT json_object_agg(cf.key,
 					CASE
@@ -508,17 +544,18 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		LIMIT 1`
 
 	var (
-		id          pgtype.UUID
-		title       string
-		slugOut     string
-		body        *string
-		fieldValues []byte
-		publishedAt pgtype.Timestamptz
-		orgID       pgtype.UUID
+		id            pgtype.UUID
+		title         string
+		slugOut       string
+		body          *string
+		intelRecordID pgtype.UUID
+		fieldValues   []byte
+		publishedAt   pgtype.Timestamptz
+		orgID         pgtype.UUID
 	)
 
 	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, slug).Scan(
-		&id, &title, &slugOut, &body, &orgID, &fieldValues, &publishedAt,
+		&id, &title, &slugOut, &body, &orgID, &intelRecordID, &fieldValues, &publishedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -554,6 +591,14 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	}
 	if orgID.Valid {
 		detail.OrganizationID = orgID.String()
+	}
+
+	if intelRecordID.Valid {
+		if sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, []pgtype.UUID{intelRecordID}); err == nil {
+			if src, ok := sources[intelRecordID.String()]; ok {
+				detail.Source = sourceAttributionFromRow(src)
+			}
+		}
 	}
 
 	return detail, nil
@@ -920,6 +965,22 @@ func deriveSummary(body string) string {
 	}
 
 	return string(r[:max]) + "…"
+}
+
+func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttribution {
+	a := SourceAttribution{
+		ID:         src.SourceID.String(),
+		Name:       src.Name,
+		SourceURL:  src.SourceUrl,
+		TrustLevel: src.TrustLevel,
+	}
+	if src.Slug != nil {
+		a.Slug = *src.Slug
+	}
+	if src.LogoUrl != nil {
+		a.LogoURL = *src.LogoUrl
+	}
+	return a
 }
 
 // jobFieldType describes how a job_listing custom field value is stored in

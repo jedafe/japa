@@ -35,6 +35,24 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
+// MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
+		TenantID: tenantID,
+		Column2:  recordIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("jobs: map sources by record ids: %w", err)
+	}
+
+	m := make(map[string]gen.ListSourcesByRecordIDsRow, len(rows))
+	for _, r := range rows {
+		m[r.RecordID.String()] = r
+	}
+
+	return m, nil
+}
+
 // CreateJobApplication inserts a job_applications row. The ON CONFLICT clause
 // in the generated query ensures a user can only apply once per job.
 func (s *Store) CreateJobApplication(ctx context.Context, tenantID, jobID, applicantID, submissionID pgtype.UUID) (gen.JobApplication, error) {
