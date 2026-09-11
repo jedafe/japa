@@ -116,23 +116,35 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // DTOs
 // ---------------------------------------------------------------------------
 
+// SourceAttribution is a lightweight source snapshot attached to rates so the
+// UI can link back to /sources/[slug].
+type SourceAttribution struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	LogoURL    string `json:"logo_url"`
+	SourceURL  string `json:"source_url"`
+	TrustLevel int16  `json:"trust_level"`
+}
+
 // RateInfo is the JSON-serialisable representation of a single provider's
 // latest rate for a corridor.
 type RateInfo struct {
-	ID              string  `json:"id"`
-	ProviderID      string  `json:"provider_id"`
-	ProviderName    string  `json:"provider_name"`
-	ProviderSlug    string  `json:"provider_slug"`
-	ProviderWebsite string  `json:"provider_website,omitempty"`
-	SendCurrency    string  `json:"send_currency"`
-	ReceiveCurrency string  `json:"receive_currency"`
-	Rate            float64 `json:"rate"`
-	FeeFlat         float64 `json:"fee_flat,omitempty"`
-	FeePct          float64 `json:"fee_pct,omitempty"`
-	TransferTime    string  `json:"transfer_time,omitempty"`
-	FetchedAt       string  `json:"fetched_at"`
-	IsManual        bool    `json:"is_manual"`
-	SourceURL       string  `json:"source_url,omitempty"`
+	ID              string            `json:"id"`
+	ProviderID      string            `json:"provider_id"`
+	ProviderName    string            `json:"provider_name"`
+	ProviderSlug    string            `json:"provider_slug"`
+	ProviderWebsite string            `json:"provider_website,omitempty"`
+	SendCurrency    string            `json:"send_currency"`
+	ReceiveCurrency string            `json:"receive_currency"`
+	Rate            float64           `json:"rate"`
+	FeeFlat         float64           `json:"fee_flat,omitempty"`
+	FeePct          float64           `json:"fee_pct,omitempty"`
+	TransferTime    string            `json:"transfer_time,omitempty"`
+	FetchedAt       string            `json:"fetched_at"`
+	IsManual        bool              `json:"is_manual"`
+	SourceURL       string            `json:"source_url,omitempty"`
+	Source          SourceAttribution `json:"source"`
 }
 
 // BestRate is the JSON-serialisable representation of the best rate for a
@@ -232,6 +244,22 @@ func numericFromFloat(f float64) pgtype.Numeric {
 	_ = n.Scan(strconv.FormatFloat(f, 'f', -1, 64))
 
 	return n
+}
+
+func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttribution {
+	a := SourceAttribution{
+		ID:         src.SourceID.String(),
+		Name:       src.Name,
+		SourceURL:  src.SourceUrl,
+		TrustLevel: src.TrustLevel,
+	}
+	if src.Slug != nil {
+		a.Slug = *src.Slug
+	}
+	if src.LogoUrl != nil {
+		a.LogoURL = *src.LogoUrl
+	}
+	return a
 }
 
 // ptrString dereferences a *string safely, returning "" for nil.
@@ -355,9 +383,25 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 		return nil, fmt.Errorf("remittance: get rates: %w", err)
 	}
 
+	recordIDs := make([]pgtype.UUID, 0, len(rows))
+	for _, r := range rows {
+		if r.IntelRecordID.Valid {
+			recordIDs = append(recordIDs, r.IntelRecordID)
+		}
+	}
+
+	sources := make(map[string]gen.ListSourcesByRecordIDsRow)
+	if len(recordIDs) > 0 {
+		if srcMap, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs); err == nil {
+			sources = srcMap
+		} else {
+			slog.Warn("remittance: failed to load source attribution", "error", err)
+		}
+	}
+
 	rates := make([]RateInfo, 0, len(rows))
 	for _, r := range rows {
-		rates = append(rates, RateInfo{
+		info := RateInfo{
 			ID:              r.ID.String(),
 			ProviderID:      r.ProviderID.String(),
 			ProviderName:    r.ProviderName,
@@ -372,7 +416,13 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 			FetchedAt:       rfc3339(r.FetchedAt),
 			IsManual:        r.IsManual,
 			SourceURL:       ptrString(r.SourceUrl),
-		})
+		}
+
+		if src, ok := sources[r.IntelRecordID.String()]; ok {
+			info.Source = sourceAttributionFromRow(src)
+		}
+
+		rates = append(rates, info)
 	}
 
 	if s.cache != nil && len(rates) > 0 {

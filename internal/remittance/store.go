@@ -55,6 +55,24 @@ func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (
 	})
 }
 
+// MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
+		TenantID: tenantID,
+		Column2:  recordIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("remittance: map sources by record ids: %w", err)
+	}
+
+	m := make(map[string]gen.ListSourcesByRecordIDsRow, len(rows))
+	for _, r := range rows {
+		m[r.RecordID.String()] = r
+	}
+
+	return m, nil
+}
+
 // DeleteProvider deletes a remittance provider by ID and tenant. Deletion is
 // blocked while the provider still has remittance_rates rows so that historical
 // rate data is not accidentally destroyed (the FK cascades on delete).
