@@ -1353,6 +1353,22 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Source attribution for content promoted from the intelligence spine.
+	if content.SourceID.Valid {
+		src := map[string]any{
+			"id":          content.SourceID.String(),
+			"name":        derefString(content.SourceName),
+			"slug":        derefString(content.SourceSlug),
+			"logo_url":    content.SourceLogoUrl,
+			"source_url":  derefString(content.SourceSourceUrl),
+			"trust_level": 0,
+		}
+		if content.SourceTrustLevel != nil {
+			src["trust_level"] = *content.SourceTrustLevel
+		}
+		dto["source"] = src
+	}
+
 	// §14 guide amendment: resolve the admin-configured category label so the
 	// public page can render "Visa Guide" instead of the raw `visa` slug —
 	// GET /content-types is auth-required, so guests cannot map it themselves.

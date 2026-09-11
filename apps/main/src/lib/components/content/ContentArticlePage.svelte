@@ -3,7 +3,7 @@
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -264,6 +264,27 @@
 				<span class="flex items-center gap-1"><Clock size={14} /> {article.read_time_minutes} {t('blog.min_read', 'min read')}</span>
 			{/if}
 			<span class="flex items-center gap-1"><Eye size={14} /> {article.view_count} {t('content.views', 'views')}</span>
+			{#if article.source}
+				<span class="flex items-center gap-1">
+					<a
+						href="/sources/{article.source.slug}"
+						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline"
+					>
+						{t('content.source', 'Source')}: {article.source.name}
+					</a>
+					{#if article.source.source_url}
+						<a
+							href={article.source.source_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+							aria-label={t('content.original_source', 'View original source')}
+						>
+							<ExternalLink size={12} />
+						</a>
+					{/if}
+				</span>
+			{/if}
 		</div>
 
 		{#if article.tags && article.tags.length > 0}

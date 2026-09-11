@@ -2,6 +2,15 @@
  * Content article shape — matches the backend GetContentBySlugRow.
  * Used by /blog/[slug] and /content/[slug] routes.
  */
+export interface ContentAttribution {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+	source_url: string;
+	trust_level: number;
+}
+
 export interface ContentArticle {
 	id: string;
 	title: string;
@@ -44,6 +53,8 @@ export interface ContentArticle {
 	 *  The single page resolves it via GET /videos/{id} to render the embed. */
 	video_source_id?: string | null;
 	tags?: string[];
+	/** Source attribution for content promoted from the intelligence spine. */
+	source?: ContentAttribution;
 	// Series fields — optional, present when the article is part of a series.
 	series_id?: string | null;
 	series_title?: string | null;

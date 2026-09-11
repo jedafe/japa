@@ -1115,6 +1115,8 @@ SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
        (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
        c.publish_at, c.published_at,
        c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
+       c.intel_source_id, c.intel_record_id,
+       src.id AS source_id, src.name AS source_name, src.slug AS source_slug, src.logo_url AS source_logo_url, src.source_url AS source_source_url, src.trust_level AS source_trust_level,
        COALESCE(up.display_name, u.username, '') AS author_name,
        COALESCE(u.username, '') AS author_username,
        COALESCE(up.avatar_url, '') AS author_avatar_url,
@@ -1136,6 +1138,7 @@ FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
 LEFT JOIN content_tags ct ON ct.content_id = c.id
@@ -1162,7 +1165,9 @@ WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
          m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
          bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug, c.video_source_id
+         prev_c.slug, next_c.slug, c.video_source_id,
+         c.intel_source_id, c.intel_record_id,
+         src.id, src.name, src.slug, src.logo_url, src.source_url, src.trust_level
 `
 
 type GetContentDetailBySlugParams struct {
@@ -1210,6 +1215,14 @@ type GetContentDetailBySlugRow struct {
 	SourceCountry         *string            `json:"source_country"`
 	TargetCountry         *string            `json:"target_country"`
 	VideoSourceID         pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID         pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID         pgtype.UUID        `json:"intel_record_id"`
+	SourceID              pgtype.UUID        `json:"source_id"`
+	SourceName            *string            `json:"source_name"`
+	SourceSlug            *string            `json:"source_slug"`
+	SourceLogoUrl         *string            `json:"source_logo_url"`
+	SourceSourceUrl       *string            `json:"source_source_url"`
+	SourceTrustLevel      *int16             `json:"source_trust_level"`
 	AuthorName            string             `json:"author_name"`
 	AuthorUsername        string             `json:"author_username"`
 	AuthorAvatarUrl       string             `json:"author_avatar_url"`
@@ -1277,6 +1290,14 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, arg GetContentDeta
 		&i.SourceCountry,
 		&i.TargetCountry,
 		&i.VideoSourceID,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
+		&i.SourceID,
+		&i.SourceName,
+		&i.SourceSlug,
+		&i.SourceLogoUrl,
+		&i.SourceSourceUrl,
+		&i.SourceTrustLevel,
 		&i.AuthorName,
 		&i.AuthorUsername,
 		&i.AuthorAvatarUrl,
@@ -1347,6 +1368,7 @@ FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
