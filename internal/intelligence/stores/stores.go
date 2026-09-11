@@ -1218,6 +1218,22 @@ func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID
 	return rows, nil
 }
 
+// CountIntelRecordsBySource returns the total number of published intel
+// records for a source, optionally filtered by entity_type. Used for accurate
+// source item feed pagination.
+func (s *Store) CountIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType string) (int64, error) {
+	count, err := s.queries.CountIntelRecordsBySource(ctx, gen.CountIntelRecordsBySourceParams{
+		TenantID: tenantID,
+		SourceID: sourceID,
+		Column3:  entityType,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("stores: count intel records by source: %w", err)
+	}
+
+	return count, nil
+}
+
 // IncrementSourcePostCount bumps the post_count for a source.
 func (s *Store) IncrementSourcePostCount(ctx context.Context, tenantID, sourceID pgtype.UUID) error {
 	if err := s.queries.IncrementSourcePostCount(ctx, gen.IncrementSourcePostCountParams{TenantID: tenantID, ID: sourceID}); err != nil {

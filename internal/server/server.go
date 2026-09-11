@@ -1446,6 +1446,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	scholarshipsService := scholarships.NewService(scholarshipsStore, settingsService)
 	scholarshipsService.SetEnqueuer(taskEnqueuer)
 	scholarshipsHandlers := scholarships.NewHandlers(scholarshipsService)
+	worker.RegisterScholarshipSyncer(scholarshipsStore)
 
 	// Ref: japaconnect-engineering/sections/74-remittance-tracker.md (ADR-075)
 	remittanceStore := remittance.NewStore(database)

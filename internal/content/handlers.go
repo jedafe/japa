@@ -463,6 +463,36 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 	}
 }
 
+// enqueueScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide Asynq
+// task when a guide is in the 'scholarship' category. It is a no-op for other
+// content types and is idempotent by (tenant_id, content_id). Fire-and-forget.
+func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UUID, guideCategory *string) {
+	if h.AsynqClient == nil {
+		return
+	}
+
+	if guideCategory == nil || *guideCategory != "scholarship" {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("content: failed to marshal scholarship sync payload", "error", err)
+		return
+	}
+
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeScholarshipSyncFromGuide, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeScholarshipSyncFromGuide)),
+	); err != nil {
+		slog.Warn("content: failed to enqueue scholarship sync task",
+			"content_id", contentID.String(), "error", err)
+	}
+}
+
 // enqueueModerationScan enqueues an async content moderation scan task.
 // Fire-and-forget: errors are logged but never propagated to the caller.
 func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID pgtype.UUID) {
@@ -1120,6 +1150,10 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue moderation scan — fire-and-forget.
 	h.enqueueModerationScan("content", content.ID, tenantID)
+
+	// §73: sync published scholarship guides to the scholarship finder
+	// projection. Fire-and-forget; the worker is a no-op for other categories.
+	h.enqueueScholarshipSyncFromGuide(content.ID, tenantID, content.GuideCategory)
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002).
 	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
@@ -1835,6 +1869,11 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue moderation scan — fire-and-forget.
 	h.enqueueModerationScan("content", id, tenantID)
 
+	// §73: keep the scholarship finder projection in sync with the published
+	// scholarship guide. Fire-and-forget; the worker is a no-op for other
+	// categories and for unpublished content.
+	h.enqueueScholarshipSyncFromGuide(id, tenantID, content.GuideCategory)
+
 	// Dispatch @mention notifications for newly added mentions — fire-and-forget
 	// (BUG-006). The notification batch system deduplicates by (recipient, type,
 	// subject) so mentions that were already notified on create won't produce
@@ -1978,6 +2017,9 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		h.enqueueRSSRegenerate(tenantID)
 	}
 
+	// §73: a published scholarship guide must be visible in the finder.
+	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
 
@@ -2023,6 +2065,9 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 	// BUG-002 fix: purge RAG embeddings on archive (ADR-069 §2: content that
 	// is no longer published must not be retrievable in RAG). Fire-and-forget.
 	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
+
+	// §73: archived guides must not appear in the finder.
+	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }
@@ -2085,6 +2130,10 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 			handleServiceError(w, err)
 			return
 		}
+
+		// §73: in_review stories are not published; keep finder in sync.
+		h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
+
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 		return
 	}
@@ -2096,6 +2145,9 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.enqueueScheduledPublish(id, tenantID, input.PublishAt)
+
+	// §73: scheduled content is not published, so remove any stale finder projection.
+	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": updated})
 }

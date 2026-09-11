@@ -93,6 +93,13 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	total, err := h.intelStores.CountIntelRecordsBySource(r.Context(), tenantID, src.ID, entityType)
+	if err != nil {
+		slog.Error("intel: source records count failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_items_failed", "Failed to load source items")
+		return
+	}
+
 	items := make([]sourceItem, 0, len(records))
 	for _, rec := range records {
 		item, ok, convErr := h.recordToSourceItem(r.Context(), tenantID, rec)
@@ -110,7 +117,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": sourceItemEnvelope{
 			Items:      items,
-			Meta:       sourceListMeta{PageSize: limit, PageOffset: (page - 1) * limit, Total: int64(len(items))},
+			Meta:       sourceListMeta{PageSize: limit, PageOffset: (page - 1) * limit, Total: total},
 			Sort:       sortMode,
 			EntityType: entityType,
 		},

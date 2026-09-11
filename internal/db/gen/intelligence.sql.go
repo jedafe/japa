@@ -74,6 +74,27 @@ func (q *Queries) ApproveProposedIntelSource(ctx context.Context, arg ApprovePro
 	return i, err
 }
 
+const countIntelRecordsBySource = `-- name: CountIntelRecordsBySource :one
+SELECT COUNT(*) FROM intel_records
+WHERE tenant_id = $1
+  AND source_id = $2
+  AND status = 'published'
+  AND ($3::text IS NULL OR $3 = '' OR entity_type = $3)
+`
+
+type CountIntelRecordsBySourceParams struct {
+	TenantID pgtype.UUID `json:"tenant_id"`
+	SourceID pgtype.UUID `json:"source_id"`
+	Column3  string      `json:"column_3"`
+}
+
+func (q *Queries) CountIntelRecordsBySource(ctx context.Context, arg CountIntelRecordsBySourceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIntelRecordsBySource, arg.TenantID, arg.SourceID, arg.Column3)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
 SELECT count(*) FROM intel_records
 WHERE tenant_id = $1 AND source_id = $2 AND promoted_record_id IS NOT NULL
