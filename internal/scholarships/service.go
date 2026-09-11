@@ -175,6 +175,66 @@ func projectScholarshipFields(r *ScholarshipResult) {
 	}
 }
 
+// renewableFromFunding extracts the is_renewable value from the funding
+// jsonb blob. It accepts string "true"/"false" or boolean values.
+func renewableFromFunding(funding []byte) (bool, bool) {
+	if len(funding) == 0 || string(funding) == "{}" {
+		return false, false
+	}
+
+	var f map[string]interface{}
+	if err := json.Unmarshal(funding, &f); err != nil {
+		return false, false
+	}
+
+	v, ok := f["is_renewable"]
+	if !ok {
+		return false, false
+	}
+
+	switch n := v.(type) {
+	case bool:
+		return n, true
+	case string:
+		b, err := strconv.ParseBool(n)
+		if err != nil {
+			return false, false
+		}
+		return b, true
+	}
+
+	return false, false
+}
+
+// mergeContentFieldValues flattens a contents.field_values JSONB blob
+// (values may be plain strings or {"value": "..."} objects) into the
+// destination map. This lets backfilled scholarship guides keep their
+// original custom-field values (eligibility, how_to_apply, contact_email,
+// award_amount_usd, is_renewable) alongside the structured scholarships table.
+func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
+	if len(fieldValues) == 0 || string(fieldValues) == "{}" {
+		return
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(fieldValues, &m); err != nil {
+		return
+	}
+
+	for k, v := range m {
+		switch t := v.(type) {
+		case string:
+			if s := strings.TrimSpace(t); s != "" {
+				dst[k] = s
+			}
+		case map[string]interface{}:
+			if s, ok := t["value"].(string); ok && strings.TrimSpace(s) != "" {
+				dst[k] = strings.TrimSpace(s)
+			}
+		}
+	}
+}
+
 // populateScholarshipResult fills the flat top-level fields and the
 // field_values map on a ScholarshipResult from the `scholarships` table
 // columns (ADR-112). The field_values keys match the legacy
@@ -192,6 +252,7 @@ func populateScholarshipResult(
 	eligibleCountries []string,
 	funding []byte,
 	description *string,
+	fieldValues []byte,
 ) {
 	fv := map[string]string{}
 	r.Country = country
@@ -236,7 +297,18 @@ func populateScholarshipResult(
 		fv["award_amount_usd"] = strconv.FormatFloat(amt, 'f', -1, 64)
 	}
 
+	// Renewable: best-effort extraction from the funding jsonb.
+	if renewable, ok := renewableFromFunding(funding); ok {
+		r.IsRenewable = &renewable
+		fv["is_renewable"] = strconv.FormatBool(renewable)
+	}
+
+	// Merge any legacy/backfilled custom-field values stored on the
+	// contents row (eligibility, how_to_apply, contact_email, etc.).
+	mergeContentFieldValues(fv, fieldValues)
+
 	r.FieldValues = fv
+	projectScholarshipFields(r)
 }
 
 // awardAmountFromFunding extracts the award_amount_usd value from the funding
@@ -404,6 +476,34 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 		argIdx++
 	}
 
+	// Award amount and renewable filters look at both the scholarships.funding
+	// JSONB and the legacy contents.field_values so backfilled guides still
+	// match. A safe regex guard prevents non-numeric values from breaking the
+	// cast.
+	const numericRE = `'^[0-9]+(\.[0-9]+)?$'`
+	amountValue := fmt.Sprintf("COALESCE(s.funding->>'award_amount_usd', c.field_values->>'award_amount_usd', '')")
+
+	if filters.MinAmount > 0 {
+		conditions = append(conditions, fmt.Sprintf("(%s ~ %s AND (%s)::numeric >= $%d)", amountValue, numericRE, amountValue, argIdx))
+		args = append(args, filters.MinAmount)
+		argIdx++
+	}
+
+	if filters.MaxAmount > 0 {
+		conditions = append(conditions, fmt.Sprintf("(%s ~ %s AND (%s)::numeric <= $%d)", amountValue, numericRE, amountValue, argIdx))
+		args = append(args, filters.MaxAmount)
+		argIdx++
+	}
+
+	if filters.Renewable != nil {
+		renewableValue := fmt.Sprintf("COALESCE(s.funding->>'is_renewable', c.field_values->>'is_renewable', '')")
+		if *filters.Renewable {
+			conditions = append(conditions, fmt.Sprintf("(LOWER(%s) = 'true' OR %s = '1')", renewableValue, renewableValue))
+		} else {
+			conditions = append(conditions, fmt.Sprintf("(LOWER(%s) = 'false' OR %s = '0')", renewableValue, renewableValue))
+		}
+	}
+
 	// Sort order. `amount_desc` has no direct column on the scholarships
 	// table (award amount lives in the `funding` jsonb, which is empty for
 	// backfilled rows); fall back to created_at so the sort param is
@@ -413,6 +513,11 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	switch filters.Sort {
 	case "deadline_asc":
 		orderBy = "s.deadline ASC NULLS LAST"
+	case "amount_desc":
+		// Award amount is not a column; try to order by the first non-null
+		// numeric award_amount_usd from funding or field_values. Non-numeric
+		// values fall to the bottom via NULLS LAST.
+		orderBy = fmt.Sprintf("(CASE WHEN %s ~ %s THEN (%s)::numeric ELSE NULL END) DESC NULLS LAST", amountValue, numericRE, amountValue)
 	default:
 		orderBy = "s.created_at DESC"
 	}
@@ -426,7 +531,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	dataQuery := fmt.Sprintf(`
 		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
-		       s.university, s.eligible_countries, s.funding, s.description,
+		       s.university, s.eligible_countries, s.funding, s.description, c.field_values,
 		       COUNT(*) OVER() AS total_count
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
@@ -481,13 +586,14 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			eligibleCountries []string
 			funding           []byte
 			description       *string
+			fieldValues       []byte
 			rowCount          int64
 		)
 
 		if err := rows.Scan(
 			&id, &intelRecordID, &guideID, &r.Title, &slug, &summary,
 			&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
-			&university, &eligibleCountries, &funding, &description,
+			&university, &eligibleCountries, &funding, &description, &fieldValues,
 			&rowCount,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scholarships: scan row: %w", err)
@@ -513,7 +619,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 			r.Summary = *description
 		}
 
-		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
+		populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
 		results = append(results, r)
 	}
 
@@ -529,7 +635,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	query := `
 		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
-		       s.university, s.eligible_countries, s.funding, s.description
+		       s.university, s.eligible_countries, s.funding, s.description, c.field_values
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
 		WHERE s.tenant_id = $1 AND s.guide_id = $2
@@ -551,12 +657,13 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 		eligibleCountries []string
 		funding           []byte
 		description       *string
+		fieldValues       []byte
 	)
 
 	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
 		&id, &gID, &r.Title, &slug, &summary,
 		&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
-		&university, &eligibleCountries, &funding, &description,
+		&university, &eligibleCountries, &funding, &description, &fieldValues,
 	); err != nil {
 		return ScholarshipResult{}, fmt.Errorf("scholarships: get detail: %w", err)
 	}
@@ -576,7 +683,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 		r.Summary = *description
 	}
 
-	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description)
+	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
 
 	return r, nil
 }

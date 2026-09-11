@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/hibiken/asynq"
@@ -22,10 +23,13 @@ import (
 // pointer types so omitted fields are NULL rather than zero-values.
 type handleSourceCreateBody struct {
 	Name                string  `json:"name"`
+	Slug                *string `json:"slug"`
 	Domain              string  `json:"domain"`
 	SourceURL           string  `json:"source_url"`
+	Description         *string `json:"description"`
 	Category            string  `json:"category"`
 	SourceType          string  `json:"source_type"`
+	SourceKind          *string `json:"source_kind"`
 	TrustLevel          int16   `json:"trust_level"`
 	CrawlMethod         string  `json:"crawl_method"`
 	CrawlFrequency      string  `json:"crawl_frequency"`
@@ -33,6 +37,7 @@ type handleSourceCreateBody struct {
 	SourceLicense       *string `json:"source_license"`
 	AttributionRequired bool    `json:"attribution_required"`
 	UsageRestriction    *string `json:"usage_restriction"`
+	LogoURL             *string `json:"logo_url"`
 	Enabled             *bool   `json:"enabled"`
 	PersonaID           *string `json:"persona_id"` // optional: AI persona to attribute promoted content to
 }
@@ -103,13 +108,30 @@ func buildCreateSourceParams(w http.ResponseWriter, tenantID pgtype.UUID, body h
 
 	enabled, freqMins, freq, domain := resolveSourceDefaults(body)
 
+	slug := body.Name
+	if body.Slug != nil && *body.Slug != "" {
+		slug = *body.Slug
+	}
+	slug = slugifySourceName(slug)
+
+	description := body.Description
+	logoURL := body.LogoURL
+	sourceKind := body.SourceKind
+	if sourceKind == nil || *sourceKind == "" {
+		k := "publisher"
+		sourceKind = &k
+	}
+
 	params := gen.CreateIntelSourceParams{
 		TenantID:            tenantID,
 		Name:                body.Name,
+		Slug:                &slug,
 		Domain:              domain,
 		SourceUrl:           body.SourceURL,
+		Description:         description,
 		Category:            body.Category,
 		SourceType:          body.SourceType,
+		SourceKind:          sourceKind,
 		TrustLevel:          body.TrustLevel,
 		CrawlMethod:         body.CrawlMethod,
 		CrawlFrequency:      freq,
@@ -119,6 +141,7 @@ func buildCreateSourceParams(w http.ResponseWriter, tenantID pgtype.UUID, body h
 		AttributionRequired: body.AttributionRequired,
 		UsageRestriction:    body.UsageRestriction,
 		ProviderConfig:      []byte(`{}`),
+		LogoUrl:             logoURL,
 		Enabled:             enabled,
 	}
 
@@ -275,6 +298,20 @@ func mergeSourcePatch(params *gen.UpdateIntelSourceParams, body *handleSourceCre
 	patchStrField(&params.SourceType, body.SourceType)
 	patchStrField(&params.CrawlMethod, body.CrawlMethod)
 	patchStrField(&params.CrawlFrequency, body.CrawlFrequency)
+
+	if body.Slug != nil && *body.Slug != "" {
+		slug := slugifySourceName(*body.Slug)
+		params.Slug = &slug
+	}
+	if body.Description != nil {
+		params.Description = body.Description
+	}
+	if body.SourceKind != nil && *body.SourceKind != "" {
+		params.SourceKind = body.SourceKind
+	}
+	if body.LogoURL != nil {
+		params.LogoUrl = body.LogoURL
+	}
 
 	if body.TrustLevel >= 1 && body.TrustLevel <= 4 {
 		params.TrustLevel = body.TrustLevel
@@ -602,6 +639,17 @@ func mergeEditorialOverrides(existing []byte, newFields map[string]json.RawMessa
 	}
 
 	return out
+}
+
+// slugifySourceName converts a source name into a URL-safe slug.
+// It lowercases, replaces non-alphanumeric characters with hyphens, and
+// collapses multiple hyphens. It does not guarantee uniqueness; callers
+// should rely on the database unique index and retry on conflict.
+func slugifySourceName(name string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	slug := re.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
+	slug = strings.Trim(slug, "-")
+	return slug
 }
 
 // extractDomain returns the host portion of a URL string. Used as a fallback

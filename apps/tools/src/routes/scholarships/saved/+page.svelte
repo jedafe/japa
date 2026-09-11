@@ -36,14 +36,14 @@
 	async function updateStatus(guideId: string, status: ScholarshipStatus) {
 		const res = await api.patch(`/scholarships/${guideId}/save`, { status });
 		if (!res.error) {
-			saved = saved.map((s) => (s.scholarship.id === guideId ? { ...s, status } : s));
+			saved = saved.map((s) => (s.scholarship.guide_id === guideId ? { ...s, status } : s));
 		}
 	}
 
 	async function unsave(guideId: string) {
 		const res = await api.delete(`/scholarships/${guideId}/save`);
 		if (!res.error) {
-			saved = saved.filter((s) => s.scholarship.id !== guideId);
+			saved = saved.filter((s) => s.scholarship.guide_id !== guideId);
 		}
 	}
 
@@ -98,7 +98,7 @@
 				<div class="p-5 bg-surface border border-border rounded-lg">
 					<div class="flex items-start justify-between gap-4">
 						<div class="flex-1 min-w-0">
-							<a href={`/scholarships/${item.scholarship.id}`} class="text-base font-semibold text-text hover:text-[var(--tool-accent)] transition-colors">
+							<a href={`/scholarships/${item.scholarship.guide_id}`} class="text-base font-semibold text-text hover:text-[var(--tool-accent)] transition-colors">
 								{item.scholarship.title}
 							</a>
 							{#if item.scholarship.institution}
@@ -132,7 +132,7 @@
 						<div class="flex-shrink-0 flex items-center gap-2">
 							<select
 								value={item.status}
-								onchange={(e) => updateStatus(item.scholarship.id, e.currentTarget.value as ScholarshipStatus)}
+								onchange={(e) => updateStatus(item.scholarship.guide_id, e.currentTarget.value as ScholarshipStatus)}
 								class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
 							>
 								{#each statusOptions as opt (opt.value)}
@@ -140,7 +140,7 @@
 								{/each}
 							</select>
 							<button
-								onclick={() => unsave(item.scholarship.id)}
+								onclick={() => unsave(item.scholarship.guide_id)}
 								class="p-1.5 text-muted hover:text-red-500 transition-colors"
 								aria-label={t('scholarships.unsave', 'Remove from saved')}
 							>
