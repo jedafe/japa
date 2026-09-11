@@ -4,11 +4,37 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// slugify helpers mirror content.Slugify to avoid an import cycle.
+var (
+	invalidSlugChars     = regexp.MustCompile(`[^a-z0-9-]+`)
+	multipleHyphens      = regexp.MustCompile(`-{2,}`)
+	leadingTrailingHyphens = regexp.MustCompile(`^-+|-+$`)
+)
+
+func slugify(title string) string {
+	s := strings.ToLower(strings.TrimSpace(title))
+	s = invalidSlugChars.ReplaceAllString(s, "-")
+	s = multipleHyphens.ReplaceAllString(s, "-")
+	s = leadingTrailingHyphens.ReplaceAllString(s, "")
+
+	if s == "" {
+		return "untitled"
+	}
+
+	return s
+}
 
 // Service applies the business logic for the intel_sources registry. It
 // wraps a Store and is the entry point used by HTTP/admin handlers and the
@@ -109,4 +135,294 @@ func (s *Service) CrawlNow(ctx context.Context, tenantID pgtype.UUID, id SourceI
 	}
 
 	return nil
+}
+
+// ProposeInput is the public submission payload for a new source proposal.
+type ProposeInput struct {
+	Name        string
+	Domain      string
+	SourceURL   string
+	Category    string
+	SourceType  string
+	Description *string
+}
+
+// Propose creates a new source proposal from an authenticated user.
+// The source is inserted with status='proposed' and enabled=false; an admin
+// must approve it before it appears in the public directory.
+func (s *Service) Propose(ctx context.Context, tenantID, userID pgtype.UUID, input ProposeInput) (Source, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.SourceURL = strings.TrimSpace(input.SourceURL)
+	input.Domain = strings.TrimSpace(input.Domain)
+	input.Category = strings.TrimSpace(input.Category)
+	input.SourceType = strings.TrimSpace(input.SourceType)
+
+	if input.Name == "" {
+		return Source{}, errpkg.ErrRequired
+	}
+	if input.SourceURL == "" {
+		return Source{}, errpkg.ErrRequired
+	}
+	if input.SourceType == "" {
+		input.SourceType = "rss"
+	}
+
+	u, err := url.Parse(input.SourceURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return Source{}, fmt.Errorf("sources: propose: %w: invalid source_url", errpkg.ErrInvalid)
+	}
+
+	if input.Domain == "" {
+		input.Domain = u.Hostname()
+	}
+	if input.Domain == "" || strings.Contains(input.Domain, ":") {
+		return Source{}, fmt.Errorf("sources: propose: %w: invalid domain", errpkg.ErrInvalid)
+	}
+
+	// Public URLs must be unique per tenant.
+	if _, err := s.store.GetByURL(ctx, tenantID, input.SourceURL); err == nil {
+		return Source{}, errpkg.ErrAlreadyExists
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return Source{}, fmt.Errorf("sources: propose: check existing url: %w", err)
+	}
+
+	slug := s.uniqueSlug(ctx, tenantID, slugify(input.Name))
+
+	now := time.Now().UTC()
+	proposedAt := pgtype.Timestamptz{Time: now, Valid: true}
+
+	crawlMethod := "manual"
+	crawlFrequency := "manual"
+	switch input.SourceType {
+	case "rss":
+		crawlMethod = "rss"
+		crawlFrequency = "hourly"
+	case "api", "youtube":
+		crawlMethod = "api"
+		crawlFrequency = "daily"
+	}
+
+	arg := gen.CreateIntelSourceParams{
+		TenantID:            tenantID,
+		Name:                input.Name,
+		Domain:              input.Domain,
+		SourceUrl:           input.SourceURL,
+		Category:            input.Category,
+		SourceType:          input.SourceType,
+		SourceKind:          "publisher",
+		TrustLevel:          5,
+		CrawlMethod:         crawlMethod,
+		CrawlFrequency:      crawlFrequency,
+		CrawlFrequencyMins:  0,
+		RobotsPolicy:        []byte("{}"),
+		AttributionRequired: false,
+		ProviderConfig:      []byte("{}"),
+		Enabled:             false,
+		Slug:                &slug,
+		Description:         input.Description,
+		Status:              "proposed",
+		ProposedBy:          userID,
+		ProposedAt:          proposedAt,
+	}
+
+	return s.store.Create(ctx, tenantID, arg)
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (Source, error) {
+	if title == nil || *title == "" {
+		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
+	}
+	if sourceURL == nil || *sourceURL == "" {
+		return Source{}, fmt.Errorf("%w: source_url", errpkg.ErrRequired)
+	}
+
+	existing, err := s.store.GetByURL(ctx, tenantID, *sourceURL)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Source{}, err
+	}
+
+	domain := ""
+	u, err := url.Parse(*sourceURL)
+	if err == nil && u.Host != "" {
+		domain = u.Host
+	}
+
+	slug := s.uniqueSlug(ctx, tenantID, *title)
+
+	arg := gen.CreateIntelSourceParams{
+		TenantID:        tenantID,
+		Name:            *title,
+		Slug:            &slug,
+		Domain:          domain,
+		SourceUrl:       *sourceURL,
+		Category:        "video",
+		SourceType:      "video_upload",
+		SourceKind:      "publisher",
+		TrustLevel:      2,
+		CrawlMethod:     "manual",
+		CrawlFrequency:  "manual",
+		CrawlFrequencyMins: 0,
+		Enabled:         true,
+		Status:          "active",
+		LogoUrl:         thumbnailURL,
+	}
+
+	return s.store.Create(ctx, tenantID, arg)
+}
+
+func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (Source, error) {
+	if name == "" {
+		return Source{}, fmt.Errorf("%w: name", errpkg.ErrRequired)
+	}
+	if slug == "" {
+		return Source{}, fmt.Errorf("%w: slug", errpkg.ErrRequired)
+	}
+
+	if sourceURL != "" {
+		existing, err := s.store.GetByURL(ctx, tenantID, sourceURL)
+		if err == nil {
+			return existing, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return Source{}, err
+		}
+	}
+
+	domain := ""
+	u, err := url.Parse(sourceURL)
+	if err == nil && u.Host != "" {
+		domain = u.Host
+	}
+
+	sourceKind := "institution"
+	if entityType == "user" || entityType == "profile" {
+		sourceKind = "individual"
+	}
+
+	arg := gen.CreateIntelSourceParams{
+		TenantID:            tenantID,
+		Name:                name,
+		Slug:                &slug,
+		Domain:              domain,
+		SourceUrl:           sourceURL,
+		Category:            category,
+		SourceType:          "static",
+		SourceKind:          sourceKind,
+		TrustLevel:          3,
+		CrawlMethod:         "manual",
+		CrawlFrequency:      "manual",
+		CrawlFrequencyMins:  0,
+		Enabled:             true,
+		Status:              "active",
+	}
+
+	return s.store.Create(ctx, tenantID, arg)
+}
+
+func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (Source, error) {
+	if sourceName == nil || *sourceName == "" {
+		return Source{}, fmt.Errorf("%w: source_name", errpkg.ErrRequired)
+	}
+
+	existing, err := s.store.GetByURL(ctx, tenantID, derefString(sourceURL))
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Source{}, err
+	}
+
+	domain := ""
+	if sourceURL != nil && *sourceURL != "" {
+		u, err := url.Parse(*sourceURL)
+		if err == nil && u.Host != "" {
+			domain = u.Host
+		}
+	}
+
+	slug := s.uniqueSlug(ctx, tenantID, *sourceName)
+
+	arg := gen.CreateIntelSourceParams{
+		TenantID:        tenantID,
+		Name:            *sourceName,
+		Slug:            &slug,
+		Domain:          domain,
+		SourceUrl:       derefString(sourceURL),
+		Category:        "comparison",
+		SourceType:      "comparison_api",
+		SourceKind:      "publisher",
+		TrustLevel:      int16(max(1, min(5, trustLevel))),
+		CrawlMethod:     "api",
+		CrawlFrequency:  "daily",
+		CrawlFrequencyMins: 0,
+		Enabled:         true,
+		Status:          "active",
+	}
+
+	return s.store.Create(ctx, tenantID, arg)
+}
+
+func (s *Service) uniqueSlug(ctx context.Context, tenantID pgtype.UUID, base string) string {
+	base = slugify(base)
+	if base == "" || base == "untitled" {
+		base = "source"
+	}
+
+	candidate := base
+	for i := 0; i < 100; i++ {
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i)
+		}
+		_, err := s.store.GetBySlug(ctx, tenantID, candidate)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return candidate
+		}
+		if err != nil {
+			// On unexpected error, fall back to a UUID-suffixed slug.
+			return fmt.Sprintf("%s-%d", base, time.Now().Unix())
+		}
+	}
+	return fmt.Sprintf("%s-%d", base, time.Now().Unix())
+}
+
+// ToggleSourceBlock blocks the source if it is not blocked, otherwise unblocks it.
+// Returns the new block state and any error.
+func (s *Service) ToggleSourceBlock(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (bool, error) {
+	blocked, err := s.store.IsSourceBlocked(ctx, tenantID, blockerID, sourceID)
+	if err != nil {
+		return false, fmt.Errorf("sources: toggle block: check: %w", err)
+	}
+
+	if blocked {
+		if err := s.store.UnblockSource(ctx, tenantID, blockerID, sourceID); err != nil {
+			return false, fmt.Errorf("sources: toggle block: unblock: %w", err)
+		}
+		return false, nil
+	}
+
+	_, err = s.store.BlockSource(ctx, tenantID, blockerID, sourceID)
+	if err != nil {
+		return false, fmt.Errorf("sources: toggle block: block: %w", err)
+	}
+	return true, nil
+}
+
+// IsSourceBlocked returns whether the user has blocked the given source.
+func (s *Service) IsSourceBlocked(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (bool, error) {
+	return s.store.IsSourceBlocked(ctx, tenantID, blockerID, sourceID)
+}
+
+// ListBlockedSourceIDs returns the source IDs blocked by the given user.
+func (s *Service) ListBlockedSourceIDs(ctx context.Context, tenantID, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
+	return s.store.ListBlockedSourceIDs(ctx, tenantID, blockerID)
 }

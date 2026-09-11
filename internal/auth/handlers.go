@@ -50,6 +50,12 @@ type TierManager interface {
 	SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error
 }
 
+// SourceManager creates canonical intel_sources rows for new entity profiles
+// (v2 source directory, Task 5).
+type SourceManager interface {
+	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
+}
+
 // AuthHandlers holds dependencies for auth HTTP handlers.
 type AuthHandlers struct { //nolint:revive // stuttering type name preserved for API compatibility
 	DB                  Querier
@@ -69,6 +75,7 @@ type AuthHandlers struct { //nolint:revive // stuttering type name preserved for
 	ReferralCapturer    ReferralCapturer      // Optional — wired by server after referral.Service is constructed (§60)
 	DefaultFolderSetter DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
+	SourceManager       SourceManager         // Optional — wired by server for v2 source directory auto-creation
 }
 
 // SetReferralCapturer injects the referral capture dependency (§60, ADR-078).
@@ -80,6 +87,42 @@ func (h *AuthHandlers) SetDefaultFolderProvider(p DefaultFolderProvider) { h.Def
 // SetTierManager injects the tier manager used to assign the regular tier on
 // new registrations.
 func (h *AuthHandlers) SetTierManager(m TierManager) { h.TierManager = m }
+
+// SetSourceManager injects the canonical source registry for auto-creating
+// user publisher profiles in the v2 source directory.
+func (h *AuthHandlers) SetSourceManager(m SourceManager) { h.SourceManager = m }
+
+func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, userID pgtype.UUID, username string) {
+	if h.SourceManager == nil {
+		return
+	}
+
+	if h.Settings != nil {
+		enabled, err := h.Settings.GetSettingBool(ctx, tenantID, "sources.auto_create_for_users")
+		if err != nil || !enabled {
+			return
+		}
+	}
+
+	sourceURL := ""
+	if h.SiteURL != "" {
+		sourceURL = fmt.Sprintf("%s/u/%s", strings.TrimRight(h.SiteURL, "/"), username)
+	}
+
+	source, err := h.SourceManager.CreateSourceFromEntity(ctx, tenantID, userID, userID, "user", username, username, sourceURL, "news")
+	if err != nil {
+		slog.Warn("register: failed to create canonical user source", "user_id", userID.String(), "error", err)
+		return
+	}
+
+	if err := h.Queries.UpdateUserSourceID(ctx, gen.UpdateUserSourceIDParams{
+		SourceID: source.ID,
+		ID:       userID,
+		TenantID: tenantID,
+	}); err != nil {
+		slog.Warn("register: failed to link user source_id", "user_id", userID.String(), "source_id", source.ID.String(), "error", err)
+	}
+}
 
 // baseURL returns the public-facing base URL for email links (password reset,
 // email verification). It prefers the configured SiteURL (JC_SITE_URL), which
@@ -305,6 +348,10 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("register: failed to create default bookmark folders", "error", err)
 		}
 	}
+
+	// v2 source directory: auto-create a canonical source for verified publisher
+	// users when the tenant setting is enabled. Non-fatal.
+	h.maybeCreateUserSource(r.Context(), tenant.ID, userID, req.Username)
 
 	// Send welcome email (fire-and-forget, Golden Rule 8).
 	if h.AsynqClient != nil {

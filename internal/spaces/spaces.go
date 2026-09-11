@@ -135,6 +135,17 @@ func DefaultPermAxes() SpacePermAxes {
 	}
 }
 
+// sourceManager creates canonical intel_sources rows for entity profiles
+// (v2 source directory, Task 5).
+type sourceManager interface {
+	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
+}
+
+// spaceSettingsReader is the subset of config.Settings used by the space service.
+type spaceSettingsReader interface {
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+}
+
 // Service provides space operations with reader/writer pool separation.
 // Reads go through the reader pool; writes go through the writer pool.
 // This follows the same pattern as the existing db.DB struct.
@@ -145,12 +156,27 @@ type Service struct {
 	enqueuer spaceEnqueuer
 	vk       valkeycompat.Cmdable // nil disables caching (tests/development)
 	activity wallet.ActivityEmitter
+	sources  sourceManager
+	siteURL  string
+	settings spaceSettingsReader
 }
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
 // (Section 52 / VALKEY-001, BUG-003: tenant-scoped). Key:
 // jc:muted_spaces:{tenant_id}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
+
+// SetSourceManager links the space service to the canonical source registry
+// (v2 source directory, Task 5).
+func (s *Service) SetSourceManager(m sourceManager) { s.sources = m }
+
+// SetSiteURL injects the public site base URL used to build canonical entity
+// source URLs. Must never be derived from the request Host (CWE-601).
+func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
+
+// SetSettings injects the system settings reader used for source auto-creation
+// gates (v2 source directory, Task 5).
+func (s *Service) SetSettings(r spaceSettingsReader) { s.settings = r }
 
 // SetActivityEmitter injects the wallet activity emitter used to record
 // space.joined events so §64 badge/challenge triggers (e.g. space_explorer)

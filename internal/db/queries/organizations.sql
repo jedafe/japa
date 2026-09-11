@@ -82,6 +82,12 @@ LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
 WHERE om.organization_id = $1
 ORDER BY om.joined_at DESC;
 
+-- name: UpdateOrganizationSourceID :exec
+-- Link an organization to its canonical intel_sources row (v2 source directory).
+UPDATE organizations
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3;
+
 -- name: UpdateOrganizationMemberRole :exec
 UPDATE organization_members
 SET role = $3

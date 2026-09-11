@@ -63,6 +63,19 @@ func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, id SourceID) (Sou
 	return row, nil
 }
 
+// GetBySlug fetches a single source by its public slug.
+func (s *Store) GetBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (Source, error) {
+	row, err := s.queries.GetIntelSourceBySlug(ctx, gen.GetIntelSourceBySlugParams{
+		TenantID: tenantID,
+		Slug:     &slug,
+	})
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: get by slug: %w", err)
+	}
+
+	return row, nil
+}
+
 // GetByURL fetches a single source by its canonical source_url.
 func (s *Store) GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (Source, error) {
 	row, err := s.queries.GetIntelSourceByURL(ctx, gen.GetIntelSourceByURLParams{
@@ -214,6 +227,59 @@ func (s *Store) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit, o
 	}
 
 	return rows, nil
+}
+
+// --- Source blocks ---
+
+// BlockSource inserts a user_source_blocks row. If the row already exists,
+// it returns pgx.ErrNoRows because of the ON CONFLICT DO NOTHING clause.
+func (s *Store) BlockSource(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := s.queries.CreateSourceBlock(ctx, gen.CreateSourceBlockParams{
+		TenantID:  tenantID,
+		BlockerID: blockerID,
+		SourceID:  sourceID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("sources: block: %w", err)
+	}
+	return row.ID, nil
+}
+
+// UnblockSource removes a user_source_blocks row.
+func (s *Store) UnblockSource(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) error {
+	if err := s.queries.DeleteSourceBlock(ctx, gen.DeleteSourceBlockParams{
+		TenantID:  tenantID,
+		BlockerID: blockerID,
+		SourceID:  sourceID,
+	}); err != nil {
+		return fmt.Errorf("sources: unblock: %w", err)
+	}
+	return nil
+}
+
+// ListBlockedSourceIDs returns the source IDs blocked by the given user.
+func (s *Store) ListBlockedSourceIDs(ctx context.Context, tenantID, blockerID pgtype.UUID) ([]pgtype.UUID, error) {
+	ids, err := s.queries.ListBlockedSourceIDs(ctx, gen.ListBlockedSourceIDsParams{
+		TenantID:  tenantID,
+		BlockerID: blockerID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sources: list blocked ids: %w", err)
+	}
+	return ids, nil
+}
+
+// IsSourceBlocked returns whether the user has blocked the given source.
+func (s *Store) IsSourceBlocked(ctx context.Context, tenantID, blockerID, sourceID pgtype.UUID) (bool, error) {
+	blocked, err := s.queries.IsSourceBlocked(ctx, gen.IsSourceBlockedParams{
+		TenantID:  tenantID,
+		BlockerID: blockerID,
+		SourceID:  sourceID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("sources: is blocked: %w", err)
+	}
+	return blocked, nil
 }
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)

@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE spaces DROP COLUMN IF EXISTS source_id;
+ALTER TABLE organizations DROP COLUMN IF EXISTS source_id;
+ALTER TABLE users DROP COLUMN IF EXISTS source_id;
+
+COMMIT;

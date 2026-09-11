@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import type { Source } from '$lib/types/sources';
+import { apiContext, apiList, apiGet } from '$lib/server/api';
+import type { Source, SourceCollection } from '$lib/types/sources';
 
 const PAGE_SIZE = 24;
 const SORT_OPTIONS = ['popular', 'recent', 'trending'];
@@ -28,9 +28,12 @@ export const load: PageServerLoad = async (event) => {
 
 	const { items: sources, meta } = await apiList<Source>(ctx, `/sources?${params.toString()}`);
 
+	const collections = await apiGet<SourceCollection[]>(ctx, '/sources/collections');
+
 	return {
 		sources,
 		meta,
+		collections,
 		q,
 		category,
 		sourceKind,

@@ -248,12 +248,24 @@ LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE s.tenant_id = $1 AND s.slug = $2 AND s.enabled = true;
 
 -- name: ListIntelRecordsBySource :many
-SELECT * FROM intel_records
-WHERE tenant_id = $1
-  AND source_id = $2
-  AND status = 'published'
-  AND ($3::text IS NULL OR $3 = '' OR entity_type = $3)
-ORDER BY extracted_at DESC
+-- Published records for a source, sorted at the DB level by the requested
+-- engagement mode. Scores come from content_scores when present, falling back
+-- to the raw contents columns; records without promoted content sort last.
+-- Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
+SELECT ir.* FROM intel_records ir
+LEFT JOIN contents c ON c.id = ir.promoted_record_id AND c.tenant_id = ir.tenant_id AND c.deleted_at IS NULL
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+WHERE ir.tenant_id = $1
+  AND ir.source_id = $2
+  AND ir.status = 'published'
+  AND ($3::text IS NULL OR $3 = '' OR ir.entity_type = $3)
+ORDER BY
+  CASE
+    WHEN $6 = 'popular' THEN COALESCE(cs.view_count, c.view_count, 0)
+    WHEN $6 = 'discussed' THEN COALESCE(cs.comment_count, c.comment_count, 0)
+    WHEN $6 = 'upvoted' THEN COALESCE(cs.vote_score, 0)
+  END DESC NULLS LAST,
+  ir.extracted_at DESC
 LIMIT $4 OFFSET $5;
 
 -- name: CountIntelRecordsBySource :one
@@ -278,3 +290,37 @@ FROM intel_records ir
 JOIN intel_sources s ON s.id = ir.source_id AND s.tenant_id = ir.tenant_id
 WHERE ir.tenant_id = $1
   AND ir.id = ANY($2::uuid[]);
+
+-- name: CreateSourceBlock :one
+INSERT INTO user_source_blocks (tenant_id, blocker_id, source_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (tenant_id, blocker_id, source_id) DO NOTHING
+RETURNING id, created_at;
+
+-- name: DeleteSourceBlock :exec
+DELETE FROM user_source_blocks
+WHERE tenant_id = $1 AND blocker_id = $2 AND source_id = $3;
+
+-- name: ListBlockedSourceIDs :many
+SELECT source_id FROM user_source_blocks
+WHERE tenant_id = $1 AND blocker_id = $2;
+
+-- name: IsSourceBlocked :one
+SELECT EXISTS(
+    SELECT 1 FROM user_source_blocks
+    WHERE tenant_id = $1 AND blocker_id = $2 AND source_id = $3
+) AS blocked;
+
+-- name: ListSourceCollections :many
+SELECT * FROM source_collections
+WHERE tenant_id = $1
+ORDER BY slug;
+
+-- name: ListSourceCollectionItems :many
+SELECT
+    i.position,
+    s.*
+FROM source_collection_items i
+JOIN intel_sources s ON s.id = i.source_id AND s.tenant_id = $1
+WHERE i.collection_id = $2
+ORDER BY i.position, i.source_id;

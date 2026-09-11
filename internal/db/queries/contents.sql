@@ -45,14 +45,21 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
        ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-       journey_stage, visa_route, source_country, target_country, video_source_id
+       journey_stage, visa_route, source_country, target_country, video_source_id,
+       intel_source_id, intel_record_id
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: GetContentByIntelRecord :one
-SELECT id, tenant_id, title, slug, content_type, body, meta_description, canonical_url, view_count, comment_count, share_count, reshare_count, publish_at, published_at, created_at, updated_at, intel_source_id, intel_record_id
-FROM contents
-WHERE tenant_id = @tenant_id AND intel_record_id = @intel_record_id AND deleted_at IS NULL;
+SELECT c.id, c.tenant_id, c.title, c.slug, c.content_type, c.body, c.meta_description, c.canonical_url,
+       COALESCE(cs.view_count, c.view_count, 0) AS view_count,
+       COALESCE(cs.comment_count, c.comment_count, 0) AS comment_count,
+       c.share_count, c.reshare_count,
+       COALESCE(cs.vote_score, 0) AS vote_score,
+       c.publish_at, c.published_at, c.created_at, c.updated_at, c.intel_source_id, c.intel_record_id
+FROM contents c
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+WHERE c.tenant_id = @tenant_id AND c.intel_record_id = @intel_record_id AND c.deleted_at IS NULL;
 
 -- name: GetContentByHash :one
 -- Duplicate-detection check (Rule 12 / BL-006). Returns a conflicting row
@@ -600,6 +607,8 @@ SET title = @title, slug = @slug, body = @body, body_html = @body_html,
     source_country = COALESCE(sqlc.narg(source_country), source_country),
     target_country = COALESCE(sqlc.narg(target_country), target_country),
     video_source_id = COALESCE(sqlc.narg(video_source_id), video_source_id),
+    intel_source_id = COALESCE(sqlc.narg(intel_source_id), intel_source_id),
+    intel_record_id = COALESCE(sqlc.narg(intel_record_id), intel_record_id),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -608,7 +617,8 @@ RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, tit
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country, video_source_id;
+          journey_stage, visa_route, source_country, target_country, video_source_id,
+          intel_source_id, intel_record_id;
 
 -- name: UpdateContentStatus :one
 UPDATE contents
@@ -622,6 +632,41 @@ RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, b
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
           journey_stage, visa_route, source_country, target_country;
+
+-- name: UpdateContentIntelSourceID :exec
+-- Links a content row to its canonical intel_sources row. Used when a
+-- comparison data source is attached to a comparison content.
+UPDATE contents
+SET intel_source_id = @intel_source_id, updated_at = now()
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: ListComparisonContentsBySourceID :many
+-- Source item feed: comparison contents linked to a canonical source.
+SELECT c.id, c.tenant_id, c.title, c.slug, c.body, c.content_type,
+       c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
+       c.view_count, c.comment_count, c.share_count,
+       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
+       u.username AS author_username
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.intel_source_id = @intel_source_id
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountComparisonContentsBySourceID :one
+SELECT COUNT(*)::int AS total
+FROM contents
+WHERE tenant_id = @tenant_id
+  AND intel_source_id = @intel_source_id
+  AND content_type = 'comparison'
+  AND deleted_at IS NULL
+  AND status = 'published'
+  AND visibility = 'public';
 
 -- name: ReassignSingleContentAuthor :one
 -- Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment)

@@ -4820,6 +4820,24 @@ func (q *Queries) UpdateSpaceSlug(ctx context.Context, arg UpdateSpaceSlugParams
 	return i, err
 }
 
+const updateSpaceSourceID = `-- name: UpdateSpaceSourceID :exec
+UPDATE spaces
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateSpaceSourceIDParams struct {
+	SourceID pgtype.UUID `json:"source_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Link a space to its canonical intel_sources row (v2 source directory).
+func (q *Queries) UpdateSpaceSourceID(ctx context.Context, arg UpdateSpaceSourceIDParams) error {
+	_, err := q.db.Exec(ctx, updateSpaceSourceID, arg.SourceID, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateSpaceStatus = `-- name: UpdateSpaceStatus :exec
 UPDATE spaces SET status = $1, updated_at = now() WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
 `

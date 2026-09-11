@@ -46,7 +46,25 @@ func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype
 		return gen.VideoSource{}, fmt.Errorf("updating video source status: %w", err)
 	}
 
-	return row, nil
+	return gen.VideoSource{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		AuthorUserID:     row.AuthorUserID,
+		SourceType:       row.SourceType,
+		SourceUrl:        row.SourceUrl,
+		ExternalID:       row.ExternalID,
+		Title:            row.Title,
+		Description:      row.Description,
+		Category:         row.Category,
+		ThumbnailUrl:     row.ThumbnailUrl,
+		ThumbnailMediaID: row.ThumbnailMediaID,
+		DurationSecs:     row.DurationSecs,
+		Status:           row.Status,
+		FieldValues:      row.FieldValues,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		SourceID:         row.SourceID,
+	}, nil
 }
 
 // CreateOrUpdateSource upserts a video source keyed by (tenant_id, source_url).
@@ -56,7 +74,25 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 		return gen.VideoSource{}, fmt.Errorf("upserting video source: %w", err)
 	}
 
-	return row, nil
+	return gen.VideoSource{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		AuthorUserID:     row.AuthorUserID,
+		SourceType:       row.SourceType,
+		SourceUrl:        row.SourceUrl,
+		ExternalID:       row.ExternalID,
+		Title:            row.Title,
+		Description:      row.Description,
+		Category:         row.Category,
+		ThumbnailUrl:     row.ThumbnailUrl,
+		ThumbnailMediaID: row.ThumbnailMediaID,
+		DurationSecs:     row.DurationSecs,
+		Status:           row.Status,
+		FieldValues:      row.FieldValues,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		SourceID:         row.SourceID,
+	}, nil
 }
 
 // GetSourceByURL returns a source by tenant and canonical URL.
@@ -69,7 +105,25 @@ func (s *Store) GetSourceByURL(ctx context.Context, tenantID pgtype.UUID, source
 		return gen.VideoSource{}, fmt.Errorf("getting video source by URL: %w", err)
 	}
 
-	return row, nil
+	return gen.VideoSource{
+		ID:               row.ID,
+		TenantID:         row.TenantID,
+		AuthorUserID:     row.AuthorUserID,
+		SourceType:       row.SourceType,
+		SourceUrl:        row.SourceUrl,
+		ExternalID:       row.ExternalID,
+		Title:            row.Title,
+		Description:      row.Description,
+		Category:         row.Category,
+		ThumbnailUrl:     row.ThumbnailUrl,
+		ThumbnailMediaID: row.ThumbnailMediaID,
+		DurationSecs:     row.DurationSecs,
+		Status:           row.Status,
+		FieldValues:      row.FieldValues,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		SourceID:         row.SourceID,
+	}, nil
 }
 
 // GetSourceByID returns a single video source.
@@ -170,6 +224,30 @@ func (s *Store) ListSourcesByAuthorUserID(ctx context.Context, tenantID, authorU
 	}
 
 	return rows, nil
+}
+
+// ListBySourceID returns active video sources linked to a canonical
+// intel_sources row, plus the total count.
+func (s *Store) ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error) {
+	rows, err := s.read.ListVideoSourcesBySourceID(ctx, gen.ListVideoSourcesBySourceIDParams{
+		TenantID:   tenantID,
+		SourceID:   sourceID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing video sources by source id: %w", err)
+	}
+
+	total, err := s.read.CountVideoSourcesBySourceID(ctx, gen.CountVideoSourcesBySourceIDParams{
+		TenantID: tenantID,
+		SourceID: sourceID,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting video sources by source id: %w", err)
+	}
+
+	return rows, int64(total), nil
 }
 
 // CreateImportJob creates a bulk import job for the user.

@@ -15,6 +15,9 @@
 	let activeIndex = $state(-1);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let loading = $state(false);
+	let requestGen = $state(0);
+
+	const activeDescendantId = $derived(activeIndex >= 0 ? `search-suggestion-${activeIndex}` : undefined);
 
 	function onInput(value: string) {
 		query = value;
@@ -25,20 +28,24 @@
 			return;
 		}
 		debounceTimer = setTimeout(async () => {
+			requestGen += 1;
+			const myGen = requestGen;
 			loading = true;
 			try {
-				const res = await api.get<{ items: TrackSummary[] } | TrackSummary[]>(
+				const res = await api.get<TrackSummary[]>(
 					`/learn/university/catalog?q=${encodeURIComponent(value.trim())}&limit=8`
 				);
-				// The list endpoint returns either { items: [...] } or a bare array.
-				suggestions = Array.isArray(res.data) ? res.data : (res.data?.items ?? []);
+				// Drop stale responses so rapid typing never shows older results.
+				if (myGen !== requestGen) return;
+				suggestions = res.data ?? [];
 				showDropdown = suggestions.length > 0;
 				activeIndex = -1;
 			} catch {
+				if (myGen !== requestGen) return;
 				suggestions = [];
 				showDropdown = false;
 			} finally {
-				loading = false;
+				if (myGen === requestGen) loading = false;
 			}
 		}, 200);
 	}
@@ -108,6 +115,7 @@
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"
 			aria-controls="search-suggestions"
+			aria-activedescendant={activeDescendantId}
 			role="combobox"
 		/>
 	</form>
@@ -126,7 +134,7 @@
 			role="listbox"
 		>
 			{#each suggestions as s, i (s.id)}
-				<li role="option" aria-selected={i === activeIndex}>
+				<li role="option" id="search-suggestion-{i}" aria-selected={i === activeIndex}>
 					<button
 						type="button"
 						onclick={() => select(s)}

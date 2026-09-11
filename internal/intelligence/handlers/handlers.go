@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -49,6 +50,18 @@ type SettingsReader interface {
 	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
 }
 
+// videoStore is the small surface of the video store needed for source item
+// feeds that include linked video sources (v2 source directory, Task 3).
+type videoStore interface {
+	ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error)
+}
+
+// contentStore is the small surface of the content service needed for source
+// item feeds that include linked comparison contents.
+type contentStore interface {
+	ListComparisonContentsBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error)
+}
+
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
 	intelStores   *stores.Store
@@ -58,6 +71,8 @@ type Handlers struct {
 	asynqClient   *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
 	settings      SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
 	defaultTenant pgtype.UUID    // tenant ID for settings reads
+	videos        videoStore     // optional; enables video source item feeds
+	contents      contentStore   // optional; enables comparison source item feeds
 }
 
 // defaultIntelTenantID is the system tenant UUID used as a fallback for
@@ -103,6 +118,14 @@ func NewHandlers(
 // to enqueue promotion; without it approved records are never published.
 // INTEL-026 fix: the reviewer user ID is passed in the payload so the
 // promoter can stamp hitl_reviewed_by on the contents row.
+// SetVideoStore links the source directory item feed to the video store so
+// linked video sources can be surfaced as source items (v2 Task 3).
+func (h *Handlers) SetVideoStore(v videoStore) { h.videos = v }
+
+// SetContentStore links the source directory item feed to the content service
+// so linked comparison contents can be surfaced as source items.
+func (h *Handlers) SetContentStore(c contentStore) { h.contents = c }
+
 func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {
 		return errors.New("intel: asynq client not configured")

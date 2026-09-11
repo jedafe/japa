@@ -1938,6 +1938,10 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	// rows"). Fire-and-forget — errors are logged, never propagated.
 	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
 
+	// §73: a deleted guide may still have a scholarships projection. The worker
+	// will see the content is gone and remove the row.
+	h.enqueueScholarshipSyncFromGuide(id, tenantID, content.GuideCategory)
+
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
 

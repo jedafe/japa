@@ -390,6 +390,31 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 	return i, err
 }
 
+const createSourceBlock = `-- name: CreateSourceBlock :one
+INSERT INTO user_source_blocks (tenant_id, blocker_id, source_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (tenant_id, blocker_id, source_id) DO NOTHING
+RETURNING id, created_at
+`
+
+type CreateSourceBlockParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	BlockerID pgtype.UUID `json:"blocker_id"`
+	SourceID  pgtype.UUID `json:"source_id"`
+}
+
+type CreateSourceBlockRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) CreateSourceBlock(ctx context.Context, arg CreateSourceBlockParams) (CreateSourceBlockRow, error) {
+	row := q.db.QueryRow(ctx, createSourceBlock, arg.TenantID, arg.BlockerID, arg.SourceID)
+	var i CreateSourceBlockRow
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
+}
+
 const decrementSourcePostCount = `-- name: DecrementSourcePostCount :exec
 UPDATE intel_sources
 SET post_count = GREATEST(0, post_count - 1)
@@ -431,6 +456,22 @@ type DeleteIntelSourceParams struct {
 
 func (q *Queries) DeleteIntelSource(ctx context.Context, arg DeleteIntelSourceParams) error {
 	_, err := q.db.Exec(ctx, deleteIntelSource, arg.TenantID, arg.ID)
+	return err
+}
+
+const deleteSourceBlock = `-- name: DeleteSourceBlock :exec
+DELETE FROM user_source_blocks
+WHERE tenant_id = $1 AND blocker_id = $2 AND source_id = $3
+`
+
+type DeleteSourceBlockParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	BlockerID pgtype.UUID `json:"blocker_id"`
+	SourceID  pgtype.UUID `json:"source_id"`
+}
+
+func (q *Queries) DeleteSourceBlock(ctx context.Context, arg DeleteSourceBlockParams) error {
+	_, err := q.db.Exec(ctx, deleteSourceBlock, arg.TenantID, arg.BlockerID, arg.SourceID)
 	return err
 }
 
@@ -857,6 +898,56 @@ func (q *Queries) IncrementSourcePostCount(ctx context.Context, arg IncrementSou
 	return err
 }
 
+const isSourceBlocked = `-- name: IsSourceBlocked :one
+SELECT EXISTS(
+    SELECT 1 FROM user_source_blocks
+    WHERE tenant_id = $1 AND blocker_id = $2 AND source_id = $3
+) AS blocked
+`
+
+type IsSourceBlockedParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	BlockerID pgtype.UUID `json:"blocker_id"`
+	SourceID  pgtype.UUID `json:"source_id"`
+}
+
+func (q *Queries) IsSourceBlocked(ctx context.Context, arg IsSourceBlockedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isSourceBlocked, arg.TenantID, arg.BlockerID, arg.SourceID)
+	var blocked bool
+	err := row.Scan(&blocked)
+	return blocked, err
+}
+
+const listBlockedSourceIDs = `-- name: ListBlockedSourceIDs :many
+SELECT source_id FROM user_source_blocks
+WHERE tenant_id = $1 AND blocker_id = $2
+`
+
+type ListBlockedSourceIDsParams struct {
+	TenantID  pgtype.UUID `json:"tenant_id"`
+	BlockerID pgtype.UUID `json:"blocker_id"`
+}
+
+func (q *Queries) ListBlockedSourceIDs(ctx context.Context, arg ListBlockedSourceIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listBlockedSourceIDs, arg.TenantID, arg.BlockerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var source_id pgtype.UUID
+		if err := rows.Scan(&source_id); err != nil {
+			return nil, err
+		}
+		items = append(items, source_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueIntelSources = `-- name: ListDueIntelSources :many
 SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
 WHERE tenant_id = $1
@@ -977,12 +1068,20 @@ func (q *Queries) ListIntelRecordsByExternalKey(ctx context.Context, arg ListInt
 }
 
 const listIntelRecordsBySource = `-- name: ListIntelRecordsBySource :many
-SELECT id, source_id, raw_document_id, entity_type, external_key, extracted, confidence, evidence, confidence_overall, status, freshness_score, geo_space_ids, extracted_at, last_verified_at, promoted_record_id, tenant_id FROM intel_records
-WHERE tenant_id = $1
-  AND source_id = $2
-  AND status = 'published'
-  AND ($3::text IS NULL OR $3 = '' OR entity_type = $3)
-ORDER BY extracted_at DESC
+SELECT ir.id, ir.source_id, ir.raw_document_id, ir.entity_type, ir.external_key, ir.extracted, ir.confidence, ir.evidence, ir.confidence_overall, ir.status, ir.freshness_score, ir.geo_space_ids, ir.extracted_at, ir.last_verified_at, ir.promoted_record_id, ir.tenant_id FROM intel_records ir
+LEFT JOIN contents c ON c.id = ir.promoted_record_id AND c.tenant_id = ir.tenant_id AND c.deleted_at IS NULL
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+WHERE ir.tenant_id = $1
+  AND ir.source_id = $2
+  AND ir.status = 'published'
+  AND ($3::text IS NULL OR $3 = '' OR ir.entity_type = $3)
+ORDER BY
+  CASE
+    WHEN $6 = 'popular' THEN COALESCE(cs.view_count, c.view_count, 0)
+    WHEN $6 = 'discussed' THEN COALESCE(cs.comment_count, c.comment_count, 0)
+    WHEN $6 = 'upvoted' THEN COALESCE(cs.vote_score, 0)
+  END DESC NULLS LAST,
+  ir.extracted_at DESC
 LIMIT $4 OFFSET $5
 `
 
@@ -992,8 +1091,13 @@ type ListIntelRecordsBySourceParams struct {
 	Column3  string      `json:"column_3"`
 	Limit    int32       `json:"limit"`
 	Offset   int32       `json:"offset"`
+	Column6  interface{} `json:"column_6"`
 }
 
+// Published records for a source, sorted at the DB level by the requested
+// engagement mode. Scores come from content_scores when present, falling back
+// to the raw contents columns; records without promoted content sort last.
+// Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
 func (q *Queries) ListIntelRecordsBySource(ctx context.Context, arg ListIntelRecordsBySourceParams) ([]IntelRecord, error) {
 	rows, err := q.db.Query(ctx, listIntelRecordsBySource,
 		arg.TenantID,
@@ -1001,6 +1105,7 @@ func (q *Queries) ListIntelRecordsBySource(ctx context.Context, arg ListIntelRec
 		arg.Column3,
 		arg.Limit,
 		arg.Offset,
+		arg.Column6,
 	)
 	if err != nil {
 		return nil, err
@@ -1642,6 +1747,159 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSourceCollectionItems = `-- name: ListSourceCollectionItems :many
+SELECT
+    i.position,
+    s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind
+FROM source_collection_items i
+JOIN intel_sources s ON s.id = i.source_id AND s.tenant_id = $1
+WHERE i.collection_id = $2
+ORDER BY i.position, i.source_id
+`
+
+type ListSourceCollectionItemsParams struct {
+	TenantID     pgtype.UUID `json:"tenant_id"`
+	CollectionID pgtype.UUID `json:"collection_id"`
+}
+
+type ListSourceCollectionItemsRow struct {
+	Position            int32              `json:"position"`
+	ID                  pgtype.UUID        `json:"id"`
+	Name                string             `json:"name"`
+	Domain              string             `json:"domain"`
+	SourceUrl           string             `json:"source_url"`
+	Category            string             `json:"category"`
+	SourceType          string             `json:"source_type"`
+	TrustLevel          int16              `json:"trust_level"`
+	CrawlMethod         string             `json:"crawl_method"`
+	CrawlFrequency      string             `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32              `json:"crawl_frequency_mins"`
+	RobotsPolicy        []byte             `json:"robots_policy"`
+	SourceLicense       *string            `json:"source_license"`
+	AttributionRequired bool               `json:"attribution_required"`
+	UsageRestriction    *string            `json:"usage_restriction"`
+	ProviderConfig      []byte             `json:"provider_config"`
+	Enabled             bool               `json:"enabled"`
+	LastCrawledAt       pgtype.Timestamptz `json:"last_crawled_at"`
+	LastSuccessAt       pgtype.Timestamptz `json:"last_success_at"`
+	LastErrorAt         pgtype.Timestamptz `json:"last_error_at"`
+	LastErrorMessage    *string            `json:"last_error_message"`
+	LastChangedAt       pgtype.Timestamptz `json:"last_changed_at"`
+	ConsecutiveFailures int32              `json:"consecutive_failures"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	PersonaID           pgtype.UUID        `json:"persona_id"`
+	Status              string             `json:"status"`
+	ProposedBy          pgtype.UUID        `json:"proposed_by"`
+	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy          pgtype.UUID        `json:"approved_by"`
+	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
+	Slug                *string            `json:"slug"`
+	Description         *string            `json:"description"`
+	LogoUrl             *string            `json:"logo_url"`
+	FollowerCount       int32              `json:"follower_count"`
+	PostCount           int32              `json:"post_count"`
+	SourceKind          string             `json:"source_kind"`
+}
+
+func (q *Queries) ListSourceCollectionItems(ctx context.Context, arg ListSourceCollectionItemsParams) ([]ListSourceCollectionItemsRow, error) {
+	rows, err := q.db.Query(ctx, listSourceCollectionItems, arg.TenantID, arg.CollectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSourceCollectionItemsRow
+	for rows.Next() {
+		var i ListSourceCollectionItemsRow
+		if err := rows.Scan(
+			&i.Position,
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TenantID,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.Slug,
+			&i.Description,
+			&i.LogoUrl,
+			&i.FollowerCount,
+			&i.PostCount,
+			&i.SourceKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSourceCollections = `-- name: ListSourceCollections :many
+SELECT id, tenant_id, slug, name, description, collection_type, query_json, sort, "limit", created_at, updated_at FROM source_collections
+WHERE tenant_id = $1
+ORDER BY slug
+`
+
+func (q *Queries) ListSourceCollections(ctx context.Context, tenantID pgtype.UUID) ([]SourceCollection, error) {
+	rows, err := q.db.Query(ctx, listSourceCollections, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SourceCollection
+	for rows.Next() {
+		var i SourceCollection
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.CollectionType,
+			&i.QueryJson,
+			&i.Sort,
+			&i.Limit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

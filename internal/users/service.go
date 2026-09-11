@@ -50,11 +50,19 @@ type Service struct {
 	// Used by admin profile-type changes so users.profile_type stays in sync
 	// with group memberships (§unified-tiers).
 	tierService *tiers.Service
+	sources     sourceManager
+	siteURL     string
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
 type userEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
+}
+
+// sourceManager creates canonical intel_sources rows for entity profiles
+// (v2 source directory, Task 5).
+type sourceManager interface {
+	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
 // folderResolver resolves a default bookmark folder for an entity/content
@@ -86,6 +94,14 @@ func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 // type updates route through SetUserTier so group memberships and the
 // denormalized users.profile_type stay in sync.
 func (s *Service) SetTierService(ts *tiers.Service) { s.tierService = ts }
+
+// SetSourceManager links the user service to the canonical source registry
+// (v2 source directory, Task 5).
+func (s *Service) SetSourceManager(m sourceManager) { s.sources = m }
+
+// SetSiteURL injects the public site base URL used to build canonical entity
+// source URLs. Must never be derived from the request Host (CWE-601).
+func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
 
 // MediaResolver resolves a media UUID to a presigned URL.
 // Implemented by the media package; injected at server wiring time.

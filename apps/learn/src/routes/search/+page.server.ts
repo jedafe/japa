@@ -1,10 +1,12 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { TrackSummary, CatalogOption } from '$lib/types';
+import type { TrackSummary, CatalogOption, TrackCategory } from '$lib/types';
+
+const DEFAULT_LIMIT = 24;
 
 /**
  * Search results page — Phase 10 (ROADMAP-LEARN.md).
- * SSR: calls GET /learn/university/catalog?q=... with level filter.
+ * SSR: calls GET /learn/university/catalog?q=... with level, category and pagination.
  * No-results state fetches suggested tracks (popular, limit 4).
  *
  * Ref: Section 54 (search), ADR-060 SSR/CSR boundary.
@@ -13,12 +15,18 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const q = event.url.searchParams.get('q') ?? '';
 	const level = event.url.searchParams.get('level') ?? '';
+	const category = event.url.searchParams.get('category') ?? '';
+	const isFree = event.url.searchParams.get('is_free') === 'true';
+	const offset = Math.max(parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0, 0);
 
 	// Build query string for the search request.
 	const params = new URLSearchParams();
 	if (q) params.set('q', q);
 	if (level) params.set('level', level);
-	params.set('limit', '24');
+	if (category) params.set('category', category);
+	if (isFree) params.set('is_free', 'true');
+	params.set('limit', String(DEFAULT_LIMIT));
+	if (offset > 0) params.set('offset', String(offset));
 	const qs = params.toString() ? `?${params.toString()}` : '';
 
 	let results: TrackSummary[] = [];
@@ -47,14 +55,17 @@ export const load: PageServerLoad = async (event) => {
 
 	// Rule 16: option lists must come from the backend, not hardcoded constants.
 	let difficultyLevels: CatalogOption[] = [];
+	let categories: TrackCategory[] = [];
 	try {
-		const opts = await apiGet<{ difficulty_levels: CatalogOption[] }>(
-			ctx,
-			'/learn/university/catalog/options'
-		);
+		const [opts, cats] = await Promise.all([
+			apiGet<{ difficulty_levels: CatalogOption[] }>(ctx, '/learn/university/catalog/options'),
+			apiGet<TrackCategory[]>(ctx, '/learn/university/categories')
+		]);
 		difficultyLevels = opts.difficulty_levels ?? [];
+		categories = cats ?? [];
 	} catch {
 		difficultyLevels = [];
+		categories = [];
 	}
 
 	return {
@@ -63,6 +74,11 @@ export const load: PageServerLoad = async (event) => {
 		suggested,
 		query: q,
 		levelFilter: level,
-		difficultyLevels
+		categoryFilter: category,
+		isFreeFilter: isFree,
+		offset,
+		limit: DEFAULT_LIMIT,
+		difficultyLevels,
+		categories
 	};
 };

@@ -958,6 +958,12 @@ JOIN space_parent_spaces sps ON sps.space_id = s.id
 WHERE sps.parent_space_id = @parent_space_id AND s.tenant_id = @tenant_id AND s.deleted_at IS NULL
 ORDER BY s.name;
 
+-- name: UpdateSpaceSourceID :exec
+-- Link a space to its canonical intel_sources row (v2 source directory).
+UPDATE spaces
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3;
+
 -- name: UpdateSpaceParentID :exec
 UPDATE spaces
 SET parent_id = @parent_id, updated_at = now()

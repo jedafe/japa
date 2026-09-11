@@ -85,12 +85,19 @@ type TierResolver interface {
 // SettingsReader is the subset of config.Settings used by the org service.
 type SettingsReader interface {
 	GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error)
+	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
 }
 
 // webhookEmitter fans an organization.* / claim.* event out to all subscribed
 // webhook endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
 	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+}
+
+// sourceManager creates canonical intel_sources rows for entity profiles
+// (v2 source directory, Task 5).
+type sourceManager interface {
+	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
 // Service provides organization business logic.
@@ -103,6 +110,7 @@ type Service struct {
 	webhooks     webhookEmitter
 	asynq        *asynq.Client
 	siteURL      string
+	sources      sourceManager
 }
 
 // NewService creates a Service backed by the given database.
@@ -147,6 +155,10 @@ func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
 // SetTierResolver injects the unified tier resolver used to read
 // per-tier organization creation limits.
 func (s *Service) SetTierResolver(r TierResolver) { s.tierResolver = r }
+
+// SetSourceManager links the organization service to the canonical source
+// registry (v2 source directory, Task 5).
+func (s *Service) SetSourceManager(m sourceManager) { s.sources = m }
 
 // emitWebhook fires an organization.* / claim.* event fire-and-forget
 // (Rule 8). Errors are logged but never returned to the caller — webhook

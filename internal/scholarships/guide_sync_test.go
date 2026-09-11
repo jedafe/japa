@@ -183,3 +183,62 @@ func TestSyncFromContentGuide_DraftDoesNotCreate(t *testing.T) {
 		t.Fatalf("expected no scholarship for draft guide")
 	}
 }
+
+// TestSyncFromContentGuide_DeletedGuideCleansProjection verifies that a sync
+// call for a deleted guide removes the existing scholarships row.
+func TestSyncFromContentGuide_DeletedGuideCleansProjection(t *testing.T) {
+	t.Parallel()
+
+	database := testdb.Connect(t)
+	tenantID := testdb.NewTenant(t, database)
+	author := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "scholarship-delete-author"})
+
+	ctx := context.Background()
+	contentSvc := content.NewService(database)
+	store := NewStore(database)
+
+	spaceID := testdb.SeedSpaceMembership(t, database, tenantID, author, testdb.SpaceOpts{})
+
+	guideCategory := "scholarship"
+	row, err := contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+		AuthorID:      author,
+		SpaceID:       spaceID,
+		ContentType:   "guide",
+		Title:         "Scholarship To Delete",
+		Body:          "Body.",
+		BodyHtml:      "<p>Body.</p>",
+		FieldValues:   []byte(`{"provider_institution":"Delete Me"}`),
+		Status:        "published",
+		Visibility:    "public",
+		GuideCategory: &guideCategory,
+	})
+	if err != nil {
+		t.Fatalf("create content: %v", err)
+	}
+
+	if err := store.SyncFromContentGuide(ctx, tenantID, row.ID); err != nil {
+		t.Fatalf("sync from guide: %v", err)
+	}
+
+	if _, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
+		TenantID: tenantID,
+		GuideID:  row.ID,
+	}); err != nil {
+		t.Fatalf("expected scholarship before delete: %v", err)
+	}
+
+	if err := contentSvc.DeleteContent(ctx, row.ID, tenantID); err != nil {
+		t.Fatalf("delete content: %v", err)
+	}
+
+	if err := store.SyncFromContentGuide(ctx, tenantID, row.ID); err != nil {
+		t.Fatalf("sync after delete: %v", err)
+	}
+
+	if _, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
+		TenantID: tenantID,
+		GuideID:  row.ID,
+	}); err == nil {
+		t.Fatalf("expected scholarship to be removed after delete")
+	}
+}

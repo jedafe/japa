@@ -368,3 +368,28 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 
 	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
 }
+
+// ListComparisonContentsBySourceID returns published comparison contents
+// linked to a canonical intel_sources row, plus the total count.
+// Ref: v2 source directory item feed for comparison sources.
+func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error) {
+	rows, err := s.read.ListComparisonContentsBySourceID(ctx, gen.ListComparisonContentsBySourceIDParams{
+		TenantID:   tenantID,
+		IntelSourceID: sourceID,
+		PageLimit:  limit,
+		PageOffset: offset,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing comparison contents by source: %w", err)
+	}
+
+	total, err := s.read.CountComparisonContentsBySourceID(ctx, gen.CountComparisonContentsBySourceIDParams{
+		TenantID:      tenantID,
+		IntelSourceID: sourceID,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting comparison contents by source: %w", err)
+	}
+
+	return rows, int64(total), nil
+}

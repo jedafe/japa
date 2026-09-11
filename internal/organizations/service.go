@@ -83,6 +83,17 @@ type ReviewClaimInput struct {
 	ResolutionNote string `json:"resolution_note,omitempty"`
 }
 
+func (s *Service) sourceAutoCreateEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+	if s.settings == nil {
+		return false
+	}
+	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "sources.auto_create_for_organizations")
+	if err != nil {
+		return false
+	}
+	return enabled
+}
+
 // CreateOrganization creates a new organization and adds the creator as owner.
 // The org insert, owner member insert, and member-count increment are wrapped
 // in a single transaction so a partial failure cannot leave an orphaned org
@@ -198,6 +209,25 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	s.InvalidateOrgCache(ctx, tenantID)
+
+	// v2 source directory: auto-create an intel_sources row for the organization
+	// when the tenant setting is enabled (default false).
+	if s.sources != nil && s.sourceAutoCreateEnabled(ctx, tenantID) {
+		category := "community_organisation"
+		if org.OrgType == "university" {
+			category = "university"
+		} else if org.OrgType == "business" || org.OrgType == "media" {
+			category = org.OrgType
+		}
+		source, sErr := s.sources.CreateSourceFromEntity(ctx, tenantID, org.ID, userID, "organization", org.Name, org.Slug, maybeString(org.WebsiteUrl), category)
+		if sErr != nil {
+			slog.Warn("organizations: failed to create source for org", "org_id", org.ID, "error", sErr)
+		} else {
+			if err := s.store.UpdateSourceID(ctx, tenantID, org.ID, source.ID); err != nil {
+				slog.Warn("organizations: failed to link org source_id", "org_id", org.ID, "source_id", source.ID, "error", err)
+			}
+		}
+	}
 
 	// ADR-064a: The org's country_code is sourced from the spaces country
 	// table, so it is a geo-aware signal. Feed it into the user's
@@ -966,8 +996,14 @@ func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
-
 	return &s
+}
+
+func maybeString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func hashToken(token string) string {

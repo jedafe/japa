@@ -1633,6 +1633,24 @@ func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOr
 	return err
 }
 
+const updateOrganizationSourceID = `-- name: UpdateOrganizationSourceID :exec
+UPDATE organizations
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateOrganizationSourceIDParams struct {
+	SourceID pgtype.UUID `json:"source_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Link an organization to its canonical intel_sources row (v2 source directory).
+func (q *Queries) UpdateOrganizationSourceID(ctx context.Context, arg UpdateOrganizationSourceIDParams) error {
+	_, err := q.db.Exec(ctx, updateOrganizationSourceID, arg.SourceID, arg.ID, arg.TenantID)
+	return err
+}
+
 const withdrawOwnershipClaim = `-- name: WithdrawOwnershipClaim :exec
 DELETE FROM ownership_claims
 WHERE id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'

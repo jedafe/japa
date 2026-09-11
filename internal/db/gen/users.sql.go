@@ -2706,6 +2706,24 @@ func (q *Queries) UpdateUserProfileType(ctx context.Context, arg UpdateUserProfi
 	return err
 }
 
+const updateUserSourceID = `-- name: UpdateUserSourceID :exec
+UPDATE users
+SET source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3
+`
+
+type UpdateUserSourceIDParams struct {
+	SourceID pgtype.UUID `json:"source_id"`
+	ID       pgtype.UUID `json:"id"`
+	TenantID pgtype.UUID `json:"tenant_id"`
+}
+
+// Link a user to its canonical intel_sources row (v2 source directory).
+func (q *Queries) UpdateUserSourceID(ctx context.Context, arg UpdateUserSourceIDParams) error {
+	_, err := q.db.Exec(ctx, updateUserSourceID, arg.SourceID, arg.ID, arg.TenantID)
+	return err
+}
+
 const updateUserSyntheticToReal = `-- name: UpdateUserSyntheticToReal :exec
 UPDATE users
 SET is_synthetic = false, synthetic_source = NULL, updated_at = now()

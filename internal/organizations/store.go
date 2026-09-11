@@ -118,6 +118,15 @@ func (s *Store) UpdateMemberRole(ctx context.Context, params gen.UpdateOrganizat
 	return s.write.UpdateOrganizationMemberRole(ctx, params)
 }
 
+// UpdateSourceID links an organization to its canonical intel_sources row.
+func (s *Store) UpdateSourceID(ctx context.Context, tenantID, orgID, sourceID pgtype.UUID) error {
+	return s.write.UpdateOrganizationSourceID(ctx, gen.UpdateOrganizationSourceIDParams{
+		TenantID: tenantID,
+		ID:       orgID,
+		SourceID: sourceID,
+	})
+}
+
 // IsMember checks if a user is a member.
 func (s *Store) IsMember(ctx context.Context, organizationID, userID pgtype.UUID) (bool, error) {
 	return s.read.IsOrganizationMember(ctx, gen.IsOrganizationMemberParams{

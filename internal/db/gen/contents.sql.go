@@ -106,6 +106,29 @@ func (q *Queries) CountBookmarksByUser(ctx context.Context, arg CountBookmarksBy
 	return count, err
 }
 
+const countComparisonContentsBySourceID = `-- name: CountComparisonContentsBySourceID :one
+SELECT COUNT(*)::int AS total
+FROM contents
+WHERE tenant_id = $1
+  AND intel_source_id = $2
+  AND content_type = 'comparison'
+  AND deleted_at IS NULL
+  AND status = 'published'
+  AND visibility = 'public'
+`
+
+type CountComparisonContentsBySourceIDParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelSourceID pgtype.UUID `json:"intel_source_id"`
+}
+
+func (q *Queries) CountComparisonContentsBySourceID(ctx context.Context, arg CountComparisonContentsBySourceIDParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonContentsBySourceID, arg.TenantID, arg.IntelSourceID)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countContentShares = `-- name: CountContentShares :one
 SELECT COUNT(*)::int AS count
 FROM content_shares
@@ -819,7 +842,8 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
        view_count, comment_count, share_count, reshare_count, publish_at, published_at,
        created_at, updated_at, guide_category,
        ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-       journey_stage, visa_route, source_country, target_country, video_source_id
+       journey_stage, visa_route, source_country, target_country, video_source_id,
+       intel_source_id, intel_record_id
 FROM contents
 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 `
@@ -874,6 +898,8 @@ type GetContentByIDRow struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
 func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
@@ -924,14 +950,22 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 		&i.SourceCountry,
 		&i.TargetCountry,
 		&i.VideoSourceID,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
 	)
 	return i, err
 }
 
 const getContentByIntelRecord = `-- name: GetContentByIntelRecord :one
-SELECT id, tenant_id, title, slug, content_type, body, meta_description, canonical_url, view_count, comment_count, share_count, reshare_count, publish_at, published_at, created_at, updated_at, intel_source_id, intel_record_id
-FROM contents
-WHERE tenant_id = $1 AND intel_record_id = $2 AND deleted_at IS NULL
+SELECT c.id, c.tenant_id, c.title, c.slug, c.content_type, c.body, c.meta_description, c.canonical_url,
+       COALESCE(cs.view_count, c.view_count, 0) AS view_count,
+       COALESCE(cs.comment_count, c.comment_count, 0) AS comment_count,
+       c.share_count, c.reshare_count,
+       COALESCE(cs.vote_score, 0) AS vote_score,
+       c.publish_at, c.published_at, c.created_at, c.updated_at, c.intel_source_id, c.intel_record_id
+FROM contents c
+LEFT JOIN content_scores cs ON cs.content_id = c.id
+WHERE c.tenant_id = $1 AND c.intel_record_id = $2 AND c.deleted_at IS NULL
 `
 
 type GetContentByIntelRecordParams struct {
@@ -952,6 +986,7 @@ type GetContentByIntelRecordRow struct {
 	CommentCount    int32              `json:"comment_count"`
 	ShareCount      int32              `json:"share_count"`
 	ReshareCount    int32              `json:"reshare_count"`
+	VoteScore       int32              `json:"vote_score"`
 	PublishAt       pgtype.Timestamptz `json:"publish_at"`
 	PublishedAt     pgtype.Timestamptz `json:"published_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
@@ -976,6 +1011,7 @@ func (q *Queries) GetContentByIntelRecord(ctx context.Context, arg GetContentByI
 		&i.CommentCount,
 		&i.ShareCount,
 		&i.ReshareCount,
+		&i.VoteScore,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -2190,6 +2226,93 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 			&i.Folder,
 			&i.FolderID,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComparisonContentsBySourceID = `-- name: ListComparisonContentsBySourceID :many
+SELECT c.id, c.tenant_id, c.title, c.slug, c.body, c.content_type,
+       c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
+       c.view_count, c.comment_count, c.share_count,
+       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
+       u.username AS author_username
+FROM contents c
+LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.intel_source_id = $2
+  AND c.content_type = 'comparison'
+  AND c.deleted_at IS NULL
+  AND c.status = 'published'
+  AND c.visibility = 'public'
+ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListComparisonContentsBySourceIDParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelSourceID pgtype.UUID `json:"intel_source_id"`
+	PageOffset    int32       `json:"page_offset"`
+	PageLimit     int32       `json:"page_limit"`
+}
+
+type ListComparisonContentsBySourceIDRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Body           string             `json:"body"`
+	ContentType    string             `json:"content_type"`
+	Status         string             `json:"status"`
+	Visibility     string             `json:"visibility"`
+	PublishedAt    pgtype.Timestamptz `json:"published_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ViewCount      int32              `json:"view_count"`
+	CommentCount   int32              `json:"comment_count"`
+	ShareCount     int32              `json:"share_count"`
+	VoteScore      int32              `json:"vote_score"`
+	AuthorUsername *string            `json:"author_username"`
+}
+
+// Source item feed: comparison contents linked to a canonical source.
+func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg ListComparisonContentsBySourceIDParams) ([]ListComparisonContentsBySourceIDRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonContentsBySourceID,
+		arg.TenantID,
+		arg.IntelSourceID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComparisonContentsBySourceIDRow
+	for rows.Next() {
+		var i ListComparisonContentsBySourceIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.ContentType,
+			&i.Status,
+			&i.Visibility,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ViewCount,
+			&i.CommentCount,
+			&i.ShareCount,
+			&i.VoteScore,
+			&i.AuthorUsername,
 		); err != nil {
 			return nil, err
 		}
@@ -5049,15 +5172,18 @@ SET title = $1, slug = $2, body = $3, body_html = $4,
     source_country = COALESCE($28, source_country),
     target_country = COALESCE($29, target_country),
     video_source_id = COALESCE($30, video_source_id),
+    intel_source_id = COALESCE($31, intel_source_id),
+    intel_record_id = COALESCE($32, intel_record_id),
     updated_at = now()
-WHERE id = $31 AND tenant_id = $32 AND deleted_at IS NULL
+WHERE id = $33 AND tenant_id = $34 AND deleted_at IS NULL
 RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
           field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
           canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
           status, visibility, is_locked, is_pinned, read_time_minutes,
           view_count, comment_count, share_count, reshare_count, publish_at, published_at,
           created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country, video_source_id
+          journey_stage, visa_route, source_country, target_country, video_source_id,
+          intel_source_id, intel_record_id
 `
 
 type UpdateContentParams struct {
@@ -5091,6 +5217,8 @@ type UpdateContentParams struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 	ID              pgtype.UUID        `json:"id"`
 	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
@@ -5135,6 +5263,8 @@ type UpdateContentRow struct {
 	SourceCountry   *string            `json:"source_country"`
 	TargetCountry   *string            `json:"target_country"`
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
 func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (UpdateContentRow, error) {
@@ -5169,6 +5299,8 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.SourceCountry,
 		arg.TargetCountry,
 		arg.VideoSourceID,
+		arg.IntelSourceID,
+		arg.IntelRecordID,
 		arg.ID,
 		arg.TenantID,
 	)
@@ -5213,8 +5345,29 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		&i.SourceCountry,
 		&i.TargetCountry,
 		&i.VideoSourceID,
+		&i.IntelSourceID,
+		&i.IntelRecordID,
 	)
 	return i, err
+}
+
+const updateContentIntelSourceID = `-- name: UpdateContentIntelSourceID :exec
+UPDATE contents
+SET intel_source_id = $1, updated_at = now()
+WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+`
+
+type UpdateContentIntelSourceIDParams struct {
+	IntelSourceID pgtype.UUID `json:"intel_source_id"`
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+}
+
+// Links a content row to its canonical intel_sources row. Used when a
+// comparison data source is attached to a comparison content.
+func (q *Queries) UpdateContentIntelSourceID(ctx context.Context, arg UpdateContentIntelSourceIDParams) error {
+	_, err := q.db.Exec(ctx, updateContentIntelSourceID, arg.IntelSourceID, arg.ID, arg.TenantID)
+	return err
 }
 
 const updateContentStatus = `-- name: UpdateContentStatus :one

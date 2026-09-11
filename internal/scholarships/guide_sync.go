@@ -72,7 +72,9 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+			// The guide was deleted before the sync task ran; remove any
+			// projection row that may still reference it.
+			return s.deleteProjectionIfExists(ctx, tenantID, contentID)
 		}
 		return fmt.Errorf("scholarships: sync from guide: get content: %w", err)
 	}
@@ -137,6 +139,37 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	}
 	slog.Info("scholarships: created scholarship from guide",
 		"content_id", content.ID.String(),
+		"tenant_id", tenantID.String())
+	return nil
+}
+
+// deleteProjectionIfExists removes the scholarships row for a guide that no
+// longer exists. It is safe to call when the content row was deleted before the
+// sync task processed.
+func (s *Store) deleteProjectionIfExists(ctx context.Context, tenantID, guideID pgtype.UUID) error {
+	existing, err := s.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
+		TenantID: tenantID,
+		GuideID:  guideID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("scholarships: sync from guide: check deleted guide: %w", err)
+	}
+
+	if !existing.GuideID.Valid {
+		return nil
+	}
+
+	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
+		TenantID: tenantID,
+		ID:       existing.ID,
+	}); err != nil {
+		return fmt.Errorf("scholarships: sync from guide: delete projection for deleted guide: %w", err)
+	}
+	slog.Info("scholarships: deleted projection for deleted guide",
+		"content_id", guideID.String(),
 		"tenant_id", tenantID.String())
 	return nil
 }

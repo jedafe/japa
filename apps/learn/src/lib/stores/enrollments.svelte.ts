@@ -11,8 +11,8 @@
 // never fetches. The first subscriber's $effect triggers the initial fetch;
 // subsequent subscribers reuse the cached data.
 
-import { api } from '$lib/api/client';
-import type { Enrollment, SessionUser } from '$lib/types';
+import { api, clientHasSession } from '$lib/api/client';
+import type { Enrollment } from '$lib/types';
 
 class EnrollmentsStore {
 	/** Current enrollments (empty array = loaded but none, null = not loaded). */
@@ -21,6 +21,9 @@ class EnrollmentsStore {
 	error = $state<string | null>(null);
 
 	private fetchPromise: Promise<void> | null = null;
+	/** Monotonically incremented request generation — used to discard stale
+	 *  in-flight responses after a refresh() or concurrent mutation. */
+	private requestGen = 0;
 
 	/**
 	 * Fetch enrollments from /me/enrollments. Deduplicates concurrent calls
@@ -28,6 +31,14 @@ class EnrollmentsStore {
 	 * Safe to call when not logged in — returns immediately with empty array.
 	 */
 	async fetch(): Promise<void> {
+		// Guard: no session cookie means this is a guest — don't call the
+		// authenticated endpoint and risk 401 noise in the console.
+		if (!clientHasSession()) {
+			this.enrollments = [];
+			this.loading = false;
+			return;
+		}
+
 		// Already loaded or in-flight — don't double-fetch.
 		if (this.enrollments !== null || this.fetchPromise) {
 			return this.fetchPromise ?? Promise.resolve();
@@ -56,10 +67,22 @@ class EnrollmentsStore {
 	 * Force a re-fetch of enrollments, discarding cached data. Called after
 	 * mutations that change enrollment state (enroll, mark-complete, progress
 	 * update). All subscribed widgets update reactively.
+	 *
+	 * A generation counter ensures an older in-flight request (e.g. from a
+	 * slow refresh started just before a mutation) cannot overwrite newer state.
 	 */
 	async refresh(): Promise<void> {
-		// Cancel any in-flight fetch by resetting its promise; the new fetch
-		// below will overwrite the state when it completes.
+		if (!clientHasSession()) {
+			this.enrollments = [];
+			this.loading = false;
+			this.error = null;
+			return;
+		}
+
+		this.requestGen += 1;
+		const myGen = this.requestGen;
+		// Drop the stale in-flight promise reference. Its handler will check
+		// the generation before mutating state.
 		this.fetchPromise = null;
 		this.enrollments = null;
 		this.loading = true;
@@ -68,12 +91,18 @@ class EnrollmentsStore {
 		this.fetchPromise = (async () => {
 			try {
 				const r = await api.get<Enrollment[]>('/me/enrollments');
-				this.enrollments = r.data ?? [];
+				if (this.requestGen === myGen) {
+					this.enrollments = r.data ?? [];
+				}
 			} catch (e) {
-				this.error = e instanceof Error ? e.message : 'Failed to load enrollments';
-				this.enrollments = [];
+				if (this.requestGen === myGen) {
+					this.error = e instanceof Error ? e.message : 'Failed to load enrollments';
+					this.enrollments = [];
+				}
 			} finally {
-				this.loading = false;
+				if (this.requestGen === myGen) {
+					this.loading = false;
+				}
 				this.fetchPromise = null;
 			}
 		})();
@@ -87,6 +116,7 @@ class EnrollmentsStore {
 		this.loading = false;
 		this.error = null;
 		this.fetchPromise = null;
+		this.requestGen += 1;
 	}
 
 	/** Convenience: true if the user is enrolled in a given track. */

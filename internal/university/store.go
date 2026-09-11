@@ -356,6 +356,7 @@ type CatalogTrack struct {
 	ThumbnailURL         *string `json:"thumbnail_url,omitempty"`
 	TotalEnrolled        int32   `json:"total_enrolled"`
 	SubscriptionEligible bool    `json:"subscription_eligible"`
+	InstructorID         *string `json:"instructor_id,omitempty"`
 	InstructorName       *string `json:"instructor_name,omitempty"`
 	AvgRating            float64 `json:"avg_rating"`
 	ReviewCount          int32   `json:"review_count"`
@@ -389,6 +390,11 @@ func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
 		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, SubscriptionEligible: r.SubscriptionEligible,
+	}
+
+	if r.InstructorID.Valid {
+		s := r.InstructorID.String()
+		c.InstructorID = &s
 	}
 
 	if r.PriceKobo != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -765,7 +766,7 @@ func (s *Service) CreateSpaceWithOwner(
 	creatorUserID pgtype.UUID,
 	parentSpaceIDs []pgtype.UUID,
 ) (gen.CreateSpaceRow, error) {
-	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
+	space, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
 		space, err := q.CreateSpace(ctx, params)
 		if err != nil {
 			return gen.CreateSpaceRow{}, fmt.Errorf("creating space: %w", err)
@@ -798,6 +799,57 @@ func (s *Service) CreateSpaceWithOwner(
 
 		return space, nil
 	})
+	if err != nil {
+		return gen.CreateSpaceRow{}, err
+	}
+
+	s.maybeCreateSourceForSpace(ctx, space, creatorUserID)
+	return space, nil
+}
+
+func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.CreateSpaceRow, creatorUserID pgtype.UUID) {
+	if s.sources == nil {
+		return
+	}
+
+	st, err := s.GetSpaceType(ctx, space.SpaceTypeID, space.TenantID)
+	if err != nil {
+		slog.Warn("spaces: failed to resolve space type for source creation", "space_id", space.ID, "error", err)
+		return
+	}
+
+	isUniversity := st.Slug == "university" || st.Slug == "universities"
+	if !isUniversity {
+		return
+	}
+
+	if s.settings != nil {
+		enabled, err := s.settings.GetSettingBool(ctx, space.TenantID, "sources.auto_create_for_universities")
+		if err != nil || !enabled {
+			return
+		}
+	}
+
+	category := "university"
+
+	sourceURL := ""
+	if s.siteURL != "" {
+		sourceURL = fmt.Sprintf("%s/spaces/%s", s.siteURL, space.Slug)
+	}
+
+	source, sErr := s.sources.CreateSourceFromEntity(ctx, space.TenantID, space.ID, creatorUserID, "space", space.Name, space.Slug, sourceURL, category)
+	if sErr != nil {
+		slog.Warn("spaces: failed to create source for space", "space_id", space.ID, "error", sErr)
+		return
+	}
+
+	if err := s.write.UpdateSpaceSourceID(ctx, gen.UpdateSpaceSourceIDParams{
+		TenantID: space.TenantID,
+		ID:       space.ID,
+		SourceID: source.ID,
+	}); err != nil {
+		slog.Warn("spaces: failed to link space source_id", "space_id", space.ID, "source_id", source.ID, "error", err)
+	}
 }
 
 var (

@@ -16,7 +16,7 @@
 	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
-	import type { Enrollment } from '$lib/types';
+	import type { Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
@@ -28,6 +28,29 @@
 	let enrolling = $state(false);
 	let enrollError = $state<string | null>(null);
 	let checkoutOpen = $state(false);
+
+	// Review submission state. Reviews are user-specific mutations (POST) on top
+	// of the SSR reviews list; we keep local copies so the tab updates after submit
+	// without a full page reload.
+	let reviews = $state<TrackReview[]>([]);
+	let reviewAggregate = $state<ReviewAggregate | null>(null);
+	let reviewRating = $state(0);
+	let reviewTitle = $state('');
+	let reviewBody = $state('');
+	let reviewSubmitting = $state(false);
+	let reviewError = $state<string | null>(null);
+	let reviewSuccess = $state(false);
+
+	// Sync local review state when navigating between tracks (data is a prop).
+	$effect(() => {
+		reviews = data.reviews;
+		reviewAggregate = data.reviewAggregate;
+		reviewRating = 0;
+		reviewTitle = '';
+		reviewBody = '';
+		reviewError = null;
+		reviewSuccess = false;
+	});
 
 	// Whether this is a paid course that requires checkout.
 	const isPaid = $derived(track.price_kobo != null && track.price_kobo > 0);
@@ -105,6 +128,45 @@
 		}
 	}
 
+	async function submitReview() {
+		if (!data.user) {
+			reviewError = t('learn.review_unauthenticated');
+			return;
+		}
+		if (reviewRating < 1 || reviewRating > 5) {
+			reviewError = t('learn.review_rating');
+			return;
+		}
+		reviewSubmitting = true;
+		reviewError = null;
+		reviewSuccess = false;
+		const r = await api.post<TrackReview>(`/learn/university/tracks/${track.id}/reviews`, {
+			rating: reviewRating,
+			title: reviewTitle.trim() || undefined,
+			body: reviewBody.trim() || undefined
+		});
+		reviewSubmitting = false;
+		if (r.error) {
+			reviewError = r.error.message || t('learn.review_error');
+			return;
+		}
+		if (r.data) {
+			// Re-fetch the reviews list (with aggregate) from the backend so the
+			// UI matches the canonical state rather than a local patch.
+			const listRes = await api.getBody<{ data: TrackReview[]; aggregate: ReviewAggregate }>(
+				`/learn/university/tracks/${track.id}/reviews?limit=10`
+			);
+			if (listRes.data) {
+				reviews = listRes.data.data;
+				reviewAggregate = listRes.data.aggregate;
+			}
+			reviewRating = 0;
+			reviewTitle = '';
+			reviewBody = '';
+			reviewSuccess = true;
+		}
+	}
+
 	function onCheckoutSuccess() {
 		checkoutOpen = false;
 		enrollmentsStore.refresh();
@@ -170,10 +232,10 @@
 						<Clock size={14} /> {track.duration_label ?? formatDuration(track.duration_iso)}
 					</span>
 				{/if}
-				{#if data.reviewAggregate?.count}
+				{#if reviewAggregate?.count}
 					<span class="inline-flex items-center gap-1">
 						<Star size={14} class="text-[var(--level-intermediate)]" />
-						{data.reviewAggregate.avg.toFixed(1)} ({formatCount(data.reviewAggregate.count)})
+						{reviewAggregate.avg.toFixed(1)} ({formatCount(reviewAggregate.count)})
 					</span>
 				{/if}
 				{#if track.enrolled_count}
@@ -352,21 +414,70 @@
 		<!-- Reviews -->
 		<Tabs.Content value="reviews" class="pt-6">
 			<div class="max-w-3xl">
-				{#if data.reviewAggregate?.count}
+				{#if reviewAggregate?.count}
 					<div class="mb-6 flex items-center gap-4">
-						<span class="text-4xl font-bold text-[var(--color-text)]">{data.reviewAggregate.avg.toFixed(1)}</span>
+						<span class="text-4xl font-bold text-[var(--color-text)]">{reviewAggregate.avg.toFixed(1)}</span>
 						<div>
-							<StarRating value={data.reviewAggregate.avg} />
-							<p class="text-sm text-[var(--color-muted)]">{formatCount(data.reviewAggregate.count)} {t('learn.ratings')}</p>
+							<StarRating value={reviewAggregate.avg} />
+							<p class="text-sm text-[var(--color-muted)]">{formatCount(reviewAggregate.count)} {t('learn.ratings')}</p>
 						</div>
 					</div>
 				{/if}
 
-				{#if data.reviews.length === 0}
+				{#if data.user}
+					<form class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<h3 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('learn.write_review')}</h3>
+						<div class="mb-3 flex items-center gap-1">
+							{#each [1, 2, 3, 4, 5] as star}
+								<button
+									type="button"
+									onclick={() => (reviewRating = star)}
+									class="p-1"
+									aria-label={t('learn.review_rating')}
+								>
+									<Star
+										size={22}
+										class={star <= reviewRating ? 'fill-[var(--level-intermediate)] text-[var(--level-intermediate)]' : 'text-[var(--color-muted)]'}
+									/>
+								</button>
+							{/each}
+						</div>
+						<input
+							type="text"
+							bind:value={reviewTitle}
+							placeholder={t('learn.review_rating')}
+							class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+						/>
+						<textarea
+							bind:value={reviewBody}
+							rows={3}
+							placeholder={t('learn.review_body')}
+							class="mb-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+						></textarea>
+						{#if reviewError}
+							<p class="mb-2 text-xs text-[var(--color-destructive)]">{reviewError}</p>
+						{/if}
+						{#if reviewSuccess}
+							<p class="mb-2 text-xs text-[var(--color-success)]">{t('learn.review_submitted')}</p>
+						{/if}
+						<button
+							type="button"
+							disabled={reviewSubmitting}
+							onclick={submitReview}
+							class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+						>
+							{reviewSubmitting ? t('common.processing') : t('learn.submit_review')}
+						</button>
+					</form>
+				{:else}
+					<p class="mb-6 text-sm text-[var(--color-muted)]">{t('learn.review_unauthenticated')}</p>
+				{/if}
+
+				{#if reviews.length === 0}
 					<p class="text-sm text-[var(--color-muted)]">{t('common.empty')}</p>
 				{:else}
 					<ul class="space-y-4">
-						{#each data.reviews as review (review.id)}
+						{#each reviews as review (review.id)}
 							<li class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 								<div class="mb-2 flex items-center gap-3">
 									{#if review.author_avatar_url}
@@ -381,6 +492,9 @@
 										<StarRating value={review.rating} small />
 									</div>
 								</div>
+								{#if review.title}
+									<p class="mb-1 text-sm font-medium text-[var(--color-text)]">{review.title}</p>
+								{/if}
 								{#if review.body}
 									<p class="text-sm text-[var(--color-text-subtle)]">{review.body}</p>
 								{/if}

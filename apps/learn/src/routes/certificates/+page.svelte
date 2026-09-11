@@ -10,13 +10,26 @@
 
 	let certificates = $state<Certificate[]>([]);
 	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let initialized = $state(false);
+
+	async function load() {
+		if (initialized) return;
+		initialized = true;
+		loading = true;
+		error = null;
+		const r = await api.get<Certificate[]>('/me/certificates');
+		loading = false;
+		if (r.error) {
+			error = r.error.message || t('common.error');
+			certificates = [];
+		} else if (r.data) {
+			certificates = r.data;
+		}
+	}
 
 	$effect(() => {
-		(async () => {
-			const r = await api.get<Certificate[]>('/me/certificates');
-			loading = false;
-			if (r.data) certificates = r.data;
-		})();
+		load();
 	});
 </script>
 
@@ -42,6 +55,21 @@
 				</div>
 			{/each}
 		</div>
+	{:else if error}
+		<EmptyState
+			title={t('common.error')}
+			description={error}
+		>
+			{#snippet action()}
+				<button
+					type="button"
+					onclick={load}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+			{/snippet}
+		</EmptyState>
 	{:else if certificates.length === 0}
 		<EmptyState
 			title={t('learn.no_certificates')}

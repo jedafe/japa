@@ -238,9 +238,9 @@ WHERE cv.tenant_id = @tenant_id
 
 -- name: CreateDataSource :one
 INSERT INTO comparison_data_sources (
-    tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, config
+    tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, config, source_id
 ) VALUES (
-    @tenant_id, sqlc.narg(entity_type), sqlc.narg(entity_id), sqlc.narg(dimension_slug), @source_name, sqlc.narg(source_url), @source_kind, @trust_level, @config
+    @tenant_id, sqlc.narg(entity_type), sqlc.narg(entity_id), sqlc.narg(dimension_slug), @source_name, sqlc.narg(source_url), @source_kind, @trust_level, @config, sqlc.narg(source_id)
 )
 RETURNING *;
 
@@ -274,6 +274,7 @@ SET entity_type = sqlc.narg(entity_type),
     freshness_score = COALESCE(sqlc.narg(freshness_score), freshness_score),
     last_verified_at = sqlc.narg(last_verified_at),
     config = @config,
+    source_id = COALESCE(sqlc.narg(source_id), source_id),
     updated_at = now()
 WHERE id = @id AND tenant_id = @tenant_id
 RETURNING *;

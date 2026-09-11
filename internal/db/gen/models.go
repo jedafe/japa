@@ -809,6 +809,7 @@ type ComparisonDataSource struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	CreatedByUserID pgtype.UUID        `json:"created_by_user_id"`
+	SourceID        pgtype.UUID        `json:"source_id"`
 }
 
 type ComparisonDimension struct {
@@ -3415,6 +3416,26 @@ type SlugHistory struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type SourceCollection struct {
+	ID             pgtype.UUID        `json:"id"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	Slug           string             `json:"slug"`
+	Name           string             `json:"name"`
+	Description    *string            `json:"description"`
+	CollectionType string             `json:"collection_type"`
+	QueryJson      []byte             `json:"query_json"`
+	Sort           *string            `json:"sort"`
+	Limit          int32              `json:"limit"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SourceCollectionItem struct {
+	CollectionID pgtype.UUID `json:"collection_id"`
+	SourceID     pgtype.UUID `json:"source_id"`
+	Position     int32       `json:"position"`
+}
+
 type Space struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
@@ -4125,6 +4146,14 @@ type UserRole struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type UserSourceBlock struct {
+	ID        pgtype.UUID        `json:"id"`
+	TenantID  pgtype.UUID        `json:"tenant_id"`
+	BlockerID pgtype.UUID        `json:"blocker_id"`
+	SourceID  pgtype.UUID        `json:"source_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type VideoChannelClaim struct {
 	ID                pgtype.UUID        `json:"id"`
 	TenantID          pgtype.UUID        `json:"tenant_id"`
@@ -4177,6 +4206,7 @@ type VideoSource struct {
 	FieldValues      []byte             `json:"field_values"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	SourceID         pgtype.UUID        `json:"source_id"`
 }
 
 type VisaProcessingStat struct {

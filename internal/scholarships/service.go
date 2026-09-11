@@ -150,9 +150,13 @@ type AdminStats struct {
 	Distribution      []gen.AdminScholarshipStatusDistributionRow `json:"distribution"`
 }
 
-// projectScholarshipFields populates the flat top-level fields on a
-// ScholarshipResult from its FieldValues map. The keys match the
-// scholarship custom-field group seeded per §06/ADR-073.
+// projectScholarshipFields fills in any flat top-level fields on a
+// ScholarshipResult that were not already populated from the structured
+// scholarships table columns. The keys match the scholarship custom-field
+// group seeded per §06/ADR-073. Structured columns take precedence so a
+// guide-synced projection (which writes provider_institution, level_of_study,
+// country, etc. into the scholarships table) is not overwritten by the raw
+// comma-separated field_values string.
 func projectScholarshipFields(r *ScholarshipResult) {
 	if r.FieldValues == nil {
 		return
@@ -162,28 +166,50 @@ func projectScholarshipFields(r *ScholarshipResult) {
 		if v, ok := r.FieldValues[key]; ok {
 			return v
 		}
-
 		return ""
 	}
-	r.Institution = get("provider_institution")
-	r.Country = get("countries_eligible")
-	r.LevelOfStudy = get("level_of_study")
-	r.ApplicationDeadline = get("application_deadline")
-	r.ApplicationURL = get("application_link")
-	r.Eligibility = get("eligibility_criteria")
-	r.HowToApply = get("how_to_apply")
-	r.ContactEmail = get("contact_email")
-	r.Description = get("description")
 
-	if v := get("award_amount_usd"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			r.AwardAmountUSD = &f
+	if r.Institution == "" {
+		r.Institution = get("provider_institution")
+	}
+	if r.Country == "" {
+		r.Country = get("countries_eligible")
+	}
+	if r.LevelOfStudy == "" {
+		r.LevelOfStudy = get("level_of_study")
+	}
+	if r.ApplicationDeadline == "" {
+		r.ApplicationDeadline = get("application_deadline")
+	}
+	if r.ApplicationURL == "" {
+		r.ApplicationURL = get("application_link")
+	}
+	if r.Eligibility == "" {
+		r.Eligibility = get("eligibility_criteria")
+	}
+	if r.HowToApply == "" {
+		r.HowToApply = get("how_to_apply")
+	}
+	if r.ContactEmail == "" {
+		r.ContactEmail = get("contact_email")
+	}
+	if r.Description == "" {
+		r.Description = get("description")
+	}
+
+	if r.AwardAmountUSD == nil {
+		if v := get("award_amount_usd"); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				r.AwardAmountUSD = &f
+			}
 		}
 	}
 
-	if v := get("is_renewable"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			r.IsRenewable = &b
+	if r.IsRenewable == nil {
+		if v := get("is_renewable"); v != "" {
+			if b, err := strconv.ParseBool(v); err == nil {
+				r.IsRenewable = &b
+			}
 		}
 	}
 }
