@@ -58,11 +58,21 @@ export const load: PageServerLoad = async (event) => {
 	const level = event.url.searchParams.get('level');
 	const sort = event.url.searchParams.get('sort');
 	const renewable = event.url.searchParams.get('renewable');
+	const minAmount = event.url.searchParams.get('min_amount');
+	const maxAmount = event.url.searchParams.get('max_amount');
+	const deadlineFrom = event.url.searchParams.get('deadline_from');
+	const deadlineTo = event.url.searchParams.get('deadline_to');
+	const includeExpired = event.url.searchParams.get('include_expired');
 	if (q) params.set('q', q);
 	if (country) params.set('country', country);
 	if (level) params.set('level', level);
 	if (sort) params.set('sort', sort);
 	if (renewable) params.set('renewable', renewable);
+	if (minAmount) params.set('min_amount', minAmount);
+	if (maxAmount) params.set('max_amount', maxAmount);
+	if (deadlineFrom) params.set('deadline_from', deadlineFrom);
+	if (deadlineTo) params.set('deadline_to', deadlineTo);
+	if (includeExpired === 'true' || includeExpired === '1') params.set('include_expired', 'true');
 	params.set('page_size', String(PAGE_SIZE));
 	params.set('page_offset', String((page - 1) * PAGE_SIZE));
 
