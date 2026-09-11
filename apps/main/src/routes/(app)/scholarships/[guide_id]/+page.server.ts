@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type { Scholarship, SavedScholarship } from '$lib/types';
+import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
 
 /**
  * Scholarship detail page — Section 73, ADR-073.
@@ -58,6 +59,7 @@ export const load: PageServerLoad = async (event) => {
 		scholarship,
 		savedItem,
 		statuses,
-		authed: !!event.locals.user
+		authed: !!event.locals.user,
+		defaultReminderDays: defaultReminderDays(event.locals.siteSettings)
 	};
 };

@@ -10,6 +10,7 @@ import type {
 	ComparisonItem,
 	ComparisonDimension
 } from '$lib/types';
+import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
 
 /**
  * Scholarship Finder at /scholarships (Section 73, ADR-073).
@@ -136,7 +137,19 @@ export const load: PageServerLoad = async (event) => {
 		statuses = [];
 	}
 
-	return { scholarships, disabled, authed, pageSize: PAGE_SIZE, currentPage: page, total, savedScholarships, savedIds, countries, statuses };
+	return {
+		scholarships,
+		disabled,
+		authed,
+		pageSize: PAGE_SIZE,
+		currentPage: page,
+		total,
+		savedScholarships,
+		savedIds,
+		countries,
+		statuses,
+		defaultReminderDays: defaultReminderDays(event.locals.siteSettings)
+	};
 };
 
 /**

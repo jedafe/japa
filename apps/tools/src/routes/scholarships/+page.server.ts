@@ -4,6 +4,9 @@ import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { Scholarship, SavedScholarship, GeoSpaceOption, CatalogOption } from '$lib/types';
 import { loadCatalog } from '$lib/server/catalog';
+import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
+
+const PAGE_SIZE = 20;
 
 /**
  * Scholarship Finder — §73, ADR-073.
@@ -20,7 +23,20 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('scholarships')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, countries: [], scholarships: [], saved: [], statusOptions: [], renewableOptions: [], user: event.locals.user };
+		return {
+			enabled: false,
+			tool,
+			countries: [],
+			scholarships: [],
+			saved: [],
+			statusOptions: [],
+			renewableOptions: [],
+			user: event.locals.user,
+			defaultReminderDays: defaultReminderDays(event.locals.siteSettings),
+			currentPage: 1,
+			pageSize: PAGE_SIZE,
+			total: 0
+		};
 	}
 
 	const ctx = apiContext(event);
@@ -34,19 +50,29 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Pass through any filter params from the URL for SSR + shareability.
+	// Pagination is 1-based in the URL, converted to 0-based page_offset.
 	const searchParams = event.url.searchParams;
-	if (!searchParams.has('page_size')) {
-		searchParams.set('page_size', '100');
+	const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
+	const pageSize = Math.max(1, Math.min(100, parseInt(searchParams.get('page_size') ?? String(PAGE_SIZE), 10) || PAGE_SIZE));
+	searchParams.set('page_size', String(pageSize));
+	searchParams.set('page_offset', String((page - 1) * pageSize));
+	if (!searchParams.has('page')) {
+		// Keep the canonical URL clean on first load; still include page in the
+		// API path so the backend sees the offset.
+		searchParams.set('page', String(page));
 	}
 	const filterQuery = searchParams.toString();
 	const filterPath = filterQuery ? `/scholarships?${filterQuery}` : '/scholarships';
 
 	let scholarships: Scholarship[] = [];
+	let total = 0;
 	try {
 		const res = await apiList<Scholarship>(ctx, filterPath);
 		scholarships = res.items;
+		total = res.meta?.total ?? scholarships.length;
 	} catch {
 		scholarships = [];
+		total = 0;
 	}
 
 	// Load saved scholarships for authenticated users.
@@ -85,6 +111,10 @@ export const load: PageServerLoad = async (event) => {
 		saved,
 		statusOptions,
 		renewableOptions,
-		user: event.locals.user
+		user: event.locals.user,
+		defaultReminderDays: defaultReminderDays(event.locals.siteSettings),
+		currentPage: page,
+		pageSize,
+		total
 	};
 };

@@ -3,6 +3,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetOrNull, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { ScholarshipDetail, SavedScholarship, CatalogOption } from '$lib/types';
+import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
 
 /**
  * Scholarship detail page — §73, ADR-073.
@@ -18,7 +19,15 @@ import type { ScholarshipDetail, SavedScholarship, CatalogOption } from '$lib/ty
 export const load: PageServerLoad = async (event) => {
 	const tool = getTool('scholarships')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, scholarship: null, savedItem: null, statusOptions: [], user: null };
+		return {
+			enabled: false,
+			tool,
+			scholarship: null,
+			savedItem: null,
+			statusOptions: [],
+			user: null,
+			defaultReminderDays: defaultReminderDays(event.locals.siteSettings)
+		};
 	}
 
 	const ctx = apiContext(event);
@@ -64,6 +73,7 @@ export const load: PageServerLoad = async (event) => {
 		scholarship,
 		savedItem,
 		statusOptions,
-		user: event.locals.user
+		user: event.locals.user,
+		defaultReminderDays: defaultReminderDays(event.locals.siteSettings)
 	};
 };

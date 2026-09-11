@@ -191,10 +191,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// Ref: conventions/system-settings-catalog.md
 	const themeCookie = event.cookies.get('jc_theme');
 	const localeCookie = event.cookies.get('jc_locale');
-	const needSettings =
-		(themeCookie !== 'dark' && themeCookie !== 'light') ||
-		!localeCookie ||
-		pathLocale !== null;
+	// Always load public site settings so they are available in
+	// event.locals.siteSettings for page load functions.
+	const needSettings = true;
 
 	let siteSettings: Record<string, unknown> = {};
 	if (needSettings && !building) {
@@ -256,6 +255,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	event.locals.user = null;
 	event.locals.csrfToken = null;
+	event.locals.siteSettings = siteSettings;
 
 	// ADR-063: detect the Japa University branded surface by host.
 	// university.japaconnect.com (and configurable custom domains like japauni.com)

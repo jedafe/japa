@@ -2,6 +2,7 @@ import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
 import type { SavedScholarship } from '$lib/types';
+import { defaultReminderDays } from '$lib/scholarships/defaultReminder';
 
 /**
  * Saved Scholarships tracker — Section 73, ADR-073.
@@ -42,5 +43,5 @@ export const load: PageServerLoad = async (event) => {
 		statuses = [];
 	}
 
-	return { saved, statuses };
+	return { saved, statuses, defaultReminderDays: defaultReminderDays(event.locals.siteSettings) };
 };

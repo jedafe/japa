@@ -217,14 +217,6 @@ func derefString(s *string) string {
 }
 
 // pgtypeUUIDString returns a string for a pgtype.UUID when valid, otherwise "".
-// HandleListSourceItems returns the published items for a source. It resolves
-// promoted records to internal JapaConnect entities and builds a unified feed.
-//
-// GET /api/v1/sources/{slug}/items
-func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request) {
-	errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Source item feed is coming in the next phase")
-}
-
 // HandleToggleSourceFollow toggles a follow on a source.
 //
 // POST /api/v1/sources/{slug}/follow

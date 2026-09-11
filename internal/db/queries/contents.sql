@@ -46,6 +46,11 @@ SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title,
 FROM contents
 WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
 
+-- name: GetContentByIntelRecord :one
+SELECT id, tenant_id, title, slug, content_type, body, meta_description, canonical_url, view_count, comment_count, share_count, reshare_count, publish_at, published_at, created_at, updated_at, intel_source_id, intel_record_id
+FROM contents
+WHERE tenant_id = @tenant_id AND intel_record_id = @intel_record_id AND deleted_at IS NULL;
+
 -- name: GetContentByHash :one
 -- Duplicate-detection check (Rule 12 / BL-006). Returns a conflicting row
 -- with the same (tenant_id, content_hash), excluding the row being updated.
