@@ -255,3 +255,19 @@ WHERE tenant_id = $1
   AND ($3::text IS NULL OR $3 = '' OR entity_type = $3)
 ORDER BY extracted_at DESC
 LIMIT $4 OFFSET $5;
+
+-- name: ListSourcesByRecordIDs :many
+-- Returns a map-friendly list of sources for a batch of intel record IDs.
+-- Used by scholarship, job, and remittance responses to attach attribution.
+SELECT
+    ir.id AS record_id,
+    s.id AS source_id,
+    s.name,
+    s.slug,
+    s.logo_url,
+    s.source_url,
+    s.trust_level
+FROM intel_records ir
+JOIN intel_sources s ON s.id = ir.source_id AND s.tenant_id = ir.tenant_id
+WHERE ir.tenant_id = $1
+  AND ir.id = ANY($2::uuid[]);
