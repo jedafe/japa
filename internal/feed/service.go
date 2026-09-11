@@ -57,6 +57,8 @@ type FeedItem struct { //nolint:revive // stuttering type name preserved for API
 	// §14 guide amendment: the guide category slug so feed cards can render
 	// a category badge for content_type='guide' items.
 	GuideCategory *string `json:"guide_category,omitempty"`
+	// Source attribution for content promoted from the intelligence spine.
+	Source *SourceRef `json:"source,omitempty"`
 	// Video-aware fields for daily video cards.
 	VideoSourceID     string `json:"video_source_id,omitempty"`
 	VideoSourceURL    string `json:"video_source_url,omitempty"`
@@ -73,6 +75,18 @@ type OrgRef struct {
 	Name    string `json:"name"`
 	Slug    string `json:"slug"`
 	LogoURL string `json:"logo_url,omitempty"`
+}
+
+// SourceRef is the source attribution badge surfaced on daily feed cards when
+// a post was promoted from the intelligence spine.
+// Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
+type SourceRef struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	LogoURL    string `json:"logo_url,omitempty"`
+	SourceURL  string `json:"source_url,omitempty"`
+	TrustLevel int32  `json:"trust_level"`
 }
 
 // PrimaryFeedItem represents a feed item from the personalized (push) feed.
@@ -141,15 +155,18 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 		offset = 0
 	}
 
+	var items []FeedItem
+	var err error
+
 	switch timeline {
 	case "explore":
-		return s.getExploreFeed(ctx, tenantID, sort, visitorCountryCode, visitorRegion, limit, offset)
+		items, err = s.getExploreFeed(ctx, tenantID, sort, visitorCountryCode, visitorRegion, limit, offset)
 	case "primary":
 		if userID == nil {
 			return nil, errors.New("primary feed requires user_id")
 		}
 
-		return s.getPrimaryFeedItems(ctx, tenantID, *userID, sort, limit, offset)
+		items, err = s.getPrimaryFeedItems(ctx, tenantID, *userID, sort, limit, offset)
 	case "space":
 		if spaceID == nil {
 			return nil, errors.New("space feed requires space_id")
@@ -162,7 +179,7 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 			viewerID = *userID
 		}
 
-		return s.getSpaceFeedItems(ctx, tenantID, *spaceID, viewerID, sort, limit, offset)
+		items, err = s.getSpaceFeedItems(ctx, tenantID, *spaceID, viewerID, sort, limit, offset)
 	case "profile":
 		if authorID == nil {
 			return nil, errors.New("profile feed requires author_id")
@@ -175,10 +192,64 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 			viewerID = *userID
 		}
 
-		return s.getProfileFeedItems(ctx, tenantID, *authorID, viewerID, sort, limit, offset)
+		items, err = s.getProfileFeedItems(ctx, tenantID, *authorID, viewerID, sort, limit, offset)
 	default:
 		return nil, fmt.Errorf("unknown timeline: %s", timeline)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return s.attachSources(ctx, tenantID, items)
+}
+
+// attachSources enriches feed items with source attribution for any content
+// promoted from the intelligence spine. Missing or invalid UUIDs are skipped
+// silently so the feed never fails because of one bad ID.
+func (s *Service) attachSources(ctx context.Context, tenantID pgtype.UUID, items []FeedItem) ([]FeedItem, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+
+	contentIDs := make([]pgtype.UUID, 0, len(items))
+	for _, it := range items {
+		if it.ID == "" {
+			continue
+		}
+
+		u, err := stringToUUID(it.ID)
+		if err != nil {
+			continue
+		}
+
+		contentIDs = append(contentIDs, u)
+	}
+
+	sources, err := s.store.listSourcesByContentIDs(ctx, tenantID, contentIDs)
+	if err != nil {
+		// Source attribution is optional — log and return the original feed.
+		slog.Warn("feed: failed to attach source attribution", "error", err)
+		return items, nil
+	}
+
+	for i := range items {
+		r, ok := sources[items[i].ID]
+		if !ok {
+			continue
+		}
+
+		items[i].Source = &SourceRef{
+			ID:         r.SourceID.String(),
+			Name:       r.SourceName,
+			Slug:       derefStr(r.SourceSlug),
+			LogoURL:    derefStr(r.SourceLogoUrl),
+			SourceURL:  r.SourceSourceUrl,
+			TrustLevel: int32(r.SourceTrustLevel),
+		}
+	}
+
+	return items, nil
 }
 
 // getExploreFeed returns the explore feed with the given sort mode.
@@ -308,6 +379,16 @@ func uuidToString(u pgtype.UUID) string {
 	}
 
 	return u.String()
+}
+
+// stringToUUID parses a UUID string into a pgtype.UUID.
+func stringToUUID(s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if err := u.Scan(s); err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return u, nil
 }
 
 // nullableUUIDToString converts a nullable pgtype.UUID to *string.

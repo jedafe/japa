@@ -192,6 +192,16 @@ export interface FeedOrganization {
 	logo_url?: string | null;
 }
 
+/** Source attribution badge surfaced on feed cards for promoted content. */
+export interface FeedSource {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string | null;
+	source_url: string;
+	trust_level: number;
+}
+
 export type ContentType =
 	| 'blog_post'
 	| 'discussion'
@@ -236,6 +246,7 @@ export interface FeedItem {
 	 *  query surfaces them (used for the play overlay / duration badge). */
 	video_source_id?: string | null;
 	duration_secs?: number | null;
+	source?: FeedSource;
 }
 
 /* ------------------------------------------------------------------ *

@@ -1654,6 +1654,67 @@ func (q *Queries) ListDigestFeedItems(ctx context.Context, arg ListDigestFeedIte
 	return items, nil
 }
 
+const listSourcesByContentIDs = `-- name: ListSourcesByContentIDs :many
+SELECT c.id AS content_id,
+       src.id AS source_id,
+       src.name AS source_name,
+       src.slug AS source_slug,
+       src.logo_url AS source_logo_url,
+       src.source_url AS source_source_url,
+       src.trust_level AS source_trust_level
+FROM contents c
+JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
+WHERE c.tenant_id = $1
+  AND c.id = ANY($2::uuid[])
+`
+
+type ListSourcesByContentIDsParams struct {
+	TenantID   pgtype.UUID   `json:"tenant_id"`
+	ContentIds []pgtype.UUID `json:"content_ids"`
+}
+
+type ListSourcesByContentIDsRow struct {
+	ContentID        pgtype.UUID `json:"content_id"`
+	SourceID         pgtype.UUID `json:"source_id"`
+	SourceName       string      `json:"source_name"`
+	SourceSlug       *string     `json:"source_slug"`
+	SourceLogoUrl    *string     `json:"source_logo_url"`
+	SourceSourceUrl  string      `json:"source_source_url"`
+	SourceTrustLevel int16       `json:"source_trust_level"`
+}
+
+// Batch source attribution lookup for feed items. Returns one row per content
+// that has an intel_source_id, so callers can attach a source badge to feed
+// cards without a per-card query.
+// Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
+func (q *Queries) ListSourcesByContentIDs(ctx context.Context, arg ListSourcesByContentIDsParams) ([]ListSourcesByContentIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSourcesByContentIDs, arg.TenantID, arg.ContentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSourcesByContentIDsRow
+	for rows.Next() {
+		var i ListSourcesByContentIDsRow
+		if err := rows.Scan(
+			&i.ContentID,
+			&i.SourceID,
+			&i.SourceName,
+			&i.SourceSlug,
+			&i.SourceLogoUrl,
+			&i.SourceSourceUrl,
+			&i.SourceTrustLevel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneOldFeeds = `-- name: PruneOldFeeds :exec
 DELETE FROM feeds WHERE created_at < now() - interval '30 days'
 `

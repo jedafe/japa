@@ -676,3 +676,20 @@ LIMIT 20;
 -- Intentionally global (no tenant_id filter): this is a retention prune that
 -- runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
 DELETE FROM feeds WHERE created_at < now() - interval '30 days';
+
+-- name: ListSourcesByContentIDs :many
+-- Batch source attribution lookup for feed items. Returns one row per content
+-- that has an intel_source_id, so callers can attach a source badge to feed
+-- cards without a per-card query.
+-- Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
+SELECT c.id AS content_id,
+       src.id AS source_id,
+       src.name AS source_name,
+       src.slug AS source_slug,
+       src.logo_url AS source_logo_url,
+       src.source_url AS source_source_url,
+       src.trust_level AS source_trust_level
+FROM contents c
+JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
+WHERE c.tenant_id = @tenant_id
+  AND c.id = ANY(@content_ids::uuid[]);

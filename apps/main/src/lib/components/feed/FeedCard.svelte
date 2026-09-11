@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play, ExternalLink } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { relativeTime } from '$lib/feed/time';
 	import { t, i18n } from '$lib/i18n';
@@ -103,6 +103,28 @@
 	{/if}
 		{#if item.author_name}<span>·</span><span>{item.author_name}</span>{/if}
 		{#if time}<span>·</span><span>{time}</span>{/if}
+		{#if item.source}
+			<span>·</span>
+			<a
+				href="/sources/{item.source.slug}"
+				class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
+				onclick={(e) => { e.stopPropagation(); }}
+			>
+				{t('feed.source', 'Source')}: {item.source.name}
+			</a>
+			{#if item.source.source_url}
+				<a
+					href={item.source.source_url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+					onclick={(e) => { e.stopPropagation(); }}
+					aria-label={t('feed.original_source', 'View original source')}
+				>
+					<ExternalLink size={12} />
+				</a>
+			{/if}
+		{/if}
 		{#if item.target_country || item.visa_route || item.journey_stage}
 			{#if item.author_name || time}<span>·</span>{/if}
 			{@render journeyBadges()}
