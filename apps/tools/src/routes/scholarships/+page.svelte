@@ -81,7 +81,7 @@
 	}
 
 	function isSaved(guideId: string): SavedScholarship | undefined {
-		return saved.find((s) => s.scholarship.id === guideId);
+		return saved.find((s) => s.scholarship.guide_id === guideId);
 	}
 
 	async function toggleSave(scholarship: Scholarship) {
@@ -89,19 +89,19 @@
 			showRegisterPrompt = true;
 			return;
 		}
-		const existing = isSaved(scholarship.id);
+		const existing = isSaved(scholarship.guide_id);
 		if (existing) {
-			const res = await api.delete(`/scholarships/${scholarship.id}/save`);
+			const res = await api.delete(`/scholarships/${scholarship.guide_id}/save`);
 			if (!res.error) {
-				saved = saved.filter((s) => s.scholarship.id !== scholarship.id);
+				saved = saved.filter((s) => s.scholarship.guide_id !== scholarship.guide_id);
 			}
 		} else {
-			const res = await api.post<{ id: string }>(`/scholarships/${scholarship.id}/save`);
-			if (!res.error) {
+			const res = await api.post<{ id: string }>(`/scholarships/${scholarship.guide_id}/save`);
+			if (!res.error && res.data) {
 				saved = [
 					...saved,
 					{
-						id: res.data?.id ?? '',
+						id: res.data.id,
 						scholarship,
 						status: 'saved' as ScholarshipStatus,
 						notes: null,
@@ -123,7 +123,7 @@
 		const res = await api.patch(`/scholarships/${guideId}/save`, { status });
 		if (!res.error) {
 			saved = saved.map((s) =>
-				s.scholarship.id === guideId ? { ...s, status } : s
+				s.scholarship.guide_id === guideId ? { ...s, status } : s
 			);
 		}
 	}
@@ -370,13 +370,13 @@
 				/>
 			{:else}
 				<div class="space-y-3">
-					{#each scholarships as s (s.id)}
-						{@const savedItem = isSaved(s.id)}
+					{#each scholarships as s (s.guide_id)}
+						{@const savedItem = isSaved(s.guide_id)}
 						{@const days = daysUntilDeadline(s.application_deadline)}
 						<div class="p-5 bg-surface border border-border rounded-lg">
 							<div class="flex items-start justify-between gap-4">
 								<div class="flex-1 min-w-0">
-									<a href={`/scholarships/${s.id}`} class="hover:text-[var(--tool-accent)] transition-colors">
+									<a href={`/scholarships/${s.guide_id}`} class="hover:text-[var(--tool-accent)] transition-colors">
 										<h3 class="text-base font-semibold text-text">{s.title}</h3>
 									</a>
 									{#if s.institution}
@@ -436,7 +436,7 @@
 									{#if savedItem}
 										<select
 											value={savedItem.status}
-											onchange={(e) => updateStatus(s.id, e.currentTarget.value as ScholarshipStatus)}
+											onchange={(e) => updateStatus(s.guide_id, e.currentTarget.value as ScholarshipStatus)}
 											class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
 										>
 											{#each statusOptions as opt (opt.value)}

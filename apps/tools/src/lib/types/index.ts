@@ -318,9 +318,13 @@ export type ScholarshipStatus =
 
 export interface Scholarship {
 	id: string;
+	/** Canonical contents guide id — used for detail/save/status routes. */
+	guide_id: string;
 	title: string;
-	institution?: string | null;
+	slug?: string;
+	summary?: string | null;
 	description?: string | null;
+	institution?: string | null;
 	country?: string | null;
 	level_of_study?: string | null;
 	award_amount_usd?: number | null;
@@ -328,6 +332,7 @@ export interface Scholarship {
 	application_deadline?: string | null;
 	/** URL to the scholarship provider's application page. */
 	application_url?: string | null;
+	field_values?: Record<string, string>;
 	tags?: string[];
 }
 

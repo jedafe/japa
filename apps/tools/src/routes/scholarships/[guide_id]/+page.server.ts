@@ -34,9 +34,9 @@ export const load: PageServerLoad = async (event) => {
 	let savedItem: SavedScholarship | null = null;
 	if (event.locals.user && scholarship) {
 		try {
-			const res = await apiGetOrNull<SavedScholarship[]>(ctx, '/scholarships/saved');
+			const res = await apiGetOrNull<SavedScholarship[]>(ctx, '/scholarships/saved?page_size=100');
 			if (res) {
-				savedItem = res.find((s) => s.scholarship.id === guideId) ?? null;
+				savedItem = res.find((s) => s.scholarship.guide_id === guideId) ?? null;
 			}
 		} catch {
 			savedItem = null;

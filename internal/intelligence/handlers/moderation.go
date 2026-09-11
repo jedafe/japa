@@ -22,15 +22,21 @@ import (
 // exposed.
 type sourceDirectoryEntry struct {
 	ID                  string  `json:"id"`
+	Slug                string  `json:"slug"`
 	Name                string  `json:"name"`
+	Description         *string `json:"description,omitempty"`
 	Domain              string  `json:"domain"`
 	SourceURL           string  `json:"source_url"`
 	Category            string  `json:"category"`
 	SourceType          string  `json:"source_type"`
+	SourceKind          string  `json:"source_kind"`
 	TrustLevel          int16   `json:"trust_level"`
 	AttributionRequired bool    `json:"attribution_required"`
 	SourceLicense       *string `json:"source_license,omitempty"`
 	UsageRestriction    *string `json:"usage_restriction,omitempty"`
+	LogoURL             *string `json:"logo_url,omitempty"`
+	FollowerCount       int32   `json:"follower_count"`
+	PostCount           int32   `json:"post_count"`
 	Enabled             bool    `json:"enabled"`
 }
 
@@ -40,10 +46,14 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 		SourceURL:           s.SourceUrl,
 		Category:            s.Category,
 		SourceType:          s.SourceType,
+		SourceKind:          s.SourceKind,
 		TrustLevel:          s.TrustLevel,
 		AttributionRequired: s.AttributionRequired,
 		SourceLicense:       s.SourceLicense,
 		UsageRestriction:    s.UsageRestriction,
+		LogoURL:             s.LogoUrl,
+		FollowerCount:       s.FollowerCount,
+		PostCount:           s.PostCount,
 		Enabled:             s.Enabled,
 	}
 	if s.ID.Valid {
@@ -51,6 +61,10 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 	}
 
 	entry.Name = s.Name
+	if s.Slug != nil {
+		entry.Slug = *s.Slug
+	}
+	entry.Description = s.Description
 
 	return entry
 }

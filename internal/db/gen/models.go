@@ -2016,11 +2016,17 @@ type IntelSource struct {
 	TenantID            pgtype.UUID        `json:"tenant_id"`
 	PersonaID           pgtype.UUID        `json:"persona_id"`
 	// active | proposed | disabled | rejected
-	Status     string             `json:"status"`
-	ProposedBy pgtype.UUID        `json:"proposed_by"`
-	ProposedAt pgtype.Timestamptz `json:"proposed_at"`
-	ApprovedBy pgtype.UUID        `json:"approved_by"`
-	ApprovedAt pgtype.Timestamptz `json:"approved_at"`
+	Status        string             `json:"status"`
+	ProposedBy    pgtype.UUID        `json:"proposed_by"`
+	ProposedAt    pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy    pgtype.UUID        `json:"approved_by"`
+	ApprovedAt    pgtype.Timestamptz `json:"approved_at"`
+	Slug          *string            `json:"slug"`
+	Description   *string            `json:"description"`
+	LogoUrl       *string            `json:"logo_url"`
+	FollowerCount int32              `json:"follower_count"`
+	PostCount     int32              `json:"post_count"`
+	SourceKind    string             `json:"source_kind"`
 }
 
 type IpBlock struct {

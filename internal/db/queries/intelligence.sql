@@ -6,8 +6,8 @@
 -- by tenant_id to guarantee data isolation across tenants.
 
 -- name: CreateIntelSource :one
-INSERT INTO intel_sources (tenant_id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+INSERT INTO intel_sources (tenant_id, name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
+VALUES ($1, $2, sqlc.narg(slug), $3, $4, sqlc.narg(description), $5, $6, COALESCE(sqlc.narg(source_kind), 'publisher'), $7, $8, $9, $10, $11, $12, $13, $14, $15, sqlc.narg(logo_url), $16,
         COALESCE(sqlc.narg(status), 'active'),
         sqlc.narg(proposed_by),
         sqlc.narg(proposed_at),
@@ -21,6 +21,9 @@ SELECT * FROM intel_sources WHERE tenant_id = $1 AND id = $2;
 
 -- name: GetIntelSourceByURL :one
 SELECT * FROM intel_sources WHERE tenant_id = $1 AND source_url = $2;
+
+-- name: GetIntelSourceBySlug :one
+SELECT * FROM intel_sources WHERE tenant_id = $1 AND slug = $2;
 
 -- name: ListIntelSources :many
 SELECT * FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3;
@@ -62,10 +65,13 @@ DELETE FROM intel_sources WHERE tenant_id = $1 AND id = $2;
 -- name: UpdateIntelSource :one
 UPDATE intel_sources
 SET name = $3,
+    slug = COALESCE(sqlc.narg(slug), slug),
     domain = $4,
     source_url = $5,
+    description = COALESCE(sqlc.narg(description), description),
     category = $6,
     source_type = $7,
+    source_kind = COALESCE(sqlc.narg(source_kind), source_kind),
     trust_level = $8,
     crawl_method = $9,
     crawl_frequency = $10,
@@ -73,6 +79,7 @@ SET name = $3,
     source_license = $12,
     attribution_required = $13,
     usage_restriction = $14,
+    logo_url = COALESCE(sqlc.narg(logo_url), logo_url),
     enabled = $15,
     status = COALESCE(sqlc.narg(status), status),
     proposed_by = COALESCE(sqlc.narg(proposed_by), proposed_by),
@@ -174,3 +181,77 @@ SET status = 'active',
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'proposed'
 RETURNING *;
+
+-- name: ListPublicSourcesPopular :many
+SELECT * FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+ORDER BY follower_count DESC, name ASC
+LIMIT $5 OFFSET $6;
+
+-- name: ListPublicSourcesRecent :many
+SELECT * FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+ORDER BY created_at DESC, name ASC
+LIMIT $5 OFFSET $6;
+
+-- name: ListPublicSourcesTrending :many
+SELECT * FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND created_at > now() - interval '30 days'
+ORDER BY follower_count DESC, post_count DESC
+LIMIT $5 OFFSET $6;
+
+-- name: CountPublicSources :one
+SELECT COUNT(*) FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%');
+
+-- name: IncrementSourcePostCount :exec
+UPDATE intel_sources
+SET post_count = post_count + 1
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: DecrementSourcePostCount :exec
+UPDATE intel_sources
+SET post_count = GREATEST(0, post_count - 1)
+WHERE tenant_id = $1 AND id = $2;
+
+-- name: GetIntelSourceBySlugWithLinkedEntity :one
+SELECT s.*,
+       sp.slug AS space_slug, sp.name AS space_name,
+       o.slug AS org_slug, o.name AS org_name,
+       u.username AS user_slug, COALESCE(up.display_name, u.username) AS user_name
+FROM intel_sources s
+LEFT JOIN spaces sp ON sp.source_id = s.id
+LEFT JOIN organizations o ON o.source_id = s.id
+LEFT JOIN users u ON u.source_id = s.id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE s.tenant_id = $1 AND s.slug = $2 AND s.enabled = true;
+
+-- name: ListIntelRecordsBySource :many
+SELECT * FROM intel_records
+WHERE tenant_id = $1
+  AND source_id = $2
+  AND status = 'published'
+  AND ($3::text IS NULL OR entity_type = $3)
+ORDER BY extracted_at DESC
+LIMIT $4 OFFSET $5;

@@ -60,10 +60,10 @@
 			return;
 		}
 		if (savedItem) {
-			const res = await api.delete(`/scholarships/${scholarship.id}/save`);
+			const res = await api.delete(`/scholarships/${scholarship.guide_id}/save`);
 			if (!res.error) savedItem = null;
 		} else {
-			const res = await api.post<{ id: string }>(`/scholarships/${scholarship.id}/save`);
+			const res = await api.post<{ id: string }>(`/scholarships/${scholarship.guide_id}/save`);
 			if (!res.error && res.data) {
 				savedItem = {
 					id: res.data.id,
@@ -86,7 +86,7 @@
 		}
 		if (!scholarship || !savedItem) return;
 		updating = true;
-		const res = await api.patch(`/scholarships/${scholarship.id}/save`, { status });
+		const res = await api.patch(`/scholarships/${scholarship.guide_id}/save`, { status });
 		updating = false;
 		if (!res.error && savedItem) {
 			savedItem = { ...savedItem, status };
@@ -105,7 +105,7 @@
 		}
 		if (!scholarship || !savedItem) return;
 		editingNotes = false;
-		const res = await api.patch(`/scholarships/${scholarship.id}/save`, { notes: notesDraft });
+		const res = await api.patch(`/scholarships/${scholarship.guide_id}/save`, { notes: notesDraft });
 		if (!res.error && savedItem) {
 			savedItem = { ...savedItem, notes: notesDraft };
 		}
@@ -123,7 +123,7 @@
 		}
 		if (!scholarship || !savedItem) return;
 		editingReminder = false;
-		const res = await api.patch(`/scholarships/${scholarship.id}/save`, {
+		const res = await api.patch(`/scholarships/${scholarship.guide_id}/save`, {
 			remind_before_days: reminderDraft
 		});
 		if (!res.error && savedItem) {
