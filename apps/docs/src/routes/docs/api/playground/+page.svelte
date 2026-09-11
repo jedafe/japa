@@ -100,15 +100,20 @@
 		}
 	}
 
-	// Quick endpoints derived from the OpenAPI spec (first 12 paths).
+	// Quick endpoints derived from the OpenAPI spec (first 12 HTTP methods).
+	// OpenAPI paths may contain non-method keys (parameters, servers, etc.)
+	// which should not be rendered as quick actions.
+	const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
 	let quickEndpoints = $derived(
 		data.spec
 			? Object.entries(data.spec.paths ?? {})
 					.flatMap(([path, methods]) =>
-						Object.entries(methods).map(([m]) => ({
-							method: m.toUpperCase() as HttpMethod,
-							path
-						}))
+						Object.entries(methods)
+							.filter(([m]) => HTTP_METHODS.has(m.toLowerCase()))
+							.map(([m]) => ({
+								method: m.toUpperCase() as HttpMethod,
+								path
+							}))
 					)
 					.slice(0, 12)
 			: []
@@ -268,7 +273,7 @@
 						<select bind:value={selectedKeyId} aria-label={t('api.select_key', 'Select API key')}>
 							<option value="">{t('api.select_key', 'Select an API key…')}</option>
 							{#each activeKeys as k (k.id)}
-								<option value={k.id}>{k.app_name} ({k.key_prefix}…)</option>
+								<option value={k.id}>{k.name} ({k.key_prefix}…)</option>
 							{/each}
 						</select>
 						{#if selectedKeyId}

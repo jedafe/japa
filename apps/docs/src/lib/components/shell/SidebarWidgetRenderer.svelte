@@ -12,6 +12,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import { apiPost } from '$lib/api/client';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { DropdownMenu } from 'bits-ui';
 	import SearchLauncher from './SearchLauncher.svelte';
@@ -81,9 +82,11 @@
 	// to the locale-prefixed URL. The cookie write is required — the hooks
 	// fall back to the cookie when the URL has no prefix, so without it,
 	// switching to the default language keeps rendering the previous locale.
+	// Uses SvelteKit's goto() for client-side navigation (ADR-013) rather
+	// than a full window.location reload.
 	function switchLanguage(lang: string) {
 		document.cookie = `jc_locale=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-		window.location.href = localeHref(lang);
+		goto(localeHref(lang));
 	}
 
 	// lucide icon lookup for admin-configured icon names (metric_card.icon,

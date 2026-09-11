@@ -45,8 +45,6 @@ export interface SessionUser {
 	/** RBAC permission nodes resolved from /me/permissions (DOC-007). */
 	permissions?: string[];
 	primary_space?: SpaceRef | null;
-	/** UI preferences persisted via PATCH /me/account, e.g. nav_collapsed. */
-	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;
 }
 
 export interface SpaceRef {
@@ -218,15 +216,18 @@ export interface OpenAPIRequestBody {
  * Developer API Keys (Section 47) — GET /me/api-keys
  * ------------------------------------------------------------------ */
 
-/** Summary of a user's API key (full key only returned on creation). */
+/** Summary of a user's API key (full key only returned on creation).
+ *  Mirrors the public API /me/api-keys response shape (Section 47).
+ */
 export interface ApiKeySummary {
 	id: string;
-	app_name: string;
+	/** Human-readable name for the key — the public API field is `name`. */
+	name: string;
 	/** First 12 chars of the key — the full key is only returned on POST. */
 	key_prefix: string;
-	environment: 'live' | 'test';
+	/** Rate-limit tier requested by the user; the backend caps by user tier. */
+	rate_limit_tier: 'basic' | 'standard' | 'premium' | 'unlimited';
 	scopes: string[];
-	rate_limit_tier: string;
 	last_used_at?: string | null;
 	status: 'active' | 'revoked';
 	created_at: string;

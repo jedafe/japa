@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
 import { buildMeta } from '$lib/seo/meta';
 import type { DocSearchResult, DocAudience } from '$lib/types';
-import { ValidAudiences } from '$lib/types';
+
 import { tServer } from '$lib/i18n/dict';
 
 /**
@@ -18,7 +18,9 @@ export const load: PageServerLoad = async (event) => {
 	if (q.length >= 2) {
 		try {
 			const params = new URLSearchParams({ q, limit: '20' });
-			if (audience && ValidAudiences.has(audience)) params.set('audience', audience);
+			if (audience && event.locals.audienceOrder.includes(audience)) {
+				params.set('audience', audience);
+			}
 			results = await apiGet<DocSearchResult[]>(apiContext(event), `/docs/search?${params}`);
 		} catch {
 			results = [];

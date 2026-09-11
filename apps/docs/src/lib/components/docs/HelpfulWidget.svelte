@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { apiPost } from '$lib/api/client';
+	import { getCookie } from '$lib/api/client';
 
 	interface Props {
 		/** Page ID for localStorage persistence of the vote. */
@@ -52,14 +52,38 @@
 
 	async function submitVote(v: 'up' | 'down' | null) {
 		const newVote = vote === v ? null : v;
-		persistLocal(newVote);
-		if (newVote) {
-			const result = await apiPost(`/docs/${encodeURIComponent(audience)}/${encodeURIComponent(slug)}/feedback`, { vote: newVote });
-			if (!result.ok) {
-				voteError = result.error;
-			} else {
-				voteError = '';
+		const previousVote = vote;
+
+		// Optimistically update UI, but not localStorage yet — only persist
+		// after the server confirms the vote (BUG-HUNT-012: failed votes
+		// were being persisted).
+		vote = newVote;
+		voteError = '';
+
+		if (!newVote) {
+			// User toggled off their vote — clear persistence.
+			persistLocal(null);
+			return;
+		}
+
+		try {
+			const res = await fetch('/api/docs/feedback', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'x-csrf-token': getCookie('csrf_token') ?? ''
+				},
+				body: JSON.stringify({ audience, slug, vote: newVote })
+			});
+			if (!res.ok) {
+				const json = await res.json().catch(() => ({ error: { message: 'Feedback failed' } }));
+				throw new Error(json?.error?.message ?? 'Feedback failed');
 			}
+			persistLocal(newVote);
+		} catch (err) {
+			// Revert optimistic UI update on failure.
+			vote = previousVote;
+			voteError = err instanceof Error ? err.message : 'Feedback failed';
 		}
 	}
 

@@ -77,6 +77,7 @@ export const load: LayoutServerLoad = async (event) => {
 		footerMenu,
 		rightSidebarWidgets,
 		leftSidebarWidgets,
-		navCollapsed: event.locals.user?.ui?.nav_collapsed ?? false
+		audienceOrder: event.locals.audienceOrder,
+		navCollapsed: event.locals.navCollapsed
 	};
 };

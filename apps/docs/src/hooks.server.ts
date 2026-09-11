@@ -13,17 +13,24 @@ import { AUDIENCE_ORDER } from '$lib/types';
  *
  * The nav tree's audience switcher only offers these; gated pages 403 →
  * /docs/access-denied (server-side gating only — never client checks).
+ *
+ * The canonical order comes from the backend (GET /docs/audiences) so the
+ * UI never drifts from the source of truth (Rule 16).
  */
-function resolveAudiences(user: SessionUser | null, audienceGates: Record<string, string>): DocAudience[] {
+function resolveAudiences(
+	user: SessionUser | null,
+	audienceGates: Record<string, string>,
+	audienceOrder: DocAudience[]
+): DocAudience[] {
 	const permissions = new Set(user?.permissions ?? []);
 	const audiences: DocAudience[] = ['users', 'api'];
-	for (const aud of AUDIENCE_ORDER) {
+	for (const aud of audienceOrder) {
 		const required = audienceGates[aud];
 		if (required && permissions.has(required)) {
-			audiences.push(aud as DocAudience);
+			audiences.push(aud);
 		}
 	}
-	return AUDIENCE_ORDER.filter((a) => audiences.includes(a));
+	return audienceOrder.filter((a) => audiences.includes(a));
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -128,7 +135,28 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	event.locals.accessibleAudiences = resolveAudiences(event.locals.user, event.locals.audienceGates);
+	// DOC-009: canonical audience order from GET /docs/audiences (Rule 16).
+	// Fallback to the compile-time constant only if the backend is unreachable.
+	event.locals.audienceOrder = AUDIENCE_ORDER;
+	if (!building) {
+		try {
+			const order = await apiGet<DocAudience[]>(apiContext(event), '/docs/audiences');
+			if (order && order.length > 0) event.locals.audienceOrder = order;
+		} catch {
+			// leave AUDIENCE_ORDER fallback
+		}
+	}
+
+	// ADR-058: nav collapsed state is persisted via a durable cookie. The
+	// backend /me/account endpoint does not currently store UI preferences,
+	// so a cookie is the source of truth for the docs shell.
+	event.locals.navCollapsed = event.cookies.get('jc_nav_collapsed') === 'true';
+
+	event.locals.accessibleAudiences = resolveAudiences(
+		event.locals.user,
+		event.locals.audienceGates,
+		event.locals.audienceOrder
+	);
 
 	// Fetch the double-submit CSRF token for authenticated users so server-side
 	// mutations (form actions, apiPost/apiPatch/apiDelete) can attach the

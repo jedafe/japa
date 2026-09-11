@@ -7,6 +7,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-svelte';
 	import type { PageData, ActionData } from './$types';
+import type { ApiKeySummary } from '$lib/types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -19,8 +20,8 @@
 
 	// Create-key dialog state
 	let showCreate = $state(false);
-	let appName = $state('');
-	let environment = $state<'live' | 'test'>('live');
+	let keyName = $state('');
+	let rateLimitTier = $state<ApiKeySummary['rate_limit_tier']>('basic');
 	let scopesInput = $state('');
 	let creating = $state(false);
 	let createError = $state('');
@@ -71,8 +72,8 @@
 
 	function openCreate() {
 		showCreate = true;
-		appName = '';
-		environment = 'live';
+		keyName = '';
+		rateLimitTier = 'basic';
 		scopesInput = '';
 		createError = '';
 		newKey = '';
@@ -179,7 +180,7 @@
 					<tr>
 						<th>{t('api.app_name', 'App Name')}</th>
 						<th>{t('api.key_prefix', 'Key')}</th>
-						<th>{t('api.environment', 'Env')}</th>
+						<th>{t('api.rate_limit_tier', 'Tier')}</th>
 						<th>{t('api.scopes', 'Scopes')}</th>
 						<th>{t('api.last_used', 'Last Used')}</th>
 						<th>{t('api.actions', 'Actions')}</th>
@@ -188,7 +189,7 @@
 				<tbody>
 					{#each data.keys as k (k.id)}
 						<tr>
-							<td class="app-name">{k.app_name}</td>
+							<td class="app-name">{k.name}</td>
 							<td>
 								<code class="key-prefix">{k.key_prefix}…</code>
 								{#if k.key_prefix}
@@ -202,7 +203,7 @@
 									</button>
 								{/if}
 							</td>
-							<td><span class="env-badge env-{k.environment}">{k.environment}</span></td>
+							<td><span class="tier-badge tier-{k.rate_limit_tier}">{k.rate_limit_tier}</span></td>
 							<td class="scopes-cell">
 								{#if k.scopes && k.scopes.length > 0}
 									{#each k.scopes as s}{s} {/each}
@@ -222,7 +223,7 @@
 									<button
 										type="button"
 										class="revoke-btn"
-										onclick={() => confirmRevoke(k.id, k.app_name)}
+										onclick={() => confirmRevoke(k.id, k.name)}
 									>
 										<Trash2 size={14} />
 										{t('api.revoke', 'Revoke')}
@@ -267,13 +268,15 @@
 					{/if}
 					<label>
 						<span>{t('api.app_name', 'App Name')}</span>
-						<input name="app_name" type="text" bind:value={appName} placeholder="My App" required />
+						<input name="name" type="text" bind:value={keyName} placeholder="My App" required />
 					</label>
 					<label>
-						<span>{t('api.environment', 'Environment')}</span>
-						<select name="environment" bind:value={environment}>
-							<option value="live">live</option>
-							<option value="test">test</option>
+						<span>{t('api.rate_limit_tier', 'Rate limit tier')}</span>
+						<select name="rate_limit_tier" bind:value={rateLimitTier}>
+							<option value="basic">{t('api.tier.basic', 'basic')}</option>
+							<option value="standard">{t('api.tier.standard', 'standard')}</option>
+							<option value="premium">{t('api.tier.premium', 'premium')}</option>
+							<option value="unlimited">{t('api.tier.unlimited', 'unlimited')}</option>
 						</select>
 					</label>
 					<label>
@@ -284,7 +287,7 @@
 						<button type="button" class="cancel-btn" onclick={() => (showCreate = false)}>
 							{t('api.cancel', 'Cancel')}
 						</button>
-						<button type="submit" class="submit-btn" disabled={creating || !appName.trim()}>
+						<button type="submit" class="submit-btn" disabled={creating || !keyName.trim()}>
 							{creating ? t('api.creating', 'Creating…') : t('api.create', 'Create')}
 						</button>
 					</div>
@@ -441,15 +444,17 @@
 		padding: 0.125rem 0.375rem;
 		border-radius: 4px;
 	}
-	.env-badge {
+	.tier-badge {
 		font-size: 0.6875rem;
 		text-transform: uppercase;
 		padding: 0.125rem 0.5rem;
 		border-radius: 4px;
 		font-weight: 600;
 	}
-	.env-live { color: var(--method-get); background: var(--method-get-bg); }
-	.env-test { color: var(--method-patch); background: var(--method-patch-bg); }
+	.tier-basic { color: var(--method-get); background: var(--method-get-bg); }
+	.tier-standard { color: var(--method-put); background: var(--method-put-bg); }
+	.tier-premium { color: var(--method-patch); background: var(--method-patch-bg); }
+	.tier-unlimited { color: var(--method-delete); background: var(--method-delete-bg); }
 	.scopes-cell {
 		font-family: var(--font-mono);
 		font-size: 0.75rem;

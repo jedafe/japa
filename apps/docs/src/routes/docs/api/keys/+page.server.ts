@@ -67,21 +67,23 @@ export const actions: Actions = {
 		}
 		const ctx = apiContext(event);
 		const form = await event.request.formData();
-		const app_name = (form.get('app_name') as string | null)?.trim();
-		const environment = (form.get('environment') as string | null) ?? 'live';
+		const name = (form.get('name') as string | null)?.trim();
+		const rate_limit_tier = (form.get('rate_limit_tier') as string | null) ?? 'basic';
 		const scopesRaw = form.get('scopes') as string | null;
 		const scopes = scopesRaw
 			? scopesRaw.split(',').map((s) => s.trim()).filter(Boolean)
 			: [];
 
-		if (!app_name) {
-			return { error: 'app_name is required' };
+		if (!name) {
+			return { error: 'name is required' };
 		}
 
+		// Public /me/api-keys expects `name` and `rate_limit_tier` (Section 47).
+		// The backend caps the requested tier to the user's allowed tier.
 		try {
 			const created = await apiPost<ApiKeyCreated>(ctx, '/me/api-keys', {
-				app_name,
-				environment,
+				name,
+				rate_limit_tier,
 				scopes
 			});
 			return { created };
