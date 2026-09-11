@@ -194,7 +194,7 @@ export const muteUser = (id: string) => api.post(`/users/${id}/mute`);
 export const unmuteUser = (id: string) => api.delete(`/users/${id}/mute`);
 export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
 
-export type FollowableType = 'user' | 'organization' | 'space' | 'tag';
+export type FollowableType = 'user' | 'organization' | 'space' | 'tag' | 'source';
 
 export const toggleFollow = (
 	type: FollowableType,
@@ -202,7 +202,7 @@ export const toggleFollow = (
 	slug: string | undefined,
 	currently: boolean
 ) => {
-	const target = type === 'space' || type === 'tag' ? (slug || id) : id;
+	const target = type === 'space' || type === 'tag' || type === 'source' ? (slug || id) : id;
 	switch (type) {
 		case 'user':
 			return currently
@@ -220,6 +220,10 @@ export const toggleFollow = (
 			return currently
 				? api.delete<{ following: boolean }>(`/tags/${target}/follow`)
 				: api.post<{ following: boolean }>(`/tags/${target}/follow`);
+		case 'source':
+			return currently
+				? api.delete<{ following: boolean }>(`/sources/${target}/follow`)
+				: api.post<{ following: boolean }>(`/sources/${target}/follow`);
 	}
 };
 
