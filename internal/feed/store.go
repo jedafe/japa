@@ -295,3 +295,25 @@ func (s *Store) getForYouCandidates(
 
 	return rows, nil
 }
+
+// listSourcesByContentIDs returns source attribution for a batch of content IDs.
+func (s *Store) listSourcesByContentIDs(ctx context.Context, tenantID pgtype.UUID, contentIDs []pgtype.UUID) (map[string]gen.ListSourcesByContentIDsRow, error) {
+	if len(contentIDs) == 0 {
+		return map[string]gen.ListSourcesByContentIDsRow{}, nil
+	}
+
+	rows, err := s.read.ListSourcesByContentIDs(ctx, gen.ListSourcesByContentIDsParams{
+		TenantID:   tenantID,
+		ContentIds: contentIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing sources by content ids: %w", err)
+	}
+
+	out := make(map[string]gen.ListSourcesByContentIDsRow, len(rows))
+	for _, r := range rows {
+		out[r.ContentID.String()] = r
+	}
+
+	return out, nil
+}
