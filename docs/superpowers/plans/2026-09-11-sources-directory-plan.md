@@ -91,7 +91,8 @@ ALTER TABLE intel_sources
     ADD COLUMN IF NOT EXISTS logo_url text,
     ADD COLUMN IF NOT EXISTS follower_count int NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS post_count int NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS source_kind text NOT NULL DEFAULT 'publisher';
+    ADD COLUMN IF NOT EXISTS source_kind text NOT NULL DEFAULT 'publisher'
+        CHECK (source_kind IN ('publisher','institution','individual','aggregator'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_intel_sources_tenant_slug
     ON intel_sources (tenant_id, slug) WHERE slug IS NOT NULL;
@@ -367,12 +368,12 @@ git commit -m "feat: support following intel sources"
 - Consumes: `IntelSource` model with new fields.
 - Produces: `GET /api/v1/sources` returning `[]SourceDirectoryEntry` + meta.
 
-- [ ] **Step 1: Add sqlc queries**
+- [ ] **Step 1: Add sqlc queries per sort mode**
 
-In `internal/db/queries/intelligence.sql`:
+In `internal/db/queries/intelligence.sql` add three queries so the handler can switch by `?sort=`:
 
 ```sql
--- name: ListPublicSources :many
+-- name: ListPublicSourcesPopular :many
 SELECT * FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
@@ -381,6 +382,33 @@ WHERE tenant_id = $1
   AND ($3::text IS NULL OR source_kind = $3)
   AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
 ORDER BY follower_count DESC, name ASC
+LIMIT $5 OFFSET $6;
+```
+
+```sql
+-- name: ListPublicSourcesRecent :many
+SELECT * FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+ORDER BY created_at DESC, name ASC
+LIMIT $5 OFFSET $6;
+```
+
+```sql
+-- name: ListPublicSourcesTrending :many
+SELECT * FROM intel_sources
+WHERE tenant_id = $1
+  AND enabled = true
+  AND status = 'active'
+  AND ($2::text IS NULL OR category = $2)
+  AND ($3::text IS NULL OR source_kind = $3)
+  AND ($4::text IS NULL OR name ILIKE '%' || $4 || '%' OR description ILIKE '%' || $4 || '%' OR domain ILIKE '%' || $4 || '%')
+  AND created_at > now() - interval '30 days'
+ORDER BY follower_count DESC, post_count DESC
 LIMIT $5 OFFSET $6;
 ```
 
@@ -403,7 +431,12 @@ In `internal/intelligence/handlers/sources_public.go`:
 func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request) { ... }
 ```
 
-Return JSON with shape:
+Rules for the handler:
+- Read `tenant_id` from context; if invalid, fall back to `defaultIntelTenantID` (same as `HandleSourcesDirectory` in `moderation.go`).
+- Parse `?category=`, `?source_kind=`, `?q=`, `?sort=` (popular | recent | trending; default `popular`), `?limit`/`?offset`.
+- Pick the appropriate sqlc query based on `sort`.
+- For `linked_entity`, left-join `spaces`, `organizations`, and `users` on `source_id = source.id` (optional single query or in-memory join after listing).
+- Return the JSON shape:
 
 ```json
 {
@@ -428,24 +461,33 @@ Return JSON with shape:
 }
 ```
 
-- [ ] **Step 3: Register route**
+- [ ] **Step 3: Register public route with optional auth**
 
 In `internal/server/server.go` under the public/v1 API group:
 
 ```go
-r.Get("/sources", intelHandlers.HandleSourcesDirectory)
+r.Group(func(r chi.Router) {
+    r.Use(auth.OptionalUserFromHeader) // or existing optional auth middleware
+    r.Get("/sources", intelHandlers.HandleSourcesDirectory)
+})
 ```
 
 - [ ] **Step 4: Write handler test**
 
-Create `internal/intelligence/handlers/sources_public_test.go` with a test that lists active sources and returns 200.
+Create `internal/intelligence/handlers/sources_public_test.go`:
+
+```go
+func TestHandleSourcesDirectory(t *testing.T) {
+    // Setup test source, call handler, assert 200 and JSON shape.
+}
+```
 
 - [ ] **Step 5: Run tests and commit**
 
 ```bash
 go test ./internal/intelligence/handlers/...
 git add internal/intelligence/handlers/sources_public.go internal/intelligence/handlers/sources_public_test.go internal/db/queries/intelligence.sql internal/server/server.go
-git commit -m "feat: public source directory API"
+git commit -m "feat: public source directory API with sort and auth"
 ```
 
 ---
@@ -462,19 +504,59 @@ git commit -m "feat: public source directory API"
 - Consumes: `GetIntelSourceBySlug`, `ListPublicSources`.
 - Produces: `GET /api/v1/sources/:slug`, `GET /api/v1/sources/:slug/items`.
 
-- [ ] **Step 1: Add sqlc query for items**
+- [ ] **Step 1: Add source detail and item queries**
 
 In `internal/db/queries/intelligence.sql`:
 
 ```sql
--- name: ListIntelRecordsBySource :many
-SELECT * FROM intel_records
-WHERE tenant_id = $1
-  AND source_id = $2
-  AND status = 'published'
-  AND ($3::text IS NULL OR entity_type = $3)
-ORDER BY extracted_at DESC
-LIMIT $4 OFFSET $5;
+-- name: GetIntelSourceBySlugWithLinkedEntity :one
+SELECT s.*,
+       sp.slug AS space_slug, sp.name AS space_name,
+       o.slug AS org_slug, o.name AS org_name,
+       u.username AS user_slug, u.display_name AS user_name
+FROM intel_sources s
+LEFT JOIN spaces sp ON sp.source_id = s.id
+LEFT JOIN organizations o ON o.source_id = s.id
+LEFT JOIN users u ON u.source_id = s.id
+WHERE s.tenant_id = $1 AND s.slug = $2 AND s.enabled = true;
+```
+
+For the item feed, reuse the radar pattern. Add `BySource` listing queries for each domain (or add `source_id` filter to existing list queries). For v1, add:
+
+```sql
+-- name: ListScholarshipsBySource :many
+SELECT * FROM scholarships
+WHERE tenant_id = $1 AND intel_record_id IN (
+    SELECT id FROM intel_records WHERE tenant_id = $1 AND source_id = $2 AND status = 'published'
+)
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4;
+```
+
+```sql
+-- name: ListJobsBySource :many
+SELECT * FROM jobs
+WHERE tenant_id = $1 AND source_id = $2 AND status = 'published'
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4;
+```
+
+```sql
+-- name: ListRemittanceRatesBySource :many
+SELECT * FROM remittance_rates
+WHERE tenant_id = $1 AND intel_record_id IN (
+    SELECT id FROM intel_records WHERE tenant_id = $1 AND source_id = $2 AND status = 'published'
+)
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4;
+```
+
+```sql
+-- name: ListContentsBySource :many
+SELECT * FROM contents
+WHERE tenant_id = $1 AND intel_source_id = $2 AND status = 'published'
+ORDER BY published_at DESC
+LIMIT $3 OFFSET $4;
 ```
 
 - [ ] **Step 2: Implement handlers**
@@ -486,21 +568,39 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) { ...
 func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request) { ... }
 ```
 
-`HandleGetSource` loads the source by slug, computes `is_following` for authed users, and joins `spaces`/`organizations`/`users` when `source_id` matches to build `linked_entity`.
+`HandleGetSource`:
+- Resolve slug to source using `GetIntelSourceBySlugWithLinkedEntity`.
+- Fall back to `defaultIntelTenantID` if the request tenant is empty.
+- Compute `is_following` with `auth.OptionalUser` and `follows.IsFollowing`.
+- Build `linked_entity` from the joined `space_*`, `org_*`, or `user_*` columns.
 
-`HandleListSourceItems` loads published `intel_records` for the source, then for each record resolves the promoted entity and builds an item with `title`, `excerpt`, `entity_type`, `href`, `original_url`, `published_at`, and engagement metrics.
+`HandleListSourceItems`:
+- Parse `?entity_type=` and `?sort=` (latest | popular | discussed | upvoted; default `latest`).
+- Load published records from `intel_records` by `source_id` and `entity_type` filter, or use the domain-specific `BySource` queries.
+- Reuse the `radarItem` converters in `internal/intelligence/handlers/radar.go` (`scholarshipToRadarItem`, `jobToRadarItem`, `remittanceRateToRadarItem`, etc.) to build a uniform `SourceItem` list with `title`, `excerpt`, `entity_type`, `href`, `original_url`, `published_at`, `vote_score`, `comment_count`, `view_count`.
+- Sort items in Go by the requested sort field (extracted_at/published_at, vote_score, comment_count, view_count).
 
-- [ ] **Step 3: Register routes**
+- [ ] **Step 3: Register public routes with optional auth**
 
 ```go
-r.Get("/sources/{slug}", intelHandlers.HandleGetSource)
-r.Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
+r.Group(func(r chi.Router) {
+    r.Use(auth.OptionalUserFromHeader)
+    r.Get("/sources/{slug}", intelHandlers.HandleGetSource)
+    r.Get("/sources/{slug}/items", intelHandlers.HandleListSourceItems)
+})
 ```
 
 - [ ] **Step 4: Add tests**
 
-- Test: `GET /sources/nodejs` returns 200 with source metadata.
-- Test: `GET /sources/nodejs/items` returns published records.
+```go
+func TestHandleGetSource(t *testing.T) { ... }
+func TestHandleListSourceItems(t *testing.T) { ... }
+```
+
+- Test: `GET /sources/nodejs` returns 200 with source metadata and `linked_entity`.
+- Test: `GET /sources/nodejs/items` returns published records with correct `entity_type` and `href`.
+- Test: `?entity_type=scholarship` filters the feed.
+- Test: `?sort=popular` sorts by `vote_score` descending.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -561,7 +661,7 @@ git commit -m "feat: source follow toggle endpoints"
 
 **Interfaces:**
 - Consumes: `intel_record.source_id` and `intel_record.id`.
-- Produces: `contents.intel_source_id` and `contents.intel_record_id` set on promoted/syndicated content.
+- Produces: `contents.intel_source_id` and `contents.intel_record_id` set on promoted/syndicated content; `intel_sources.post_count` updated on publish/unpublish.
 
 - [ ] **Step 1: Update content creation**
 
@@ -578,21 +678,43 @@ contentParams := gen.CreateContentParams{
 }
 ```
 
-- [ ] **Step 2: Update existing content service**
+- [ ] **Step 2: Add source post_count maintenance queries**
+
+In `internal/db/queries/intelligence.sql`:
+
+```sql
+-- name: IncrementSourcePostCount :exec
+UPDATE intel_sources
+SET post_count = post_count + 1
+WHERE tenant_id = $1 AND id = $2;
+```
+
+```sql
+-- name: DecrementSourcePostCount :exec
+UPDATE intel_sources
+SET post_count = GREATEST(0, post_count - 1)
+WHERE tenant_id = $1 AND id = $2;
+```
+
+- [ ] **Step 3: Update promoters to maintain post_count**
+
+When a record reaches `status = 'published'` and has a promoted entity, call `IncrementSourcePostCount` with `record.SourceID` in the same transaction. When a published record is rejected, removed, or unpublished, call `DecrementSourcePostCount`.
+
+- [ ] **Step 4: Update existing content service**
 
 Ensure `internal/content/store.go` `CreateContent` passes the new IDs through to the generated query.
 
-- [ ] **Step 3: Run tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 go test ./internal/intelligence/promoter/...
 go test ./internal/content/...
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git commit -m "feat: wire intel source/record provenance into contents"
+git commit -m "feat: wire intel source/record provenance and maintain post counts"
 ```
 
 ---
@@ -770,10 +892,29 @@ export const load: PageServerLoad = async (event) => {
 - [ ] **Step 2: Write detail page**
 
 - `SourceHeader.svelte`: logo, name, domain, description, follow button, trust badge, linked entity card.
-- `SourceItemList.svelte`: tab bar (All / Scholarships / Jobs / Contents / etc.), `FeedCard` or domain card list.
+- `SourceItemList.svelte`:
+  - **Entity-type tabs:** All / Scholarships / Jobs / Remittance / Contents / Videos / News / About.
+  - **Sort tabs:** Latest / Popular / Discussed / Upvoted. Pass `?sort=` to the `GET /sources/:slug/items` API.
+  - Render `FeedCard` or domain card list.
 - `+page.svelte`: compose header and item list; handle follow toggle with optimistic UI and rollback.
 
-- [ ] **Step 3: Run checks and commit**
+- [ ] **Step 3: Derive and display related tags**
+
+Use `source.category` plus the top N recurring tags from the source's published items to render a related-tags row. Add i18n keys:
+
+```json
+"sources.follow": "Follow",
+"sources.unfollow": "Unfollow",
+"sources.about": "About",
+"sources.latest": "Latest",
+"sources.popular": "Popular",
+"sources.discussed": "Discussed",
+"sources.upvoted": "Upvoted",
+"sources.dataSources": "Data sources",
+"sources.viewProfile": "View profile"
+```
+
+- [ ] **Step 4: Run checks and commit**
 
 ```bash
 cd apps/main
@@ -907,8 +1048,19 @@ git commit -m "feat: source attribution and data source links in tools"
 -- migrations/000655_backfill_source_slugs.up.sql
 BEGIN;
 UPDATE intel_sources
-SET slug = lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g')) || '-' || substr(md5(random()::text), 1, 6)
+SET slug = lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'))
 WHERE slug IS NULL;
+
+-- Deduplicate any collisions by appending a short hash.
+UPDATE intel_sources s
+SET slug = s.slug || '-' || substr(md5(s.id::text || s.tenant_id::text), 1, 6)
+WHERE s.id IN (
+    SELECT id FROM (
+        SELECT id, row_number() OVER (PARTITION BY tenant_id, slug ORDER BY created_at, id) AS rn
+        FROM intel_sources
+        WHERE slug IS NOT NULL
+    ) t WHERE rn > 1
+);
 COMMIT;
 ```
 
@@ -989,27 +1141,45 @@ git commit -m "docs: update api routes and section docs for sources"
 - [ ] Run `go test ./internal/intelligence/... ./internal/follows/... ./internal/scholarships/... ./internal/jobs/... ./internal/remittance/... ./internal/content/...`
 - [ ] Run `make sqlc-gen` and verify no hand-edited generated files.
 - [ ] Run `bun run check` in `apps/main` and `apps/tools`.
+- [ ] Run a final conformance pass:
+  - Check no hardcoded source data in SvelteKit (Rule 16).
+  - Check all new API errors use the standard `{error: {code, message, status}}` shape (Rule 5).
+  - Check all Valkey keys use `jc:` prefix (Rule 4).
+  - Check no AI attribution in commits or docs (Rule 17).
 - [ ] Manual QA:
-  - Navigate to `/sources`; verify directory renders.
-  - Click a source; verify detail page and item feed.
+  - Navigate to `/sources`; verify directory renders with sort tabs (Popular / Recent / Trending) and category filters.
+  - Click a source; verify detail page shows entity-type tabs and sort tabs (Latest / Popular / Discussed / Upvoted).
   - Click an item; verify it opens in JapaConnect with a source back-link.
   - In Scholarship Finder / Remittance tool, verify source attribution links.
   - Follow a source and refresh; verify `follower_count` updates.
 
 ---
 
+## Out of scope for v1 (explicit)
+
+The plan is scoped to the hybrid publisher/entity-profile model we agreed on. The following daily.dev-adjacent features are intentionally not in this plan and should be added in later phases unless the scope changes:
+
+1. **"Suggest new source" UI** — daily.dev allows users to propose new publishers. This requires a new admin/moderation queue and is not in v1.
+2. **"Block source" action** — daily.dev has a block action in addition to follow. JapaConnect's current block system is user/space oriented; extending it to sources is a separate feature.
+3. **Unifying `video_sources` and `comparison_data_sources`** — the canonical v1 registry is `intel_sources`. `video_sources` and `comparison_data_sources` remain independent; a later phase can link or fold them in.
+4. **"Top video sources" / "Recently added" / "Rising" directory sections** — the v1 directory supports category and sort tabs; curated section carousels can be added later.
+5. **Auto-creating `intel_sources` for every university/organization/user** — only entities that are actual publishers/data feeds get a `source_id`. Bulk auto-creation is not in v1.
+
+---
+
 ## Self-review
 
 **Spec coverage:**
-- `/sources` directory — Task 11.
-- `/sources/[slug]` detail — Task 12.
+- `/sources` directory with sort tabs (Popular / Recent / Trending) — Task 5 + 11.
+- `/sources/[slug]` detail with entity-type and sort tabs (Latest / Popular / Discussed / Upvoted) — Task 6 + 12.
 - Item feed opens inside JapaConnect with source link — Task 6 + 13.
 - Tool source attribution — Task 14.
 - Hybrid entity profile links — Task 2 + detail page `linked_entity`.
 - Follow sources — Task 4 + 7.
-- Content provenance — Task 3 + 8.
+- Content provenance and source `post_count` maintenance — Task 3 + 8.
 - Schema extensions — Task 1.
+- Public route auth/tenant fallback — Task 5 + 6.
 
 **Placeholder scan:** No TBD/TODO placeholders. Migration numbers use 000651–000655 and assume the current latest migration is 000650.
 
-**Type consistency:** `Source` type in `apps/main/src/lib/types` matches the API response shape. `FeedItem.source` is optional and matches the backend addition. Follow entity type `source` is added consistently in DB, service, and package constants.
+**Type consistency:** `Source` type in `apps/main/src/lib/types` matches the API response shape. `FeedItem.source` is optional and matches the backend addition. Follow entity type `source` is added consistently in DB, service, and package constants. `SourceItem` `sort` values match the backend `?sort=` enum in Task 6.
