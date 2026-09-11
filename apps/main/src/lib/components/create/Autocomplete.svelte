@@ -52,6 +52,10 @@
 		 * created item so it can be selected immediately.
 		 */
 		onAdd?: (query: string) => Promise<AutocompleteItem | null>;
+		/** Extra classes for the wrapper element. */
+		class?: string;
+		/** Extra classes for the input element. */
+		inputClass?: string;
 	}
 
 	let {
@@ -59,6 +63,10 @@
 		placeholder,
 		ariaLabel = undefined,
 		emptyMessage,
+		/** Extra classes for the wrapper element. */
+		class: wrapperClass = '',
+		/** Extra classes for the input element. */
+		inputClass = '',
 		fetcher,
 		initialFetcher,
 		selectedId,
@@ -295,7 +303,7 @@
 
 <div class="autocomplete-field" bind:this={fieldEl}>
 	<div
-		class="autocomplete-input-wrapper"
+		class="autocomplete-input-wrapper {wrapperClass}"
 		class:focused
 		class:has-value={!!selectedId}
 	>
@@ -317,7 +325,7 @@
 		<input
 			{id}
 			type="text"
-			class="autocomplete-input"
+			class="autocomplete-input {inputClass}"
 			placeholder={selectedId && !focused ? '' : placeholder}
 			aria-label={ariaLabel ?? placeholder}
 			bind:this={inputEl}

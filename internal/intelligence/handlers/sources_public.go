@@ -83,9 +83,15 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	userID, authed := optionalUser(w, r)
+
 	entries := make([]publicSource, 0, len(rows))
 	for _, s := range rows {
-		entries = append(entries, intelSourceToPublic(s, false, nil))
+		isFollowing := false
+		if authed && h.followsSvc != nil {
+			isFollowing, _ = h.followsSvc.IsFollowing(r.Context(), tenantID, userID, follows.EntityTypeSource, s.ID)
+		}
+		entries = append(entries, intelSourceToPublic(s, isFollowing, nil))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{

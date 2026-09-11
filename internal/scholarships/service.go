@@ -236,6 +236,9 @@ func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
 	}
 
 	for k, v := range m {
+		if v == nil {
+			continue
+		}
 		switch t := v.(type) {
 		case string:
 			if s := strings.TrimSpace(t); s != "" {
@@ -252,6 +255,10 @@ func mergeContentFieldValues(dst map[string]string, fieldValues []byte) {
 		case map[string]interface{}:
 			if s, ok := t["value"].(string); ok && strings.TrimSpace(s) != "" {
 				dst[k] = strings.TrimSpace(s)
+			}
+		case []interface{}:
+			if s := joinInterfaceArray(t, ", "); s != "" {
+				dst[k] = s
 			}
 		}
 	}
@@ -471,6 +478,7 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 	conditions = append(conditions, fmt.Sprintf("s.tenant_id = $%d", tenantIdx))
 	conditions = append(conditions, "c.status = 'published'")
 	conditions = append(conditions, "c.deleted_at IS NULL")
+	conditions = append(conditions, "c.guide_category = 'scholarship'")
 
 	if filters.Country != "" {
 		conditions = append(conditions, fmt.Sprintf("s.country ILIKE '%%' || $%d || '%%'", argIdx))
@@ -718,7 +726,8 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
 		WHERE s.tenant_id = $1 AND s.guide_id = $2
-		  AND c.status = 'published' AND c.deleted_at IS NULL`
+		  AND c.status = 'published' AND c.deleted_at IS NULL
+		  AND c.guide_category = 'scholarship'`
 
 	var (
 		r                 ScholarshipResult

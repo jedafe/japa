@@ -3,7 +3,7 @@
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -41,6 +41,9 @@
 		/** §106 video — the linked video_sources row, loaded by
 		 *  /content/[slug]/+page.server.ts when content_type === 'video'. */
 		videoSource?: VideoSource | null;
+		/** §73 scholarship integration — set by /guide/[slug] when the guide
+		 *  is also a scholarship in the finder. */
+		scholarship?: { guide_id: string; slug: string; title: string } | null;
 	}
 
 	type PageData = ContentArticlePageData;
@@ -240,6 +243,18 @@
 				{#each journeyChips as chip (chip)}
 					<span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-1 text-xs text-[var(--color-text-subtle)]">{chip}</span>
 				{/each}
+			</div>
+		{/if}
+
+		{#if data.scholarship}
+			<div class="mt-4">
+				<a
+					href={`/scholarships/${data.scholarship.guide_id}`}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-opacity hover:opacity-90"
+				>
+					<GraduationCap size={18} />
+					{t('scholarships.view_scholarship', 'View scholarship')}
+				</a>
 			</div>
 		{/if}
 

@@ -169,6 +169,23 @@ func RegisterSettings(s settingsReader) {
 	appSettings = s
 }
 
+// ScholarshipSyncer derives or updates a scholarships projection row from a
+// published guide. Defined as a local interface so the worker package does not
+// import the scholarships package (avoids an import cycle: scholarships imports
+// worker for task constants, worker uses the adapter for §73 guide-to-scholarship
+// sync).
+type ScholarshipSyncer interface {
+	SyncFromContentGuide(ctx context.Context, tenantID, contentID pgtype.UUID) error
+}
+
+// scholarshipSyncer is the registered implementation. Nil until wired by server.go.
+var scholarshipSyncer ScholarshipSyncer
+
+// RegisterScholarshipSyncer injects the adapter for the scholarship:sync_from_guide task.
+func RegisterScholarshipSyncer(s ScholarshipSyncer) {
+	scholarshipSyncer = s
+}
+
 // videoProcessor holds the video processor for background video processing.
 var videoProcessor interface {
 	Transcode(ctx context.Context, inputPath, outputPath string) error
@@ -301,6 +318,43 @@ func scheduleFanOutTask(enq *Enqueuer, contentID, tenantID, authorID, spaceID pg
 	if err := enq.Enqueue(TypeContentFanOutToFeeds, payload); err != nil {
 		slog.Warn("scheduleFanOutTask: failed to enqueue fan-out",
 			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
+	}
+}
+
+// scheduleScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide task
+// when the published scheduled content is a scholarship guide. The handler is
+// idempotent and a no-op for non-scholarship content.
+func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID, tenantID pgtype.UUID, contentIDStr string) {
+	if taskEnqueuer == nil {
+		return
+	}
+
+	published, err := gen.New(dbPool.Reader).GetContentByID(ctx, gen.GetContentByIDParams{
+		ID: contentID, TenantID: tenantID,
+	})
+	if err != nil {
+		slog.Warn("task:content:publish_scheduled: failed to fetch content for scholarship sync",
+			"content_id", contentIDStr, "error", err)
+		return
+	}
+
+	if published.ContentType != "guide" ||
+		(published.GuideCategory == nil || *published.GuideCategory != "scholarship") {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"content_id": contentID.String(),
+		"tenant_id":  tenantID.String(),
+	})
+	if err != nil {
+		slog.Warn("scheduleScholarshipSyncFromGuide: failed to marshal payload", "error", err)
+		return
+	}
+
+	if err := taskEnqueuer.Enqueue(TypeScholarshipSyncFromGuide, payload); err != nil {
+		slog.Warn("scheduleScholarshipSyncFromGuide: failed to enqueue",
+			"content_id", contentIDStr, "error", err)
 	}
 }
 
@@ -1799,6 +1853,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	}
 
 	scheduleScheduledPublishFanOut(ctx, contentID, tenantID, payload.ContentID)
+	scheduleScholarshipSyncFromGuide(ctx, contentID, tenantID, payload.ContentID)
 
 	return nil
 }
@@ -2995,6 +3050,43 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		"newsletter_id", payload.NewsletterID,
 		"segment", campaign.Segment,
 		"sent", sent, "failed", failed, "total", total)
+
+	return nil
+}
+
+// HandleScholarshipSyncFromGuide derives or updates a scholarships projection
+// row from a guide with content_type='guide' and guide_category='scholarship'.
+// It is a no-op for other content types and is idempotent by (tenant_id, guide_id).
+func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:scholarship:sync_from_guide")
+
+	if scholarshipSyncer == nil {
+		slog.Warn("task:scholarship:sync_from_guide: no syncer registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		ContentID string `json:"content_id"`
+		TenantID  string `json:"tenant_id"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		return err
+	}
+
+	contentID, err := scanUUID(payload.ContentID)
+	if err != nil {
+		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
+	}
+
+	tenantID, err := scanUUID(payload.TenantID)
+	if err != nil {
+		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
+	}
+
+	if err := scholarshipSyncer.SyncFromContentGuide(ctx, tenantID, contentID); err != nil {
+		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
+	}
 
 	return nil
 }
@@ -4552,6 +4644,9 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 
 		published++
 		affectedTenants[pc.TenantID] = struct{}{}
+
+		// §73: keep the scholarship finder in sync for scheduled scholarship guides.
+		scheduleScholarshipSyncFromGuide(ctx, pc.ID, pc.TenantID, pc.ID.String())
 
 		slog.Info("task:content:publish_sweep: content published",
 			"content_id", pc.ID.String())

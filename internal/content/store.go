@@ -69,6 +69,9 @@ type CreateContentInput struct {
 	AIGenerated   bool
 	AIGeneratedAt pgtype.Timestamptz
 	AIModel       *string
+	// Source provenance for promoted/ingested content (v1 sources directory).
+	IntelSourceID pgtype.UUID
+	IntelRecordID pgtype.UUID
 }
 
 // resolveSpaceCountryCode walks a space's parent_id chain until it reaches
@@ -559,6 +562,8 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		AiGenerated:     input.AIGenerated,
 		AiModel:         input.AIModel,
 		AiGeneratedAt:   aiGeneratedAt,
+		IntelSourceID:   input.IntelSourceID,
+		IntelRecordID:   input.IntelRecordID,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError

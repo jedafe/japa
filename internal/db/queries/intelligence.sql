@@ -256,6 +256,13 @@ WHERE tenant_id = $1
 ORDER BY extracted_at DESC
 LIMIT $4 OFFSET $5;
 
+-- name: CountIntelRecordsBySource :one
+SELECT COUNT(*) FROM intel_records
+WHERE tenant_id = $1
+  AND source_id = $2
+  AND status = 'published'
+  AND ($3::text IS NULL OR $3 = '' OR entity_type = $3);
+
 -- name: ListSourcesByRecordIDs :many
 -- Returns a map-friendly list of sources for a batch of intel record IDs.
 -- Used by scholarship, job, and remittance responses to attach attribution.

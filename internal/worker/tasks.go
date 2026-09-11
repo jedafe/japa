@@ -56,6 +56,7 @@ const (
 	TypeWalletAwardPoints             = "wallet:award_points"
 	TypeWalletDeductCredits           = "wallet:deduct_credits" // #nosec
 	TypeNewsletterSend                = "newsletter:send"
+	TypeScholarshipSyncFromGuide      = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
 
@@ -181,6 +182,7 @@ var handlerRegistry = []struct {
 	{TypeWalletAwardPoints, HandleWalletAwardPoints},
 	{TypeWalletDeductCredits, HandleWalletDeductCredits},
 	{TypeNewsletterSend, HandleNewsletterSend},
+	{TypeScholarshipSyncFromGuide, HandleScholarshipSyncFromGuide},
 	{TypeDocsGeneratePage, HandleDocsGeneratePage},
 	{TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers},
 	// Japa University creator economy (ADR-063)

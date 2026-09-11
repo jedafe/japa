@@ -154,6 +154,7 @@ var taskTier = func() map[string]string {
 		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
 		TypeLearningUpdateTrackCompletion, TypeVideoProcessing, TypeVideoImportBulk,
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
+		TypeScholarshipSyncFromGuide,
 		TypeAffiliateCreditAuthorCommission,
 		TypeDocsGeneratePage,
 		TypeFormFireSubmissionTriggers,
@@ -331,6 +332,7 @@ var taskTypeCatalog = []struct {
 	{TypeWalletAwardPoints, "default", "Award points or credits to a user wallet (checklist, referral, assessment, scholarship)"},
 	{TypeWalletDeductCredits, "default", "Deduct or refund credits for self-serve ad campaign funding"},
 	{TypeNewsletterSend, "default", "Send newsletter to subscribers"},
+	{TypeScholarshipSyncFromGuide, "default", "Derive or update a scholarships projection row from a published scholarship guide (§73)"},
 	{TypeDocsGeneratePage, "default", "Generate a docs page via AI (fire-and-forget)"},
 	{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},
 	// Japa University (ADR-063)
