@@ -98,6 +98,41 @@ func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedSc
 	return count, nil
 }
 
+// GetSourceByRecordID returns source attribution for a single intel record.
+func (s *Store) GetSourceByRecordID(ctx context.Context, tenantID, recordID pgtype.UUID) (gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
+		TenantID: tenantID,
+		Column2:  []pgtype.UUID{recordID},
+	})
+	if err != nil {
+		return gen.ListSourcesByRecordIDsRow{}, fmt.Errorf("scholarships: get source by record id: %w", err)
+	}
+
+	if len(rows) == 0 {
+		return gen.ListSourcesByRecordIDsRow{}, errors.New("scholarships: source not found")
+	}
+
+	return rows[0], nil
+}
+
+// MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
+		TenantID: tenantID,
+		Column2:  recordIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scholarships: map sources by record ids: %w", err)
+	}
+
+	m := make(map[string]gen.ListSourcesByRecordIDsRow, len(rows))
+	for _, r := range rows {
+		m[r.RecordID.String()] = r
+	}
+
+	return m, nil
+}
+
 // AdminStatusDistribution returns per-status scholarship counts for the admin dashboard.
 func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminScholarshipStatusDistributionRow, error) {
 	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx, tenantID)

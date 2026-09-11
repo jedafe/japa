@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -77,6 +78,17 @@ type ScholarshipFilters struct {
 // which renders arbitrary fields.
 //
 // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
+// SourceAttribution is a lightweight source snapshot attached to scholarship,
+// job, and remittance results so the UI can link back to /sources/[slug].
+type SourceAttribution struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Slug       string `json:"slug"`
+	LogoURL    string `json:"logo_url"`
+	SourceURL  string `json:"source_url"`
+	TrustLevel int16  `json:"trust_level"`
+}
+
 type ScholarshipResult struct {
 	GuideID             string            `json:"guide_id"`
 	ID                  string            `json:"id"`
@@ -98,6 +110,7 @@ type ScholarshipResult struct {
 	HowToApply          string            `json:"how_to_apply"`
 	ContactEmail        string            `json:"contact_email"`
 	FieldValues         map[string]string `json:"field_values"`
+	Source              SourceAttribution `json:"source"`
 }
 
 // SavedScholarshipResponse is the saved-tracker row shape returned by
@@ -663,6 +676,25 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 		results = append(results, r)
 	}
 
+	// Attach source attribution in a single batch query.
+	recordIDs := make([]pgtype.UUID, 0, len(results))
+	for _, r := range results {
+		if r.IntelRecordID != "" {
+			recordIDs = append(recordIDs, pgtypeUUID(r.IntelRecordID))
+		}
+	}
+
+	if len(recordIDs) > 0 {
+		sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs)
+		if err == nil {
+			for i := range results {
+				if src, ok := sources[results[i].IntelRecordID]; ok {
+					results[i].Source = sourceAttributionFromRow(src)
+				}
+			}
+		}
+	}
+
 	return results, total, nil
 }
 
@@ -673,7 +705,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 // which SaveScholarship maps to ErrGuideNotFound.
 func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
-		SELECT s.id, s.guide_id, s.title, c.slug, c.meta_description,
+		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
 		       s.university, s.eligible_countries, s.funding, s.description,
 		       (
@@ -691,6 +723,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	var (
 		r                 ScholarshipResult
 		id                pgtype.UUID
+		intelRecordID     pgtype.UUID
 		gID               pgtype.UUID
 		slug              *string
 		summary           *string
@@ -708,7 +741,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	)
 
 	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
-		&id, &gID, &r.Title, &slug, &summary,
+		&id, &intelRecordID, &gID, &r.Title, &slug, &summary,
 		&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
 		&university, &eligibleCountries, &funding, &description, &fieldValues,
 	); err != nil {
@@ -716,6 +749,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	}
 
 	r.ID = pgtypeUUIDString(id)
+	r.IntelRecordID = pgtypeUUIDString(intelRecordID)
 	r.GuideID = pgtypeUUIDString(gID)
 	r.CountrySpaceID = pgtypeUUIDString(countrySpaceID)
 	r.FieldsOfStudy = fieldsOfStudy
@@ -732,7 +766,29 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 
 	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
 
+	if intelRecordID.Valid {
+		if src, err := s.store.GetSourceByRecordID(ctx, tenantID, intelRecordID); err == nil {
+			r.Source = sourceAttributionFromRow(src)
+		}
+	}
+
 	return r, nil
+}
+
+func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttribution {
+	a := SourceAttribution{
+		ID:         pgtypeUUIDString(src.SourceID),
+		Name:       src.Name,
+		SourceURL:  src.SourceUrl,
+		TrustLevel: src.TrustLevel,
+	}
+	if src.Slug != nil {
+		a.Slug = *src.Slug
+	}
+	if src.LogoUrl != nil {
+		a.LogoURL = *src.LogoUrl
+	}
+	return a
 }
 
 // SaveScholarship saves a scholarship to the user's tracker. The guide is
@@ -1042,6 +1098,21 @@ func uniqueUserIDsFromDeadlines(rows []gen.AdminScholarshipUpcomingDeadlinesRow)
 	}
 
 	return out
+}
+
+// pgtypeUUID converts a UUID string to a pgtype.UUID. Invalid input becomes
+// an invalid (NULL) pgtype.UUID.
+func pgtypeUUID(s string) pgtype.UUID {
+	if s == "" {
+		return pgtype.UUID{}
+	}
+
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+
+	return pgtype.UUID{Bytes: [16]byte(id), Valid: true}
 }
 
 // pgtypeUUIDString returns the canonical string form of a pgtype.UUID,
