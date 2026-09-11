@@ -14,11 +14,11 @@ describe('Security +page.svelte', () => {
 
 	it('shows scan findings tab', () => {
 		render(Page);
-		expect(screen.getByText('Scan Findings')).toBeTruthy();
+		expect(screen.getByRole('tab', { name: 'Scan Findings' })).toBeTruthy();
 	});
 
 	it('shows IP blocks tab', () => {
 		render(Page);
-		expect(screen.getByText(/IP Blocks/)).toBeTruthy();
+		expect(screen.getByRole('tab', { name: /IP Blocks/ })).toBeTruthy();
 	});
 });

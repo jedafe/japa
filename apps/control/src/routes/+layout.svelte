@@ -50,6 +50,7 @@
 		Cpu,
 		BrainCircuit,
 		BarChart3,
+		Building,
 	} from 'lucide-svelte';
 	type LucideIcon = typeof LayoutDashboard;
 
@@ -205,6 +206,7 @@
 		{ href: '/cron', icon: Clock },
 		{ href: '/deployments', icon: Rocket },
 		{ href: '/currencies', icon: Coins },
+		{ href: '/tenants', icon: Building },
 		{ href: '/intelligence', icon: BrainCircuit }
 	];
 
@@ -229,6 +231,7 @@
 		'/backup-configs': { label: 'nav.backup_configs', tooltip: 'nav.backup_configs_tooltip', defaultLabel: 'Backup Configs', defaultTooltip: 'Database backup configuration' },
 		'/permission-nodes': { label: 'nav.permission_nodes', tooltip: 'nav.permission_nodes_tooltip', defaultLabel: 'Permission Nodes', defaultTooltip: 'RBAC permission key viewer' },
 		'/currencies': { label: 'nav.currencies', tooltip: 'nav.currencies_tooltip', defaultLabel: 'Currencies', defaultTooltip: 'Credit currency exchange rates' },
+		'/tenants': { label: 'nav.tenants', tooltip: 'nav.tenants_tooltip', defaultLabel: 'Tenants', defaultTooltip: 'Multi-tenant management' },
 		'/intelligence': { label: 'nav.intelligence', tooltip: 'nav.intelligence_tooltip', defaultLabel: 'Intelligence', defaultTooltip: 'Data intelligence pipeline & review' },
 	};
 

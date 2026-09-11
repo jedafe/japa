@@ -114,6 +114,11 @@ export interface Tenant {
 	status: string;
 	created_at: string;
 	updated_at: string;
+	deleted_at?: string | null;
+}
+
+export interface SecurityOverview {
+	active_ip_blocks: number;
 }
 
 export interface SecurityScan {

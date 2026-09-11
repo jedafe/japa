@@ -35,6 +35,25 @@ import (
 	"github.com/jedafe/japa/internal/worker"
 )
 
+// encodeSettingValue returns a JSON byte slice suitable for the
+// system_settings.value jsonb column. If the supplied value is a string that
+// itself contains a JSON array or object, the raw JSON is stored directly
+// instead of double-encoding it as a JSON string.
+func encodeSettingValue(value any) []byte {
+	if s, ok := value.(string); ok {
+		trimmed := strings.TrimSpace(s)
+		if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
+			(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
+			if json.Valid([]byte(trimmed)) {
+				return []byte(trimmed)
+			}
+		}
+	}
+
+	data, _ := json.Marshal(value)
+	return data
+}
+
 // HonchoHealthChecker checks Honcho service health for the Control Panel
 // application health group (ADR-027, Section 21 line 104). The honcho.Client
 // satisfies this interface. Health returns a report carrying connectivity
@@ -461,7 +480,9 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 
 		var opts []any
 		if meta.Options != "" {
-			json.Unmarshal([]byte(meta.Options), &opts)
+			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
+				// opts parsed successfully; it will be assigned to Options below.
+			}
 		}
 
 		settings = append(settings, enrichedSetting{
@@ -505,31 +526,10 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		// The system_settings.value column is jsonb, so every value must be
-		// valid JSON. json.Marshal produces the canonical encoding for each
-		// Go type: strings get wrapped in quotes ("3"), booleans become true,
-		// numbers stay bare, and arrays/objects are serialized as-is.
-		//
-		// However, when the frontend sends a JSON array/object as a string
-		// (e.g. the onboarding.promoted_* settings store '["uuid"]' as a
-		// string), json.Marshal would double-encode it to '"[\\"uuid\\"]"'.
-		// Detect this case and store the raw JSON directly.
-		var data []byte
-
-		if s, ok := value.(string); ok {
-			trimmed := strings.TrimSpace(s)
-			if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
-				(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
-				if json.Valid([]byte(trimmed)) {
-					data = []byte(trimmed)
-				} else {
-					data, _ = json.Marshal(value)
-				}
-			} else {
-				data, _ = json.Marshal(value)
-			}
-		} else {
-			data, _ = json.Marshal(value)
-		}
+		// valid JSON. encodeSettingValue stores raw JSON when the frontend sends
+		// a JSON array/object as a string (e.g. '["uuid"]'), avoiding
+		// double-encoding.
+		data := encodeSettingValue(value)
 		// Consult the catalog for the is_public flag. On INSERT, set is_public
 		// from the catalog so appearance/branding settings are exposed via
 		// GET /site/settings/public. On CONFLICT (existing row), preserve the
@@ -588,9 +588,10 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// The value column is jsonb — json.Marshal produces the correct JSON
-	// encoding for each type (strings quoted, booleans bare, etc.).
-	data, _ := json.Marshal(input.Value)
+	// The value column is jsonb — encodeSettingValue stores raw JSON when the
+	// value is a string that itself is a JSON array/object, preventing
+	// double-encoding.
+	data := encodeSettingValue(input.Value)
 	// Resolve is_public: explicit request body value takes precedence; fall
 	// back to the catalog default so appearance/branding settings are public.
 	isPublic := false
@@ -732,7 +733,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 		if meta.Options != "" {
 			var opts []any
 			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
-				s.Options = opts
+				// opts parsed successfully; it will be assigned to Options below.
 			}
 		}
 
@@ -756,7 +757,9 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 
 		var opts []any
 		if meta.Options != "" {
-			json.Unmarshal([]byte(meta.Options), &opts)
+			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
+				// opts parsed successfully; it will be assigned to Options below.
+			}
 		}
 
 		settings = append(settings, enrichedSetting{
@@ -793,27 +796,17 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 
 	for key, value := range input {
 		// The system_settings.value column is jsonb, so every value must be
-		// valid JSON. When the frontend sends a JSON array/object as a string
-		// (e.g. onboarding.promoted_* settings store '["uuid"]' as a string),
-		// json.Marshal would double-encode it. Detect this case and store the
-		// raw JSON directly — mirrors UpdateSystemSettings logic.
-		var data []byte
-
+		// valid JSON. encodeSettingValue stores raw JSON when the frontend sends
+		// a JSON array/object as a string (e.g. '["uuid"]'), avoiding
+		// double-encoding.
 		if s, ok := value.(string); ok {
-			trimmed := strings.TrimSpace(s)
-			if (strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) ||
-				(strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) {
-				if json.Valid([]byte(trimmed)) {
-					data = []byte(trimmed)
-				} else {
-					data, _ = json.Marshal(value)
-				}
-			} else {
-				data, _ = json.Marshal(value)
+			if verr := validateSettingValue(key, s); verr != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_setting_value", verr.Error())
+				return
 			}
-		} else {
-			data, _ = json.Marshal(value)
 		}
+
+		data := encodeSettingValue(value)
 		// Consult the catalog for the is_public flag so appearance/branding
 		// settings are exposed via GET /site/settings/public. On CONFLICT
 		// (existing row), preserve the current is_public value.
@@ -866,7 +859,14 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	data, _ := json.Marshal(input.Value)
+	if s, ok := input.Value.(string); ok {
+		if verr := validateSettingValue(key, s); verr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_setting_value", verr.Error())
+			return
+		}
+	}
+
+	data := encodeSettingValue(input.Value)
 	if input.IsPublic != nil {
 		_, err := h.DB.Writer.Exec(
 			r.Context(),
@@ -3647,6 +3647,9 @@ func (h *Handlers) saveOAuthClients(r *http.Request, clients []oauthClientEntry)
 		return errors.New("valkey not available")
 	}
 
+	// #nosec G117 — OAuth client secrets are persisted in Valkey; this is the
+	// intended storage path. List/get handlers mask the secret before returning
+	// it to the UI.
 	data, err := json.Marshal(clients)
 	if err != nil {
 		return err

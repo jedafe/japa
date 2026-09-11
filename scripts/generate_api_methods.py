@@ -4,35 +4,9 @@
 import re
 
 UNCONSUMED = [
-    # control (28)
-    ("control", "DELETE", "/control/api-keys/{id}"),
-    ("control", "DELETE", "/control/queue/dlq/{task_id}"),
-    ("control", "DELETE", "/control/security/ip-blocks/{id}"),
-    ("control", "DELETE", "/control/tenants/{id}"),
-    ("control", "GET", "/control/api-keys/analytics"),
-    ("control", "GET", "/control/api-keys/{id}"),
-    ("control", "GET", "/control/cache/stats"),
-    ("control", "GET", "/control/deployments"),
-    ("control", "GET", "/control/tenants/{id}"),
-    ("control", "PATCH", "/control/ai-budget"),
-    ("control", "PATCH", "/control/api-keys/{id}"),
-    ("control", "PATCH", "/control/feature-flags/{flag_name}"),
-    ("control", "PATCH", "/control/system-settings"),
-    ("control", "PATCH", "/control/system-settings/{key}"),
-    ("control", "PATCH", "/control/tenants/{id}"),
-    ("control", "POST", "/control/api-keys"),
-    ("control", "POST", "/control/api-keys/{id}/suspend"),
-    ("control", "POST", "/control/cache/flush"),
-    ("control", "POST", "/control/cron/jobs/{id}/trigger"),
-    ("control", "POST", "/control/health/db/vacuum"),
-    ("control", "POST", "/control/queue/dlq/discard-all"),
-    ("control", "POST", "/control/queue/dlq/{task_id}/retry"),
-    ("control", "POST", "/control/security/ip-blocks"),
-    ("control", "POST", "/control/security/{id}/resolve"),
-    ("control", "POST", "/control/system-settings/{key}/reset"),
-    ("control", "POST", "/control/tenants"),
-    ("control", "POST", "/control/tenants/{id}/suspend"),
-    ("control", "POST", "/control/tenants/{id}/unsuspend"),
+    # control — all catalog routes are now consumed by the Control Panel UI.
+    # This script should not be used as a source of truth; derive missing
+    # routes from .jeos/conventions/api-routes-catalog.md instead.
 
     # admin ads
     ("admin", "DELETE", "/admin/ads/campaigns/{id}"),
