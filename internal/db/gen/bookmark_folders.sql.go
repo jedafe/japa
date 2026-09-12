@@ -15,7 +15,7 @@ const createBookmarkFolder = `-- name: CreateBookmarkFolder :one
 
 INSERT INTO bookmark_folders (user_id, name, position) VALUES ($1, $2, $3)
 
-RETURNING id, user_id, name, created_at, updated_at, position
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
 `
 
 type CreateBookmarkFolderParams struct {
@@ -24,23 +24,15 @@ type CreateBookmarkFolderParams struct {
 	Position int32       `json:"position"`
 }
 
-type CreateBookmarkFolderRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	Position  int32              `json:"position"`
-}
-
 // Bookmark folders (catalog: GET/POST /me/bookmark-folders, PATCH/DELETE
 // /me/bookmark-folders/:id). Distinct from bookmarks.folder (free-text,
 // migration 000103) — this table is a first-class named entity with an ID.
-func (q *Queries) CreateBookmarkFolder(ctx context.Context, arg CreateBookmarkFolderParams) (CreateBookmarkFolderRow, error) {
+func (q *Queries) CreateBookmarkFolder(ctx context.Context, arg CreateBookmarkFolderParams) (BookmarkFolder, error) {
 	row := q.db.QueryRow(ctx, createBookmarkFolder, arg.UserID, arg.Name, arg.Position)
-	var i CreateBookmarkFolderRow
+	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,
@@ -69,7 +61,7 @@ func (q *Queries) DeleteBookmarkFolder(ctx context.Context, arg DeleteBookmarkFo
 }
 
 const getBookmarkFolder = `-- name: GetBookmarkFolder :one
-SELECT id, user_id, name, created_at, updated_at, position
+SELECT id, tenant_id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
 WHERE id = $1 AND user_id = $2
 `
@@ -79,21 +71,13 @@ type GetBookmarkFolderParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-type GetBookmarkFolderRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	Position  int32              `json:"position"`
-}
-
 // Validates that a folder belongs to the given user and tenant (BL-013).
-func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderParams) (GetBookmarkFolderRow, error) {
+func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderParams) (BookmarkFolder, error) {
 	row := q.db.QueryRow(ctx, getBookmarkFolder, arg.ID, arg.UserID)
-	var i GetBookmarkFolderRow
+	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,
@@ -159,7 +143,7 @@ const updateBookmarkFolder = `-- name: UpdateBookmarkFolder :one
 UPDATE bookmark_folders
 SET name = $1, updated_at = now()
 WHERE id = $2 AND user_id = $3
-RETURNING id, user_id, name, created_at, updated_at, position
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
 `
 
 type UpdateBookmarkFolderParams struct {
@@ -168,20 +152,12 @@ type UpdateBookmarkFolderParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-type UpdateBookmarkFolderRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	Position  int32              `json:"position"`
-}
-
-func (q *Queries) UpdateBookmarkFolder(ctx context.Context, arg UpdateBookmarkFolderParams) (UpdateBookmarkFolderRow, error) {
+func (q *Queries) UpdateBookmarkFolder(ctx context.Context, arg UpdateBookmarkFolderParams) (BookmarkFolder, error) {
 	row := q.db.QueryRow(ctx, updateBookmarkFolder, arg.Name, arg.ID, arg.UserID)
-	var i UpdateBookmarkFolderRow
+	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,
