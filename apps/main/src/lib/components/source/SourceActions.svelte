@@ -148,7 +148,7 @@
 			"rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-hover)]"}
 		aria-label={t('sources.actions', 'Source actions')}
 	>
-		<MoreVertical class="h-5 w-5" />
+		<MoreVertical class="h-4 w-4" />
 	</DropdownMenu.Trigger>
 
 	<DropdownMenu.Portal>

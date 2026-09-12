@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Heart, Share2, ExternalLink } from 'lucide-svelte';
+	import { ExternalLink } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
+	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
+	import ShareButton from '$lib/components/ui/ShareButton.svelte';
 	import SourceActions from './SourceActions.svelte';
 	import type { Source, SourceItem } from '$lib/types/sources';
 
@@ -45,35 +47,14 @@
 		if (e.key === 'Enter') goto(item.href);
 	}
 
-	function formatCount(n: number): string {
-		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-		if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'k';
-		return String(n);
+	function onToggleLove(next: boolean) {
+		loved = next;
+		loveCount += next ? 1 : -1;
 	}
 
-	function toggleLove(e: Event) {
-		e.stopPropagation();
-		loved = !loved;
-		loveCount += loved ? 1 : -1;
-	}
-
-	async function shareItem(e: Event) {
-		e.stopPropagation();
-		const url = item.original_url || item.href;
-		try {
-			if (navigator.share) {
-				await navigator.share({ title: item.title, url });
-			} else if (navigator.clipboard) {
-				await navigator.clipboard.writeText(url);
-			}
-		} catch {
-			// user cancelled or unavailable
-		}
-	}
-
-	const readHref = $derived(item.original_url || item.href);
-	const readLabel = $derived(
-		t('sources.read_content_type', 'Read {type}').replace('{type}', entityLabel || item.entity_type)
+	const viewHref = $derived(item.original_url);
+	const viewLabel = $derived(
+		t('sources.view_content_type', 'View {type}').replace('{type}', entityLabel || item.entity_type)
 	);
 
 	function onEdit(updated: Source) {
@@ -106,22 +87,24 @@
 
 		<!-- Top-right action cluster -->
 		<div class="absolute right-3 top-3 z-20 flex items-center gap-2">
-			<a
-				href={readHref}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="invisible flex translate-x-2 items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white opacity-0 backdrop-blur-sm transition-all group-hover:visible group-focus-within:visible group-hover:translate-x-0 group-focus-within:translate-x-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70"
-				onclick={(e) => e.stopPropagation()}
-			>
-				<ExternalLink size={14} />
-				{readLabel}
-			</a>
+			{#if viewHref}
+				<a
+					href={viewHref}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="invisible flex translate-x-2 items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white opacity-0 backdrop-blur-sm transition-all group-hover:visible group-focus-within:visible group-hover:translate-x-0 group-focus-within:translate-x-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70"
+					onclick={(e) => e.stopPropagation()}
+				>
+					<ExternalLink size={14} />
+					{viewLabel}
+				</a>
+			{/if}
 
 			<SourceActions
 				{source}
 				showBlock={false}
 				showDelete={true}
-				triggerClass="grid h-10 w-10 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100"
+				triggerClass="grid h-9 w-9 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100"
 				onEdit={onEdit}
 			/>
 		</div>
@@ -151,9 +134,7 @@
 		{/if}
 
 		<!-- Footer -->
-		<div
-			class="relative z-10 mt-auto flex items-center justify-between border-t border-[var(--color-border)] pt-3"
-		>
+		<div class="relative z-10 mt-auto flex items-center gap-6 border-t border-[var(--color-border)] pt-3">
 			<div class="min-w-0 flex-1">
 				{#if sourceName && sourceId && sourceSlug}
 					<EntityHoverChip
@@ -183,30 +164,18 @@
 				{/if}
 			</div>
 
-			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-2">
-				<button
-					type="button"
-					onclick={toggleLove}
-					class="inline-flex h-11 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-					class:text-[var(--color-primary)]={loved}
-					aria-label={t('sources.love', 'Love')}
-				>
-					<Heart
-						size={20}
-						class={loved ? 'fill-current' : ''}
-						aria-hidden="true"
-					/>
-					{formatCount(loveCount)}
-				</button>
+			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-3">
+				<ReactionButton
+					count={loveCount}
+					active={loved}
+					onToggle={onToggleLove}
+					ariaLabel={t('sources.love', 'Love')}
+				/>
 
-				<button
-					type="button"
-					onclick={shareItem}
-					class="grid h-11 w-11 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-					aria-label={t('common.share', 'Share')}
-				>
-					<Share2 size={20} aria-hidden="true" />
-				</button>
+				<ShareButton
+					url={item.original_url || item.href}
+					title={item.title}
+				/>
 			</div>
 		</div>
 	</div>
