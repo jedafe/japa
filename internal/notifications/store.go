@@ -255,10 +255,10 @@ func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
 // GetUserProfile to return ErrNoRows for every user. Now requires the
 // correct tenant_id so the tenant-scoped WHERE clause matches.
 func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
-	user, err := s.read.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	user, err := s.read.GetUserProfile(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting user profile: %w", err)
 	}
@@ -269,10 +269,10 @@ func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.
 // getUserEmail returns the user's email address for notification email
 // delivery (§35, BUG-003). Tenant-scoped per §04.
 func (s *Store) getUserEmail(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
-	email, err := s.read.GetUserEmail(ctx, gen.GetUserEmailParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	email, err := s.read.GetUserEmail(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting user email: %w", err)
 	}

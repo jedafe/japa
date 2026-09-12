@@ -303,10 +303,10 @@ func (s *Store) ListChannelClaimsByAuthor(ctx context.Context, tenantID, videoAu
 // GetUserForClaimByUsername resolves a username to the user record needed for
 // the claim flow (id, is_synthetic, synthetic_source).
 func (s *Store) GetUserForClaimByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserForVideoClaimRow, error) {
-	row, err := s.read.GetUserForVideoClaim(ctx, gen.GetUserForVideoClaimParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetUserForVideoClaim(ctx,
+
+		username,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetUserForVideoClaimRow{}, errpkg.ErrNotFound
@@ -320,10 +320,10 @@ func (s *Store) GetUserForClaimByUsername(ctx context.Context, tenantID pgtype.U
 
 // GetUserSyntheticStatusByID returns whether the given user is a synthetic channel account.
 func (s *Store) GetUserSyntheticStatusByID(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
-	isSynthetic, err := s.read.GetUserSyntheticStatusByID(ctx, gen.GetUserSyntheticStatusByIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	isSynthetic, err := s.read.GetUserSyntheticStatusByID(ctx,
+
+		userID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, errpkg.ErrNotFound
@@ -477,10 +477,10 @@ func (s *Store) UpdateImportJob(ctx context.Context, arg gen.UpdateVideoImportJo
 
 // GetUserByUsername looks up a user by tenant and username.
 func (s *Store) GetUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
-	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetUserByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetUserByUsernameRow{}, errpkg.ErrNotFound

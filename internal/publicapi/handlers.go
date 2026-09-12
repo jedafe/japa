@@ -754,10 +754,9 @@ func (h *Handlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.Queries.GetPublicUserByID(r.Context(), gen.GetPublicUserByIDParams{
-		UserID:   id,
-		TenantID: keyCtx.TenantID,
-	})
+	user, err := h.Queries.GetPublicUserByID(r.Context(),
+		id,
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -811,10 +810,9 @@ func (h *Handlers) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
-		UserID:   keyCtx.UserID,
-		TenantID: keyCtx.TenantID,
-	})
+	user, err := h.Queries.GetUserByID(r.Context(),
+		keyCtx.UserID,
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -919,7 +917,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	offset := parseOffset(r)
 
 	users, err := h.Queries.ListPublicUsers(r.Context(), gen.ListPublicUsersParams{
-		TenantID:    keyCtx.TenantID,
+
 		Search:      search,
 		ProfileType: profileType,
 		PageOffset:  offset,

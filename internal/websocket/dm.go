@@ -865,10 +865,10 @@ func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipi
 
 	// Look up sender username for notification title.
 	var senderUsername string
-	if row, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   senderID,
-	}); err == nil {
+	if row, err := s.store.read.GetUserByID(ctx,
+
+		senderID,
+	); err == nil {
 		senderUsername = row.Username
 	}
 
@@ -897,10 +897,10 @@ func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipi
 
 	// Look up sender username for notification title.
 	var senderUsername string
-	if row, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   senderID,
-	}); err == nil {
+	if row, err := s.store.read.GetUserByID(ctx,
+
+		senderID,
+	); err == nil {
 		senderUsername = row.Username
 	}
 

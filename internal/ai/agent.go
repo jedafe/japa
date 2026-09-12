@@ -98,7 +98,7 @@ type SessionStore interface {
 // GeoSpaceResolver resolves the user's current geo space. *gen.Queries
 // satisfies this via GetUserCurrentGeoSpace.
 type GeoSpaceResolver interface {
-	GetUserCurrentGeoSpace(ctx context.Context, arg gen.GetUserCurrentGeoSpaceParams) (gen.GetUserCurrentGeoSpaceRow, error)
+	GetUserCurrentGeoSpace(ctx context.Context, userID pgtype.UUID) (gen.GetUserCurrentGeoSpaceRow, error)
 }
 
 // RateLimiter is the subset of Valkey commands the agent uses for the
@@ -701,10 +701,9 @@ func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID, tenantID p
 		return nil, ""
 	}
 
-	row, err := h.geo.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	row, err := h.geo.GetUserCurrentGeoSpace(ctx,
+		userID,
+	)
 	if err != nil {
 		slog.Warn("ai: failed to resolve user geo context", "error", err)
 		return nil, ""

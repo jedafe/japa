@@ -2276,10 +2276,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// BUG-003: wire the "verified" axis checker for CanPostInSpace. The
 	// "verified" posting_perm requires email_verified_at IS NOT NULL.
 	spacePostChecker.VerifiedChecker = func(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
-		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx, gen.GetUserEmailVerifiedStatusParams{
-			UserID:   userID,
-			TenantID: tenantID,
-		})
+		verifiedAt, err := gen.New(database.Reader).GetUserEmailVerifiedStatus(ctx,
+			userID,
+		)
 		if err != nil {
 			return false, err
 		}
@@ -3279,10 +3278,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// and direct admin suspension (status='suspended') that may not
 				// have a corresponding user_moderation_actions row. Only
 				// status='active' keeps the connection live.
-				user, err := q.GetUserByID(ctx, gen.GetUserByIDParams{
-					TenantID: tid,
-					UserID:   uid,
-				})
+				user, err := q.GetUserByID(ctx,
+
+					uid,
+				)
 				if err != nil || user.Status != "active" {
 					return false
 				}

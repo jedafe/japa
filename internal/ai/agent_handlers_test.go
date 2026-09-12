@@ -218,8 +218,8 @@ func (s *stubContentStore) GetContentByID(_ context.Context, arg gen.GetContentB
 	return row, nil
 }
 
-func (s *stubContentStore) GetUserByID(_ context.Context, arg gen.GetUserByIDParams) (gen.GetUserByIDRow, error) {
-	row, ok := s.users[arg.UserID.String()]
+func (s *stubContentStore) GetUserByID(_ context.Context, userID pgtype.UUID) (gen.GetUserByIDRow, error) {
+	row, ok := s.users[userID.String()]
 	if !ok {
 		return gen.GetUserByIDRow{}, pgx.ErrNoRows
 	}
@@ -822,7 +822,6 @@ func TestHandleReassignAuthor_Success(t *testing.T) {
 	// Seed the target author in the user store so the validity check passes.
 	content.users[newAuthorID.String()] = gen.GetUserByIDRow{
 		ID:       newAuthorID,
-		TenantID: tn.ID,
 		Username: "newauthor",
 	}
 
@@ -874,7 +873,6 @@ func TestHandleReassignAuthor_ContentNotFound(t *testing.T) {
 	// should then fail with 404.
 	content.users[newAuthorID.String()] = gen.GetUserByIDRow{
 		ID:       newAuthorID,
-		TenantID: tn.ID,
 		Username: "newauthor",
 	}
 

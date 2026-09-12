@@ -88,16 +88,16 @@ type SourceRegistry interface {
 // Service coordinates video URL resolution, synthetic channel creation,
 // thumbnail storage, and source persistence.
 type Service struct {
-	store        *Store
-	resolver     Resolver
-	userManager  UserManager
-	media        MediaManager
-	enqueuer     TaskEnqueuer
-	settings     settingsReader
-	content      ContentCreator
-	dispatcher   AIDispatcher
-	ytProvider   *YouTubeProvider
-	sources      SourceRegistry
+	store       *Store
+	resolver    Resolver
+	userManager UserManager
+	media       MediaManager
+	enqueuer    TaskEnqueuer
+	settings    settingsReader
+	content     ContentCreator
+	dispatcher  AIDispatcher
+	ytProvider  *YouTubeProvider
+	sources     SourceRegistry
 }
 
 // NewService returns a video Service.
@@ -626,10 +626,9 @@ func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, tenant
 			return fmt.Errorf("reassigning video sources: %w", err)
 		}
 
-		return q.UpdateUserSyntheticToReal(ctx, gen.UpdateUserSyntheticToRealParams{
-			UserID:   existing.VideoAuthorUserID,
-			TenantID: tenantID,
-		})
+		return q.UpdateUserSyntheticToReal(ctx,
+			existing.VideoAuthorUserID,
+		)
 
 	case "takedown":
 		if !existing.VideoSourceID.Valid {

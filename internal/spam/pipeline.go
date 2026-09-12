@@ -404,10 +404,10 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 
 	queries := gen.New(p.db.Reader)
 
-	user, err := queries.GetUserByID(ctx, gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   req.UserID,
-	})
+	user, err := queries.GetUserByID(ctx,
+
+		req.UserID,
+	)
 	if err != nil {
 		slog.Warn("user age check failed", "user_id", req.UserID, "error", err)
 		return name, 0.0, nil
@@ -470,10 +470,10 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 
 	threshold := time.Duration(days) * 24 * time.Hour
 
-	user, err := queries.GetUserByID(ctx, gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   req.UserID,
-	})
+	user, err := queries.GetUserByID(ctx,
+
+		req.UserID,
+	)
 	if err != nil {
 		slog.Warn("new_user_links: user lookup failed", "user_id", req.UserID, "error", err)
 		return name, 0.0, nil

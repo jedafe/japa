@@ -13,20 +13,15 @@ import (
 
 const activeUserExistsByID = `-- name: ActiveUserExistsByID :one
 SELECT EXISTS (
-    SELECT 1 FROM users
-    WHERE tenant_id = $1 AND id = $2 AND status = 'active'
+ SELECT 1 FROM users
+ WHERE id = $1 AND status = 'active'
 ) AS exists
 `
 
-type ActiveUserExistsByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Existence check for the public profile gate: is there an ACTIVE user with
 // this id in this tenant? Non-active (banned/suspended/deleted) or missing → false.
-func (q *Queries) ActiveUserExistsByID(ctx context.Context, arg ActiveUserExistsByIDParams) (bool, error) {
-	row := q.db.QueryRow(ctx, activeUserExistsByID, arg.TenantID, arg.ID)
+func (q *Queries) ActiveUserExistsByID(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, activeUserExistsByID, id)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -35,23 +30,21 @@ func (q *Queries) ActiveUserExistsByID(ctx context.Context, arg ActiveUserExists
 const countPublicUsers = `-- name: CountPublicUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1
-  AND u.status = 'active'
-  AND COALESCE(ups.search_indexable, true) = true
-  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR u.profile_type = $3)
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.status = 'active'
+ AND COALESCE(ups.search_indexable, true) = true
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR u.profile_type = $2)
 `
 
 type CountPublicUsersParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Search      string      `json:"search"`
-	ProfileType string      `json:"profile_type"`
+	Search      string `json:"search"`
+	ProfileType string `json:"profile_type"`
 }
 
 func (q *Queries) CountPublicUsers(ctx context.Context, arg CountPublicUsersParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countPublicUsers, arg.TenantID, arg.Search, arg.ProfileType)
+	row := q.db.QueryRow(ctx, countPublicUsers, arg.Search, arg.ProfileType)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -59,18 +52,13 @@ func (q *Queries) CountPublicUsers(ctx context.Context, arg CountPublicUsersPara
 
 const countUserActivity = `-- name: CountUserActivity :one
 SELECT (SELECT count(*) FROM contents c
-        WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL)
-     + (SELECT count(*) FROM comments cm
-        WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL) AS total
+ WHERE c.author_id = $1 AND c.deleted_at IS NULL)
+ + (SELECT count(*) FROM comments cm
+ WHERE cm.author_user_id = $1 AND cm.deleted_at IS NULL) AS total
 `
 
-type CountUserActivityParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-}
-
-func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countUserActivity, arg.TenantID, arg.AuthorID)
+func (q *Queries) CountUserActivity(ctx context.Context, authorID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserActivity, authorID)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -79,17 +67,12 @@ func (q *Queries) CountUserActivity(ctx context.Context, arg CountUserActivityPa
 const countUserBookmarks = `-- name: CountUserBookmarks :one
 SELECT COUNT(*)::int AS count
 FROM bookmarks b
-WHERE b.user_id = $1 AND b.tenant_id = $2
+WHERE b.user_id = $1
 `
 
-type CountUserBookmarksParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Counts the user's bookmarks in the unified bookmarks table.
-func (q *Queries) CountUserBookmarks(ctx context.Context, arg CountUserBookmarksParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countUserBookmarks, arg.UserID, arg.TenantID)
+func (q *Queries) CountUserBookmarks(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserBookmarks, userID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -98,18 +81,13 @@ func (q *Queries) CountUserBookmarks(ctx context.Context, arg CountUserBookmarks
 const countUserContent = `-- name: CountUserContent :one
 
 SELECT
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
-    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+ COUNT(*)::int AS total,
+ COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+ COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
 FROM contents
-WHERE tenant_id = $1 AND author_id = $2
-  AND deleted_at IS NULL
+WHERE author_id = $1
+ AND deleted_at IS NULL
 `
-
-type CountUserContentParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type CountUserContentRow struct {
 	Total          int32 `json:"total"`
@@ -122,8 +100,8 @@ type CountUserContentRow struct {
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 // ---------------------------------------------------------------------------
 // Counts the user's content by status within the tenant.
-func (q *Queries) CountUserContent(ctx context.Context, arg CountUserContentParams) (CountUserContentRow, error) {
-	row := q.db.QueryRow(ctx, countUserContent, arg.TenantID, arg.UserID)
+func (q *Queries) CountUserContent(ctx context.Context, userID pgtype.UUID) (CountUserContentRow, error) {
+	row := q.db.QueryRow(ctx, countUserContent, userID)
 	var i CountUserContentRow
 	err := row.Scan(&i.Total, &i.DraftCount, &i.PublishedCount)
 	return i, err
@@ -131,20 +109,19 @@ func (q *Queries) CountUserContent(ctx context.Context, arg CountUserContentPara
 
 const countUserContentCreatedInPeriod = `-- name: CountUserContentCreatedInPeriod :one
 SELECT
-    COUNT(*)::int AS total,
-    COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
-    COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
+ COUNT(*)::int AS total,
+ COUNT(*) FILTER (WHERE status = 'draft')::int AS draft_count,
+ COUNT(*) FILTER (WHERE status = 'published')::int AS published_count
 FROM contents
-WHERE tenant_id = $1 AND author_id = $2 AND deleted_at IS NULL
-  AND ($3::timestamptz IS NULL OR created_at >= $3)
-  AND ($4::timestamptz IS NULL OR created_at <= $4)
+WHERE author_id = $1 AND deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR created_at >= $2)
+ AND ($3::timestamptz IS NULL OR created_at <= $3)
 `
 
 type CountUserContentCreatedInPeriodParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 type CountUserContentCreatedInPeriodRow struct {
@@ -157,12 +134,7 @@ type CountUserContentCreatedInPeriodRow struct {
 // Used for the 'Posts' metric card period-over-period delta.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) CountUserContentCreatedInPeriod(ctx context.Context, arg CountUserContentCreatedInPeriodParams) (CountUserContentCreatedInPeriodRow, error) {
-	row := q.db.QueryRow(ctx, countUserContentCreatedInPeriod,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Column3,
-		arg.Column4,
-	)
+	row := q.db.QueryRow(ctx, countUserContentCreatedInPeriod, arg.AuthorID, arg.Column2, arg.Column3)
 	var i CountUserContentCreatedInPeriodRow
 	err := row.Scan(&i.Total, &i.DraftCount, &i.PublishedCount)
 	return i, err
@@ -170,17 +142,12 @@ func (q *Queries) CountUserContentCreatedInPeriod(ctx context.Context, arg Count
 
 const countUserFollowStats = `-- name: CountUserFollowStats :one
 SELECT
-    COALESCE(u.follower_count, 0)::int AS follower_count,
-    (SELECT COUNT(*)::int FROM follows f
-       WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+ COALESCE(u.follower_count, 0)::int AS follower_count,
+ (SELECT COUNT(*)::int FROM follows f
+ WHERE f.follower_id = u.id) AS following_count
 FROM users u
-WHERE u.id = $1 AND u.tenant_id = $2
+WHERE u.id = $1
 `
-
-type CountUserFollowStatsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type CountUserFollowStatsRow struct {
 	FollowerCount  int32 `json:"follower_count"`
@@ -190,8 +157,8 @@ type CountUserFollowStatsRow struct {
 // Returns the follower_count (denormalized on users) and following_count
 // (computed from the follows table) for the user.
 // Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts)
-func (q *Queries) CountUserFollowStats(ctx context.Context, arg CountUserFollowStatsParams) (CountUserFollowStatsRow, error) {
-	row := q.db.QueryRow(ctx, countUserFollowStats, arg.UserID, arg.TenantID)
+func (q *Queries) CountUserFollowStats(ctx context.Context, userID pgtype.UUID) (CountUserFollowStatsRow, error) {
+	row := q.db.QueryRow(ctx, countUserFollowStats, userID)
 	var i CountUserFollowStatsRow
 	err := row.Scan(&i.FollowerCount, &i.FollowingCount)
 	return i, err
@@ -200,29 +167,22 @@ func (q *Queries) CountUserFollowStats(ctx context.Context, arg CountUserFollowS
 const countUserFollowersGained = `-- name: CountUserFollowersGained :one
 SELECT COUNT(*)::bigint AS count
 FROM follows
-WHERE tenant_id = $1
-  AND entity_type = 'user'
-  AND entity_id = $2
-  AND ($3::timestamptz IS NULL OR created_at >= $3)
-  AND ($4::timestamptz IS NULL OR created_at <= $4)
+WHERE entity_type = 'user'
+ AND entity_id = $1
+ AND ($2::timestamptz IS NULL OR created_at >= $2)
+ AND ($3::timestamptz IS NULL OR created_at <= $3)
 `
 
 type CountUserFollowersGainedParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	EntityID pgtype.UUID        `json:"entity_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 // Number of new user-entity follows for the user within a date range.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) CountUserFollowersGained(ctx context.Context, arg CountUserFollowersGainedParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserFollowersGained,
-		arg.TenantID,
-		arg.EntityID,
-		arg.Column3,
-		arg.Column4,
-	)
+	row := q.db.QueryRow(ctx, countUserFollowersGained, arg.EntityID, arg.Column2, arg.Column3)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -231,142 +191,112 @@ func (q *Queries) CountUserFollowersGained(ctx context.Context, arg CountUserFol
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*)::int AS count
 FROM users u
-WHERE u.tenant_id = $1
-  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR
-       ($3 = 'restricted' AND EXISTS (
-         SELECT 1 FROM user_operation_bans uob
-         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
-           AND (uob.expires_at IS NULL OR uob.expires_at > now())
-       )) OR
-       ($3 != 'restricted' AND u.status = $3))
-  AND ($4::text = '' OR EXISTS (
-    SELECT 1 FROM user_group_memberships ugm
-    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = $1
-    WHERE ugm.user_id = u.id AND ugm.tenant_id = $1 AND ug.slug = $4
-  ))
+WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR
+ ($2 = 'restricted' AND EXISTS (
+ SELECT 1 FROM user_operation_bans uob
+ WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+ AND (uob.expires_at IS NULL OR uob.expires_at > now())
+ )) OR
+ ($2 != 'restricted' AND u.status = $2))
+ AND ($3::text = '' OR EXISTS (
+ SELECT 1 FROM user_group_memberships ugm
+ JOIN user_groups ug ON ug.id = ugm.group_id
+ WHERE ugm.user_id = u.id AND ug.slug = $3
+ ))
 `
 
 type CountUsersParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Search    string      `json:"search"`
-	Status    string      `json:"status"`
-	GroupSlug string      `json:"group_slug"`
+	Search    string `json:"search"`
+	Status    string `json:"status"`
+	GroupSlug string `json:"group_slug"`
 }
 
 func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countUsers,
-		arg.TenantID,
-		arg.Search,
-		arg.Status,
-		arg.GroupSlug,
-	)
+	row := q.db.QueryRow(ctx, countUsers, arg.Search, arg.Status, arg.GroupSlug)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createSyntheticUser = `-- name: CreateSyntheticUser :one
-INSERT INTO users (
-    tenant_id, email, username, password_hash, profile_type, is_synthetic, synthetic_source
-) VALUES (
-    $1, $2, $3, '', 'regular', true, $4
-)
+INSERT INTO users (email, username, password_hash, profile_type, is_synthetic, synthetic_source) VALUES ($1, $2, '', 'regular', true, $3)
 RETURNING id
 `
 
 type CreateSyntheticUserParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
-	Email           string      `json:"email"`
-	Username        string      `json:"username"`
-	SyntheticSource *string     `json:"synthetic_source"`
+	Email           string  `json:"email"`
+	Username        string  `json:"username"`
+	SyntheticSource *string `json:"synthetic_source"`
 }
 
 func (q *Queries) CreateSyntheticUser(ctx context.Context, arg CreateSyntheticUserParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createSyntheticUser,
-		arg.TenantID,
-		arg.Email,
-		arg.Username,
-		arg.SyntheticSource,
-	)
+	row := q.db.QueryRow(ctx, createSyntheticUser, arg.Email, arg.Username, arg.SyntheticSource)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const deactivateUser = `-- name: DeactivateUser :exec
-UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1 AND tenant_id = $2
+UPDATE users SET status = 'suspended', updated_at = now() WHERE id = $1
 `
 
-type DeactivateUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeactivateUser(ctx context.Context, arg DeactivateUserParams) error {
-	_, err := q.db.Exec(ctx, deactivateUser, arg.ID, arg.TenantID)
+func (q *Queries) DeactivateUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deactivateUser, id)
 	return err
 }
 
 const disconnectOAuthAccount = `-- name: DisconnectOAuthAccount :exec
-DELETE FROM oauth_accounts WHERE tenant_id = $1 AND user_id = $2 AND provider = $3
+DELETE FROM oauth_accounts WHERE user_id = $1 AND provider = $2
 `
 
 type DisconnectOAuthAccountParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	Provider string      `json:"provider"`
 }
 
 func (q *Queries) DisconnectOAuthAccount(ctx context.Context, arg DisconnectOAuthAccountParams) error {
-	_, err := q.db.Exec(ctx, disconnectOAuthAccount, arg.TenantID, arg.UserID, arg.Provider)
+	_, err := q.db.Exec(ctx, disconnectOAuthAccount, arg.UserID, arg.Provider)
 	return err
 }
 
-const emailExistsForTenant = `-- name: EmailExistsForTenant :one
+const emailExists = `-- name: EmailExists :one
 SELECT COUNT(*)::int AS count
 FROM users
-WHERE tenant_id = $1 AND email = $2 AND id != $3
+WHERE email = $1 AND id != $2
 `
 
-type EmailExistsForTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Email    string      `json:"email"`
-	ID       pgtype.UUID `json:"id"`
+type EmailExistsParams struct {
+	Email string      `json:"email"`
+	ID    pgtype.UUID `json:"id"`
 }
 
-// Checks whether an email is already taken by another user in the same tenant.
+// Checks whether an email is already taken by another user.
 // Returns the count (0 = available).
-func (q *Queries) EmailExistsForTenant(ctx context.Context, arg EmailExistsForTenantParams) (int32, error) {
-	row := q.db.QueryRow(ctx, emailExistsForTenant, arg.TenantID, arg.Email, arg.ID)
+func (q *Queries) EmailExists(ctx context.Context, arg EmailExistsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, emailExists, arg.Email, arg.ID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const getContentByIDForEditor = `-- name: GetContentByIDForEditor :one
-SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
-       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
-       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.video_source_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+SELECT c.id, c.author_id, c.organization_id, c.space_id,
+ c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+ c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.video_source_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+ c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
-WHERE c.id = $1 AND c.tenant_id = $2
-  AND c.deleted_at IS NULL
+WHERE c.id = $1
+ AND c.deleted_at IS NULL
 `
-
-type GetContentByIDForEditorParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentByIDForEditorRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -411,12 +341,11 @@ type GetContentByIDForEditorRow struct {
 // or holds the RBAC `content.edit` permission but is not the content owner.
 // Mirrors the GetUserContent column set so the response shape is identical.
 // A missing row or a different tenant's content resolves to pgx.ErrNoRows → 404.
-func (q *Queries) GetContentByIDForEditor(ctx context.Context, arg GetContentByIDForEditorParams) (GetContentByIDForEditorRow, error) {
-	row := q.db.QueryRow(ctx, getContentByIDForEditor, arg.ID, arg.TenantID)
+func (q *Queries) GetContentByIDForEditor(ctx context.Context, id pgtype.UUID) (GetContentByIDForEditorRow, error) {
+	row := q.db.QueryRow(ctx, getContentByIDForEditor, id)
 	var i GetContentByIDForEditorRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -460,36 +389,30 @@ func (q *Queries) GetContentByIDForEditor(ctx context.Context, arg GetContentByI
 
 const getPublicProfileByUsername = `-- name: GetPublicProfileByUsername :one
 SELECT DISTINCT ON (u.id)
-       u.id AS user_id,
-       u.username,
-       u.profile_type,
-       u.follower_count,
-       u.is_synthetic,
-       u.synthetic_source,
-       up.display_name,
-       up.avatar_url,
-       up.bio,
-       up.cover_url,
-       up.location,
-       up.banner_media_id,
-       COALESCE(up.created_at, u.created_at) AS created_at,
-       COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
-       (SELECT COUNT(*)::int
-          FROM follows f
-         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+ u.id AS user_id,
+ u.username,
+ u.profile_type,
+ u.follower_count,
+ u.is_synthetic,
+ u.synthetic_source,
+ up.display_name,
+ up.avatar_url,
+ up.bio,
+ up.cover_url,
+ up.location,
+ up.banner_media_id,
+ COALESCE(up.created_at, u.created_at) AS created_at,
+ COALESCE(ups.show_points_publicly, false) AS show_points_publicly,
+ (SELECT COUNT(*)::int
+ FROM follows f
+ WHERE f.follower_id = u.id) AS following_count
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1
-  AND u.username = $2
-  AND u.status = 'active'
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.username = $1
+ AND u.status = 'active'
 ORDER BY u.id
 `
-
-type GetPublicProfileByUsernameParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
-}
 
 type GetPublicProfileByUsernameRow struct {
 	UserID             pgtype.UUID        `json:"user_id"`
@@ -514,8 +437,8 @@ type GetPublicProfileByUsernameRow struct {
 // layer can conditionally include the user's Points balance (Section 28).
 // is_synthetic/synthetic_source identify imported video channels; location and
 // banner_media_id carry the channel's public metadata (migration 000633).
-func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicProfileByUsernameParams) (GetPublicProfileByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, getPublicProfileByUsername, arg.TenantID, arg.Username)
+func (q *Queries) GetPublicProfileByUsername(ctx context.Context, username string) (GetPublicProfileByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getPublicProfileByUsername, username)
 	var i GetPublicProfileByUsernameRow
 	err := row.Scan(
 		&i.UserID,
@@ -539,30 +462,24 @@ func (q *Queries) GetPublicProfileByUsername(ctx context.Context, arg GetPublicP
 
 const getPublicUserByID = `-- name: GetPublicUserByID :one
 SELECT u.id AS user_id,
-       u.username,
-       u.profile_type,
-       u.follower_count,
-       up.display_name,
-       up.avatar_url,
-       up.bio,
-       up.cover_url,
-       COALESCE(up.created_at, u.created_at) AS created_at,
-       (SELECT COUNT(*)::int
-          FROM follows f
-         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+ u.username,
+ u.profile_type,
+ u.follower_count,
+ up.display_name,
+ up.avatar_url,
+ up.bio,
+ up.cover_url,
+ COALESCE(up.created_at, u.created_at) AS created_at,
+ (SELECT COUNT(*)::int
+ FROM follows f
+ WHERE f.follower_id = u.id) AS following_count
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1
-  AND u.id = $2
-  AND u.status = 'active'
-  AND COALESCE(ups.search_indexable, true) = true
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.id = $1
+ AND u.status = 'active'
+ AND COALESCE(ups.search_indexable, true) = true
 `
-
-type GetPublicUserByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetPublicUserByIDRow struct {
 	UserID         pgtype.UUID        `json:"user_id"`
@@ -582,10 +499,9 @@ type GetPublicUserByIDRow struct {
 // and created_at — NO email, status, last_login, or group membership.
 // Only active users who have not opted out of search indexability.
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
-//
-//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
-func (q *Queries) GetPublicUserByID(ctx context.Context, arg GetPublicUserByIDParams) (GetPublicUserByIDRow, error) {
-	row := q.db.QueryRow(ctx, getPublicUserByID, arg.TenantID, arg.UserID)
+// japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+func (q *Queries) GetPublicUserByID(ctx context.Context, userID pgtype.UUID) (GetPublicUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPublicUserByID, userID)
 	var i GetPublicUserByIDRow
 	err := row.Scan(
 		&i.UserID,
@@ -605,11 +521,10 @@ func (q *Queries) GetPublicUserByID(ctx context.Context, arg GetPublicUserByIDPa
 const getSessionIDByHash = `-- name: GetSessionIDByHash :one
 SELECT id
 FROM refresh_tokens
-WHERE tenant_id = $1 AND user_id = $2 AND token_hash = $3 AND revoked_at IS NULL
+WHERE user_id = $1 AND token_hash = $2 AND revoked_at IS NULL
 `
 
 type GetSessionIDByHashParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	UserID    pgtype.UUID `json:"user_id"`
 	TokenHash string      `json:"token_hash"`
 }
@@ -618,7 +533,7 @@ type GetSessionIDByHashParams struct {
 // /me/sessions can flag the current session and RevokeAllSessions can keep
 // it (JEOS §50: "revoke all other sessions (keep current one)").
 func (q *Queries) GetSessionIDByHash(ctx context.Context, arg GetSessionIDByHashParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getSessionIDByHash, arg.TenantID, arg.UserID, arg.TokenHash)
+	row := q.db.QueryRow(ctx, getSessionIDByHash, arg.UserID, arg.TokenHash)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -627,16 +542,11 @@ func (q *Queries) GetSessionIDByHash(ctx context.Context, arg GetSessionIDByHash
 const getSyntheticUserByUsername = `-- name: GetSyntheticUserByUsername :one
 SELECT u.id
 FROM users u
-WHERE u.tenant_id = $1 AND u.username = $2 AND u.is_synthetic = true
+WHERE u.username = $1 AND u.is_synthetic = true
 `
 
-type GetSyntheticUserByUsernameParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
-}
-
-func (q *Queries) GetSyntheticUserByUsername(ctx context.Context, arg GetSyntheticUserByUsernameParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getSyntheticUserByUsername, arg.TenantID, arg.Username)
+func (q *Queries) GetSyntheticUserByUsername(ctx context.Context, username string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSyntheticUserByUsername, username)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -646,14 +556,9 @@ const getUserAccountForUpdate = `-- name: GetUserAccountForUpdate :one
 
 SELECT id, username, email, email_verified_at, username_changed_at
 FROM users
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 FOR UPDATE
 `
-
-type GetUserAccountForUpdateParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetUserAccountForUpdateRow struct {
 	ID                pgtype.UUID        `json:"id"`
@@ -670,8 +575,8 @@ type GetUserAccountForUpdateRow struct {
 // Fetches the fields needed to validate an account update (username cooldown,
 // email uniqueness, current verified state). Row-locks the user for the
 // duration of the transaction to prevent concurrent account edits.
-func (q *Queries) GetUserAccountForUpdate(ctx context.Context, arg GetUserAccountForUpdateParams) (GetUserAccountForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getUserAccountForUpdate, arg.ID, arg.TenantID)
+func (q *Queries) GetUserAccountForUpdate(ctx context.Context, id pgtype.UUID) (GetUserAccountForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserAccountForUpdate, id)
 	var i GetUserAccountForUpdateRow
 	err := row.Scan(
 		&i.ID,
@@ -684,19 +589,13 @@ func (q *Queries) GetUserAccountForUpdate(ctx context.Context, arg GetUserAccoun
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, tenant_id, email, username, profile_type, status, follower_count, created_at, updated_at
+SELECT id, email, username, profile_type, status, follower_count, created_at, updated_at
 FROM users
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetUserByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetUserByIDRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Email         string             `json:"email"`
 	Username      string             `json:"username"`
 	ProfileType   string             `json:"profile_type"`
@@ -706,12 +605,11 @@ type GetUserByIDRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (GetUserByIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserByID, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserByID(ctx context.Context, userID pgtype.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserByID, userID)
 	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.Username,
 		&i.ProfileType,
@@ -725,34 +623,27 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (GetUs
 
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT DISTINCT ON (u.id)
-       COALESCE(up.id, gen_random_uuid()) AS id,
-       u.tenant_id,
-       u.id AS user_id,
-       up.display_name,
-       up.avatar_url,
-       up.bio,
-       up.timezone,
-       up.cover_url,
-       COALESCE(up.created_at, u.created_at) AS created_at,
-       COALESCE(up.updated_at, u.updated_at) AS updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count,
-       ug.slug AS user_group_name
+ COALESCE(up.id, gen_random_uuid()) AS id,
+ u.id AS user_id,
+ up.display_name,
+ up.avatar_url,
+ up.bio,
+ up.timezone,
+ up.cover_url,
+ COALESCE(up.created_at, u.created_at) AS created_at,
+ COALESCE(up.updated_at, u.updated_at) AS updated_at,
+ u.email, u.username, u.profile_type, u.status, u.follower_count,
+ ug.slug AS user_group_name
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
-LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE u.tenant_id = $1 AND u.username = $2
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id
+WHERE u.username = $1
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
-type GetUserByUsernameParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
-}
-
 type GetUserByUsernameRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	DisplayName   *string            `json:"display_name"`
 	AvatarUrl     *string            `json:"avatar_url"`
@@ -769,12 +660,11 @@ type GetUserByUsernameRow struct {
 	UserGroupName *string            `json:"user_group_name"`
 }
 
-func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, getUserByUsername, arg.TenantID, arg.Username)
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getUserByUsername, username)
 	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.AvatarUrl,
@@ -794,29 +684,27 @@ func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernamePa
 }
 
 const getUserContent = `-- name: GetUserContent :one
-SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
-       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
-       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.video_source_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+SELECT c.id, c.author_id, c.organization_id, c.space_id,
+ c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+ c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.video_source_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+ c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
-WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
-  AND c.deleted_at IS NULL
+WHERE c.id = $1 AND c.author_id = $2
+ AND c.deleted_at IS NULL
 `
 
 type GetUserContentParams struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 }
 
 type GetUserContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -863,11 +751,10 @@ type GetUserContentRow struct {
 // the GetUserDraft column set so the response shape is identical. A missing
 // row or content owned by another user/tenant resolves to pgx.ErrNoRows → 404.
 func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) (GetUserContentRow, error) {
-	row := q.db.QueryRow(ctx, getUserContent, arg.ID, arg.TenantID, arg.AuthorID)
+	row := q.db.QueryRow(ctx, getUserContent, arg.ID, arg.AuthorID)
 	var i GetUserContentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -912,13 +799,12 @@ func (q *Queries) GetUserContent(ctx context.Context, arg GetUserContentParams) 
 const getUserContentAnalytics = `-- name: GetUserContentAnalytics :many
 SELECT c.id, c.title, c.content_type, c.status, c.view_count, c.comment_count, c.share_count, c.created_at
 FROM contents c
-WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
+WHERE c.author_id = $1 AND c.deleted_at IS NULL
 ORDER BY c.view_count DESC NULLS LAST, c.created_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $2 OFFSET $3
 `
 
 type GetUserContentAnalyticsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 	Limit    int32       `json:"limit"`
 	Offset   int32       `json:"offset"`
@@ -938,12 +824,7 @@ type GetUserContentAnalyticsRow struct {
 // Per-content analytics breakdown for the authenticated user (Section 40).
 // Returns each published/draft content item with its view/comment/share counts.
 func (q *Queries) GetUserContentAnalytics(ctx context.Context, arg GetUserContentAnalyticsParams) ([]GetUserContentAnalyticsRow, error) {
-	rows, err := q.db.Query(ctx, getUserContentAnalytics,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Limit,
-		arg.Offset,
-	)
+	rows, err := q.db.Query(ctx, getUserContentAnalytics, arg.AuthorID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -973,33 +854,30 @@ func (q *Queries) GetUserContentAnalytics(ctx context.Context, arg GetUserConten
 
 const getUserContentByPeriod = `-- name: GetUserContentByPeriod :many
 WITH period_views AS (
-    SELECT ucv.content_id, COUNT(*)::bigint AS views
-    FROM user_content_views ucv
-    JOIN contents c ON c.id = ucv.content_id
-    WHERE c.tenant_id = $1
-      AND c.author_id = $2
-      AND c.deleted_at IS NULL
-      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
-      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
-    GROUP BY ucv.content_id
+ SELECT ucv.content_id, COUNT(*)::bigint AS views
+ FROM user_content_views ucv
+ JOIN contents c ON c.id = ucv.content_id
+ WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+ AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
+ GROUP BY ucv.content_id
 )
 SELECT c.id, c.title, c.content_type, c.status,
-       COALESCE(pv.views, 0)::bigint AS view_count,
-       c.comment_count, c.share_count, c.created_at
+ COALESCE(pv.views, 0)::bigint AS view_count,
+ c.comment_count, c.share_count, c.created_at
 FROM contents c
 LEFT JOIN period_views pv ON pv.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.deleted_at IS NULL
+WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
 ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
-LIMIT $5 OFFSET $6
+LIMIT $4 OFFSET $5
 `
 
 type GetUserContentByPeriodParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 	Limit    int32              `json:"limit"`
 	Offset   int32              `json:"offset"`
 }
@@ -1022,10 +900,9 @@ type GetUserContentByPeriodRow struct {
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserContentByPeriod(ctx context.Context, arg GetUserContentByPeriodParams) ([]GetUserContentByPeriodRow, error) {
 	rows, err := q.db.Query(ctx, getUserContentByPeriod,
-		arg.TenantID,
 		arg.AuthorID,
+		arg.Column2,
 		arg.Column3,
-		arg.Column4,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -1058,39 +935,34 @@ func (q *Queries) GetUserContentByPeriod(ctx context.Context, arg GetUserContent
 
 const getUserCurrentGeoSpace = `-- name: GetUserCurrentGeoSpace :one
 SELECT
-    u.current_geo_space_id,
-    city.id AS city_id,
-    COALESCE(CASE WHEN city.level = 'city' THEN city.name END, '')::text AS city_name,
-    city.geo_code AS city_geo_code,
-    city.name AS space_name,
-    state.id AS state_id,
-    state.name AS state_name,
-    country.id AS country_id,
-    country.name AS country_name,
-    country.geo_code AS country_geo_code
+ u.current_geo_space_id,
+ city.id AS city_id,
+ COALESCE(CASE WHEN city.level = 'city' THEN city.name END, '')::text AS city_name,
+ city.geo_code AS city_geo_code,
+ city.name AS space_name,
+ state.id AS state_id,
+ state.name AS state_name,
+ country.id AS country_id,
+ country.name AS country_name,
+ country.geo_code AS country_geo_code
 FROM users u
-LEFT JOIN spaces city ON city.id = u.current_geo_space_id AND city.tenant_id = u.tenant_id AND city.deleted_at IS NULL
+LEFT JOIN spaces city ON city.id = u.current_geo_space_id AND city.deleted_at IS NULL
 LEFT JOIN spaces state ON state.id = COALESCE(
-    -- If the current geo space is a state, use it directly.
-    CASE WHEN city.level = 'state' THEN city.id END,
-    -- If it's a city, use its parent state.
-    CASE WHEN city.level = 'city' AND city.parent_id IS NOT NULL THEN city.parent_id END
-) AND state.tenant_id = u.tenant_id AND state.deleted_at IS NULL
+ -- If the current geo space is a state, use it directly.
+ CASE WHEN city.level = 'state' THEN city.id END,
+ -- If it's a city, use its parent state.
+ CASE WHEN city.level = 'city' AND city.parent_id IS NOT NULL THEN city.parent_id END
+) AND state.deleted_at IS NULL
 LEFT JOIN spaces country ON country.id = COALESCE(
-    -- If the current geo space is a country itself, use it.
-    CASE WHEN city.level = 'country' THEN city.id END,
-    -- If it's a state, find its parent country.
-    CASE WHEN city.level = 'state' AND city.parent_id IS NOT NULL THEN city.parent_id END,
-    -- If it's a city, find its grandparent country (city → state → country).
-    (SELECT s2.parent_id FROM spaces s2 WHERE s2.id = city.parent_id AND s2.level = 'state' LIMIT 1)
-) AND country.tenant_id = u.tenant_id AND country.deleted_at IS NULL
-WHERE u.id = $1 AND u.tenant_id = $2
+ -- If the current geo space is a country itself, use it.
+ CASE WHEN city.level = 'country' THEN city.id END,
+ -- If it's a state, find its parent country.
+ CASE WHEN city.level = 'state' AND city.parent_id IS NOT NULL THEN city.parent_id END,
+ -- If it's a city, find its grandparent country (city → state → country).
+ (SELECT s2.parent_id FROM spaces s2 WHERE s2.id = city.parent_id AND s2.level = 'state' LIMIT 1)
+) AND country.deleted_at IS NULL
+WHERE u.id = $1
 `
-
-type GetUserCurrentGeoSpaceParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetUserCurrentGeoSpaceRow struct {
 	CurrentGeoSpaceID pgtype.UUID `json:"current_geo_space_id"`
@@ -1113,8 +985,8 @@ type GetUserCurrentGeoSpaceRow struct {
 // (CASE WHEN city.level = 'city'). space_name is always the space's name
 // regardless of level, used by GET /me/location to display the user's
 // location even when it's a state or country (BUG-VIS-003).
-func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrentGeoSpaceParams) (GetUserCurrentGeoSpaceRow, error) {
-	row := q.db.QueryRow(ctx, getUserCurrentGeoSpace, arg.UserID, arg.TenantID)
+func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, userID pgtype.UUID) (GetUserCurrentGeoSpaceRow, error) {
+	row := q.db.QueryRow(ctx, getUserCurrentGeoSpace, userID)
 	var i GetUserCurrentGeoSpaceRow
 	err := row.Scan(
 		&i.CurrentGeoSpaceID,
@@ -1133,24 +1005,22 @@ func (q *Queries) GetUserCurrentGeoSpace(ctx context.Context, arg GetUserCurrent
 
 const getUserDailyImpressions = `-- name: GetUserDailyImpressions :many
 SELECT
-    date_trunc('day', viewed_at AT TIME ZONE 'UTC')::date AS day,
-    COUNT(*)::bigint AS views
+ date_trunc('day', viewed_at AT TIME ZONE 'UTC')::date AS day,
+ COUNT(*)::bigint AS views
 FROM user_content_views ucv
 JOIN contents c ON c.id = ucv.content_id
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.deleted_at IS NULL
-  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
-  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+ AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
 GROUP BY 1
 ORDER BY 1 ASC
 `
 
 type GetUserDailyImpressionsParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 type GetUserDailyImpressionsRow struct {
@@ -1161,12 +1031,7 @@ type GetUserDailyImpressionsRow struct {
 // Daily unique content views for the user's own content within a date range.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserDailyImpressions(ctx context.Context, arg GetUserDailyImpressionsParams) ([]GetUserDailyImpressionsRow, error) {
-	rows, err := q.db.Query(ctx, getUserDailyImpressions,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getUserDailyImpressions, arg.AuthorID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,29 +1051,27 @@ func (q *Queries) GetUserDailyImpressions(ctx context.Context, arg GetUserDailyI
 }
 
 const getUserDraft = `-- name: GetUserDraft :one
-SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id,
-       c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
-       c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.video_source_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
-       c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
+SELECT c.id, c.author_id, c.organization_id, c.space_id,
+ c.content_type, c.title, c.slug, c.body, c.body_html, c.field_values,
+ c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.video_source_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.read_time_minutes, c.view_count, c.comment_count, c.share_count,
+ c.reshare_count, c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
-WHERE c.id = $1 AND c.tenant_id = $2 AND c.author_id = $3
-  AND c.status = 'draft' AND c.deleted_at IS NULL
+WHERE c.id = $1 AND c.author_id = $2
+ AND c.status = 'draft' AND c.deleted_at IS NULL
 `
 
 type GetUserDraftParams struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 }
 
 type GetUserDraftRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -1253,11 +1116,10 @@ type GetUserDraftRow struct {
 // draft for editing via GET /api/v1/me/drafts/{id}. Mirrors the column set
 // of GetContentByID so the response shape matches GET /content/{slug}.
 func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (GetUserDraftRow, error) {
-	row := q.db.QueryRow(ctx, getUserDraft, arg.ID, arg.TenantID, arg.AuthorID)
+	row := q.db.QueryRow(ctx, getUserDraft, arg.ID, arg.AuthorID)
 	var i GetUserDraftRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -1300,37 +1162,26 @@ func (q *Queries) GetUserDraft(ctx context.Context, arg GetUserDraftParams) (Get
 }
 
 const getUserEmail = `-- name: GetUserEmail :one
-SELECT email FROM users WHERE id = $1 AND tenant_id = $2
+SELECT email FROM users WHERE id = $1
 `
-
-type GetUserEmailParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Returns the user's email address for notification email delivery (§35).
 // Tenant-scoped per §04.
-func (q *Queries) GetUserEmail(ctx context.Context, arg GetUserEmailParams) (string, error) {
-	row := q.db.QueryRow(ctx, getUserEmail, arg.UserID, arg.TenantID)
+func (q *Queries) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserEmail, userID)
 	var email string
 	err := row.Scan(&email)
 	return email, err
 }
 
 const getUserEmailVerifiedStatus = `-- name: GetUserEmailVerifiedStatus :one
-SELECT email_verified_at FROM users WHERE id = $1 AND tenant_id = $2
+SELECT email_verified_at FROM users WHERE id = $1
 `
-
-type GetUserEmailVerifiedStatusParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Returns email_verified_at for the user. Used by the CanPostInSpace
 // "verified" posting_perm axis (Section 05 line 149, BUG-003).
-// Tenant-scoped per Section 04 (BUG-009).
-func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, arg GetUserEmailVerifiedStatusParams) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, getUserEmailVerifiedStatus, arg.UserID, arg.TenantID)
+func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getUserEmailVerifiedStatus, userID)
 	var email_verified_at pgtype.Timestamptz
 	err := row.Scan(&email_verified_at)
 	return email_verified_at, err
@@ -1338,35 +1189,33 @@ func (q *Queries) GetUserEmailVerifiedStatus(ctx context.Context, arg GetUserEma
 
 const getUserFollowerGrowth = `-- name: GetUserFollowerGrowth :many
 WITH followers AS (
-    SELECT date_trunc('day', f.created_at)::date AS day,
-           COUNT(*)::bigint AS new_followers
-    FROM follows f
-    WHERE f.tenant_id = $1
-      AND f.entity_type = 'user'
-      AND f.entity_id = $2
-      AND ($3::date IS NULL OR f.created_at::date >= $3)
-      AND ($4::date IS NULL OR f.created_at::date <= $4)
-    GROUP BY 1
+ SELECT date_trunc('day', f.created_at)::date AS day,
+ COUNT(*)::bigint AS new_followers
+ FROM follows f
+ WHERE f.entity_type = 'user'
+ AND f.entity_id = $1
+ AND ($2::date IS NULL OR f.created_at::date >= $2)
+ AND ($3::date IS NULL OR f.created_at::date <= $3)
+ GROUP BY 1
 ),
 following AS (
-    SELECT date_trunc('day', f.created_at)::date AS day,
-           COUNT(*)::bigint AS new_following
-    FROM follows f
-    WHERE f.tenant_id = $1
-      AND f.entity_type = 'user'
-      AND f.follower_id = $2
-      AND ($3::date IS NULL OR f.created_at::date >= $3)
-      AND ($4::date IS NULL OR f.created_at::date <= $4)
-    GROUP BY 1
+ SELECT date_trunc('day', f.created_at)::date AS day,
+ COUNT(*)::bigint AS new_following
+ FROM follows f
+ WHERE f.entity_type = 'user'
+ AND f.follower_id = $1
+ AND ($2::date IS NULL OR f.created_at::date >= $2)
+ AND ($3::date IS NULL OR f.created_at::date <= $3)
+ GROUP BY 1
 ),
 days AS (
-    SELECT day FROM followers
-    UNION
-    SELECT day FROM following
+ SELECT day FROM followers
+ UNION
+ SELECT day FROM following
 )
 SELECT d.day,
-       COALESCE(f.new_followers, 0) AS new_followers,
-       COALESCE(g.new_following, 0) AS new_following
+ COALESCE(f.new_followers, 0) AS new_followers,
+ COALESCE(g.new_following, 0) AS new_following
 FROM days d
 LEFT JOIN followers f ON f.day = d.day
 LEFT JOIN following g ON g.day = d.day
@@ -1374,10 +1223,9 @@ ORDER BY d.day DESC
 `
 
 type GetUserFollowerGrowthParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	EntityID pgtype.UUID `json:"entity_id"`
+	Column2  pgtype.Date `json:"column_2"`
 	Column3  pgtype.Date `json:"column_3"`
-	Column4  pgtype.Date `json:"column_4"`
 }
 
 type GetUserFollowerGrowthRow struct {
@@ -1390,12 +1238,7 @@ type GetUserFollowerGrowthRow struct {
 // Counts both users who followed this user (new_followers) and users this
 // user followed (new_following), grouped by day.
 func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollowerGrowthParams) ([]GetUserFollowerGrowthRow, error) {
-	rows, err := q.db.Query(ctx, getUserFollowerGrowth,
-		arg.TenantID,
-		arg.EntityID,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getUserFollowerGrowth, arg.EntityID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -1417,13 +1260,8 @@ func (q *Queries) GetUserFollowerGrowth(ctx context.Context, arg GetUserFollower
 const getUserForVideoClaim = `-- name: GetUserForVideoClaim :one
 SELECT id, is_synthetic, synthetic_source
 FROM users
-WHERE tenant_id = $1 AND username = $2
+WHERE username = $1
 `
-
-type GetUserForVideoClaimParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
-}
 
 type GetUserForVideoClaimRow struct {
 	ID              pgtype.UUID `json:"id"`
@@ -1432,29 +1270,24 @@ type GetUserForVideoClaimRow struct {
 }
 
 // Resolves a username to a user identity for the video claim/takedown flow.
-func (q *Queries) GetUserForVideoClaim(ctx context.Context, arg GetUserForVideoClaimParams) (GetUserForVideoClaimRow, error) {
-	row := q.db.QueryRow(ctx, getUserForVideoClaim, arg.TenantID, arg.Username)
+func (q *Queries) GetUserForVideoClaim(ctx context.Context, username string) (GetUserForVideoClaimRow, error) {
+	row := q.db.QueryRow(ctx, getUserForVideoClaim, username)
 	var i GetUserForVideoClaimRow
 	err := row.Scan(&i.ID, &i.IsSynthetic, &i.SyntheticSource)
 	return i, err
 }
 
 const getUserPasswordHash = `-- name: GetUserPasswordHash :one
-SELECT id, password_hash FROM users WHERE id = $1 AND tenant_id = $2
+SELECT id, password_hash FROM users WHERE id = $1
 `
-
-type GetUserPasswordHashParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetUserPasswordHashRow struct {
 	ID           pgtype.UUID `json:"id"`
 	PasswordHash *string     `json:"password_hash"`
 }
 
-func (q *Queries) GetUserPasswordHash(ctx context.Context, arg GetUserPasswordHashParams) (GetUserPasswordHashRow, error) {
-	row := q.db.QueryRow(ctx, getUserPasswordHash, arg.ID, arg.TenantID)
+func (q *Queries) GetUserPasswordHash(ctx context.Context, id pgtype.UUID) (GetUserPasswordHashRow, error) {
+	row := q.db.QueryRow(ctx, getUserPasswordHash, id)
 	var i GetUserPasswordHashRow
 	err := row.Scan(&i.ID, &i.PasswordHash)
 	return i, err
@@ -1462,44 +1295,40 @@ func (q *Queries) GetUserPasswordHash(ctx context.Context, arg GetUserPasswordHa
 
 const getUserPeriodEngagement = `-- name: GetUserPeriodEngagement :one
 SELECT
-    COALESCE(v.views, 0)::bigint AS views,
-    COALESCE(r.reactions, 0)::bigint AS reactions,
-    COALESCE(cm.comments, 0)::bigint AS comments
+ COALESCE(v.views, 0)::bigint AS views,
+ COALESCE(r.reactions, 0)::bigint AS reactions,
+ COALESCE(cm.comments, 0)::bigint AS comments
 FROM
-    (SELECT COUNT(*)::bigint AS views
-     FROM user_content_views ucv
-     JOIN contents c ON c.id = ucv.content_id
-     WHERE c.tenant_id = $1
-       AND c.author_id = $2
-       AND c.deleted_at IS NULL
-       AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
-       AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
-    ) v,
-    (SELECT COUNT(*)::bigint AS reactions
-     FROM reactions r
-     JOIN contents c ON c.id = r.entity_id AND r.entity_type = 'content'
-     WHERE c.tenant_id = $1
-       AND c.author_id = $2
-       AND c.deleted_at IS NULL
-       AND ($3::timestamptz IS NULL OR r.created_at >= $3)
-       AND ($4::timestamptz IS NULL OR r.created_at <= $4)
-    ) r,
-    (SELECT COUNT(*)::bigint AS comments
-     FROM comments cm
-     JOIN contents c ON c.id = cm.content_id
-     WHERE c.tenant_id = $1
-       AND c.author_id = $2
-       AND c.deleted_at IS NULL
-       AND ($3::timestamptz IS NULL OR cm.created_at >= $3)
-       AND ($4::timestamptz IS NULL OR cm.created_at <= $4)
-    ) cm
+ (SELECT COUNT(*)::bigint AS views
+ FROM user_content_views ucv
+ JOIN contents c ON c.id = ucv.content_id
+ WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+ AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
+ ) v,
+ (SELECT COUNT(*)::bigint AS reactions
+ FROM reactions r
+ JOIN contents c ON c.id = r.entity_id AND r.entity_type = 'content'
+ WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR r.created_at >= $2)
+ AND ($3::timestamptz IS NULL OR r.created_at <= $3)
+ ) r,
+ (SELECT COUNT(*)::bigint AS comments
+ FROM comments cm
+ JOIN contents c ON c.id = cm.content_id
+ WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR cm.created_at >= $2)
+ AND ($3::timestamptz IS NULL OR cm.created_at <= $3)
+ ) cm
 `
 
 type GetUserPeriodEngagementParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 type GetUserPeriodEngagementRow struct {
@@ -1511,34 +1340,32 @@ type GetUserPeriodEngagementRow struct {
 // Total views, reactions and comments on the user's own content for a period.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserPeriodEngagement(ctx context.Context, arg GetUserPeriodEngagementParams) (GetUserPeriodEngagementRow, error) {
-	row := q.db.QueryRow(ctx, getUserPeriodEngagement,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Column3,
-		arg.Column4,
-	)
+	row := q.db.QueryRow(ctx, getUserPeriodEngagement, arg.AuthorID, arg.Column2, arg.Column3)
 	var i GetUserPeriodEngagementRow
 	err := row.Scan(&i.Views, &i.Reactions, &i.Comments)
 	return i, err
 }
 
 const getUserPreferences = `-- name: GetUserPreferences :one
-SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
+SELECT id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetUserPreferencesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+type GetUserPreferencesRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	DarkMode  string             `json:"dark_mode"`
+	Language  string             `json:"language"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferencesParams) (UserPreference, error) {
-	row := q.db.QueryRow(ctx, getUserPreferences, arg.TenantID, arg.UserID)
-	var i UserPreference
+func (q *Queries) GetUserPreferences(ctx context.Context, userID pgtype.UUID) (GetUserPreferencesRow, error) {
+	row := q.db.QueryRow(ctx, getUserPreferences, userID)
+	var i GetUserPreferencesRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DarkMode,
 		&i.Language,
@@ -1549,27 +1376,30 @@ func (q *Queries) GetUserPreferences(ctx context.Context, arg GetUserPreferences
 }
 
 const getUserPreferencesForUpdate = `-- name: GetUserPreferencesForUpdate :one
-SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at
+SELECT id, user_id, dark_mode, language, created_at, updated_at
 FROM user_preferences
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 FOR UPDATE
 `
 
-type GetUserPreferencesForUpdateParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+type GetUserPreferencesForUpdateRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	DarkMode  string             `json:"dark_mode"`
+	Language  string             `json:"language"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Row-locks the user_preferences row for the read-merge-upsert pattern in
 // UpdatePreferences (BUG-003). The FOR UPDATE lock is held until the
 // transaction commits or rolls back, preventing concurrent preference
 // edits from racing on the merge step.
-func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, arg GetUserPreferencesForUpdateParams) (UserPreference, error) {
-	row := q.db.QueryRow(ctx, getUserPreferencesForUpdate, arg.TenantID, arg.UserID)
-	var i UserPreference
+func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, userID pgtype.UUID) (GetUserPreferencesForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserPreferencesForUpdate, userID)
+	var i GetUserPreferencesForUpdateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DarkMode,
 		&i.Language,
@@ -1580,20 +1410,14 @@ func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, arg GetUserPr
 }
 
 const getUserPrivacySettings = `-- name: GetUserPrivacySettings :one
-SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
-       show_online_status, show_activity, show_points_publicly, created_at, updated_at
+SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+ show_online_status, show_activity, show_points_publicly, created_at, updated_at
 FROM user_privacy_settings
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetUserPrivacySettingsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetUserPrivacySettingsRow struct {
 	UserID             pgtype.UUID        `json:"user_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DmPrivacy          string             `json:"dm_privacy"`
 	ProfileVisibility  string             `json:"profile_visibility"`
 	SearchIndexable    bool               `json:"search_indexable"`
@@ -1604,13 +1428,11 @@ type GetUserPrivacySettingsRow struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
-func (q *Queries) GetUserPrivacySettings(ctx context.Context, arg GetUserPrivacySettingsParams) (GetUserPrivacySettingsRow, error) {
-	row := q.db.QueryRow(ctx, getUserPrivacySettings, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserPrivacySettings(ctx context.Context, userID pgtype.UUID) (GetUserPrivacySettingsRow, error) {
+	row := q.db.QueryRow(ctx, getUserPrivacySettings, userID)
 	var i GetUserPrivacySettingsRow
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.DmPrivacy,
 		&i.ProfileVisibility,
 		&i.SearchIndexable,
@@ -1624,21 +1446,15 @@ func (q *Queries) GetUserPrivacySettings(ctx context.Context, arg GetUserPrivacy
 }
 
 const getUserPrivacySettingsForUpdate = `-- name: GetUserPrivacySettingsForUpdate :one
-SELECT user_id, tenant_id, dm_privacy, profile_visibility, search_indexable,
-       show_online_status, show_activity, show_points_publicly, created_at, updated_at
+SELECT user_id, dm_privacy, profile_visibility, search_indexable,
+ show_online_status, show_activity, show_points_publicly, created_at, updated_at
 FROM user_privacy_settings
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 FOR UPDATE
 `
 
-type GetUserPrivacySettingsForUpdateParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 type GetUserPrivacySettingsForUpdateRow struct {
 	UserID             pgtype.UUID        `json:"user_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DmPrivacy          string             `json:"dm_privacy"`
 	ProfileVisibility  string             `json:"profile_visibility"`
 	SearchIndexable    bool               `json:"search_indexable"`
@@ -1653,12 +1469,11 @@ type GetUserPrivacySettingsForUpdateRow struct {
 // in UpdatePrivacySettings (BUG-004). The FOR UPDATE lock is held until
 // the transaction commits or rolls back, preventing concurrent privacy
 // edits from racing on the merge step.
-func (q *Queries) GetUserPrivacySettingsForUpdate(ctx context.Context, arg GetUserPrivacySettingsForUpdateParams) (GetUserPrivacySettingsForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getUserPrivacySettingsForUpdate, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserPrivacySettingsForUpdate(ctx context.Context, userID pgtype.UUID) (GetUserPrivacySettingsForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserPrivacySettingsForUpdate, userID)
 	var i GetUserPrivacySettingsForUpdateRow
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.DmPrivacy,
 		&i.ProfileVisibility,
 		&i.SearchIndexable,
@@ -1673,36 +1488,29 @@ func (q *Queries) GetUserPrivacySettingsForUpdate(ctx context.Context, arg GetUs
 
 const getUserProfile = `-- name: GetUserProfile :one
 SELECT DISTINCT ON (u.id)
-       COALESCE(up.id, gen_random_uuid()) AS id,
-       u.tenant_id,
-       u.id AS user_id,
-       up.display_name,
-       up.avatar_url,
-       up.avatar_media_id,
-       up.header_media_id,
-       up.bio,
-       up.timezone,
-       up.cover_url,
-       COALESCE(up.created_at, u.created_at) AS created_at,
-       COALESCE(up.updated_at, u.updated_at) AS updated_at,
-       u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
-       ug.slug AS user_group_name
+ COALESCE(up.id, gen_random_uuid()) AS id,
+ u.id AS user_id,
+ up.display_name,
+ up.avatar_url,
+ up.avatar_media_id,
+ up.header_media_id,
+ up.bio,
+ up.timezone,
+ up.cover_url,
+ COALESCE(up.created_at, u.created_at) AS created_at,
+ COALESCE(up.updated_at, u.updated_at) AS updated_at,
+ u.email, u.username, u.profile_type, u.status, u.follower_count, u.last_login_at,
+ ug.slug AS user_group_name
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id
-LEFT JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = ugm.tenant_id
-WHERE u.tenant_id = $1 AND u.id = $2
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_group_memberships ugm ON ugm.user_id = u.id
+LEFT JOIN user_groups ug ON ug.id = ugm.group_id
+WHERE u.id = $1
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END
 `
 
-type GetUserProfileParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 type GetUserProfileRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	DisplayName   *string            `json:"display_name"`
 	AvatarUrl     *string            `json:"avatar_url"`
@@ -1722,12 +1530,11 @@ type GetUserProfileRow struct {
 	UserGroupName *string            `json:"user_group_name"`
 }
 
-func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) (GetUserProfileRow, error) {
-	row := q.db.QueryRow(ctx, getUserProfile, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserProfile(ctx context.Context, userID pgtype.UUID) (GetUserProfileRow, error) {
+	row := q.db.QueryRow(ctx, getUserProfile, userID)
 	var i GetUserProfileRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.AvatarUrl,
@@ -1750,21 +1557,15 @@ func (q *Queries) GetUserProfile(ctx context.Context, arg GetUserProfileParams) 
 }
 
 const getUserProfileForUpdate = `-- name: GetUserProfileForUpdate :one
-SELECT id, tenant_id, user_id, display_name, avatar_url, avatar_media_id,
-       header_media_id, bio, timezone, cover_url, created_at, updated_at
+SELECT id, user_id, display_name, avatar_url, avatar_media_id,
+ header_media_id, bio, timezone, cover_url, created_at, updated_at
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 FOR UPDATE
 `
 
-type GetUserProfileForUpdateParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 type GetUserProfileForUpdateRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	DisplayName   *string            `json:"display_name"`
 	AvatarUrl     *string            `json:"avatar_url"`
@@ -1781,12 +1582,11 @@ type GetUserProfileForUpdateRow struct {
 // UpdateProfile (BUG-002). The FOR UPDATE lock is held until the
 // transaction commits or rolls back, preventing concurrent profile edits
 // from racing on the merge step.
-func (q *Queries) GetUserProfileForUpdate(ctx context.Context, arg GetUserProfileForUpdateParams) (GetUserProfileForUpdateRow, error) {
-	row := q.db.QueryRow(ctx, getUserProfileForUpdate, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserProfileForUpdate(ctx context.Context, userID pgtype.UUID) (GetUserProfileForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getUserProfileForUpdate, userID)
 	var i GetUserProfileForUpdateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.AvatarUrl,
@@ -1804,19 +1604,14 @@ func (q *Queries) GetUserProfileForUpdate(ctx context.Context, arg GetUserProfil
 const getUserProfileID = `-- name: GetUserProfileID :one
 SELECT id
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetUserProfileIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // ADR-064a: Returns the user_profiles.id for a given user. Used as the
 // entity_id when upserting custom field values (entity_type='user_profile').
 // Returns pgx.ErrNoRows when the profile doesn't exist yet.
-func (q *Queries) GetUserProfileID(ctx context.Context, arg GetUserProfileIDParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getUserProfileID, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserProfileID(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getUserProfileID, userID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -1824,25 +1619,23 @@ func (q *Queries) GetUserProfileID(ctx context.Context, arg GetUserProfileIDPara
 
 const getUserReadersByCountry = `-- name: GetUserReadersByCountry :many
 SELECT
-    COALESCE(NULLIF(ucv.country_code, ''), '')::text AS country_code,
-    COUNT(*)::bigint AS readers
+ COALESCE(NULLIF(ucv.country_code, ''), '')::text AS country_code,
+ COUNT(*)::bigint AS readers
 FROM user_content_views ucv
 JOIN contents c ON c.id = ucv.content_id
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.deleted_at IS NULL
-  AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
-  AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
+WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+ AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
 GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 10
 `
 
 type GetUserReadersByCountryParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 type GetUserReadersByCountryRow struct {
@@ -1856,12 +1649,7 @@ type GetUserReadersByCountryRow struct {
 // or when GeoIP cannot resolve the viewer's country.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserReadersByCountry(ctx context.Context, arg GetUserReadersByCountryParams) ([]GetUserReadersByCountryRow, error) {
-	rows, err := q.db.Query(ctx, getUserReadersByCountry,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getUserReadersByCountry, arg.AuthorID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -1883,17 +1671,11 @@ func (q *Queries) GetUserReadersByCountry(ctx context.Context, arg GetUserReader
 const getUserStatus = `-- name: GetUserStatus :one
 SELECT COALESCE(status, 'active') AS status
 FROM users
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetUserStatusParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// Tenant-scoped per Section 04 (BUG-009).
-func (q *Queries) GetUserStatus(ctx context.Context, arg GetUserStatusParams) (string, error) {
-	row := q.db.QueryRow(ctx, getUserStatus, arg.ID, arg.TenantID)
+func (q *Queries) GetUserStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserStatus, id)
 	var status string
 	err := row.Scan(&status)
 	return status, err
@@ -1902,17 +1684,12 @@ func (q *Queries) GetUserStatus(ctx context.Context, arg GetUserStatusParams) (s
 const getUserSyntheticStatusByID = `-- name: GetUserSyntheticStatusByID :one
 SELECT is_synthetic
 FROM users
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetUserSyntheticStatusByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 // Returns whether the user is a synthetic channel account.
-func (q *Queries) GetUserSyntheticStatusByID(ctx context.Context, arg GetUserSyntheticStatusByIDParams) (bool, error) {
-	row := q.db.QueryRow(ctx, getUserSyntheticStatusByID, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserSyntheticStatusByID(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserSyntheticStatusByID, userID)
 	var is_synthetic bool
 	err := row.Scan(&is_synthetic)
 	return is_synthetic, err
@@ -1920,33 +1697,30 @@ func (q *Queries) GetUserSyntheticStatusByID(ctx context.Context, arg GetUserSyn
 
 const getUserTopContentByPeriod = `-- name: GetUserTopContentByPeriod :many
 WITH period_views AS (
-    SELECT ucv.content_id, COUNT(*)::bigint AS views
-    FROM user_content_views ucv
-    JOIN contents c ON c.id = ucv.content_id
-    WHERE c.tenant_id = $1
-      AND c.author_id = $2
-      AND c.deleted_at IS NULL
-      AND ($3::timestamptz IS NULL OR ucv.viewed_at >= $3)
-      AND ($4::timestamptz IS NULL OR ucv.viewed_at <= $4)
-    GROUP BY ucv.content_id
+ SELECT ucv.content_id, COUNT(*)::bigint AS views
+ FROM user_content_views ucv
+ JOIN contents c ON c.id = ucv.content_id
+ WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
+ AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
+ GROUP BY ucv.content_id
 )
 SELECT c.id, c.title, c.content_type, c.status,
-       COALESCE(pv.views, 0)::bigint AS view_count,
-       c.comment_count, c.share_count, c.created_at
+ COALESCE(pv.views, 0)::bigint AS view_count,
+ c.comment_count, c.share_count, c.created_at
 FROM contents c
 LEFT JOIN period_views pv ON pv.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.deleted_at IS NULL
+WHERE c.author_id = $1
+ AND c.deleted_at IS NULL
 ORDER BY COALESCE(pv.views, 0) DESC, c.view_count DESC NULLS LAST, c.created_at DESC
 LIMIT 10
 `
 
 type GetUserTopContentByPeriodParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 }
 
 type GetUserTopContentByPeriodRow struct {
@@ -1965,12 +1739,7 @@ type GetUserTopContentByPeriodRow struct {
 // when a post had no views in the period. Used by GET /me/analytics.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) GetUserTopContentByPeriod(ctx context.Context, arg GetUserTopContentByPeriodParams) ([]GetUserTopContentByPeriodRow, error) {
-	rows, err := q.db.Query(ctx, getUserTopContentByPeriod,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getUserTopContentByPeriod, arg.AuthorID, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -1999,22 +1768,21 @@ func (q *Queries) GetUserTopContentByPeriod(ctx context.Context, arg GetUserTopC
 }
 
 const listActiveUsersForDigest = `-- name: ListActiveUsersForDigest :many
-SELECT u.id, u.tenant_id, u.email
+SELECT u.id, u.email
 FROM users u
 WHERE u.status = 'active'
-  AND u.email IS NOT NULL AND u.email != ''
-  AND u.email_verified_at IS NOT NULL
-  AND COALESCE(
-    (SELECT value::bool FROM system_settings ss
-     WHERE ss.tenant_id = u.tenant_id AND ss.key = 'email.digest_enabled'),
-    true)
+ AND u.email IS NOT NULL AND u.email != ''
+ AND u.email_verified_at IS NOT NULL
+ AND COALESCE(
+ (SELECT value::bool FROM system_settings ss
+ WHERE ss.key = 'email.digest_enabled'),
+ true)
 ORDER BY u.id
 `
 
 type ListActiveUsersForDigestRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Email    string      `json:"email"`
+	ID    pgtype.UUID `json:"id"`
+	Email string      `json:"email"`
 }
 
 func (q *Queries) ListActiveUsersForDigest(ctx context.Context) ([]ListActiveUsersForDigestRow, error) {
@@ -2026,7 +1794,7 @@ func (q *Queries) ListActiveUsersForDigest(ctx context.Context) ([]ListActiveUse
 	var items []ListActiveUsersForDigestRow
 	for rows.Next() {
 		var i ListActiveUsersForDigestRow
-		if err := rows.Scan(&i.ID, &i.TenantID, &i.Email); err != nil {
+		if err := rows.Scan(&i.ID, &i.Email); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2040,13 +1808,8 @@ func (q *Queries) ListActiveUsersForDigest(ctx context.Context) ([]ListActiveUse
 const listOAuthAccounts = `-- name: ListOAuthAccounts :many
 SELECT id, provider, provider_user_id, created_at
 FROM oauth_accounts
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type ListOAuthAccountsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type ListOAuthAccountsRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -2055,8 +1818,8 @@ type ListOAuthAccountsRow struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListOAuthAccounts(ctx context.Context, arg ListOAuthAccountsParams) ([]ListOAuthAccountsRow, error) {
-	rows, err := q.db.Query(ctx, listOAuthAccounts, arg.TenantID, arg.UserID)
+func (q *Queries) ListOAuthAccounts(ctx context.Context, userID pgtype.UUID) ([]ListOAuthAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listOAuthAccounts, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2082,38 +1845,36 @@ func (q *Queries) ListOAuthAccounts(ctx context.Context, arg ListOAuthAccountsPa
 
 const listPublicUsers = `-- name: ListPublicUsers :many
 SELECT u.id AS user_id,
-       u.username,
-       u.profile_type,
-       u.follower_count,
-       u.is_synthetic,
-       u.synthetic_source,
-       up.display_name,
-       up.avatar_url,
-       up.bio,
-       up.cover_url,
-       up.location,
-       COALESCE(up.created_at, u.created_at) AS created_at,
-       (SELECT COUNT(*)::int
-          FROM follows f
-         WHERE f.tenant_id = u.tenant_id AND f.follower_id = u.id) AS following_count
+ u.username,
+ u.profile_type,
+ u.follower_count,
+ u.is_synthetic,
+ u.synthetic_source,
+ up.display_name,
+ up.avatar_url,
+ up.bio,
+ up.cover_url,
+ up.location,
+ COALESCE(up.created_at, u.created_at) AS created_at,
+ (SELECT COUNT(*)::int
+ FROM follows f
+ WHERE f.follower_id = u.id) AS following_count
 FROM users u
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id AND ups.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1
-  AND u.status = 'active'
-  AND COALESCE(ups.search_indexable, true) = true
-  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR up.display_name ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR u.profile_type = $3)
+LEFT JOIN user_profiles up ON up.user_id = u.id
+LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+WHERE u.status = 'active'
+ AND COALESCE(ups.search_indexable, true) = true
+ AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR u.profile_type = $2)
 ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListPublicUsersParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Search      string      `json:"search"`
-	ProfileType string      `json:"profile_type"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	Search      string `json:"search"`
+	ProfileType string `json:"profile_type"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
 }
 
 type ListPublicUsersRow struct {
@@ -2138,11 +1899,9 @@ type ListPublicUsersRow struct {
 // Ordered by follower_count DESC then created_at DESC so the directory surfaces
 // prominent users first.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//
-//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+// japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams) ([]ListPublicUsersRow, error) {
 	rows, err := q.db.Query(ctx, listPublicUsers,
-		arg.TenantID,
 		arg.Search,
 		arg.ProfileType,
 		arg.PageOffset,
@@ -2183,20 +1942,19 @@ func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams
 const listUserActivity = `-- name: ListUserActivity :many
 SELECT activity.type, activity.content, activity.created_at
 FROM (
-    SELECT 'content'::text AS type, c.title AS content, c.created_at
-    FROM contents c
-    WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
-    UNION ALL
-    SELECT 'comment'::text AS type, left(cm.body, 240) AS content, cm.created_at
-    FROM comments cm
-    WHERE cm.tenant_id = $1 AND cm.author_user_id = $2 AND cm.deleted_at IS NULL
+ SELECT 'content'::text AS type, c.title AS content, c.created_at
+ FROM contents c
+ WHERE c.author_id = $1 AND c.deleted_at IS NULL
+ UNION ALL
+ SELECT 'comment'::text AS type, left(cm.body, 240) AS content, cm.created_at
+ FROM comments cm
+ WHERE cm.author_user_id = $1 AND cm.deleted_at IS NULL
 ) activity
 ORDER BY activity.created_at DESC
-LIMIT $3
+LIMIT $2
 `
 
 type ListUserActivityParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 	Limit    int32       `json:"limit"`
 }
@@ -2211,7 +1969,7 @@ type ListUserActivityRow struct {
 // (admin user-detail activity tab). Comment bodies are truncated so a long
 // comment cannot bloat the list payload.
 func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityParams) ([]ListUserActivityRow, error) {
-	rows, err := q.db.Query(ctx, listUserActivity, arg.TenantID, arg.AuthorID, arg.Limit)
+	rows, err := q.db.Query(ctx, listUserActivity, arg.AuthorID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2232,55 +1990,54 @@ func (q *Queries) ListUserActivity(ctx context.Context, arg ListUserActivityPara
 
 const listUserBookmarks = `-- name: ListUserBookmarks :many
 SELECT
-    b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
-    CASE
-        WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
-        WHEN b.entity_type = 'forum_thread'           THEN ft.title
-        WHEN b.entity_type = 'forum_reply'            THEN frt.title
-        WHEN b.entity_type = 'space'                   THEN s.name
-        WHEN b.entity_type = 'tag'                     THEN t.name
-        WHEN b.entity_type = 'learning_track'          THEN lt.title
-        WHEN b.entity_type = 'doc_page'                THEN dp.title
-    END AS title,
-    CASE
-        WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
-        WHEN b.entity_type = 'forum_thread'           THEN ft.slug
-        WHEN b.entity_type = 'forum_reply'            THEN frt.slug
-        WHEN b.entity_type = 'space'                   THEN s.slug
-        WHEN b.entity_type = 'tag'                     THEN t.slug
-        WHEN b.entity_type = 'learning_track'          THEN lt.slug
-        WHEN b.entity_type = 'doc_page'                THEN dp.slug
-    END AS slug,
-    CASE
-        WHEN b.entity_type = 'doc_page' THEN dp.audience
-    END AS audience
+ b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
+ CASE
+ WHEN b.entity_type IN ('content', 'blog_post') THEN c.title
+ WHEN b.entity_type = 'forum_thread' THEN ft.title
+ WHEN b.entity_type = 'forum_reply' THEN frt.title
+ WHEN b.entity_type = 'space' THEN s.name
+ WHEN b.entity_type = 'tag' THEN t.name
+ WHEN b.entity_type = 'learning_track' THEN lt.title
+ WHEN b.entity_type = 'doc_page' THEN dp.title
+ END AS title,
+ CASE
+ WHEN b.entity_type IN ('content', 'blog_post') THEN c.slug
+ WHEN b.entity_type = 'forum_thread' THEN ft.slug
+ WHEN b.entity_type = 'forum_reply' THEN frt.slug
+ WHEN b.entity_type = 'space' THEN s.slug
+ WHEN b.entity_type = 'tag' THEN t.slug
+ WHEN b.entity_type = 'learning_track' THEN lt.slug
+ WHEN b.entity_type = 'doc_page' THEN dp.slug
+ END AS slug,
+ CASE
+ WHEN b.entity_type = 'doc_page' THEN dp.audience
+ END AS audience
 FROM bookmarks b
 LEFT JOIN contents c
-    ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
+ ON b.entity_type IN ('content', 'blog_post') AND b.entity_id = c.id
 LEFT JOIN forum_threads ft
-    ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
+ ON b.entity_type = 'forum_thread' AND b.entity_id = ft.id
 LEFT JOIN forum_replies fr
-    ON b.entity_type = 'forum_reply' AND b.entity_id = fr.id
+ ON b.entity_type = 'forum_reply' AND b.entity_id = fr.id
 LEFT JOIN forum_threads frt
-    ON b.entity_type = 'forum_reply' AND fr.thread_id = frt.id
+ ON b.entity_type = 'forum_reply' AND fr.thread_id = frt.id
 LEFT JOIN spaces s
-    ON b.entity_type = 'space' AND b.entity_id = s.id
+ ON b.entity_type = 'space' AND b.entity_id = s.id
 LEFT JOIN tags t
-    ON b.entity_type = 'tag' AND b.entity_id = t.id
+ ON b.entity_type = 'tag' AND b.entity_id = t.id
 LEFT JOIN learning_tracks lt
-    ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
+ ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
 LEFT JOIN doc_pages dp
-    ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
-WHERE b.user_id = $1 AND b.tenant_id = $2
-  AND ($3::uuid IS NULL OR b.folder_id = $3::uuid)
-  AND ($4::text[] IS NULL OR b.entity_type = ANY($4::text[]))
+ ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
+WHERE b.user_id = $1
+ AND ($2::uuid IS NULL OR b.folder_id = $2::uuid)
+ AND ($3::text[] IS NULL OR b.entity_type = ANY($3::text[]))
 ORDER BY b.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListUserBookmarksParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	FolderID    pgtype.UUID `json:"folder_id"`
 	EntityTypes []string    `json:"entity_types"`
 	PageOffset  int32       `json:"page_offset"`
@@ -2310,7 +2067,6 @@ type ListUserBookmarksRow struct {
 func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksParams) ([]ListUserBookmarksRow, error) {
 	rows, err := q.db.Query(ctx, listUserBookmarks,
 		arg.UserID,
-		arg.TenantID,
 		arg.FolderID,
 		arg.EntityTypes,
 		arg.PageOffset,
@@ -2347,22 +2103,21 @@ func (q *Queries) ListUserBookmarks(ctx context.Context, arg ListUserBookmarksPa
 const listUserContent = `-- name: ListUserContent :many
 SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.created_at, c.updated_at
 FROM contents c
-WHERE c.tenant_id = $1 AND c.author_id = $2 AND c.deleted_at IS NULL
-  AND ($3::text = '' OR c.status = $3)
-  AND ($4::text = '' OR c.content_type = $4)
-  AND ($5::text = '' OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%')
+WHERE c.author_id = $1 AND c.deleted_at IS NULL
+ AND ($2::text = '' OR c.status = $2)
+ AND ($3::text = '' OR c.content_type = $3)
+ AND ($4::text = '' OR c.title ILIKE '%' || $4 || '%' OR c.slug ILIKE '%' || $4 || '%')
 ORDER BY
-  CASE
-    WHEN $6::text = 'oldest' THEN EXTRACT(EPOCH FROM c.created_at)
-    WHEN $6::text = 'most_viewed' THEN -c.view_count::float8
-    ELSE -EXTRACT(EPOCH FROM c.created_at)
-  END ASC,
-  c.created_at DESC
-LIMIT $8 OFFSET $7
+ CASE
+ WHEN $5::text = 'oldest' THEN EXTRACT(EPOCH FROM c.created_at)
+ WHEN $5::text = 'most_viewed' THEN -c.view_count::float8
+ ELSE -EXTRACT(EPOCH FROM c.created_at)
+ END ASC,
+ c.created_at DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListUserContentParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	AuthorID    pgtype.UUID `json:"author_id"`
 	Status      string      `json:"status"`
 	ContentType string      `json:"content_type"`
@@ -2391,7 +2146,6 @@ type ListUserContentRow struct {
 // Used by GET /me/content (published), /me/drafts (draft), and /me/scheduled (scheduled).
 func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams) ([]ListUserContentRow, error) {
 	rows, err := q.db.Query(ctx, listUserContent,
-		arg.TenantID,
 		arg.AuthorID,
 		arg.Status,
 		arg.ContentType,
@@ -2431,14 +2185,9 @@ func (q *Queries) ListUserContent(ctx context.Context, arg ListUserContentParams
 const listUserSessions = `-- name: ListUserSessions :many
 SELECT id, token_hash, expires_at, created_at, device_name, ip_address, last_used_at
 FROM refresh_tokens
-WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL
+WHERE user_id = $1 AND revoked_at IS NULL
 ORDER BY created_at DESC
 `
-
-type ListUserSessionsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type ListUserSessionsRow struct {
 	ID         pgtype.UUID        `json:"id"`
@@ -2450,10 +2199,10 @@ type ListUserSessionsRow struct {
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009). Returns device_name, ip_address,
+// Returns device_name, ip_address,
 // last_used_at per JEOS §50 contract.
-func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error) {
-	rows, err := q.db.Query(ctx, listUserSessions, arg.TenantID, arg.UserID)
+func (q *Queries) ListUserSessions(ctx context.Context, userID pgtype.UUID) ([]ListUserSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listUserSessions, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2481,51 +2230,48 @@ func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsPara
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT u.id, u.tenant_id, u.email, u.username, u.profile_type,
-       CASE
-         WHEN EXISTS (
-           SELECT 1 FROM user_operation_bans uob
-           WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
-             AND (uob.expires_at IS NULL OR uob.expires_at > now())
-         ) THEN 'restricted'
-         ELSE u.status
-       END AS status,
-       u.follower_count, u.created_at, u.updated_at,
-       (SELECT COALESCE(string_agg(ug.name, ', '), '')
-        FROM user_group_memberships ugm
-        JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = u.tenant_id
-        WHERE ugm.user_id = u.id AND ugm.tenant_id = u.tenant_id) AS groups
+SELECT u.id, u.email, u.username, u.profile_type,
+ CASE
+ WHEN EXISTS (
+ SELECT 1 FROM user_operation_bans uob
+ WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+ AND (uob.expires_at IS NULL OR uob.expires_at > now())
+ ) THEN 'restricted'
+ ELSE u.status
+ END AS status,
+ u.follower_count, u.created_at, u.updated_at,
+ (SELECT COALESCE(string_agg(ug.name, ', '), '')
+ FROM user_group_memberships ugm
+ JOIN user_groups ug ON ug.id = ugm.group_id
+ WHERE ugm.user_id = u.id) AS groups
 FROM users u
-WHERE u.tenant_id = $1
-  AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR
-       ($3 = 'restricted' AND EXISTS (
-         SELECT 1 FROM user_operation_bans uob
-         WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
-           AND (uob.expires_at IS NULL OR uob.expires_at > now())
-       )) OR
-       ($3 != 'restricted' AND u.status = $3))
-  AND ($4::text = '' OR EXISTS (
-    SELECT 1 FROM user_group_memberships ugm
-    JOIN user_groups ug ON ug.id = ugm.group_id AND ug.tenant_id = $1
-    WHERE ugm.user_id = u.id AND ugm.tenant_id = $1 AND ug.slug = $4
-  ))
+WHERE ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR
+ ($2 = 'restricted' AND EXISTS (
+ SELECT 1 FROM user_operation_bans uob
+ WHERE uob.user_id = u.id AND uob.deleted_at IS NULL
+ AND (uob.expires_at IS NULL OR uob.expires_at > now())
+ )) OR
+ ($2 != 'restricted' AND u.status = $2))
+ AND ($3::text = '' OR EXISTS (
+ SELECT 1 FROM user_group_memberships ugm
+ JOIN user_groups ug ON ug.id = ugm.group_id
+ WHERE ugm.user_id = u.id AND ug.slug = $3
+ ))
 ORDER BY u.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListUsersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Search     string      `json:"search"`
-	Status     string      `json:"status"`
-	GroupSlug  string      `json:"group_slug"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Search     string `json:"search"`
+	Status     string `json:"status"`
+	GroupSlug  string `json:"group_slug"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListUsersRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Email         string             `json:"email"`
 	Username      string             `json:"username"`
 	ProfileType   string             `json:"profile_type"`
@@ -2538,7 +2284,6 @@ type ListUsersRow struct {
 
 func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers,
-		arg.TenantID,
 		arg.Search,
 		arg.Status,
 		arg.GroupSlug,
@@ -2554,7 +2299,6 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 		var i ListUsersRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Email,
 			&i.Username,
 			&i.ProfileType,
@@ -2575,233 +2319,200 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 }
 
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL AND id != $3
+UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND id != $2
 `
 
 type RevokeAllUserSessionsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	ID       pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) RevokeAllUserSessions(ctx context.Context, arg RevokeAllUserSessionsParams) error {
-	_, err := q.db.Exec(ctx, revokeAllUserSessions, arg.TenantID, arg.UserID, arg.ID)
+	_, err := q.db.Exec(ctx, revokeAllUserSessions, arg.UserID, arg.ID)
 	return err
 }
 
 const revokeUserSession = `-- name: RevokeUserSession :exec
-UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND tenant_id = $2 AND user_id = $3 AND revoked_at IS NULL
+UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
 `
 
 type RevokeUserSessionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) error {
-	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.TenantID, arg.UserID)
+	_, err := q.db.Exec(ctx, revokeUserSession, arg.ID, arg.UserID)
 	return err
 }
 
 const softDeleteUser = `-- name: SoftDeleteUser :exec
-UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1 AND tenant_id = $2
+UPDATE users SET status = 'deleted', updated_at = now() WHERE id = $1
 `
 
-type SoftDeleteUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error {
-	_, err := q.db.Exec(ctx, softDeleteUser, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteUser, id)
 	return err
 }
 
 const updateLastLoginAt = `-- name: UpdateLastLoginAt :exec
-UPDATE users SET last_login_at = now() WHERE tenant_id = $1 AND id = $2
+UPDATE users SET last_login_at = now() WHERE id = $1
 `
 
-type UpdateLastLoginAtParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) UpdateLastLoginAt(ctx context.Context, arg UpdateLastLoginAtParams) error {
-	_, err := q.db.Exec(ctx, updateLastLoginAt, arg.TenantID, arg.ID)
+func (q *Queries) UpdateLastLoginAt(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateLastLoginAt, id)
 	return err
 }
 
 const updateUserEmail = `-- name: UpdateUserEmail :exec
 UPDATE users
-SET email = $3, email_verified_at = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET email = $2, email_verified_at = NULL, updated_at = now()
+WHERE id = $1
 `
 
 type UpdateUserEmailParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Email    string      `json:"email"`
+	ID    pgtype.UUID `json:"id"`
+	Email string      `json:"email"`
 }
 
 // Updates the email and resets email_verified_at to NULL so the user must
 // re-verify the new address (Section 50: email change triggers re-verification).
 func (q *Queries) UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) error {
-	_, err := q.db.Exec(ctx, updateUserEmail, arg.ID, arg.TenantID, arg.Email)
+	_, err := q.db.Exec(ctx, updateUserEmail, arg.ID, arg.Email)
 	return err
 }
 
 const updateUserGeoSpace = `-- name: UpdateUserGeoSpace :exec
 UPDATE users
 SET current_geo_space_id = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateUserGeoSpaceParams struct {
 	CurrentGeoSpaceID pgtype.UUID `json:"current_geo_space_id"`
 	ID                pgtype.UUID `json:"id"`
-	TenantID          pgtype.UUID `json:"tenant_id"`
 }
 
 // Sets the user's current primary geo space (Section 05, ADR-005).
 func (q *Queries) UpdateUserGeoSpace(ctx context.Context, arg UpdateUserGeoSpaceParams) error {
-	_, err := q.db.Exec(ctx, updateUserGeoSpace, arg.CurrentGeoSpaceID, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateUserGeoSpace, arg.CurrentGeoSpaceID, arg.ID)
 	return err
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users
-SET password_hash = $3, password_changed_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET password_hash = $2, password_changed_at = now(), updated_at = now()
+WHERE id = $1
 `
 
 type UpdateUserPasswordParams struct {
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	PasswordHash *string     `json:"password_hash"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
 // Sets password_changed_at so max-password-age policies can be enforced
 // (Ref: sections/02-authentication-sessions.md).
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
-	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.TenantID, arg.PasswordHash)
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
 	return err
 }
 
 const updateUserProfileType = `-- name: UpdateUserProfileType :exec
-UPDATE users SET profile_type = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2
+UPDATE users SET profile_type = $2, updated_at = now() WHERE id = $1
 `
 
 type UpdateUserProfileTypeParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	ID          pgtype.UUID `json:"id"`
 	ProfileType string      `json:"profile_type"`
 }
 
 func (q *Queries) UpdateUserProfileType(ctx context.Context, arg UpdateUserProfileTypeParams) error {
-	_, err := q.db.Exec(ctx, updateUserProfileType, arg.TenantID, arg.ID, arg.ProfileType)
+	_, err := q.db.Exec(ctx, updateUserProfileType, arg.ID, arg.ProfileType)
 	return err
 }
 
 const updateUserSourceID = `-- name: UpdateUserSourceID :exec
 UPDATE users
 SET source_id = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateUserSourceIDParams struct {
 	SourceID pgtype.UUID `json:"source_id"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 // Link a user to its canonical intel_sources row (v2 source directory).
 func (q *Queries) UpdateUserSourceID(ctx context.Context, arg UpdateUserSourceIDParams) error {
-	_, err := q.db.Exec(ctx, updateUserSourceID, arg.SourceID, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateUserSourceID, arg.SourceID, arg.ID)
 	return err
 }
 
 const updateUserSyntheticToReal = `-- name: UpdateUserSyntheticToReal :exec
 UPDATE users
 SET is_synthetic = false, synthetic_source = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND is_synthetic = true
+WHERE id = $1 AND is_synthetic = true
 `
-
-type UpdateUserSyntheticToRealParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Promote a synthetic channel user to a real user after a claim is approved.
 // The user row is kept; only the synthetic flag and source marker are cleared.
-func (q *Queries) UpdateUserSyntheticToReal(ctx context.Context, arg UpdateUserSyntheticToRealParams) error {
-	_, err := q.db.Exec(ctx, updateUserSyntheticToReal, arg.UserID, arg.TenantID)
+func (q *Queries) UpdateUserSyntheticToReal(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateUserSyntheticToReal, userID)
 	return err
 }
 
 const updateUserUsername = `-- name: UpdateUserUsername :exec
 UPDATE users
-SET username = $3, username_changed_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET username = $2, username_changed_at = now(), updated_at = now()
+WHERE id = $1
 `
 
 type UpdateUserUsernameParams struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Username string      `json:"username"`
 }
 
 // Updates the username and stamps username_changed_at for cooldown tracking.
 // Section 50: username may be changed once per 30 days.
 func (q *Queries) UpdateUserUsername(ctx context.Context, arg UpdateUserUsernameParams) error {
-	_, err := q.db.Exec(ctx, updateUserUsername, arg.ID, arg.TenantID, arg.Username)
+	_, err := q.db.Exec(ctx, updateUserUsername, arg.ID, arg.Username)
 	return err
 }
 
 const upsertUserPreferences = `-- name: UpsertUserPreferences :exec
-INSERT INTO user_preferences (tenant_id, user_id, dark_mode, language)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-    dark_mode = EXCLUDED.dark_mode,
-    language = EXCLUDED.language,
-    updated_at = now()
+INSERT INTO user_preferences (user_id, dark_mode, language) VALUES ($1, $2, $3)
+
+ON CONFLICT (user_id) DO UPDATE SET
+ dark_mode = EXCLUDED.dark_mode,
+ language = EXCLUDED.language,
+ updated_at = now()
 `
 
 type UpsertUserPreferencesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	DarkMode string      `json:"dark_mode"`
 	Language string      `json:"language"`
 }
 
 func (q *Queries) UpsertUserPreferences(ctx context.Context, arg UpsertUserPreferencesParams) error {
-	_, err := q.db.Exec(ctx, upsertUserPreferences,
-		arg.TenantID,
-		arg.UserID,
-		arg.DarkMode,
-		arg.Language,
-	)
+	_, err := q.db.Exec(ctx, upsertUserPreferences, arg.UserID, arg.DarkMode, arg.Language)
 	return err
 }
 
 const upsertUserPrivacySettings = `-- name: UpsertUserPrivacySettings :exec
-INSERT INTO user_privacy_settings (tenant_id, user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity, show_points_publicly)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-    dm_privacy = EXCLUDED.dm_privacy,
-    profile_visibility = EXCLUDED.profile_visibility,
-    search_indexable = EXCLUDED.search_indexable,
-    show_online_status = EXCLUDED.show_online_status,
-    show_activity = EXCLUDED.show_activity,
-    show_points_publicly = EXCLUDED.show_points_publicly,
-    updated_at = now()
+INSERT INTO user_privacy_settings (user_id, dm_privacy, profile_visibility, search_indexable, show_online_status, show_activity, show_points_publicly) VALUES ($1, $2, $3, $4, $5, $6, $7)
+
+ON CONFLICT (user_id) DO UPDATE SET
+ dm_privacy = EXCLUDED.dm_privacy,
+ profile_visibility = EXCLUDED.profile_visibility,
+ search_indexable = EXCLUDED.search_indexable,
+ show_online_status = EXCLUDED.show_online_status,
+ show_activity = EXCLUDED.show_activity,
+ show_points_publicly = EXCLUDED.show_points_publicly,
+ updated_at = now()
 `
 
 type UpsertUserPrivacySettingsParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	UserID             pgtype.UUID `json:"user_id"`
 	DmPrivacy          string      `json:"dm_privacy"`
 	ProfileVisibility  string      `json:"profile_visibility"`
@@ -2811,10 +2522,8 @@ type UpsertUserPrivacySettingsParams struct {
 	ShowPointsPublicly bool        `json:"show_points_publicly"`
 }
 
-// Tenant-scoped per Section 04 (BUG-009).
 func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserPrivacySettingsParams) error {
 	_, err := q.db.Exec(ctx, upsertUserPrivacySettings,
-		arg.TenantID,
 		arg.UserID,
 		arg.DmPrivacy,
 		arg.ProfileVisibility,
@@ -2827,28 +2536,21 @@ func (q *Queries) UpsertUserPrivacySettings(ctx context.Context, arg UpsertUserP
 }
 
 const upsertUserProfile = `-- name: UpsertUserProfile :exec
-INSERT INTO user_profiles (
-    tenant_id, user_id, display_name, avatar_url, avatar_media_id, header_media_id,
-    bio, timezone, cover_url, location, banner_media_id
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11
-)
-ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-    display_name = EXCLUDED.display_name,
-    avatar_url = EXCLUDED.avatar_url,
-    avatar_media_id = EXCLUDED.avatar_media_id,
-    header_media_id = EXCLUDED.header_media_id,
-    bio = EXCLUDED.bio,
-    timezone = EXCLUDED.timezone,
-    cover_url = EXCLUDED.cover_url,
-    location = COALESCE(EXCLUDED.location, user_profiles.location),
-    banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
-    updated_at = now()
+INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (user_id) DO UPDATE SET
+ display_name = EXCLUDED.display_name,
+ avatar_url = EXCLUDED.avatar_url,
+ avatar_media_id = EXCLUDED.avatar_media_id,
+ header_media_id = EXCLUDED.header_media_id,
+ bio = EXCLUDED.bio,
+ timezone = EXCLUDED.timezone,
+ cover_url = EXCLUDED.cover_url,
+ location = COALESCE(EXCLUDED.location, user_profiles.location),
+ banner_media_id = COALESCE(EXCLUDED.banner_media_id, user_profiles.banner_media_id),
+ updated_at = now()
 `
 
 type UpsertUserProfileParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	UserID        pgtype.UUID `json:"user_id"`
 	DisplayName   *string     `json:"display_name"`
 	AvatarUrl     *string     `json:"avatar_url"`
@@ -2863,7 +2565,6 @@ type UpsertUserProfileParams struct {
 
 func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error {
 	_, err := q.db.Exec(ctx, upsertUserProfile,
-		arg.TenantID,
 		arg.UserID,
 		arg.DisplayName,
 		arg.AvatarUrl,
@@ -2879,37 +2580,30 @@ func (q *Queries) UpsertUserProfile(ctx context.Context, arg UpsertUserProfilePa
 }
 
 const userHasPassword = `-- name: UserHasPassword :one
-SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND password_hash IS NOT NULL AND password_hash != '') AS has_password
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AND password_hash != '') AS has_password
 `
 
-type UserHasPasswordParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// Tenant-scoped per Section 04 (BUG-009).
-func (q *Queries) UserHasPassword(ctx context.Context, arg UserHasPasswordParams) (bool, error) {
-	row := q.db.QueryRow(ctx, userHasPassword, arg.ID, arg.TenantID)
+func (q *Queries) UserHasPassword(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasPassword, id)
 	var has_password bool
 	err := row.Scan(&has_password)
 	return has_password, err
 }
 
-const usernameExistsForTenant = `-- name: UsernameExistsForTenant :one
+const usernameExists = `-- name: UsernameExists :one
 SELECT COUNT(*)::int AS count
 FROM users
-WHERE tenant_id = $1 AND username = $2 AND id != $3
+WHERE username = $1 AND id != $2
 `
 
-type UsernameExistsForTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
+type UsernameExistsParams struct {
 	Username string      `json:"username"`
 	ID       pgtype.UUID `json:"id"`
 }
 
-// Checks whether a username is already taken by another user in the same tenant.
-func (q *Queries) UsernameExistsForTenant(ctx context.Context, arg UsernameExistsForTenantParams) (int32, error) {
-	row := q.db.QueryRow(ctx, usernameExistsForTenant, arg.TenantID, arg.Username, arg.ID)
+// Checks whether a username is already taken by another user.
+func (q *Queries) UsernameExists(ctx context.Context, arg UsernameExistsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, usernameExists, arg.Username, arg.ID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err

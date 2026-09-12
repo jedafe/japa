@@ -327,10 +327,10 @@ func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantI
 func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
-	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetUserByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		return id, fmt.Errorf("looking up user %q: %w", username, err)
 	}

@@ -137,7 +137,7 @@ type stubGeoResolver struct {
 	err error
 }
 
-func (s *stubGeoResolver) GetUserCurrentGeoSpace(ctx context.Context, arg gen.GetUserCurrentGeoSpaceParams) (gen.GetUserCurrentGeoSpaceRow, error) {
+func (s *stubGeoResolver) GetUserCurrentGeoSpace(ctx context.Context, userID pgtype.UUID) (gen.GetUserCurrentGeoSpaceRow, error) {
 	return s.row, s.err
 }
 

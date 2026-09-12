@@ -3253,7 +3253,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 	sentCount := 0
 
 	for _, u := range digestUsers {
-		if err := sendDigestToUser(ctx, u.ID.String(), u.TenantID.String(), u.Email, period); err != nil {
+		if err := sendDigestToUser(ctx, u.ID.String(), pgtype.UUID{}.String(), u.Email, period); err != nil {
 			slog.Error("task:email:send_digest: failed for user", "user_id", u.ID.String(), "error", err)
 			continue
 		}

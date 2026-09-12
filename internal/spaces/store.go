@@ -1365,10 +1365,10 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID, tenantID
 // GetUserIDByUsername resolves a username to a user ID within the tenant.
 // Uses the sqlc-generated GetUserByUsername query (Rule 2 — no raw SQL).
 func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (pgtype.UUID, error) {
-	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetUserByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, errors.New("user not found")

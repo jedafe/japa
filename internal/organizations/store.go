@@ -351,10 +351,9 @@ func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwn
 // Used by AcceptInvitation to verify the accepting user's email matches the
 // invited email (BUG-003).
 func (s *Store) GetUserEmail(ctx context.Context, userID, tenantID pgtype.UUID) (string, error) {
-	return s.read.GetUserEmail(ctx, gen.GetUserEmailParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.read.GetUserEmail(ctx,
+		userID,
+	)
 }
 
 // GetPendingClaimByClaimant checks if a user already has a pending claim for

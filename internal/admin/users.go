@@ -134,10 +134,10 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the user is soft-deleted before allowing hard delete.
-	user, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	user, err := h.Queries.GetUserByID(r.Context(),
+
+		userID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "User not found")
 		return

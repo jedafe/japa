@@ -1116,9 +1116,9 @@ func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pg
 		return fmt.Errorf("looking up destination_country custom field: %w", err)
 	}
 
-	profileID, err := s.store.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	profileID, err := s.store.read.GetUserProfileID(ctx,
+		userID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting user profile id: %w", err)
 	}
