@@ -43,8 +43,8 @@ func (s *Store) TopContent(ctx context.Context, arg gen.AdvancedAnalyticsTopCont
 }
 
 // RevenueStreams is an exported method.
-func (s *Store) RevenueStreams(ctx context.Context, arg gen.AdvancedAnalyticsRevenueStreamsParams) ([]gen.MvRevenueStream, error) {
-	rows, err := s.queries.AdvancedAnalyticsRevenueStreams(ctx, arg)
+func (s *Store) RevenueStreams(ctx context.Context, fromMonth pgtype.Date) ([]gen.MvRevenueStream, error) {
+	rows, err := s.queries.AdvancedAnalyticsRevenueStreams(ctx, fromMonth)
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: revenue streams: %w", err)
 	}
@@ -63,8 +63,8 @@ func (s *Store) AdPerformance(ctx context.Context, arg gen.AdvancedAnalyticsAdPe
 }
 
 // NewsletterEngagement is an exported method.
-func (s *Store) NewsletterEngagement(ctx context.Context, arg gen.AdvancedAnalyticsNewsletterEngagementParams) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
-	rows, err := s.queries.AdvancedAnalyticsNewsletterEngagement(ctx, arg)
+func (s *Store) NewsletterEngagement(ctx context.Context, topN int32) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
+	rows, err := s.queries.AdvancedAnalyticsNewsletterEngagement(ctx, topN)
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: newsletter engagement: %w", err)
 	}

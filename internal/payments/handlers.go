@@ -1935,9 +1935,7 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := gen.New(tx)
-	if err := qtx.RemoveAllTracksFromPlan(ctx, gen.RemoveAllTracksFromPlanParams{
-		PlanID: planID,
-	}); err != nil {
+	if err := qtx.RemoveAllTracksFromPlan(ctx, planID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear plan tracks")
 		return
 	}

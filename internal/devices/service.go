@@ -203,10 +203,7 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 		return ErrNoDispatcher
 	}
 
-	tokens, err := s.store.GetActiveTokensForUser(ctx, gen.GetActiveDeviceTokensForUserParams{
-
-		UserID: userID,
-	})
+	tokens, err := s.store.GetActiveTokensForUser(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("devices: get active tokens: %w", err)
 	}
@@ -256,10 +253,7 @@ func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, device
 		return ErrNoDispatcher
 	}
 
-	token, err := s.store.GetTokenByDeviceID(ctx, gen.GetDeviceTokenByDeviceIDParams{
-
-		DeviceID: deviceID,
-	})
+	token, err := s.store.GetTokenByDeviceID(ctx, deviceID)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDeviceNotFound, err)
 	}

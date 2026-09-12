@@ -54,10 +54,8 @@ func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 	return row, nil
 }
 
-func (s *Store) getTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
-	row, err := s.read.GetEmailTemplateByType(ctx, gen.GetEmailTemplateByTypeParams{
-		Type: templateType,
-	})
+func (s *Store) getTemplateByType(ctx context.Context, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
+	row, err := s.read.GetEmailTemplateByType(ctx, templateType)
 	if err != nil {
 		return gen.GetEmailTemplateByTypeRow{}, fmt.Errorf("getting email template by type: %w", err)
 	}

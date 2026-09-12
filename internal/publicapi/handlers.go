@@ -713,10 +713,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total, err := h.Queries.CountTagsPaginated(r.Context(), gen.CountTagsPaginatedParams{
-
-		Q: q,
-	})
+	total, err := h.Queries.CountTagsPaginated(r.Context(), q)
 	if err != nil {
 		handleServiceError(w, err)
 		return

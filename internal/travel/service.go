@@ -731,7 +731,7 @@ func (s *Service) CreateProvider(ctx context.Context, arg gen.CreateTravelProvid
 		return ProviderInfo{}, fmt.Errorf("travel: create provider: %w", err)
 	}
 
-	s.invalidateSearchCache(ctx, arg.TenantID)
+	s.invalidateSearchCache(ctx)
 
 	return providerToInfo(p), nil
 }
@@ -749,7 +749,7 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 		return ProviderInfo{}, fmt.Errorf("travel: update provider: %w", err)
 	}
 
-	s.invalidateSearchCache(ctx, arg.TenantID)
+	s.invalidateSearchCache(ctx)
 
 	return providerToInfo(p), nil
 }
@@ -762,7 +762,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 		return fmt.Errorf("travel: delete provider: %w", err)
 	}
 
-	s.invalidateSearchCache(ctx, tenantID)
+	s.invalidateSearchCache(ctx)
 
 	return nil
 }
@@ -770,7 +770,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 // invalidateSearchCache flushes all cached travel search results for a tenant.
 // Uses SCAN (not KEYS) to find jc:travel:search:* keys and batch-deletes them.
 // Best-effort: errors are logged but do not fail the caller's operation.
-func (s *Service) invalidateSearchCache(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) invalidateSearchCache(ctx context.Context) {
 	if s.cache == nil {
 		return
 	}

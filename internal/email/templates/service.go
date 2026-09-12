@@ -57,8 +57,8 @@ func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 // GetTemplateByType is an exported method.
-func (s *Service) GetTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
-	return s.store.getTemplateByType(ctx, tenantID, templateType)
+func (s *Service) GetTemplateByType(ctx context.Context, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
+	return s.store.getTemplateByType(ctx, templateType)
 }
 
 // UpdateTemplate is an exported method.

@@ -56,11 +56,8 @@ func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (
 }
 
 // MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
-func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
-	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-
-		Column2: recordIDs,
-	})
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, recordIDs)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: map sources by record ids: %w", err)
 	}
