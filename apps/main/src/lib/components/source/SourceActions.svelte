@@ -42,6 +42,12 @@
 		}
 	}
 
+	async function openReport() {
+		if (!(await requireAuthOrRedirect())) return;
+		reportOpen = true;
+		open = false;
+	}
+
 	async function share() {
 		const url = `${page.url.origin}/sources/${source.slug}`;
 		try {
@@ -84,10 +90,7 @@
 			</DropdownMenu.Item>
 
 			<DropdownMenu.Item
-				onSelect={() => {
-					reportOpen = true;
-					open = false;
-				}}
+				onSelect={openReport}
 				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
 			>
 				<Flag class="h-4 w-4" />
