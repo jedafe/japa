@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { attachAuthorUsernames } from '$lib/server/users';
 import type { ContentArticle } from '$lib/types/content';
 import type { BlogSeries } from '$lib/types';
 
@@ -55,6 +56,7 @@ export const load: PageServerLoad = async (event) => {
 				? await apiList<ContentArticle>(ctx, `/blog/featured?${params.toString()}`)
 				: await apiList<ContentArticle>(ctx, `/blog?${params.toString()}`);
 		const { items, meta } = blogRes;
+		await attachAuthorUsernames(ctx, items);
 		return { items, meta, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q: '', loadError: false };
 	} catch {
 		return { items: [] as ContentArticle[], meta: null, series: [] as BlogSeries[], page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q: '', loadError: true };

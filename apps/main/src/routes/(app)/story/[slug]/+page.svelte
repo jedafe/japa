@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2, Eye, ExternalLink } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -243,19 +244,22 @@
 			<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 				{#if story.author_name}
 					{@const authorDisplay = story.author_display_name ?? story.author_name}
-					{@const authorHref = story.author_username ?? story.author_name}
-					<svelte:element
-						this={authorHref ? 'a' : 'span'}
-						href={authorHref ? `/u/${authorHref}` : undefined}
-						class="flex items-center gap-2 {authorHref ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+					<UserHoverCard
+						id={story.author_id ?? ''}
+						slug={story.author_username}
+						name={authorDisplay}
+						avatar={story.author_avatar}
+						variant="row"
 					>
-						{#if story.author_avatar}
-							<img src={story.author_avatar} alt="" class="h-9 w-9 rounded-full object-cover" />
-						{:else}
-							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorDisplay.charAt(0)}</span>
-						{/if}
-						<span class="font-medium text-[var(--color-text)]">{authorDisplay}</span>
-					</svelte:element>
+						{#snippet trigger()}
+							{#if story.author_avatar}
+								<img src={story.author_avatar} alt="" class="h-9 w-9 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorDisplay.charAt(0)}</span>
+							{/if}
+							<span class="font-medium text-[var(--color-text)]">{authorDisplay}</span>
+						{/snippet}
+					</UserHoverCard>
 					<span>·</span>
 				{/if}
 				<span>{publishedDate || relativeTime(story.created_at, new Date(), i18n.locale)}</span>

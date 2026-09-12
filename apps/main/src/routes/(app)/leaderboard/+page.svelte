@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { Trophy, Lock, Medal } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, SelectField, UrlTabs, type UrlTab } from '$lib/components/ui';
@@ -128,23 +129,31 @@
 										</span>
 									</td>
 									<td class="px-3 py-2">
-										<a href="/u/{entry.username}" class="flex items-center gap-2 text-[var(--color-text)] hover:underline">
-											{#if entry.avatar_url}
-												<img
-													src={entry.avatar_url}
-													alt=""
-													class="h-6 w-6 shrink-0 rounded-full object-cover"
-												/>
-											{/if}
-											<span class="min-w-0 truncate">
-												{#if entry.display_name}
-													<span class="font-medium">{entry.display_name}</span>
-													<span class="text-[var(--color-muted)]">@{entry.username}</span>
-												{:else}
-													@{entry.username}
+										<UserHoverCard
+											id={entry.user_id}
+											slug={entry.username}
+											name={entry.display_name ?? entry.username}
+											avatar={entry.avatar_url}
+											class="inline-flex w-fit min-w-0 max-w-full items-center gap-2 text-left text-[var(--color-text)] hover:underline"
+										>
+											{#snippet trigger()}
+												{#if entry.avatar_url}
+													<img
+														src={entry.avatar_url}
+														alt=""
+														class="h-6 w-6 shrink-0 rounded-full object-cover"
+													/>
 												{/if}
-											</span>
-										</a>
+												<span class="min-w-0 truncate">
+													{#if entry.display_name}
+														<span class="font-medium">{entry.display_name}</span>
+														<span class="text-[var(--color-muted)]">@{entry.username}</span>
+													{:else}
+														@{entry.username}
+													{/if}
+												</span>
+											{/snippet}
+										</UserHoverCard>
 									</td>
 									<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">
 										{entry.points.toLocaleString()}

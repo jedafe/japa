@@ -7,7 +7,10 @@
 	import { t } from '$lib/i18n';
 	import { SearchInput, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import type { PageData } from './$types';
+	import type { SearchResult } from '$lib/types/search';
 
 	let { data }: { data: PageData } = $props();
 
@@ -185,6 +188,65 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
+{#snippet resultCard(result: SearchResult, showTypeBadge = false)}
+	{@const item = result.item}
+	{@const title = resultTitle(result)}
+	{@const excerpt = resultExcerpt(result)}
+	{@const hoverType =
+		result.type === 'user' || result.type === 'space' || result.type === 'organization' || result.type === 'source'
+			? result.type
+			: null}
+	{#if hoverType}
+		{#if hoverType === 'user'}
+			<UserHoverCard
+				id={item.id}
+				slug={item.username}
+				name={item.display_name ?? item.username ?? item.name ?? title}
+				avatar={item.avatar_url}
+				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{#snippet trigger()}
+					{#if showTypeBadge}
+						<div class="mb-1 flex items-center gap-2">
+							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
+						</div>
+					{/if}
+					<h3 class="font-medium text-[var(--color-text)]">{title}</h3>
+					{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
+				{/snippet}
+			</UserHoverCard>
+		{:else}
+			<EntityHoverChip
+				type={hoverType}
+				id={item.id}
+				slug={item.slug}
+				name={item.name ?? title}
+				class="block w-full rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{#snippet trigger()}
+					{#if showTypeBadge}
+						<div class="mb-1 flex items-center gap-2">
+							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
+						</div>
+					{/if}
+					<h3 class="font-medium text-[var(--color-text)]">{title}</h3>
+					{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
+				{/snippet}
+			</EntityHoverChip>
+		{/if}
+	{:else}
+		<a href={resultURL(result)} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
+			{#if showTypeBadge}
+				<div class="mb-1 flex items-center gap-2">
+					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
+				</div>
+			{/if}
+			<h3 class="font-medium text-[var(--color-text)]">{title}</h3>
+			{#if excerpt}<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{excerpt}</p>{/if}
+		</a>
+	{/if}
+{/snippet}
+
 <div class="mx-auto max-w-full px-4 py-8">
 	<h1 class="mb-6 text-2xl font-bold text-[var(--color-text)]">{t('search.heading', 'Search')}</h1>
 
@@ -250,12 +312,7 @@
 						</h2>
 						<div class="space-y-2">
 							{#each group.results as result (resultID(result))}
-								<a href={resultURL(result)} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-									<h3 class="font-medium text-[var(--color-text)]">{resultTitle(result)}</h3>
-									{#if resultExcerpt(result)}
-										<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{resultExcerpt(result)}</p>
-									{/if}
-								</a>
+								{@render resultCard(result)}
 							{/each}
 							{#if group.total > group.results.length}
 								<button
@@ -274,15 +331,7 @@
 			<!-- Filtered flat list (§54 nested item shape) -->
 			<div class="space-y-3">
 				{#each data.results as result (resultID(result))}
-					<a href={resultURL(result)} class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]">
-						<div class="mb-1 flex items-center gap-2">
-							<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-text-subtle)]">{groupLabels[result.type] ?? result.type}</span>
-						</div>
-						<h3 class="font-medium text-[var(--color-text)]">{resultTitle(result)}</h3>
-						{#if resultExcerpt(result)}
-							<p class="mt-1 line-clamp-2 text-sm text-[var(--color-text-subtle)]">{resultExcerpt(result)}</p>
-						{/if}
-					</a>
+					{@render resultCard(result, true)}
 				{/each}
 			</div>
 		{/if}

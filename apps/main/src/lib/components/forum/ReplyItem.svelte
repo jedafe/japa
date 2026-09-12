@@ -5,6 +5,7 @@
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import type { ForumReply } from '$lib/types';
 	import VoteRail from './VoteRail.svelte';
 	// Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
@@ -222,7 +223,20 @@
 					{t('ama.pending', 'Pending')}
 				</span>
 			{/if}
-			<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+			{#if reply.is_anonymous}
+				<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+			{:else}
+				<UserHoverCard
+					id={reply.author_user_id}
+					slug={reply.author_username}
+					name={authorLabel}
+					variant="row"
+				>
+					{#snippet trigger()}
+						<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+					{/snippet}
+				</UserHoverCard>
+			{/if}
 			{#if time}<span>·</span><span>{time}</span>{/if}
 			{#if reply.is_edited}<span>·</span><span class="italic">{t('forum.edited', 'edited')}</span>{/if}
 			{#if reply.view_count > 0}<span>·</span><span class="italic">{reply.view_count} {t('forum.views', 'views')}</span>{/if}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { FileText, Users, Info, ShieldQuestion, Image as ImageIcon, GitCompare, ArrowRight } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -190,23 +191,28 @@
 				<ul class="space-y-2">
 					{#each data.members as member (member.user.id)}
 						<li>
-							<a
-								href="/u/{member.user.username}"
-								class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							<UserHoverCard
+								id={member.user.id}
+								slug={member.user.username}
+								name={member.user.display_name ?? member.user.username}
+								avatar={member.user.avatar_url}
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
-								{#if member.user.avatar_url}
-									<img src={member.user.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
-								{:else}
-									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-										{member.user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+								{#snippet trigger()}
+									{#if member.user.avatar_url}
+										<img src={member.user.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+									{:else}
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+											{member.user.display_name?.charAt(0)?.toUpperCase() ?? '?'}
+										</span>
+									{/if}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name}</span>
+										<span class="block text-xs text-[var(--color-muted)]">@{member.user.username}</span>
 									</span>
-								{/if}
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.user.display_name}</span>
-									<span class="block text-xs text-[var(--color-muted)]">@{member.user.username}</span>
-								</span>
-								<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{member.role}</span>
-							</a>
+									<span class="shrink-0 rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs capitalize text-[var(--color-text-subtle)]">{member.role}</span>
+								{/snippet}
+							</UserHoverCard>
 						</li>
 					{/each}
 				</ul>

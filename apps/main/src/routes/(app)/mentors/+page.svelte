@@ -2,6 +2,7 @@
 	// Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
@@ -272,28 +273,43 @@
 							: 'border-[var(--color-border)] bg-[var(--color-surface)]'}"
 					>
 						<div class="flex items-start gap-3">
-							<a href="/mentors/{mentor.username}" class="shrink-0">
-								{#if mentor.avatar_url}
-									<img
-										src={mentor.avatar_url}
-										alt={mentor.username}
-										class="h-12 w-12 rounded-full object-cover"
-									/>
-								{:else}
-									<div class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-										<GraduationCap size={20} />
-									</div>
-								{/if}
-							</a>
+							<UserHoverCard
+									id={mentor.user_id}
+									slug={mentor.username}
+									name={mentor.display_name ?? mentor.username}
+									avatar={mentor.avatar_url}
+									class="shrink-0"
+								>
+									{#snippet trigger()}
+										{#if mentor.avatar_url}
+											<img
+												src={mentor.avatar_url}
+												alt={mentor.username}
+												class="h-12 w-12 rounded-full object-cover"
+											/>
+										{:else}
+											<div class="grid h-12 w-12 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
+												<GraduationCap size={20} />
+											</div>
+										{/if}
+									{/snippet}
+								</UserHoverCard>
+
 
 							<div class="min-w-0 flex-1">
 								<div class="flex flex-wrap items-center gap-2">
-									<a
-										href="/mentors/{mentor.username}"
+									<UserHoverCard
+										id={mentor.user_id}
+										slug={mentor.username}
+										name={mentor.display_name ?? mentor.username}
+										avatar={mentor.avatar_url}
+										variant="row"
 										class="text-sm font-semibold text-[var(--color-text)] hover:text-[var(--color-primary)]"
 									>
-										{mentor.username}
-									</a>
+										{#snippet trigger()}
+											{mentor.username}
+										{/snippet}
+									</UserHoverCard>
 									{#if hasCapacity(mentor)}
 										<span class="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-600">
 											{t('mentors.spots_open', 'Spots open')}

@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { Dialog } from 'bits-ui';
 	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -524,22 +525,27 @@
 				<ul class="space-y-0.5">
 					{#each data.followers as f (f.id)}
 						<li>
-							<a
-								href="/u/{f.username}"
-								class="flex items-center gap-3 rounded-[var(--radius)] p-2 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							<UserHoverCard
+								id={f.id}
+								slug={f.username}
+								name={f.display_name}
+								avatar={f.avatar_url}
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
-								{#if f.avatar_url}
-									<img src={f.avatar_url} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
-								{:else}
-									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
-										{initials(f.display_name)}
+								{#snippet trigger()}
+									{#if f.avatar_url}
+										<img src={f.avatar_url} alt={f.display_name} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
+									{:else}
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
+											{initials(f.display_name)}
+										</span>
+									{/if}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{f.display_name}</span>
+										<span class="block truncate text-xs text-[var(--color-muted)]">@{f.username}</span>
 									</span>
-								{/if}
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{f.display_name}</span>
-									<span class="block truncate text-xs text-[var(--color-muted)]">@{f.username}</span>
-								</span>
-							</a>
+								{/snippet}
+							</UserHoverCard>
 						</li>
 					{/each}
 				</ul>

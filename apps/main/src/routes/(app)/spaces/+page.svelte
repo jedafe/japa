@@ -396,6 +396,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						fallback={space.name.charAt(0).toUpperCase()}
 						hueSeed={space.id}
 						meta={cardMeta}
+						entityType="space"
+						entityId={space.id}
+						entitySlug={space.slug}
+						entityCount={space.member_count}
 					>
 						{#snippet actions()}
 							{#if page.data.user}

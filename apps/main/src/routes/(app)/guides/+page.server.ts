@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGetEnvelope, apiList } from '$lib/server/api';
+import { attachAuthorUsernames } from '$lib/server/users';
 import type { BlogSeries, ContentTypeMeta } from '$lib/types';
 import type { GuideListItem } from '$lib/types/content';
 
@@ -71,6 +72,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const res = await apiGetEnvelope<GuideListItem[]>(ctx, `/content?${params.toString()}`);
 		items = res.data ?? [];
+		await attachAuthorUsernames(ctx, items);
 	} catch {
 		loadError = true;
 	}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import {
@@ -229,7 +230,22 @@
 								<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 									<div class="flex items-center justify-between gap-2">
 										<div class="flex items-center gap-2">
-											<span class="text-sm font-medium text-[var(--color-text)]">{reviewAuthorName(review)}</span>
+											{#if review.author_username}
+												<UserHoverCard
+													id={review.author_id}
+													slug={review.author_username}
+													name={review.author_display_name ?? review.author_username}
+													avatar={review.author_avatar_url}
+													variant="row"
+													class="inline-flex max-w-full items-center text-left text-sm font-medium text-[var(--color-text)] hover:underline"
+												>
+													{#snippet trigger()}
+														<span>{reviewAuthorName(review)}</span>
+													{/snippet}
+												</UserHoverCard>
+											{:else}
+												<span class="text-sm font-medium text-[var(--color-text)]">{reviewAuthorName(review)}</span>
+											{/if}
 											<span class="flex items-center gap-0.5 text-[var(--color-primary)]">
 												{#each Array(5) as _, i}
 													<Star

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getFreshness } from '$lib/api/jce';
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import {
 		deduplicateMatrix,
 		uniqueDimensions,
@@ -154,19 +155,22 @@
 
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if authorName}
-				{@const authorHref = comparison.content.author_username ?? comparison.content.author_name}
-				<svelte:element
-					this={authorHref ? 'a' : 'span'}
-					href={authorHref ? `/u/${authorHref}` : undefined}
-					class="flex items-center gap-2 {authorHref ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+				<UserHoverCard
+					id={comparison.content.author_id ?? ''}
+					slug={comparison.content.author_username}
+					name={authorName}
+					avatar={comparison.content.author_avatar_url}
+					variant="row"
 				>
-					{#if comparison.content.author_avatar_url}
-						<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
-					{:else}
-						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
-					{/if}
-					<span class="font-medium text-[var(--color-text)]">{authorName}</span>
-				</svelte:element>
+					{#snippet trigger()}
+						{#if comparison.content.author_avatar_url}
+							<img src={comparison.content.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+						{:else}
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+						{/if}
+						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
+					{/snippet}
+				</UserHoverCard>
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>

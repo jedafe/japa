@@ -2,6 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGetEnvelope, apiList } from '$lib/server/api';
+import { attachAuthorUsernames } from '$lib/server/users';
 import type { BlogSeries, GeoCountry, Story } from '$lib/types';
 import type { GuideListItem } from '$lib/types/content';
 
@@ -52,7 +53,9 @@ export const load: PageServerLoad = async (event) => {
 				ctx,
 				`/content?type=story&featured=1&page_size=${PAGE_SIZE}`
 			);
-			return { ...base, featured: res.data ?? [] };
+			const featured = res.data ?? [];
+			await attachAuthorUsernames(ctx, featured);
+			return { ...base, featured };
 		} catch {
 			return { ...base, loadError: true };
 		}
@@ -84,6 +87,7 @@ export const load: PageServerLoad = async (event) => {
 
 	try {
 		const { items, meta } = await apiList<Story>(ctx, `/stories?${params.toString()}`);
+		await attachAuthorUsernames(ctx, items);
 		return { ...base, stories: items, total: meta?.total, countries };
 	} catch {
 		return { ...base, loadError: true, countries };
