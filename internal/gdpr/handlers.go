@@ -567,7 +567,7 @@ func (s *Service) ListAuditLogsWithQuery(ctx context.Context, tenantID, actorUse
 	}
 
 	return s.store.listAuditLogs(ctx, gen.ListAuditLogsParams{
-		TenantID:    tenantID,
+
 		ActorUserID: actorFilter,
 		ActionType:  actionType,
 		TargetType:  targetTypePtr,

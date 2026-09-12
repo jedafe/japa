@@ -47,7 +47,7 @@ func (s *Service) EmitActivityEvent(ctx context.Context, tenantID, userID pgtype
 	}
 
 	event, err := s.store.insertActivityEvent(ctx, gen.InsertActivityEventParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		ActivityKey: input.ActivityKey,
 		Reference:   input.Reference,
@@ -162,9 +162,9 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// same source cannot both pass the count and insert.
 	if rule.OneTime {
 		count, err := qtx.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
-			TenantID: tenantID,
-			UserID:   event.UserID,
-			Source:   &event.ActivityKey,
+
+			UserID: event.UserID,
+			Source: &event.ActivityKey,
 		})
 		if err != nil {
 			return fmt.Errorf("checking one-time rule ledger: %w", err)
@@ -173,8 +173,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 		if count > 0 {
 			// Mark processed so the event is not retried.
 			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-				ID:       eventID,
-				TenantID: tenantID,
+				ID: eventID,
 			}); err != nil {
 				return fmt.Errorf("marking one-time event processed: %w", err)
 			}
@@ -192,7 +191,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Get current balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     event.UserID,
 		LedgerType: LedgerTypePoints,
 	})
@@ -238,8 +237,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			// badges/challenges. Mark processed inside the tx for exactly-once
 			// evaluation on any replay (same pattern as the one-time skip).
 			if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-				ID:       eventID,
-				TenantID: tenantID,
+				ID: eventID,
 			}); merr != nil {
 				return fmt.Errorf("marking capped event processed: %w", merr)
 			}
@@ -263,7 +261,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           event.UserID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationEarn,
@@ -280,8 +278,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 	// Mark event as processed within the transaction.
 	if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-		ID:       eventID,
-		TenantID: tenantID,
+		ID: eventID,
 	}); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}
@@ -357,10 +354,10 @@ func (s *Service) GetBalance(ctx context.Context, tenantID, userID pgtype.UUID) 
 // GetLifetimePoints returns the total positive points ever earned by a user
 // (never decreases — used for badges/tiers per Section 28). BUG-W-003.
 func (s *Service) GetLifetimePoints(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
-	return s.store.read.GetLifetimePoints(ctx, gen.GetLifetimePointsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.store.read.GetLifetimePoints(ctx,
+
+		userID,
+	)
 }
 
 // GetPointsBalance returns only the Points balance for a user. Used by the
@@ -440,7 +437,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Get current points balance within the transaction.
 	currentPoints, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypePoints,
 	})
@@ -469,7 +466,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Get current credits balance within the transaction.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -504,7 +501,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Insert points debit entry — only the points actually converted.
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypePoints,
 		Operation:        OperationConvert,
@@ -521,7 +518,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 
 	// Insert credits credit entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationConvert,
@@ -576,7 +573,7 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 
 	// Get current credits balance within the transaction.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -597,7 +594,7 @@ func (s *Service) SpendCredits(ctx context.Context, tenantID, userID pgtype.UUID
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationSpend,
@@ -666,7 +663,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 
 	// Get current balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     targetUserID,
 		LedgerType: input.LedgerType,
 	})
@@ -690,7 +687,7 @@ func (s *Service) AdminAdjustBalance(ctx context.Context, tenantID, actorUserID 
 
 	// Insert ledger entry
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           targetUserID,
 		LedgerType:       input.LedgerType,
 		Operation:        OperationAdminAdjust,
@@ -737,7 +734,7 @@ func (s *Service) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 			}
 
 			return gen.WalletSetting{
-				TenantID:            tenantID,
+
 				PointsToCreditsRate: &rate,
 				DailyEarningCap:     1000,
 				EnableEarning:       true,
@@ -807,7 +804,7 @@ func (s *Service) CreateOrUpdateActivityRule(ctx context.Context, tenantID pgtyp
 	}
 
 	return s.store.upsertActivityRule(ctx, gen.UpsertActivityRuleParams{
-		TenantID:    tenantID,
+
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   &input.IsEnabled,
@@ -829,8 +826,8 @@ func (s *Service) ToggleActivityRule(ctx context.Context, id, tenantID pgtype.UU
 // parameter — so PATCH /admin/wallet/rules/{id} updates the correct rule.
 func (s *Service) UpdateActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID, input CreateOrUpdateActivityRuleInput) (gen.ActivityPointRule, error) {
 	return s.store.updateActivityRuleByID(ctx, gen.UpdateActivityRuleByIDParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		PointValue:  input.PointValue,
 		IsEnabled:   &input.IsEnabled,
 		OneTime:     input.OneTime,

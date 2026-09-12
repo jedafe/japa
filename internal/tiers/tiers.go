@@ -56,10 +56,10 @@ var tierRanks = map[string]int{
 
 // ResolveUserTier returns the user's effective tier (regular/pro/business).
 func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	rank, err := s.store.read.ResolveUserTier(ctx, gen.ResolveUserTierParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	rank, err := s.store.read.ResolveUserTier(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return "", fmt.Errorf("resolve user tier: %w", err)
 	}
@@ -91,44 +91,44 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	// Remove the user from any existing tier-bearing group so the tier
 	// assignment is idempotent and cannot leave stale pro/business memberships.
-	if err := txStore.write.RemoveUserFromTierGroups(ctx, gen.RemoveUserFromTierGroupsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	}); err != nil {
+	if err := txStore.write.RemoveUserFromTierGroups(ctx,
+
+		userID,
+	); err != nil {
 		return fmt.Errorf("remove tier groups: %w", err)
 	}
 
 	// Always keep the user in the base members group.
-	baseID, err := txStore.read.GetTierGroupID(ctx, gen.GetTierGroupIDParams{
-		TenantID: tenantID,
-		Slug:     "members",
-	})
+	baseID, err := txStore.read.GetTierGroupID(ctx,
+
+		"members",
+	)
 	if err != nil {
 		return fmt.Errorf("lookup members group: %w", err)
 	}
 
 	if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GroupID:  baseID,
+
+		UserID:  userID,
+		GroupID: baseID,
 	}); err != nil {
 		return fmt.Errorf("add members group: %w", err)
 	}
 
 	// Add the target tier group unless the requested tier is the base tier.
 	if tier != "regular" {
-		targetID, err := txStore.read.GetTierGroupID(ctx, gen.GetTierGroupIDParams{
-			TenantID: tenantID,
-			Slug:     tier,
-		})
+		targetID, err := txStore.read.GetTierGroupID(ctx,
+
+			tier,
+		)
 		if err != nil {
 			return fmt.Errorf("lookup %s group: %w", tier, err)
 		}
 
 		if err := txStore.write.AddUserToTierGroup(ctx, gen.AddUserToTierGroupParams{
-			TenantID: tenantID,
-			UserID:   userID,
-			GroupID:  targetID,
+
+			UserID:  userID,
+			GroupID: targetID,
 		}); err != nil {
 			return fmt.Errorf("add %s group: %w", tier, err)
 		}

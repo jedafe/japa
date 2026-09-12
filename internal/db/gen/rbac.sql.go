@@ -12,19 +12,18 @@ import (
 )
 
 const addUserToGroup = `-- name: AddUserToGroup :exec
-INSERT INTO user_group_memberships (tenant_id, user_id, group_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (tenant_id, user_id, group_id) DO NOTHING
+INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2)
+
+ON CONFLICT (user_id, group_id) DO NOTHING
 `
 
 type AddUserToGroupParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GroupID  pgtype.UUID `json:"group_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 }
 
 func (q *Queries) AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error {
-	_, err := q.db.Exec(ctx, addUserToGroup, arg.TenantID, arg.UserID, arg.GroupID)
+	_, err := q.db.Exec(ctx, addUserToGroup, arg.UserID, arg.GroupID)
 	return err
 }
 
@@ -45,8 +44,8 @@ func (q *Queries) AssignPermissionToRole(ctx context.Context, arg AssignPermissi
 }
 
 const assignRoleToGroup = `-- name: AssignRoleToGroup :exec
-INSERT INTO group_roles (group_id, role_id)
-VALUES ($1, $2)
+INSERT INTO group_roles (group_id, role_id) VALUES ($1, $2)
+
 ON CONFLICT DO NOTHING
 `
 
@@ -64,7 +63,7 @@ const countGroupMembersByTenant = `-- name: CountGroupMembersByTenant :many
 SELECT ug.id AS group_id, COUNT(ugm.user_id)::int AS member_count
 FROM user_groups ug
 LEFT JOIN user_group_memberships ugm ON ugm.group_id = ug.id
-WHERE ug.tenant_id = $1
+
 GROUP BY ug.id
 `
 
@@ -73,8 +72,8 @@ type CountGroupMembersByTenantRow struct {
 	MemberCount int32       `json:"member_count"`
 }
 
-func (q *Queries) CountGroupMembersByTenant(ctx context.Context, tenantID pgtype.UUID) ([]CountGroupMembersByTenantRow, error) {
-	rows, err := q.db.Query(ctx, countGroupMembersByTenant, tenantID)
+func (q *Queries) CountGroupMembersByTenant(ctx context.Context) ([]CountGroupMembersByTenantRow, error) {
+	rows, err := q.db.Query(ctx, countGroupMembersByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +96,7 @@ const countGroupsByRoleAndTenant = `-- name: CountGroupsByRoleAndTenant :many
 SELECT gr.role_id, COUNT(gr.group_id)::int AS group_count
 FROM group_roles gr
 JOIN user_roles ur ON gr.role_id = ur.id
-WHERE ur.tenant_id = $1
+
 GROUP BY gr.role_id
 `
 
@@ -106,8 +105,8 @@ type CountGroupsByRoleAndTenantRow struct {
 	GroupCount int32       `json:"group_count"`
 }
 
-func (q *Queries) CountGroupsByRoleAndTenant(ctx context.Context, tenantID pgtype.UUID) ([]CountGroupsByRoleAndTenantRow, error) {
-	rows, err := q.db.Query(ctx, countGroupsByRoleAndTenant, tenantID)
+func (q *Queries) CountGroupsByRoleAndTenant(ctx context.Context) ([]CountGroupsByRoleAndTenantRow, error) {
+	rows, err := q.db.Query(ctx, countGroupsByRoleAndTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -129,60 +128,48 @@ func (q *Queries) CountGroupsByRoleAndTenant(ctx context.Context, tenantID pgtyp
 const countRoles = `-- name: CountRoles :one
 SELECT COUNT(*)::int AS count
 FROM user_roles
-WHERE tenant_id = $1 AND ($2::text = '' OR name ILIKE '%' || $2 || '%')
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%')
 `
 
-type CountRolesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Search   string      `json:"search"`
-}
-
-func (q *Queries) CountRoles(ctx context.Context, arg CountRolesParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countRoles, arg.TenantID, arg.Search)
+func (q *Queries) CountRoles(ctx context.Context, search string) (int32, error) {
+	row := q.db.QueryRow(ctx, countRoles, search)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createUserGroup = `-- name: CreateUserGroup :one
-INSERT INTO user_groups (tenant_id, name, slug, description)
-VALUES ($1, $2, $3, $4)
+INSERT INTO user_groups (name, slug, description) VALUES ($1, $2, $3)
+
 RETURNING id
 `
 
 type CreateUserGroupParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Name        string      `json:"name"`
-	Slug        string      `json:"slug"`
-	Description *string     `json:"description"`
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description"`
 }
 
 func (q *Queries) CreateUserGroup(ctx context.Context, arg CreateUserGroupParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createUserGroup,
-		arg.TenantID,
-		arg.Name,
-		arg.Slug,
-		arg.Description,
-	)
+	row := q.db.QueryRow(ctx, createUserGroup, arg.Name, arg.Slug, arg.Description)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const createUserRole = `-- name: CreateUserRole :one
-INSERT INTO user_roles (tenant_id, name, slug)
-VALUES ($1, $2, $3)
+INSERT INTO user_roles (name, slug) VALUES ($1, $2)
+
 RETURNING id
 `
 
 type CreateUserRoleParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Name     string      `json:"name"`
-	Slug     string      `json:"slug"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 func (q *Queries) CreateUserRole(ctx context.Context, arg CreateUserRoleParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, createUserRole, arg.TenantID, arg.Name, arg.Slug)
+	row := q.db.QueryRow(ctx, createUserRole, arg.Name, arg.Slug)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -202,75 +189,53 @@ func (q *Queries) DeleteRolePermissionsByRoleID(ctx context.Context, roleID pgty
 }
 
 const deleteUserGroup = `-- name: DeleteUserGroup :exec
-DELETE FROM user_groups WHERE tenant_id = $1 AND slug = $2 AND is_system = false
+DELETE FROM user_groups WHERE slug = $1 AND is_system = false
 `
 
-type DeleteUserGroupParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
-
-func (q *Queries) DeleteUserGroup(ctx context.Context, arg DeleteUserGroupParams) error {
-	_, err := q.db.Exec(ctx, deleteUserGroup, arg.TenantID, arg.Slug)
+func (q *Queries) DeleteUserGroup(ctx context.Context, slug string) error {
+	_, err := q.db.Exec(ctx, deleteUserGroup, slug)
 	return err
 }
 
 const deleteUserGroupByID = `-- name: DeleteUserGroupByID :exec
-DELETE FROM user_groups WHERE id = $1 AND tenant_id = $2 AND is_system = false
+DELETE FROM user_groups WHERE id = $1 AND is_system = false
 `
 
-type DeleteUserGroupByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteUserGroupByID(ctx context.Context, arg DeleteUserGroupByIDParams) error {
-	_, err := q.db.Exec(ctx, deleteUserGroupByID, arg.ID, arg.TenantID)
+func (q *Queries) DeleteUserGroupByID(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserGroupByID, id)
 	return err
 }
 
 const deleteUserRole = `-- name: DeleteUserRole :exec
-DELETE FROM user_roles WHERE id = $1 AND tenant_id = $2
+DELETE FROM user_roles WHERE id = $1
 `
-
-type DeleteUserRoleParams struct {
-	RoleID   pgtype.UUID `json:"role_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // role_permissions and group_roles have ON DELETE CASCADE from user_roles,
 // so deleting the user_roles row cleans up all dependent rows automatically.
-func (q *Queries) DeleteUserRole(ctx context.Context, arg DeleteUserRoleParams) error {
-	_, err := q.db.Exec(ctx, deleteUserRole, arg.RoleID, arg.TenantID)
+func (q *Queries) DeleteUserRole(ctx context.Context, roleID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserRole, roleID)
 	return err
 }
 
 const getUserGroupByID = `-- name: GetUserGroupByID :one
-SELECT id, tenant_id, name, slug, is_system, description
+SELECT id, name, slug, is_system, description
 FROM user_groups
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetUserGroupByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetUserGroupByIDRow struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
 	IsSystem    bool        `json:"is_system"`
 	Description *string     `json:"description"`
 }
 
-func (q *Queries) GetUserGroupByID(ctx context.Context, arg GetUserGroupByIDParams) (GetUserGroupByIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserGroupByID, arg.ID, arg.TenantID)
+func (q *Queries) GetUserGroupByID(ctx context.Context, id pgtype.UUID) (GetUserGroupByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserGroupByID, id)
 	var i GetUserGroupByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.IsSystem,
@@ -297,21 +262,20 @@ func (q *Queries) InsertRolePermissionByKey(ctx context.Context, arg InsertRoleP
 
 const isUserInGroup = `-- name: IsUserInGroup :one
 SELECT EXISTS(
-    SELECT 1
-    FROM user_group_memberships ugm
-    JOIN user_groups ug ON ugm.group_id = ug.id
-    WHERE ugm.tenant_id = $1 AND ugm.user_id = $2 AND ug.slug = $3
+ SELECT 1
+ FROM user_group_memberships ugm
+ JOIN user_groups ug ON ugm.group_id = ug.id
+ WHERE ugm.user_id = $1 AND ug.slug = $2
 ) AS in_group
 `
 
 type IsUserInGroupParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	UserID    pgtype.UUID `json:"user_id"`
 	GroupSlug string      `json:"group_slug"`
 }
 
 func (q *Queries) IsUserInGroup(ctx context.Context, arg IsUserInGroupParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isUserInGroup, arg.TenantID, arg.UserID, arg.GroupSlug)
+	row := q.db.QueryRow(ctx, isUserInGroup, arg.UserID, arg.GroupSlug)
 	var in_group bool
 	err := row.Scan(&in_group)
 	return in_group, err
@@ -355,7 +319,7 @@ func (q *Queries) ListAllPermissions(ctx context.Context) ([]ListAllPermissionsR
 const listAllRoles = `-- name: ListAllRoles :many
 SELECT id, name, slug
 FROM user_roles
-WHERE tenant_id = $1
+
 ORDER BY name
 `
 
@@ -365,8 +329,8 @@ type ListAllRolesRow struct {
 	Slug string      `json:"slug"`
 }
 
-func (q *Queries) ListAllRoles(ctx context.Context, tenantID pgtype.UUID) ([]ListAllRolesRow, error) {
-	rows, err := q.db.Query(ctx, listAllRoles, tenantID)
+func (q *Queries) ListAllRoles(ctx context.Context) ([]ListAllRolesRow, error) {
+	rows, err := q.db.Query(ctx, listAllRoles)
 	if err != nil {
 		return nil, err
 	}
@@ -419,15 +383,10 @@ const listGroupMembersWithUser = `-- name: ListGroupMembersWithUser :many
 SELECT u.id, u.username, COALESCE(up.display_name, '')
 FROM user_group_memberships ugm
 JOIN users u ON ugm.user_id = u.id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ugm.tenant_id
-WHERE ugm.group_id = $1 AND ugm.tenant_id = $2
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ugm.group_id = $1
 ORDER BY u.username
 `
-
-type ListGroupMembersWithUserParams struct {
-	GroupID  pgtype.UUID `json:"group_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type ListGroupMembersWithUserRow struct {
 	ID          pgtype.UUID `json:"id"`
@@ -435,8 +394,8 @@ type ListGroupMembersWithUserRow struct {
 	DisplayName string      `json:"display_name"`
 }
 
-func (q *Queries) ListGroupMembersWithUser(ctx context.Context, arg ListGroupMembersWithUserParams) ([]ListGroupMembersWithUserRow, error) {
-	rows, err := q.db.Query(ctx, listGroupMembersWithUser, arg.GroupID, arg.TenantID)
+func (q *Queries) ListGroupMembersWithUser(ctx context.Context, groupID pgtype.UUID) ([]ListGroupMembersWithUserRow, error) {
+	rows, err := q.db.Query(ctx, listGroupMembersWithUser, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +420,7 @@ FROM user_groups ug
 JOIN group_roles gr ON gr.group_id = ug.id
 JOIN role_permissions rp ON rp.role_id = gr.role_id
 JOIN permissions p ON rp.permission_id = p.id
-WHERE ug.tenant_id = $1
+
 ORDER BY ug.id, p.key
 `
 
@@ -470,8 +429,8 @@ type ListGroupPermissionsByTenantRow struct {
 	Key     string      `json:"key"`
 }
 
-func (q *Queries) ListGroupPermissionsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListGroupPermissionsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listGroupPermissionsByTenant, tenantID)
+func (q *Queries) ListGroupPermissionsByTenant(ctx context.Context) ([]ListGroupPermissionsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listGroupPermissionsByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +545,7 @@ SELECT rp.role_id, p.key, p.description
 FROM role_permissions rp
 JOIN user_roles ur ON rp.role_id = ur.id
 JOIN permissions p ON rp.permission_id = p.id
-WHERE ur.tenant_id = $1
+
 ORDER BY rp.role_id, p.key
 `
 
@@ -596,8 +555,8 @@ type ListRolePermissionsByTenantRow struct {
 	Description *string     `json:"description"`
 }
 
-func (q *Queries) ListRolePermissionsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListRolePermissionsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listRolePermissionsByTenant, tenantID)
+func (q *Queries) ListRolePermissionsByTenant(ctx context.Context) ([]ListRolePermissionsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listRolePermissionsByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -619,16 +578,15 @@ func (q *Queries) ListRolePermissionsByTenant(ctx context.Context, tenantID pgty
 const listRolesPaginated = `-- name: ListRolesPaginated :many
 SELECT id, name, slug
 FROM user_roles
-WHERE tenant_id = $1 AND ($2::text = '' OR name ILIKE '%' || $2 || '%')
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%')
 ORDER BY name
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListRolesPaginatedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Search     string `json:"search"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListRolesPaginatedRow struct {
@@ -638,12 +596,7 @@ type ListRolesPaginatedRow struct {
 }
 
 func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginatedParams) ([]ListRolesPaginatedRow, error) {
-	rows, err := q.db.Query(ctx, listRolesPaginated,
-		arg.TenantID,
-		arg.Search,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listRolesPaginated, arg.Search, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -663,23 +616,22 @@ func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginated
 }
 
 const listUserGroupsByTenant = `-- name: ListUserGroupsByTenant :many
-SELECT id, tenant_id, name, slug, is_system, description
+SELECT id, name, slug, is_system, description
 FROM user_groups
-WHERE tenant_id = $1
+
 ORDER BY name
 `
 
 type ListUserGroupsByTenantRow struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
 	IsSystem    bool        `json:"is_system"`
 	Description *string     `json:"description"`
 }
 
-func (q *Queries) ListUserGroupsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ListUserGroupsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listUserGroupsByTenant, tenantID)
+func (q *Queries) ListUserGroupsByTenant(ctx context.Context) ([]ListUserGroupsByTenantRow, error) {
+	rows, err := q.db.Query(ctx, listUserGroupsByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -689,7 +641,6 @@ func (q *Queries) ListUserGroupsByTenant(ctx context.Context, tenantID pgtype.UU
 		var i ListUserGroupsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.IsSystem,
@@ -712,20 +663,15 @@ JOIN user_groups ug ON ugm.group_id = ug.id
 JOIN group_roles gr ON gr.group_id = ug.id
 JOIN role_permissions rp ON rp.role_id = gr.role_id
 JOIN permissions p ON rp.permission_id = p.id
-WHERE ugm.tenant_id = $1 AND p.key = $2
+WHERE p.key = $1
 `
-
-type ListUserIDsByPermissionKeyParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	PermissionKey string      `json:"permission_key"`
-}
 
 // Returns the distinct user IDs that hold the given permission key via the
 // RBAC chain: user_group_memberships → user_groups → group_roles →
 // role_permissions → permissions. Used by report:notify_admin to fan out
 // moderation notifications to every user with reports.review.
-func (q *Queries) ListUserIDsByPermissionKey(ctx context.Context, arg ListUserIDsByPermissionKeyParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listUserIDsByPermissionKey, arg.TenantID, arg.PermissionKey)
+func (q *Queries) ListUserIDsByPermissionKey(ctx context.Context, permissionKey string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listUserIDsByPermissionKey, permissionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -746,8 +692,8 @@ func (q *Queries) ListUserIDsByPermissionKey(ctx context.Context, arg ListUserID
 
 const registerPermission = `-- name: RegisterPermission :exec
 
-INSERT INTO permissions (key, description)
-VALUES ($1, $2)
+INSERT INTO permissions (key, description) VALUES ($1, $2)
+
 ON CONFLICT (key) DO NOTHING
 `
 
@@ -795,42 +741,35 @@ func (q *Queries) RemoveRoleFromGroup(ctx context.Context, arg RemoveRoleFromGro
 
 const removeUserFromGroup = `-- name: RemoveUserFromGroup :exec
 DELETE FROM user_group_memberships
-WHERE tenant_id = $1 AND user_id = $2 AND group_id = $3
+WHERE user_id = $1 AND group_id = $2
 `
 
 type RemoveUserFromGroupParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GroupID  pgtype.UUID `json:"group_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 }
 
 func (q *Queries) RemoveUserFromGroup(ctx context.Context, arg RemoveUserFromGroupParams) error {
-	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.TenantID, arg.UserID, arg.GroupID)
+	_, err := q.db.Exec(ctx, removeUserFromGroup, arg.UserID, arg.GroupID)
 	return err
 }
 
 const resolveUserGroups = `-- name: ResolveUserGroups :many
-SELECT ug.id, ug.tenant_id, ug.name, ug.slug, ug.is_system
+SELECT ug.id, ug.name, ug.slug, ug.is_system
 FROM user_group_memberships ugm
 JOIN user_groups ug ON ugm.group_id = ug.id
-WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
+WHERE ugm.user_id = $1
 `
-
-type ResolveUserGroupsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type ResolveUserGroupsRow struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Name     string      `json:"name"`
 	Slug     string      `json:"slug"`
 	IsSystem bool        `json:"is_system"`
 }
 
-func (q *Queries) ResolveUserGroups(ctx context.Context, arg ResolveUserGroupsParams) ([]ResolveUserGroupsRow, error) {
-	rows, err := q.db.Query(ctx, resolveUserGroups, arg.TenantID, arg.UserID)
+func (q *Queries) ResolveUserGroups(ctx context.Context, userID pgtype.UUID) ([]ResolveUserGroupsRow, error) {
+	rows, err := q.db.Query(ctx, resolveUserGroups, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -840,7 +779,6 @@ func (q *Queries) ResolveUserGroups(ctx context.Context, arg ResolveUserGroupsPa
 		var i ResolveUserGroupsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.IsSystem,
@@ -864,19 +802,14 @@ JOIN group_roles gr ON gr.group_id = ug.id
 JOIN user_roles ur ON gr.role_id = ur.id
 JOIN role_permissions rp ON rp.role_id = ur.id
 JOIN permissions p ON rp.permission_id = p.id
-WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
+WHERE ugm.user_id = $1
 `
-
-type ResolveUserPermissionsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // =====================
 // RBAC Resolution (for rbac.go)
 // =====================
-func (q *Queries) ResolveUserPermissions(ctx context.Context, arg ResolveUserPermissionsParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, resolveUserPermissions, arg.TenantID, arg.UserID)
+func (q *Queries) ResolveUserPermissions(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, resolveUserPermissions, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +829,7 @@ func (q *Queries) ResolveUserPermissions(ctx context.Context, arg ResolveUserPer
 }
 
 const updateUserGroup = `-- name: UpdateUserGroup :exec
-UPDATE user_groups SET name = $1, slug = $2, description = $3 WHERE id = $4 AND tenant_id = $5
+UPDATE user_groups SET name = $1, slug = $2, description = $3 WHERE id = $4
 `
 
 type UpdateUserGroupParams struct {
@@ -904,7 +837,6 @@ type UpdateUserGroupParams struct {
 	Slug        string      `json:"slug"`
 	Description *string     `json:"description"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateUserGroup(ctx context.Context, arg UpdateUserGroupParams) error {
@@ -913,22 +845,20 @@ func (q *Queries) UpdateUserGroup(ctx context.Context, arg UpdateUserGroupParams
 		arg.Slug,
 		arg.Description,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
 
 const updateUserRole = `-- name: UpdateUserRole :exec
-UPDATE user_roles SET name = $1 WHERE id = $2 AND tenant_id = $3
+UPDATE user_roles SET name = $1 WHERE id = $2
 `
 
 type UpdateUserRoleParams struct {
-	Name     string      `json:"name"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Name string      `json:"name"`
+	ID   pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
-	_, err := q.db.Exec(ctx, updateUserRole, arg.Name, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateUserRole, arg.Name, arg.ID)
 	return err
 }

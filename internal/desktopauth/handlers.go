@@ -130,7 +130,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Queries.CreateRefreshToken(ctx, gen.CreateRefreshTokenParams{
-		TenantID:  keyCtx.TenantID,
+
 		UserID:    keyCtx.UserID,
 		TokenHash: refreshHash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},

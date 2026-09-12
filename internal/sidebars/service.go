@@ -161,7 +161,7 @@ func (s *Service) CreateSidebar(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	sb, err := s.store.createSidebar(ctx, gen.CreateSidebarParams{
-		TenantID:         tenantID,
+
 		App:              input.App,
 		Position:         input.Position,
 		Slug:             input.Slug,
@@ -219,7 +219,6 @@ func (s *Service) UpdateSidebar(ctx context.Context, id, tenantID pgtype.UUID, i
 		RequiredGroupIds: groupIDsJSON,
 		Status:           input.Status,
 		ID:               id,
-		TenantID:         tenantID,
 	})
 	if err != nil {
 		return gen.Sidebar{}, err
@@ -311,7 +310,7 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, tenantID, sidebarID p
 	}
 
 	widget, err := s.store.createSidebarWidget(ctx, gen.CreateSidebarWidgetParams{
-		TenantID:   tenantID,
+
 		SidebarID:  sidebarID,
 		WidgetType: input.WidgetType,
 		Label:      input.Label,
@@ -395,7 +394,6 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID, tenant
 		PermissionNode:   input.PermissionNode,
 		Status:           input.Status,
 		ID:               id,
-		TenantID:         tenantID,
 	})
 	if err != nil {
 		return gen.SidebarWidget{}, err

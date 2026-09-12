@@ -14,16 +14,11 @@ import (
 const countMutedSpaces = `-- name: CountMutedSpaces :one
 SELECT COUNT(*)::int AS count
 FROM space_mutes
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountMutedSpacesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountMutedSpaces(ctx context.Context, arg CountMutedSpacesParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMutedSpaces, arg.TenantID, arg.UserID)
+func (q *Queries) CountMutedSpaces(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMutedSpaces, userID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -32,16 +27,11 @@ func (q *Queries) CountMutedSpaces(ctx context.Context, arg CountMutedSpacesPara
 const countMutedUsers = `-- name: CountMutedUsers :one
 SELECT COUNT(*)::int AS count
 FROM user_mutes
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountMutedUsersParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountMutedUsers(ctx context.Context, arg CountMutedUsersParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMutedUsers, arg.TenantID, arg.UserID)
+func (q *Queries) CountMutedUsers(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMutedUsers, userID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -50,16 +40,11 @@ func (q *Queries) CountMutedUsers(ctx context.Context, arg CountMutedUsersParams
 const getMutedSpaceIDs = `-- name: GetMutedSpaceIDs :many
 SELECT space_id
 FROM space_mutes
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetMutedSpaceIDsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetMutedSpaceIDs(ctx context.Context, arg GetMutedSpaceIDsParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, getMutedSpaceIDs, arg.TenantID, arg.UserID)
+func (q *Queries) GetMutedSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getMutedSpaceIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -81,16 +66,11 @@ func (q *Queries) GetMutedSpaceIDs(ctx context.Context, arg GetMutedSpaceIDsPara
 const getMutedUserIDs = `-- name: GetMutedUserIDs :many
 SELECT muted_user_id
 FROM user_mutes
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetMutedUserIDsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetMutedUserIDs(ctx context.Context, arg GetMutedUserIDsParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, getMutedUserIDs, arg.TenantID, arg.UserID)
+func (q *Queries) GetMutedUserIDs(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getMutedUserIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -111,19 +91,18 @@ func (q *Queries) GetMutedUserIDs(ctx context.Context, arg GetMutedUserIDsParams
 
 const isSpaceMuted = `-- name: IsSpaceMuted :one
 SELECT EXISTS(
-    SELECT 1 FROM space_mutes
-    WHERE tenant_id = $1 AND user_id = $2 AND space_id = $3
+ SELECT 1 FROM space_mutes
+ WHERE user_id = $1 AND space_id = $2
 ) AS is_muted
 `
 
 type IsSpaceMutedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) IsSpaceMuted(ctx context.Context, arg IsSpaceMutedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isSpaceMuted, arg.TenantID, arg.UserID, arg.SpaceID)
+	row := q.db.QueryRow(ctx, isSpaceMuted, arg.UserID, arg.SpaceID)
 	var is_muted bool
 	err := row.Scan(&is_muted)
 	return is_muted, err
@@ -131,19 +110,18 @@ func (q *Queries) IsSpaceMuted(ctx context.Context, arg IsSpaceMutedParams) (boo
 
 const isUserMuted = `-- name: IsUserMuted :one
 SELECT EXISTS(
-    SELECT 1 FROM user_mutes
-    WHERE tenant_id = $1 AND user_id = $2 AND muted_user_id = $3
+ SELECT 1 FROM user_mutes
+ WHERE user_id = $1 AND muted_user_id = $2
 ) AS is_muted
 `
 
 type IsUserMutedParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	MutedUserID pgtype.UUID `json:"muted_user_id"`
 }
 
 func (q *Queries) IsUserMuted(ctx context.Context, arg IsUserMutedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isUserMuted, arg.TenantID, arg.UserID, arg.MutedUserID)
+	row := q.db.QueryRow(ctx, isUserMuted, arg.UserID, arg.MutedUserID)
 	var is_muted bool
 	err := row.Scan(&is_muted)
 	return is_muted, err
@@ -151,23 +129,22 @@ func (q *Queries) IsUserMuted(ctx context.Context, arg IsUserMutedParams) (bool,
 
 const listMutedSpaces = `-- name: ListMutedSpaces :many
 SELECT sm.id, sm.space_id, s.name AS space_name, s.slug AS space_slug,
-       s.level, s.space_type_id,
-       (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
-       sm.created_at
+ s.level, s.space_type_id,
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ sm.created_at
 FROM space_mutes sm
 JOIN spaces s ON s.id = sm.space_id
-LEFT JOIN users u ON u.id = $1 AND u.tenant_id = $2
-WHERE sm.tenant_id = $2 AND sm.user_id = $1
-  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR s.level = $4)
-  AND ($5::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $5)
+LEFT JOIN users u ON u.id = $1
+WHERE sm.user_id = $1
+ AND ($2::text = '' OR s.name ILIKE '%' || $2 || '%' OR s.slug ILIKE '%' || $2 || '%')
+ AND ($3::text = '' OR s.level = $3)
+ AND ($4::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $4)
 ORDER BY (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) DESC, sm.created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $6 OFFSET $5
 `
 
 type ListMutedSpacesParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Search      string      `json:"search"`
 	Level       string      `json:"level"`
 	SpaceTypeID pgtype.UUID `json:"space_type_id"`
@@ -189,7 +166,6 @@ type ListMutedSpacesRow struct {
 func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams) ([]ListMutedSpacesRow, error) {
 	rows, err := q.db.Query(ctx, listMutedSpaces,
 		arg.UserID,
-		arg.TenantID,
 		arg.Search,
 		arg.Level,
 		arg.SpaceTypeID,
@@ -225,19 +201,18 @@ func (q *Queries) ListMutedSpaces(ctx context.Context, arg ListMutedSpacesParams
 
 const listMutedUsers = `-- name: ListMutedUsers :many
 SELECT um.id, um.muted_user_id, u.username,
-       COALESCE(up.display_name, '') AS display_name,
-       COALESCE(up.avatar_url, '') AS avatar_url,
-       um.created_at
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ um.created_at
 FROM user_mutes um
 JOIN users u ON u.id = um.muted_user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = um.tenant_id
-WHERE um.tenant_id = $1 AND um.user_id = $2
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE um.user_id = $1
 ORDER BY um.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListMutedUsersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -253,12 +228,7 @@ type ListMutedUsersRow struct {
 }
 
 func (q *Queries) ListMutedUsers(ctx context.Context, arg ListMutedUsersParams) ([]ListMutedUsersRow, error) {
-	rows, err := q.db.Query(ctx, listMutedUsers,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMutedUsers, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -286,35 +256,33 @@ func (q *Queries) ListMutedUsers(ctx context.Context, arg ListMutedUsersParams) 
 
 const muteSpace = `-- name: MuteSpace :exec
 
-INSERT INTO space_mutes (tenant_id, user_id, space_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (tenant_id, user_id, space_id) DO NOTHING
+INSERT INTO space_mutes (user_id, space_id) VALUES ($1, $2)
+
+ON CONFLICT (user_id, space_id) DO NOTHING
 `
 
 type MuteSpaceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 // =====================
 // Space Mutes
 // =====================
 func (q *Queries) MuteSpace(ctx context.Context, arg MuteSpaceParams) error {
-	_, err := q.db.Exec(ctx, muteSpace, arg.TenantID, arg.UserID, arg.SpaceID)
+	_, err := q.db.Exec(ctx, muteSpace, arg.UserID, arg.SpaceID)
 	return err
 }
 
 const muteUser = `-- name: MuteUser :exec
 
 
-INSERT INTO user_mutes (tenant_id, user_id, muted_user_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (tenant_id, user_id, muted_user_id) DO NOTHING
+INSERT INTO user_mutes (user_id, muted_user_id) VALUES ($1, $2)
+
+ON CONFLICT (user_id, muted_user_id) DO NOTHING
 `
 
 type MuteUserParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	MutedUserID pgtype.UUID `json:"muted_user_id"`
 }
@@ -324,38 +292,36 @@ type MuteUserParams struct {
 // User Mutes
 // =====================
 func (q *Queries) MuteUser(ctx context.Context, arg MuteUserParams) error {
-	_, err := q.db.Exec(ctx, muteUser, arg.TenantID, arg.UserID, arg.MutedUserID)
+	_, err := q.db.Exec(ctx, muteUser, arg.UserID, arg.MutedUserID)
 	return err
 }
 
 const unmuteSpace = `-- name: UnmuteSpace :exec
 DELETE FROM space_mutes
-WHERE tenant_id = $1 AND user_id = $2 AND space_id = $3
+WHERE user_id = $1 AND space_id = $2
 `
 
 type UnmuteSpaceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) UnmuteSpace(ctx context.Context, arg UnmuteSpaceParams) error {
-	_, err := q.db.Exec(ctx, unmuteSpace, arg.TenantID, arg.UserID, arg.SpaceID)
+	_, err := q.db.Exec(ctx, unmuteSpace, arg.UserID, arg.SpaceID)
 	return err
 }
 
 const unmuteUser = `-- name: UnmuteUser :exec
 DELETE FROM user_mutes
-WHERE tenant_id = $1 AND user_id = $2 AND muted_user_id = $3
+WHERE user_id = $1 AND muted_user_id = $2
 `
 
 type UnmuteUserParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	MutedUserID pgtype.UUID `json:"muted_user_id"`
 }
 
 func (q *Queries) UnmuteUser(ctx context.Context, arg UnmuteUserParams) error {
-	_, err := q.db.Exec(ctx, unmuteUser, arg.TenantID, arg.UserID, arg.MutedUserID)
+	_, err := q.db.Exec(ctx, unmuteUser, arg.UserID, arg.MutedUserID)
 	return err
 }

@@ -34,7 +34,7 @@ func (s *Store) createComparisonType(ctx context.Context, p gen.CreateComparison
 }
 
 func (s *Store) getComparisonTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonTypeByIDRow, error) {
-	row, err := s.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetComparisonTypeByID(ctx, id)
 	if err != nil {
 		return gen.GetComparisonTypeByIDRow{}, fmt.Errorf("getting comparison type by ID: %w", err)
 	}
@@ -43,7 +43,7 @@ func (s *Store) getComparisonTypeByID(ctx context.Context, id, tenantID pgtype.U
 }
 
 func (s *Store) getComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
-	row, err := s.read.GetComparisonTypeBySlug(ctx, gen.GetComparisonTypeBySlugParams{Slug: slug, TenantID: tenantID})
+	row, err := s.read.GetComparisonTypeBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetComparisonTypeBySlugRow{}, fmt.Errorf("getting comparison type by slug: %w", err)
 	}
@@ -57,7 +57,7 @@ func (s *Store) listComparisonTypesByTenant(ctx context.Context, tenantID pgtype
 	}
 
 	rows, err := s.read.ListComparisonTypesByTenant(ctx, gen.ListComparisonTypesByTenantParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -78,7 +78,7 @@ func (s *Store) updateComparisonType(ctx context.Context, p gen.UpdateComparison
 }
 
 func (s *Store) deleteComparisonType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonType(ctx, gen.DeleteComparisonTypeParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteComparisonType(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison type: %w", err)
 	}
 
@@ -98,10 +98,9 @@ func (s *Store) setComparisonTypeAccess(ctx context.Context, p gen.SetComparison
 }
 
 func (s *Store) listComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
-	rows, err := s.read.ListComparisonTypeAccess(ctx, gen.ListComparisonTypeAccessParams{
-		TypeID:   typeID,
-		TenantID: tenantID,
-	})
+	rows, err := s.read.ListComparisonTypeAccess(ctx,
+		typeID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison type access: %w", err)
 	}
@@ -111,8 +110,8 @@ func (s *Store) listComparisonTypeAccess(ctx context.Context, typeID, tenantID p
 
 func (s *Store) deleteComparisonTypeAccess(ctx context.Context, typeID, tenantID, userGroupID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonTypeAccess(ctx, gen.DeleteComparisonTypeAccessParams{
-		TypeID:      typeID,
-		TenantID:    tenantID,
+		TypeID: typeID,
+
 		UserGroupID: userGroupID,
 	}); err != nil {
 		return fmt.Errorf("deleting comparison type access: %w", err)
@@ -135,10 +134,9 @@ func (s *Store) createComparisonItem(ctx context.Context, p gen.CreateComparison
 }
 
 func (s *Store) listComparisonItemsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonItemsByContentRow, error) {
-	rows, err := s.read.ListComparisonItemsByContent(ctx, gen.ListComparisonItemsByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	rows, err := s.read.ListComparisonItemsByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison items: %w", err)
 	}
@@ -147,7 +145,7 @@ func (s *Store) listComparisonItemsByContent(ctx context.Context, contentID, ten
 }
 
 func (s *Store) getComparisonItemByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonItemByIDRow, error) {
-	row, err := s.read.GetComparisonItemByID(ctx, gen.GetComparisonItemByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetComparisonItemByID(ctx, id)
 	if err != nil {
 		return gen.GetComparisonItemByIDRow{}, fmt.Errorf("getting comparison item: %w", err)
 	}
@@ -165,7 +163,7 @@ func (s *Store) updateComparisonItem(ctx context.Context, p gen.UpdateComparison
 }
 
 func (s *Store) deleteComparisonItem(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonItem(ctx, gen.DeleteComparisonItemParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteComparisonItem(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison item: %w", err)
 	}
 
@@ -176,8 +174,8 @@ func (s *Store) reorderComparisonItems(ctx context.Context, id, contentID, tenan
 	if err := s.write.ReorderComparisonItems(ctx, gen.ReorderComparisonItemsParams{
 		ID:        id,
 		ContentID: contentID,
-		TenantID:  tenantID,
-		Position:  position,
+
+		Position: position,
 	}); err != nil {
 		return fmt.Errorf("reordering comparison items: %w", err)
 	}
@@ -199,10 +197,9 @@ func (s *Store) createComparisonDimension(ctx context.Context, p gen.CreateCompa
 }
 
 func (s *Store) listComparisonDimensionsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonDimensionsByContentRow, error) {
-	rows, err := s.read.ListComparisonDimensionsByContent(ctx, gen.ListComparisonDimensionsByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	rows, err := s.read.ListComparisonDimensionsByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison dimensions: %w", err)
 	}
@@ -211,7 +208,7 @@ func (s *Store) listComparisonDimensionsByContent(ctx context.Context, contentID
 }
 
 func (s *Store) getComparisonDimensionByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonDimensionByIDRow, error) {
-	row, err := s.read.GetComparisonDimensionByID(ctx, gen.GetComparisonDimensionByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetComparisonDimensionByID(ctx, id)
 	if err != nil {
 		return gen.GetComparisonDimensionByIDRow{}, fmt.Errorf("getting comparison dimension: %w", err)
 	}
@@ -229,7 +226,7 @@ func (s *Store) updateComparisonDimension(ctx context.Context, p gen.UpdateCompa
 }
 
 func (s *Store) deleteComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonDimension(ctx, gen.DeleteComparisonDimensionParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteComparisonDimension(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison dimension: %w", err)
 	}
 
@@ -240,8 +237,8 @@ func (s *Store) reorderComparisonDimensions(ctx context.Context, id, contentID, 
 	if err := s.write.ReorderComparisonDimensions(ctx, gen.ReorderComparisonDimensionsParams{
 		ID:        id,
 		ContentID: contentID,
-		TenantID:  tenantID,
-		Position:  position,
+
+		Position: position,
 	}); err != nil {
 		return fmt.Errorf("reordering comparison dimensions: %w", err)
 	}
@@ -272,10 +269,9 @@ func (s *Store) upsertComparisonValueWithMetadata(ctx context.Context, p gen.Ups
 }
 
 func (s *Store) listComparisonValuesByDimension(ctx context.Context, dimensionID, tenantID pgtype.UUID) ([]gen.ListComparisonValuesByDimensionRow, error) {
-	rows, err := s.read.ListComparisonValuesByDimension(ctx, gen.ListComparisonValuesByDimensionParams{
-		DimensionID: dimensionID,
-		TenantID:    tenantID,
-	})
+	rows, err := s.read.ListComparisonValuesByDimension(ctx,
+		dimensionID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison values: %w", err)
 	}
@@ -287,7 +283,6 @@ func (s *Store) getComparisonValue(ctx context.Context, dimensionID, itemID, ten
 	row, err := s.read.GetComparisonValue(ctx, gen.GetComparisonValueParams{
 		DimensionID: dimensionID,
 		ItemID:      itemID,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		return gen.ComparisonValue{}, fmt.Errorf("getting comparison value: %w", err)
@@ -297,10 +292,9 @@ func (s *Store) getComparisonValue(ctx context.Context, dimensionID, itemID, ten
 }
 
 func (s *Store) deleteComparisonValuesByDimension(ctx context.Context, dimensionID, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonValuesByDimension(ctx, gen.DeleteComparisonValuesByDimensionParams{
-		DimensionID: dimensionID,
-		TenantID:    tenantID,
-	}); err != nil {
+	if err := s.write.DeleteComparisonValuesByDimension(ctx,
+		dimensionID,
+	); err != nil {
 		return fmt.Errorf("deleting comparison values by dimension: %w", err)
 	}
 
@@ -308,10 +302,9 @@ func (s *Store) deleteComparisonValuesByDimension(ctx context.Context, dimension
 }
 
 func (s *Store) getComparisonValuesByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ComparisonValue, error) {
-	rows, err := s.read.GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	rows, err := s.read.GetComparisonValuesByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting comparison values by content: %w", err)
 	}
@@ -348,10 +341,9 @@ func (s *Store) listComparisonsFilteredAdmin(ctx context.Context, p gen.ListComp
 // countComparisonItemsByType returns the number of comparison_items linked to a
 // given type_id — used by DeleteComparisonType to guard against in-use deletion.
 func (s *Store) countComparisonItemsByType(ctx context.Context, typeID, tenantID pgtype.UUID) (int32, error) {
-	count, err := s.read.CountComparisonItemsByType(ctx, gen.CountComparisonItemsByTypeParams{
-		TypeID:   typeID,
-		TenantID: tenantID,
-	})
+	count, err := s.read.CountComparisonItemsByType(ctx,
+		typeID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting comparison items by type: %w", err)
 	}
@@ -361,10 +353,9 @@ func (s *Store) countComparisonItemsByType(ctx context.Context, typeID, tenantID
 
 // listUserGroupIDsForUser returns the user_group_ids the user belongs to.
 func (s *Store) listUserGroupIDsForUser(ctx context.Context, userID, tenantID pgtype.UUID) ([]string, error) {
-	ids, err := s.read.GetUserGroupIDs(ctx, gen.GetUserGroupIDsParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	ids, err := s.read.GetUserGroupIDs(ctx,
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting user group IDs: %w", err)
 	}

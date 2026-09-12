@@ -9,9 +9,8 @@
 
 -- name: GetActiveAssessmentForm :one
 SELECT * FROM forms
-WHERE tenant_id = @tenant_id
-  AND form_type = 'assessment'
-  AND status = 'active'
+WHERE form_type = 'assessment'
+ AND status = 'active'
 ORDER BY created_at DESC
 LIMIT 1;
 
@@ -21,7 +20,7 @@ LIMIT 1;
 
 -- name: GetAssessmentFormByID :one
 SELECT * FROM forms
-WHERE tenant_id = @tenant_id AND id = @id AND form_type = 'assessment';
+WHERE id = @id AND form_type = 'assessment';
 
 -- =====================================================================
 -- Update the assessment form's scoring_config.
@@ -30,7 +29,7 @@ WHERE tenant_id = @tenant_id AND id = @id AND form_type = 'assessment';
 -- name: UpdateAssessmentFormScoring :one
 UPDATE forms
 SET scoring_config = @scoring_config
-WHERE tenant_id = @tenant_id AND id = @id AND form_type = 'assessment'
+WHERE id = @id AND form_type = 'assessment'
 RETURNING *;
 
 -- =====================================================================
@@ -38,8 +37,8 @@ RETURNING *;
 -- =====================================================================
 
 -- name: CreateAssessmentSubmission :one
-INSERT INTO form_submissions (form_id, tenant_id, user_id, field_values, status)
-VALUES (@form_id, @tenant_id, sqlc.narg(user_id), @field_values, 'new')
+INSERT INTO form_submissions (form_id, user_id, field_values, status) VALUES (@form_id, sqlc.narg(user_id), @field_values, 'new')
+
 RETURNING *;
 
 -- =====================================================================
@@ -47,14 +46,8 @@ RETURNING *;
 -- =====================================================================
 
 -- name: CreateAssessmentResult :one
-INSERT INTO assessment_results (
-    tenant_id, user_id, submission_id, total_score,
-    dimension_scores, threshold_label, roadmap_content
-)
-VALUES (
-    @tenant_id, sqlc.narg(user_id), @submission_id, @total_score,
-    @dimension_scores, @threshold_label, @roadmap_content
-)
+INSERT INTO assessment_results (user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content) VALUES (sqlc.narg(user_id), @submission_id, @total_score, @dimension_scores, @threshold_label, @roadmap_content)
+
 RETURNING *;
 
 -- =====================================================================
@@ -63,7 +56,7 @@ RETURNING *;
 
 -- name: GetAssessmentResultByID :one
 SELECT * FROM assessment_results
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- =====================================================================
 -- Get a single assessment result by submission_id. Used by the public
@@ -74,7 +67,7 @@ WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: GetAssessmentResultBySubmission :one
 SELECT * FROM assessment_results
-WHERE tenant_id = @tenant_id AND submission_id = @submission_id;
+WHERE submission_id = @submission_id;
 
 -- =====================================================================
 -- List a user's assessment results (history).
@@ -82,14 +75,14 @@ WHERE tenant_id = @tenant_id AND submission_id = @submission_id;
 
 -- name: ListUserAssessmentResults :many
 SELECT * FROM assessment_results
-WHERE tenant_id = @tenant_id AND user_id = @user_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountUserAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
-WHERE tenant_id = @tenant_id AND user_id = @user_id;
+WHERE user_id = @user_id;
 
 -- =====================================================================
 -- Count prior assessment results for a user and form. Used to award
@@ -100,9 +93,8 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id;
 SELECT COUNT(*) AS count
 FROM assessment_results ar
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = @tenant_id
-  AND ar.user_id = @user_id
-  AND fs.form_id = @form_id;
+WHERE ar.user_id = @user_id
+ AND fs.form_id = @form_id;
 
 -- =====================================================================
 -- Admin: list all users' results (paginated, filterable by score range).
@@ -110,24 +102,22 @@ WHERE ar.tenant_id = @tenant_id
 
 -- name: AdminListAssessmentResults :many
 SELECT
-    ar.*,
-    u.username AS username,
-    fs.field_values AS submission_values
+ ar.*,
+ u.username AS username,
+ fs.field_values AS submission_values
 FROM assessment_results ar
 LEFT JOIN users u ON u.id = ar.user_id
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = @tenant_id
-  AND (@min_score::int = 0 OR ar.total_score >= @min_score)
-  AND (@max_score::int = 0 OR ar.total_score <= @max_score)
+WHERE (@min_score::int = 0 OR ar.total_score >= @min_score)
+ AND (@max_score::int = 0 OR ar.total_score <= @max_score)
 ORDER BY ar.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
-WHERE tenant_id = @tenant_id
-  AND (@min_score::int = 0 OR total_score >= @min_score)
-  AND (@max_score::int = 0 OR total_score <= @max_score);
+WHERE (@min_score::int = 0 OR total_score >= @min_score)
+ AND (@max_score::int = 0 OR total_score <= @max_score);
 
 -- =====================================================================
 -- Admin: score distribution — count of results per threshold label.
@@ -135,11 +125,11 @@ WHERE tenant_id = @tenant_id
 
 -- name: AdminAssessmentScoreDistribution :many
 SELECT
-    threshold_label,
-    COUNT(*) AS count,
-    AVG(total_score)::int AS avg_score
+ threshold_label,
+ COUNT(*) AS count,
+ AVG(total_score)::int AS avg_score
 FROM assessment_results
-WHERE tenant_id = @tenant_id
+
 GROUP BY threshold_label
 ORDER BY avg_score DESC;
 
@@ -149,14 +139,13 @@ ORDER BY avg_score DESC;
 
 -- name: AdminAssessmentCompletionStats :one
 SELECT
-    COUNT(DISTINCT fs.id) AS total_submissions,
-    COUNT(DISTINCT ar.id) AS total_scored,
-    COALESCE(AVG(ar.total_score), 0)::int AS avg_score
+ COUNT(DISTINCT fs.id) AS total_submissions,
+ COUNT(DISTINCT ar.id) AS total_scored,
+ COALESCE(AVG(ar.total_score), 0)::int AS avg_score
 FROM form_submissions fs
 LEFT JOIN assessment_results ar ON ar.submission_id = fs.id
 JOIN forms f ON f.id = fs.form_id
-WHERE fs.tenant_id = @tenant_id
-  AND f.form_type = 'assessment';
+WHERE f.form_type = 'assessment';
 
 -- =====================================================================
 -- Get form fields for an assessment form (for scoring engine to resolve
@@ -167,7 +156,7 @@ WHERE fs.tenant_id = @tenant_id
 -- name: GetAssessmentFormFields :many
 SELECT cf.*
 FROM custom_field_group_assignments a
-JOIN custom_fields cf ON cf.group_id = a.group_id AND cf.tenant_id = @tenant_id
+JOIN custom_fields cf ON cf.group_id = a.group_id
 WHERE a.entity_class = 'form' AND a.entity_id = @form_id
 ORDER BY cf.position;
 
@@ -200,13 +189,13 @@ WHERE user_id IS NULL AND created_at < now() - ($1::int || ' hours')::interval;
 
 -- name: GetLatestAssessmentJourneyContext :one
 SELECT
-    ar.roadmap_content,
-    ar.dimension_scores,
-    ar.threshold_label,
-    ar.created_at,
-    fs.field_values AS submission_values
+ ar.roadmap_content,
+ ar.dimension_scores,
+ ar.threshold_label,
+ ar.created_at,
+ fs.field_values AS submission_values
 FROM assessment_results ar
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = @tenant_id AND ar.user_id = @user_id
+WHERE ar.user_id = @user_id
 ORDER BY ar.created_at DESC
 LIMIT 1;

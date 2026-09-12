@@ -236,7 +236,7 @@ func (s *Service) Propose(ctx context.Context, tenantID, userID pgtype.UUID, inp
 	}
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:            tenantID,
+
 		Name:                input.Name,
 		Domain:              input.Domain,
 		SourceUrl:           input.SourceURL,
@@ -294,7 +294,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 	slug := s.uniqueSlug(ctx, tenantID, *title)
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:           tenantID,
+
 		Name:               *title,
 		Slug:               &slug,
 		Domain:             domain,
@@ -345,7 +345,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 	}
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:           tenantID,
+
 		Name:               name,
 		Slug:               &slug,
 		Domain:             domain,
@@ -389,7 +389,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 	slug := s.uniqueSlug(ctx, tenantID, *sourceName)
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:           tenantID,
+
 		Name:               *sourceName,
 		Slug:               &slug,
 		Domain:             domain,

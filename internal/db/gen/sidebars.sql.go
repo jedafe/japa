@@ -15,43 +15,39 @@ const bulkUpdateSidebarWidgetSortOrder = `-- name: BulkUpdateSidebarWidgetSortOr
 UPDATE sidebar_widgets
 SET sort_order = u.sort_order, updated_at = now()
 FROM (
-    SELECT unnest($2::uuid[]) AS id, unnest($3::int[]) AS sort_order
+ SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS sort_order
 ) AS u
-WHERE sidebar_widgets.id = u.id AND sidebar_widgets.tenant_id = $1
+WHERE sidebar_widgets.id = u.id
 `
 
 type BulkUpdateSidebarWidgetSortOrderParams struct {
-	TenantID   pgtype.UUID   `json:"tenant_id"`
 	Ids        []pgtype.UUID `json:"ids"`
 	SortOrders []int32       `json:"sort_orders"`
 }
 
 func (q *Queries) BulkUpdateSidebarWidgetSortOrder(ctx context.Context, arg BulkUpdateSidebarWidgetSortOrderParams) error {
-	_, err := q.db.Exec(ctx, bulkUpdateSidebarWidgetSortOrder, arg.TenantID, arg.Ids, arg.SortOrders)
+	_, err := q.db.Exec(ctx, bulkUpdateSidebarWidgetSortOrder, arg.Ids, arg.SortOrders)
 	return err
 }
 
 const countSidebars = `-- name: CountSidebars :one
 SELECT COUNT(*)::int AS count
 FROM sidebars
-WHERE tenant_id = $1
-  AND ($2::text = '' OR app = $2)
-  AND ($3::text = '' OR position = $3)
-  AND ($4::text = '' OR status = $4)
-  AND ($5::text = '' OR name ILIKE '%' || $5 || '%' OR slug ILIKE '%' || $5 || '%')
+WHERE ($1::text = '' OR app = $1)
+ AND ($2::text = '' OR position = $2)
+ AND ($3::text = '' OR status = $3)
+ AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
 `
 
 type CountSidebarsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	App      string      `json:"app"`
-	Position string      `json:"position"`
-	Status   string      `json:"status"`
-	Q        string      `json:"q"`
+	App      string `json:"app"`
+	Position string `json:"position"`
+	Status   string `json:"status"`
+	Q        string `json:"q"`
 }
 
 func (q *Queries) CountSidebars(ctx context.Context, arg CountSidebarsParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countSidebars,
-		arg.TenantID,
 		arg.App,
 		arg.Position,
 		arg.Status,
@@ -63,29 +59,39 @@ func (q *Queries) CountSidebars(ctx context.Context, arg CountSidebarsParams) (i
 }
 
 const createSidebar = `-- name: CreateSidebar :one
-INSERT INTO sidebars (tenant_id, app, position, slug, name, page_pattern,
-    visibility, required_group_ids, status)
-VALUES ($1, $2, $3, $4, $5, $6,
-    $7, $8, $9)
-RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
-    required_group_ids, status, created_at, updated_at
+INSERT INTO sidebars (app, position, slug, name, page_pattern, visibility, required_group_ids, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+
+RETURNING id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 `
 
 type CreateSidebarParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
-	App              string      `json:"app"`
-	Position         string      `json:"position"`
-	Slug             string      `json:"slug"`
-	Name             string      `json:"name"`
-	PagePattern      string      `json:"page_pattern"`
-	Visibility       string      `json:"visibility"`
-	RequiredGroupIds []byte      `json:"required_group_ids"`
-	Status           string      `json:"status"`
+	App              string `json:"app"`
+	Position         string `json:"position"`
+	Slug             string `json:"slug"`
+	Name             string `json:"name"`
+	PagePattern      string `json:"page_pattern"`
+	Visibility       string `json:"visibility"`
+	RequiredGroupIds []byte `json:"required_group_ids"`
+	Status           string `json:"status"`
 }
 
-func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (Sidebar, error) {
+type CreateSidebarRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (CreateSidebarRow, error) {
 	row := q.db.QueryRow(ctx, createSidebar,
-		arg.TenantID,
 		arg.App,
 		arg.Position,
 		arg.Slug,
@@ -95,10 +101,9 @@ func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (S
 		arg.RequiredGroupIds,
 		arg.Status,
 	)
-	var i Sidebar
+	var i CreateSidebarRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -114,18 +119,14 @@ func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (S
 }
 
 const createSidebarWidget = `-- name: CreateSidebarWidget :one
-INSERT INTO sidebar_widgets (tenant_id, sidebar_id, widget_type, label, props,
-    sort_order, visibility, required_group_ids, permission_node, status)
-VALUES ($1, $2, $3, $4, $5,
-    $6, $7, $8, $9,
-    $10)
-RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-    visibility, required_group_ids, permission_node, status,
-    created_at, updated_at
+INSERT INTO sidebar_widgets (sidebar_id, widget_type, label, props, sort_order, visibility, required_group_ids, permission_node, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+
+RETURNING id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 `
 
 type CreateSidebarWidgetParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	SidebarID        pgtype.UUID `json:"sidebar_id"`
 	WidgetType       string      `json:"widget_type"`
 	Label            string      `json:"label"`
@@ -137,9 +138,23 @@ type CreateSidebarWidgetParams struct {
 	Status           string      `json:"status"`
 }
 
-func (q *Queries) CreateSidebarWidget(ctx context.Context, arg CreateSidebarWidgetParams) (SidebarWidget, error) {
+type CreateSidebarWidgetRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateSidebarWidget(ctx context.Context, arg CreateSidebarWidgetParams) (CreateSidebarWidgetRow, error) {
 	row := q.db.QueryRow(ctx, createSidebarWidget,
-		arg.TenantID,
 		arg.SidebarID,
 		arg.WidgetType,
 		arg.Label,
@@ -150,10 +165,9 @@ func (q *Queries) CreateSidebarWidget(ctx context.Context, arg CreateSidebarWidg
 		arg.PermissionNode,
 		arg.Status,
 	)
-	var i SidebarWidget
+	var i CreateSidebarWidgetRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,
@@ -171,52 +185,50 @@ func (q *Queries) CreateSidebarWidget(ctx context.Context, arg CreateSidebarWidg
 
 const deleteSidebar = `-- name: DeleteSidebar :exec
 DELETE FROM sidebars
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteSidebarParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteSidebar(ctx context.Context, arg DeleteSidebarParams) error {
-	_, err := q.db.Exec(ctx, deleteSidebar, arg.ID, arg.TenantID)
+func (q *Queries) DeleteSidebar(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSidebar, id)
 	return err
 }
 
 const deleteSidebarWidget = `-- name: DeleteSidebarWidget :exec
 DELETE FROM sidebar_widgets
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteSidebarWidgetParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteSidebarWidget(ctx context.Context, arg DeleteSidebarWidgetParams) error {
-	_, err := q.db.Exec(ctx, deleteSidebarWidget, arg.ID, arg.TenantID)
+func (q *Queries) DeleteSidebarWidget(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSidebarWidget, id)
 	return err
 }
 
 const getSidebarByID = `-- name: GetSidebarByID :one
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
+SELECT id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 FROM sidebars
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetSidebarByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetSidebarByIDRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetSidebarByID(ctx context.Context, arg GetSidebarByIDParams) (Sidebar, error) {
-	row := q.db.QueryRow(ctx, getSidebarByID, arg.ID, arg.TenantID)
-	var i Sidebar
+func (q *Queries) GetSidebarByID(ctx context.Context, id pgtype.UUID) (GetSidebarByIDRow, error) {
+	row := q.db.QueryRow(ctx, getSidebarByID, id)
+	var i GetSidebarByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -232,24 +244,33 @@ func (q *Queries) GetSidebarByID(ctx context.Context, arg GetSidebarByIDParams) 
 }
 
 const getSidebarWidget = `-- name: GetSidebarWidget :one
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetSidebarWidgetParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetSidebarWidgetRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetSidebarWidget(ctx context.Context, arg GetSidebarWidgetParams) (SidebarWidget, error) {
-	row := q.db.QueryRow(ctx, getSidebarWidget, arg.ID, arg.TenantID)
-	var i SidebarWidget
+func (q *Queries) GetSidebarWidget(ctx context.Context, id pgtype.UUID) (GetSidebarWidgetRow, error) {
+	row := q.db.QueryRow(ctx, getSidebarWidget, id)
+	var i GetSidebarWidgetRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,
@@ -266,32 +287,41 @@ func (q *Queries) GetSidebarWidget(ctx context.Context, arg GetSidebarWidgetPara
 }
 
 const listActiveSidebarWidgets = `-- name: ListActiveSidebarWidgets :many
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
-WHERE tenant_id = $1 AND sidebar_id = $2
-  AND status = 'active'
+WHERE sidebar_id = $1
+ AND status = 'active'
 ORDER BY sort_order ASC, created_at ASC
 `
 
-type ListActiveSidebarWidgetsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	SidebarID pgtype.UUID `json:"sidebar_id"`
+type ListActiveSidebarWidgetsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListActiveSidebarWidgets(ctx context.Context, arg ListActiveSidebarWidgetsParams) ([]SidebarWidget, error) {
-	rows, err := q.db.Query(ctx, listActiveSidebarWidgets, arg.TenantID, arg.SidebarID)
+func (q *Queries) ListActiveSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID) ([]ListActiveSidebarWidgetsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSidebarWidgets, sidebarID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SidebarWidget
+	var items []ListActiveSidebarWidgetsRow
 	for rows.Next() {
-		var i SidebarWidget
+		var i ListActiveSidebarWidgetsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SidebarID,
 			&i.WidgetType,
 			&i.Label,
@@ -316,37 +346,48 @@ func (q *Queries) ListActiveSidebarWidgets(ctx context.Context, arg ListActiveSi
 
 const listActiveSidebarsForResolve = `-- name: ListActiveSidebarsForResolve :many
 
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
+SELECT id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 FROM sidebars
-WHERE tenant_id = $1
-  AND app = $2
-  AND position = $3
-  AND status = 'active'
+WHERE app = $1
+ AND position = $2
+ AND status = 'active'
 ORDER BY created_at ASC
 `
 
 type ListActiveSidebarsForResolveParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	App      string      `json:"app"`
-	Position string      `json:"position"`
+	App      string `json:"app"`
+	Position string `json:"position"`
+}
+
+type ListActiveSidebarsForResolveRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 // =====================
 // Public Resolution
 // =====================
-func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActiveSidebarsForResolveParams) ([]Sidebar, error) {
-	rows, err := q.db.Query(ctx, listActiveSidebarsForResolve, arg.TenantID, arg.App, arg.Position)
+func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActiveSidebarsForResolveParams) ([]ListActiveSidebarsForResolveRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSidebarsForResolve, arg.App, arg.Position)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Sidebar
+	var items []ListActiveSidebarsForResolveRow
 	for rows.Next() {
-		var i Sidebar
+		var i ListActiveSidebarsForResolveRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.App,
 			&i.Position,
 			&i.Slug,
@@ -370,34 +411,43 @@ func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActi
 
 const listSidebarWidgets = `-- name: ListSidebarWidgets :many
 
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
-WHERE tenant_id = $1 AND sidebar_id = $2
+WHERE sidebar_id = $1
 ORDER BY sort_order ASC, created_at ASC
 `
 
-type ListSidebarWidgetsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	SidebarID pgtype.UUID `json:"sidebar_id"`
+type ListSidebarWidgetsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 // =====================
 // Sidebar Widgets CRUD
 // =====================
-func (q *Queries) ListSidebarWidgets(ctx context.Context, arg ListSidebarWidgetsParams) ([]SidebarWidget, error) {
-	rows, err := q.db.Query(ctx, listSidebarWidgets, arg.TenantID, arg.SidebarID)
+func (q *Queries) ListSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID) ([]ListSidebarWidgetsRow, error) {
+	rows, err := q.db.Query(ctx, listSidebarWidgets, sidebarID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SidebarWidget
+	var items []ListSidebarWidgetsRow
 	for rows.Next() {
-		var i SidebarWidget
+		var i ListSidebarWidgetsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SidebarID,
 			&i.WidgetType,
 			&i.Label,
@@ -423,56 +473,53 @@ func (q *Queries) ListSidebarWidgets(ctx context.Context, arg ListSidebarWidgets
 const listSidebars = `-- name: ListSidebars :many
 
 
-SELECT s.id, s.tenant_id, s.app, s.position, s.slug, s.name, s.page_pattern, s.visibility,
-       s.required_group_ids, s.status, s.created_at, s.updated_at,
-       COALESCE(sw.cnt, 0)::int AS widget_count
+SELECT s.id, s.app, s.position, s.slug, s.name, s.page_pattern, s.visibility,
+ s.required_group_ids, s.status, s.created_at, s.updated_at,
+ COALESCE(sw.cnt, 0)::int AS widget_count
 FROM sidebars s
 LEFT JOIN (
-    SELECT sidebar_id, COUNT(*)::int AS cnt
-    FROM sidebar_widgets
-    GROUP BY sidebar_id
+ SELECT sidebar_id, COUNT(*)::int AS cnt
+ FROM sidebar_widgets
+ GROUP BY sidebar_id
 ) sw ON sw.sidebar_id = s.id
-WHERE s.tenant_id = $1
-  AND ($2::text = '' OR s.app = $2)
-  AND ($3::text = '' OR s.position = $3)
-  AND ($4::text = '' OR s.status = $4)
-  AND ($5::text = '' OR s.name ILIKE '%' || $5 || '%' OR s.slug ILIKE '%' || $5 || '%')
+WHERE ($1::text = '' OR s.app = $1)
+ AND ($2::text = '' OR s.position = $2)
+ AND ($3::text = '' OR s.status = $3)
+ AND ($4::text = '' OR s.name ILIKE '%' || $4 || '%' OR s.slug ILIKE '%' || $4 || '%')
 ORDER BY
-  CASE WHEN $6::text = 'name:asc'      THEN s.name END ASC,
-  CASE WHEN $6::text = 'name:desc'     THEN s.name END DESC,
-  CASE WHEN $6::text = 'app:asc'       THEN s.app END ASC,
-  CASE WHEN $6::text = 'app:desc'      THEN s.app END DESC,
-  CASE WHEN $6::text = 'position:asc'  THEN s.position END ASC,
-  CASE WHEN $6::text = 'position:desc' THEN s.position END DESC,
-  CASE WHEN $6::text = 'slug:asc'      THEN s.slug END ASC,
-  CASE WHEN $6::text = 'slug:desc'     THEN s.slug END DESC,
-  CASE WHEN $6::text = 'page_pattern:asc'  THEN s.page_pattern END ASC,
-  CASE WHEN $6::text = 'page_pattern:desc' THEN s.page_pattern END DESC,
-  CASE WHEN $6::text = 'status:asc'    THEN s.status END ASC,
-  CASE WHEN $6::text = 'status:desc'   THEN s.status END DESC,
-  CASE WHEN $6::text = 'updated_at:asc'  THEN s.updated_at END ASC,
-  CASE WHEN $6::text = 'updated_at:desc' THEN s.updated_at END DESC,
-  CASE WHEN $6::text = 'created_at:asc'  THEN s.created_at END ASC,
-  CASE WHEN $6::text = 'created_at:desc' THEN s.created_at END DESC,
-  -- Default sort when @sort is empty or unrecognized
-  s.app ASC, s.position ASC, s.created_at ASC
-LIMIT $8 OFFSET $7
+ CASE WHEN $5::text = 'name:asc' THEN s.name END ASC,
+ CASE WHEN $5::text = 'name:desc' THEN s.name END DESC,
+ CASE WHEN $5::text = 'app:asc' THEN s.app END ASC,
+ CASE WHEN $5::text = 'app:desc' THEN s.app END DESC,
+ CASE WHEN $5::text = 'position:asc' THEN s.position END ASC,
+ CASE WHEN $5::text = 'position:desc' THEN s.position END DESC,
+ CASE WHEN $5::text = 'slug:asc' THEN s.slug END ASC,
+ CASE WHEN $5::text = 'slug:desc' THEN s.slug END DESC,
+ CASE WHEN $5::text = 'page_pattern:asc' THEN s.page_pattern END ASC,
+ CASE WHEN $5::text = 'page_pattern:desc' THEN s.page_pattern END DESC,
+ CASE WHEN $5::text = 'status:asc' THEN s.status END ASC,
+ CASE WHEN $5::text = 'status:desc' THEN s.status END DESC,
+ CASE WHEN $5::text = 'updated_at:asc' THEN s.updated_at END ASC,
+ CASE WHEN $5::text = 'updated_at:desc' THEN s.updated_at END DESC,
+ CASE WHEN $5::text = 'created_at:asc' THEN s.created_at END ASC,
+ CASE WHEN $5::text = 'created_at:desc' THEN s.created_at END DESC,
+ -- Default sort when @sort is empty or unrecognized
+ s.app ASC, s.position ASC, s.created_at ASC
+LIMIT $7 OFFSET $6
 `
 
 type ListSidebarsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	App        string      `json:"app"`
-	Position   string      `json:"position"`
-	Status     string      `json:"status"`
-	Q          string      `json:"q"`
-	Sort       string      `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	App        string `json:"app"`
+	Position   string `json:"position"`
+	Status     string `json:"status"`
+	Q          string `json:"q"`
+	Sort       string `json:"sort"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListSidebarsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	App              string             `json:"app"`
 	Position         string             `json:"position"`
 	Slug             string             `json:"slug"`
@@ -495,7 +542,6 @@ type ListSidebarsRow struct {
 // =====================
 func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]ListSidebarsRow, error) {
 	rows, err := q.db.Query(ctx, listSidebars,
-		arg.TenantID,
 		arg.App,
 		arg.Position,
 		arg.Status,
@@ -513,7 +559,6 @@ func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]L
 		var i ListSidebarsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.App,
 			&i.Position,
 			&i.Slug,
@@ -539,11 +584,11 @@ func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]L
 const updateSidebar = `-- name: UpdateSidebar :one
 UPDATE sidebars
 SET name = $1, page_pattern = $2, visibility = $3,
-    required_group_ids = $4, status = $5,
-    updated_at = now()
-WHERE id = $6 AND tenant_id = $7
-RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
-    required_group_ids, status, created_at, updated_at
+ required_group_ids = $4, status = $5,
+ updated_at = now()
+WHERE id = $6
+RETURNING id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 `
 
 type UpdateSidebarParams struct {
@@ -553,10 +598,23 @@ type UpdateSidebarParams struct {
 	RequiredGroupIds []byte      `json:"required_group_ids"`
 	Status           string      `json:"status"`
 	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateSidebar(ctx context.Context, arg UpdateSidebarParams) (Sidebar, error) {
+type UpdateSidebarRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	App              string             `json:"app"`
+	Position         string             `json:"position"`
+	Slug             string             `json:"slug"`
+	Name             string             `json:"name"`
+	PagePattern      string             `json:"page_pattern"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateSidebar(ctx context.Context, arg UpdateSidebarParams) (UpdateSidebarRow, error) {
 	row := q.db.QueryRow(ctx, updateSidebar,
 		arg.Name,
 		arg.PagePattern,
@@ -564,12 +622,10 @@ func (q *Queries) UpdateSidebar(ctx context.Context, arg UpdateSidebarParams) (S
 		arg.RequiredGroupIds,
 		arg.Status,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i Sidebar
+	var i UpdateSidebarRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -587,14 +643,14 @@ func (q *Queries) UpdateSidebar(ctx context.Context, arg UpdateSidebarParams) (S
 const updateSidebarWidget = `-- name: UpdateSidebarWidget :one
 UPDATE sidebar_widgets
 SET label = $1, widget_type = $2, props = $3,
-    sort_order = $4, visibility = $5,
-    required_group_ids = $6,
-    permission_node = $7, status = $8,
-    updated_at = now()
-WHERE id = $9 AND tenant_id = $10
-RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-    visibility, required_group_ids, permission_node, status,
-    created_at, updated_at
+ sort_order = $4, visibility = $5,
+ required_group_ids = $6,
+ permission_node = $7, status = $8,
+ updated_at = now()
+WHERE id = $9
+RETURNING id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 `
 
 type UpdateSidebarWidgetParams struct {
@@ -607,10 +663,24 @@ type UpdateSidebarWidgetParams struct {
 	PermissionNode   *string     `json:"permission_node"`
 	Status           string      `json:"status"`
 	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateSidebarWidget(ctx context.Context, arg UpdateSidebarWidgetParams) (SidebarWidget, error) {
+type UpdateSidebarWidgetRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	SidebarID        pgtype.UUID        `json:"sidebar_id"`
+	WidgetType       string             `json:"widget_type"`
+	Label            string             `json:"label"`
+	Props            []byte             `json:"props"`
+	SortOrder        int32              `json:"sort_order"`
+	Visibility       string             `json:"visibility"`
+	RequiredGroupIds []byte             `json:"required_group_ids"`
+	PermissionNode   *string            `json:"permission_node"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateSidebarWidget(ctx context.Context, arg UpdateSidebarWidgetParams) (UpdateSidebarWidgetRow, error) {
 	row := q.db.QueryRow(ctx, updateSidebarWidget,
 		arg.Label,
 		arg.WidgetType,
@@ -621,12 +691,10 @@ func (q *Queries) UpdateSidebarWidget(ctx context.Context, arg UpdateSidebarWidg
 		arg.PermissionNode,
 		arg.Status,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i SidebarWidget
+	var i UpdateSidebarWidgetRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,

@@ -90,10 +90,9 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 
 	switch entityType {
 	case PrivacyEntityContent:
-		exempt, err := c.read.GetContentAIExempt(ctx, gen.GetContentAIExemptParams{
-			ID:       entityID,
-			TenantID: tenantID,
-		})
+		exempt, err := c.read.GetContentAIExempt(ctx,
+			entityID,
+		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil
@@ -105,10 +104,9 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 		return exempt, nil
 
 	case PrivacyEntityCustomFieldValue:
-		exempt, err := c.read.GetCustomFieldValueAIExempt(ctx, gen.GetCustomFieldValueAIExemptParams{
-			ID:       entityID,
-			TenantID: tenantID,
-		})
+		exempt, err := c.read.GetCustomFieldValueAIExempt(ctx,
+			entityID,
+		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil
@@ -120,10 +118,9 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 		return exempt, nil
 
 	case PrivacyEntityUser:
-		exempt, err := c.read.GetUserAIExempt(ctx, gen.GetUserAIExemptParams{
-			ID:       entityID,
-			TenantID: tenantID,
-		})
+		exempt, err := c.read.GetUserAIExempt(ctx,
+			entityID,
+		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return false, nil

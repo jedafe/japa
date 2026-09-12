@@ -22,7 +22,7 @@ import (
 // ListPermissionPresets returns every permission preset owned by the given
 // tenant, oldest first.
 func (s *Service) ListPermissionPresets(ctx context.Context, tenantID pgtype.UUID) ([]gen.SpacePermissionPreset, error) {
-	presets, err := s.read.ListPermissionPresetsByTenant(ctx, tenantID)
+	presets, err := s.read.ListPermissionPresetsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing permission presets: %w", err)
 	}
@@ -33,10 +33,9 @@ func (s *Service) ListPermissionPresets(ctx context.Context, tenantID pgtype.UUI
 // GetPermissionPreset returns the permission preset matching the given name,
 // scoped to the tenant.
 func (s *Service) GetPermissionPreset(ctx context.Context, name string, tenantID pgtype.UUID) (gen.SpacePermissionPreset, error) {
-	preset, err := s.read.GetPermissionPresetByName(ctx, gen.GetPermissionPresetByNameParams{
-		Name:     name,
-		TenantID: tenantID,
-	})
+	preset, err := s.read.GetPermissionPresetByName(ctx,
+		name,
+	)
 	if err != nil {
 		return gen.SpacePermissionPreset{}, fmt.Errorf("getting permission preset: %w", err)
 	}
@@ -106,7 +105,7 @@ func (s *Service) ListSpaceTypeCategories(ctx context.Context, tenantID pgtype.U
 // ListSpaceTypes returns every space type owned by the given tenant,
 // oldest first.
 func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.SpaceType, error) {
-	types, err := s.read.ListSpaceTypesByTenant(ctx, tenantID)
+	types, err := s.read.ListSpaceTypesByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing space types: %w", err)
 	}
@@ -120,7 +119,7 @@ func (s *Service) ListSpaceTypes(ctx context.Context, tenantID pgtype.UUID) ([]g
 // to skip filters.
 func (s *Service) ListSpaceTypesFiltered(ctx context.Context, tenantID pgtype.UUID, search, categoryFilter string, selectableOnly bool) ([]gen.SpaceType, error) {
 	types, err := s.read.ListSpaceTypesByTenantFiltered(ctx, gen.ListSpaceTypesByTenantFilteredParams{
-		TenantID:       tenantID,
+
 		Search:         search,
 		CategoryFilter: categoryFilter,
 		SelectableOnly: selectableOnly,
@@ -135,10 +134,9 @@ func (s *Service) ListSpaceTypesFiltered(ctx context.Context, tenantID pgtype.UU
 // GetSpaceType returns the space type with the given ID, scoped to the
 // tenant.
 func (s *Service) GetSpaceType(ctx context.Context, id, tenantID pgtype.UUID) (gen.SpaceType, error) {
-	st, err := s.read.GetSpaceTypeByID(ctx, gen.GetSpaceTypeByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	st, err := s.read.GetSpaceTypeByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("getting space type: %w", err)
 	}
@@ -149,10 +147,9 @@ func (s *Service) GetSpaceType(ctx context.Context, id, tenantID pgtype.UUID) (g
 // GetSpaceTypeBySlug returns the space type matching the given slug, scoped
 // to the tenant.
 func (s *Service) GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error) {
-	st, err := s.read.GetSpaceTypeBySlug(ctx, gen.GetSpaceTypeBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	st, err := s.read.GetSpaceTypeBySlug(ctx,
+		slug,
+	)
 	if err != nil {
 		return gen.SpaceType{}, fmt.Errorf("getting space type by slug: %w", err)
 	}
@@ -185,10 +182,9 @@ func (s *Service) UpdateSpaceType(ctx context.Context, params gen.UpdateSpaceTyp
 // DeleteSpaceType deletes a non-system space type, scoped to the tenant.
 // System types are protected at the database level.
 func (s *Service) DeleteSpaceType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteSpaceType(ctx, gen.DeleteSpaceTypeParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteSpaceType(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting space type: %w", err)
 	}
 
@@ -204,10 +200,10 @@ func (s *Service) DeleteSpaceType(ctx context.Context, id, tenantID pgtype.UUID)
 // only see public spaces; authenticated callers also see members/private
 // spaces they belong to (Section 05 line 272, §9 multi-tenancy, BUG-007).
 func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID) ([]gen.ListSpacesByTenantRow, error) {
-	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
-		TenantID:     tenantID,
-		ViewerUserID: viewerUserID,
-	})
+	spaces, err := s.read.ListSpacesByTenant(ctx,
+
+		viewerUserID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
@@ -221,7 +217,7 @@ func (s *Service) ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.
 // default (no type/parent filter) branch.
 func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion, sort string, spaceTypeID pgtype.UUID, joinedOnly bool, limit, offset int32) ([]gen.ListSpacesPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesPaginated(ctx, gen.ListSpacesPaginatedParams{
-		TenantID:     tenantID,
+
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -245,7 +241,7 @@ func (s *Service) ListSpacesPaginated(ctx context.Context, tenantID, viewerUserI
 // discovery filters (SPACES-009).
 func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID, search, geoCode, level, region, subregion string, spaceTypeID pgtype.UUID, joinedOnly bool) (int64, error) {
 	total, err := s.read.CountSpaces(ctx, gen.CountSpacesParams{
-		TenantID:     tenantID,
+
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -267,7 +263,7 @@ func (s *Service) CountSpaces(ctx context.Context, tenantID, viewerUserID pgtype
 // are applied at the SQL level — pass "" for no filter.
 func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, search, status, visibility string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
 	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-		TenantID:   tenantID,
+
 		Search:     search,
 		Status:     status,
 		Visibility: visibility,
@@ -285,7 +281,7 @@ func (s *Service) AdminListSpaces(ctx context.Context, tenantID pgtype.UUID, sea
 // respecting the same search/status/visibility filters as AdminListSpaces.
 func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID, search, status, visibility string) (int64, error) {
 	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
-		TenantID:   tenantID,
+
 		Search:     search,
 		Status:     status,
 		Visibility: visibility,
@@ -305,8 +301,8 @@ func (s *Service) AdminListSpacesCount(ctx context.Context, tenantID pgtype.UUID
 // to keep the payload small for the authenticated shell (most callers only need the first page).
 func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]gen.ListSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListSpacesByMemberUser(ctx, gen.ListSpacesByMemberUserParams{
-		UserID:      userID,
-		TenantID:    tenantID,
+		UserID: userID,
+
 		Search:      search,
 		Level:       level,
 		SpaceTypeID: spaceTypeID,
@@ -326,8 +322,8 @@ func (s *Service) ListSpacesByMember(ctx context.Context, tenantID, userID pgtyp
 // (Section 03 — admin override).
 func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]gen.ListAllSpacesForAdminRow, error) {
 	spaces, err := s.read.ListAllSpacesForAdmin(ctx, gen.ListAllSpacesForAdminParams{
-		UserID:      userID,
-		TenantID:    tenantID,
+		UserID: userID,
+
 		Search:      search,
 		Level:       level,
 		SpaceTypeID: spaceTypeID,
@@ -345,7 +341,7 @@ func (s *Service) ListAllSpacesForAdmin(ctx context.Context, tenantID, userID pg
 // for the given tenant. Used to gate admin-only space listing.
 func (s *Service) IsSuperAdmin(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
 	return s.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		GroupSlug: "super_admin",
 	})
@@ -355,8 +351,8 @@ func (s *Service) IsSuperAdmin(ctx context.Context, tenantID, userID pgtype.UUID
 // (catalog: GET /me/spaces/moderated). Supports optional search/pagination.
 func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListSpacesByModeratorUserRow, error) {
 	spaces, err := s.read.ListSpacesByModeratorUser(ctx, gen.ListSpacesByModeratorUserParams{
-		UserID:    userID,
-		TenantID:  tenantID,
+		UserID: userID,
+
 		Search:    search,
 		LimitVal:  limit,
 		OffsetVal: offset,
@@ -373,8 +369,8 @@ func (s *Service) ListSpacesByModerator(ctx context.Context, tenantID, userID pg
 // optional search/pagination.
 func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID, search string, limit, offset int32) ([]gen.ListSpacesByOwnerUserRow, error) {
 	spaces, err := s.read.ListSpacesByOwnerUser(ctx, gen.ListSpacesByOwnerUserParams{
-		UserID:    userID,
-		TenantID:  tenantID,
+		UserID: userID,
+
 		Search:    search,
 		LimitVal:  limit,
 		OffsetVal: offset,
@@ -389,10 +385,9 @@ func (s *Service) ListSpacesByOwner(ctx context.Context, tenantID, userID pgtype
 // CountSpacesByOwner returns the number of spaces the user owns, for the
 // max_spaces_creatable quota check (Section 03, §26).
 func (s *Service) CountSpacesByOwner(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
-	count, err := s.read.CountSpacesByOwnerUser(ctx, gen.CountSpacesByOwnerUserParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	count, err := s.read.CountSpacesByOwnerUser(ctx,
+		userID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting spaces by owner: %w", err)
 	}
@@ -403,10 +398,10 @@ func (s *Service) CountSpacesByOwner(ctx context.Context, tenantID, userID pgtyp
 // GetUserMaxSpacesCreatable returns the most permissive max_spaces_creatable
 // from the user's group memberships. -1 = unlimited, 0 = none, N = capped.
 func (s *Service) GetUserMaxSpacesCreatable(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
-	max, err := s.read.GetUserMaxSpacesCreatable(ctx, gen.GetUserMaxSpacesCreatableParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	max, err := s.read.GetUserMaxSpacesCreatable(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("getting max_spaces_creatable: %w", err)
 	}
@@ -419,8 +414,8 @@ func (s *Service) GetUserMaxSpacesCreatable(ctx context.Context, tenantID, userI
 // members-only/private and non-active spaces.
 func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListPublicSpacesByMemberUserRow, error) {
 	spaces, err := s.read.ListPublicSpacesByMemberUser(ctx, gen.ListPublicSpacesByMemberUserParams{
-		UserID:     userID,
-		TenantID:   tenantID,
+		UserID: userID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -434,10 +429,10 @@ func (s *Service) ListPublicByMemberUser(ctx context.Context, tenantID, userID p
 // ListStatesByCountryCode returns the state/province spaces parented to the
 // country with the given ISO geo_code (catalog: GET /geo/countries/:code/states).
 func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) ([]gen.ListStatesByCountryGeoCodeRow, error) {
-	states, err := s.read.ListStatesByCountryGeoCode(ctx, gen.ListStatesByCountryGeoCodeParams{
-		TenantID:    tenantID,
-		CountryCode: &countryCode,
-	})
+	states, err := s.read.ListStatesByCountryGeoCode(ctx,
+
+		&countryCode,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing states by country code: %w", err)
 	}
@@ -448,10 +443,9 @@ func (s *Service) ListStatesByCountryCode(ctx context.Context, tenantID pgtype.U
 // ListCitiesByState returns the city spaces parented to the given state
 // (catalog: GET /geo/states/:id/cities).
 func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error) {
-	cities, err := s.read.ListCitiesByStateID(ctx, gen.ListCitiesByStateIDParams{
-		StateID:  stateID,
-		TenantID: tenantID,
-	})
+	cities, err := s.read.ListCitiesByStateID(ctx,
+		stateID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing cities by state: %w", err)
 	}
@@ -465,7 +459,7 @@ func (s *Service) ListCitiesByState(ctx context.Context, tenantID, stateID pgtyp
 // members/private spaces they belong to (SPACES-001, Section 05 line 272).
 func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID, viewerUserID pgtype.UUID, level string) ([]gen.ListSpacesByLevelRow, error) {
 	spaces, err := s.read.ListSpacesByLevel(ctx, gen.ListSpacesByLevelParams{
-		TenantID:     tenantID,
+
 		Level:        level,
 		ViewerUserID: viewerUserID,
 	})
@@ -481,10 +475,9 @@ func (s *Service) ListSpacesByLevel(ctx context.Context, tenantID, viewerUserID 
 // /geo/me suggested_spaces algorithm (Section 37) and the onboarding primary
 // space auto-join (Section 05, ADR-005).
 func (s *Service) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error) {
-	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-		GeoCode:  &countryCode,
-		TenantID: tenantID,
-	})
+	space, err := s.read.GetSpaceByGeoCode(ctx,
+		&countryCode,
+	)
 	if err != nil {
 		return gen.GetSpaceByGeoCodeRow{}, fmt.Errorf("getting space by geo code: %w", err)
 	}
@@ -497,10 +490,9 @@ func (s *Service) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, c
 // /geo/me suggested_spaces algorithm (Section 37) and the reverse-geocoding
 // flow (ADR-064a).
 func (s *Service) FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error) {
-	space, err := s.read.FindCitySpaceByName(ctx, gen.FindCitySpaceByNameParams{
-		CityName: cityName,
-		TenantID: tenantID,
-	})
+	space, err := s.read.FindCitySpaceByName(ctx,
+		cityName,
+	)
 	if err != nil {
 		return gen.FindCitySpaceByNameRow{}, fmt.Errorf("finding city space by name: %w", err)
 	}
@@ -512,7 +504,7 @@ func (s *Service) FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID,
 // newest first. The viewerUserID filters by visibility (SPACES-001).
 func (s *Service) ListSpacesByType(ctx context.Context, tenantID, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error) {
 	spaces, err := s.read.ListSpacesByType(ctx, gen.ListSpacesByTypeParams{
-		TenantID:     tenantID,
+
 		SpaceTypeID:  spaceTypeID,
 		ViewerUserID: viewerUserID,
 	})
@@ -529,7 +521,7 @@ func (s *Service) ListSpacesByType(ctx context.Context, tenantID, viewerUserID, 
 // 'followers', 'posts').
 func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByTypePaginated(ctx, gen.ListSpacesByTypePaginatedParams{
-		TenantID:    tenantID,
+
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
@@ -550,7 +542,7 @@ func (s *Service) ListSpacesByTypePaginated(ctx context.Context, tenantID, space
 // matching the same optional search, geo_code, region, and subregion filters.
 func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error) {
 	total, err := s.read.CountSpacesByType(ctx, gen.CountSpacesByTypeParams{
-		TenantID:    tenantID,
+
 		SpaceTypeID: spaceTypeID,
 		Search:      search,
 		GeoCode:     geoCode,
@@ -571,8 +563,8 @@ func (s *Service) CountSpacesByType(ctx context.Context, tenantID, spaceTypeID p
 // ListSpacesByParentAndLevel branches in the directory ListSpaces handler.
 func (s *Service) ListSpacesByParentPaginated(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion, sort string, joinedOnly bool, limit, offset int32) ([]gen.ListSpacesByParentPaginatedRow, error) {
 	spaces, err := s.read.ListSpacesByParentPaginated(ctx, gen.ListSpacesByParentPaginatedParams{
-		ParentID:     parentID,
-		TenantID:     tenantID,
+		ParentID: parentID,
+
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -595,8 +587,8 @@ func (s *Service) ListSpacesByParentPaginated(ctx context.Context, tenantID, vie
 // same filters as ListSpacesByParentPaginated.
 func (s *Service) CountSpacesByParent(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID, search, geoCode, level, region, subregion string, joinedOnly bool) (int64, error) {
 	total, err := s.read.CountSpacesByParent(ctx, gen.CountSpacesByParentParams{
-		ParentID:     parentID,
-		TenantID:     tenantID,
+		ParentID: parentID,
+
 		ViewerUserID: viewerUserID,
 		Search:       search,
 		GeoCode:      geoCode,
@@ -631,7 +623,7 @@ func (s *Service) ListViewerSpaceRelations(ctx context.Context, tenantID, viewer
 	}
 
 	rows, err := s.read.ListViewerSpaceRelations(ctx, gen.ListViewerSpaceRelationsParams{
-		TenantID:     tenantID,
+
 		ViewerUserID: viewerUserID,
 		SpaceIds:     spaceIDs,
 	})
@@ -655,8 +647,8 @@ func (s *Service) ListViewerSpaceRelations(ctx context.Context, tenantID, viewer
 // visibility (SPACES-001).
 func (s *Service) ListChildSpaces(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID) ([]gen.ListChildSpacesRow, error) {
 	spaces, err := s.read.ListChildSpaces(ctx, gen.ListChildSpacesParams{
-		ParentID:     parentID,
-		TenantID:     tenantID,
+		ParentID: parentID,
+
 		ViewerUserID: viewerUserID,
 	})
 	if err != nil {
@@ -670,7 +662,7 @@ func (s *Service) ListChildSpaces(ctx context.Context, tenantID, viewerUserID, p
 // canonical space_parent_spaces junction.
 func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, tenantID, viewerUserID, parentID pgtype.UUID, level string) ([]gen.ListSpacesByParentAndLevelRow, error) {
 	return s.read.ListSpacesByParentAndLevel(ctx, gen.ListSpacesByParentAndLevelParams{
-		TenantID:     tenantID,
+
 		ParentID:     parentID,
 		Level:        level,
 		ViewerUserID: viewerUserID,
@@ -681,7 +673,7 @@ func (s *Service) ListSpacesByParentAndLevel(ctx context.Context, tenantID, view
 // to an ancestor via space_parent_spaces.
 func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search, sort string, limit, offset int32) ([]gen.ListSpacesByAncestorAndTypeRow, error) {
 	return s.read.ListSpacesByAncestorAndType(ctx, gen.ListSpacesByAncestorAndTypeParams{
-		TenantID:        tenantID,
+
 		SpaceTypeID:     spaceTypeID,
 		AncestorSpaceID: ancestorID,
 		Search:          search,
@@ -695,7 +687,7 @@ func (s *Service) ListSpacesByAncestorAndType(ctx context.Context, tenantID, spa
 // linked to an ancestor via space_parent_spaces.
 func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, tenantID, spaceTypeID, ancestorID pgtype.UUID, search string) (int64, error) {
 	return s.read.CountSpacesByAncestorAndType(ctx, gen.CountSpacesByAncestorAndTypeParams{
-		TenantID:        tenantID,
+
 		SpaceTypeID:     spaceTypeID,
 		AncestorSpaceID: ancestorID,
 		Search:          search,
@@ -704,23 +696,22 @@ func (s *Service) CountSpacesByAncestorAndType(ctx context.Context, tenantID, sp
 
 // ListDistinctRegions returns the distinct regions for country-level spaces.
 func (s *Service) ListDistinctRegions(ctx context.Context, tenantID pgtype.UUID) ([]*string, error) {
-	return s.read.ListDistinctRegions(ctx, tenantID)
+	return s.read.ListDistinctRegions(ctx)
 }
 
 // ListDistinctSubregions returns the distinct subregions for a given region.
 func (s *Service) ListDistinctSubregions(ctx context.Context, tenantID pgtype.UUID, region string) ([]*string, error) {
-	return s.read.ListDistinctSubregions(ctx, gen.ListDistinctSubregionsParams{
-		TenantID: tenantID,
-		Region:   &region,
-	})
+	return s.read.ListDistinctSubregions(ctx,
+
+		&region,
+	)
 }
 
 // GetSpace returns the space with the given ID, scoped to the tenant.
 func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error) {
-	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	space, err := s.read.GetSpaceByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.GetSpaceByIDRow{}, fmt.Errorf("getting space: %w", err)
 	}
@@ -731,10 +722,9 @@ func (s *Service) GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.G
 // GetSpaceBySlug returns the space matching the given slug, scoped to the
 // tenant.
 func (s *Service) GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error) {
-	space, err := s.read.GetSpaceBySlug(ctx, gen.GetSpaceBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	space, err := s.read.GetSpaceBySlug(ctx,
+		slug,
+	)
 	if err != nil {
 		return gen.GetSpaceBySlugRow{}, fmt.Errorf("getting space by slug: %w", err)
 	}
@@ -773,17 +763,15 @@ func (s *Service) CreateSpaceWithOwner(
 		}
 
 		if err := q.AddSpaceOwner(ctx, gen.AddSpaceOwnerParams{
-			SpaceID:  space.ID,
-			UserID:   creatorUserID,
-			TenantID: params.TenantID,
+			SpaceID: space.ID,
+			UserID:  creatorUserID,
 		}); err != nil {
 			return gen.CreateSpaceRow{}, fmt.Errorf("adding space owner: %w", err)
 		}
 
 		if err := q.IncrementSpaceCount(ctx, gen.IncrementSpaceCountParams{
-			Delta:    1,
-			ID:       space.ID,
-			TenantID: params.TenantID,
+			Delta: 1,
+			ID:    space.ID,
 		}); err != nil {
 			return gen.CreateSpaceRow{}, fmt.Errorf("incrementing member count: %w", err)
 		}
@@ -844,7 +832,7 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 	}
 
 	if err := s.write.UpdateSpaceSourceID(ctx, gen.UpdateSpaceSourceIDParams{
-		TenantID: space.TenantID,
+
 		ID:       space.ID,
 		SourceID: source.ID,
 	}); err != nil {
@@ -873,7 +861,7 @@ func slugify(name string) string {
 // city to the geo catalog should not count against the user's
 // max_spaces_creatable quota (the user does not own the city).
 func (s *Service) CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID, name string) (gen.CreateSpaceRow, error) {
-	state, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: stateID, TenantID: tenantID})
+	state, err := s.read.GetSpaceByID(ctx, stateID)
 	if err != nil {
 		return gen.CreateSpaceRow{}, fmt.Errorf("getting state: %w", err)
 	}
@@ -882,17 +870,16 @@ func (s *Service) CreateCity(ctx context.Context, tenantID, stateID pgtype.UUID,
 		return gen.CreateSpaceRow{}, errors.New("parent is not a state")
 	}
 
-	cityType, err := s.read.GetSpaceTypeBySlug(ctx, gen.GetSpaceTypeBySlugParams{
-		Slug:     "city",
-		TenantID: tenantID,
-	})
+	cityType, err := s.read.GetSpaceTypeBySlug(ctx,
+		"city",
+	)
 	if err != nil {
 		return gen.CreateSpaceRow{}, fmt.Errorf("getting city space type: %w", err)
 	}
 
 	axes := DefaultPermAxes()
 	params := gen.CreateSpaceParams{
-		TenantID:       tenantID,
+
 		ParentID:       stateID,
 		SpaceTypeID:    cityType.ID,
 		Name:           strings.TrimSpace(name),
@@ -955,8 +942,8 @@ func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID, tenantI
 func (s *Service) SetSpaceParent(ctx context.Context, spaceID, tenantID, parentID pgtype.UUID, parentIDs []pgtype.UUID) error {
 	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		if err := q.UpdateSpaceParentID(ctx, gen.UpdateSpaceParentIDParams{
-			ID:       spaceID,
-			TenantID: tenantID,
+			ID: spaceID,
+
 			ParentID: parentID,
 		}); err != nil {
 			return fmt.Errorf("updating parent_id: %w", err)
@@ -990,9 +977,9 @@ func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams)
 // to a 409. Ref: sections/39-space-types-university.md (admin slug rename).
 func (s *Service) UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error) {
 	space, err := s.write.UpdateSpaceSlug(ctx, gen.UpdateSpaceSlugParams{
-		ID:       id,
-		TenantID: tenantID,
-		Slug:     slug,
+		ID: id,
+
+		Slug: slug,
 	})
 	if err != nil {
 		return gen.UpdateSpaceSlugRow{}, fmt.Errorf("updating space slug: %w", err)
@@ -1007,7 +994,6 @@ func (s *Service) UpdateSpaceKeywords(ctx context.Context, id, tenantID pgtype.U
 	if err := s.write.UpdateSpaceKeywords(ctx, gen.UpdateSpaceKeywordsParams{
 		Keywords: keywords,
 		ID:       id,
-		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("updating space keywords: %w", err)
 	}
@@ -1017,16 +1003,15 @@ func (s *Service) UpdateSpaceKeywords(ctx context.Context, id, tenantID pgtype.U
 
 // GetSpaceKeywords returns the keywords array for a space.
 func (s *Service) GetSpaceKeywords(ctx context.Context, id, tenantID pgtype.UUID) ([]string, error) {
-	return s.read.GetSpaceKeywords(ctx, gen.GetSpaceKeywordsParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.read.GetSpaceKeywords(ctx,
+		id,
+	)
 }
 
 // UpdateSpaceWikiContent updates only the wiki_content field of a space.
 func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID pgtype.UUID, wikiContent []byte) (gen.UpdateSpaceRow, error) {
 	// Load current space to preserve all other fields.
-	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: spaceID, TenantID: tenantID})
+	space, err := s.read.GetSpaceByID(ctx, spaceID)
 	if err != nil {
 		return gen.UpdateSpaceRow{}, fmt.Errorf("getting space for wiki update: %w", err)
 	}
@@ -1045,7 +1030,6 @@ func (s *Service) UpdateSpaceWikiContent(ctx context.Context, spaceID, tenantID 
 		JoiningPerm:    space.JoiningPerm,
 		Status:         space.Status,
 		ID:             spaceID,
-		TenantID:       tenantID,
 	})
 	if err != nil {
 		return gen.UpdateSpaceRow{}, fmt.Errorf("updating wiki content: %w", err)
@@ -1079,10 +1063,9 @@ func (s *Service) UpdateSpaceHeaderImageID(ctx context.Context, params gen.Updat
 
 // DeleteSpace deletes a space, scoped to the tenant.
 func (s *Service) DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteSpace(ctx, gen.DeleteSpaceParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteSpace(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting space: %w", err)
 	}
 
@@ -1093,9 +1076,8 @@ func (s *Service) DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) err
 // or negative), scoped to the tenant.
 func (s *Service) IncrementSpaceCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementSpaceCount(ctx, gen.IncrementSpaceCountParams{
-		Delta:    delta,
-		ID:       id,
-		TenantID: tenantID,
+		Delta: delta,
+		ID:    id,
 	}); err != nil {
 		return fmt.Errorf("incrementing space count: %w", err)
 	}
@@ -1159,9 +1141,8 @@ func (s *Service) DeleteSpaceRule(ctx context.Context, id, spaceID pgtype.UUID) 
 // IsMember returns true if the user is a member of the space.
 func (s *Service) IsMember(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
 	isMember, err := s.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking space membership: %w", err)
@@ -1173,9 +1154,8 @@ func (s *Service) IsMember(ctx context.Context, spaceID, userID, tenantID pgtype
 // IsOwner returns true if the user is the owner (role='owner') of the space.
 func (s *Service) IsOwner(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
 	isOwner, err := s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking space ownership: %w", err)
@@ -1187,9 +1167,8 @@ func (s *Service) IsOwner(ctx context.Context, spaceID, userID, tenantID pgtype.
 // Join adds the user as a member of the space.
 func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("adding space member: %w", err)
 	}
@@ -1208,9 +1187,8 @@ func (s *Service) Join(ctx context.Context, spaceID, userID, tenantID pgtype.UUI
 // user is considered a member.
 func (s *Service) JoinPending(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.AddSpaceMemberPending(ctx, gen.AddSpaceMemberPendingParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("adding pending space member: %w", err)
 	}
@@ -1223,9 +1201,8 @@ func (s *Service) JoinPending(ctx context.Context, spaceID, userID, tenantID pgt
 // 198-224, BUG-001).
 func (s *Service) AddOwner(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.AddSpaceOwner(ctx, gen.AddSpaceOwnerParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("adding space owner: %w", err)
 	}
@@ -1236,9 +1213,8 @@ func (s *Service) AddOwner(ctx context.Context, spaceID, userID, tenantID pgtype
 // Leave removes the user from the space membership.
 func (s *Service) Leave(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.RemoveSpaceMember(ctx, gen.RemoveSpaceMemberParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("removing space member: %w", err)
 	}
@@ -1248,10 +1224,9 @@ func (s *Service) Leave(ctx context.Context, spaceID, userID, tenantID pgtype.UU
 
 // CountMembers returns the number of members in the space.
 func (s *Service) CountMembers(ctx context.Context, spaceID, tenantID pgtype.UUID) (int64, error) {
-	count, err := s.read.CountSpaceMembers(ctx, gen.CountSpaceMembersParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	count, err := s.read.CountSpaceMembers(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting space members: %w", err)
 	}
@@ -1274,10 +1249,10 @@ func (s *Service) CountSpaceStats(ctx context.Context, tenantID pgtype.UUID, spa
 		return map[string]SpaceStat{}, nil
 	}
 
-	rows, err := s.read.CountSpaceStats(ctx, gen.CountSpaceStatsParams{
-		TenantID: tenantID,
-		SpaceIds: spaceIDs,
-	})
+	rows, err := s.read.CountSpaceStats(ctx,
+
+		spaceIDs,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("counting space stats: %w", err)
 	}
@@ -1310,8 +1285,8 @@ func (s *Service) ListMembers(ctx context.Context, spaceID, tenantID pgtype.UUID
 	}
 
 	rows, err := s.read.ListSpaceMembersWithProfile(ctx, gen.ListSpaceMembersWithProfileParams{
-		SpaceID:    spaceID,
-		TenantID:   tenantID,
+		SpaceID: spaceID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -1352,9 +1327,8 @@ func (s *Service) AssignModerator(ctx context.Context, params gen.AssignSpaceMod
 // SPACES-015: tenant-scoped for defense-in-depth.
 func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.RemoveSpaceModerator(ctx, gen.RemoveSpaceModeratorParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("removing space moderator: %w", err)
 	}
@@ -1387,17 +1361,16 @@ func (s *Service) GetUserIDByUsername(ctx context.Context, tenantID pgtype.UUID,
 
 // GetSpaceByID returns a space by its ID within the tenant.
 func (s *Service) GetSpaceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetSpaceByIDRow, error) {
-	return s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{TenantID: tenantID, ID: id})
+	return s.read.GetSpaceByID(ctx, id)
 }
 
 // ListModerators returns every moderator assigned to the given space,
 // including their username and display name.
 // SPACES-015: tenant-scoped for defense-in-depth.
 func (s *Service) ListModerators(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.ListSpaceModeratorsRow, error) {
-	mods, err := s.read.ListSpaceModerators(ctx, gen.ListSpaceModeratorsParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	mods, err := s.read.ListSpaceModerators(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing space moderators: %w", err)
 	}
@@ -1409,9 +1382,8 @@ func (s *Service) ListModerators(ctx context.Context, spaceID, tenantID pgtype.U
 // SPACES-015: tenant-scoped for defense-in-depth.
 func (s *Service) IsModerator(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
 	_, err := s.read.GetSpaceModerator(ctx, gen.GetSpaceModeratorParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1431,9 +1403,8 @@ func (s *Service) IsModerator(ctx context.Context, spaceID, userID, tenantID pgt
 // and non-admin members receive 403 analytics_forbidden.
 func (s *Service) CanManageSpace(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) (bool, error) {
 	isOwner, err := s.read.CheckSpaceOwnership(ctx, gen.CheckSpaceOwnershipParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("checking space ownership: %w", err)
@@ -1483,10 +1454,9 @@ func (s *Service) RemoveParentSpace(ctx context.Context, spaceID, parentSpaceID 
 // GetParentSpaces returns every parent space for the given space, resolved
 // through the junction table and scoped to the tenant.
 func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.GetParentSpacesBySpaceIDRow, error) {
-	spaces, err := s.read.GetParentSpacesBySpaceID(ctx, gen.GetParentSpacesBySpaceIDParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	spaces, err := s.read.GetParentSpacesBySpaceID(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("querying parent spaces: %w", err)
 	}
@@ -1497,10 +1467,9 @@ func (s *Service) GetParentSpaces(ctx context.Context, spaceID, tenantID pgtype.
 // GetChildSpaces returns every child space for the given space, resolved
 // through the junction table and scoped to the tenant.
 func (s *Service) GetChildSpaces(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]gen.GetChildSpacesByParentIDRow, error) {
-	spaces, err := s.read.GetChildSpacesByParentID(ctx, gen.GetChildSpacesByParentIDParams{
-		ParentSpaceID: spaceID,
-		TenantID:      tenantID,
-	})
+	spaces, err := s.read.GetChildSpacesByParentID(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("querying child spaces: %w", err)
 	}
@@ -1547,10 +1516,9 @@ type SpaceAnalyticsSummary struct {
 // GetSpaceAnalyticsSummary returns member/content/view counts for a space
 // in a single SQL query instead of three sequential ones (BUG-020).
 func (s *Service) GetSpaceAnalyticsSummary(ctx context.Context, spaceID, tenantID pgtype.UUID) (SpaceAnalyticsSummary, error) {
-	row, err := s.read.GetSpaceAnalyticsSummary(ctx, gen.GetSpaceAnalyticsSummaryParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetSpaceAnalyticsSummary(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return SpaceAnalyticsSummary{}, fmt.Errorf("getting space analytics summary: %w", err)
 	}

@@ -572,7 +572,7 @@ func (s *Service) AdminListResults(ctx context.Context, tenantID pgtype.UUID, mi
 	offset := (page - 1) * limit
 
 	results, total, err := s.store.AdminListAssessmentResults(ctx, AdminListAssessmentResultsFilter{
-		TenantID: tenantID,
+
 		MinScore: minScore,
 		MaxScore: maxScore,
 		Offset:   offset,
@@ -1615,8 +1615,8 @@ func formToDTO(form gen.Form, fields []gen.CustomField) *AssessmentFormDTO {
 	}
 
 	return &AssessmentFormDTO{
-		ID:            form.ID.String(),
-		TenantID:      form.TenantID.String(),
+		ID: form.ID.String(),
+
 		Name:          form.Name,
 		Slug:          form.Slug,
 		Description:   description,

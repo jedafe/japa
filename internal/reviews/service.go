@@ -51,7 +51,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	}
 
 	review, err := s.store.createReview(ctx, gen.CreateReviewParams{
-		TenantID:       tenantID,
+
 		EntityType:     input.EntityType,
 		EntityID:       input.EntityID,
 		ReviewerUserID: reviewerUserID,
@@ -65,7 +65,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 
 	// Best-effort aggregate update (non-blocking failure).
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: input.EntityType,
 		EntityID:   input.EntityID,
 	}); err != nil {
@@ -148,8 +148,8 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 	}
 
 	review, err := s.store.updateReview(ctx, gen.UpdateReviewParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ReviewerUserID: reviewerUserID,
 		Rating:         rating,
 		Title:          t,
@@ -161,7 +161,7 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -182,8 +182,8 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID, reviewerUserID
 	}
 
 	_, err = s.store.softDeleteOwnReview(ctx, gen.SoftDeleteOwnReviewParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ReviewerUserID: reviewerUserID,
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID, reviewerUserID
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -215,7 +215,7 @@ func (s *Service) HardDeleteReview(ctx context.Context, id, tenantID pgtype.UUID
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -239,8 +239,8 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 	}
 
 	_, err = s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
-		ID:        id,
-		TenantID:  tenantID,
+		ID: id,
+
 		Status:    ReviewStatusFlagged,
 		RemovedBy: pgtype.UUID{}, // flagging does not remove — clear removed_by
 	})
@@ -250,7 +250,7 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -280,8 +280,8 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUse
 	}
 
 	review, err := s.store.updateReviewStatus(ctx, gen.UpdateReviewStatusParams{
-		ID:        id,
-		TenantID:  tenantID,
+		ID: id,
+
 		Status:    status,
 		RemovedBy: removedBy,
 	})
@@ -300,7 +300,7 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUse
 	})
 
 	if _, auditErr := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
-		TenantID:    tenantID,
+
 		ActorUserID: moderatorUserID,
 		ActionType:  "review.moderate",
 		TargetType:  &targetType,
@@ -312,7 +312,7 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUse
 
 	// Best-effort aggregate update.
 	if _, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: review.EntityType,
 		EntityID:   review.EntityID,
 	}); err != nil {
@@ -334,7 +334,7 @@ func (s *Service) RecalculateAggregate(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	_, err := s.store.upsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})

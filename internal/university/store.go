@@ -72,8 +72,8 @@ type InstructorProfile struct {
 
 func profileFromRow(r gen.InstructorProfile) InstructorProfile {
 	p := InstructorProfile{
-		ID:              r.ID.String(),
-		TenantID:        r.TenantID.String(),
+		ID: r.ID.String(),
+
 		UserID:          r.UserID.String(),
 		DisplayName:     r.DisplayName,
 		Headline:        r.Headline,
@@ -130,7 +130,7 @@ func (s *Store) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in Appl
 	}
 
 	row, err := s.write.UpsertInstructorApplication(ctx, gen.UpsertInstructorApplicationParams{
-		TenantID:        tenantID,
+
 		UserID:          userID,
 		DisplayName:     in.DisplayName,
 		Headline:        in.Headline,
@@ -147,23 +147,23 @@ func (s *Store) Apply(ctx context.Context, tenantID, userID pgtype.UUID, in Appl
 
 // GetByUser returns the instructor profile for a user (any status).
 func (s *Store) GetByUser(ctx context.Context, tenantID, userID pgtype.UUID) (gen.InstructorProfile, error) {
-	return s.read.GetInstructorProfileByUser(ctx, gen.GetInstructorProfileByUserParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	return s.read.GetInstructorProfileByUser(ctx,
+		userID,
+	)
 }
 
 // GetByID returns the instructor profile by ID (any status).
 func (s *Store) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.InstructorProfile, error) {
-	return s.read.GetInstructorProfileByID(ctx, gen.GetInstructorProfileByIDParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetInstructorProfileByID(ctx,
+		id,
+	)
 }
 
 // GetPublic returns the public-facing instructor profile (approved only).
 func (s *Store) GetPublic(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetPublicInstructorProfileRow, error) {
-	return s.read.GetPublicInstructorProfile(ctx, gen.GetPublicInstructorProfileParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetPublicInstructorProfile(ctx,
+		id,
+	)
 }
 
 // ListByStatus lists instructor profiles filtered by status (empty = all).
@@ -171,7 +171,7 @@ func (s *Store) GetPublic(ctx context.Context, tenantID, id pgtype.UUID) (gen.Ge
 // space (ADR-063 admin per-university view).
 func (s *Store) ListByStatus(ctx context.Context, tenantID pgtype.UUID, status string, spaceID pgtype.UUID, limit, offset int32) ([]gen.InstructorProfile, error) {
 	return s.read.ListInstructorProfilesByStatus(ctx, gen.ListInstructorProfilesByStatusParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+		Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -180,14 +180,14 @@ func (s *Store) ListByStatus(ctx context.Context, tenantID pgtype.UUID, status s
 // space (ADR-063 admin per-university view).
 func (s *Store) CountByStatus(ctx context.Context, tenantID pgtype.UUID, status string, spaceID pgtype.UUID) (int64, error) {
 	return s.read.CountInstructorProfilesByStatus(ctx, gen.CountInstructorProfilesByStatusParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID,
+		Status: status, SpaceID: spaceID,
 	})
 }
 
 // UpdateSelf updates creator-editable fields on the caller's own profile.
 func (s *Store) UpdateSelf(ctx context.Context, tenantID, userID pgtype.UUID, in UpdateSelfInput) (gen.InstructorProfile, error) {
 	return s.write.UpdateInstructorProfileSelf(ctx, gen.UpdateInstructorProfileSelfParams{
-		TenantID:     tenantID,
+
 		UserID:       userID,
 		DisplayName:  in.DisplayName,
 		Headline:     in.Headline,
@@ -209,7 +209,7 @@ type UpdateSelfInput struct {
 // Approve transitions a pending application to approved.
 func (s *Store) Approve(ctx context.Context, tenantID, id, reviewer pgtype.UUID, tier string, commissionOverride *float64) (gen.InstructorProfile, error) {
 	params := gen.ApproveInstructorApplicationParams{
-		TenantID: tenantID, ID: id, ReviewedBy: reviewer,
+		ID: id, ReviewedBy: reviewer,
 	}
 
 	if tier != "" {
@@ -230,30 +230,30 @@ func (s *Store) Approve(ctx context.Context, tenantID, id, reviewer pgtype.UUID,
 // Reject transitions a pending application to rejected.
 func (s *Store) Reject(ctx context.Context, tenantID, id, reviewer pgtype.UUID) (gen.InstructorProfile, error) {
 	return s.write.RejectInstructorApplication(ctx, gen.RejectInstructorApplicationParams{
-		TenantID: tenantID, ID: id, ReviewedBy: reviewer,
+		ID: id, ReviewedBy: reviewer,
 	})
 }
 
 // Suspend transitions an approved instructor to suspended.
 func (s *Store) Suspend(ctx context.Context, tenantID, id, reviewer pgtype.UUID) (gen.InstructorProfile, error) {
 	return s.write.SuspendInstructor(ctx, gen.SuspendInstructorParams{
-		TenantID: tenantID, ID: id, ReviewedBy: reviewer,
+		ID: id, ReviewedBy: reviewer,
 	})
 }
 
 // Reinstate transitions a suspended instructor back to approved.
 func (s *Store) Reinstate(ctx context.Context, tenantID, id, reviewer pgtype.UUID) (gen.InstructorProfile, error) {
 	return s.write.ReinstateInstructor(ctx, gen.ReinstateInstructorParams{
-		TenantID: tenantID, ID: id, ReviewedBy: reviewer,
+		ID: id, ReviewedBy: reviewer,
 	})
 }
 
 // Delete permanently removes an instructor profile/application. Blocked
 // while the instructor is approved (reject or suspend first).
 func (s *Store) Delete(ctx context.Context, tenantID, id pgtype.UUID) (gen.DeleteInstructorProfileRow, error) {
-	return s.write.DeleteInstructorProfile(ctx, gen.DeleteInstructorProfileParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.write.DeleteInstructorProfile(ctx,
+		id,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +444,7 @@ type CatalogFilter struct {
 // ListCatalog returns marketplace tracks matching the filter.
 func (s *Store) ListCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter, limit, offset int32) ([]gen.ListUniversityCatalogRow, error) {
 	return s.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
-		TenantID: tenantID, Category: f.Category, Language: f.Language,
+		Category: f.Category, Language: f.Language,
 		IsFree: f.IsFree, Level: f.Level, Q: f.Q, Sort: f.Sort, SpaceID: f.SpaceID,
 		PageLimit: limit, PageOffset: offset,
 	})
@@ -453,16 +453,16 @@ func (s *Store) ListCatalog(ctx context.Context, tenantID pgtype.UUID, f Catalog
 // CountCatalog returns the total count of marketplace tracks matching the filter.
 func (s *Store) CountCatalog(ctx context.Context, tenantID pgtype.UUID, f CatalogFilter) (int64, error) {
 	return s.read.CountUniversityCatalog(ctx, gen.CountUniversityCatalogParams{
-		TenantID: tenantID, Category: f.Category, Language: f.Language,
+		Category: f.Category, Language: f.Language,
 		IsFree: f.IsFree, Level: f.Level, Q: f.Q, SpaceID: f.SpaceID,
 	})
 }
 
 // GetCatalogTrackBySlug returns a single marketplace track with instructor + rating.
 func (s *Store) GetCatalogTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetUniversityTrackBySlugRow, error) {
-	return s.read.GetUniversityTrackBySlug(ctx, gen.GetUniversityTrackBySlugParams{
-		TenantID: tenantID, Slug: slug,
-	})
+	return s.read.GetUniversityTrackBySlug(ctx,
+		slug,
+	)
 }
 
 // CatalogTrackDetail is the flat DTO returned by GET /learn/university/catalog/{slug}.
@@ -502,7 +502,7 @@ type CatalogTrackDetail struct {
 // Level = Difficulty for the frontend contract.
 func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDetail {
 	c := CatalogTrackDetail{
-		ID: r.ID, TenantID: r.TenantID, Title: r.Title, Slug: r.Slug,
+		ID: r.ID, Title: r.Title, Slug: r.Slug,
 		Description: r.Description, Difficulty: r.Difficulty, Level: r.Difficulty,
 		CoverMediaID: r.CoverMediaID, InstructorID: r.InstructorID,
 		PriceKobo: r.PriceKobo, Currency: r.Currency, Category: r.Category,
@@ -524,9 +524,9 @@ func CatalogTrackDetailFromRow(r gen.GetUniversityTrackBySlugRow) CatalogTrackDe
 
 // GetTrackByID returns a track by ID (any publish state).
 func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetUniversityTrackByIDRow, error) {
-	return s.read.GetUniversityTrackByID(ctx, gen.GetUniversityTrackByIDParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetUniversityTrackByID(ctx,
+		id,
+	)
 }
 
 // CreateTrackInput holds the body for POST /learn/university/my/tracks.
@@ -548,7 +548,7 @@ type CreateTrackInput struct {
 // CreateTrack creates a new marketplace track owned by the instructor.
 func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, in CreateTrackInput) (gen.CreateUniversityTrackRow, error) {
 	params := gen.CreateUniversityTrackParams{
-		TenantID: tenantID, Title: in.Title, Slug: in.Slug,
+		Title: in.Title, Slug: in.Slug,
 		Description: in.Description, Difficulty: in.Difficulty,
 		Category: in.Category,
 	}
@@ -601,7 +601,7 @@ type UpdateTrackInput struct {
 // UpdateTrack updates a creator's own track.
 func (s *Store) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateUniversityTrackRow, error) {
 	params := gen.UpdateUniversityTrackParams{
-		TenantID: tenantID, ID: trackID, InstructorID: instructorID,
+		ID: trackID, InstructorID: instructorID,
 	}
 	if in.Title != nil {
 		params.Title = *in.Title
@@ -642,22 +642,22 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, trackID, instructorID
 // SubmitTrack marks a creator's track as submitted for marketplace approval.
 func (s *Store) SubmitTrack(ctx context.Context, tenantID, trackID, instructorID pgtype.UUID) (gen.SubmitUniversityTrackRow, error) {
 	return s.write.SubmitUniversityTrack(ctx, gen.SubmitUniversityTrackParams{
-		TenantID: tenantID, ID: trackID, InstructorID: instructorID,
+		ID: trackID, InstructorID: instructorID,
 	})
 }
 
 // ListTracksByInstructor returns all tracks owned by an instructor.
 func (s *Store) ListTracksByInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.ListUniversityTracksByInstructorRow, error) {
-	return s.read.ListUniversityTracksByInstructor(ctx, gen.ListUniversityTracksByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.ListUniversityTracksByInstructor(ctx,
+		instructorID,
+	)
 }
 
 // ListPendingTracks returns tracks awaiting marketplace approval.
 // spaceID, when Valid, restricts to tracks targeted at that space.
 func (s *Store) ListPendingTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, limit, offset int32) ([]gen.ListPendingUniversityTracksRow, error) {
 	return s.read.ListPendingUniversityTracks(ctx, gen.ListPendingUniversityTracksParams{
-		TenantID: tenantID, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+		SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -665,23 +665,23 @@ func (s *Store) ListPendingTracks(ctx context.Context, tenantID, spaceID pgtype.
 // approval (mirrors ListPendingTracks). Used by the admin hub and the
 // pending-tracks list meta envelope.
 func (s *Store) CountPendingTracks(ctx context.Context, tenantID, spaceID pgtype.UUID) (int64, error) {
-	return s.read.CountPendingUniversityTracks(ctx, gen.CountPendingUniversityTracksParams{
-		TenantID: tenantID, SpaceID: spaceID,
-	})
+	return s.read.CountPendingUniversityTracks(ctx,
+		spaceID,
+	)
 }
 
 // ApproveTrack publishes a submitted track to the marketplace.
 func (s *Store) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
-	return s.write.ApproveUniversityTrack(ctx, gen.ApproveUniversityTrackParams{
-		TenantID: tenantID, ID: trackID,
-	})
+	return s.write.ApproveUniversityTrack(ctx,
+		trackID,
+	)
 }
 
 // IncrementTotalEnrolled bumps the cached enrollment counter.
 func (s *Store) IncrementTotalEnrolled(ctx context.Context, tenantID, trackID pgtype.UUID) error {
-	return s.write.IncrementTrackTotalEnrolled(ctx, gen.IncrementTrackTotalEnrolledParams{
-		TenantID: tenantID, ID: trackID,
-	})
+	return s.write.IncrementTrackTotalEnrolled(ctx,
+		trackID,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -691,7 +691,7 @@ func (s *Store) IncrementTotalEnrolled(ctx context.Context, tenantID, trackID pg
 // UpsertEnrollment creates or updates an enrollment, linking the payment.
 func (s *Store) UpsertEnrollment(ctx context.Context, tenantID, userID, trackID pgtype.UUID, accessType string, paymentID *pgtype.UUID) (gen.Enrollment, error) {
 	params := gen.UpsertEnrollmentWithPaymentParams{
-		TenantID: tenantID, UserID: userID, TrackID: trackID, AccessType: accessType,
+		UserID: userID, TrackID: trackID, AccessType: accessType,
 	}
 	if paymentID != nil {
 		params.PaymentID = *paymentID
@@ -703,15 +703,15 @@ func (s *Store) UpsertEnrollment(ctx context.Context, tenantID, userID, trackID 
 // HasEnrollment reports whether a user is enrolled in a track.
 func (s *Store) HasEnrollment(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (bool, error) {
 	return s.read.HasEnrollmentForTrack(ctx, gen.HasEnrollmentForTrackParams{
-		TenantID: tenantID, UserID: userID, TrackID: trackID,
+		UserID: userID, TrackID: trackID,
 	})
 }
 
 // HasSplitForPayment is the idempotency guard for enrollment processing.
 func (s *Store) HasSplitForPayment(ctx context.Context, tenantID, paymentID pgtype.UUID) (bool, error) {
-	return s.read.HasRevenueSplitForPayment(ctx, gen.HasRevenueSplitForPaymentParams{
-		TenantID: tenantID, PaymentID: paymentID,
-	})
+	return s.read.HasRevenueSplitForPayment(ctx,
+		paymentID,
+	)
 }
 
 // InsertRevenueSplit records an immutable per-event revenue split.
@@ -721,24 +721,24 @@ func (s *Store) InsertRevenueSplit(ctx context.Context, params gen.InsertRevenue
 
 // ListOpenSplits returns revenue splits not yet rolled into a payout.
 func (s *Store) ListOpenSplits(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.RevenueSplit, error) {
-	return s.read.ListOpenRevenueSplitsByInstructor(ctx, gen.ListOpenRevenueSplitsByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.ListOpenRevenueSplitsByInstructor(ctx,
+		instructorID,
+	)
 }
 
 // ListSplitsByInstructor returns paginated splits for an instructor.
 func (s *Store) ListSplitsByInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID, limit, offset int32) ([]gen.RevenueSplit, error) {
 	return s.read.ListRevenueSplitsByInstructor(ctx, gen.ListRevenueSplitsByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID, PageLimit: limit, PageOffset: offset,
+		InstructorID: instructorID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
 // GetRevenueSplitByID returns a single immutable revenue-split record by ID,
 // tenant-scoped. Used by the admin audit viewer (ADR-063 §9).
 func (s *Store) GetRevenueSplitByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RevenueSplit, error) {
-	return s.read.GetRevenueSplitByID(ctx, gen.GetRevenueSplitByIDParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetRevenueSplitByID(ctx,
+		id,
+	)
 }
 
 // ListRevenueSplitsFilter holds the optional filters for the admin audit
@@ -758,7 +758,7 @@ type ListRevenueSplitsFilter struct {
 // revenue-split audit records with optional filters (ADR-063 §9).
 func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter, limit, offset int32) ([]gen.ListRevenueSplitsRow, error) {
 	return s.read.ListRevenueSplits(ctx, gen.ListRevenueSplitsParams{
-		TenantID:     tenantID,
+
 		InstructorID: f.InstructorID,
 		TrackID:      f.TrackID,
 		Source:       f.Source,
@@ -775,7 +775,7 @@ func (s *Store) ListRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f L
 // ListRevenueSplits, for the pagination meta envelope (ADR-063 §9).
 func (s *Store) CountRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f ListRevenueSplitsFilter) (int64, error) {
 	return s.read.CountRevenueSplits(ctx, gen.CountRevenueSplitsParams{
-		TenantID:     tenantID,
+
 		InstructorID: f.InstructorID,
 		TrackID:      f.TrackID,
 		Source:       f.Source,
@@ -788,16 +788,16 @@ func (s *Store) CountRevenueSplits(ctx context.Context, tenantID pgtype.UUID, f 
 
 // SumOpenSplits returns gross/creator/platform totals for open splits.
 func (s *Store) SumOpenSplits(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.SumOpenSplitsByInstructorRow, error) {
-	return s.read.SumOpenSplitsByInstructor(ctx, gen.SumOpenSplitsByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.SumOpenSplitsByInstructor(ctx,
+		instructorID,
+	)
 }
 
 // SumOpenSplitsByAllInstructors returns gross/creator/platform totals for
 // open splits grouped by instructor_id in a single query. Use this instead
 // of looping SumOpenSplits per instructor to avoid an N+1 (AUDIT-BE-DB-005).
 func (s *Store) SumOpenSplitsByAllInstructors(ctx context.Context, tenantID pgtype.UUID) ([]gen.SumOpenSplitsByAllInstructorsRow, error) {
-	return s.read.SumOpenSplitsByAllInstructors(ctx, tenantID)
+	return s.read.SumOpenSplitsByAllInstructors(ctx)
 }
 
 // StampSplitsWithPayout marks open splits in a period as rolled into a payout.
@@ -805,7 +805,7 @@ func (s *Store) SumOpenSplitsByAllInstructors(ctx context.Context, tenantID pgty
 // converted to timestamptz boundaries for the created_at range filter.
 func (s *Store) StampSplitsWithPayout(ctx context.Context, tenantID, instructorID, payoutID pgtype.UUID, periodStart, periodEnd pgtype.Date) (int64, error) {
 	return s.write.StampRevenueSplitsWithPayout(ctx, gen.StampRevenueSplitsWithPayoutParams{
-		TenantID: tenantID, InstructorID: instructorID, PayoutID: payoutID,
+		InstructorID: instructorID, PayoutID: payoutID,
 		PeriodStart: pgtype.Timestamptz{Time: periodStart.Time, Valid: true},
 		PeriodEnd:   pgtype.Timestamptz{Time: periodEnd.Time, Valid: true},
 	})
@@ -822,15 +822,15 @@ func (s *Store) CreatePayout(ctx context.Context, params gen.CreateInstructorPay
 
 // GetPayout returns a payout by ID.
 func (s *Store) GetPayout(ctx context.Context, tenantID, id pgtype.UUID) (gen.InstructorPayout, error) {
-	return s.read.GetInstructorPayoutByID(ctx, gen.GetInstructorPayoutByIDParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetInstructorPayoutByID(ctx,
+		id,
+	)
 }
 
 // ListPayoutsByInstructor returns an instructor's payout history.
 func (s *Store) ListPayoutsByInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID, limit, offset int32) ([]gen.InstructorPayout, error) {
 	return s.read.ListInstructorPayoutsByInstructor(ctx, gen.ListInstructorPayoutsByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID, PageLimit: limit, PageOffset: offset,
+		InstructorID: instructorID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -839,7 +839,7 @@ func (s *Store) ListPayoutsByInstructor(ctx context.Context, tenantID, instructo
 // targeted at that space.
 func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.ListInstructorPayoutsByStatusRow, error) {
 	return s.read.ListInstructorPayoutsByStatus(ctx, gen.ListInstructorPayoutsByStatusParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+		Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -848,73 +848,73 @@ func (s *Store) ListPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtyp
 // and the payout-queue list meta envelope.
 func (s *Store) CountPayoutsByStatus(ctx context.Context, tenantID, spaceID pgtype.UUID, status string) (int64, error) {
 	return s.read.CountInstructorPayoutsByStatus(ctx, gen.CountInstructorPayoutsByStatusParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID,
+		Status: status, SpaceID: spaceID,
 	})
 }
 
 // UpdatePayoutStatus transitions a payout's status.
 func (s *Store) UpdatePayoutStatus(ctx context.Context, tenantID, id pgtype.UUID, status string, ref, failureReason *string) (gen.InstructorPayout, error) {
 	return s.write.UpdatePayoutStatus(ctx, gen.UpdatePayoutStatusParams{
-		TenantID: tenantID, ID: id, Status: status,
+		ID: id, Status: status,
 		PayoutReference: ref, FailureReason: failureReason,
 	})
 }
 
 // EarningsSummary returns open/paid totals for an instructor.
 func (s *Store) EarningsSummary(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.GetInstructorEarningsSummaryRow, error) {
-	return s.read.GetInstructorEarningsSummary(ctx, gen.GetInstructorEarningsSummaryParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.GetInstructorEarningsSummary(ctx,
+		instructorID,
+	)
 }
 
 // DashboardSummary returns aggregate stats (total_enrolled, total_revenue,
 // courses_count) for the instructor dashboard (BUG-003).
 func (s *Store) DashboardSummary(ctx context.Context, tenantID, instructorID pgtype.UUID) (gen.GetInstructorDashboardSummaryRow, error) {
-	return s.read.GetInstructorDashboardSummary(ctx, gen.GetInstructorDashboardSummaryParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.GetInstructorDashboardSummary(ctx,
+		instructorID,
+	)
 }
 
 // RevenueSeries returns the daily creator revenue series for an instructor (BUG-005).
 func (s *Store) RevenueSeries(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.GetInstructorRevenueSeriesRow, error) {
-	return s.read.GetInstructorRevenueSeries(ctx, gen.GetInstructorRevenueSeriesParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.GetInstructorRevenueSeries(ctx,
+		instructorID,
+	)
 }
 
 // TrackRevenueSeries returns the daily revenue series for a single track (BUG-007).
 func (s *Store) TrackRevenueSeries(ctx context.Context, tenantID, trackID pgtype.UUID) ([]gen.GetTrackRevenueSeriesRow, error) {
-	return s.read.GetTrackRevenueSeries(ctx, gen.GetTrackRevenueSeriesParams{
-		TenantID: tenantID, TrackID: trackID,
-	})
+	return s.read.GetTrackRevenueSeries(ctx,
+		trackID,
+	)
 }
 
 // TrackEnrollmentSeries returns the daily enrollment series for a track (BUG-007).
 func (s *Store) TrackEnrollmentSeries(ctx context.Context, tenantID, trackID pgtype.UUID) ([]gen.GetTrackEnrollmentSeriesRow, error) {
-	return s.read.GetTrackEnrollmentSeries(ctx, gen.GetTrackEnrollmentSeriesParams{
-		TenantID: tenantID, TrackID: trackID,
-	})
+	return s.read.GetTrackEnrollmentSeries(ctx,
+		trackID,
+	)
 }
 
 // TrackCompletionRate returns total/completed enrollment counts for a track (BUG-007).
 func (s *Store) TrackCompletionRate(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.GetTrackCompletionRateRow, error) {
-	return s.read.GetTrackCompletionRate(ctx, gen.GetTrackCompletionRateParams{
-		TenantID: tenantID, TrackID: trackID,
-	})
+	return s.read.GetTrackCompletionRate(ctx,
+		trackID,
+	)
 }
 
 // HasProStreamSplit checks whether a pro_stream split already exists for the
 // given instructor/track/user combination (BUG-008 idempotency guard).
 func (s *Store) HasProStreamSplit(ctx context.Context, tenantID, instructorID, trackID, userID pgtype.UUID) (bool, error) {
 	return s.read.HasProStreamSplitForPeriod(ctx, gen.HasProStreamSplitForPeriodParams{
-		TenantID: tenantID, InstructorID: instructorID, TrackID: trackID, UserID: userID,
+		InstructorID: instructorID, TrackID: trackID, UserID: userID,
 	})
 }
 
 // ListAllTracks returns all marketplace tracks (admin view, BUG-002).
 func (s *Store) ListAllTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, status string, limit, offset int32) ([]gen.ListAllUniversityTracksRow, error) {
 	return s.read.ListAllUniversityTracks(ctx, gen.ListAllUniversityTracksParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
+		Status: status, SpaceID: spaceID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -922,21 +922,21 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID, spaceID pgtype.UUID
 // spaceID, when Valid, restricts to tracks targeted at that space.
 func (s *Store) CountAllTracks(ctx context.Context, tenantID, spaceID pgtype.UUID, status string) (int64, error) {
 	return s.read.CountAllUniversityTracks(ctx, gen.CountAllUniversityTracksParams{
-		TenantID: tenantID, Status: status, SpaceID: spaceID,
+		Status: status, SpaceID: spaceID,
 	})
 }
 
 // RejectTrack rejects a submitted track with an optional reason (BUG-002, BUG-004).
 func (s *Store) RejectTrack(ctx context.Context, tenantID, trackID pgtype.UUID, reason *string) (gen.RejectUniversityTrackRow, error) {
 	return s.write.RejectUniversityTrack(ctx, gen.RejectUniversityTrackParams{
-		TenantID: tenantID, ID: trackID, RejectionReason: reason,
+		ID: trackID, RejectionReason: reason,
 	})
 }
 
 // UpdateInstructorAdmin updates an instructor's tier and/or commission override (BUG-002).
 func (s *Store) UpdateInstructorAdmin(ctx context.Context, tenantID, id pgtype.UUID, tier *string, commissionOverride *pgtype.Numeric) (gen.InstructorProfile, error) {
 	params := gen.UpdateInstructorProfileAdminParams{
-		TenantID: tenantID, ID: id, Tier: tier,
+		ID: id, Tier: tier,
 	}
 	if commissionOverride != nil {
 		params.CommissionPctOverride = *commissionOverride
@@ -948,15 +948,15 @@ func (s *Store) UpdateInstructorAdmin(ctx context.Context, tenantID, id pgtype.U
 // ListPublishedTracksByInstructor returns only live marketplace tracks for
 // an instructor, filtered at the DB level (BUG-017).
 func (s *Store) ListPublishedTracksByInstructor(ctx context.Context, tenantID, instructorID pgtype.UUID) ([]gen.ListPublishedTracksByInstructorRow, error) {
-	return s.read.ListPublishedTracksByInstructor(ctx, gen.ListPublishedTracksByInstructorParams{
-		TenantID: tenantID, InstructorID: instructorID,
-	})
+	return s.read.ListPublishedTracksByInstructor(ctx,
+		instructorID,
+	)
 }
 
 // SetTrackFeatured features or unfeatures a marketplace track (BUG-012).
 func (s *Store) SetTrackFeatured(ctx context.Context, tenantID, trackID pgtype.UUID, featured bool) (gen.SetUniversityTrackFeaturedRow, error) {
 	return s.write.SetUniversityTrackFeatured(ctx, gen.SetUniversityTrackFeaturedParams{
-		TenantID: tenantID, ID: trackID, Featured: featured,
+		ID: trackID, Featured: featured,
 	})
 }
 
@@ -968,54 +968,54 @@ func (s *Store) SetTrackFeatured(ctx context.Context, tenantID, trackID pgtype.U
 // CreateTrackCategory inserts a new university_track_categories row.
 func (s *Store) CreateTrackCategory(ctx context.Context, tenantID pgtype.UUID, slug, name string, sortOrder int32, isActive bool) (gen.UniversityTrackCategory, error) {
 	return s.write.CreateUniversityTrackCategory(ctx, gen.CreateUniversityTrackCategoryParams{
-		TenantID: tenantID, Slug: slug, Name: name, SortOrder: sortOrder, IsActive: isActive,
+		Slug: slug, Name: name, SortOrder: sortOrder, IsActive: isActive,
 	})
 }
 
 // GetTrackCategory fetches a single category by ID (tenant-scoped).
 func (s *Store) GetTrackCategory(ctx context.Context, tenantID, id pgtype.UUID) (gen.UniversityTrackCategory, error) {
-	return s.read.GetUniversityTrackCategory(ctx, gen.GetUniversityTrackCategoryParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetUniversityTrackCategory(ctx,
+		id,
+	)
 }
 
 // ListTrackCategories returns paginated categories with optional active/search filters.
 func (s *Store) ListTrackCategories(ctx context.Context, tenantID pgtype.UUID, active, search string, limit, offset int32) ([]gen.UniversityTrackCategory, error) {
 	return s.read.ListUniversityTrackCategories(ctx, gen.ListUniversityTrackCategoriesParams{
-		TenantID: tenantID, Active: active, Search: search, PageLimit: limit, PageOffset: offset,
+		Active: active, Search: search, PageLimit: limit, PageOffset: offset,
 	})
 }
 
 // CountTrackCategories returns the total count for the same filter set.
 func (s *Store) CountTrackCategories(ctx context.Context, tenantID pgtype.UUID, active, search string) (int64, error) {
 	return s.read.CountUniversityTrackCategories(ctx, gen.CountUniversityTrackCategoriesParams{
-		TenantID: tenantID, Active: active, Search: search,
+		Active: active, Search: search,
 	})
 }
 
 // ListActiveTrackCategories returns only active categories for the public catalog dropdown.
 func (s *Store) ListActiveTrackCategories(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListActiveUniversityTrackCategoriesRow, error) {
-	return s.read.ListActiveUniversityTrackCategories(ctx, tenantID)
+	return s.read.ListActiveUniversityTrackCategories(ctx)
 }
 
 // UpdateTrackCategory partially updates a category (nil fields are preserved via COALESCE).
 func (s *Store) UpdateTrackCategory(ctx context.Context, tenantID, id pgtype.UUID, name, slug *string, sortOrder *int32, isActive *bool) (gen.UniversityTrackCategory, error) {
 	return s.write.UpdateUniversityTrackCategory(ctx, gen.UpdateUniversityTrackCategoryParams{
-		TenantID: tenantID, ID: id, Name: name, Slug: slug, SortOrder: sortOrder, IsActive: isActive,
+		ID: id, Name: name, Slug: slug, SortOrder: sortOrder, IsActive: isActive,
 	})
 }
 
 // DeleteTrackCategory removes a category row (caller must check CountTracksByCategory first).
 func (s *Store) DeleteTrackCategory(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.write.DeleteUniversityTrackCategory(ctx, gen.DeleteUniversityTrackCategoryParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.write.DeleteUniversityTrackCategory(ctx,
+		id,
+	)
 }
 
 // CountTracksByCategory returns the number of learning_tracks whose category matches
 // the given slug. Used by the delete handler to block removal when tracks reference it.
 func (s *Store) CountTracksByCategory(ctx context.Context, tenantID pgtype.UUID, category string) (int64, error) {
-	return s.read.CountTracksByCategory(ctx, gen.CountTracksByCategoryParams{
-		TenantID: tenantID, Category: &category,
-	})
+	return s.read.CountTracksByCategory(ctx,
+		&category,
+	)
 }

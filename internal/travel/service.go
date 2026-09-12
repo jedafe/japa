@@ -409,7 +409,7 @@ func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
 	return HashSearchQuery(struct {
 		TenantID string `json:"tenant_id"`
 		Params   any    `json:"params"`
-	}{TenantID: tenantPart, Params: params})
+	}{Params: params})
 }
 
 // HashSearchQuery generates a SHA-256 hash of the canonical JSON encoding of

@@ -29,7 +29,6 @@ func (r *iteratorForBatchInsertAdEvents) Next() bool {
 
 func (r iteratorForBatchInsertAdEvents) Values() ([]interface{}, error) {
 	return []interface{}{
-		r.rows[0].TenantID,
 		r.rows[0].CampaignID,
 		r.rows[0].UserID,
 		r.rows[0].EventType,
@@ -42,5 +41,5 @@ func (r iteratorForBatchInsertAdEvents) Err() error {
 }
 
 func (q *Queries) BatchInsertAdEvents(ctx context.Context, arg []BatchInsertAdEventsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"ad_events"}, []string{"tenant_id", "campaign_id", "user_id", "event_type", "occurred_at"}, &iteratorForBatchInsertAdEvents{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"ad_events"}, []string{"campaign_id", "user_id", "event_type", "occurred_at"}, &iteratorForBatchInsertAdEvents{rows: arg})
 }

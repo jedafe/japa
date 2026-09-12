@@ -377,7 +377,7 @@ func (h *Handlers) ListAllReviews(w http.ResponseWriter, r *http.Request) {
 		reviews = make([]gen.ListAdminReviewsFilteredRow, len(rows))
 		for i, r := range rows {
 			reviews[i] = gen.ListAdminReviewsFilteredRow{
-				ID: r.ID, TenantID: r.TenantID, EntityType: r.EntityType,
+				ID: r.ID, EntityType: r.EntityType,
 				EntityID: r.EntityID, ReviewerUserID: r.ReviewerUserID,
 				Rating: r.Rating, Title: r.Title, Body: r.Body,
 				Status: r.Status, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,

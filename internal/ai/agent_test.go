@@ -88,8 +88,8 @@ type stubSessionStore struct {
 
 func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error) {
 	s.created = gen.AiAgentSession{
-		ID:             randomUUID(),
-		TenantID:       arg.TenantID,
+		ID: randomUUID(),
+
 		UserID:         arg.UserID,
 		Prompt:         arg.Prompt,
 		GeoSpaceID:     arg.GeoSpaceID,

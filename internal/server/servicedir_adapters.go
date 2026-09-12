@@ -36,7 +36,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 	}
 
 	rows, err := a.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
@@ -71,7 +71,7 @@ func (a serviceReviewAdapter) ListByEntity(ctx context.Context, tenantID pgtype.
 // Returns zeros when no aggregate row exists yet (no reviews posted).
 func (a serviceReviewAdapter) Aggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (servicedir.ReviewAggregate, error) {
 	agg, err := a.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})

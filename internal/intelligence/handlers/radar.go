@@ -368,27 +368,27 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	// not blank the entire radar).
 	items = appendRadarRows(items, domainFilter, "job",
 		func() ([]gen.IntelJob, error) {
-			return h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, jobToRadarItem, "jobs")
 
 	items = appendRadarRows(items, domainFilter, "visa",
 		func() ([]gen.VisaRoute, error) {
-			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, visaRouteToRadarItem, "visa routes")
 
 	items = appendRadarRows(items, domainFilter, "housing",
 		func() ([]gen.HousingGuide, error) {
-			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, housingGuideToRadarItem, "housing guides")
 
 	items = appendRadarRows(items, domainFilter, "remittance",
 		func() ([]gen.RemittanceRate, error) {
-			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, remittanceRateToRadarItem, "remittance rates")
 
 	items = appendRadarRows(items, domainFilter, "cost_of_living",
 		func() ([]gen.ComparisonItem, error) {
-			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{Column2: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, comparisonItemToRadarItem, "cost-of-living")
 
 	// Sort the merged items by created_at desc (stable sort to preserve
@@ -458,10 +458,8 @@ func (h *Handlers) listRadarScholarships(ctx context.Context, tenantID pgtype.UU
 
 	switch {
 	case hasCursor:
-		return h.intelStores.ListScholarshipsKeyset(ctx, tenantID, gen.ListScholarshipsKeysetParams{
-			Column2: cursorTS,
-			ID:      cursorID,
-			Limit:   limit32,
+		return h.intelStores.ListScholarshipsKeyset(ctx, tenantID, gen.ListScholarshipsKeysetParams{Column1: cursorTS, ID: cursorID,
+			Limit: limit32,
 		})
 	case spaceID.Valid:
 		return h.intelStores.ListScholarshipsBySpace(ctx, tenantID, gen.ListScholarshipsBySpaceParams{
@@ -655,10 +653,7 @@ func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request
 	var items []radarItem
 
 	if len(spaceIDs) > 0 {
-		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{
-			Column2: spaceIDs,
-			Limit:   clampInt32(limit),
-		})
+		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)})
 		if err != nil {
 			slog.Error("intel: radar followed union query failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
@@ -672,10 +667,7 @@ func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request
 		}
 
 		// Union in jobs from followed spaces (graceful degradation on error).
-		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{
-			Column2: spaceIDs,
-			Limit:   clampInt32(limit),
-		}); jerr != nil {
+		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)}); jerr != nil {
 			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
 		} else {
 			for _, j := range jobRows {

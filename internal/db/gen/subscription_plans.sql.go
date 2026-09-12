@@ -13,55 +13,40 @@ import (
 
 const addTrackToPlan = `-- name: AddTrackToPlan :exec
 
-INSERT INTO subscription_plan_tracks (plan_id, track_id, tenant_id)
-VALUES ($1, $2, $3)
+INSERT INTO subscription_plan_tracks (plan_id, track_id) VALUES ($1, $2)
+
 ON CONFLICT (plan_id, track_id) DO NOTHING
 `
 
 type AddTrackToPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PlanID  pgtype.UUID `json:"plan_id"`
+	TrackID pgtype.UUID `json:"track_id"`
 }
 
 // ─── Subscription Plan ↔ Track junction (migration 000273) ───────────────
 func (q *Queries) AddTrackToPlan(ctx context.Context, arg AddTrackToPlanParams) error {
-	_, err := q.db.Exec(ctx, addTrackToPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	_, err := q.db.Exec(ctx, addTrackToPlan, arg.PlanID, arg.TrackID)
 	return err
 }
 
 const countTracksForPlan = `-- name: CountTracksForPlan :one
 SELECT count(*) FROM subscription_plan_tracks
-WHERE plan_id = $1 AND tenant_id = $2
+WHERE plan_id = $1
 `
 
-type CountTracksForPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CountTracksForPlan(ctx context.Context, arg CountTracksForPlanParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTracksForPlan, arg.PlanID, arg.TenantID)
+func (q *Queries) CountTracksForPlan(ctx context.Context, planID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countTracksForPlan, planID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createSubscriptionPlan = `-- name: CreateSubscriptionPlan :one
-INSERT INTO subscription_plans (
-    tenant_id, slug, name, description, features,
-    monthly_amount, yearly_amount, currency,
-    highlighted, sort_order, status, tier
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8,
-    $9, $10, $11, NULLIF($12, '')
-)
+INSERT INTO subscription_plans (slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, tier) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''))
 RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
 
 type CreateSubscriptionPlanParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	Slug          string      `json:"slug"`
 	Name          string      `json:"name"`
 	Description   string      `json:"description"`
@@ -77,7 +62,6 @@ type CreateSubscriptionPlanParams struct {
 
 func (q *Queries) CreateSubscriptionPlan(ctx context.Context, arg CreateSubscriptionPlanParams) (SubscriptionPlan, error) {
 	row := q.db.QueryRow(ctx, createSubscriptionPlan,
-		arg.TenantID,
 		arg.Slug,
 		arg.Name,
 		arg.Description,
@@ -113,31 +97,21 @@ func (q *Queries) CreateSubscriptionPlan(ctx context.Context, arg CreateSubscrip
 
 const deleteSubscriptionPlan = `-- name: DeleteSubscriptionPlan :exec
 DELETE FROM subscription_plans
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteSubscriptionPlanParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteSubscriptionPlan(ctx context.Context, arg DeleteSubscriptionPlanParams) error {
-	_, err := q.db.Exec(ctx, deleteSubscriptionPlan, arg.ID, arg.TenantID)
+func (q *Queries) DeleteSubscriptionPlan(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSubscriptionPlan, id)
 	return err
 }
 
 const getSubscriptionPlanByID = `-- name: GetSubscriptionPlanByID :one
 SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetSubscriptionPlanByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetSubscriptionPlanByID(ctx context.Context, arg GetSubscriptionPlanByIDParams) (SubscriptionPlan, error) {
-	row := q.db.QueryRow(ctx, getSubscriptionPlanByID, arg.ID, arg.TenantID)
+func (q *Queries) GetSubscriptionPlanByID(ctx context.Context, id pgtype.UUID) (SubscriptionPlan, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionPlanByID, id)
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
@@ -161,16 +135,11 @@ func (q *Queries) GetSubscriptionPlanByID(ctx context.Context, arg GetSubscripti
 
 const getSubscriptionPlanBySlug = `-- name: GetSubscriptionPlanBySlug :one
 SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
-WHERE tenant_id = $1 AND slug = $2
+WHERE slug = $1
 `
 
-type GetSubscriptionPlanBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
-
-func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, arg GetSubscriptionPlanBySlugParams) (SubscriptionPlan, error) {
-	row := q.db.QueryRow(ctx, getSubscriptionPlanBySlug, arg.TenantID, arg.Slug)
+func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, slug string) (SubscriptionPlan, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionPlanBySlug, slug)
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
@@ -194,18 +163,17 @@ func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, arg GetSubscrip
 
 const isTrackInPlan = `-- name: IsTrackInPlan :one
 SELECT 1 FROM subscription_plan_tracks
-WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+WHERE plan_id = $1 AND track_id = $2
 LIMIT 1
 `
 
 type IsTrackInPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PlanID  pgtype.UUID `json:"plan_id"`
+	TrackID pgtype.UUID `json:"track_id"`
 }
 
 func (q *Queries) IsTrackInPlan(ctx context.Context, arg IsTrackInPlanParams) (int32, error) {
-	row := q.db.QueryRow(ctx, isTrackInPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	row := q.db.QueryRow(ctx, isTrackInPlan, arg.PlanID, arg.TrackID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -213,12 +181,12 @@ func (q *Queries) IsTrackInPlan(ctx context.Context, arg IsTrackInPlanParams) (i
 
 const listActiveSubscriptionPlans = `-- name: ListActiveSubscriptionPlans :many
 SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
-WHERE tenant_id = $1 AND status = 'active'
+WHERE status = 'active'
 ORDER BY sort_order ASC, created_at ASC
 `
 
-func (q *Queries) ListActiveSubscriptionPlans(ctx context.Context, tenantID pgtype.UUID) ([]SubscriptionPlan, error) {
-	rows, err := q.db.Query(ctx, listActiveSubscriptionPlans, tenantID)
+func (q *Queries) ListActiveSubscriptionPlans(ctx context.Context) ([]SubscriptionPlan, error) {
+	rows, err := q.db.Query(ctx, listActiveSubscriptionPlans)
 	if err != nil {
 		return nil, err
 	}
@@ -255,12 +223,12 @@ func (q *Queries) ListActiveSubscriptionPlans(ctx context.Context, tenantID pgty
 
 const listSubscriptionPlans = `-- name: ListSubscriptionPlans :many
 SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
-WHERE tenant_id = $1
+
 ORDER BY sort_order ASC, created_at ASC
 `
 
-func (q *Queries) ListSubscriptionPlans(ctx context.Context, tenantID pgtype.UUID) ([]SubscriptionPlan, error) {
-	rows, err := q.db.Query(ctx, listSubscriptionPlans, tenantID)
+func (q *Queries) ListSubscriptionPlans(ctx context.Context) ([]SubscriptionPlan, error) {
+	rows, err := q.db.Query(ctx, listSubscriptionPlans)
 	if err != nil {
 		return nil, err
 	}
@@ -297,17 +265,12 @@ func (q *Queries) ListSubscriptionPlans(ctx context.Context, tenantID pgtype.UUI
 
 const listTrackIDsForPlan = `-- name: ListTrackIDsForPlan :many
 SELECT track_id FROM subscription_plan_tracks
-WHERE plan_id = $1 AND tenant_id = $2
+WHERE plan_id = $1
 ORDER BY created_at ASC
 `
 
-type ListTrackIDsForPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListTrackIDsForPlan(ctx context.Context, arg ListTrackIDsForPlanParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listTrackIDsForPlan, arg.PlanID, arg.TenantID)
+func (q *Queries) ListTrackIDsForPlan(ctx context.Context, planID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listTrackIDsForPlan, planID)
 	if err != nil {
 		return nil, err
 	}
@@ -328,51 +291,45 @@ func (q *Queries) ListTrackIDsForPlan(ctx context.Context, arg ListTrackIDsForPl
 
 const removeAllTracksFromPlan = `-- name: RemoveAllTracksFromPlan :exec
 DELETE FROM subscription_plan_tracks
-WHERE plan_id = $1 AND tenant_id = $2
+WHERE plan_id = $1
 `
 
-type RemoveAllTracksFromPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) RemoveAllTracksFromPlan(ctx context.Context, arg RemoveAllTracksFromPlanParams) error {
-	_, err := q.db.Exec(ctx, removeAllTracksFromPlan, arg.PlanID, arg.TenantID)
+func (q *Queries) RemoveAllTracksFromPlan(ctx context.Context, planID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeAllTracksFromPlan, planID)
 	return err
 }
 
 const removeTrackFromPlan = `-- name: RemoveTrackFromPlan :exec
 DELETE FROM subscription_plan_tracks
-WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+WHERE plan_id = $1 AND track_id = $2
 `
 
 type RemoveTrackFromPlanParams struct {
-	PlanID   pgtype.UUID `json:"plan_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PlanID  pgtype.UUID `json:"plan_id"`
+	TrackID pgtype.UUID `json:"track_id"`
 }
 
 func (q *Queries) RemoveTrackFromPlan(ctx context.Context, arg RemoveTrackFromPlanParams) error {
-	_, err := q.db.Exec(ctx, removeTrackFromPlan, arg.PlanID, arg.TrackID, arg.TenantID)
+	_, err := q.db.Exec(ctx, removeTrackFromPlan, arg.PlanID, arg.TrackID)
 	return err
 }
 
 const updateSubscriptionPlan = `-- name: UpdateSubscriptionPlan :one
 UPDATE subscription_plans
 SET
-    slug = COALESCE(NULLIF($1, ''), slug),
-    name = COALESCE(NULLIF($2, ''), name),
-    description = $3,
-    features = $4,
-    monthly_amount = $5,
-    yearly_amount = $6,
-    currency = COALESCE(NULLIF($7, ''), currency),
-    highlighted = $8,
-    sort_order = $9,
-    status = COALESCE(NULLIF($10, ''), status),
-    tier = COALESCE(NULLIF($11, ''), tier),
-    updated_at = now()
-WHERE id = $12 AND tenant_id = $13
+ slug = COALESCE(NULLIF($1, ''), slug),
+ name = COALESCE(NULLIF($2, ''), name),
+ description = $3,
+ features = $4,
+ monthly_amount = $5,
+ yearly_amount = $6,
+ currency = COALESCE(NULLIF($7, ''), currency),
+ highlighted = $8,
+ sort_order = $9,
+ status = COALESCE(NULLIF($10, ''), status),
+ tier = COALESCE(NULLIF($11, ''), tier),
+ updated_at = now()
+WHERE id = $12
 RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
 
@@ -389,7 +346,6 @@ type UpdateSubscriptionPlanParams struct {
 	Status        interface{} `json:"status"`
 	Tier          interface{} `json:"tier"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateSubscriptionPlan(ctx context.Context, arg UpdateSubscriptionPlanParams) (SubscriptionPlan, error) {
@@ -406,7 +362,6 @@ func (q *Queries) UpdateSubscriptionPlan(ctx context.Context, arg UpdateSubscrip
 		arg.Status,
 		arg.Tier,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i SubscriptionPlan
 	err := row.Scan(

@@ -1150,7 +1150,7 @@ func (s *Service) GetForYouFeed(
 		visitorRegion := contentRegion
 
 		rows, err := s.store.getForYouCandidates(ctx, gen.GetForYouCandidatesParams{
-			TenantID:           tenantID,
+
 			WindowStart:        windowStart,
 			ExcludeAuthorID:    userID,
 			AuthorIds:          authorIDs,

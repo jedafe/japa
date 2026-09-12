@@ -644,10 +644,9 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 		isPrivateSpace := false
 
 		if spaceID.Valid {
-			space, err := h.Service.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       spaceID,
-				TenantID: tenantID,
-			})
+			space, err := h.Service.read.GetSpaceByID(ctx,
+				spaceID,
+			)
 			if err == nil && space.Visibility != "public" {
 				isPrivateSpace = true
 			}
@@ -2652,8 +2651,8 @@ func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
 	}
 
 	return jsonldTemplateResponse{
-		ID:          t.ID.String(),
-		TenantID:    t.TenantID.String(),
+		ID: t.ID.String(),
+
 		ContentType: t.ContentType,
 		Template:    body,
 		IsActive:    t.IsActive,

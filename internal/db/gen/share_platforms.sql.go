@@ -12,26 +12,37 @@ import (
 )
 
 const createSharePlatform = `-- name: CreateSharePlatform :one
-INSERT INTO share_platforms (tenant_id, key, label, icon, url_template, color, enabled, position)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+INSERT INTO share_platforms (key, label, icon, url_template, color, enabled, position) VALUES ($1, $2, $3, $4, $5, $6, $7)
+
+RETURNING id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 `
 
 type CreateSharePlatformParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Key         string      `json:"key"`
-	Label       string      `json:"label"`
-	Icon        string      `json:"icon"`
-	UrlTemplate string      `json:"url_template"`
-	Color       string      `json:"color"`
-	Enabled     bool        `json:"enabled"`
-	Position    int32       `json:"position"`
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Icon        string `json:"icon"`
+	UrlTemplate string `json:"url_template"`
+	Color       string `json:"color"`
+	Enabled     bool   `json:"enabled"`
+	Position    int32  `json:"position"`
+}
+
+type CreateSharePlatformRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Creates a new share platform.
-func (q *Queries) CreateSharePlatform(ctx context.Context, arg CreateSharePlatformParams) (SharePlatform, error) {
+func (q *Queries) CreateSharePlatform(ctx context.Context, arg CreateSharePlatformParams) (CreateSharePlatformRow, error) {
 	row := q.db.QueryRow(ctx, createSharePlatform,
-		arg.TenantID,
 		arg.Key,
 		arg.Label,
 		arg.Icon,
@@ -40,10 +51,9 @@ func (q *Queries) CreateSharePlatform(ctx context.Context, arg CreateSharePlatfo
 		arg.Enabled,
 		arg.Position,
 	)
-	var i SharePlatform
+	var i CreateSharePlatformRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,
@@ -59,40 +69,40 @@ func (q *Queries) CreateSharePlatform(ctx context.Context, arg CreateSharePlatfo
 
 const deleteSharePlatform = `-- name: DeleteSharePlatform :exec
 DELETE FROM share_platforms
-WHERE tenant_id = $1
-  AND key = $2
+WHERE key = $1
 `
 
-type DeleteSharePlatformParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-}
-
 // Deletes a share platform by key.
-func (q *Queries) DeleteSharePlatform(ctx context.Context, arg DeleteSharePlatformParams) error {
-	_, err := q.db.Exec(ctx, deleteSharePlatform, arg.TenantID, arg.Key)
+func (q *Queries) DeleteSharePlatform(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteSharePlatform, key)
 	return err
 }
 
 const getSharePlatform = `-- name: GetSharePlatform :one
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
-WHERE tenant_id = $1
-  AND key = $2
+WHERE key = $1
 `
 
-type GetSharePlatformParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
+type GetSharePlatformRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Returns a single share platform by key.
-func (q *Queries) GetSharePlatform(ctx context.Context, arg GetSharePlatformParams) (SharePlatform, error) {
-	row := q.db.QueryRow(ctx, getSharePlatform, arg.TenantID, arg.Key)
-	var i SharePlatform
+func (q *Queries) GetSharePlatform(ctx context.Context, key string) (GetSharePlatformRow, error) {
+	row := q.db.QueryRow(ctx, getSharePlatform, key)
+	var i GetSharePlatformRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,
@@ -107,26 +117,37 @@ func (q *Queries) GetSharePlatform(ctx context.Context, arg GetSharePlatformPara
 }
 
 const listEnabledSharePlatforms = `-- name: ListEnabledSharePlatforms :many
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
-WHERE tenant_id = $1
-  AND enabled = true
+WHERE enabled = true
 ORDER BY position ASC, label ASC
 `
 
+type ListEnabledSharePlatformsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Public query: returns only enabled share platforms, ordered by position.
-func (q *Queries) ListEnabledSharePlatforms(ctx context.Context, tenantID pgtype.UUID) ([]SharePlatform, error) {
-	rows, err := q.db.Query(ctx, listEnabledSharePlatforms, tenantID)
+func (q *Queries) ListEnabledSharePlatforms(ctx context.Context) ([]ListEnabledSharePlatformsRow, error) {
+	rows, err := q.db.Query(ctx, listEnabledSharePlatforms)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SharePlatform
+	var items []ListEnabledSharePlatformsRow
 	for rows.Next() {
-		var i SharePlatform
+		var i ListEnabledSharePlatformsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Key,
 			&i.Label,
 			&i.Icon,
@@ -148,25 +169,37 @@ func (q *Queries) ListEnabledSharePlatforms(ctx context.Context, tenantID pgtype
 }
 
 const listSharePlatforms = `-- name: ListSharePlatforms :many
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
-WHERE tenant_id = $1
+
 ORDER BY position ASC, label ASC
 `
 
+type ListSharePlatformsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Returns all share platforms for a tenant, ordered by position.
-func (q *Queries) ListSharePlatforms(ctx context.Context, tenantID pgtype.UUID) ([]SharePlatform, error) {
-	rows, err := q.db.Query(ctx, listSharePlatforms, tenantID)
+func (q *Queries) ListSharePlatforms(ctx context.Context) ([]ListSharePlatformsRow, error) {
+	rows, err := q.db.Query(ctx, listSharePlatforms)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SharePlatform
+	var items []ListSharePlatformsRow
 	for rows.Next() {
-		var i SharePlatform
+		var i ListSharePlatformsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Key,
 			&i.Label,
 			&i.Icon,
@@ -190,30 +223,41 @@ func (q *Queries) ListSharePlatforms(ctx context.Context, tenantID pgtype.UUID) 
 const updateSharePlatform = `-- name: UpdateSharePlatform :one
 UPDATE share_platforms
 SET label = $1,
-    icon = $2,
-    url_template = $3,
-    color = $4,
-    enabled = $5,
-    position = $6,
-    updated_at = now()
-WHERE tenant_id = $7
-  AND key = $8
-RETURNING id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+ icon = $2,
+ url_template = $3,
+ color = $4,
+ enabled = $5,
+ position = $6,
+ updated_at = now()
+WHERE key = $7
+RETURNING id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 `
 
 type UpdateSharePlatformParams struct {
-	Label       string      `json:"label"`
-	Icon        string      `json:"icon"`
-	UrlTemplate string      `json:"url_template"`
-	Color       string      `json:"color"`
-	Enabled     bool        `json:"enabled"`
-	Position    int32       `json:"position"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Key         string      `json:"key"`
+	Label       string `json:"label"`
+	Icon        string `json:"icon"`
+	UrlTemplate string `json:"url_template"`
+	Color       string `json:"color"`
+	Enabled     bool   `json:"enabled"`
+	Position    int32  `json:"position"`
+	Key         string `json:"key"`
+}
+
+type UpdateSharePlatformRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Key         string             `json:"key"`
+	Label       string             `json:"label"`
+	Icon        string             `json:"icon"`
+	UrlTemplate string             `json:"url_template"`
+	Color       string             `json:"color"`
+	Enabled     bool               `json:"enabled"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Updates a share platform by key.
-func (q *Queries) UpdateSharePlatform(ctx context.Context, arg UpdateSharePlatformParams) (SharePlatform, error) {
+func (q *Queries) UpdateSharePlatform(ctx context.Context, arg UpdateSharePlatformParams) (UpdateSharePlatformRow, error) {
 	row := q.db.QueryRow(ctx, updateSharePlatform,
 		arg.Label,
 		arg.Icon,
@@ -221,13 +265,11 @@ func (q *Queries) UpdateSharePlatform(ctx context.Context, arg UpdateSharePlatfo
 		arg.Color,
 		arg.Enabled,
 		arg.Position,
-		arg.TenantID,
 		arg.Key,
 	)
-	var i SharePlatform
+	var i UpdateSharePlatformRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,

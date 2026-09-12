@@ -234,7 +234,7 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	}
 
 	meta := ServiceMeta{
-		TenantID:           tenantID,
+
 		ContentID:          contentRow.ID,
 		OrgID:              orgID,
 		DestinationSpaceID: destSpaceID,
@@ -297,7 +297,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
-		TenantID:        tenantID,
+
 		DestSpaceID:     destSpaceID,
 		CitySpaceID:     citySpaceID,
 		ServiceCategory: serviceCategory,
@@ -486,7 +486,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, c
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID:        tenantID,
+
 		DestSpaceID:     destSpaceID,
 		Status:          status,
 		IsVerified:      isVerified,

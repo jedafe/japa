@@ -994,10 +994,10 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.Service.store.read.GetPublicAuthorAnalytics(r.Context(), gen.GetPublicAuthorAnalyticsParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-	})
+	stats, err := h.Service.store.read.GetPublicAuthorAnalytics(r.Context(),
+
+		userID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")

@@ -96,7 +96,7 @@ func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityTyp
 	vec := pgvector.NewVector(chunk.Vector)
 
 	_, err := s.queries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		ChunkIndex: int32(chunk.Index), // #nosec G115 -- chunk index, bounded by chunking logic
@@ -115,7 +115,7 @@ func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityTyp
 // Used on unpublish/delete and by the admin DELETE route.
 func (s *Store) DeleteEntityEmbeddings(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	return s.queries.DeleteContentEmbeddingsByEntity(ctx, gen.DeleteContentEmbeddingsByEntityParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -124,17 +124,17 @@ func (s *Store) DeleteEntityEmbeddings(ctx context.Context, tenantID pgtype.UUID
 // DeleteEmbeddingsByType removes all chunks for every entity of the given
 // type within a tenant. Used by the admin by-type aggregate purge.
 func (s *Store) DeleteEmbeddingsByType(ctx context.Context, tenantID pgtype.UUID, entityType string) error {
-	return s.queries.DeleteContentEmbeddingsByType(ctx, gen.DeleteContentEmbeddingsByTypeParams{
-		TenantID:   tenantID,
-		EntityType: entityType,
-	})
+	return s.queries.DeleteContentEmbeddingsByType(ctx,
+
+		entityType,
+	)
 }
 
 // DeleteStaleTail removes chunks with chunk_index >= maxIndex for an entity.
 // Called after a re-index that produced fewer chunks than the previous index.
 func (s *Store) DeleteStaleTail(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, maxIndex int32) error {
 	return s.queries.DeleteContentEmbeddingsAboveIndex(ctx, gen.DeleteContentEmbeddingsAboveIndexParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		MaxIndex:   maxIndex,
@@ -144,7 +144,7 @@ func (s *Store) DeleteStaleTail(ctx context.Context, tenantID pgtype.UUID, entit
 // CountEntityChunks returns the number of chunks stored for an entity.
 func (s *Store) CountEntityChunks(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (int64, error) {
 	return s.queries.CountContentEmbeddingsByEntity(ctx, gen.CountContentEmbeddingsByEntityParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -161,7 +161,7 @@ type PublishedContentID struct {
 // into memory at once.
 func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListPublishedContentIDsForReindex(ctx, gen.ListPublishedContentIDsForReindexParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -172,8 +172,7 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID:       row.ID,
-			TenantID: row.TenantID,
+			ID: row.ID,
 		})
 	}
 
@@ -184,7 +183,7 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 // full corpus re-indexing (ADR-069 §2: forum threads are part of the corpus).
 func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListForumThreadIDsForReindex(ctx, gen.ListForumThreadIDsForReindexParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -195,8 +194,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID:       row.ID,
-			TenantID: row.TenantID,
+			ID: row.ID,
 		})
 	}
 
@@ -207,7 +205,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 // re-indexing (ADR-069 §2: spaces are part of the corpus).
 func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListSpaceIDsForReindex(ctx, gen.ListSpaceIDsForReindexParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -218,8 +216,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID:       row.ID,
-			TenantID: row.TenantID,
+			ID: row.ID,
 		})
 	}
 
@@ -230,7 +227,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 // full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
 func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListLearningTrackIDsForReindex(ctx, gen.ListLearningTrackIDsForReindexParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -241,8 +238,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID:       row.ID,
-			TenantID: row.TenantID,
+			ID: row.ID,
 		})
 	}
 
@@ -256,9 +252,9 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 
 	rows, err := s.queries.SearchContentEmbeddings(ctx, gen.SearchContentEmbeddingsParams{
 		QueryEmbedding: &vec,
-		TenantID:       tenantID,
-		Language:       language,
-		TopK:           topK,
+
+		Language: language,
+		TopK:     topK,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rag: search: %w", err)
@@ -300,10 +296,10 @@ func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, que
 
 	rows, err := s.queries.SearchContentEmbeddingsGeoFiltered(ctx, gen.SearchContentEmbeddingsGeoFilteredParams{
 		QueryEmbedding: &vec,
-		TenantID:       tenantID,
-		Language:       language,
-		TopK:           topK,
-		GeoSpaceID:     geoSpaceID,
+
+		Language:   language,
+		TopK:       topK,
+		GeoSpaceID: geoSpaceID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rag: search geo-filtered: %w", err)
@@ -341,7 +337,7 @@ type EntityTypeStats struct {
 
 // GetStats returns aggregate index statistics for a tenant.
 func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (IndexStats, error) {
-	row, err := s.queries.GetContentEmbeddingStats(ctx, tenantID)
+	row, err := s.queries.GetContentEmbeddingStats(ctx)
 	if err != nil {
 		return IndexStats{}, fmt.Errorf("rag: get stats: %w", err)
 	}
@@ -351,7 +347,7 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (IndexStats,
 		lastIndexed = row.LastIndexedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 
-	byTypeRows, err := s.queries.GetContentEmbeddingStatsByType(ctx, tenantID)
+	byTypeRows, err := s.queries.GetContentEmbeddingStatsByType(ctx)
 	if err != nil {
 		return IndexStats{}, fmt.Errorf("rag: get stats by type: %w", err)
 	}

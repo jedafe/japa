@@ -138,7 +138,7 @@ func (s *Service) createBulkImportJob(ctx context.Context, tenantID, userID pgty
 	errorLog, _ := json.Marshal([]bulkErrorLogEntry{})
 
 	return s.store.CreateImportJob(ctx, gen.CreateVideoImportJobParams{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		SourceType:         dbSourceType,
 		SourceUrl:          stringPtr(sourceURL),
@@ -161,8 +161,8 @@ func (s *Service) enqueueBulkImport(_ context.Context, job gen.VideoImportJob, t
 
 	payload, err := json.Marshal(BulkImportPayload{
 		ImportJobID: job.ID.String(),
-		TenantID:    tenantID.String(),
-		UserID:      userID.String(),
+
+		UserID: userID.String(),
 	})
 	if err != nil {
 		return gen.VideoImportJob{}, fmt.Errorf("encoding import payload: %w", err)
@@ -241,8 +241,8 @@ func (s *Service) startBulkImportJob(ctx context.Context, importJobID, tenantID 
 	startedAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
 
 	return s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-		ID:            job.ID,
-		TenantID:      job.TenantID,
+		ID: job.ID,
+
 		Status:        "running",
 		TotalItems:    0,
 		ImportedCount: 0,
@@ -277,8 +277,8 @@ func (s *Service) resolveAndCapBulkURLs(ctx context.Context, tenantID pgtype.UUI
 // upsertImportJobTotal stores the resolved total on the running job.
 func (s *Service) upsertImportJobTotal(ctx context.Context, job gen.VideoImportJob, startedAt pgtype.Timestamptz, total int32) error {
 	_, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-		ID:            job.ID,
-		TenantID:      job.TenantID,
+		ID: job.ID,
+
 		Status:        "running",
 		TotalItems:    total,
 		ImportedCount: 0,
@@ -329,8 +329,8 @@ func (s *Service) importBulkURLs(ctx context.Context, tenantID, userID pgtype.UU
 		errorLogBytes, _ := json.Marshal(errorLog)
 
 		if _, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-			ID:            job.ID,
-			TenantID:      job.TenantID,
+			ID: job.ID,
+
 			Status:        "running",
 			TotalItems:    total,
 			ImportedCount: imported,
@@ -360,8 +360,8 @@ func (s *Service) finalizeBulkImportJob(ctx context.Context, job gen.VideoImport
 	errorLogBytes, _ := json.Marshal(errorLog)
 
 	_, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-		ID:            job.ID,
-		TenantID:      job.TenantID,
+		ID: job.ID,
+
 		Status:        status,
 		TotalItems:    total,
 		ImportedCount: imported,
@@ -561,8 +561,8 @@ func (s *Service) bulkYouTubeProvider(apiKey string) *YouTubeProvider {
 func (s *Service) failJob(ctx context.Context, job gen.VideoImportJob, message string) error {
 	errorLog, _ := json.Marshal([]bulkErrorLogEntry{{Message: message}})
 	_, err := s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-		ID:            job.ID,
-		TenantID:      job.TenantID,
+		ID: job.ID,
+
 		Status:        "failed",
 		TotalItems:    0,
 		ImportedCount: 0,

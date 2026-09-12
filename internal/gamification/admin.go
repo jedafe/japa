@@ -26,7 +26,7 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 	}
 
 	arg := gen.CreateBadgeDefinitionParams{
-		TenantID:           tenantID,
+
 		Slug:               in.Slug,
 		Name:               in.Name,
 		Description:        in.Description,
@@ -67,8 +67,8 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 // non-nil fields in the input are updated.
 func (s *Service) UpdateBadge(ctx context.Context, tenantID, badgeID pgtype.UUID, in UpdateBadgeInput) (BadgeInfo, error) {
 	arg := gen.UpdateBadgeDefinitionParams{
-		TenantID: tenantID,
-		ID:       badgeID,
+
+		ID: badgeID,
 	}
 	if in.Name != nil {
 		arg.Name = in.Name
@@ -129,7 +129,7 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 	}
 
 	_, err = s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		BadgeID:   badgeID,
 		AwardedBy: awardedBy,
@@ -232,7 +232,7 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 	}
 
 	arg := gen.CreateChallengeParams{
-		TenantID:     tenantID,
+
 		Slug:         in.Slug,
 		Name:         in.Name,
 		Description:  in.Description,
@@ -285,8 +285,8 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 // UpdateChallenge updates a challenge definition's mutable fields (admin).
 func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgtype.UUID, in UpdateChallengeInput) (ChallengeInfo, error) {
 	arg := gen.UpdateChallengeParams{
-		TenantID: tenantID,
-		ID:       challengeID,
+
+		ID: challengeID,
 	}
 	if in.Name != nil {
 		arg.Name = in.Name

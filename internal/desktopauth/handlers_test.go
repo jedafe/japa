@@ -115,10 +115,10 @@ func TestExchangeKey_InsufficientScope(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
-		TenantID: tid,
-		Scopes:   []string{"api.read.content"},
+		KeyID:  uid,
+		UserID: uid,
+
+		Scopes: []string{"api.read.content"},
 	}
 	h := &Handlers{APIKeys: &fakeAPIKeyValidator{keyCtx: ctx, allowed: true}}
 	req := httptest.NewRequest(http.MethodPost, "/auth/exchange-key", nil)
@@ -138,10 +138,10 @@ func TestExchangeKey_IPNotAllowed(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
-		TenantID: tid,
-		Scopes:   []string{"api.write.content"},
+		KeyID:  uid,
+		UserID: uid,
+
+		Scopes: []string{"api.write.content"},
 	}
 	v := &fakeAPIKeyValidator{keyCtx: ctx, allowed: false}
 	h := &Handlers{APIKeys: v}
@@ -162,10 +162,10 @@ func TestExchangeKey_Success(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
-		TenantID: tid,
-		Scopes:   []string{"api.write.content"},
+		KeyID:  uid,
+		UserID: uid,
+
+		Scopes: []string{"api.write.content"},
 	}
 	q := &fakeRefreshCreator{}
 	h := &Handlers{
@@ -242,10 +242,10 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 		{"api.read.*", "api.write.*"},
 	} {
 		ctx := &publicapi.APIKeyContext{
-			KeyID:    uid,
-			UserID:   uid,
-			TenantID: tid,
-			Scopes:   scopes,
+			KeyID:  uid,
+			UserID: uid,
+
+			Scopes: scopes,
 		}
 		q := &fakeRefreshCreator{}
 		h := &Handlers{
@@ -269,10 +269,10 @@ func TestExchangeKey_BodyFallback(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
 	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
-		KeyID:    uid,
-		UserID:   uid,
-		TenantID: tid,
-		Scopes:   []string{"api.write.content"},
+		KeyID:  uid,
+		UserID: uid,
+
+		Scopes: []string{"api.write.content"},
 	}
 	h := &Handlers{
 		APIKeys:     &fakeAPIKeyValidator{keyCtx: ctx, allowed: true},

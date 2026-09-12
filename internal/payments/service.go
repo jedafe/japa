@@ -99,7 +99,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 
 	if provider != nil {
 		resp, err := provider.InitiatePayment(ctx, PaymentRequest{
-			TenantID:    tenantID.String(),
+
 			UserID:      userID.String(),
 			Email:       input.Email,
 			Amount:      netAmount,
@@ -199,7 +199,7 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	payment, err := s.store.createPayment(ctx, gen.CreatePaymentParams{
-		TenantID:       tenantID,
+
 		UserID:         userID,
 		Provider:       input.Provider,
 		ProviderRef:    ref,
@@ -358,7 +358,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	// This collapses the previous read-check + insert + mark into a single
 	// atomic step that is race-free under concurrent delivery.
 	inserted, err := s.store.insertWebhookEventIfNew(ctx, gen.InsertWebhookEventParams{
-		TenantID:   tenantID,
+
 		Provider:   provider,
 		EventID:    event.EventID,
 		EventType:  event.EventType,
@@ -554,7 +554,7 @@ func (s *Service) CreateDiscountCode(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	code, err := s.store.createDiscountCode(ctx, gen.CreateDiscountCodeParams{
-		TenantID:      tenantID,
+
 		Code:          input.Code,
 		DiscountType:  input.DiscountType,
 		DiscountValue: float64ToNumeric(input.DiscountValue),

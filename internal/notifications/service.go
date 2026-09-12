@@ -89,7 +89,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 	// BUG-001: pass tenant_id so the batch window carries tenant context
 	// through to DispatchBatch, which needs it for the notifications insert.
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
-		TenantID:         tenantID,
+
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		SubjectType:      subjectType,
@@ -200,7 +200,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	var actionURLPtr *string
 
 	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
-		TenantID:         window.TenantID,
+
 		RecipientID:      window.RecipientID,
 		NotificationType: window.NotificationType,
 		ActorType:        stringPtr(ActorTypeUser),
@@ -331,7 +331,7 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 
 	// BUG-005: capture the returned ID for the WebSocket broadcast.
 	notifID, err := s.store.insertNotification(ctx, gen.InsertNotificationParams{
-		TenantID:         tenantID,
+
 		RecipientID:      recipientID,
 		NotificationType: nType,
 		ActorType:        actorTypePtr,

@@ -9,7 +9,7 @@
 
 -- name: ListAdSlotTypesForSelfServe :many
 SELECT * FROM ad_slot_types
-WHERE tenant_id = @tenant_id AND is_active = true
+WHERE is_active = true
 ORDER BY slot_name ASC;
 
 -- =====================================================================
@@ -17,16 +17,8 @@ ORDER BY slot_name ASC;
 -- =====================================================================
 
 -- name: CreateSelfServeAdCampaign :one
-INSERT INTO ad_campaigns (
-    tenant_id, organization_id, name, slot_type_id, content, target_url,
-    budget_credits, flat_rate, status, priority, frequency_cap_per_user,
-    start_date, end_date, target_geo, target_space_ids, created_by
-)
-VALUES (
-    @tenant_id, @organization_id, @name, @slot_type_id, @content, sqlc.narg(target_url),
-    @budget_credits, @flat_rate, 'pending_review', 0, sqlc.narg(frequency_cap_per_user),
-    sqlc.narg(start_date), sqlc.narg(end_date), @target_geo, @target_space_ids, @created_by
-)
+INSERT INTO ad_campaigns (organization_id, name, slot_type_id, content, target_url, budget_credits, flat_rate, status, priority, frequency_cap_per_user, start_date, end_date, target_geo, target_space_ids, created_by) VALUES (@organization_id, @name, @slot_type_id, @content, sqlc.narg(target_url), @budget_credits, @flat_rate, 'pending_review', 0, sqlc.narg(frequency_cap_per_user), sqlc.narg(start_date), sqlc.narg(end_date), @target_geo, @target_space_ids, @created_by)
+
 RETURNING *;
 
 -- =====================================================================
@@ -35,7 +27,7 @@ RETURNING *;
 
 -- name: GetSelfServeAdCampaign :one
 SELECT * FROM ad_campaigns
-WHERE tenant_id = @tenant_id AND id = @id AND organization_id = @organization_id;
+WHERE id = @id AND organization_id = @organization_id;
 
 -- =====================================================================
 -- List an org's campaigns.
@@ -43,16 +35,16 @@ WHERE tenant_id = @tenant_id AND id = @id AND organization_id = @organization_id
 
 -- name: ListOrgAdCampaigns :many
 SELECT * FROM ad_campaigns
-WHERE tenant_id = @tenant_id AND organization_id = @organization_id
-  AND (@status::text = '' OR status = @status)
+WHERE organization_id = @organization_id
+ AND (@status::text = '' OR status = @status)
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountOrgAdCampaigns :one
 SELECT COUNT(*) AS count
 FROM ad_campaigns
-WHERE tenant_id = @tenant_id AND organization_id = @organization_id
-  AND (@status::text = '' OR status = @status);
+WHERE organization_id = @organization_id
+ AND (@status::text = '' OR status = @status);
 
 -- =====================================================================
 -- Update a campaign's creative (only when pending_review or paused).
@@ -61,11 +53,11 @@ WHERE tenant_id = @tenant_id AND organization_id = @organization_id
 -- name: UpdateSelfServeAdCampaignCreative :one
 UPDATE ad_campaigns
 SET
-    content    = COALESCE(sqlc.narg(content), content),
-    target_url = COALESCE(sqlc.narg(target_url), target_url),
-    updated_at = now()
-WHERE tenant_id = @tenant_id AND id = @id AND organization_id = @organization_id
-  AND status IN ('pending_review', 'paused')
+ content = COALESCE(sqlc.narg(content), content),
+ target_url = COALESCE(sqlc.narg(target_url), target_url),
+ updated_at = now()
+WHERE id = @id AND organization_id = @organization_id
+ AND status IN ('pending_review', 'paused')
 RETURNING *;
 
 -- =====================================================================
@@ -75,8 +67,8 @@ RETURNING *;
 -- name: PauseAdCampaign :one
 UPDATE ad_campaigns
 SET status = 'paused', updated_at = now()
-WHERE tenant_id = @tenant_id AND id = @id AND organization_id = @organization_id
-  AND status = 'active'
+WHERE id = @id AND organization_id = @organization_id
+ AND status = 'active'
 RETURNING *;
 
 -- =====================================================================
@@ -86,8 +78,8 @@ RETURNING *;
 -- name: ResumeAdCampaign :one
 UPDATE ad_campaigns
 SET status = 'active', updated_at = now()
-WHERE tenant_id = @tenant_id AND id = @id AND organization_id = @organization_id
-  AND status = 'paused'
+WHERE id = @id AND organization_id = @organization_id
+ AND status = 'paused'
 RETURNING *;
 
 -- =====================================================================
@@ -96,13 +88,13 @@ RETURNING *;
 
 -- name: GetAdCampaignStats :one
 SELECT
-    COUNT(*) FILTER (WHERE ae.event_type = 'impression') AS impressions,
-    COUNT(*) FILTER (WHERE ae.event_type = 'click') AS clicks,
-    ac.spent,
-    ac.budget_credits
+ COUNT(*) FILTER (WHERE ae.event_type = 'impression') AS impressions,
+ COUNT(*) FILTER (WHERE ae.event_type = 'click') AS clicks,
+ ac.spent,
+ ac.budget_credits
 FROM ad_campaigns ac
 LEFT JOIN ad_events ae ON ae.campaign_id = ac.id
-WHERE ac.tenant_id = @tenant_id AND ac.id = @id AND ac.organization_id = @organization_id
+WHERE ac.id = @id AND ac.organization_id = @organization_id
 GROUP BY ac.spent, ac.budget_credits;
 
 -- =====================================================================
@@ -111,7 +103,7 @@ GROUP BY ac.spent, ac.budget_credits;
 
 -- name: IsOrgVerified :one
 SELECT verified FROM organizations
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- =====================================================================
 -- Check if a user is a member of an organization (org admin check).
@@ -119,8 +111,8 @@ WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: IsOrgMember :one
 SELECT EXISTS(
-    SELECT 1 FROM organization_members
-    WHERE organization_id = @org_id AND user_id = @user_id
+ SELECT 1 FROM organization_members
+ WHERE organization_id = @org_id AND user_id = @user_id
 ) AS is_member;
 
 -- =====================================================================
@@ -129,9 +121,9 @@ SELECT EXISTS(
 
 -- name: GetCampaignForRefund :one
 SELECT * FROM ad_campaigns
-WHERE tenant_id = @tenant_id AND id = @id AND organization_id IS NOT NULL;
+WHERE id = @id AND organization_id IS NOT NULL;
 
 -- name: MarkCampaignRefunded :exec
 UPDATE ad_campaigns
 SET budget_credits = 0, status = 'rejected', updated_at = now()
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;

@@ -14,11 +14,11 @@ import (
 const adminCountFlaggedReferrals = `-- name: AdminCountFlaggedReferrals :one
 SELECT COUNT(*) AS count
 FROM referrals
-WHERE tenant_id = $1 AND status = 'flagged'
+WHERE status = 'flagged'
 `
 
-func (q *Queries) AdminCountFlaggedReferrals(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountFlaggedReferrals, tenantID)
+func (q *Queries) AdminCountFlaggedReferrals(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountFlaggedReferrals)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -27,17 +27,11 @@ func (q *Queries) AdminCountFlaggedReferrals(ctx context.Context, tenantID pgtyp
 const adminCountReferrals = `-- name: AdminCountReferrals :one
 SELECT COUNT(*) AS count
 FROM referrals
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 `
 
-type AdminCountReferralsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-}
-
-func (q *Queries) AdminCountReferrals(ctx context.Context, arg AdminCountReferralsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountReferrals, arg.TenantID, arg.Status)
+func (q *Queries) AdminCountReferrals(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountReferrals, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -45,19 +39,18 @@ func (q *Queries) AdminCountReferrals(ctx context.Context, arg AdminCountReferra
 
 const adminListFlaggedReferrals = `-- name: AdminListFlaggedReferrals :many
 SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
-WHERE tenant_id = $1 AND status = 'flagged'
+WHERE status = 'flagged'
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type AdminListFlaggedReferralsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) AdminListFlaggedReferrals(ctx context.Context, arg AdminListFlaggedReferralsParams) ([]Referral, error) {
-	rows, err := q.db.Query(ctx, adminListFlaggedReferrals, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminListFlaggedReferrals, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -93,29 +86,22 @@ func (q *Queries) AdminListFlaggedReferrals(ctx context.Context, arg AdminListFl
 const adminListReferrals = `-- name: AdminListReferrals :many
 
 SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type AdminListReferralsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 // =====================================================================
 // Admin oversight
 // =====================================================================
 func (q *Queries) AdminListReferrals(ctx context.Context, arg AdminListReferralsParams) ([]Referral, error) {
-	rows, err := q.db.Query(ctx, adminListReferrals,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, adminListReferrals, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +137,7 @@ func (q *Queries) AdminListReferrals(ctx context.Context, arg AdminListReferrals
 const adminReferralStats = `-- name: AdminReferralStats :many
 SELECT status, COUNT(*) AS count
 FROM referrals
-WHERE tenant_id = $1
+
 GROUP BY status
 ORDER BY count DESC
 `
@@ -161,8 +147,8 @@ type AdminReferralStatsRow struct {
 	Count  int64  `json:"count"`
 }
 
-func (q *Queries) AdminReferralStats(ctx context.Context, tenantID pgtype.UUID) ([]AdminReferralStatsRow, error) {
-	rows, err := q.db.Query(ctx, adminReferralStats, tenantID)
+func (q *Queries) AdminReferralStats(ctx context.Context) ([]AdminReferralStatsRow, error) {
+	rows, err := q.db.Query(ctx, adminReferralStats)
 	if err != nil {
 		return nil, err
 	}
@@ -184,19 +170,18 @@ func (q *Queries) AdminReferralStats(ctx context.Context, tenantID pgtype.UUID) 
 const countCreditedReferralsByReferrerThisPeriod = `-- name: CountCreditedReferralsByReferrerThisPeriod :one
 SELECT COUNT(*) AS count
 FROM referrals
-WHERE tenant_id = $1 AND referrer_id = $2
-  AND status = 'credited'
-  AND credited_at >= $3
+WHERE referrer_id = $1
+ AND status = 'credited'
+ AND credited_at >= $2
 `
 
 type CountCreditedReferralsByReferrerThisPeriodParams struct {
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	ReferrerID  pgtype.UUID        `json:"referrer_id"`
 	PeriodStart pgtype.Timestamptz `json:"period_start"`
 }
 
 func (q *Queries) CountCreditedReferralsByReferrerThisPeriod(ctx context.Context, arg CountCreditedReferralsByReferrerThisPeriodParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCreditedReferralsByReferrerThisPeriod, arg.TenantID, arg.ReferrerID, arg.PeriodStart)
+	row := q.db.QueryRow(ctx, countCreditedReferralsByReferrerThisPeriod, arg.ReferrerID, arg.PeriodStart)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -205,18 +190,17 @@ func (q *Queries) CountCreditedReferralsByReferrerThisPeriod(ctx context.Context
 const countReferralsByReferrer = `-- name: CountReferralsByReferrer :one
 SELECT COUNT(*) AS count
 FROM referrals
-WHERE tenant_id = $1 AND referrer_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE referrer_id = $1
+ AND ($2::text = '' OR status = $2)
 `
 
 type CountReferralsByReferrerParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ReferrerID pgtype.UUID `json:"referrer_id"`
 	Status     string      `json:"status"`
 }
 
 func (q *Queries) CountReferralsByReferrer(ctx context.Context, arg CountReferralsByReferrerParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countReferralsByReferrer, arg.TenantID, arg.ReferrerID, arg.Status)
+	row := q.db.QueryRow(ctx, countReferralsByReferrer, arg.ReferrerID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -224,14 +208,13 @@ func (q *Queries) CountReferralsByReferrer(ctx context.Context, arg CountReferra
 
 const createReferral = `-- name: CreateReferral :one
 
-INSERT INTO referrals (tenant_id, referrer_id, referee_id, referral_code, status)
-VALUES ($1, $2, $3, $4, 'pending')
+INSERT INTO referrals (referrer_id, referee_id, referral_code, status) VALUES ($1, $2, $3, 'pending')
+
 ON CONFLICT (referee_id) DO NOTHING
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreateReferralParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	ReferrerID   pgtype.UUID `json:"referrer_id"`
 	RefereeID    pgtype.UUID `json:"referee_id"`
 	ReferralCode string      `json:"referral_code"`
@@ -241,12 +224,7 @@ type CreateReferralParams struct {
 // Referrals — tracking and status transitions
 // =====================================================================
 func (q *Queries) CreateReferral(ctx context.Context, arg CreateReferralParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, createReferral,
-		arg.TenantID,
-		arg.ReferrerID,
-		arg.RefereeID,
-		arg.ReferralCode,
-	)
+	row := q.db.QueryRow(ctx, createReferral, arg.ReferrerID, arg.RefereeID, arg.ReferralCode)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -267,20 +245,19 @@ func (q *Queries) CreateReferral(ctx context.Context, arg CreateReferralParams) 
 }
 
 const createReferralCode = `-- name: CreateReferralCode :one
-INSERT INTO referral_codes (tenant_id, user_id, code)
-VALUES ($1, $2, $3)
+INSERT INTO referral_codes (user_id, code) VALUES ($1, $2)
+
 ON CONFLICT (user_id) DO NOTHING
 RETURNING id, tenant_id, user_id, code, click_count, created_at
 `
 
 type CreateReferralCodeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	Code     string      `json:"code"`
+	UserID pgtype.UUID `json:"user_id"`
+	Code   string      `json:"code"`
 }
 
 func (q *Queries) CreateReferralCode(ctx context.Context, arg CreateReferralCodeParams) (ReferralCode, error) {
-	row := q.db.QueryRow(ctx, createReferralCode, arg.TenantID, arg.UserID, arg.Code)
+	row := q.db.QueryRow(ctx, createReferralCode, arg.UserID, arg.Code)
 	var i ReferralCode
 	err := row.Scan(
 		&i.ID,
@@ -296,17 +273,16 @@ func (q *Queries) CreateReferralCode(ctx context.Context, arg CreateReferralCode
 const creditFlaggedReferral = `-- name: CreditFlaggedReferral :one
 UPDATE referrals
 SET
-    status         = 'credited',
-    reward_amount  = $1,
-    credited_at    = now(),
-    flagged_reason = NULL
-WHERE tenant_id = $2 AND id = $3 AND status = 'flagged'
+ status = 'credited',
+ reward_amount = $1,
+ credited_at = now(),
+ flagged_reason = NULL
+WHERE id = $2 AND status = 'flagged'
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreditFlaggedReferralParams struct {
 	RewardAmount pgtype.Numeric `json:"reward_amount"`
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 	ID           pgtype.UUID    `json:"id"`
 }
 
@@ -314,7 +290,7 @@ type CreditFlaggedReferralParams struct {
 // PATCH /admin/referrals/:id/resolve action=credit). CreditReferral only
 // accepts status='qualified'; flagged referrals need their own transition.
 func (q *Queries) CreditFlaggedReferral(ctx context.Context, arg CreditFlaggedReferralParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, creditFlaggedReferral, arg.RewardAmount, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, creditFlaggedReferral, arg.RewardAmount, arg.ID)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -337,21 +313,20 @@ func (q *Queries) CreditFlaggedReferral(ctx context.Context, arg CreditFlaggedRe
 const creditReferral = `-- name: CreditReferral :one
 UPDATE referrals
 SET
-    status       = 'credited',
-    reward_amount = $1,
-    credited_at  = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'qualified'
+ status = 'credited',
+ reward_amount = $1,
+ credited_at = now()
+WHERE id = $2 AND status = 'qualified'
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreditReferralParams struct {
 	RewardAmount pgtype.Numeric `json:"reward_amount"`
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 	ID           pgtype.UUID    `json:"id"`
 }
 
 func (q *Queries) CreditReferral(ctx context.Context, arg CreditReferralParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, creditReferral, arg.RewardAmount, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, creditReferral, arg.RewardAmount, arg.ID)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -374,15 +349,14 @@ func (q *Queries) CreditReferral(ctx context.Context, arg CreditReferralParams) 
 const flagReferral = `-- name: FlagReferral :one
 UPDATE referrals
 SET
-    status         = 'flagged',
-    flagged_reason = $1
-WHERE tenant_id = $2 AND id = $3 AND status IN ('pending', 'qualified')
+ status = 'flagged',
+ flagged_reason = $1
+WHERE id = $2 AND status IN ('pending', 'qualified')
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type FlagReferralParams struct {
 	FlaggedReason *string     `json:"flagged_reason"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ID            pgtype.UUID `json:"id"`
 }
 
@@ -390,7 +364,7 @@ type FlagReferralParams struct {
 // prevents reverting an already-credited or rejected referral (§60 status
 // machine, BUG-012).
 func (q *Queries) FlagReferral(ctx context.Context, arg FlagReferralParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, flagReferral, arg.FlaggedReason, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, flagReferral, arg.FlaggedReason, arg.ID)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -412,16 +386,11 @@ func (q *Queries) FlagReferral(ctx context.Context, arg FlagReferralParams) (Ref
 
 const getReferralByID = `-- name: GetReferralByID :one
 SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetReferralByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetReferralByID(ctx context.Context, arg GetReferralByIDParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, getReferralByID, arg.TenantID, arg.ID)
+func (q *Queries) GetReferralByID(ctx context.Context, id pgtype.UUID) (Referral, error) {
+	row := q.db.QueryRow(ctx, getReferralByID, id)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -443,16 +412,11 @@ func (q *Queries) GetReferralByID(ctx context.Context, arg GetReferralByIDParams
 
 const getReferralByReferee = `-- name: GetReferralByReferee :one
 SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
-WHERE tenant_id = $1 AND referee_id = $2
+WHERE referee_id = $1
 `
 
-type GetReferralByRefereeParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	RefereeID pgtype.UUID `json:"referee_id"`
-}
-
-func (q *Queries) GetReferralByReferee(ctx context.Context, arg GetReferralByRefereeParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, getReferralByReferee, arg.TenantID, arg.RefereeID)
+func (q *Queries) GetReferralByReferee(ctx context.Context, refereeID pgtype.UUID) (Referral, error) {
+	row := q.db.QueryRow(ctx, getReferralByReferee, refereeID)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -495,13 +459,8 @@ const getReferralCodeByUserID = `-- name: GetReferralCodeByUserID :one
 
 
 SELECT id, tenant_id, user_id, code, click_count, created_at FROM referral_codes
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetReferralCodeByUserIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // referral_v2.sql — Referral System V2 queries (Section 60, ADR-078).
 // Covers referral code CRUD, referral tracking, and admin oversight.
@@ -512,8 +471,8 @@ type GetReferralCodeByUserIDParams struct {
 // =====================================================================
 // Referral Codes
 // =====================================================================
-func (q *Queries) GetReferralCodeByUserID(ctx context.Context, arg GetReferralCodeByUserIDParams) (ReferralCode, error) {
-	row := q.db.QueryRow(ctx, getReferralCodeByUserID, arg.TenantID, arg.UserID)
+func (q *Queries) GetReferralCodeByUserID(ctx context.Context, userID pgtype.UUID) (ReferralCode, error) {
+	row := q.db.QueryRow(ctx, getReferralCodeByUserID, userID)
 	var i ReferralCode
 	err := row.Scan(
 		&i.ID,
@@ -539,14 +498,13 @@ func (q *Queries) IncrementReferralClickCount(ctx context.Context, code string) 
 
 const listReferralsByReferrer = `-- name: ListReferralsByReferrer :many
 SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
-WHERE tenant_id = $1 AND referrer_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE referrer_id = $1
+ AND ($2::text = '' OR status = $2)
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListReferralsByReferrerParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ReferrerID pgtype.UUID `json:"referrer_id"`
 	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
@@ -555,7 +513,6 @@ type ListReferralsByReferrerParams struct {
 
 func (q *Queries) ListReferralsByReferrer(ctx context.Context, arg ListReferralsByReferrerParams) ([]Referral, error) {
 	rows, err := q.db.Query(ctx, listReferralsByReferrer,
-		arg.TenantID,
 		arg.ReferrerID,
 		arg.Status,
 		arg.PageOffset,
@@ -595,12 +552,12 @@ func (q *Queries) ListReferralsByReferrer(ctx context.Context, arg ListReferrals
 
 const listUserReferralCodes = `-- name: ListUserReferralCodes :many
 SELECT id, tenant_id, user_id, code, click_count, created_at FROM referral_codes
-WHERE tenant_id = $1
+
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListUserReferralCodes(ctx context.Context, tenantID pgtype.UUID) ([]ReferralCode, error) {
-	rows, err := q.db.Query(ctx, listUserReferralCodes, tenantID)
+func (q *Queries) ListUserReferralCodes(ctx context.Context) ([]ReferralCode, error) {
+	rows, err := q.db.Query(ctx, listUserReferralCodes)
 	if err != nil {
 		return nil, err
 	}
@@ -629,21 +586,20 @@ func (q *Queries) ListUserReferralCodes(ctx context.Context, tenantID pgtype.UUI
 const qualifyReferral = `-- name: QualifyReferral :one
 UPDATE referrals
 SET
-    status               = 'qualified',
-    qualified_payment_id = $1,
-    qualified_at         = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'pending'
+ status = 'qualified',
+ qualified_payment_id = $1,
+ qualified_at = now()
+WHERE id = $2 AND status = 'pending'
 RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type QualifyReferralParams struct {
 	QualifiedPaymentID pgtype.UUID `json:"qualified_payment_id"`
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	ID                 pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) QualifyReferral(ctx context.Context, arg QualifyReferralParams) (Referral, error) {
-	row := q.db.QueryRow(ctx, qualifyReferral, arg.QualifiedPaymentID, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, qualifyReferral, arg.QualifiedPaymentID, arg.ID)
 	var i Referral
 	err := row.Scan(
 		&i.ID,
@@ -666,15 +622,10 @@ func (q *Queries) QualifyReferral(ctx context.Context, arg QualifyReferralParams
 const rejectReferral = `-- name: RejectReferral :exec
 UPDATE referrals
 SET status = 'rejected'
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type RejectReferralParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) RejectReferral(ctx context.Context, arg RejectReferralParams) error {
-	_, err := q.db.Exec(ctx, rejectReferral, arg.TenantID, arg.ID)
+func (q *Queries) RejectReferral(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, rejectReferral, id)
 	return err
 }

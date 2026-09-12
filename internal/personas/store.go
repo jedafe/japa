@@ -54,7 +54,7 @@ func (s *Store) DB() *db.DB { return s.db }
 // profile and config creation in a single tx.
 func (s *Store) CreatePersonaUser(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, email, username string) (gen.User, error) {
 	row, err := q.CreatePersonaUser(ctx, gen.CreatePersonaUserParams{
-		TenantID: tenantID,
+
 		Email:    email,
 		Username: username,
 	})
@@ -83,9 +83,9 @@ func (s *Store) CreateAIPersona(ctx context.Context, q *gen.Queries, params gen.
 // GetAIPersonaByID retrieves a single persona by ID (with joined user +
 // profile names).
 func (s *Store) GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetAIPersonaByIDRow, error) {
-	return s.read.GetAIPersonaByID(ctx, gen.GetAIPersonaByIDParams{
-		TenantID: tenantID, ID: id,
-	})
+	return s.read.GetAIPersonaByID(ctx,
+		id,
+	)
 }
 
 // ListAIPersonas lists personas for a tenant with pagination, optional status
@@ -93,7 +93,7 @@ func (s *Store) GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) 
 // empty q matches all rows; sort/dir default to created_at DESC.
 func (s *Store) ListAIPersonas(ctx context.Context, tenantID pgtype.UUID, status, q, sort, dir string, limit, offset int32) ([]gen.ListAIPersonasRow, error) {
 	return s.read.ListAIPersonas(ctx, gen.ListAIPersonasParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		Q:          q,
 		Sort:       sort,
@@ -107,7 +107,7 @@ func (s *Store) ListAIPersonas(ctx context.Context, tenantID pgtype.UUID, status
 // filters applied to ListAIPersonas.
 func (s *Store) CountAIPersonas(ctx context.Context, tenantID pgtype.UUID, status, q string) (int64, error) {
 	return s.read.CountAIPersonas(ctx, gen.CountAIPersonasParams{
-		TenantID: tenantID, Status: status, Q: q,
+		Status: status, Q: q,
 	})
 }
 
@@ -126,9 +126,9 @@ func (s *Store) UpdateAIPersona(ctx context.Context, params gen.UpdateAIPersonaP
 // the orchestration engine to resolve the persona config from the actor
 // identity. Returns the resolved voice prompt.
 func (s *Store) GetAIPersonaByUserID(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetAIPersonaByUserIDRow, error) {
-	return s.read.GetAIPersonaByUserID(ctx, gen.GetAIPersonaByUserIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	return s.read.GetAIPersonaByUserID(ctx,
+		userID,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ func (s *Store) GetAIPersonaByUserID(ctx context.Context, tenantID, userID pgtyp
 // backing user (is_synthetic = true only).
 func (s *Store) ListPersonaActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListPersonaActivityRow, error) {
 	return s.read.ListPersonaActivity(ctx, gen.ListPersonaActivityParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -149,9 +149,9 @@ func (s *Store) ListPersonaActivity(ctx context.Context, tenantID, userID pgtype
 // CountPersonaActivity counts platform_events for a persona's backing user
 // (is_synthetic = true only).
 func (s *Store) CountPersonaActivity(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
-	return s.read.CountPersonaActivity(ctx, gen.CountPersonaActivityParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	return s.read.CountPersonaActivity(ctx,
+		userID,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -177,18 +177,18 @@ func (s *Store) CreatePersonaVoice(ctx context.Context, q *gen.Queries, params g
 
 // GetPersonaVoiceByID retrieves a single shared voice by ID.
 func (s *Store) GetPersonaVoiceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.PersonaVoice, error) {
-	return s.read.GetPersonaVoiceByID(ctx, gen.GetPersonaVoiceByIDParams{TenantID: tenantID, ID: id})
+	return s.read.GetPersonaVoiceByID(ctx, id)
 }
 
 // GetPersonaVoiceBySlug retrieves a single shared voice by tenant + slug.
 func (s *Store) GetPersonaVoiceBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.PersonaVoice, error) {
-	return s.read.GetPersonaVoiceBySlug(ctx, gen.GetPersonaVoiceBySlugParams{TenantID: tenantID, Slug: slug})
+	return s.read.GetPersonaVoiceBySlug(ctx, slug)
 }
 
 // ListPersonaVoices lists shared voices for a tenant with pagination.
 func (s *Store) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.PersonaVoice, error) {
 	return s.read.ListPersonaVoices(ctx, gen.ListPersonaVoicesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -196,7 +196,7 @@ func (s *Store) ListPersonaVoices(ctx context.Context, tenantID pgtype.UUID, lim
 
 // CountPersonaVoices counts shared voices for a tenant.
 func (s *Store) CountPersonaVoices(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.read.CountPersonaVoices(ctx, tenantID)
+	return s.read.CountPersonaVoices(ctx)
 }
 
 // UpdatePersonaVoice updates a shared voice's fields.
@@ -211,5 +211,5 @@ func (s *Store) UpdatePersonaVoice(ctx context.Context, params gen.UpdatePersona
 
 // DeletePersonaVoice deletes a shared voice by tenant + ID.
 func (s *Store) DeletePersonaVoice(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.write.DeletePersonaVoice(ctx, gen.DeletePersonaVoiceParams{TenantID: tenantID, ID: id})
+	return s.write.DeletePersonaVoice(ctx, id)
 }

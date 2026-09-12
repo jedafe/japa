@@ -29,10 +29,9 @@ func (h *Handlers) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(), gen.ListSpaceJoinRequestsParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	rows, err := h.Service.read.ListSpaceJoinRequests(r.Context(),
+		spaceID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
@@ -79,10 +78,9 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
-		SpaceID:  spaceID,
-		UserID:   requestID,
-		Status:   input.Status,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  requestID,
+		Status:  input.Status,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
@@ -123,9 +121,9 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.Service.write.UpdateSpaceStatus(r.Context(), gen.UpdateSpaceStatusParams{
-		ID:       spaceID,
-		TenantID: tenantID,
-		Status:   input.Status,
+		ID: spaceID,
+
+		Status: input.Status,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
@@ -208,7 +206,7 @@ func (h *Handlers) AdminListJoinRequests(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context(), tenantID)
+	rows, err := h.Service.read.ListAllSpaceJoinRequests(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list join requests")
 		return
@@ -269,10 +267,9 @@ func (h *Handlers) AdminResolveJoinRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Service.write.UpdateSpaceJoinRequest(r.Context(), gen.UpdateSpaceJoinRequestParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		Status:   status,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
+		Status:  status,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update join request")
 		return

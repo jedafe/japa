@@ -114,7 +114,7 @@ func safeInt32(v int) int32 {
 // CreateKnownBot adds a new bot to the registry for the given tenant.
 func (s *Service) CreateKnownBot(ctx context.Context, tenantID pgtype.UUID, input CreateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.createKnownBot(ctx, gen.CreateKnownBotParams{
-		TenantID:         tenantID,
+
 		Name:             input.Name,
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          string(input.BotType),
@@ -208,8 +208,8 @@ func (s *Service) ListKnownBotsWithCount(ctx context.Context, tenantID pgtype.UU
 // UpdateKnownBot modifies an existing bot entry.
 func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUID, input UpdateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.updateKnownBot(ctx, gen.UpdateKnownBotParams{
-		ID:               botID,
-		TenantID:         tenantID,
+		ID: botID,
+
 		Name:             input.Name,
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          string(input.BotType),

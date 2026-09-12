@@ -46,8 +46,8 @@ func TestListEntries_OnlyPublished(t *testing.T) {
 
 	store := NewStore(database)
 	entries, total, err := store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    100,
+
+		Limit: 100,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries: %v", err)
@@ -86,8 +86,8 @@ func TestListEntries_TenantIsolated(t *testing.T) {
 
 	store := NewStore(database)
 	entries, total, err := store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantA,
-		Limit:    100,
+
+		Limit: 100,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries: %v", err)
@@ -121,9 +121,9 @@ func TestListEntries_PaginationAndCount(t *testing.T) {
 
 	// Page 1: limit=2, should return 2 entries but total=5.
 	entries, total, err := store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    2,
-		Offset:   0,
+
+		Limit:  2,
+		Offset: 0,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries page 1: %v", err)
@@ -137,9 +137,9 @@ func TestListEntries_PaginationAndCount(t *testing.T) {
 
 	// Page 3: limit=2, offset=4, should return 1 entry, total still 5.
 	entries, total, err = store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    2,
-		Offset:   4,
+
+		Limit:  2,
+		Offset: 4,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries page 3: %v", err)
@@ -171,7 +171,7 @@ func TestListEntries_OriginFilter(t *testing.T) {
 
 	store := NewStore(database)
 	entries, total, err := store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID:      tenantID,
+
 		OriginSpaceID: originSpace,
 		Limit:         100,
 	})
@@ -210,8 +210,8 @@ func TestAdminListEntries_AnyStatus(t *testing.T) {
 
 	store := NewStore(database)
 	entries, total, err := store.AdminListEntries(t.Context(), AdminListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    100,
+
+		Limit: 100,
 	})
 	if err != nil {
 		t.Fatalf("AdminListEntries: %v", err)
@@ -246,9 +246,9 @@ func TestAdminListEntries_StatusFilter(t *testing.T) {
 
 	store := NewStore(database)
 	entries, total, err := store.AdminListEntries(t.Context(), AdminListEntriesFilter{
-		TenantID: tenantID,
-		Status:   "pending",
-		Limit:    100,
+
+		Status: "pending",
+		Limit:  100,
 	})
 	if err != nil {
 		t.Fatalf("AdminListEntries with status filter: %v", err)
@@ -285,8 +285,8 @@ func TestAdminUpdateEntry_ValidStatuses(t *testing.T) {
 
 	// Verify it's now visible in the public list.
 	entries, _, err := store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    100,
+
+		Limit: 100,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries after publish: %v", err)
@@ -311,8 +311,8 @@ func TestAdminUpdateEntry_ValidStatuses(t *testing.T) {
 
 	// Verify it's no longer in the public list.
 	entries, _, err = store.ListEntries(t.Context(), ListEntriesFilter{
-		TenantID: tenantID,
-		Limit:    100,
+
+		Limit: 100,
 	})
 	if err != nil {
 		t.Fatalf("ListEntries after archive: %v", err)

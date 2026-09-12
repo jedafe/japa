@@ -23,8 +23,7 @@ type ProcessActivityEventPayload struct {
 // EnqueueProcessActivityEvent enqueues a task to process an activity event.
 func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
 	payload, err := json.Marshal(ProcessActivityEventPayload{
-		EventID:  eventID.String(),
-		TenantID: tenantID.String(),
+		EventID: eventID.String(),
 	})
 	if err != nil {
 		return fmt.Errorf("marshaling activity event payload: %w", err)
@@ -116,7 +115,7 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 
 	// Read current credits balance within the transaction.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -137,7 +136,7 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 	}
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationPurchase,
@@ -374,7 +373,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 	}
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: ledgerType,
 	})
@@ -401,7 +400,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 
 	src := source
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       ledgerType,
 		Operation:        operation,

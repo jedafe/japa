@@ -85,7 +85,7 @@ func (m *mockStore) CreateContent(_ context.Context, tenantID pgtype.UUID, arg g
 		return gen.CreateContentRow{}, errors.New("mock: create content failed")
 	}
 
-	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
+	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
 func (m *mockStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
@@ -95,8 +95,8 @@ func (m *mockStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) 
 	}
 
 	return gen.GetContentByIDRow{
-		ID:         id,
-		TenantID:   tenantID,
+		ID: id,
+
 		Title:      m.existing.Title,
 		Body:       "mock body",
 		Status:     "published",
@@ -119,7 +119,7 @@ func (m *mockStore) ContentSlugExists(_ context.Context, _ pgtype.UUID, slug str
 
 func (m *mockStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
-	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID, Title: arg.Title, Slug: arg.Slug}, nil
+	return gen.UpdateContentRow{ID: arg.ID, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
 func (m *mockStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
@@ -489,8 +489,8 @@ func TestScholarshipPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 		},
 		hasExisting: true,
 		contentReturn: &gen.GetContentByIDRow{
-			ID:           guideID,
-			TenantID:     pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			ID: guideID,
+
 			Title:        "MEXT Scholarship 2027",
 			Body:         "stale body",
 			Status:       "published",
@@ -653,8 +653,8 @@ func TestScholarshipPromoter_UpdatePreservesContentBodyOverride(t *testing.T) {
 		},
 		hasExisting: true,
 		contentReturn: &gen.GetContentByIDRow{
-			ID:           guideID,
-			TenantID:     pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			ID: guideID,
+
 			Title:        "MEXT Scholarship 2027",
 			Body:         "stale body",
 			Status:       "published",

@@ -356,7 +356,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 	}
 
 	_, err = s.store.InsertRevenueSplit(ctx, gen.InsertRevenueSplitParams{
-		TenantID:     tenantID,
+
 		InstructorID: track.InstructorID,
 		TrackID:      trackID,
 		EnrollmentID: enrollRef,
@@ -498,7 +498,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 		}
 
 		payout, err := s.store.CreatePayout(ctx, gen.CreateInstructorPayoutParams{
-			TenantID:               tenantID,
+
 			InstructorID:           p.ID,
 			PeriodStart:            ps,
 			PeriodEnd:              pe,
@@ -600,8 +600,8 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 	}
 
 	if _, err := s.spaceLogoUpdater.UpdateSpaceLogoMediaID(ctx, gen.UpdateSpaceLogoMediaIDParams{
-		ID:          spaceID,
-		TenantID:    tenantID,
+		ID: spaceID,
+
 		LogoMediaID: mediaID,
 	}); err != nil {
 		return fmt.Errorf("university:fetch_logo: updating space logo_media_id: %w", err)

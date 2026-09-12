@@ -59,8 +59,7 @@ func newRequest(t *testing.T, method, path, body string, tenantID, userID pgtype
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	})
 
 	// Set a chi route context so chi.URLParam works inside handlers.
@@ -188,8 +187,8 @@ func (f *fakeService) ListDataSources(ctx context.Context, tenantID pgtype.UUID,
 
 func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	return DataSource{
-		ID:             uuid.New().String(),
-		TenantID:       tenantID.String(),
+		ID: uuid.New().String(),
+
 		EntityType:     in.EntityType,
 		EntityID:       in.EntityID,
 		DimensionSlug:  in.DimensionSlug,
@@ -208,8 +207,8 @@ func (f *fakeService) GetDataSource(ctx context.Context, id, tenantID pgtype.UUI
 
 func (f *fakeService) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	return DataSource{
-		ID:             id.String(),
-		TenantID:       tenantID.String(),
+		ID: id.String(),
+
 		EntityType:     in.EntityType,
 		EntityID:       in.EntityID,
 		DimensionSlug:  in.DimensionSlug,
@@ -296,8 +295,7 @@ func newAuthenticatedRequest(t *testing.T, method, path, body string, tenantID, 
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	})
 
 	return r.WithContext(ctx)
@@ -473,8 +471,8 @@ func TestHandlers_ListDataSources_Happy(t *testing.T) {
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
 		dataSources: []DataSource{
 			{
-				ID:         uuid.New().String(),
-				TenantID:   tenantID.String(),
+				ID: uuid.New().String(),
+
 				SourceName: "Official Source",
 				SourceKind: "official",
 				TrustLevel: 5,

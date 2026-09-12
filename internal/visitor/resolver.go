@@ -322,9 +322,9 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// 2. Authenticated user's content_country_preference (explicit override).
 	if user != nil && t != nil {
 		if pref, err := res.read.GetUserContentCountryPreference(r.Context(),
-			gen.GetUserContentCountryPreferenceParams{
-				TenantID: t.ID, UserID: user.UserID,
-			}); err == nil && pref != nil && *pref != "" {
+
+			user.UserID,
+		); err == nil && pref != nil && *pref != "" {
 			vc.ContentCountry = strings.ToUpper(*pref)
 			vc.Source = "preference"
 			// Still resolve archetype for analytics/surfacing, using profile
@@ -356,9 +356,9 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 
 	// Load profile signals for authenticated users.
 	if user != nil && t != nil {
-		fields, err := res.read.GetUserGeoProfileFields(ctx, gen.GetUserGeoProfileFieldsParams{
-			TenantID: t.ID, UserID: user.UserID,
-		})
+		fields, err := res.read.GetUserGeoProfileFields(ctx,
+			user.UserID,
+		)
 		if err == nil {
 			vc.JapaStage = strings.ToLower(strings.TrimSpace(fields.JapaStatus))
 			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
@@ -596,10 +596,9 @@ func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *te
 
 	code := strings.ToUpper(vc.ContentCountry)
 
-	row, err := res.read.GetSpaceRegionByGeoCode(ctx, gen.GetSpaceRegionByGeoCodeParams{
-		GeoCode:  &code,
-		TenantID: t.ID,
-	})
+	row, err := res.read.GetSpaceRegionByGeoCode(ctx,
+		&code,
+	)
 	if err != nil || row == nil || *row == "" {
 		return
 	}
@@ -717,10 +716,10 @@ func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContex
 		return
 	}
 
-	row, err := res.read.GetLatestAssessmentJourneyContext(ctx, gen.GetLatestAssessmentJourneyContextParams{
-		TenantID: t.ID,
-		UserID:   userID,
-	})
+	row, err := res.read.GetLatestAssessmentJourneyContext(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return
 	}

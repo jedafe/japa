@@ -890,7 +890,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 
 		if deps.HITL != nil && !skipHITL {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
-				TenantID:    tenantID,
+
 				ContentID:   row.ID,
 				ContentType: a.ContentType,
 				AIOutput:    fvJSON,

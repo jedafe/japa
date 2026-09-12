@@ -53,7 +53,7 @@ func newAMAPatchRequest(t *testing.T, body []byte, withUser bool, id string) (*h
 			t.Fatalf("scan user id: %v", err)
 		}
 
-		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID, TenantID: tenantID})
+		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID})
 	}
 
 	rctx := chi.NewRouteContext()

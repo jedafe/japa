@@ -34,7 +34,7 @@ func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemPar
 // provided by the slugs array. Used for the readiness roadmap feed.
 func (s *Store) getContentsBySlugs(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]gen.ListContentsBySlugsRow, error) {
 	rows, err := s.read.ListContentsBySlugs(ctx, gen.ListContentsBySlugsParams{
-		TenantID:          tenantID,
+
 		Slugs:             slugs,
 		CanSeeUnpublished: false,
 		CanSeePrivate:     false,
@@ -60,7 +60,7 @@ func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, visito
 	}
 
 	rows, err := s.read.GetExploreFeed(ctx, gen.GetExploreFeedParams{
-		TenantID:           tenantID,
+
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -82,7 +82,7 @@ func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID
 	}
 
 	rows, err := s.read.GetPrimaryFeed(ctx, gen.GetPrimaryFeedParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		Sort:       sort,
 		PageLimit:  limit,
@@ -105,7 +105,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID, viewerID pg
 	}
 
 	rows, err := s.read.GetSpaceFeed(ctx, gen.GetSpaceFeedParams{
-		TenantID:   tenantID,
+
 		SpaceID:    spaceID,
 		ViewerID:   viewerID,
 		Sort:       sort,
@@ -129,7 +129,7 @@ func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID, viewerID
 	}
 
 	rows, err := s.read.GetProfileFeed(ctx, gen.GetProfileFeedParams{
-		TenantID:   tenantID,
+
 		AuthorID:   authorID,
 		ViewerID:   viewerID,
 		Sort:       sort,
@@ -152,7 +152,7 @@ func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, visitorCou
 	}
 
 	rows, err := s.read.GetTopFeed(ctx, gen.GetTopFeedParams{
-		TenantID:           tenantID,
+
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -174,7 +174,7 @@ func (s *Store) getRisingFeed(ctx context.Context, tenantID pgtype.UUID, visitor
 	}
 
 	rows, err := s.read.GetRisingFeed(ctx, gen.GetRisingFeedParams{
-		TenantID:           tenantID,
+
 		VisitorCountryCode: &visitorCountryCode,
 		VisitorRegion:      &visitorRegion,
 		PageLimit:          limit,
@@ -203,10 +203,9 @@ func (s *Store) updateContentScore(ctx context.Context, params gen.UpdateContent
 //
 
 func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, gravity float64) error {
-	if err := s.write.UpdateVelocityScores(ctx, gen.UpdateVelocityScoresParams{
-		Gravity:  gravity,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.UpdateVelocityScores(ctx,
+		gravity,
+	); err != nil {
 		return fmt.Errorf("updating velocity scores: %w", err)
 	}
 
@@ -217,9 +216,9 @@ func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, 
 //
 
 func (s *Store) deleteFeedItemsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
-	if err := s.write.DeleteFeedItemsByContent(ctx, gen.DeleteFeedItemsByContentParams{
-		ContentID: contentID, TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteFeedItemsByContent(ctx,
+		contentID,
+	); err != nil {
 		return fmt.Errorf("deleting feed items by content: %w", err)
 	}
 
@@ -230,9 +229,9 @@ func (s *Store) deleteFeedItemsByContent(ctx context.Context, tenantID, contentI
 //
 
 func (s *Store) deleteFeedItemsByUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	if err := s.write.DeleteFeedItemsByUser(ctx, gen.DeleteFeedItemsByUserParams{
-		UserID: userID, TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteFeedItemsByUser(ctx,
+		userID,
+	); err != nil {
 		return fmt.Errorf("deleting feed items by user: %w", err)
 	}
 
@@ -243,9 +242,9 @@ func (s *Store) deleteFeedItemsByUser(ctx context.Context, tenantID, userID pgty
 //
 
 func (s *Store) getFeedItemCount(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
-	count, err := s.read.GetFeedItemCount(ctx, gen.GetFeedItemCountParams{
-		UserID: userID, TenantID: tenantID,
-	})
+	count, err := s.read.GetFeedItemCount(ctx,
+		userID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting feed items: %w", err)
 	}
@@ -258,7 +257,7 @@ func (s *Store) getFollowedEntityIDs(
 	ctx context.Context, tenantID, followerID pgtype.UUID, entityType string,
 ) ([]pgtype.UUID, error) {
 	ids, err := s.read.GetFollowedEntityIDsByType(ctx, gen.GetFollowedEntityIDsByTypeParams{
-		TenantID:   tenantID,
+
 		FollowerID: followerID,
 		EntityType: entityType,
 	})
@@ -273,10 +272,10 @@ func (s *Store) getFollowedEntityIDs(
 func (s *Store) getMemberSpaceIDs(
 	ctx context.Context, tenantID, userID pgtype.UUID,
 ) ([]pgtype.UUID, error) {
-	ids, err := s.read.GetMemberSpaceIDs(ctx, gen.GetMemberSpaceIDsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	ids, err := s.read.GetMemberSpaceIDs(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting member space ids: %w", err)
 	}
@@ -302,10 +301,10 @@ func (s *Store) listSourcesByContentIDs(ctx context.Context, tenantID pgtype.UUI
 		return map[string]gen.ListSourcesByContentIDsRow{}, nil
 	}
 
-	rows, err := s.read.ListSourcesByContentIDs(ctx, gen.ListSourcesByContentIDsParams{
-		TenantID:   tenantID,
-		ContentIds: contentIDs,
-	})
+	rows, err := s.read.ListSourcesByContentIDs(ctx,
+
+		contentIDs,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing sources by content ids: %w", err)
 	}

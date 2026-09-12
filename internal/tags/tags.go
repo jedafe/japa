@@ -35,7 +35,7 @@ func NewService(database *db.DB) *Service {
 
 // ListTags returns every tag for the tenant, alphabetically.
 func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListTagsByTenantRow, error) {
-	tags, err := s.read.ListTagsByTenant(ctx, tenantID)
+	tags, err := s.read.ListTagsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing tags: %w", err)
 	}
@@ -85,7 +85,7 @@ func (s *Service) AdminCountTags(ctx context.Context, params gen.AdminCountTagsP
 
 // GetTagBySlug returns a single tag by its slug.
 func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetTagBySlugRow, error) {
-	tag, err := s.read.GetTagBySlug(ctx, gen.GetTagBySlugParams{TenantID: tenantID, Slug: slug})
+	tag, err := s.read.GetTagBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetTagBySlugRow{}, fmt.Errorf("getting tag by slug: %w", err)
 	}
@@ -95,7 +95,7 @@ func (s *Service) GetTagBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 
 // GetTagByID returns a single tag by its ID (used by DeleteTag guard).
 func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTagByIDRow, error) {
-	tag, err := s.read.GetTagByID(ctx, gen.GetTagByIDParams{ID: id, TenantID: tenantID})
+	tag, err := s.read.GetTagByID(ctx, id)
 	if err != nil {
 		return gen.GetTagByIDRow{}, fmt.Errorf("getting tag by id: %w", err)
 	}
@@ -105,7 +105,7 @@ func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 
 // ResolveTagSlugs resolves multiple tag slugs to their IDs in one query (Section 14).
 func (s *Service) ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) ([]gen.GetTagsBySlugsRow, error) {
-	rows, err := s.read.GetTagsBySlugs(ctx, gen.GetTagsBySlugsParams{TenantID: tenantID, Slugs: slugs})
+	rows, err := s.read.GetTagsBySlugs(ctx, slugs)
 	if err != nil {
 		return nil, fmt.Errorf("resolving tag slugs: %w", err)
 	}
@@ -207,7 +207,7 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 	}
 
 	tag, err := s.write.CreateTag(ctx, gen.CreateTagParams{
-		TenantID:     tenantID,
+
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  input.Description,
@@ -246,8 +246,8 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 	}
 
 	tag, err := s.write.UpdateTag(ctx, gen.UpdateTagParams{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  input.Description,
@@ -267,7 +267,7 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 
 // DeleteTag deletes a tag (catalog: DELETE /admin/tags/:id).
 func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteTag(ctx, gen.DeleteTagParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteTag(ctx, id); err != nil {
 		return fmt.Errorf("deleting tag: %w", err)
 	}
 
@@ -276,7 +276,7 @@ func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error
 
 // ListTagModerators returns the moderators of a tag (Section 49).
 func (s *Service) ListTagModerators(ctx context.Context, tagID, tenantID pgtype.UUID) ([]gen.ListTagModeratorsRow, error) {
-	rows, err := s.read.ListTagModerators(ctx, gen.ListTagModeratorsParams{TenantID: tenantID, TagID: tagID})
+	rows, err := s.read.ListTagModerators(ctx, tagID)
 	if err != nil {
 		return nil, fmt.Errorf("listing tag moderators: %w", err)
 	}
@@ -297,7 +297,7 @@ type AddTagModeratorInput struct {
 // Idempotent — re-adding an existing moderator is a no-op refresh.
 func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInput) (gen.TagModerator, error) {
 	row, err := s.write.AddTagModerator(ctx, gen.AddTagModeratorParams{
-		TenantID:         input.TenantID,
+
 		TagID:            input.TagID,
 		UserID:           input.UserID,
 		AssignedBy:       input.AssignedBy,
@@ -313,9 +313,9 @@ func (s *Service) AddTagModerator(ctx context.Context, input AddTagModeratorInpu
 // RemoveTagModerator removes a user as a moderator of a tag (Section 49).
 func (s *Service) RemoveTagModerator(ctx context.Context, tagID, userID, tenantID pgtype.UUID) error {
 	if err := s.write.RemoveTagModerator(ctx, gen.RemoveTagModeratorParams{
-		TenantID: tenantID,
-		TagID:    tagID,
-		UserID:   userID,
+
+		TagID:  tagID,
+		UserID: userID,
 	}); err != nil {
 		return fmt.Errorf("removing tag moderator: %w", err)
 	}

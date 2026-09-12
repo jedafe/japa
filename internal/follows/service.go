@@ -307,8 +307,8 @@ func (s *Service) GetFollowers(ctx context.Context, tenantID, callerID pgtype.UU
 	for i, r := range rows {
 		result[i] = FollowerInfo{
 			Follow: gen.Follow{
-				ID:         r.ID,
-				TenantID:   r.TenantID,
+				ID: r.ID,
+
 				FollowerID: r.FollowerID,
 				EntityType: r.EntityType,
 				EntityID:   r.EntityID,
@@ -342,8 +342,8 @@ func (s *Service) GetFollowing(ctx context.Context, tenantID, callerID, follower
 	for i, r := range rows {
 		result[i] = FollowingInfo{
 			Follow: gen.Follow{
-				ID:         r.ID,
-				TenantID:   r.TenantID,
+				ID: r.ID,
+
 				FollowerID: r.FollowerID,
 				EntityType: r.EntityType,
 				EntityID:   r.EntityID,
@@ -390,8 +390,8 @@ func (s *Service) GetFollowingByType(ctx context.Context, tenantID, callerID, fo
 	for i, r := range rows {
 		result[i] = FollowingInfo{
 			Follow: gen.Follow{
-				ID:         r.ID,
-				TenantID:   r.TenantID,
+				ID: r.ID,
+
 				FollowerID: r.FollowerID,
 				EntityType: r.EntityType,
 				EntityID:   r.EntityID,

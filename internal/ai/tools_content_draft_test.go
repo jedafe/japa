@@ -53,8 +53,8 @@ func (s *stubHITLStore) CreateHITLReview(ctx context.Context, review HITLReview)
 	_ = id.Scan("00000000-0000-0000-0000-0000000000aa")
 
 	return HITLReview{
-		ID:          id,
-		TenantID:    review.TenantID,
+		ID: id,
+
 		ContentID:   review.ContentID,
 		ContentType: review.ContentType,
 		AIOutput:    review.AIOutput,

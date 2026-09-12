@@ -76,8 +76,8 @@ func seriesFromRow(row any) Series {
 	switch r := row.(type) {
 	case gen.GetBlogSeriesBySlugRow:
 		return Series{
-			ID:            r.ID,
-			TenantID:      r.TenantID,
+			ID: r.ID,
+
 			Title:         r.Title,
 			Slug:          r.Slug,
 			Description:   r.Description,
@@ -91,8 +91,8 @@ func seriesFromRow(row any) Series {
 		}
 	case gen.ListBlogSeriesByTenantRow:
 		return Series{
-			ID:            r.ID,
-			TenantID:      r.TenantID,
+			ID: r.ID,
+
 			Title:         r.Title,
 			Slug:          r.Slug,
 			Description:   r.Description,
@@ -106,8 +106,8 @@ func seriesFromRow(row any) Series {
 		}
 	case gen.ListBlogSeriesByAuthorRow:
 		return Series{
-			ID:            r.ID,
-			TenantID:      r.TenantID,
+			ID: r.ID,
+
 			Title:         r.Title,
 			Slug:          r.Slug,
 			Description:   r.Description,

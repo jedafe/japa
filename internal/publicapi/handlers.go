@@ -613,10 +613,9 @@ func (h *Handlers) GetContentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	content, err := h.Queries.GetPublishedContentByID(r.Context(), gen.GetPublishedContentByIDParams{
-		ID:       id,
-		TenantID: keyCtx.TenantID,
-	})
+	content, err := h.Queries.GetPublishedContentByID(r.Context(),
+		id,
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -638,10 +637,10 @@ func (h *Handlers) ListSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaces, err := h.Queries.ListSpacesByTenant(r.Context(), gen.ListSpacesByTenantParams{
-		TenantID:     keyCtx.TenantID,
-		ViewerUserID: pgtype.UUID{}, // public API key has no user context → NULL → public spaces only
-	})
+	spaces, err := h.Queries.ListSpacesByTenant(r.Context(),
+
+		pgtype.UUID{}, // public API key has no user context → NULL → public spaces only
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -671,10 +670,9 @@ func (h *Handlers) GetSpaceBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	space, err := h.Queries.GetPublicSpaceBySlug(r.Context(), gen.GetPublicSpaceBySlugParams{
-		Slug:     slug,
-		TenantID: keyCtx.TenantID,
-	})
+	space, err := h.Queries.GetPublicSpaceBySlug(r.Context(),
+		slug,
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -704,7 +702,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 
 	tags, err := h.Queries.ListTagsPaginated(r.Context(), gen.ListTagsPaginatedParams{
-		TenantID:   keyCtx.TenantID,
+
 		Q:          q,
 		Sort:       sort,
 		PageLimit:  limit,
@@ -716,8 +714,8 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, err := h.Queries.CountTagsPaginated(r.Context(), gen.CountTagsPaginatedParams{
-		TenantID: keyCtx.TenantID,
-		Q:        q,
+
+		Q: q,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -879,8 +877,8 @@ func (h *Handlers) ListContentComments(w http.ResponseWriter, r *http.Request) {
 	offset := parseOffset(r)
 
 	comments, err := h.Queries.ListPublicCommentsByContent(r.Context(), gen.ListPublicCommentsByContentParams{
-		ContentID:  contentID,
-		TenantID:   keyCtx.TenantID,
+		ContentID: contentID,
+
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -956,10 +954,9 @@ func (h *Handlers) GetTagBySlug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.Queries.GetTagBySlug(r.Context(), gen.GetTagBySlugParams{
-		Slug:     slug,
-		TenantID: keyCtx.TenantID,
-	})
+	tag, err := h.Queries.GetTagBySlug(r.Context(),
+		slug,
+	)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1005,10 +1002,8 @@ func (h *Handlers) GetTrendingContentHandler(w http.ResponseWriter, r *http.Requ
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingContent(r.Context(), gen.GetTrendingContentParams{
-		TenantID: keyCtx.TenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1040,10 +1035,8 @@ func (h *Handlers) GetTrendingTagsHandler(w http.ResponseWriter, r *http.Request
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingTags(r.Context(), gen.GetTrendingTagsParams{
-		TenantID: keyCtx.TenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1075,10 +1068,8 @@ func (h *Handlers) GetTrendingSpacesHandler(w http.ResponseWriter, r *http.Reque
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingSpaces(r.Context(), gen.GetTrendingSpacesParams{
-		TenantID: keyCtx.TenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1110,10 +1101,8 @@ func (h *Handlers) GetTrendingUsersHandler(w http.ResponseWriter, r *http.Reques
 	limit := parsePageSize(r, 10, 50)
 
 	rows, err := h.Queries.GetTrendingUsers(r.Context(), gen.GetTrendingUsersParams{
-		TenantID: keyCtx.TenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 	if err != nil {
 		handleServiceError(w, err)

@@ -14,28 +14,21 @@ import (
 const countVideoImportJobsForAdmin = `-- name: CountVideoImportJobsForAdmin :one
 SELECT COUNT(*)::int AS total
 FROM video_import_jobs vj
-JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
-WHERE vj.tenant_id = $1
-  AND ($2::text = '' OR vj.status = $2)
-  AND ($3::text = '' OR vj.source_type = $3)
-  AND ($4::text = '' OR vj.query ILIKE '%' || $4 || '%' OR vj.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+JOIN users u ON u.id = vj.user_id
+WHERE ($1::text = '' OR vj.status = $1)
+ AND ($2::text = '' OR vj.source_type = $2)
+ AND ($3::text = '' OR vj.query ILIKE '%' || $3 || '%' OR vj.source_url ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 `
 
 type CountVideoImportJobsForAdminParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	SourceType string      `json:"source_type"`
-	Q          string      `json:"q"`
+	Status     string `json:"status"`
+	SourceType string `json:"source_type"`
+	Q          string `json:"q"`
 }
 
 // Total for admin video import jobs list (same filters as ListVideoImportJobsForAdmin).
 func (q *Queries) CountVideoImportJobsForAdmin(ctx context.Context, arg CountVideoImportJobsForAdminParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countVideoImportJobsForAdmin,
-		arg.TenantID,
-		arg.Status,
-		arg.SourceType,
-		arg.Q,
-	)
+	row := q.db.QueryRow(ctx, countVideoImportJobsForAdmin, arg.Status, arg.SourceType, arg.Q)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -43,22 +36,14 @@ func (q *Queries) CountVideoImportJobsForAdmin(ctx context.Context, arg CountVid
 
 const createVideoImportJob = `-- name: CreateVideoImportJob :one
 
-INSERT INTO video_import_jobs (
-    tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, auto_publish
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    COALESCE($7, 'pending'), $8, $9, $10,
-    COALESCE($11, '[]'::jsonb), $12
-)
+INSERT INTO video_import_jobs (user_id, source_type, source_url, query, target_author_user_id, status, total_items, imported_count, failed_count, error_log, auto_publish) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'pending'), $7, $8, $9, COALESCE($10, '[]'::jsonb), $11)
 RETURNING
-    id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at,
-    completed_at, auto_publish, started_at
+ id, user_id, source_type, source_url, query, target_author_user_id,
+ status, total_items, imported_count, failed_count, error_log, created_at,
+ completed_at, auto_publish, started_at
 `
 
 type CreateVideoImportJobParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	UserID             pgtype.UUID `json:"user_id"`
 	SourceType         string      `json:"source_type"`
 	SourceUrl          *string     `json:"source_url"`
@@ -72,10 +57,27 @@ type CreateVideoImportJobParams struct {
 	AutoPublish        bool        `json:"auto_publish"`
 }
 
+type CreateVideoImportJobRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+}
+
 // Video import jobs: bulk YouTube channel/playlist/keyword imports.
-func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImportJobParams) (VideoImportJob, error) {
+func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImportJobParams) (CreateVideoImportJobRow, error) {
 	row := q.db.QueryRow(ctx, createVideoImportJob,
-		arg.TenantID,
 		arg.UserID,
 		arg.SourceType,
 		arg.SourceUrl,
@@ -88,10 +90,9 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 		arg.ErrorLog,
 		arg.AutoPublish,
 	)
-	var i VideoImportJob
+	var i CreateVideoImportJobRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -112,24 +113,36 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 
 const getVideoImportJobByID = `-- name: GetVideoImportJobByID :one
 SELECT
-    id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at,
-    completed_at, auto_publish, started_at
+ id, user_id, source_type, source_url, query, target_author_user_id,
+ status, total_items, imported_count, failed_count, error_log, created_at,
+ completed_at, auto_publish, started_at
 FROM video_import_jobs
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetVideoImportJobByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetVideoImportJobByIDRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
 }
 
-func (q *Queries) GetVideoImportJobByID(ctx context.Context, arg GetVideoImportJobByIDParams) (VideoImportJob, error) {
-	row := q.db.QueryRow(ctx, getVideoImportJobByID, arg.ID, arg.TenantID)
-	var i VideoImportJob
+func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (GetVideoImportJobByIDRow, error) {
+	row := q.db.QueryRow(ctx, getVideoImportJobByID, id)
+	var i GetVideoImportJobByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -150,39 +163,50 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, arg GetVideoImportJ
 
 const listVideoImportJobsByUser = `-- name: ListVideoImportJobsByUser :many
 SELECT
-    id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at,
-    completed_at, auto_publish, started_at
+ id, user_id, source_type, source_url, query, target_author_user_id,
+ status, total_items, imported_count, failed_count, error_log, created_at,
+ completed_at, auto_publish, started_at
 FROM video_import_jobs
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListVideoImportJobsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
-func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoImportJobsByUserParams) ([]VideoImportJob, error) {
-	rows, err := q.db.Query(ctx, listVideoImportJobsByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+type ListVideoImportJobsByUserRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+}
+
+func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoImportJobsByUserParams) ([]ListVideoImportJobsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listVideoImportJobsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []VideoImportJob
+	var items []ListVideoImportJobsByUserRow
 	for rows.Next() {
-		var i VideoImportJob
+		var i ListVideoImportJobsByUserRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -210,28 +234,26 @@ func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoIm
 
 const listVideoImportJobsForAdmin = `-- name: ListVideoImportJobsForAdmin :many
 SELECT
-    vj.id, vj.tenant_id, vj.user_id, vj.source_type, vj.source_url, vj.query,
-    vj.target_author_user_id, vj.status, vj.total_items, vj.imported_count,
-    vj.failed_count, vj.error_log, vj.created_at, vj.completed_at, vj.auto_publish,
-    vj.started_at,
-    u.username AS owner_username
+ vj.id, vj.user_id, vj.source_type, vj.source_url, vj.query,
+ vj.target_author_user_id, vj.status, vj.total_items, vj.imported_count,
+ vj.failed_count, vj.error_log, vj.created_at, vj.completed_at, vj.auto_publish,
+ vj.started_at,
+ u.username AS owner_username
 FROM video_import_jobs vj
-JOIN users u ON u.id = vj.user_id AND u.tenant_id = vj.tenant_id
-WHERE vj.tenant_id = $1
-  AND ($2::text = '' OR vj.status = $2)
-  AND ($3::text = '' OR vj.source_type = $3)
-  AND ($4::text = '' OR vj.query ILIKE '%' || $4 || '%' OR vj.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+JOIN users u ON u.id = vj.user_id
+WHERE ($1::text = '' OR vj.status = $1)
+ AND ($2::text = '' OR vj.source_type = $2)
+ AND ($3::text = '' OR vj.query ILIKE '%' || $3 || '%' OR vj.source_url ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 ORDER BY
-    CASE WHEN $5 = 'created_at' AND $6 = 'asc' THEN vj.created_at END ASC NULLS LAST,
-    CASE WHEN $5 = 'created_at' AND $6 = 'desc' THEN vj.created_at END DESC NULLS FIRST,
-    CASE WHEN $5 = 'status' AND $6 = 'asc' THEN vj.status END ASC NULLS LAST,
-    CASE WHEN $5 = 'status' AND $6 = 'desc' THEN vj.status END DESC NULLS FIRST,
-    vj.created_at DESC
-LIMIT $8 OFFSET $7
+ CASE WHEN $4 = 'created_at' AND $5 = 'asc' THEN vj.created_at END ASC NULLS LAST,
+ CASE WHEN $4 = 'created_at' AND $5 = 'desc' THEN vj.created_at END DESC NULLS FIRST,
+ CASE WHEN $4 = 'status' AND $5 = 'asc' THEN vj.status END ASC NULLS LAST,
+ CASE WHEN $4 = 'status' AND $5 = 'desc' THEN vj.status END DESC NULLS FIRST,
+ vj.created_at DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListVideoImportJobsForAdminParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	SourceType string      `json:"source_type"`
 	Q          string      `json:"q"`
@@ -243,7 +265,6 @@ type ListVideoImportJobsForAdminParams struct {
 
 type ListVideoImportJobsForAdminRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	SourceType         string             `json:"source_type"`
 	SourceUrl          *string            `json:"source_url"`
@@ -264,7 +285,6 @@ type ListVideoImportJobsForAdminRow struct {
 // Admin queue with optional status/source_type filters, text search, and sorting.
 func (q *Queries) ListVideoImportJobsForAdmin(ctx context.Context, arg ListVideoImportJobsForAdminParams) ([]ListVideoImportJobsForAdminRow, error) {
 	rows, err := q.db.Query(ctx, listVideoImportJobsForAdmin,
-		arg.TenantID,
 		arg.Status,
 		arg.SourceType,
 		arg.Q,
@@ -282,7 +302,6 @@ func (q *Queries) ListVideoImportJobsForAdmin(ctx context.Context, arg ListVideo
 		var i ListVideoImportJobsForAdminRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -312,17 +331,17 @@ func (q *Queries) ListVideoImportJobsForAdmin(ctx context.Context, arg ListVideo
 const updateVideoImportJob = `-- name: UpdateVideoImportJob :one
 UPDATE video_import_jobs
 SET status = $1,
-    total_items = $2,
-    imported_count = $3,
-    failed_count = $4,
-    error_log = COALESCE($5, error_log),
-    started_at = COALESCE($6, started_at),
-    completed_at = COALESCE($7, completed_at)
-WHERE id = $8 AND tenant_id = $9
+ total_items = $2,
+ imported_count = $3,
+ failed_count = $4,
+ error_log = COALESCE($5, error_log),
+ started_at = COALESCE($6, started_at),
+ completed_at = COALESCE($7, completed_at)
+WHERE id = $8
 RETURNING
-    id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
-    status, total_items, imported_count, failed_count, error_log, created_at,
-    completed_at, auto_publish, started_at
+ id, user_id, source_type, source_url, query, target_author_user_id,
+ status, total_items, imported_count, failed_count, error_log, created_at,
+ completed_at, auto_publish, started_at
 `
 
 type UpdateVideoImportJobParams struct {
@@ -334,10 +353,27 @@ type UpdateVideoImportJobParams struct {
 	StartedAt     pgtype.Timestamptz `json:"started_at"`
 	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImportJobParams) (VideoImportJob, error) {
+type UpdateVideoImportJobRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	SourceType         string             `json:"source_type"`
+	SourceUrl          *string            `json:"source_url"`
+	Query              *string            `json:"query"`
+	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
+	Status             string             `json:"status"`
+	TotalItems         int32              `json:"total_items"`
+	ImportedCount      int32              `json:"imported_count"`
+	FailedCount        int32              `json:"failed_count"`
+	ErrorLog           []byte             `json:"error_log"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
+	AutoPublish        bool               `json:"auto_publish"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+}
+
+func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImportJobParams) (UpdateVideoImportJobRow, error) {
 	row := q.db.QueryRow(ctx, updateVideoImportJob,
 		arg.Status,
 		arg.TotalItems,
@@ -347,12 +383,10 @@ func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImpor
 		arg.StartedAt,
 		arg.CompletedAt,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i VideoImportJob
+	var i UpdateVideoImportJobRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,

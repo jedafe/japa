@@ -45,8 +45,8 @@ func (s *Service) ListDiscussions(ctx context.Context, tenantID, contentID pgtyp
 	}
 
 	rows, err := s.read.ListContentThreadLinks(ctx, gen.ListContentThreadLinksParams{
-		ContentID:  contentID,
-		TenantID:   tenantID,
+		ContentID: contentID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -68,10 +68,9 @@ func (s *Service) ListDiscussions(ctx context.Context, tenantID, contentID pgtyp
 		}
 	}
 
-	total, err := s.read.CountContentThreadLinks(ctx, gen.CountContentThreadLinksParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	total, err := s.read.CountContentThreadLinks(ctx,
+		contentID,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting content thread links: %w", err)
 	}
@@ -105,20 +104,18 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 
 	if input.ThreadID.Valid {
 		// Validate the existing thread exists in the same tenant before linking.
-		if _, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       input.ThreadID,
-			TenantID: tenantID,
-		}); err != nil {
+		if _, err := s.read.GetContentByID(ctx,
+			input.ThreadID,
+		); err != nil {
 			return StartConversationResult{}, fmt.Errorf("resolving existing thread: %w", err)
 		}
 
 		threadID = input.ThreadID
 	} else {
 		// Derive a new discussion thread from the blog/content.
-		blog, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       contentID,
-			TenantID: tenantID,
-		})
+		blog, err := s.read.GetContentByID(ctx,
+			contentID,
+		)
 		if err != nil {
 			return StartConversationResult{}, fmt.Errorf("fetching content to derive discussion: %w", err)
 		}
@@ -126,7 +123,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 		title := "Discussing: " + blog.Title
 
 		thread, err := s.write.CreateContent(ctx, gen.CreateContentParams{
-			TenantID:    tenantID,
+
 			AuthorID:    userID,
 			ContentType: "discussion",
 			Title:       title,
@@ -148,7 +145,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 	}
 
 	link, err := s.write.CreateContentThreadLink(ctx, gen.CreateContentThreadLinkParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		ThreadID:  threadID,
 	})

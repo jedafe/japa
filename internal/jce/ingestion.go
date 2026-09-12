@@ -52,7 +52,7 @@ func newIngestionStore(database *db.DB) *ingestionStore {
 
 func (st *ingestionStore) create(ctx context.Context, tenantID, contentID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	row, err := st.write.CreateIngestionJob(ctx, gen.CreateIngestionJobParams{
-		TenantID:   tenantID,
+
 		ContentID:  contentID,
 		SourceKind: sourceKind,
 	})
@@ -64,10 +64,9 @@ func (st *ingestionStore) create(ctx context.Context, tenantID, contentID pgtype
 }
 
 func (st *ingestionStore) get(ctx context.Context, id, tenantID pgtype.UUID) (IngestionJob, error) {
-	row, err := st.read.GetIngestionJob(ctx, gen.GetIngestionJobParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := st.read.GetIngestionJob(ctx,
+		id,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return IngestionJob{}, fmt.Errorf("%w: ingestion job not found", errpkg.ErrNotFound)
@@ -81,7 +80,7 @@ func (st *ingestionStore) get(ctx context.Context, id, tenantID pgtype.UUID) (In
 
 func (st *ingestionStore) listByContent(ctx context.Context, tenantID, contentID pgtype.UUID, limit, offset int32) ([]IngestionJob, error) {
 	rows, err := st.read.ListIngestionJobsByContent(ctx, gen.ListIngestionJobsByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		OffsetVal: offset,
 		LimitVal:  limit,
@@ -110,7 +109,7 @@ func (st *ingestionStore) findLatestPendingByContent(ctx context.Context, tenant
 	const lookbackLimit = 1000
 
 	rows, err := st.read.ListIngestionJobsByContent(ctx, gen.ListIngestionJobsByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		OffsetVal: 0,
 		LimitVal:  lookbackLimit,
@@ -148,8 +147,8 @@ func (st *ingestionStore) update(ctx context.Context, arg gen.UpdateIngestionJob
 
 func toIngestionJob(row gen.ComparisonDataIngestionJob) (IngestionJob, error) {
 	job := IngestionJob{
-		ID:             row.ID.String(),
-		TenantID:       row.TenantID.String(),
+		ID: row.ID.String(),
+
 		ContentID:      row.ContentID.String(),
 		Status:         row.Status,
 		SourceKind:     row.SourceKind,
@@ -261,7 +260,7 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 	}
 
 	payload, err := json.Marshal(refreshValuesPayload{
-		TenantID:       tenantID.String(),
+
 		ContentID:      contentID.String(),
 		SourceKind:     sourceKind,
 		IngestionJobID: job.ID,
@@ -275,7 +274,6 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 			StartedAt:      pgtype.Timestamptz{},
 			CompletedAt:    pgtype.Timestamptz{},
 			ID:             stringToUUID(job.ID),
-			TenantID:       tenantID,
 		})
 
 		s.releaseRefreshLock(ctx, contentID)
@@ -291,7 +289,6 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 			StartedAt:      pgtype.Timestamptz{},
 			CompletedAt:    pgtype.Timestamptz{},
 			ID:             stringToUUID(job.ID),
-			TenantID:       tenantID,
 		})
 
 		s.releaseRefreshLock(ctx, contentID)
@@ -325,7 +322,6 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 		StartedAt:      startedAt,
 		CompletedAt:    pgtype.Timestamptz{},
 		ID:             jobID,
-		TenantID:       tenantID,
 	}); err != nil {
 		return fmt.Errorf("marking ingestion job running: %w", err)
 	}
@@ -348,10 +344,9 @@ func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID,
 		return fmt.Errorf("loading comparison matrix: %w", err)
 	}
 
-	values, err := gen.New(s.db.Reader).GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	values, err := gen.New(s.db.Reader).GetComparisonValuesByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return fmt.Errorf("loading comparison values: %w", err)
 	}
@@ -745,7 +740,6 @@ func (s *Service) finalizeRefresh(ctx context.Context, tenantID, contentID, jobI
 		StartedAt:      startedAt,
 		CompletedAt:    completedAt,
 		ID:             jobID,
-		TenantID:       tenantID,
 	}); err != nil {
 		return fmt.Errorf("finalizing ingestion job: %w", err)
 	}

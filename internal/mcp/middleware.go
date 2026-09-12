@@ -93,8 +93,8 @@ func validateBearer(ctx context.Context, token string, kr *auth.KeyRotation, vkC
 	}
 
 	return &auth.AuthenticatedUser{
-		UserID:    userID,
-		TenantID:  tenantID,
+		UserID: userID,
+
 		SessionID: claims.JTI,
 	}, nil
 }
@@ -119,8 +119,7 @@ func validateAPIKey(ctx context.Context, r *http.Request, apiKey string, publicA
 	}
 
 	user := &auth.AuthenticatedUser{
-		UserID:   keyCtx.UserID,
-		TenantID: keyCtx.TenantID,
+		UserID: keyCtx.UserID,
 	}
 
 	return keyCtx, user, nil

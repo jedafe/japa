@@ -121,9 +121,9 @@ func TestDispatchToUser(t *testing.T) {
 	bridge := &PubSubBridge{hub: hub}
 
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-dispatch",
-		TenantID: "t1",
+		Hub:    hub,
+		UserID: "user-dispatch",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -157,8 +157,8 @@ func TestDispatchToSpace(t *testing.T) {
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
-	c1 := &Client{Hub: hub, UserID: "u1", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	c2 := &Client{Hub: hub, UserID: "u2", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c1 := &Client{Hub: hub, UserID: "u1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c2 := &Client{Hub: hub, UserID: "u2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(c1)
 	hub.Register(c2)
 	hub.SubscribeToSpace(c1, "s-dispatch")
@@ -195,8 +195,8 @@ func TestDispatchToAll(t *testing.T) {
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
-	c1 := &Client{Hub: hub, UserID: "u1", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	c2 := &Client{Hub: hub, UserID: "u2", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c1 := &Client{Hub: hub, UserID: "u1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c2 := &Client{Hub: hub, UserID: "u2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(c1)
 	hub.Register(c2)
 
@@ -229,7 +229,7 @@ func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
-	client := &Client{Hub: hub, UserID: "u-broadcast", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-broadcast", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	msg := PubSubMessage{
@@ -265,7 +265,7 @@ func TestDispatchToUserDoesNotRepublish(t *testing.T) {
 	hub.SetPubSub(mock) // wired as in production
 	bridge := &PubSubBridge{hub: hub}
 
-	client := &Client{Hub: hub, UserID: "u-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-loop", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	bridge.dispatch(PubSubMessage{
@@ -295,7 +295,7 @@ func TestDispatchToSpaceDoesNotRepublish(t *testing.T) {
 	hub.SetPubSub(mock)
 	bridge := &PubSubBridge{hub: hub}
 
-	c := &Client{Hub: hub, UserID: "u-sp-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c := &Client{Hub: hub, UserID: "u-sp-loop", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(c)
 	hub.SubscribeToSpace(c, "s-loop")
 
@@ -325,7 +325,7 @@ func TestDispatchToAllDoesNotRepublish(t *testing.T) {
 	hub.SetPubSub(mock)
 	bridge := &PubSubBridge{hub: hub}
 
-	c := &Client{Hub: hub, UserID: "u-all-loop", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	c := &Client{Hub: hub, UserID: "u-all-loop", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(c)
 
 	bridge.dispatch(PubSubMessage{
@@ -369,7 +369,7 @@ func TestHubBroadcastWithoutBridge(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-nobs", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-nobs", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	event := WSEvent{Type: EventNotification, Payload: "no-bridge"}
@@ -391,7 +391,7 @@ func TestHubBroadcastTriggersPublish(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-pub", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-pub", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	bridge := &mockBridge{hub: hub}
@@ -421,7 +421,7 @@ func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-sp", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-sp", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 	hub.SubscribeToSpace(client, "s-pub")
 
@@ -446,7 +446,7 @@ func TestHubAllBroadcastTriggersPublish(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-all", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-all", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	bridge := &mockBridge{hub: hub}
@@ -512,8 +512,8 @@ func TestBroadcastToTenantDeliversOnlyToSameTenant(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	sameTenant := &Client{Hub: hub, UserID: "u-same", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	otherTenant := &Client{Hub: hub, UserID: "u-other", TenantID: "t2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	sameTenant := &Client{Hub: hub, UserID: "u-same", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	otherTenant := &Client{Hub: hub, UserID: "u-other", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(sameTenant)
 	hub.Register(otherTenant)
 
@@ -539,7 +539,7 @@ func TestBroadcastToTenantTriggersPublishTenant(t *testing.T) {
 	t.Parallel()
 
 	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-pres", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-pres", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	mock := &mockBridge{hub: hub}
@@ -562,8 +562,8 @@ func TestDispatchTenantBroadcastDoesNotLeakAcrossTenants(t *testing.T) {
 	hub := NewHub()
 	bridge := &PubSubBridge{hub: hub}
 
-	t1Client := &Client{Hub: hub, UserID: "u-t1", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	t2Client := &Client{Hub: hub, UserID: "u-t2", TenantID: "t2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	t1Client := &Client{Hub: hub, UserID: "u-t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	t2Client := &Client{Hub: hub, UserID: "u-t2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(t1Client)
 	hub.Register(t2Client)
 
@@ -596,7 +596,7 @@ func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
 	hub.SetPubSub(mock)
 	bridge := &PubSubBridge{hub: hub}
 
-	client := &Client{Hub: hub, UserID: "u-tnb", TenantID: "t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
+	client := &Client{Hub: hub, UserID: "u-tnb", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
 	hub.Register(client)
 
 	bridge.dispatch(PubSubMessage{

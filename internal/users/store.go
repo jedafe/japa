@@ -47,7 +47,7 @@ func (s *Store) SetContentCountryPreference(ctx context.Context, tenantID, userI
 	}
 
 	return s.write.SetUserContentCountryPreference(ctx, gen.SetUserContentCountryPreferenceParams{
-		TenantID:                 tenantID,
+
 		UserID:                   userID,
 		ContentCountryPreference: pref,
 	})
@@ -55,10 +55,10 @@ func (s *Store) SetContentCountryPreference(ctx context.Context, tenantID, userI
 
 // GetContentCountryPreference returns the user's content_country_preference.
 func (s *Store) GetContentCountryPreference(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	pref, err := s.read.GetUserContentCountryPreference(ctx, gen.GetUserContentCountryPreferenceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	pref, err := s.read.GetUserContentCountryPreference(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -89,9 +89,9 @@ func (s *Store) getCurrentGeoSpace(ctx context.Context, tenantID, userID pgtype.
 // findCitySpace finds a city-level Space by name (case-insensitive) for
 // the reverse-geocoding flow (ADR-064a).
 func (s *Store) findCitySpace(ctx context.Context, tenantID pgtype.UUID, cityName string) (pgtype.UUID, error) {
-	space, err := s.read.FindCitySpaceByName(ctx, gen.FindCitySpaceByNameParams{
-		CityName: cityName, TenantID: tenantID,
-	})
+	space, err := s.read.FindCitySpaceByName(ctx,
+		cityName,
+	)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -106,9 +106,9 @@ func (s *Store) findCitySpace(ctx context.Context, tenantID pgtype.UUID, cityNam
 // the reverse-geocoding fallback (ADR-064a, BUG-006). Used when no city-
 // level Space matches but a state/county name is available from Nominatim.
 func (s *Store) findStateSpace(ctx context.Context, tenantID pgtype.UUID, stateName string) (pgtype.UUID, error) {
-	space, err := s.read.FindStateSpaceByName(ctx, gen.FindStateSpaceByNameParams{
-		StateName: stateName, TenantID: tenantID,
-	})
+	space, err := s.read.FindStateSpaceByName(ctx,
+		stateName,
+	)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -121,10 +121,9 @@ func (s *Store) findStateSpace(ctx context.Context, tenantID pgtype.UUID, stateN
 func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
 	code := countryCode
 
-	space, err := s.read.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-		GeoCode:  &code,
-		TenantID: tenantID,
-	})
+	space, err := s.read.GetSpaceByGeoCode(ctx,
+		&code,
+	)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -136,10 +135,9 @@ func (s *Store) findCountrySpace(ctx context.Context, tenantID pgtype.UUID, coun
 // a geo space (level = country/state/city). Used by the POST /me/location
 // handler to validate direct space_id selections (ADR-064a security check).
 func (s *Store) isValidGeoSpace(ctx context.Context, tenantID, spaceID pgtype.UUID) bool {
-	space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-		ID:       spaceID,
-		TenantID: tenantID,
-	})
+	space, err := s.read.GetSpaceByID(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return false
 	}
@@ -157,10 +155,9 @@ func (s *Store) isValidGeoSpace(ctx context.Context, tenantID, spaceID pgtype.UU
 // custom field ID by key, fetches the user_profiles.id, and upserts the value.
 // An empty value clears the field by setting value_text to NULL.
 func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.UUID, fieldKey, value string) error {
-	field, err := s.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      fieldKey,
-		TenantID: tenantID,
-	})
+	field, err := s.read.GetCustomFieldByKey(ctx,
+		fieldKey,
+	)
 	if err != nil {
 		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
@@ -196,10 +193,9 @@ func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 // or destination_country) from the user's profile (ADR-064a). Returns an
 // empty string when the field has no value set (no row / NULL value_text).
 func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.UUID, fieldKey string) (string, error) {
-	field, err := s.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      fieldKey,
-		TenantID: tenantID,
-	})
+	field, err := s.read.GetCustomFieldByKey(ctx,
+		fieldKey,
+	)
 	if err != nil {
 		return "", fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
@@ -215,7 +211,6 @@ func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 		FieldID:    field.ID,
 		EntityType: "user_profile",
 		EntityID:   profileID,
-		TenantID:   tenantID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -314,10 +309,9 @@ func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, tenantID, u
 
 // setGeoCustomFieldTx is the transaction-scoped variant of setGeoCustomField.
 func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, fieldKey, value string) error {
-	field, err := q.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      fieldKey,
-		TenantID: tenantID,
-	})
+	field, err := q.GetCustomFieldByKey(ctx,
+		fieldKey,
+	)
 	if err != nil {
 		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
@@ -500,7 +494,7 @@ func (s *Store) updateUserPassword(ctx context.Context, tenantID, userID pgtype.
 // so it can be checked against future password changes (auth.password.history_count).
 func (s *Store) insertPasswordHistory(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash string) error {
 	return s.write.InsertPasswordHistory(ctx, gen.InsertPasswordHistoryParams{
-		TenantID:     tenantID,
+
 		UserID:       userID,
 		PasswordHash: passwordHash,
 	})
@@ -526,10 +520,10 @@ func (s *Store) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID,
 // revokeAllRefreshTokens revokes all non-revoked refresh tokens for a user,
 // forcing re-authentication on all devices. Used after password change/reset.
 func (s *Store) revokeAllRefreshTokens(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.write.RevokeAllUserRefreshTokens(ctx, gen.RevokeAllUserRefreshTokensParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.write.RevokeAllUserRefreshTokens(ctx,
+
+		userID,
+	)
 }
 
 func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsRow, error) {
@@ -952,9 +946,7 @@ func (s *Store) getUserPeriodEngagement(ctx context.Context, tenantID, userID pg
 // within the supplied date range.
 func (s *Store) countUserPointsEarned(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
 	return s.read.CountUserPointsEarned(ctx, gen.CountUserPointsEarnedParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		Column3:  from,
-		Column4:  to,
+
+		UserID: userID, Column2: from, Column3: to,
 	})
 }

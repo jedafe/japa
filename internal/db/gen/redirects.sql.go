@@ -13,75 +13,64 @@ import (
 
 const bulkDeleteRedirects = `-- name: BulkDeleteRedirects :exec
 DELETE FROM redirects
-WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+WHERE id = ANY($1::uuid[])
 `
 
-type BulkDeleteRedirectsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	Ids      []pgtype.UUID `json:"ids"`
-}
-
-func (q *Queries) BulkDeleteRedirects(ctx context.Context, arg BulkDeleteRedirectsParams) error {
-	_, err := q.db.Exec(ctx, bulkDeleteRedirects, arg.TenantID, arg.Ids)
+func (q *Queries) BulkDeleteRedirects(ctx context.Context, ids []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, bulkDeleteRedirects, ids)
 	return err
 }
 
 const bulkUpdateRedirectStatus = `-- name: BulkUpdateRedirectStatus :exec
 UPDATE redirects
 SET is_active = $1, updated_at = now()
-WHERE tenant_id = $2 AND id = ANY($3::uuid[])
+WHERE id = ANY($2::uuid[])
 `
 
 type BulkUpdateRedirectStatusParams struct {
 	IsActive bool          `json:"is_active"`
-	TenantID pgtype.UUID   `json:"tenant_id"`
 	Ids      []pgtype.UUID `json:"ids"`
 }
 
 func (q *Queries) BulkUpdateRedirectStatus(ctx context.Context, arg BulkUpdateRedirectStatusParams) error {
-	_, err := q.db.Exec(ctx, bulkUpdateRedirectStatus, arg.IsActive, arg.TenantID, arg.Ids)
+	_, err := q.db.Exec(ctx, bulkUpdateRedirectStatus, arg.IsActive, arg.Ids)
 	return err
 }
 
 const countRedirects = `-- name: CountRedirects :one
 SELECT COUNT(*)::int AS count
 FROM redirects
-WHERE tenant_id = $1
-  AND ($2::boolean IS NULL OR is_active = $2::boolean)
-  AND ($3::text = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
+WHERE ($1::boolean IS NULL OR is_active = $1::boolean)
+ AND ($2::text = '' OR source_path ILIKE '%' || $2 || '%' OR target_url ILIKE '%' || $2 || '%')
 `
 
 type CountRedirectsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	IsActive *bool       `json:"is_active"`
-	Search   string      `json:"search"`
+	IsActive *bool  `json:"is_active"`
+	Search   string `json:"search"`
 }
 
 func (q *Queries) CountRedirects(ctx context.Context, arg CountRedirectsParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countRedirects, arg.TenantID, arg.IsActive, arg.Search)
+	row := q.db.QueryRow(ctx, countRedirects, arg.IsActive, arg.Search)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createRedirect = `-- name: CreateRedirect :one
-INSERT INTO redirects (tenant_id, source_path, target_url, http_status, notes)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, source_path, target_url, http_status, is_active,
-    notes, hit_count, last_hit_at, created_at, updated_at
+INSERT INTO redirects (source_path, target_url, http_status, notes) VALUES ($1, $2, $3, $4)
+
+RETURNING id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
 `
 
 type CreateRedirectParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	SourcePath string      `json:"source_path"`
-	TargetUrl  string      `json:"target_url"`
-	HttpStatus int16       `json:"http_status"`
-	Notes      *string     `json:"notes"`
+	SourcePath string  `json:"source_path"`
+	TargetUrl  string  `json:"target_url"`
+	HttpStatus int16   `json:"http_status"`
+	Notes      *string `json:"notes"`
 }
 
 func (q *Queries) CreateRedirect(ctx context.Context, arg CreateRedirectParams) (Redirect, error) {
 	row := q.db.QueryRow(ctx, createRedirect,
-		arg.TenantID,
 		arg.SourcePath,
 		arg.TargetUrl,
 		arg.HttpStatus,
@@ -106,33 +95,21 @@ func (q *Queries) CreateRedirect(ctx context.Context, arg CreateRedirectParams) 
 
 const deleteRedirect = `-- name: DeleteRedirect :exec
 DELETE FROM redirects
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteRedirectParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteRedirect(ctx context.Context, arg DeleteRedirectParams) error {
-	_, err := q.db.Exec(ctx, deleteRedirect, arg.ID, arg.TenantID)
+func (q *Queries) DeleteRedirect(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRedirect, id)
 	return err
 }
 
 const getRedirect = `-- name: GetRedirect :one
-SELECT id, tenant_id, source_path, target_url, http_status, is_active,
-       notes, hit_count, last_hit_at, created_at, updated_at
-FROM redirects
-WHERE id = $1 AND tenant_id = $2
+SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+WHERE id = $1
 `
 
-type GetRedirectParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetRedirect(ctx context.Context, arg GetRedirectParams) (Redirect, error) {
-	row := q.db.QueryRow(ctx, getRedirect, arg.ID, arg.TenantID)
+func (q *Queries) GetRedirect(ctx context.Context, id pgtype.UUID) (Redirect, error) {
+	row := q.db.QueryRow(ctx, getRedirect, id)
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
@@ -151,19 +128,12 @@ func (q *Queries) GetRedirect(ctx context.Context, arg GetRedirectParams) (Redir
 }
 
 const getRedirectByPath = `-- name: GetRedirectByPath :one
-SELECT id, tenant_id, source_path, target_url, http_status, is_active,
-       notes, hit_count, last_hit_at, created_at, updated_at
-FROM redirects
-WHERE tenant_id = $1 AND source_path = $2 AND is_active = true
+SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+WHERE source_path = $1 AND is_active = true
 `
 
-type GetRedirectByPathParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	SourcePath string      `json:"source_path"`
-}
-
-func (q *Queries) GetRedirectByPath(ctx context.Context, arg GetRedirectByPathParams) (Redirect, error) {
-	row := q.db.QueryRow(ctx, getRedirectByPath, arg.TenantID, arg.SourcePath)
+func (q *Queries) GetRedirectByPath(ctx context.Context, sourcePath string) (Redirect, error) {
+	row := q.db.QueryRow(ctx, getRedirectByPath, sourcePath)
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
@@ -182,19 +152,12 @@ func (q *Queries) GetRedirectByPath(ctx context.Context, arg GetRedirectByPathPa
 }
 
 const getRedirectsByIDs = `-- name: GetRedirectsByIDs :many
-SELECT id, tenant_id, source_path, target_url, http_status, is_active,
-       notes, hit_count, last_hit_at, created_at, updated_at
-FROM redirects
-WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+WHERE id = ANY($1::uuid[])
 `
 
-type GetRedirectsByIDsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	Ids      []pgtype.UUID `json:"ids"`
-}
-
-func (q *Queries) GetRedirectsByIDs(ctx context.Context, arg GetRedirectsByIDsParams) ([]Redirect, error) {
-	rows, err := q.db.Query(ctx, getRedirectsByIDs, arg.TenantID, arg.Ids)
+func (q *Queries) GetRedirectsByIDs(ctx context.Context, ids []pgtype.UUID) ([]Redirect, error) {
+	rows, err := q.db.Query(ctx, getRedirectsByIDs, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -227,47 +190,42 @@ func (q *Queries) GetRedirectsByIDs(ctx context.Context, arg GetRedirectsByIDsPa
 
 const listRedirects = `-- name: ListRedirects :many
 
-SELECT id, tenant_id, source_path, target_url, http_status, is_active,
-       notes, hit_count, last_hit_at, created_at, updated_at
-FROM redirects
-WHERE tenant_id = $1
-  AND ($2::boolean IS NULL OR is_active = $2::boolean)
-  AND ($3::text = '' OR source_path ILIKE '%' || $3 || '%' OR target_url ILIKE '%' || $3 || '%')
+SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+WHERE ($1::boolean IS NULL OR is_active = $1::boolean)
+ AND ($2::text = '' OR source_path ILIKE '%' || $2 || '%' OR target_url ILIKE '%' || $2 || '%')
 ORDER BY
-  -- Dynamic sort: @sort is the column name, @dir is 'asc' or 'desc'.
-  -- Fallback to created_at DESC when @sort is empty or unrecognized.
-  CASE WHEN $4::text = 'source_path' AND $5::text = 'asc'  THEN source_path END ASC,
-  CASE WHEN $4::text = 'source_path' AND $5::text = 'desc' THEN source_path END DESC,
-  CASE WHEN $4::text = 'target_url'  AND $5::text = 'asc'  THEN target_url  END ASC,
-  CASE WHEN $4::text = 'target_url'  AND $5::text = 'desc' THEN target_url  END DESC,
-  CASE WHEN $4::text = 'http_status' AND $5::text = 'asc'  THEN http_status END ASC,
-  CASE WHEN $4::text = 'http_status' AND $5::text = 'desc' THEN http_status END DESC,
-  CASE WHEN $4::text = 'is_active'   AND $5::text = 'asc'  THEN is_active   END ASC,
-  CASE WHEN $4::text = 'is_active'   AND $5::text = 'desc' THEN is_active   END DESC,
-  CASE WHEN $4::text = 'hit_count'   AND $5::text = 'asc'  THEN hit_count   END ASC,
-  CASE WHEN $4::text = 'hit_count'   AND $5::text = 'desc' THEN hit_count   END DESC,
-  CASE WHEN $4::text = 'created_at'  AND $5::text = 'asc'  THEN created_at  END ASC,
-  CASE WHEN $4::text = 'created_at'  AND $5::text = 'desc' THEN created_at  END DESC,
-  CASE WHEN $4::text = 'updated_at'  AND $5::text = 'asc'  THEN updated_at  END ASC,
-  CASE WHEN $4::text = 'updated_at'  AND $5::text = 'desc' THEN updated_at  END DESC,
-  CASE WHEN $4::text = '' OR $4::text NOT IN ('source_path','target_url','http_status','is_active','hit_count','created_at','updated_at') THEN created_at END DESC
-LIMIT $7 OFFSET $6
+ -- Dynamic sort: @sort is the column name, @dir is 'asc' or 'desc'.
+ -- Fallback to created_at DESC when @sort is empty or unrecognized.
+ CASE WHEN $3::text = 'source_path' AND $4::text = 'asc' THEN source_path END ASC,
+ CASE WHEN $3::text = 'source_path' AND $4::text = 'desc' THEN source_path END DESC,
+ CASE WHEN $3::text = 'target_url' AND $4::text = 'asc' THEN target_url END ASC,
+ CASE WHEN $3::text = 'target_url' AND $4::text = 'desc' THEN target_url END DESC,
+ CASE WHEN $3::text = 'http_status' AND $4::text = 'asc' THEN http_status END ASC,
+ CASE WHEN $3::text = 'http_status' AND $4::text = 'desc' THEN http_status END DESC,
+ CASE WHEN $3::text = 'is_active' AND $4::text = 'asc' THEN is_active END ASC,
+ CASE WHEN $3::text = 'is_active' AND $4::text = 'desc' THEN is_active END DESC,
+ CASE WHEN $3::text = 'hit_count' AND $4::text = 'asc' THEN hit_count END ASC,
+ CASE WHEN $3::text = 'hit_count' AND $4::text = 'desc' THEN hit_count END DESC,
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'asc' THEN created_at END ASC,
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'desc' THEN created_at END DESC,
+ CASE WHEN $3::text = 'updated_at' AND $4::text = 'asc' THEN updated_at END ASC,
+ CASE WHEN $3::text = 'updated_at' AND $4::text = 'desc' THEN updated_at END DESC,
+ CASE WHEN $3::text = '' OR $3::text NOT IN ('source_path','target_url','http_status','is_active','hit_count','created_at','updated_at') THEN created_at END DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListRedirectsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	IsActive   *bool       `json:"is_active"`
-	Search     string      `json:"search"`
-	Sort       string      `json:"sort"`
-	Dir        string      `json:"dir"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	IsActive   *bool  `json:"is_active"`
+	Search     string `json:"search"`
+	Sort       string `json:"sort"`
+	Dir        string `json:"dir"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 // Redirects — Admin-managed URL redirect rules (ADR-056)
 func (q *Queries) ListRedirects(ctx context.Context, arg ListRedirectsParams) ([]Redirect, error) {
 	rows, err := q.db.Query(ctx, listRedirects,
-		arg.TenantID,
 		arg.IsActive,
 		arg.Search,
 		arg.Sort,
@@ -308,27 +266,21 @@ func (q *Queries) ListRedirects(ctx context.Context, arg ListRedirectsParams) ([
 const recordRedirectHit = `-- name: RecordRedirectHit :exec
 UPDATE redirects
 SET hit_count = hit_count + 1, last_hit_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type RecordRedirectHitParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) RecordRedirectHit(ctx context.Context, arg RecordRedirectHitParams) error {
-	_, err := q.db.Exec(ctx, recordRedirectHit, arg.ID, arg.TenantID)
+func (q *Queries) RecordRedirectHit(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, recordRedirectHit, id)
 	return err
 }
 
 const updateRedirect = `-- name: UpdateRedirect :one
 UPDATE redirects
 SET source_path = $1, target_url = $2,
-    http_status = $3, is_active = $4,
-    notes = $5, updated_at = now()
-WHERE id = $6 AND tenant_id = $7
-RETURNING id, tenant_id, source_path, target_url, http_status, is_active,
-    notes, hit_count, last_hit_at, created_at, updated_at
+ http_status = $3, is_active = $4,
+ notes = $5, updated_at = now()
+WHERE id = $6
+RETURNING id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
 `
 
 type UpdateRedirectParams struct {
@@ -338,7 +290,6 @@ type UpdateRedirectParams struct {
 	IsActive   bool        `json:"is_active"`
 	Notes      *string     `json:"notes"`
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateRedirect(ctx context.Context, arg UpdateRedirectParams) (Redirect, error) {
@@ -349,7 +300,6 @@ func (q *Queries) UpdateRedirect(ctx context.Context, arg UpdateRedirectParams) 
 		arg.IsActive,
 		arg.Notes,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i Redirect
 	err := row.Scan(

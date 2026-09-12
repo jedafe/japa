@@ -15,11 +15,10 @@ const deregisterDeviceToken = `-- name: DeregisterDeviceToken :exec
 
 UPDATE device_tokens
 SET is_active = false, updated_at = now()
-WHERE tenant_id = $1 AND user_id = $2 AND device_id = $3
+WHERE user_id = $1 AND device_id = $2
 `
 
 type DeregisterDeviceTokenParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	DeviceID string      `json:"device_id"`
 }
@@ -28,27 +27,22 @@ type DeregisterDeviceTokenParams struct {
 // Deregister a device token (set is_active = false).
 // =====================================================================
 func (q *Queries) DeregisterDeviceToken(ctx context.Context, arg DeregisterDeviceTokenParams) error {
-	_, err := q.db.Exec(ctx, deregisterDeviceToken, arg.TenantID, arg.UserID, arg.DeviceID)
+	_, err := q.db.Exec(ctx, deregisterDeviceToken, arg.UserID, arg.DeviceID)
 	return err
 }
 
 const getActiveDeviceTokensForUser = `-- name: GetActiveDeviceTokensForUser :many
 
 SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
-WHERE tenant_id = $1 AND user_id = $2 AND is_active = true
+WHERE user_id = $1 AND is_active = true
 ORDER BY last_used_at DESC
 `
-
-type GetActiveDeviceTokensForUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // =====================================================================
 // Get all active device tokens for a user (for push dispatch).
 // =====================================================================
-func (q *Queries) GetActiveDeviceTokensForUser(ctx context.Context, arg GetActiveDeviceTokensForUserParams) ([]DeviceToken, error) {
-	rows, err := q.db.Query(ctx, getActiveDeviceTokensForUser, arg.TenantID, arg.UserID)
+func (q *Queries) GetActiveDeviceTokensForUser(ctx context.Context, userID pgtype.UUID) ([]DeviceToken, error) {
+	rows, err := q.db.Query(ctx, getActiveDeviceTokensForUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,19 +76,14 @@ func (q *Queries) GetActiveDeviceTokensForUser(ctx context.Context, arg GetActiv
 const getDeviceTokenByDeviceID = `-- name: GetDeviceTokenByDeviceID :one
 
 SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
-WHERE tenant_id = $1 AND device_id = $2 AND is_active = true
+WHERE device_id = $1 AND is_active = true
 `
-
-type GetDeviceTokenByDeviceIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	DeviceID string      `json:"device_id"`
-}
 
 // =====================================================================
 // Get a device token by ID (for admin test push).
 // =====================================================================
-func (q *Queries) GetDeviceTokenByDeviceID(ctx context.Context, arg GetDeviceTokenByDeviceIDParams) (DeviceToken, error) {
-	row := q.db.QueryRow(ctx, getDeviceTokenByDeviceID, arg.TenantID, arg.DeviceID)
+func (q *Queries) GetDeviceTokenByDeviceID(ctx context.Context, deviceID string) (DeviceToken, error) {
+	row := q.db.QueryRow(ctx, getDeviceTokenByDeviceID, deviceID)
 	var i DeviceToken
 	err := row.Scan(
 		&i.ID,
@@ -115,13 +104,12 @@ func (q *Queries) GetDeviceTokenByDeviceID(ctx context.Context, arg GetDeviceTok
 const listUserDeviceTokens = `-- name: ListUserDeviceTokens :many
 
 SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
-WHERE tenant_id = $1 AND user_id = $2
-  AND ($3::boolean = false OR is_active = true)
+WHERE user_id = $1
+ AND ($2::boolean = false OR is_active = true)
 ORDER BY created_at DESC
 `
 
 type ListUserDeviceTokensParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	ActiveOnly bool        `json:"active_only"`
 }
@@ -130,7 +118,7 @@ type ListUserDeviceTokensParams struct {
 // List a user's active device tokens.
 // =====================================================================
 func (q *Queries) ListUserDeviceTokens(ctx context.Context, arg ListUserDeviceTokensParams) ([]DeviceToken, error) {
-	rows, err := q.db.Query(ctx, listUserDeviceTokens, arg.TenantID, arg.UserID, arg.ActiveOnly)
+	rows, err := q.db.Query(ctx, listUserDeviceTokens, arg.UserID, arg.ActiveOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +168,10 @@ const touchDeviceToken = `-- name: TouchDeviceToken :exec
 
 UPDATE device_tokens
 SET last_used_at = now(), updated_at = now()
-WHERE tenant_id = $1 AND user_id = $2 AND device_id = $3 AND is_active = true
+WHERE user_id = $1 AND device_id = $2 AND is_active = true
 `
 
 type TouchDeviceTokenParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	DeviceID string      `json:"device_id"`
 }
@@ -193,28 +180,27 @@ type TouchDeviceTokenParams struct {
 // Update last_used_at on a device token (heartbeat).
 // =====================================================================
 func (q *Queries) TouchDeviceToken(ctx context.Context, arg TouchDeviceTokenParams) error {
-	_, err := q.db.Exec(ctx, touchDeviceToken, arg.TenantID, arg.UserID, arg.DeviceID)
+	_, err := q.db.Exec(ctx, touchDeviceToken, arg.UserID, arg.DeviceID)
 	return err
 }
 
 const upsertDeviceToken = `-- name: UpsertDeviceToken :one
 
 
-INSERT INTO device_tokens (tenant_id, user_id, device_id, token, platform, app_version, is_active)
-VALUES ($1, $2, $3, $4, $5, $6, true)
-ON CONFLICT (tenant_id, user_id, device_id)
+INSERT INTO device_tokens (user_id, device_id, token, platform, app_version, is_active) VALUES ($1, $2, $3, $4, $5, true)
+
+ON CONFLICT (user_id, device_id)
 DO UPDATE SET
-    token        = EXCLUDED.token,
-    platform     = EXCLUDED.platform,
-    app_version  = EXCLUDED.app_version,
-    is_active    = true,
-    last_used_at = now(),
-    updated_at   = now()
+ token = EXCLUDED.token,
+ platform = EXCLUDED.platform,
+ app_version = EXCLUDED.app_version,
+ is_active = true,
+ last_used_at = now(),
+ updated_at = now()
 RETURNING id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at
 `
 
 type UpsertDeviceTokenParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	DeviceID   string      `json:"device_id"`
 	Token      string      `json:"token"`
@@ -231,7 +217,6 @@ type UpsertDeviceTokenParams struct {
 // =====================================================================
 func (q *Queries) UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenParams) (DeviceToken, error) {
 	row := q.db.QueryRow(ctx, upsertDeviceToken,
-		arg.TenantID,
 		arg.UserID,
 		arg.DeviceID,
 		arg.Token,

@@ -165,7 +165,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, p
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.List(ctx, ListFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		Profession:         profession,
 		Education:          education,
@@ -257,7 +257,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		Status:             status,
 		IsActive:           isActive,
@@ -361,7 +361,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	row, err := s.store.Create(ctx, CreateRoute{
-		TenantID:             tenantID,
+
 		DestinationSpaceID:   destSpaceID,
 		VisaCategory:         input.VisaCategory,
 		Name:                 input.Name,
@@ -594,7 +594,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	isActive := false
 
 	row, err := s.store.Create(ctx, CreateRoute{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		Name:               routeName,

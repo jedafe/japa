@@ -138,8 +138,8 @@ type CampaignPlanResult struct {
 // campaignFromGen converts a generated ContentCampaign row to the API DTO.
 func campaignFromGen(c gen.ContentCampaign) Campaign {
 	camp := Campaign{
-		ID:                    c.ID.String(),
-		TenantID:              c.TenantID.String(),
+		ID: c.ID.String(),
+
 		Name:                  c.Name,
 		Prompt:                c.Prompt,
 		Status:                c.Status,

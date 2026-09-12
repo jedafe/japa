@@ -49,31 +49,31 @@ type FeatureChecker interface {
 //
 //nolint:revive // exported: stutter naming is intentional
 type StoryDTO struct {
-	ID               string `json:"id"`
-	AuthorID         string `json:"author_id,omitempty"`
-	Title            string `json:"title"`
-	Slug             string `json:"slug"`
-	Body             string `json:"body"`
-	BodyHTML         string `json:"body_html"`
-	Status           string `json:"status"`
-	Visibility       string `json:"visibility"`
-	ViewCount        int32  `json:"view_count"`
-	CommentCount     int32  `json:"comment_count"`
-	PublishedAt      string `json:"published_at"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
-	OriginSpaceID    string `json:"origin_space_id,omitempty"`
-	OriginSpaceName  string `json:"origin_space_name,omitempty"`
-	OriginSpaceCode  string `json:"origin_space_code,omitempty"`
-	DestSpaceID      string `json:"destination_space_id"`
-	DestSpaceName    string `json:"destination_space_name"`
-	DestSpaceCode    string `json:"destination_space_code,omitempty"`
-	RelocationYear   int16  `json:"relocation_year,omitempty"`
-	VisaCategory     string `json:"visa_category,omitempty"`
-	Profession       string `json:"profession,omitempty"`
-	BiggestChallenge string `json:"biggest_challenge,omitempty"`
-	MostUsefulRes    string `json:"most_useful_resource,omitempty"`
-	BestAdvice       string `json:"best_advice,omitempty"`
+	ID                string `json:"id"`
+	AuthorID          string `json:"author_id,omitempty"`
+	Title             string `json:"title"`
+	Slug              string `json:"slug"`
+	Body              string `json:"body"`
+	BodyHTML          string `json:"body_html"`
+	Status            string `json:"status"`
+	Visibility        string `json:"visibility"`
+	ViewCount         int32  `json:"view_count"`
+	CommentCount      int32  `json:"comment_count"`
+	PublishedAt       string `json:"published_at"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
+	OriginSpaceID     string `json:"origin_space_id,omitempty"`
+	OriginSpaceName   string `json:"origin_space_name,omitempty"`
+	OriginSpaceCode   string `json:"origin_space_code,omitempty"`
+	DestSpaceID       string `json:"destination_space_id"`
+	DestSpaceName     string `json:"destination_space_name"`
+	DestSpaceCode     string `json:"destination_space_code,omitempty"`
+	RelocationYear    int16  `json:"relocation_year,omitempty"`
+	VisaCategory      string `json:"visa_category,omitempty"`
+	Profession        string `json:"profession,omitempty"`
+	BiggestChallenge  string `json:"biggest_challenge,omitempty"`
+	MostUsefulRes     string `json:"most_useful_resource,omitempty"`
+	BestAdvice        string `json:"best_advice,omitempty"`
 	Verified          bool   `json:"verified"`
 	AuthorName        string `json:"author_name,omitempty"`
 	AuthorUsername    string `json:"author_username,omitempty"`
@@ -260,7 +260,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	}
 
 	meta := StoryMeta{
-		TenantID:           tenantID,
+
 		ContentID:          contentRow.ID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -324,7 +324,7 @@ func (s *Service) List(ctx context.Context, tenantID, originSpaceID, destSpaceID
 	}
 
 	rows, total, err := s.store.ListStories(ctx, ListStoriesFilter{
-		TenantID:      tenantID,
+
 		OriginSpaceID: originSpaceID,
 		DestSpaceID:   destSpaceID,
 		VisaCategory:  visaCategory,
@@ -592,7 +592,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, q
 	}
 
 	rows, total, err := s.store.AdminListStories(ctx, AdminListStoriesFilter{
-		TenantID:    tenantID,
+
 		Status:      status,
 		Verified:    verified,
 		Q:           q,
@@ -858,7 +858,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 	aiModel := "content_agent_v1"
 
 	meta := StoryMeta{
-		TenantID:           tenantID,
+
 		ContentID:          contentRow.ID,
 		DestinationSpaceID: destSpaceID,
 		Verified:           false,

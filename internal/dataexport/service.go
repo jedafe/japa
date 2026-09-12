@@ -192,7 +192,7 @@ func (s *Service) CreateExport(ctx context.Context, tenantID, userID pgtype.UUID
 	}
 
 	exp, err := s.store.Create(ctx, gen.CreatePlatformDataExportParams{
-		TenantID:        tenantID,
+
 		Name:            name,
 		ExportType:      exportType,
 		Format:          format,

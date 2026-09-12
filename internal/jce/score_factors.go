@@ -40,7 +40,7 @@ func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in 
 	}
 
 	row, err := s.write.CreateScoreFactor(ctx, gen.CreateScoreFactorParams{
-		TenantID:         tenantID,
+
 		ComparisonTypeID: stringToUUID(ptrString(in.ComparisonTypeID)),
 		FactorKey:        in.FactorKey,
 		Label:            in.Label,
@@ -63,7 +63,7 @@ func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonT
 	include := &includeGlobal
 
 	rows, err := s.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
-		TenantID:         tenantID,
+
 		ComparisonTypeID: comparisonTypeID,
 		IncludeGlobal:    include,
 		DataSource:       nil,
@@ -88,10 +88,9 @@ func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonT
 
 // get returns a score factor by id and tenant.
 func (s *scoreFactorStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error) {
-	row, err := s.read.GetScoreFactor(ctx, gen.GetScoreFactorParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetScoreFactor(ctx,
+		id,
+	)
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("getting score factor: %w", err)
 	}
@@ -122,7 +121,6 @@ func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID,
 		Config:           cfgBytes,
 		IsSystem:         in.IsSystem,
 		ID:               id,
-		TenantID:         tenantID,
 	})
 	if err != nil {
 		return ScoreFactor{}, fmt.Errorf("updating score factor: %w", err)
@@ -133,10 +131,9 @@ func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID,
 
 // delete removes a score factor.
 func (s *scoreFactorStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteScoreFactor(ctx, gen.DeleteScoreFactorParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteScoreFactor(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting score factor: %w", err)
 	}
 
@@ -166,7 +163,7 @@ func (s *scoreFactorStore) getByKey(ctx context.Context, tenantID, comparisonTyp
 	}
 
 	row, err := s.read.GetScoreFactorByKey(ctx, gen.GetScoreFactorByKeyParams{
-		TenantID:         tenantID,
+
 		ComparisonTypeID: comparisonTypeID,
 		FactorKey:        factorKey,
 	})
@@ -193,8 +190,8 @@ func scoreFactorFromRow(row gen.ComparisonScoreFactor) (ScoreFactor, error) {
 	}
 
 	return ScoreFactor{
-		ID:               row.ID.String(),
-		TenantID:         row.TenantID.String(),
+		ID: row.ID.String(),
+
 		ComparisonTypeID: uuidPtr(row.ComparisonTypeID),
 		FactorKey:        row.FactorKey,
 		Label:            row.Label,

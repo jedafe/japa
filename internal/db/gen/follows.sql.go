@@ -14,11 +14,10 @@ import (
 const countFollowersByEntity = `-- name: CountFollowersByEntity :one
 
 SELECT COUNT(*)::int AS count FROM follows
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE entity_type = $1 AND entity_id = $2
 `
 
 type CountFollowersByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
@@ -27,7 +26,7 @@ type CountFollowersByEntityParams struct {
 // Counts
 // =====================
 func (q *Queries) CountFollowersByEntity(ctx context.Context, arg CountFollowersByEntityParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countFollowersByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, countFollowersByEntity, arg.EntityType, arg.EntityID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -35,16 +34,11 @@ func (q *Queries) CountFollowersByEntity(ctx context.Context, arg CountFollowers
 
 const countFollowingByUser = `-- name: CountFollowingByUser :one
 SELECT COUNT(*)::int AS count FROM follows
-WHERE tenant_id = $1 AND follower_id = $2
+WHERE follower_id = $1
 `
 
-type CountFollowingByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	FollowerID pgtype.UUID `json:"follower_id"`
-}
-
-func (q *Queries) CountFollowingByUser(ctx context.Context, arg CountFollowingByUserParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countFollowingByUser, arg.TenantID, arg.FollowerID)
+func (q *Queries) CountFollowingByUser(ctx context.Context, followerID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countFollowingByUser, followerID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -52,23 +46,17 @@ func (q *Queries) CountFollowingByUser(ctx context.Context, arg CountFollowingBy
 
 const deleteFollowByFollowerEntity = `-- name: DeleteFollowByFollowerEntity :exec
 DELETE FROM follows
-WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
+WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
 type DeleteFollowByFollowerEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) DeleteFollowByFollowerEntity(ctx context.Context, arg DeleteFollowByFollowerEntityParams) error {
-	_, err := q.db.Exec(ctx, deleteFollowByFollowerEntity,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.EntityType,
-		arg.EntityID,
-	)
+	_, err := q.db.Exec(ctx, deleteFollowByFollowerEntity, arg.FollowerID, arg.EntityType, arg.EntityID)
 	return err
 }
 
@@ -111,19 +99,17 @@ func (q *Queries) DeleteFollowsByFollower(ctx context.Context, followerID pgtype
 const getBulkFollowingStatus = `-- name: GetBulkFollowingStatus :many
 
 SELECT $1::text AS entity_type, eid::uuid AS entity_id,
-    EXISTS (
-        SELECT 1 FROM follows sub
-        WHERE sub.tenant_id = $2
-          AND sub.follower_id = $3
-          AND sub.entity_type = $1
-          AND sub.entity_id = eid
-    ) AS is_following
-FROM unnest($4::uuid[]) AS t(eid)
+ EXISTS (
+ SELECT 1 FROM follows sub
+ WHERE sub.follower_id = $2
+ AND sub.entity_type = $1
+ AND sub.entity_id = eid
+ ) AS is_following
+FROM unnest($3::uuid[]) AS t(eid)
 `
 
 type GetBulkFollowingStatusParams struct {
 	EntityType string        `json:"entity_type"`
-	TenantID   pgtype.UUID   `json:"tenant_id"`
 	FollowerID pgtype.UUID   `json:"follower_id"`
 	EntityIds  []pgtype.UUID `json:"entity_ids"`
 }
@@ -141,12 +127,7 @@ type GetBulkFollowingStatusRow struct {
 // is_following = false when no follow row exists for the current user.
 // Ref: japaconnect-engineering/sections/31-follow-system.md (bulk is_following)
 func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowingStatusParams) ([]GetBulkFollowingStatusRow, error) {
-	rows, err := q.db.Query(ctx, getBulkFollowingStatus,
-		arg.EntityType,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.EntityIds,
-	)
+	rows, err := q.db.Query(ctx, getBulkFollowingStatus, arg.EntityType, arg.FollowerID, arg.EntityIds)
 	if err != nil {
 		return nil, err
 	}
@@ -166,29 +147,30 @@ func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowi
 }
 
 const getFollow = `-- name: GetFollow :one
-SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
+SELECT id, follower_id, entity_type, entity_id, created_at
 FROM follows
-WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
+WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
 type GetFollowParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, error) {
-	row := q.db.QueryRow(ctx, getFollow,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.EntityType,
-		arg.EntityID,
-	)
-	var i Follow
+type GetFollowRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	FollowerID pgtype.UUID        `json:"follower_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (GetFollowRow, error) {
+	row := q.db.QueryRow(ctx, getFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
+	var i GetFollowRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.FollowerID,
 		&i.EntityType,
 		&i.EntityID,
@@ -199,21 +181,20 @@ func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, e
 
 const getFollowersByEntity = `-- name: GetFollowersByEntity :many
 
-SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
-       u.username,
-       COALESCE(up.display_name, '') AS display_name,
-       COALESCE(up.avatar_url, '') AS avatar_url,
-       u.profile_type
+SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
+ u.username,
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url,
+ u.profile_type
 FROM follows f
 JOIN users u ON u.id = f.follower_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = f.tenant_id
-WHERE f.tenant_id = $1 AND f.entity_type = $2 AND f.entity_id = $3
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE f.entity_type = $1 AND f.entity_id = $2
 ORDER BY f.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type GetFollowersByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -222,7 +203,6 @@ type GetFollowersByEntityParams struct {
 
 type GetFollowersByEntityRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	FollowerID  pgtype.UUID        `json:"follower_id"`
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`
@@ -238,7 +218,6 @@ type GetFollowersByEntityRow struct {
 // =====================
 func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEntityParams) ([]GetFollowersByEntityRow, error) {
 	rows, err := q.db.Query(ctx, getFollowersByEntity,
-		arg.TenantID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.PageOffset,
@@ -253,7 +232,6 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 		var i GetFollowersByEntityRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.FollowerID,
 			&i.EntityType,
 			&i.EntityID,
@@ -274,33 +252,32 @@ func (q *Queries) GetFollowersByEntity(ctx context.Context, arg GetFollowersByEn
 }
 
 const getFollowingByUser = `-- name: GetFollowingByUser :many
-SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
-    CASE f.entity_type
-        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
-        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
-        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
-        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
-        WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
-        ELSE ''
-    END AS entity_name,
-    CASE f.entity_type
-        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
-        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
-        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
-        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
-        WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
-        ELSE ''
-    END AS entity_slug,
-    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_display_name,
-    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_avatar_url
+SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+ WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+ WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+ WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+ WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE ''
+ END AS entity_name,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+ WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+ WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+ WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
+ WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE ''
+ END AS entity_slug,
+ COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+ COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
-WHERE f.tenant_id = $1 AND f.follower_id = $2
+WHERE f.follower_id = $1
 ORDER BY f.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type GetFollowingByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -308,7 +285,6 @@ type GetFollowingByUserParams struct {
 
 type GetFollowingByUserRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	FollowerID        pgtype.UUID        `json:"follower_id"`
 	EntityType        string             `json:"entity_type"`
 	EntityID          pgtype.UUID        `json:"entity_id"`
@@ -320,12 +296,7 @@ type GetFollowingByUserRow struct {
 }
 
 func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUserParams) ([]GetFollowingByUserRow, error) {
-	rows, err := q.db.Query(ctx, getFollowingByUser,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, getFollowingByUser, arg.FollowerID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +306,6 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 		var i GetFollowingByUserRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.FollowerID,
 			&i.EntityType,
 			&i.EntityID,
@@ -356,33 +326,32 @@ func (q *Queries) GetFollowingByUser(ctx context.Context, arg GetFollowingByUser
 }
 
 const getFollowingByUserAndType = `-- name: GetFollowingByUserAndType :many
-SELECT f.id, f.tenant_id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
-    CASE f.entity_type
-        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
-        WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
-        WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
-        WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
-        WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
-        ELSE ''
-    END AS entity_name,
-    CASE f.entity_type
-        WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
-        WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
-        WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
-        WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
-        WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
-        ELSE ''
-    END AS entity_slug,
-    COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_display_name,
-    COALESCE((SELECT avatar_url  FROM user_profiles WHERE user_id = f.entity_id AND tenant_id = f.tenant_id), '')::text AS entity_avatar_url
+SELECT f.id, f.follower_id, f.entity_type, f.entity_id, f.created_at,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+ WHEN 'space' THEN COALESCE((SELECT name FROM spaces WHERE id = f.entity_id), '')
+ WHEN 'tag' THEN COALESCE((SELECT name FROM tags WHERE id = f.entity_id), '')
+ WHEN 'organization' THEN COALESCE((SELECT name FROM organizations WHERE id = f.entity_id), '')
+ WHEN 'source' THEN COALESCE((SELECT name FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE ''
+ END AS entity_name,
+ CASE f.entity_type
+ WHEN 'user' THEN COALESCE((SELECT username FROM users WHERE id = f.entity_id), '')
+ WHEN 'space' THEN COALESCE((SELECT slug FROM spaces WHERE id = f.entity_id), '')
+ WHEN 'tag' THEN COALESCE((SELECT slug FROM tags WHERE id = f.entity_id), '')
+ WHEN 'organization' THEN COALESCE((SELECT slug FROM organizations WHERE id = f.entity_id), '')
+ WHEN 'source' THEN COALESCE((SELECT slug FROM intel_sources WHERE id = f.entity_id), '')
+ ELSE ''
+ END AS entity_slug,
+ COALESCE((SELECT display_name FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_display_name,
+ COALESCE((SELECT avatar_url FROM user_profiles WHERE user_id = f.entity_id), '')::text AS entity_avatar_url
 FROM follows f
-WHERE f.tenant_id = $1 AND f.follower_id = $2 AND f.entity_type = $3
+WHERE f.follower_id = $1 AND f.entity_type = $2
 ORDER BY f.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type GetFollowingByUserAndTypeParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	PageOffset int32       `json:"page_offset"`
@@ -391,7 +360,6 @@ type GetFollowingByUserAndTypeParams struct {
 
 type GetFollowingByUserAndTypeRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	FollowerID        pgtype.UUID        `json:"follower_id"`
 	EntityType        string             `json:"entity_type"`
 	EntityID          pgtype.UUID        `json:"entity_id"`
@@ -404,7 +372,6 @@ type GetFollowingByUserAndTypeRow struct {
 
 func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowingByUserAndTypeParams) ([]GetFollowingByUserAndTypeRow, error) {
 	rows, err := q.db.Query(ctx, getFollowingByUserAndType,
-		arg.TenantID,
 		arg.FollowerID,
 		arg.EntityType,
 		arg.PageOffset,
@@ -419,7 +386,6 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 		var i GetFollowingByUserAndTypeRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.FollowerID,
 			&i.EntityType,
 			&i.EntityID,
@@ -442,13 +408,12 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 const insertFollow = `-- name: InsertFollow :exec
 
 
-INSERT INTO follows (tenant_id, follower_id, entity_type, entity_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, $2, $3)
+
 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING
 `
 
 type InsertFollowParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -460,25 +425,19 @@ type InsertFollowParams struct {
 // Follow CRUD
 // =====================
 func (q *Queries) InsertFollow(ctx context.Context, arg InsertFollowParams) error {
-	_, err := q.db.Exec(ctx, insertFollow,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.EntityType,
-		arg.EntityID,
-	)
+	_, err := q.db.Exec(ctx, insertFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
 	return err
 }
 
 const isFollowing = `-- name: IsFollowing :one
 
 SELECT EXISTS (
-    SELECT 1 FROM follows
-    WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = $3 AND entity_id = $4
+ SELECT 1 FROM follows
+ WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 ) AS is_following
 `
 
 type IsFollowingParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -488,12 +447,7 @@ type IsFollowingParams struct {
 // Status Checks
 // =====================
 func (q *Queries) IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isFollowing,
-		arg.TenantID,
-		arg.FollowerID,
-		arg.EntityType,
-		arg.EntityID,
-	)
+	row := q.db.QueryRow(ctx, isFollowing, arg.FollowerID, arg.EntityType, arg.EntityID)
 	var is_following bool
 	err := row.Scan(&is_following)
 	return is_following, err
@@ -501,19 +455,18 @@ func (q *Queries) IsFollowing(ctx context.Context, arg IsFollowingParams) (bool,
 
 const isMutualFollow = `-- name: IsMutualFollow :one
 SELECT EXISTS (
-    SELECT 1 FROM follows
-    WHERE tenant_id = $1 AND follower_id = $2 AND entity_type = 'user' AND entity_id = $3
+ SELECT 1 FROM follows
+ WHERE follower_id = $1 AND entity_type = 'user' AND entity_id = $2
 ) AS is_mutual
 `
 
 type IsMutualFollowParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 }
 
 func (q *Queries) IsMutualFollow(ctx context.Context, arg IsMutualFollowParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isMutualFollow, arg.TenantID, arg.EntityID, arg.FollowerID)
+	row := q.db.QueryRow(ctx, isMutualFollow, arg.EntityID, arg.FollowerID)
 	var is_mutual bool
 	err := row.Scan(&is_mutual)
 	return is_mutual, err

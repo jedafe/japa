@@ -44,7 +44,7 @@ func NewStore(database *db.DB) *Store {
 // GetActiveAssessmentForm returns the active assessment form
 // (form_type='assessment', status='active') for the tenant.
 func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUID) (gen.Form, error) {
-	form, err := s.queries.GetActiveAssessmentForm(ctx, tenantID)
+	form, err := s.queries.GetActiveAssessmentForm(ctx)
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get active form: %w", err)
 	}
@@ -56,10 +56,10 @@ func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUI
 // form, ordered by position. The scoring engine uses each field's config
 // JSONB to resolve per-answer scores.
 func (s *Store) GetAssessmentFormFields(ctx context.Context, tenantID, formID pgtype.UUID) ([]gen.CustomField, error) {
-	fields, err := s.queries.GetAssessmentFormFields(ctx, gen.GetAssessmentFormFieldsParams{
-		TenantID: tenantID,
-		FormID:   formID,
-	})
+	fields, err := s.queries.GetAssessmentFormFields(ctx,
+
+		formID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get form fields: %w", err)
 	}
@@ -71,8 +71,8 @@ func (s *Store) GetAssessmentFormFields(ctx context.Context, tenantID, formID pg
 // userID may be invalid (zero) for anonymous submissions.
 func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, tenantID, userID pgtype.UUID, fieldValues []byte) (gen.FormSubmission, error) {
 	sub, err := s.queries.CreateAssessmentSubmission(ctx, gen.CreateAssessmentSubmissionParams{
-		FormID:      formID,
-		TenantID:    tenantID,
+		FormID: formID,
+
 		UserID:      userID,
 		FieldValues: fieldValues,
 	})
@@ -86,7 +86,7 @@ func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, tenantID
 // CreateAssessmentResult stores a scored assessment result.
 func (s *Store) CreateAssessmentResult(ctx context.Context, tenantID, userID, submissionID pgtype.UUID, totalScore int32, dimensionScores []byte, thresholdLabel string, roadmapContent []byte) (gen.AssessmentResult, error) {
 	result, err := s.queries.CreateAssessmentResult(ctx, gen.CreateAssessmentResultParams{
-		TenantID:        tenantID,
+
 		UserID:          userID,
 		SubmissionID:    submissionID,
 		TotalScore:      totalScore,
@@ -103,10 +103,10 @@ func (s *Store) CreateAssessmentResult(ctx context.Context, tenantID, userID, su
 
 // GetAssessmentResultByID returns a single assessment result by ID.
 func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.AssessmentResult, error) {
-	result, err := s.queries.GetAssessmentResultByID(ctx, gen.GetAssessmentResultByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	result, err := s.queries.GetAssessmentResultByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		return gen.AssessmentResult{}, fmt.Errorf("assessment: get result: %w", err)
 	}
@@ -118,10 +118,10 @@ func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype
 // submission, if the Asynq scoring task has written it yet. Used by the
 // public polling endpoint after an async submit.
 func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
-	result, err := s.queries.GetAssessmentResultBySubmission(ctx, gen.GetAssessmentResultBySubmissionParams{
-		TenantID:     tenantID,
-		SubmissionID: submissionID,
-	})
+	result, err := s.queries.GetAssessmentResultBySubmission(ctx,
+
+		submissionID,
+	)
 	if err != nil {
 		return gen.AssessmentResult{}, fmt.Errorf("assessment: get result by submission: %w", err)
 	}
@@ -133,7 +133,7 @@ func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, s
 // paginated by offset/limit, newest first.
 func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AssessmentResult, error) {
 	results, err := s.queries.ListUserAssessmentResults(ctx, gen.ListUserAssessmentResultsParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
@@ -147,10 +147,10 @@ func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID 
 
 // CountUserAssessmentResults returns the total count of a user's results.
 func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
-	count, err := s.queries.CountUserAssessmentResults(ctx, gen.CountUserAssessmentResultsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	count, err := s.queries.CountUserAssessmentResults(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("assessment: count user results: %w", err)
 	}
@@ -163,9 +163,9 @@ func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID
 // per user per form (Section 28).
 func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantID, userID, formID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountAssessmentResultsByUserAndForm(ctx, gen.CountAssessmentResultsByUserAndFormParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		FormID:   formID,
+
+		UserID: userID,
+		FormID: formID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("assessment: count user results by form: %w", err)
@@ -179,8 +179,8 @@ func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantI
 func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, tenantID, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {
 	form, err := s.queries.UpdateAssessmentFormScoring(ctx, gen.UpdateAssessmentFormScoringParams{
 		ScoringConfig: scoringConfig,
-		TenantID:      tenantID,
-		ID:            id,
+
+		ID: id,
 	})
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: update form scoring: %w", err)
@@ -355,7 +355,7 @@ LIMIT $%d OFFSET $%d`,
 // for the tenant, optionally filtered by score range. Admin-only.
 func (s *Store) AdminCountAssessmentResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore int32) (int64, error) {
 	count, err := s.queries.AdminCountAssessmentResults(ctx, gen.AdminCountAssessmentResultsParams{
-		TenantID: tenantID,
+
 		MinScore: minScore,
 		MaxScore: maxScore,
 	})
@@ -376,7 +376,7 @@ type AdminScoreDistributionRow struct {
 // AdminScoreDistribution returns the count and average score of assessment
 // results grouped by threshold label. Admin-only.
 func (s *Store) AdminScoreDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminScoreDistributionRow, error) {
-	rows, err := s.queries.AdminAssessmentScoreDistribution(ctx, tenantID)
+	rows, err := s.queries.AdminAssessmentScoreDistribution(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: admin score distribution: %w", err)
 	}
@@ -403,7 +403,7 @@ type AdminCompletionStatsRow struct {
 // AdminCompletionStats returns total submissions, total scored results, and
 // the average score across all assessment submissions. Admin-only.
 func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID) (AdminCompletionStatsRow, error) {
-	row, err := s.queries.AdminAssessmentCompletionStats(ctx, tenantID)
+	row, err := s.queries.AdminAssessmentCompletionStats(ctx)
 	if err != nil {
 		return AdminCompletionStatsRow{}, fmt.Errorf("assessment: admin completion stats: %w", err)
 	}
@@ -476,7 +476,7 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 	}
 
 	created, err := s.queries.CreateForm(ctx, gen.CreateFormParams{
-		TenantID:             tenantID,
+
 		SpaceID:              in.SpaceID,
 		Name:                 in.Name,
 		Slug:                 in.Slug,
@@ -566,7 +566,6 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 		Status:               status,
 		SubmissionFeeCredits: submissionFeeCredits,
 		ID:                   id,
-		TenantID:             tenantID,
 	})
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: update form: %w", err)
@@ -602,7 +601,7 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 
 // DeleteAssessmentForm soft-deletes a non-system assessment form by id.
 func (s *Store) DeleteAssessmentForm(ctx context.Context, tenantID, id pgtype.UUID) error {
-	if err := s.queries.DeleteForm(ctx, gen.DeleteFormParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.queries.DeleteForm(ctx, id); err != nil {
 		return fmt.Errorf("assessment: delete form: %w", err)
 	}
 
@@ -638,10 +637,9 @@ WHERE id = $1 AND tenant_id = $2
 // result roadmap endpoint to re-build the visitor's journey context from the
 // submission's field_values without re-storing that context on the result row.
 func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
-	sub, err := s.queries.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
-		ID:       submissionID,
-		TenantID: tenantID,
-	})
+	sub, err := s.queries.GetFormSubmissionByID(ctx,
+		submissionID,
+	)
 	if err != nil {
 		return gen.GetFormSubmissionByIDRow{}, fmt.Errorf("assessment: get submission by id: %w", err)
 	}
@@ -656,10 +654,9 @@ func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pg
 func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geoCode string) (gen.GetSpaceByGeoCodeRow, error) {
 	code := strings.ToUpper(strings.TrimSpace(geoCode))
 
-	row, err := s.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-		GeoCode:  &code,
-		TenantID: tenantID,
-	})
+	row, err := s.queries.GetSpaceByGeoCode(ctx,
+		&code,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.GetSpaceByGeoCodeRow{}, nil
@@ -680,7 +677,7 @@ func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geo
 // original step.
 func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgtype.UUID, dimension, destination, stage, visa, origin, purpose string) ([]gen.FindRoadmapContentByDimensionRow, error) {
 	rows, err := s.queries.FindRoadmapContentByDimension(ctx, gen.FindRoadmapContentByDimensionParams{
-		TenantID:           tenantID,
+
 		Dimension:          []byte(dimension),
 		DestinationCountry: destination,
 		JourneyStage:       stage,

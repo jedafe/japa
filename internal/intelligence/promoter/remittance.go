@@ -144,9 +144,9 @@ func (p *RemittancePromoter) remittanceCreatePath(ctx context.Context, record ge
 		}
 
 		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
-			TenantID: p.tenantID,
-			ID:       record.ID,
-			Status:   "extracted",
+
+			ID:     record.ID,
+			Status: "extracted",
 		}); err != nil {
 			return fmt.Errorf("promoter: mark intel record extracted: %w", err)
 		}

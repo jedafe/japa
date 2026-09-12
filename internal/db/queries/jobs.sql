@@ -9,9 +9,9 @@
 -- =====================================================================
 
 -- name: CreateJobApplication :one
-INSERT INTO job_applications (tenant_id, job_id, applicant_id, submission_id)
-VALUES (@tenant_id, @job_id, @applicant_id, sqlc.narg(submission_id))
-ON CONFLICT (tenant_id, job_id, applicant_id) DO NOTHING
+INSERT INTO job_applications (job_id, applicant_id, submission_id) VALUES (@job_id, @applicant_id, sqlc.narg(submission_id))
+
+ON CONFLICT (job_id, applicant_id) DO NOTHING
 RETURNING *;
 
 -- =====================================================================
@@ -21,10 +21,10 @@ RETURNING *;
 -- name: UpdateJobApplicationStatus :one
 UPDATE job_applications
 SET
-    status            = @status,
-    employer_notes    = COALESCE(sqlc.narg(employer_notes), employer_notes),
-    status_updated_at = now()
-WHERE tenant_id = @tenant_id AND id = @id
+ status = @status,
+ employer_notes = COALESCE(sqlc.narg(employer_notes), employer_notes),
+ status_updated_at = now()
+WHERE id = @id
 RETURNING *;
 
 -- =====================================================================
@@ -33,7 +33,7 @@ RETURNING *;
 
 -- name: GetJobApplicationByID :one
 SELECT * FROM job_applications
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- =====================================================================
 -- List applications for a specific job (employer view).
@@ -41,21 +41,21 @@ WHERE tenant_id = @tenant_id AND id = @id;
 
 -- name: ListJobApplicationsByJob :many
 SELECT
-    ja.*,
-    u.username AS applicant_username,
-    u.email    AS applicant_email
+ ja.*,
+ u.username AS applicant_username,
+ u.email AS applicant_email
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
-WHERE ja.tenant_id = @tenant_id AND ja.job_id = @job_id
-  AND (@status::text = '' OR ja.status = @status)
+WHERE ja.job_id = @job_id
+ AND (@status::text = '' OR ja.status = @status)
 ORDER BY ja.applied_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountJobApplicationsByJob :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = @tenant_id AND job_id = @job_id
-  AND (@status::text = '' OR status = @status);
+WHERE job_id = @job_id
+ AND (@status::text = '' OR status = @status);
 
 -- =====================================================================
 -- List an applicant's application history.
@@ -63,19 +63,19 @@ WHERE tenant_id = @tenant_id AND job_id = @job_id
 
 -- name: ListUserJobApplications :many
 SELECT
-    ja.*,
-    c.title AS job_title,
-    c.slug  AS job_slug
+ ja.*,
+ c.title AS job_title,
+ c.slug AS job_slug
 FROM job_applications ja
 JOIN contents c ON c.id = ja.job_id
-WHERE ja.tenant_id = @tenant_id AND ja.applicant_id = @user_id
+WHERE ja.applicant_id = @user_id
 ORDER BY ja.applied_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountUserJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = @tenant_id AND applicant_id = @user_id;
+WHERE applicant_id = @user_id;
 
 -- =====================================================================
 -- Admin: list all applications across all jobs.
@@ -83,22 +83,20 @@ WHERE tenant_id = @tenant_id AND applicant_id = @user_id;
 
 -- name: AdminListJobApplications :many
 SELECT
-    ja.*,
-    u.username AS applicant_username,
-    c.title    AS job_title
+ ja.*,
+ u.username AS applicant_username,
+ c.title AS job_title
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
 JOIN contents c ON c.id = ja.job_id
-WHERE ja.tenant_id = @tenant_id
-  AND (@status::text = '' OR ja.status = @status)
+WHERE (@status::text = '' OR ja.status = @status)
 ORDER BY ja.applied_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = @tenant_id
-  AND (@status::text = '' OR status = @status);
+WHERE (@status::text = '' OR status = @status);
 
 -- =====================================================================
 -- Admin: application status distribution.
@@ -106,10 +104,10 @@ WHERE tenant_id = @tenant_id
 
 -- name: AdminJobApplicationStatusDistribution :many
 SELECT
-    status,
-    COUNT(*) AS count
+ status,
+ COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = @tenant_id
+
 GROUP BY status
 ORDER BY count DESC;
 
@@ -128,18 +126,16 @@ ORDER BY count DESC;
 -- (ISO date) so it is cast to timestamptz for comparison.
 UPDATE contents c
 SET status = 'archived', updated_at = now()
-WHERE c.tenant_id = @tenant_id
-  AND c.content_type = 'job_listing'
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND EXISTS (
-    SELECT 1
-    FROM custom_field_values cfv
-    JOIN custom_fields cf ON cf.id = cfv.field_id
-    WHERE cfv.entity_type = 'content'
-      AND cfv.entity_id = c.id
-      AND cf.tenant_id = c.tenant_id
-      AND cf.key = 'application_deadline'
-      AND cfv.value_text IS NOT NULL
-      AND cfv.value_text::timestamptz < now()
-  );
+WHERE c.content_type = 'job_listing'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND EXISTS (
+ SELECT 1
+ FROM custom_field_values cfv
+ JOIN custom_fields cf ON cf.id = cfv.field_id
+ WHERE cfv.entity_type = 'content'
+ AND cfv.entity_id = c.id
+ AND cf.key = 'application_deadline'
+ AND cfv.value_text IS NOT NULL
+ AND cfv.value_text::timestamptz < now()
+ );

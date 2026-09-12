@@ -12,85 +12,74 @@ import (
 )
 
 const deleteFeedItemsByContent = `-- name: DeleteFeedItemsByContent :exec
-DELETE FROM feeds WHERE content_id = $1 AND tenant_id = $2
+DELETE FROM feeds WHERE content_id = $1
 `
 
-type DeleteFeedItemsByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteFeedItemsByContent(ctx context.Context, arg DeleteFeedItemsByContentParams) error {
-	_, err := q.db.Exec(ctx, deleteFeedItemsByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFeedItemsByContent, contentID)
 	return err
 }
 
 const deleteFeedItemsByUser = `-- name: DeleteFeedItemsByUser :exec
-DELETE FROM feeds WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM feeds WHERE user_id = $1
 `
 
-type DeleteFeedItemsByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, arg DeleteFeedItemsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteFeedItemsByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFeedItemsByUser, userID)
 	return err
 }
 
 const getExploreFeed = `-- name: GetExploreFeed :many
 WITH content_geo AS (
-    SELECT cs.content_id,
-           COALESCE(MAX(CASE
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
-               WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
-               ELSE 1
-           END), 1) AS geo_proximity
-    FROM content_spaces cs
-    JOIN contents c2 ON c2.id = cs.content_id
-      AND c2.tenant_id = $1
-      AND c2.status = 'published'
-      AND c2.deleted_at IS NULL
-      AND c2.visibility = 'public'
-    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
-    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
-      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
-    GROUP BY cs.content_id
+ SELECT cs.content_id,
+ COALESCE(MAX(CASE
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $4 THEN 2
+ ELSE 1
+ END), 1) AS geo_proximity
+ FROM content_spaces cs
+ JOIN contents c2 ON c2.id = cs.content_id
+ AND c2.status = 'published'
+ AND c2.deleted_at IS NULL
+ AND c2.visibility = 'public'
+ JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+ LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+ LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+ WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+ AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+ GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
-       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -104,31 +93,29 @@ LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.visibility = 'public'
-  -- §106: synthetic video channels are excluded from discovery feeds so
-  -- imported channel content does not surface as normal user activity.
-  -- COALESCE keeps rows whose author join produced no users row.
-  AND COALESCE(u.is_synthetic, false) = false
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ -- §106: synthetic video channels are excluded from discovery feeds so
+ -- imported channel content does not surface as normal user activity.
+ -- COALESCE keeps rows whose author join produced no users row.
+ AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ m.storage_bucket, m.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC, cs.reaction_count DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type GetExploreFeedParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	PageOffset         int32       `json:"page_offset"`
-	PageLimit          int32       `json:"page_limit"`
-	VisitorCountryCode *string     `json:"visitor_country_code"`
-	VisitorRegion      *string     `json:"visitor_region"`
+	PageOffset         int32   `json:"page_offset"`
+	PageLimit          int32   `json:"page_limit"`
+	VisitorCountryCode *string `json:"visitor_country_code"`
+	VisitorRegion      *string `json:"visitor_region"`
 }
 
 type GetExploreFeedRow struct {
@@ -179,7 +166,6 @@ type GetExploreFeedRow struct {
 // back to velocity and vote score for tie-breaking.
 func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) ([]GetExploreFeedRow, error) {
 	rows, err := q.db.Query(ctx, getExploreFeed,
-		arg.TenantID,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.VisitorCountryCode,
@@ -245,16 +231,11 @@ func (q *Queries) GetExploreFeed(ctx context.Context, arg GetExploreFeedParams) 
 }
 
 const getFeedItemCount = `-- name: GetFeedItemCount :one
-SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = $1 AND tenant_id = $2
+SELECT COUNT(*)::int AS count FROM feeds WHERE user_id = $1
 `
 
-type GetFeedItemCountParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetFeedItemCount(ctx context.Context, arg GetFeedItemCountParams) (int32, error) {
-	row := q.db.QueryRow(ctx, getFeedItemCount, arg.UserID, arg.TenantID)
+func (q *Queries) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getFeedItemCount, userID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -263,20 +244,18 @@ func (q *Queries) GetFeedItemCount(ctx context.Context, arg GetFeedItemCountPara
 const getFollowedEntityIDsByType = `-- name: GetFollowedEntityIDsByType :many
 SELECT entity_id
 FROM follows
-WHERE tenant_id = $1
-  AND follower_id = $2
-  AND entity_type = $3
+WHERE follower_id = $1
+ AND entity_type = $2
 `
 
 type GetFollowedEntityIDsByTypeParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FollowerID pgtype.UUID `json:"follower_id"`
 	EntityType string      `json:"entity_type"`
 }
 
 // Lean ID-only lookup of everything a user follows of one entity type.
 func (q *Queries) GetFollowedEntityIDsByType(ctx context.Context, arg GetFollowedEntityIDsByTypeParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, getFollowedEntityIDsByType, arg.TenantID, arg.FollowerID, arg.EntityType)
+	rows, err := q.db.Query(ctx, getFollowedEntityIDsByType, arg.FollowerID, arg.EntityType)
 	if err != nil {
 		return nil, err
 	}
@@ -297,117 +276,113 @@ func (q *Queries) GetFollowedEntityIDsByType(ctx context.Context, arg GetFollowe
 
 const getForYouCandidates = `-- name: GetForYouCandidates :many
 WITH affinity AS (
-    SELECT c.id
-    FROM contents c
-    WHERE c.tenant_id = $5
-      AND c.status = 'published'
-      AND c.deleted_at IS NULL
-      AND c.visibility = 'public'
-      AND c.created_at >= $6
-      AND c.author_id <> $7
-      AND NOT EXISTS (
-          SELECT 1 FROM user_blocks ub
-          WHERE ub.tenant_id = c.tenant_id
-            AND ((ub.blocker_id = $7 AND ub.blocked_id = c.author_id)
-              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $7))
-      )
-      AND (
-            c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[]))
-         OR c.space_id  = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[]))
-         OR EXISTS (
-              SELECT 1 FROM content_tags ct
-              WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
-         )
-      )
-    ORDER BY c.created_at DESC
-    LIMIT $8
+ SELECT c.id
+ FROM contents c
+ WHERE c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ AND c.created_at >= $5
+ AND c.author_id <> $6
+ AND NOT EXISTS (
+ SELECT 1 FROM user_blocks ub
+ WHERE ((ub.blocker_id = $6 AND ub.blocked_id = c.author_id)
+ OR (ub.blocker_id = c.author_id AND ub.blocked_id = $6))
+ )
+ AND (
+ c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[]))
+ OR c.space_id = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[]))
+ OR EXISTS (
+ SELECT 1 FROM content_tags ct
+ WHERE ct.content_id = c.id AND ct.tag_id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
+ )
+ )
+ ORDER BY c.created_at DESC
+ LIMIT $7
 ),
 velocity AS (
-    SELECT c.id
-    FROM contents c
-    JOIN content_scores cs ON cs.content_id = c.id
-    WHERE c.tenant_id = $5
-      AND c.status = 'published'
-      AND c.deleted_at IS NULL
-      AND c.visibility = 'public'
-      AND c.created_at >= $6
-      AND c.author_id <> $7
-      AND NOT EXISTS (
-          SELECT 1 FROM user_blocks ub
-          WHERE ub.tenant_id = c.tenant_id
-            AND ((ub.blocker_id = $7 AND ub.blocked_id = c.author_id)
-              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $7))
-      )
-      -- §106: the velocity (global discovery) branch excludes synthetic
-      -- video channel content. The affinity branch above is left
-      -- unfiltered so channels a user explicitly follows still surface.
-      AND NOT EXISTS (
-          SELECT 1 FROM users su
-          WHERE su.id = c.author_id AND su.is_synthetic = true
-      )
-    ORDER BY cs.velocity_score DESC
-    LIMIT $9
+ SELECT c.id
+ FROM contents c
+ JOIN content_scores cs ON cs.content_id = c.id
+ WHERE c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ AND c.created_at >= $5
+ AND c.author_id <> $6
+ AND NOT EXISTS (
+ SELECT 1 FROM user_blocks ub
+ WHERE ((ub.blocker_id = $6 AND ub.blocked_id = c.author_id)
+ OR (ub.blocker_id = c.author_id AND ub.blocked_id = $6))
+ )
+ -- §106: the velocity (global discovery) branch excludes synthetic
+ -- video channel content. The affinity branch above is left
+ -- unfiltered so channels a user explicitly follows still surface.
+ AND NOT EXISTS (
+ SELECT 1 FROM users su
+ WHERE su.id = c.author_id AND su.is_synthetic = true
+ )
+ ORDER BY cs.velocity_score DESC
+ LIMIT $8
 ),
 candidate_ids AS (
-    SELECT id FROM affinity
-    UNION
-    SELECT id FROM velocity
+ SELECT id FROM affinity
+ UNION
+ SELECT id FROM velocity
 ),
 content_geo AS (
-    SELECT cs.content_id,
-           COALESCE(MAX(CASE
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'city' THEN 5
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'state' THEN 4
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $10 AND s.level = 'country' THEN 3
-               WHEN COALESCE(cp.region, sp.region, s.region) = $11 THEN 2
-               ELSE 1
-           END), 1) AS geo_proximity
-    FROM content_spaces cs
-    JOIN candidate_ids ci ON ci.id = cs.content_id
-    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
-    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
-      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
-    GROUP BY cs.content_id
+ SELECT cs.content_id,
+ COALESCE(MAX(CASE
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $9 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $9 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $9 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $10 THEN 2
+ ELSE 1
+ END), 1) AS geo_proximity
+ FROM content_spaces cs
+ JOIN candidate_ids ci ON ci.id = cs.content_id
+ JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+ LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+ LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+ WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+ AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+ GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score, cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
-       COALESCE(c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[])), false)::bool AS is_author_followed,
-       COALESCE(c.space_id  = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[])), false)::bool AS is_space_followed,
-       COUNT(DISTINCT t.id) FILTER (
-           WHERE t.id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
-       )::int                                              AS followed_tag_overlap,
-       s.geo_code                                          AS space_geo_code,
-       COALESCE(cg.geo_proximity, 1)                       AS geo_proximity
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score, cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(c.author_id = ANY(COALESCE($1::uuid[], ARRAY[]::uuid[])), false)::bool AS is_author_followed,
+ COALESCE(c.space_id = ANY(COALESCE($2::uuid[], ARRAY[]::uuid[])), false)::bool AS is_space_followed,
+ COUNT(DISTINCT t.id) FILTER (
+ WHERE t.id = ANY(COALESCE($3::uuid[], ARRAY[]::uuid[]))
+ )::int AS followed_tag_overlap,
+ s.geo_code AS space_geo_code,
+ COALESCE(cg.geo_proximity, 1) AS geo_proximity
 FROM contents c
 JOIN candidate_ids ci ON ci.id = c.id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
-LEFT JOIN users u  ON u.id = c.author_id
+LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct ON ct.content_id = c.id
@@ -419,14 +394,14 @@ LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug, s.geo_code,
-         c.journey_stage, c.visa_route, c.source_country, c.target_country,
-         m.storage_bucket, m.storage_path,
-         cg.geo_proximity,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug, s.geo_code,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ m.storage_bucket, m.storage_path,
+ cg.geo_proximity,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 LIMIT $4
 `
 
@@ -435,7 +410,6 @@ type GetForYouCandidatesParams struct {
 	SpaceIds           []pgtype.UUID      `json:"space_ids"`
 	TagIds             []pgtype.UUID      `json:"tag_ids"`
 	CandidateCap       int32              `json:"candidate_cap"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	WindowStart        pgtype.Timestamptz `json:"window_start"`
 	ExcludeAuthorID    pgtype.UUID        `json:"exclude_author_id"`
 	AffinityLimit      int32              `json:"affinity_limit"`
@@ -501,7 +475,6 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 		arg.SpaceIds,
 		arg.TagIds,
 		arg.CandidateCap,
-		arg.TenantID,
 		arg.WindowStart,
 		arg.ExcludeAuthorID,
 		arg.AffinityLimit,
@@ -574,18 +547,12 @@ func (q *Queries) GetForYouCandidates(ctx context.Context, arg GetForYouCandidat
 const getMemberSpaceIDs = `-- name: GetMemberSpaceIDs :many
 SELECT space_id
 FROM space_members
-WHERE tenant_id = $1
-  AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetMemberSpaceIDsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 // Space IDs the user is a member of (affinity signal, distinct from follows).
-func (q *Queries) GetMemberSpaceIDs(ctx context.Context, arg GetMemberSpaceIDsParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, getMemberSpaceIDs, arg.TenantID, arg.UserID)
+func (q *Queries) GetMemberSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getMemberSpaceIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,33 +573,33 @@ func (q *Queries) GetMemberSpaceIDs(ctx context.Context, arg GetMemberSpaceIDsPa
 
 const getPrimaryFeed = `-- name: GetPrimaryFeed :many
 SELECT f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
-       c.title, c.slug, c.author_id, c.created_at AS content_created_at,
-       c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score, cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ c.title, c.slug, c.author_id, c.created_at AS content_created_at,
+ c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score, cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM feeds f
 JOIN contents c ON c.id = f.content_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
@@ -646,35 +613,33 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.
 LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
-WHERE f.tenant_id = $1 AND f.user_id = $2
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM user_blocks ub
-      WHERE ub.tenant_id = f.tenant_id
-        AND ((ub.blocker_id = $2 AND ub.blocked_id = c.author_id)
-          OR (ub.blocker_id = c.author_id AND ub.blocked_id = $2))
-  )
+WHERE f.user_id = $1
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND NOT EXISTS (
+ SELECT 1 FROM user_blocks ub
+ WHERE ((ub.blocker_id = $1 AND ub.blocked_id = c.author_id)
+ OR (ub.blocker_id = c.author_id AND ub.blocked_id = $1))
+ )
 GROUP BY f.id, f.content_id, f.space_id, f.content_type, f.score, f.created_at,
-         c.id, c.title, c.slug, c.author_id, c.created_at,
-         c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         c.read_time_minutes, m.storage_bucket, m.storage_path,
-         c.journey_stage, c.visa_route, c.source_country, c.target_country,
-         c.guide_category,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ c.id, c.title, c.slug, c.author_id, c.created_at,
+ c.view_count, c.comment_count, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ c.read_time_minutes, m.storage_bucket, m.storage_path,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
-    CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
-    f.created_at DESC
-LIMIT $5 OFFSET $4
+ CASE WHEN $2 = 'top' THEN cs.reaction_count END DESC,
+ CASE WHEN $2 = 'rising' THEN cs.velocity_score END DESC,
+ f.created_at DESC
+LIMIT $4 OFFSET $3
 `
 
 type GetPrimaryFeedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	Sort       interface{} `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
@@ -731,7 +696,6 @@ type GetPrimaryFeedRow struct {
 // 'relevant' falls back to latest (pgvector relevance is only used in the for-you feed).
 func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) ([]GetPrimaryFeedRow, error) {
 	rows, err := q.db.Query(ctx, getPrimaryFeed,
-		arg.TenantID,
 		arg.UserID,
 		arg.Sort,
 		arg.PageOffset,
@@ -800,33 +764,33 @@ func (q *Queries) GetPrimaryFeed(ctx context.Context, arg GetPrimaryFeedParams) 
 
 const getProfileFeed = `-- name: GetProfileFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score,
-       cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score,
+ cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -839,34 +803,32 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.
 LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
-WHERE c.tenant_id = $1 AND c.author_id = $2
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.visibility = 'public'
-  AND NOT (
-      $3::uuid IS NOT NULL AND EXISTS (
-          SELECT 1 FROM user_blocks ub
-          WHERE ub.tenant_id = c.tenant_id
-            AND ((ub.blocker_id = $3::uuid AND ub.blocked_id = c.author_id)
-              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
-      )
-  )
+WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ AND NOT (
+ $2::uuid IS NOT NULL AND EXISTS (
+ SELECT 1 FROM user_blocks ub
+ WHERE ((ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_id)
+ OR (ub.blocker_id = c.author_id AND ub.blocked_id = $2::uuid))
+ )
+ )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ m.storage_bucket, m.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $4 = 'top' THEN cs.reaction_count END DESC,
-    CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
-    c.created_at DESC
-LIMIT $6 OFFSET $5
+ CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
+ CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+ c.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type GetProfileFeedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
 	ViewerID   pgtype.UUID `json:"viewer_id"`
 	Sort       interface{} `json:"sort"`
@@ -924,7 +886,6 @@ type GetProfileFeedRow struct {
 // feed returns no rows, enforcing mutual invisibility.
 func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) ([]GetProfileFeedRow, error) {
 	rows, err := q.db.Query(ctx, getProfileFeed,
-		arg.TenantID,
 		arg.AuthorID,
 		arg.ViewerID,
 		arg.Sort,
@@ -991,56 +952,55 @@ func (q *Queries) GetProfileFeed(ctx context.Context, arg GetProfileFeedParams) 
 
 const getRisingFeed = `-- name: GetRisingFeed :many
 WITH content_geo AS (
-    SELECT cs.content_id,
-           COALESCE(MAX(CASE
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
-               WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
-               ELSE 1
-           END), 1) AS geo_proximity
-    FROM content_spaces cs
-    JOIN contents c2 ON c2.id = cs.content_id
-      AND c2.tenant_id = $1
-      AND c2.status = 'published'
-      AND c2.deleted_at IS NULL
-      AND c2.visibility = 'public'
-    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
-    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
-      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
-    GROUP BY cs.content_id
+ SELECT cs.content_id,
+ COALESCE(MAX(CASE
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $4 THEN 2
+ ELSE 1
+ END), 1) AS geo_proximity
+ FROM content_spaces cs
+ JOIN contents c2 ON c2.id = cs.content_id
+ AND c2.status = 'published'
+ AND c2.deleted_at IS NULL
+ AND c2.visibility = 'public'
+ JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+ LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+ LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+ WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+ AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+ GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score,
-       cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
-       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score,
+ cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -1054,29 +1014,27 @@ LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.visibility = 'public'
-  -- §106: exclude synthetic video channel content from discovery feeds.
-  AND COALESCE(u.is_synthetic, false) = false
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ -- §106: exclude synthetic video channel content from discovery feeds.
+ AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ m.storage_bucket, m.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.velocity_score DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type GetRisingFeedParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	PageOffset         int32       `json:"page_offset"`
-	PageLimit          int32       `json:"page_limit"`
-	VisitorCountryCode *string     `json:"visitor_country_code"`
-	VisitorRegion      *string     `json:"visitor_region"`
+	PageOffset         int32   `json:"page_offset"`
+	PageLimit          int32   `json:"page_limit"`
+	VisitorCountryCode *string `json:"visitor_country_code"`
+	VisitorRegion      *string `json:"visitor_region"`
 }
 
 type GetRisingFeedRow struct {
@@ -1125,7 +1083,6 @@ type GetRisingFeedRow struct {
 // Rising content sorted by velocity score, ranked by geo proximity.
 func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([]GetRisingFeedRow, error) {
 	rows, err := q.db.Query(ctx, getRisingFeed,
-		arg.TenantID,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.VisitorCountryCode,
@@ -1192,33 +1149,33 @@ func (q *Queries) GetRisingFeed(ctx context.Context, arg GetRisingFeedParams) ([
 
 const getSpaceFeed = `-- name: GetSpaceFeed :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score,
-       cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score,
+ cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -1231,33 +1188,31 @@ LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.
 LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
-WHERE c.tenant_id = $1 AND c.space_id = $2
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND NOT (
-      $3::uuid IS NOT NULL AND EXISTS (
-          SELECT 1 FROM user_blocks ub
-          WHERE ub.tenant_id = c.tenant_id
-            AND ((ub.blocker_id = $3::uuid AND ub.blocked_id = c.author_id)
-              OR (ub.blocker_id = c.author_id AND ub.blocked_id = $3::uuid))
-      )
-  )
+WHERE c.space_id = $1
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND NOT (
+ $2::uuid IS NOT NULL AND EXISTS (
+ SELECT 1 FROM user_blocks ub
+ WHERE ((ub.blocker_id = $2::uuid AND ub.blocked_id = c.author_id)
+ OR (ub.blocker_id = c.author_id AND ub.blocked_id = $2::uuid))
+ )
+ )
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ m.storage_bucket, m.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY
-    CASE WHEN $4 = 'top' THEN cs.reaction_count END DESC,
-    CASE WHEN $4 = 'rising' THEN cs.velocity_score END DESC,
-    c.created_at DESC
-LIMIT $6 OFFSET $5
+ CASE WHEN $3 = 'top' THEN cs.reaction_count END DESC,
+ CASE WHEN $3 = 'rising' THEN cs.velocity_score END DESC,
+ c.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type GetSpaceFeedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	ViewerID   pgtype.UUID `json:"viewer_id"`
 	Sort       interface{} `json:"sort"`
@@ -1312,7 +1267,6 @@ type GetSpaceFeedRow struct {
 // @viewer_id is nullable — when present, mutual user_blocks are excluded (§41).
 func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]GetSpaceFeedRow, error) {
 	rows, err := q.db.Query(ctx, getSpaceFeed,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.ViewerID,
 		arg.Sort,
@@ -1378,56 +1332,55 @@ func (q *Queries) GetSpaceFeed(ctx context.Context, arg GetSpaceFeedParams) ([]G
 
 const getTopFeed = `-- name: GetTopFeed :many
 WITH content_geo AS (
-    SELECT cs.content_id,
-           COALESCE(MAX(CASE
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'city' THEN 5
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'state' THEN 4
-               WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $4 AND s.level = 'country' THEN 3
-               WHEN COALESCE(cp.region, sp.region, s.region) = $5 THEN 2
-               ELSE 1
-           END), 1) AS geo_proximity
-    FROM content_spaces cs
-    JOIN contents c2 ON c2.id = cs.content_id
-      AND c2.tenant_id = $1
-      AND c2.status = 'published'
-      AND c2.deleted_at IS NULL
-      AND c2.visibility = 'public'
-    JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
-    LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
-    LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
-    WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
-      AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
-    GROUP BY cs.content_id
+ SELECT cs.content_id,
+ COALESCE(MAX(CASE
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'city' THEN 5
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'state' THEN 4
+ WHEN COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $3 AND s.level = 'country' THEN 3
+ WHEN COALESCE(cp.region, sp.region, s.region) = $4 THEN 2
+ ELSE 1
+ END), 1) AS geo_proximity
+ FROM content_spaces cs
+ JOIN contents c2 ON c2.id = cs.content_id
+ AND c2.status = 'published'
+ AND c2.deleted_at IS NULL
+ AND c2.visibility = 'public'
+ JOIN spaces s ON s.id = cs.space_id AND s.level IN ('country', 'state', 'city') AND s.deleted_at IS NULL
+ LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
+ LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
+ WHERE COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) IS NOT NULL
+ AND COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) != ''
+ GROUP BY cs.content_id
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       cs.vote_score, cs.velocity_score,
-       cs.bookmark_count,
-       COALESCE(cs.reaction_count, 0) AS reaction_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       c.read_time_minutes,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.guide_category,
-       c.organization_id,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
-       COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
+ c.created_at, c.view_count, c.comment_count,
+ cs.vote_score, cs.velocity_score,
+ cs.bookmark_count,
+ COALESCE(cs.reaction_count, 0) AS reaction_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ c.read_time_minutes,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.guide_category,
+ c.organization_id,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(string_agg(t.name, ',' ORDER BY t.name), '') AS tags,
+ COALESCE(MAX(cg.geo_proximity), 1) AS geo_proximity
 FROM contents c
 JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -1441,30 +1394,28 @@ LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN content_geo cg ON cg.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.visibility = 'public'
-  AND c.created_at > now() - interval '7 days'
-  -- §106: exclude synthetic video channel content from discovery feeds.
-  AND COALESCE(u.is_synthetic, false) = false
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.visibility = 'public'
+ AND c.created_at > now() - interval '7 days'
+ -- §106: exclude synthetic video channel content from discovery feeds.
+ AND COALESCE(u.is_synthetic, false) = false
 GROUP BY c.id, cs.vote_score, cs.velocity_score, cs.bookmark_count, cs.reaction_count,
-         u.username, up.display_name, up.avatar_url,
-         s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         sm.storage_bucket, sm.storage_path,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ u.username, up.display_name, up.avatar_url,
+ s.name, s.slug,
+ m.storage_bucket, m.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ sm.storage_bucket, sm.storage_path,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 ORDER BY COALESCE(MAX(cg.geo_proximity), 1) DESC, cs.reaction_count DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type GetTopFeedParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	PageOffset         int32       `json:"page_offset"`
-	PageLimit          int32       `json:"page_limit"`
-	VisitorCountryCode *string     `json:"visitor_country_code"`
-	VisitorRegion      *string     `json:"visitor_region"`
+	PageOffset         int32   `json:"page_offset"`
+	PageLimit          int32   `json:"page_limit"`
+	VisitorCountryCode *string `json:"visitor_country_code"`
+	VisitorRegion      *string `json:"visitor_region"`
 }
 
 type GetTopFeedRow struct {
@@ -1513,7 +1464,6 @@ type GetTopFeedRow struct {
 // Top content in 7-day rolling window (for top sort), ranked by geo proximity.
 func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTopFeedRow, error) {
 	rows, err := q.db.Query(ctx, getTopFeed,
-		arg.TenantID,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.VisitorCountryCode,
@@ -1580,13 +1530,12 @@ func (q *Queries) GetTopFeed(ctx context.Context, arg GetTopFeedParams) ([]GetTo
 
 const insertFeedItem = `-- name: InsertFeedItem :exec
 
-INSERT INTO feeds (tenant_id, user_id, content_id, space_id, content_type, score)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO feeds (user_id, content_id, space_id, content_type, score) VALUES ($1, $2, $3, $4, $5)
+
 ON CONFLICT (user_id, content_id) DO NOTHING
 `
 
 type InsertFeedItemParams struct {
-	TenantID    pgtype.UUID    `json:"tenant_id"`
 	UserID      pgtype.UUID    `json:"user_id"`
 	ContentID   pgtype.UUID    `json:"content_id"`
 	SpaceID     pgtype.UUID    `json:"space_id"`
@@ -1597,7 +1546,6 @@ type InsertFeedItemParams struct {
 // Section 32: Activity Feed / Timeline
 func (q *Queries) InsertFeedItem(ctx context.Context, arg InsertFeedItemParams) error {
 	_, err := q.db.Exec(ctx, insertFeedItem,
-		arg.TenantID,
 		arg.UserID,
 		arg.ContentID,
 		arg.SpaceID,
@@ -1611,16 +1559,11 @@ const listDigestFeedItems = `-- name: ListDigestFeedItems :many
 SELECT c.id, c.title, c.slug, c.content_type
 FROM feeds f
 JOIN contents c ON c.id = f.content_id
-WHERE f.user_id = $1 AND f.tenant_id = $2
-  AND f.created_at >= now() - interval '7 days'
+WHERE f.user_id = $1
+ AND f.created_at >= now() - interval '7 days'
 ORDER BY f.created_at DESC
 LIMIT 20
 `
-
-type ListDigestFeedItemsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type ListDigestFeedItemsRow struct {
 	ID          pgtype.UUID `json:"id"`
@@ -1629,8 +1572,8 @@ type ListDigestFeedItemsRow struct {
 	ContentType string      `json:"content_type"`
 }
 
-func (q *Queries) ListDigestFeedItems(ctx context.Context, arg ListDigestFeedItemsParams) ([]ListDigestFeedItemsRow, error) {
-	rows, err := q.db.Query(ctx, listDigestFeedItems, arg.UserID, arg.TenantID)
+func (q *Queries) ListDigestFeedItems(ctx context.Context, userID pgtype.UUID) ([]ListDigestFeedItemsRow, error) {
+	rows, err := q.db.Query(ctx, listDigestFeedItems, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1656,22 +1599,16 @@ func (q *Queries) ListDigestFeedItems(ctx context.Context, arg ListDigestFeedIte
 
 const listSourcesByContentIDs = `-- name: ListSourcesByContentIDs :many
 SELECT c.id AS content_id,
-       src.id AS source_id,
-       src.name AS source_name,
-       src.slug AS source_slug,
-       src.logo_url AS source_logo_url,
-       src.source_url AS source_source_url,
-       src.trust_level AS source_trust_level
+ src.id AS source_id,
+ src.name AS source_name,
+ src.slug AS source_slug,
+ src.logo_url AS source_logo_url,
+ src.source_url AS source_source_url,
+ src.trust_level AS source_trust_level
 FROM contents c
-JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.id = ANY($2::uuid[])
+JOIN intel_sources src ON src.id = c.intel_source_id
+WHERE c.id = ANY($1::uuid[])
 `
-
-type ListSourcesByContentIDsParams struct {
-	TenantID   pgtype.UUID   `json:"tenant_id"`
-	ContentIds []pgtype.UUID `json:"content_ids"`
-}
 
 type ListSourcesByContentIDsRow struct {
 	ContentID        pgtype.UUID `json:"content_id"`
@@ -1687,8 +1624,8 @@ type ListSourcesByContentIDsRow struct {
 // that has an intel_source_id, so callers can attach a source badge to feed
 // cards without a per-card query.
 // Ref: docs/superpowers/specs/2026-09-11-sources-directory-design.md
-func (q *Queries) ListSourcesByContentIDs(ctx context.Context, arg ListSourcesByContentIDsParams) ([]ListSourcesByContentIDsRow, error) {
-	rows, err := q.db.Query(ctx, listSourcesByContentIDs, arg.TenantID, arg.ContentIds)
+func (q *Queries) ListSourcesByContentIDs(ctx context.Context, contentIds []pgtype.UUID) ([]ListSourcesByContentIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSourcesByContentIDs, contentIds)
 	if err != nil {
 		return nil, err
 	}
@@ -1729,11 +1666,11 @@ func (q *Queries) PruneOldFeeds(ctx context.Context) error {
 const updateContentScore = `-- name: UpdateContentScore :exec
 UPDATE content_scores
 SET vote_score = $1,
-    comment_count = $2,
-    view_count = $3,
-    bookmark_count = $4,
-    reaction_count = $5,
-    last_scored_at = now()
+ comment_count = $2,
+ view_count = $3,
+ bookmark_count = $4,
+ reaction_count = $5,
+ last_scored_at = now()
 WHERE content_id = $6
 `
 
@@ -1762,33 +1699,25 @@ func (q *Queries) UpdateContentScore(ctx context.Context, arg UpdateContentScore
 const updateVelocityScores = `-- name: UpdateVelocityScores :exec
 UPDATE content_scores cs
 SET velocity_score = CASE
-    WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
-    THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
-         / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
-    ELSE 0
+ WHEN c.published_at IS NOT NULL AND EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
+ THEN GREATEST(0, (cs.reaction_count * 2 + cs.comment_count + cs.view_count / 100.0)::numeric
+ / POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0, $1))
+ ELSE 0
 END,
 last_scored_at = now()
 FROM contents c
 WHERE cs.content_id = c.id
-  AND c.tenant_id = $2
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.created_at >= now() - interval '30 days'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.created_at >= now() - interval '30 days'
 `
-
-type UpdateVelocityScoresParams struct {
-	Gravity  float64     `json:"gravity"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Batch update velocity scores for published content < 30 days old.
 // velocity = (vote_score * 2 + comment_count + view_count / 100) /
-//
-//	(hours_since_publish ^ gravity)
-//
+// (hours_since_publish ^ gravity)
 // gravity is passed as a parameter so it can be hot-reloaded from
 // system_settings (feed.velocity.gravity, default 1.8).
-func (q *Queries) UpdateVelocityScores(ctx context.Context, arg UpdateVelocityScoresParams) error {
-	_, err := q.db.Exec(ctx, updateVelocityScores, arg.Gravity, arg.TenantID)
+func (q *Queries) UpdateVelocityScores(ctx context.Context, gravity float64) error {
+	_, err := q.db.Exec(ctx, updateVelocityScores, gravity)
 	return err
 }

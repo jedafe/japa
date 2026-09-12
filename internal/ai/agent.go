@@ -561,7 +561,6 @@ func (h *AgentHandler) runLoop(
 				Call:      call,
 				SessionID: session.ID,
 				UserID:    userID,
-				TenantID:  tenantID,
 			})
 
 			// The executor returns (result, err). When both are non-nil,
@@ -875,7 +874,7 @@ func (h *AgentHandler) createSession(ctx context.Context, userID, tenantID pgtyp
 	if h.sessions == nil {
 		// No session store configured — return a zero-value session so
 		// the loop can proceed (useful for tests).
-		return gen.AiAgentSession{ID: randomUUID(), TenantID: tenantID, UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running"}, nil
+		return gen.AiAgentSession{ID: randomUUID(), UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running"}, nil
 	}
 
 	var geoID pgtype.UUID
@@ -884,7 +883,7 @@ func (h *AgentHandler) createSession(ctx context.Context, userID, tenantID pgtyp
 	}
 
 	return h.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
-		TenantID:       tenantID,
+
 		UserID:         userID,
 		Prompt:         prompt,
 		GeoSpaceID:     geoID,
@@ -908,7 +907,6 @@ func (h *AgentHandler) completeSession(ctx context.Context, session gen.AiAgentS
 		TotalTokens:   int32(totalTokens),   // #nosec G115 -- bounded by single session token count
 		EstimatedCost: floatToNumeric(cost),
 		ID:            session.ID,
-		TenantID:      session.TenantID,
 	})
 	if err != nil {
 		slog.Warn("ai: failed to complete agent session", "session_id", session.ID, "error", err)
@@ -929,7 +927,6 @@ func (h *AgentHandler) failSession(ctx context.Context, session gen.AiAgentSessi
 		TotalTokens:   int32(totalTokens),   // #nosec G115 -- bounded by single session token count
 		EstimatedCost: floatToNumeric(cost),
 		ID:            session.ID,
-		TenantID:      session.TenantID,
 	})
 	if err != nil {
 		slog.Warn("ai: failed to fail agent session", "session_id", session.ID, "error", err)
@@ -946,8 +943,7 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 	}
 
 	_, err := h.sessions.CancelAgentSession(context.WithoutCancel(ctx), gen.CancelAgentSessionParams{
-		ID:       session.ID,
-		TenantID: session.TenantID,
+		ID: session.ID,
 	})
 	if err != nil {
 		slog.Warn("ai: failed to cancel agent session", "session_id", session.ID, "error", err)

@@ -88,7 +88,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 	}
 
 	rows, err := s.read.ListActiveAMAs(ctx, gen.ListActiveAMAsParams{
-		TenantID:        tenantID,
+
 		Dest:            strPtr(dest),
 		Profession:      strPtr(profession),
 		CursorCreatedAt: cursorCreatedAt,
@@ -108,7 +108,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 
 // GetByID returns a single AMA thread by its ID.
 func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThread, error) {
-	r, err := s.read.GetAMAByID(ctx, gen.GetAMAByIDParams{ID: id, TenantID: tenantID})
+	r, err := s.read.GetAMAByID(ctx, id)
 	if err != nil {
 		return AMAThread{}, err
 	}
@@ -120,14 +120,14 @@ func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThrea
 // the close handler to authorize the host (thread author) to close their own
 // AMA without holding forum.ama.moderate (§88 "host or moderator").
 func (s *Store) GetAuthorID(ctx context.Context, threadID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	return s.read.GetAMAAuthorID(ctx, gen.GetAMAAuthorIDParams{ID: threadID, TenantID: tenantID})
+	return s.read.GetAMAAuthorID(ctx, threadID)
 }
 
 // HasActiveAMA returns true if the user already has an open AMA session
 // (closes_at IS NULL or in the future). Enforces the "one active AMA per
 // host" rate limit (§88 Rate Limiting).
 func (s *Store) HasActiveAMA(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
-	return s.read.HasActiveAMA(ctx, gen.HasActiveAMAParams{AuthorUserID: userID, TenantID: tenantID})
+	return s.read.HasActiveAMA(ctx, userID)
 }
 
 // CreateAMA inserts a new AMA thread (forum_threads with ama_config) and
@@ -135,7 +135,7 @@ func (s *Store) HasActiveAMA(ctx context.Context, userID, tenantID pgtype.UUID) 
 // permissions, rate limits, cooldown, and computing closes_at before calling.
 func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, error) {
 	r, err := s.write.CreateAMA(ctx, gen.CreateAMAParams{
-		TenantID:          p.TenantID,
+
 		SpaceID:           p.SpaceID,
 		AuthorUserID:      p.AuthorUserID,
 		Title:             p.Title,
@@ -150,8 +150,8 @@ func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, er
 	}
 
 	return AMAThread{
-		ID:           r.ID,
-		TenantID:     r.TenantID,
+		ID: r.ID,
+
 		Title:        r.Title,
 		Slug:         r.Slug,
 		Body:         r.Body,
@@ -167,8 +167,8 @@ func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, er
 // NULL and deleted_at IS NULL.
 func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, title string, body []byte, isAnonymous bool) (AMAThread, error) {
 	r, err := s.write.UpdateAMA(ctx, gen.UpdateAMAParams{
-		ID:          threadID,
-		TenantID:    tenantID,
+		ID: threadID,
+
 		Title:       title,
 		Body:        body,
 		IsAnonymous: isAnonymous,
@@ -182,7 +182,7 @@ func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, t
 
 // CloseAMA sets the closes_at field in ama_config to now(), closing the AMA.
 func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) error {
-	return s.write.CloseAMA(ctx, gen.CloseAMAParams{ID: threadID, TenantID: tenantID})
+	return s.write.CloseAMA(ctx, threadID)
 }
 
 // SetReplyPending marks a forum reply as pending AMA host approval. Called
@@ -190,7 +190,7 @@ func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) er
 // question_approval_required = true and the reply author is not the host
 // (§88 question_approval_required).
 func (s *Store) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
-	return s.write.SetReplyAMAPending(ctx, gen.SetReplyAMAPendingParams{ID: replyID, TenantID: tenantID})
+	return s.write.SetReplyAMAPending(ctx, replyID)
 }
 
 // ApproveQuestion approves a pending AMA question (host or moderator).
@@ -199,7 +199,6 @@ func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID
 	return s.write.ApproveAMAQuestion(ctx, gen.ApproveAMAQuestionParams{
 		ReplyID:  replyID,
 		ThreadID: threadID,
-		TenantID: tenantID,
 	})
 }
 
@@ -212,7 +211,7 @@ func (s *Store) CheckCooldown(ctx context.Context, userID, tenantID pgtype.UUID,
 
 	return s.read.CheckAMACooldown(ctx, gen.CheckAMACooldownParams{
 		AuthorUserID: userID,
-		TenantID:     tenantID,
+
 		CooldownDays: int32(cooldownDays), // #nosec
 	})
 }
@@ -226,8 +225,8 @@ func rowToAMAThread(
 	createdAt, updatedAt pgtype.Timestamptz,
 ) AMAThread {
 	t := AMAThread{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Title:        title,
 		Slug:         slug,
 		Body:         body,

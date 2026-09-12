@@ -29,29 +29,24 @@ func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, arg AcceptOr
 
 const activeOrgExistsByID = `-- name: ActiveOrgExistsByID :one
 SELECT EXISTS (
-    SELECT 1 FROM organizations
-    WHERE tenant_id = $1 AND id = $2
-      AND status = 'active' AND deleted_at IS NULL
+ SELECT 1 FROM organizations
+ WHERE id = $1
+ AND status = 'active' AND deleted_at IS NULL
 ) AS exists
 `
 
-type ActiveOrgExistsByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Existence check for the public org profile gate: is there an ACTIVE,
 // non-deleted organization with this id in this tenant?
-func (q *Queries) ActiveOrgExistsByID(ctx context.Context, arg ActiveOrgExistsByIDParams) (bool, error) {
-	row := q.db.QueryRow(ctx, activeOrgExistsByID, arg.TenantID, arg.ID)
+func (q *Queries) ActiveOrgExistsByID(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, activeOrgExistsByID, id)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const addOrganizationMember = `-- name: AddOrganizationMember :exec
-INSERT INTO organization_members (organization_id, user_id, role, invited_by)
-VALUES ($1, $2, $3, $4)
+INSERT INTO organization_members (organization_id, user_id, role, invited_by) VALUES ($1, $2, $3, $4)
+
 ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
 `
 
@@ -74,51 +69,43 @@ func (q *Queries) AddOrganizationMember(ctx context.Context, arg AddOrganization
 
 const approveOwnershipClaim = `-- name: ApproveOwnershipClaim :exec
 UPDATE ownership_claims
-SET status = 'approved', reviewed_by = $3, resolution_note = $4, reviewed_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET status = 'approved', reviewed_by = $2, resolution_note = $3, reviewed_at = now()
+WHERE id = $1
 `
 
 type ApproveOwnershipClaimParams struct {
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
 	ResolutionNote *string     `json:"resolution_note"`
 }
 
 func (q *Queries) ApproveOwnershipClaim(ctx context.Context, arg ApproveOwnershipClaimParams) error {
-	_, err := q.db.Exec(ctx, approveOwnershipClaim,
-		arg.ID,
-		arg.TenantID,
-		arg.ReviewedBy,
-		arg.ResolutionNote,
-	)
+	_, err := q.db.Exec(ctx, approveOwnershipClaim, arg.ID, arg.ReviewedBy, arg.ResolutionNote)
 	return err
 }
 
 const countOrganizations = `-- name: CountOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE tenant_id = $1 AND deleted_at IS NULL
-  AND ($2::text = '' OR org_type = $2)
-  AND ($3::text = '' OR country_code = $3)
-  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
-  AND ($5::text = '' OR verified = ($5 = 'true'))
+WHERE deleted_at IS NULL
+ AND ($1::text = '' OR org_type = $1)
+ AND ($2::text = '' OR country_code = $2)
+ AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR verified = ($4 = 'true'))
 `
 
 type CountOrganizationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  string      `json:"column_2"`
-	Column3  string      `json:"column_3"`
-	Column4  string      `json:"column_4"`
-	Column5  string      `json:"column_5"`
+	Column1 string `json:"column_1"`
+	Column2 string `json:"column_2"`
+	Column3 string `json:"column_3"`
+	Column4 string `json:"column_4"`
 }
 
 func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizationsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countOrganizations,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
-		arg.Column5,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -127,18 +114,13 @@ func (q *Queries) CountOrganizations(ctx context.Context, arg CountOrganizations
 
 const countOrganizationsByOwner = `-- name: CountOrganizationsByOwner :one
 SELECT COUNT(*) FROM organizations
-WHERE owner_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE owner_user_id = $1 AND deleted_at IS NULL
 `
-
-type CountOrganizationsByOwnerParams struct {
-	OwnerUserID pgtype.UUID `json:"owner_user_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-}
 
 // Counts active (non-deleted) organizations owned by a user in a tenant.
 // Used by the organizations.max_per_user quantity gate (BUG-015).
-func (q *Queries) CountOrganizationsByOwner(ctx context.Context, arg CountOrganizationsByOwnerParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countOrganizationsByOwner, arg.OwnerUserID, arg.TenantID)
+func (q *Queries) CountOrganizationsByOwner(ctx context.Context, ownerUserID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationsByOwner, ownerUserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -146,39 +128,32 @@ func (q *Queries) CountOrganizationsByOwner(ctx context.Context, arg CountOrgani
 
 const countPublicOrganizations = `-- name: CountPublicOrganizations :one
 SELECT COUNT(*) FROM organizations
-WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL
-  AND ($2::text = '' OR verified = ($2 = 'true'))
-  AND ($3::text = '' OR org_type = $3)
-  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+WHERE status = 'active' AND deleted_at IS NULL
+ AND ($1::text = '' OR verified = ($1 = 'true'))
+ AND ($2::text = '' OR org_type = $2)
+ AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
 `
 
 type CountPublicOrganizationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Verified string      `json:"verified"`
-	OrgType  string      `json:"org_type"`
-	Search   string      `json:"search"`
+	Verified string `json:"verified"`
+	OrgType  string `json:"org_type"`
+	Search   string `json:"search"`
 }
 
 func (q *Queries) CountPublicOrganizations(ctx context.Context, arg CountPublicOrganizationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPublicOrganizations,
-		arg.TenantID,
-		arg.Verified,
-		arg.OrgType,
-		arg.Search,
-	)
+	row := q.db.QueryRow(ctx, countPublicOrganizations, arg.Verified, arg.OrgType, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations (tenant_id, owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO organizations (owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+
 RETURNING id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id
 `
 
 type CreateOrganizationParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	OwnerUserID pgtype.UUID `json:"owner_user_id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
@@ -192,7 +167,6 @@ type CreateOrganizationParams struct {
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
 	row := q.db.QueryRow(ctx, createOrganization,
-		arg.TenantID,
 		arg.OwnerUserID,
 		arg.Name,
 		arg.Slug,
@@ -233,8 +207,8 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 }
 
 const createOrganizationInvitation = `-- name: CreateOrganizationInvitation :one
-INSERT INTO organization_invitations (organization_id, email, role, invited_by, token_hash)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO organization_invitations (organization_id, email, role, invited_by, token_hash) VALUES ($1, $2, $3, $4, $5)
+
 RETURNING id, organization_id, email, role, invited_by, token_hash, expires_at, accepted_at, created_at
 `
 
@@ -270,13 +244,12 @@ func (q *Queries) CreateOrganizationInvitation(ctx context.Context, arg CreateOr
 }
 
 const createOwnershipClaim = `-- name: CreateOwnershipClaim :one
-INSERT INTO ownership_claims (tenant_id, claimant_user_id, organization_id, evidence_url, notes, form_submission_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO ownership_claims (claimant_user_id, organization_id, evidence_url, notes, form_submission_id) VALUES ($1, $2, $3, $4, $5)
+
 RETURNING id, tenant_id, claimant_user_id, organization_id, evidence_url, notes, status, reviewed_by, resolution_note, created_at, reviewed_at, form_submission_id
 `
 
 type CreateOwnershipClaimParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	ClaimantUserID   pgtype.UUID `json:"claimant_user_id"`
 	OrganizationID   pgtype.UUID `json:"organization_id"`
 	EvidenceUrl      *string     `json:"evidence_url"`
@@ -286,7 +259,6 @@ type CreateOwnershipClaimParams struct {
 
 func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipClaimParams) (OwnershipClaim, error) {
 	row := q.db.QueryRow(ctx, createOwnershipClaim,
-		arg.TenantID,
 		arg.ClaimantUserID,
 		arg.OrganizationID,
 		arg.EvidenceUrl,
@@ -315,7 +287,7 @@ const expireOrganizationBoosts = `-- name: ExpireOrganizationBoosts :exec
 UPDATE organization_boosts
 SET status = 'ended'
 WHERE status = 'active'
-  AND end_date < now()
+ AND end_date < now()
 `
 
 func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
@@ -326,15 +298,10 @@ func (q *Queries) ExpireOrganizationBoosts(ctx context.Context) error {
 const getOrgOwnerPublicProfile = `-- name: GetOrgOwnerPublicProfile :one
 SELECT u.id, u.username, up.display_name, up.avatar_url
 FROM organizations o
-JOIN users u ON u.id = o.owner_user_id AND u.tenant_id = $1
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-WHERE o.id = $2 AND o.tenant_id = $1 AND o.deleted_at IS NULL
+JOIN users u ON u.id = o.owner_user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE o.id = $1 AND o.deleted_at IS NULL
 `
-
-type GetOrgOwnerPublicProfileParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-}
 
 type GetOrgOwnerPublicProfileRow struct {
 	ID          pgtype.UUID `json:"id"`
@@ -349,8 +316,8 @@ type GetOrgOwnerPublicProfileRow struct {
 // owner is shown even if their account is restricted (they are the org's
 // leader regardless of their own account standing). Tenant-scoped for
 // defense-in-depth.
-func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, arg GetOrgOwnerPublicProfileParams) (GetOrgOwnerPublicProfileRow, error) {
-	row := q.db.QueryRow(ctx, getOrgOwnerPublicProfile, arg.TenantID, arg.OrganizationID)
+func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, organizationID pgtype.UUID) (GetOrgOwnerPublicProfileRow, error) {
+	row := q.db.QueryRow(ctx, getOrgOwnerPublicProfile, organizationID)
 	var i GetOrgOwnerPublicProfileRow
 	err := row.Scan(
 		&i.ID,
@@ -363,21 +330,20 @@ func (q *Queries) GetOrgOwnerPublicProfile(ctx context.Context, arg GetOrgOwnerP
 
 const getOrganizationAnalytics = `-- name: GetOrganizationAnalytics :one
 SELECT
-  COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
-  COUNT(c.id)::bigint AS total_posts,
-  (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = $1) AS total_members,
-  o.follower_count::bigint AS total_followers,
-  COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - make_interval(days => $2))::bigint AS posts_last_30d
+ COALESCE(SUM(c.view_count), 0)::bigint AS total_views,
+ COUNT(c.id)::bigint AS total_posts,
+ (SELECT COUNT(*)::bigint FROM organization_members om WHERE om.organization_id = $1) AS total_members,
+ o.follower_count::bigint AS total_followers,
+ COUNT(c.id) FILTER (WHERE c.created_at >= NOW() - make_interval(days => $2))::bigint AS posts_last_30d
 FROM organizations o
 LEFT JOIN contents c ON c.organization_id = o.id AND c.status != 'draft' AND c.deleted_at IS NULL
-WHERE o.id = $1 AND o.tenant_id = $3 AND o.deleted_at IS NULL
+WHERE o.id = $1 AND o.deleted_at IS NULL
 GROUP BY o.id, o.follower_count
 `
 
 type GetOrganizationAnalyticsParams struct {
 	OrgID      pgtype.UUID `json:"org_id"`
 	PeriodDays int32       `json:"period_days"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 type GetOrganizationAnalyticsRow struct {
@@ -392,7 +358,7 @@ type GetOrganizationAnalyticsRow struct {
 // Returns total views (sum of content view_count), total posts, members,
 // followers, and posts created in the last @period_days days (default 30).
 func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizationAnalyticsParams) (GetOrganizationAnalyticsRow, error) {
-	row := q.db.QueryRow(ctx, getOrganizationAnalytics, arg.OrgID, arg.PeriodDays, arg.TenantID)
+	row := q.db.QueryRow(ctx, getOrganizationAnalytics, arg.OrgID, arg.PeriodDays)
 	var i GetOrganizationAnalyticsRow
 	err := row.Scan(
 		&i.TotalViews,
@@ -406,16 +372,11 @@ func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizat
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
 SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetOrganizationByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetOrganizationByID(ctx context.Context, arg GetOrganizationByIDParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, getOrganizationByID, arg.ID, arg.TenantID)
+func (q *Queries) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error) {
+	row := q.db.QueryRow(ctx, getOrganizationByID, id)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
@@ -485,16 +446,11 @@ func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (
 
 const getOrganizationBySlug = `-- name: GetOrganizationBySlug :one
 SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
-WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE slug = $1 AND deleted_at IS NULL
 `
 
-type GetOrganizationBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetOrganizationBySlug(ctx context.Context, arg GetOrganizationBySlugParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, getOrganizationBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error) {
+	row := q.db.QueryRow(ctx, getOrganizationBySlug, slug)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
@@ -568,13 +524,8 @@ SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
-WHERE oc.id = $1 AND oc.tenant_id = $2
+WHERE oc.id = $1
 `
-
-type GetOwnershipClaimByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetOwnershipClaimByIDRow struct {
 	ID               pgtype.UUID        `json:"id"`
@@ -595,8 +546,8 @@ type GetOwnershipClaimByIDRow struct {
 
 // Returns a single ownership claim by ID (for GET /claim-ownership/{id}).
 // Joined with the claimant's username and org name for display.
-func (q *Queries) GetOwnershipClaimByID(ctx context.Context, arg GetOwnershipClaimByIDParams) (GetOwnershipClaimByIDRow, error) {
-	row := q.db.QueryRow(ctx, getOwnershipClaimByID, arg.ID, arg.TenantID)
+func (q *Queries) GetOwnershipClaimByID(ctx context.Context, id pgtype.UUID) (GetOwnershipClaimByIDRow, error) {
+	row := q.db.QueryRow(ctx, getOwnershipClaimByID, id)
 	var i GetOwnershipClaimByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -619,20 +570,19 @@ func (q *Queries) GetOwnershipClaimByID(ctx context.Context, arg GetOwnershipCla
 
 const getPendingClaimByClaimant = `-- name: GetPendingClaimByClaimant :one
 SELECT id FROM ownership_claims
-WHERE organization_id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'
+WHERE organization_id = $1 AND claimant_user_id = $2 AND status = 'pending'
 LIMIT 1
 `
 
 type GetPendingClaimByClaimantParams struct {
 	OrganizationID pgtype.UUID `json:"organization_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
 }
 
 // Checks if a user already has a pending claim for an org (BUG-010).
 // Used to prevent duplicate pending claims per user per org.
 func (q *Queries) GetPendingClaimByClaimant(ctx context.Context, arg GetPendingClaimByClaimantParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getPendingClaimByClaimant, arg.OrganizationID, arg.TenantID, arg.ClaimantUserID)
+	row := q.db.QueryRow(ctx, getPendingClaimByClaimant, arg.OrganizationID, arg.ClaimantUserID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -660,17 +610,12 @@ func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, arg GetPendin
 
 const getPendingOwnershipClaim = `-- name: GetPendingOwnershipClaim :one
 SELECT id FROM ownership_claims
-WHERE organization_id = $1 AND tenant_id = $2 AND status = 'pending'
+WHERE organization_id = $1 AND status = 'pending'
 ORDER BY created_at DESC LIMIT 1
 `
 
-type GetPendingOwnershipClaimParams struct {
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetPendingOwnershipClaim(ctx context.Context, arg GetPendingOwnershipClaimParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getPendingOwnershipClaim, arg.OrganizationID, arg.TenantID)
+func (q *Queries) GetPendingOwnershipClaim(ctx context.Context, organizationID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getPendingOwnershipClaim, organizationID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -678,12 +623,12 @@ func (q *Queries) GetPendingOwnershipClaim(ctx context.Context, arg GetPendingOw
 
 const getPendingOwnershipClaims = `-- name: GetPendingOwnershipClaims :many
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
-       u.username AS claimant_username, u.email AS claimant_email,
-       o.name AS org_name, o.slug AS org_slug
+ u.username AS claimant_username, u.email AS claimant_email,
+ o.name AS org_name, o.slug AS org_slug
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
-WHERE oc.tenant_id = $1 AND oc.status = 'pending'
+WHERE oc.status = 'pending'
 ORDER BY oc.created_at DESC
 `
 
@@ -701,8 +646,8 @@ type GetPendingOwnershipClaimsRow struct {
 	OrgSlug          string             `json:"org_slug"`
 }
 
-func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]GetPendingOwnershipClaimsRow, error) {
-	rows, err := q.db.Query(ctx, getPendingOwnershipClaims, tenantID)
+func (q *Queries) GetPendingOwnershipClaims(ctx context.Context) ([]GetPendingOwnershipClaimsRow, error) {
+	rows, err := q.db.Query(ctx, getPendingOwnershipClaims)
 	if err != nil {
 		return nil, err
 	}
@@ -735,19 +680,14 @@ func (q *Queries) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype
 
 const getPublicOrganizationBySlug = `-- name: GetPublicOrganizationBySlug :one
 SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
-WHERE slug = $1 AND tenant_id = $2
-  AND status = 'active' AND deleted_at IS NULL
+WHERE slug = $1
+ AND status = 'active' AND deleted_at IS NULL
 `
-
-type GetPublicOrganizationBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Public org profile header: only ACTIVE, non-deleted orgs (unverified-but-
 // active is a valid public state per Section 07). Non-active/deleted → no row → 404.
-func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, arg GetPublicOrganizationBySlugParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, getPublicOrganizationBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, slug string) (Organization, error) {
+	row := q.db.QueryRow(ctx, getPublicOrganizationBySlug, slug)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
@@ -780,25 +720,24 @@ func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, arg GetPublic
 const incrementOrganizationMemberCount = `-- name: IncrementOrganizationMemberCount :exec
 UPDATE organizations
 SET member_count = member_count + $2, updated_at = now()
-WHERE id = $1 AND tenant_id = $3
+WHERE id = $1
 `
 
 type IncrementOrganizationMemberCountParams struct {
 	ID          pgtype.UUID `json:"id"`
 	MemberCount int32       `json:"member_count"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 // Defense-in-depth: tenant-scoped to prevent cross-tenant count corruption.
 func (q *Queries) IncrementOrganizationMemberCount(ctx context.Context, arg IncrementOrganizationMemberCountParams) error {
-	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount, arg.TenantID)
+	_, err := q.db.Exec(ctx, incrementOrganizationMemberCount, arg.ID, arg.MemberCount)
 	return err
 }
 
 const isOrganizationMember = `-- name: IsOrganizationMember :one
 SELECT EXISTS(
-    SELECT 1 FROM organization_members
-    WHERE organization_id = $1 AND user_id = $2
+ SELECT 1 FROM organization_members
+ WHERE organization_id = $1 AND user_id = $2
 ) AS is_member
 `
 
@@ -816,19 +755,14 @@ func (q *Queries) IsOrganizationMember(ctx context.Context, arg IsOrganizationMe
 
 const listOrganizationInvitations = `-- name: ListOrganizationInvitations :many
 SELECT oi.id, oi.organization_id, oi.email, oi.role, oi.invited_by, oi.token_hash, oi.expires_at, oi.accepted_at, oi.created_at FROM organization_invitations oi
-JOIN organizations o ON o.id = oi.organization_id AND o.tenant_id = $2
+JOIN organizations o ON o.id = oi.organization_id
 WHERE oi.organization_id = $1 AND oi.accepted_at IS NULL
 ORDER BY oi.created_at DESC
 `
 
-type ListOrganizationInvitationsParams struct {
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
-}
-
 // Tenant-scoped via the organizations join (defense-in-depth, BUG-005).
-func (q *Queries) ListOrganizationInvitations(ctx context.Context, arg ListOrganizationInvitationsParams) ([]OrganizationInvitation, error) {
-	rows, err := q.db.Query(ctx, listOrganizationInvitations, arg.OrganizationID, arg.TenantID)
+func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationID pgtype.UUID) ([]OrganizationInvitation, error) {
+	rows, err := q.db.Query(ctx, listOrganizationInvitations, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -860,16 +794,11 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, arg ListOrgan
 const listOrganizationMembers = `-- name: ListOrganizationMembers :many
 SELECT om.organization_id, om.user_id, om.role, om.invited_by, om.joined_at, u.username, up.display_name, up.avatar_url
 FROM organization_members om
-JOIN users u ON u.id = om.user_id AND u.tenant_id = $2
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+JOIN users u ON u.id = om.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE om.organization_id = $1
 ORDER BY om.joined_at DESC
 `
-
-type ListOrganizationMembersParams struct {
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
-}
 
 type ListOrganizationMembersRow struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
@@ -883,8 +812,8 @@ type ListOrganizationMembersRow struct {
 }
 
 // Tenant-scoped via the users join (defense-in-depth, BUG-004).
-func (q *Queries) ListOrganizationMembers(ctx context.Context, arg ListOrganizationMembersParams) ([]ListOrganizationMembersRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizationMembers, arg.OrganizationID, arg.TenantID)
+func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -916,23 +845,22 @@ const listOrganizations = `-- name: ListOrganizations :many
 SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
-WHERE o.tenant_id = $1 AND o.deleted_at IS NULL
-  AND ($2::text = '' OR o.org_type = $2)
-  AND ($3::text = '' OR o.country_code = $3)
-  AND ($4::text = '' OR o.name ILIKE '%' || $4 || '%' OR o.slug ILIKE '%' || $4 || '%')
-  AND ($5::text = '' OR o.verified = ($5 = 'true'))
+WHERE o.deleted_at IS NULL
+ AND ($1::text = '' OR o.org_type = $1)
+ AND ($2::text = '' OR o.country_code = $2)
+ AND ($3::text = '' OR o.name ILIKE '%' || $3 || '%' OR o.slug ILIKE '%' || $3 || '%')
+ AND ($4::text = '' OR o.verified = ($4 = 'true'))
 ORDER BY o.created_at DESC
-LIMIT $6 OFFSET $7
+LIMIT $5 OFFSET $6
 `
 
 type ListOrganizationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  string      `json:"column_2"`
-	Column3  string      `json:"column_3"`
-	Column4  string      `json:"column_4"`
-	Column5  string      `json:"column_5"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	Column1 string `json:"column_1"`
+	Column2 string `json:"column_2"`
+	Column3 string `json:"column_3"`
+	Column4 string `json:"column_4"`
+	Limit   int32  `json:"limit"`
+	Offset  int32  `json:"offset"`
 }
 
 type ListOrganizationsRow struct {
@@ -964,11 +892,10 @@ type ListOrganizationsRow struct {
 
 func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsParams) ([]ListOrganizationsRow, error) {
 	rows, err := q.db.Query(ctx, listOrganizations,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
-		arg.Column5,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -1019,14 +946,13 @@ const listOrganizationsByMember = `-- name: ListOrganizationsByMember :many
 SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, om.role AS member_role
 FROM organizations o
 JOIN organization_members om ON om.organization_id = o.id AND om.user_id = $1
-WHERE o.tenant_id = $2 AND o.deleted_at IS NULL
+WHERE o.deleted_at IS NULL
 ORDER BY o.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListOrganizationsByMemberParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1061,12 +987,7 @@ type ListOrganizationsByMemberRow struct {
 // Returns orgs the given user is a member of (for GET /me/organizations).
 // Includes the member's role so the dashboard can badge ownership/admin.
 func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganizationsByMemberParams) ([]ListOrganizationsByMemberRow, error) {
-	rows, err := q.db.Query(ctx, listOrganizationsByMember,
-		arg.UserID,
-		arg.TenantID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listOrganizationsByMember, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1115,17 +1036,15 @@ SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
-WHERE oc.tenant_id = $1
-  AND ($2::text = '' OR oc.status = $2)
+WHERE ($1::text = '' OR oc.status = $1)
 ORDER BY oc.created_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $2 OFFSET $3
 `
 
 type ListOwnershipClaimsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  string      `json:"column_2"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	Column1 string `json:"column_1"`
+	Limit   int32  `json:"limit"`
+	Offset  int32  `json:"offset"`
 }
 
 type ListOwnershipClaimsRow struct {
@@ -1146,12 +1065,7 @@ type ListOwnershipClaimsRow struct {
 }
 
 func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClaimsParams) ([]ListOwnershipClaimsRow, error) {
-	rows, err := q.db.Query(ctx, listOwnershipClaims,
-		arg.TenantID,
-		arg.Column2,
-		arg.Limit,
-		arg.Offset,
-	)
+	rows, err := q.db.Query(ctx, listOwnershipClaims, arg.Column1, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,24 +1100,18 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 }
 
 const listOwnershipClaimsByClaimant = `-- name: ListOwnershipClaimsByClaimant :many
-SELECT oc.id, oc.tenant_id, oc.organization_id, oc.claimant_user_id, oc.evidence_url,
-       oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at,
-       oc.reviewed_at, oc.form_submission_id,
-       o.name AS org_name, o.slug AS org_slug
+SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url,
+ oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at,
+ oc.reviewed_at, oc.form_submission_id,
+ o.name AS org_name, o.slug AS org_slug
 FROM ownership_claims oc
 JOIN organizations o ON o.id = oc.organization_id
-WHERE oc.tenant_id = $1 AND oc.claimant_user_id = $2
+WHERE oc.claimant_user_id = $1
 ORDER BY oc.created_at DESC
 `
 
-type ListOwnershipClaimsByClaimantParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
-}
-
 type ListOwnershipClaimsByClaimantRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	OrganizationID   pgtype.UUID        `json:"organization_id"`
 	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
 	EvidenceUrl      *string            `json:"evidence_url"`
@@ -1223,8 +1131,8 @@ type ListOwnershipClaimsByClaimantRow struct {
 // /claim-ownership/{id} are unreachable after the POST response is lost.
 // Joined with the org name/slug so the "My claims" surface can link back
 // to the org profile.
-func (q *Queries) ListOwnershipClaimsByClaimant(ctx context.Context, arg ListOwnershipClaimsByClaimantParams) ([]ListOwnershipClaimsByClaimantRow, error) {
-	rows, err := q.db.Query(ctx, listOwnershipClaimsByClaimant, arg.TenantID, arg.ClaimantUserID)
+func (q *Queries) ListOwnershipClaimsByClaimant(ctx context.Context, claimantUserID pgtype.UUID) ([]ListOwnershipClaimsByClaimantRow, error) {
+	rows, err := q.db.Query(ctx, listOwnershipClaimsByClaimant, claimantUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -1234,7 +1142,6 @@ func (q *Queries) ListOwnershipClaimsByClaimant(ctx context.Context, arg ListOwn
 		var i ListOwnershipClaimsByClaimantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.OrganizationID,
 			&i.ClaimantUserID,
 			&i.EvidenceUrl,
@@ -1260,23 +1167,17 @@ func (q *Queries) ListOwnershipClaimsByClaimant(ctx context.Context, arg ListOwn
 
 const listOwnershipClaimsForAdmin = `-- name: ListOwnershipClaimsForAdmin :many
 SELECT oc.id, oc.organization_id, oc.claimant_user_id, oc.evidence_url, oc.notes, oc.created_at, oc.status,
-       oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,
-       u.username AS claimant_username, u.email AS claimant_email,
-       o.name AS org_name, o.slug AS org_slug,
-       reviewer.username AS reviewed_by_username
+ oc.form_submission_id, oc.resolution_note, oc.reviewed_by, oc.reviewed_at,
+ u.username AS claimant_username, u.email AS claimant_email,
+ o.name AS org_name, o.slug AS org_slug,
+ reviewer.username AS reviewed_by_username
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
 LEFT JOIN users reviewer ON reviewer.id = oc.reviewed_by
-WHERE oc.tenant_id = $1
-  AND ($2::text = '' OR $2::text = 'all' OR oc.status = $2)
+WHERE ($1::text = '' OR $1::text = 'all' OR oc.status = $1)
 ORDER BY oc.created_at DESC
 `
-
-type ListOwnershipClaimsForAdminParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  string      `json:"column_2"`
-}
 
 type ListOwnershipClaimsForAdminRow struct {
 	ID                 pgtype.UUID        `json:"id"`
@@ -1304,8 +1205,8 @@ type ListOwnershipClaimsForAdminRow struct {
 // GET /admin/organizations/pending-claims?status=.
 // Includes form_submission_id, resolution_note, reviewed_by, and reviewed_at
 // so the admin can inspect the claimant's submitted form data and review history.
-func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, arg ListOwnershipClaimsForAdminParams) ([]ListOwnershipClaimsForAdminRow, error) {
-	rows, err := q.db.Query(ctx, listOwnershipClaimsForAdmin, arg.TenantID, arg.Column2)
+func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, dollar_1 string) ([]ListOwnershipClaimsForAdminRow, error) {
+	rows, err := q.db.Query(ctx, listOwnershipClaimsForAdmin, dollar_1)
 	if err != nil {
 		return nil, err
 	}
@@ -1343,18 +1244,13 @@ func (q *Queries) ListOwnershipClaimsForAdmin(ctx context.Context, arg ListOwner
 
 const listPublicOrganizationMembers = `-- name: ListPublicOrganizationMembers :many
 SELECT om.organization_id, om.user_id, om.role, om.joined_at,
-       u.username, up.display_name, up.avatar_url
+ u.username, up.display_name, up.avatar_url
 FROM organization_members om
-JOIN users u ON u.id = om.user_id AND u.tenant_id = $1 AND u.status = 'active'
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-WHERE om.organization_id = $2
+JOIN users u ON u.id = om.user_id AND u.status = 'active'
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE om.organization_id = $1
 ORDER BY om.joined_at DESC
 `
-
-type ListPublicOrganizationMembersParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-}
 
 type ListPublicOrganizationMembersRow struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
@@ -1369,8 +1265,8 @@ type ListPublicOrganizationMembersRow struct {
 // Public Members tab: ACTIVE members only (banned/suspended/deleted users
 // excluded), tenant-scoped via the users join (defense-in-depth). Excludes the
 // internal invited_by column by projecting only public fields.
-func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPublicOrganizationMembersParams) ([]ListPublicOrganizationMembersRow, error) {
-	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, arg.TenantID, arg.OrganizationID)
+func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, organizationID pgtype.UUID) ([]ListPublicOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicOrganizationMembers, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -1399,23 +1295,22 @@ func (q *Queries) ListPublicOrganizationMembers(ctx context.Context, arg ListPub
 
 const listPublicOrganizations = `-- name: ListPublicOrganizations :many
 SELECT id, name, slug, tagline, org_type, logo_media_id, header_media_id,
-       country_code, verified, follower_count, member_count, created_at
+ country_code, verified, follower_count, member_count, created_at
 FROM organizations
-WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL
-  AND ($2::text = '' OR verified = ($2 = 'true'))
-  AND ($3::text = '' OR org_type = $3)
-  AND ($4::text = '' OR name ILIKE '%' || $4 || '%' OR slug ILIKE '%' || $4 || '%')
+WHERE status = 'active' AND deleted_at IS NULL
+ AND ($1::text = '' OR verified = ($1 = 'true'))
+ AND ($2::text = '' OR org_type = $2)
+ AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
 ORDER BY created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListPublicOrganizationsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Verified   string      `json:"verified"`
-	OrgType    string      `json:"org_type"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Verified   string `json:"verified"`
+	OrgType    string `json:"org_type"`
+	Search     string `json:"search"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListPublicOrganizationsRow struct {
@@ -1439,7 +1334,6 @@ type ListPublicOrganizationsRow struct {
 // = all). Ordered by created_at DESC (newest first).
 func (q *Queries) ListPublicOrganizations(ctx context.Context, arg ListPublicOrganizationsParams) ([]ListPublicOrganizationsRow, error) {
 	rows, err := q.db.Query(ctx, listPublicOrganizations,
-		arg.TenantID,
 		arg.Verified,
 		arg.OrgType,
 		arg.Search,
@@ -1494,13 +1388,12 @@ func (q *Queries) RemoveOrganizationMember(ctx context.Context, arg RemoveOrgani
 
 const reviewOwnershipClaim = `-- name: ReviewOwnershipClaim :exec
 UPDATE ownership_claims
-SET status = $3, reviewed_by = $4, resolution_note = $5, reviewed_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET status = $2, reviewed_by = $3, resolution_note = $4, reviewed_at = now()
+WHERE id = $1
 `
 
 type ReviewOwnershipClaimParams struct {
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	Status         string      `json:"status"`
 	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
 	ResolutionNote *string     `json:"resolution_note"`
@@ -1509,7 +1402,6 @@ type ReviewOwnershipClaimParams struct {
 func (q *Queries) ReviewOwnershipClaim(ctx context.Context, arg ReviewOwnershipClaimParams) error {
 	_, err := q.db.Exec(ctx, reviewOwnershipClaim,
 		arg.ID,
-		arg.TenantID,
 		arg.Status,
 		arg.ReviewedBy,
 		arg.ResolutionNote,
@@ -1539,50 +1431,44 @@ func (q *Queries) RevokeOrganizationInvitation(ctx context.Context, arg RevokeOr
 const softDeleteOrganization = `-- name: SoftDeleteOrganization :exec
 UPDATE organizations
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type SoftDeleteOrganizationParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error {
-	_, err := q.db.Exec(ctx, softDeleteOrganization, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteOrganization(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteOrganization, id)
 	return err
 }
 
 const transferOrganizationOwnership = `-- name: TransferOrganizationOwnership :exec
 UPDATE organizations
 SET owner_user_id = $2, updated_at = now()
-WHERE id = $1 AND tenant_id = $3
+WHERE id = $1
 `
 
 type TransferOrganizationOwnershipParams struct {
 	ID          pgtype.UUID `json:"id"`
 	OwnerUserID pgtype.UUID `json:"owner_user_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 // Transfers an organization's owner_user_id to a new owner (the claimant
 // whose ownership claim was approved). Tenant-scoped for defense-in-depth.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
 func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error {
-	_, err := q.db.Exec(ctx, transferOrganizationOwnership, arg.ID, arg.OwnerUserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, transferOrganizationOwnership, arg.ID, arg.OwnerUserID)
 	return err
 }
 
 const updateOrganization = `-- name: UpdateOrganization :exec
 UPDATE organizations
 SET name = COALESCE(NULLIF($1::text, ''), name),
-    tagline = COALESCE($2, tagline),
-    description = COALESCE($3, description),
-    website_url = COALESCE($4, website_url),
-    country_code = COALESCE($5, country_code),
-    geo_space_id = COALESCE($6, geo_space_id),
-    org_type = COALESCE(NULLIF($7::text, ''), org_type),
-    updated_at = now()
-WHERE id = $8 AND tenant_id = $9 AND deleted_at IS NULL
+ tagline = COALESCE($2, tagline),
+ description = COALESCE($3, description),
+ website_url = COALESCE($4, website_url),
+ country_code = COALESCE($5, country_code),
+ geo_space_id = COALESCE($6, geo_space_id),
+ org_type = COALESCE(NULLIF($7::text, ''), org_type),
+ updated_at = now()
+WHERE id = $8 AND deleted_at IS NULL
 `
 
 type UpdateOrganizationParams struct {
@@ -1594,7 +1480,6 @@ type UpdateOrganizationParams struct {
 	GeoSpaceID  pgtype.UUID `json:"geo_space_id"`
 	OrgType     string      `json:"org_type"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 // Partial update: COALESCE preserves the existing column value when the
@@ -1611,7 +1496,6 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		arg.GeoSpaceID,
 		arg.OrgType,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -1636,35 +1520,33 @@ func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOr
 const updateOrganizationSourceID = `-- name: UpdateOrganizationSourceID :exec
 UPDATE organizations
 SET source_id = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateOrganizationSourceIDParams struct {
 	SourceID pgtype.UUID `json:"source_id"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 // Link an organization to its canonical intel_sources row (v2 source directory).
 func (q *Queries) UpdateOrganizationSourceID(ctx context.Context, arg UpdateOrganizationSourceIDParams) error {
-	_, err := q.db.Exec(ctx, updateOrganizationSourceID, arg.SourceID, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateOrganizationSourceID, arg.SourceID, arg.ID)
 	return err
 }
 
 const withdrawOwnershipClaim = `-- name: WithdrawOwnershipClaim :exec
 DELETE FROM ownership_claims
-WHERE id = $1 AND tenant_id = $2 AND claimant_user_id = $3 AND status = 'pending'
+WHERE id = $1 AND claimant_user_id = $2 AND status = 'pending'
 `
 
 type WithdrawOwnershipClaimParams struct {
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ClaimantUserID pgtype.UUID `json:"claimant_user_id"`
 }
 
 // Withdraw (delete) a pending claim by the claimant. Only pending claims
 // can be withdrawn; reviewed claims are historical records.
 func (q *Queries) WithdrawOwnershipClaim(ctx context.Context, arg WithdrawOwnershipClaimParams) error {
-	_, err := q.db.Exec(ctx, withdrawOwnershipClaim, arg.ID, arg.TenantID, arg.ClaimantUserID)
+	_, err := q.db.Exec(ctx, withdrawOwnershipClaim, arg.ID, arg.ClaimantUserID)
 	return err
 }

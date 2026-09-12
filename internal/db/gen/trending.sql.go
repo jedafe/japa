@@ -13,79 +13,70 @@ import (
 
 const deleteExpiredTrendingSnapshots = `-- name: DeleteExpiredTrendingSnapshots :exec
 DELETE FROM trending_snapshots
-WHERE tenant_id = $1 AND expires_at < now()
+WHERE expires_at < now()
 `
 
-func (q *Queries) DeleteExpiredTrendingSnapshots(ctx context.Context, tenantID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteExpiredTrendingSnapshots, tenantID)
+func (q *Queries) DeleteExpiredTrendingSnapshots(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredTrendingSnapshots)
 	return err
 }
 
 const deleteTrendingSnapshotsByType = `-- name: DeleteTrendingSnapshotsByType :exec
 DELETE FROM trending_snapshots
-WHERE tenant_id = $1 AND entity_type = $2 AND "window" = $3 AND ($4::text IS NULL OR geo_code = $4)
+WHERE entity_type = $1 AND "window" = $2 AND ($3::text IS NULL OR geo_code = $3)
 `
 
 type DeleteTrendingSnapshotsByTypeParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	EntityType string      `json:"entity_type"`
-	Window     string      `json:"window"`
-	Column4    string      `json:"column_4"`
+	EntityType string `json:"entity_type"`
+	Window     string `json:"window"`
+	Column3    string `json:"column_3"`
 }
 
 func (q *Queries) DeleteTrendingSnapshotsByType(ctx context.Context, arg DeleteTrendingSnapshotsByTypeParams) error {
-	_, err := q.db.Exec(ctx, deleteTrendingSnapshotsByType,
-		arg.TenantID,
-		arg.EntityType,
-		arg.Window,
-		arg.Column4,
-	)
+	_, err := q.db.Exec(ctx, deleteTrendingSnapshotsByType, arg.EntityType, arg.Window, arg.Column3)
 	return err
 }
 
 const getSuggestedContent = `-- name: GetSuggestedContent :many
 WITH seed AS (
-    SELECT cs.relevance_embedding AS emb
-    FROM content_scores cs
-    WHERE cs.content_id = $4::uuid
+ SELECT cs.relevance_embedding AS emb
+ FROM content_scores cs
+ WHERE cs.content_id = $3::uuid
 )
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.view_count,
-       CASE
-         WHEN (SELECT emb FROM seed) IS NOT NULL
-         THEN 1 - (cs.relevance_embedding <=> (SELECT emb FROM seed))
-         ELSE ts.score
-       END AS similarity_score,
-       ts.score AS trending_score
+ c.view_count,
+ CASE
+ WHEN (SELECT emb FROM seed) IS NOT NULL
+ THEN 1 - (cs.relevance_embedding <=> (SELECT emb FROM seed))
+ ELSE ts.score
+ END AS similarity_score,
+ ts.score AS trending_score
 FROM contents c
 JOIN trending_snapshots ts ON ts.entity_id = c.id
-    AND ts.tenant_id = c.tenant_id
-    AND ts.entity_type = 'content'
-    AND ts."window" = $2
-    AND ts.expires_at > now()
-    AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
+ AND ts.entity_type = 'content'
+ AND ts."window" = $1
+ AND ts.expires_at > now()
+ AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
 LEFT JOIN content_scores cs ON cs.content_id = c.id
-WHERE c.tenant_id = $1
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL
-  AND ($4::uuid IS NULL OR c.id != $4::uuid)
-  AND ($4::uuid IS NULL OR cs.relevance_embedding IS NOT NULL)
+WHERE c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ AND ($3::uuid IS NULL OR c.id != $3::uuid)
+ AND ($3::uuid IS NULL OR cs.relevance_embedding IS NOT NULL)
 ORDER BY
-    CASE
-        WHEN (SELECT emb FROM seed) IS NOT NULL
-        THEN cs.relevance_embedding <=> (SELECT emb FROM seed)
-        ELSE -ts.score
-    END
-LIMIT $5
+ CASE
+ WHEN (SELECT emb FROM seed) IS NOT NULL
+ THEN cs.relevance_embedding <=> (SELECT emb FROM seed)
+ ELSE -ts.score
+ END
+LIMIT $4
 `
 
 type GetSuggestedContentParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Window   string      `json:"window"`
-	Column3  string      `json:"column_3"`
-	Column4  pgtype.UUID `json:"column_4"`
-	Limit    int32       `json:"limit"`
+	Window  string      `json:"window"`
+	Column2 string      `json:"column_2"`
+	Column3 pgtype.UUID `json:"column_3"`
+	Limit   int32       `json:"limit"`
 }
 
 type GetSuggestedContentRow struct {
@@ -104,13 +95,12 @@ type GetSuggestedContentRow struct {
 // seed content's relevance_embedding and all other published content.
 // Falls back to trending content ordering when no seed is provided
 // (seed_content_id IS NULL → returns top trending content by score).
-// Params: $1=tenant_id, $2=window, $3=geo_code(narg), $4=seed_content_id, $5=limit
+// Params: $1=window, $2=geo_code(narg), $3=seed_content_id, $4=limit
 func (q *Queries) GetSuggestedContent(ctx context.Context, arg GetSuggestedContentParams) ([]GetSuggestedContentRow, error) {
 	rows, err := q.db.Query(ctx, getSuggestedContent,
-		arg.TenantID,
 		arg.Window,
+		arg.Column2,
 		arg.Column3,
-		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -143,25 +133,23 @@ func (q *Queries) GetSuggestedContent(ctx context.Context, arg GetSuggestedConte
 
 const getSuggestedSpaces = `-- name: GetSuggestedSpaces :many
 SELECT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
-       COUNT(DISTINCT sm2.user_id) AS shared_members
+ COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
-JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
-JOIN space_members sm2 ON sm2.space_id = s.id AND sm2.tenant_id = $2
+JOIN space_members sm ON sm.user_id = $1
+JOIN space_members sm2 ON sm2.space_id = s.id
 WHERE s.id NOT IN (
-    SELECT space_id FROM space_members WHERE user_id = $1 AND tenant_id = $2
+ SELECT space_id FROM space_members WHERE user_id = $1
 )
-AND s.tenant_id = $2
 AND s.deleted_at IS NULL
 GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code
-ORDER BY (CASE WHEN s.geo_code = $4 THEN 0 ELSE 1 END), shared_members DESC
-LIMIT $3
+ORDER BY (CASE WHEN s.geo_code = $3 THEN 0 ELSE 1 END), shared_members DESC
+LIMIT $2
 `
 
 type GetSuggestedSpacesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-	GeoCode  *string     `json:"geo_code"`
+	UserID  pgtype.UUID `json:"user_id"`
+	Limit   int32       `json:"limit"`
+	GeoCode *string     `json:"geo_code"`
 }
 
 type GetSuggestedSpacesRow struct {
@@ -178,12 +166,7 @@ type GetSuggestedSpacesRow struct {
 // ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
 // global ranking (original behavior).
 func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpacesParams) ([]GetSuggestedSpacesRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedSpaces,
-		arg.UserID,
-		arg.TenantID,
-		arg.Limit,
-		arg.GeoCode,
-	)
+	rows, err := q.db.Query(ctx, getSuggestedSpaces, arg.UserID, arg.Limit, arg.GeoCode)
 	if err != nil {
 		return nil, err
 	}
@@ -212,28 +195,26 @@ func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpaces
 
 const getSuggestedTags = `-- name: GetSuggestedTags :many
 SELECT DISTINCT t.id, t.name, t.slug, t.follower_count,
-       (CASE WHEN sp.geo_code = $4 THEN 0 ELSE 1 END) AS geo_weight
+ (CASE WHEN sp.geo_code = $3 THEN 0 ELSE 1 END) AS geo_weight
 FROM tags t
-JOIN contents c ON c.tenant_id = t.tenant_id AND c.id IN (
-    SELECT ct.content_id FROM content_tags ct
-    JOIN contents c2 ON c2.id = ct.content_id AND c2.author_id = $1 AND c2.tenant_id = $2
-        AND c2.deleted_at IS NULL AND c2.status = 'published'
+JOIN contents c ON c.id IN (
+ SELECT ct.content_id FROM content_tags ct
+ JOIN contents c2 ON c2.id = ct.content_id AND c2.author_id = $1
+ AND c2.deleted_at IS NULL AND c2.status = 'published'
 )
 LEFT JOIN spaces sp ON sp.id = c.geo_space_id
-WHERE t.tenant_id = $2
-  AND c.deleted_at IS NULL
-  AND c.status = 'published'
+WHERE c.deleted_at IS NULL
+ AND c.status = 'published'
 AND NOT EXISTS (
-    SELECT 1 FROM follows f
-    WHERE f.follower_id = $1 AND f.entity_type = 'tag' AND f.entity_id = t.id AND f.tenant_id = $2
+ SELECT 1 FROM follows f
+ WHERE f.follower_id = $1 AND f.entity_type = 'tag' AND f.entity_id = t.id
 )
-ORDER BY (CASE WHEN sp.geo_code = $4 THEN 0 ELSE 1 END), t.follower_count DESC
-LIMIT $3
+ORDER BY (CASE WHEN sp.geo_code = $3 THEN 0 ELSE 1 END), t.follower_count DESC
+LIMIT $2
 `
 
 type GetSuggestedTagsParams struct {
 	AuthorID pgtype.UUID `json:"author_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Limit    int32       `json:"limit"`
 	GeoCode  *string     `json:"geo_code"`
 }
@@ -250,12 +231,7 @@ type GetSuggestedTagsRow struct {
 // geo region are preferred (re-weighted, not hidden). Empty geoCode =
 // global ranking (original behavior).
 func (q *Queries) GetSuggestedTags(ctx context.Context, arg GetSuggestedTagsParams) ([]GetSuggestedTagsRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedTags,
-		arg.AuthorID,
-		arg.TenantID,
-		arg.Limit,
-		arg.GeoCode,
-	)
+	rows, err := q.db.Query(ctx, getSuggestedTags, arg.AuthorID, arg.Limit, arg.GeoCode)
 	if err != nil {
 		return nil, err
 	}
@@ -283,33 +259,31 @@ func (q *Queries) GetSuggestedTags(ctx context.Context, arg GetSuggestedTagsPara
 const getSuggestedUsers = `-- name: GetSuggestedUsers :many
 
 SELECT DISTINCT u.id, u.username,
-       COALESCE(NULLIF(up.display_name, ''), u.username) AS display_name,
-       up.avatar_url, up.bio,
-       COUNT(DISTINCT sm2.space_id) AS shared_spaces,
-       COUNT(DISTINCT CASE WHEN sp.geo_code = $4 THEN sm2.space_id END) AS geo_shared_spaces
+ COALESCE(NULLIF(up.display_name, ''), u.username) AS display_name,
+ up.avatar_url, up.bio,
+ COUNT(DISTINCT sm2.space_id) AS shared_spaces,
+ COUNT(DISTINCT CASE WHEN sp.geo_code = $3 THEN sm2.space_id END) AS geo_shared_spaces
 FROM users u
-JOIN space_members sm ON sm.user_id = $1 AND sm.tenant_id = $2
-JOIN space_members sm2 ON sm2.space_id = sm.space_id AND sm2.user_id = u.id AND sm2.tenant_id = $2
-LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.tenant_id = $2 AND sp.deleted_at IS NULL
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = $2
+JOIN space_members sm ON sm.user_id = $1
+JOIN space_members sm2 ON sm2.space_id = sm.space_id AND sm2.user_id = u.id
+LEFT JOIN spaces sp ON sp.id = sm2.space_id AND sp.deleted_at IS NULL
+LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE u.id != $1
-  AND u.tenant_id = $2
-  AND u.status = 'active'
-  AND u.is_synthetic = false
-  AND NOT EXISTS (
-      SELECT 1 FROM follows f
-      WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id AND f.tenant_id = $2
-  )
+ AND u.status = 'active'
+ AND u.is_synthetic = false
+ AND NOT EXISTS (
+ SELECT 1 FROM follows f
+ WHERE f.follower_id = $1 AND f.entity_type = 'user' AND f.entity_id = u.id
+ )
 GROUP BY u.id, u.username, up.display_name, up.avatar_url, up.bio
 ORDER BY geo_shared_spaces DESC, shared_spaces DESC
-LIMIT $3
+LIMIT $2
 `
 
 type GetSuggestedUsersParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-	GeoCode  *string     `json:"geo_code"`
+	UserID  pgtype.UUID `json:"user_id"`
+	Limit   int32       `json:"limit"`
+	GeoCode *string     `json:"geo_code"`
 }
 
 type GetSuggestedUsersRow struct {
@@ -332,12 +306,7 @@ type GetSuggestedUsersRow struct {
 // produce NULL (no profile row / empty name) and the API contract exposes
 // display_name as a non-null string consumed directly by suggestion UIs.
 func (q *Queries) GetSuggestedUsers(ctx context.Context, arg GetSuggestedUsersParams) ([]GetSuggestedUsersRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedUsers,
-		arg.UserID,
-		arg.TenantID,
-		arg.Limit,
-		arg.GeoCode,
-	)
+	rows, err := q.db.Query(ctx, getSuggestedUsers, arg.UserID, arg.Limit, arg.GeoCode)
 	if err != nil {
 		return nil, err
 	}
@@ -365,28 +334,25 @@ func (q *Queries) GetSuggestedUsers(ctx context.Context, arg GetSuggestedUsersPa
 }
 
 const getTrendingByType = `-- name: GetTrendingByType :many
-SELECT id, tenant_id, entity_type, entity_id, score, "window", geo_code, computed_at, expires_at
+SELECT id, entity_type, entity_id, score, "window", geo_code, computed_at, expires_at
 FROM trending_snapshots
-WHERE tenant_id = $1
-  AND entity_type = $2
-  AND "window" = $3
-  AND expires_at > now()
-  AND ($4::text IS NULL OR geo_code = $4)
+WHERE entity_type = $1
+ AND "window" = $2
+ AND expires_at > now()
+ AND ($3::text IS NULL OR geo_code = $3)
 ORDER BY score DESC
-LIMIT $5
+LIMIT $4
 `
 
 type GetTrendingByTypeParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	EntityType string      `json:"entity_type"`
-	Window     string      `json:"window"`
-	Column4    string      `json:"column_4"`
-	Limit      int32       `json:"limit"`
+	EntityType string `json:"entity_type"`
+	Window     string `json:"window"`
+	Column3    string `json:"column_3"`
+	Limit      int32  `json:"limit"`
 }
 
 type GetTrendingByTypeRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Score      float64            `json:"score"`
@@ -398,10 +364,9 @@ type GetTrendingByTypeRow struct {
 
 func (q *Queries) GetTrendingByType(ctx context.Context, arg GetTrendingByTypeParams) ([]GetTrendingByTypeRow, error) {
 	rows, err := q.db.Query(ctx, getTrendingByType,
-		arg.TenantID,
 		arg.EntityType,
 		arg.Window,
-		arg.Column4,
+		arg.Column3,
 		arg.Limit,
 	)
 	if err != nil {
@@ -413,7 +378,6 @@ func (q *Queries) GetTrendingByType(ctx context.Context, arg GetTrendingByTypePa
 		var i GetTrendingByTypeRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.Score,
@@ -434,32 +398,30 @@ func (q *Queries) GetTrendingByType(ctx context.Context, arg GetTrendingByTypePa
 
 const getTrendingContent = `-- name: GetTrendingContent :many
 SELECT id, entity_id, score, "window", geo_code, computed_at,
-       content_id AS id, title, slug, content_type, author_id, space_id, view_count
+ content_id AS id, title, slug, content_type, author_id, space_id, view_count
 FROM (
-    SELECT DISTINCT ON (c.id)
-           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-           c.id AS content_id, c.title, c.slug, c.content_type, c.author_id, c.space_id, c.view_count
-    FROM trending_snapshots ts
-    JOIN contents c ON c.id = ts.entity_id AND c.tenant_id = ts.tenant_id
-    WHERE ts.tenant_id = $1
-      AND ts.entity_type = 'content'
-      AND ts."window" = $2
-      AND ts.expires_at > now()
-      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-      AND c.status = 'published'
-      AND c.visibility = 'public'
-      AND c.deleted_at IS NULL
-    ORDER BY c.id, ts.score DESC
+ SELECT DISTINCT ON (c.id)
+ ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+ c.id AS content_id, c.title, c.slug, c.content_type, c.author_id, c.space_id, c.view_count
+ FROM trending_snapshots ts
+ JOIN contents c ON c.id = ts.entity_id
+ WHERE ts.entity_type = 'content'
+ AND ts."window" = $1
+ AND ts.expires_at > now()
+ AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ ORDER BY c.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTrendingContentParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Window   string      `json:"window"`
-	Column3  string      `json:"column_3"`
-	Limit    int32       `json:"limit"`
+	Window  string `json:"window"`
+	Column2 string `json:"column_2"`
+	Limit   int32  `json:"limit"`
 }
 
 type GetTrendingContentRow struct {
@@ -481,12 +443,7 @@ type GetTrendingContentRow struct {
 // Dedupe by content: an entity can hold one snapshot per geo_code, so an
 // unfiltered (global) read would list the same content once per scope.
 func (q *Queries) GetTrendingContent(ctx context.Context, arg GetTrendingContentParams) ([]GetTrendingContentRow, error) {
-	rows, err := q.db.Query(ctx, getTrendingContent,
-		arg.TenantID,
-		arg.Window,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTrendingContent, arg.Window, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -523,17 +480,11 @@ const getTrendingSearchQueries = `-- name: GetTrendingSearchQueries :many
 
 SELECT query, COUNT(*) AS search_count, AVG(results_count) AS avg_results
 FROM search_analytics
-WHERE tenant_id = $1
-  AND created_at >= now() - INTERVAL '24 hours'
+WHERE created_at >= now() - INTERVAL '24 hours'
 GROUP BY query
 ORDER BY search_count DESC
-LIMIT $2
+LIMIT $1
 `
-
-type GetTrendingSearchQueriesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-}
 
 type GetTrendingSearchQueriesRow struct {
 	Query       string  `json:"query"`
@@ -544,8 +495,8 @@ type GetTrendingSearchQueriesRow struct {
 // =====================
 // Search Analytics (for trending queries)
 // =====================
-func (q *Queries) GetTrendingSearchQueries(ctx context.Context, arg GetTrendingSearchQueriesParams) ([]GetTrendingSearchQueriesRow, error) {
-	rows, err := q.db.Query(ctx, getTrendingSearchQueries, arg.TenantID, arg.Limit)
+func (q *Queries) GetTrendingSearchQueries(ctx context.Context, limit int32) ([]GetTrendingSearchQueriesRow, error) {
+	rows, err := q.db.Query(ctx, getTrendingSearchQueries, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -566,30 +517,28 @@ func (q *Queries) GetTrendingSearchQueries(ctx context.Context, arg GetTrendingS
 
 const getTrendingSpaces = `-- name: GetTrendingSpaces :many
 SELECT id, entity_id, score, "window", geo_code, computed_at,
-       space_id AS id, name, slug, space_geo_code, member_count, post_count
+ space_id AS id, name, slug, space_geo_code, member_count, post_count
 FROM (
-    SELECT DISTINCT ON (s.id)
-           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-           s.id AS space_id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
-    FROM trending_snapshots ts
-    JOIN spaces s ON s.id = ts.entity_id AND s.tenant_id = ts.tenant_id
-    WHERE ts.tenant_id = $1
-      AND ts.entity_type = 'space'
-      AND ts."window" = $2
-      AND ts.expires_at > now()
-      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-      AND s.deleted_at IS NULL
-    ORDER BY s.id, ts.score DESC
+ SELECT DISTINCT ON (s.id)
+ ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+ s.id AS space_id, s.name, s.slug, s.geo_code AS space_geo_code, s.member_count, s.post_count
+ FROM trending_snapshots ts
+ JOIN spaces s ON s.id = ts.entity_id
+ WHERE ts.entity_type = 'space'
+ AND ts."window" = $1
+ AND ts.expires_at > now()
+ AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
+ AND s.deleted_at IS NULL
+ ORDER BY s.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTrendingSpacesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Window   string      `json:"window"`
-	Column3  string      `json:"column_3"`
-	Limit    int32       `json:"limit"`
+	Window  string `json:"window"`
+	Column2 string `json:"column_2"`
+	Limit   int32  `json:"limit"`
 }
 
 type GetTrendingSpacesRow struct {
@@ -608,12 +557,7 @@ type GetTrendingSpacesRow struct {
 }
 
 func (q *Queries) GetTrendingSpaces(ctx context.Context, arg GetTrendingSpacesParams) ([]GetTrendingSpacesRow, error) {
-	rows, err := q.db.Query(ctx, getTrendingSpaces,
-		arg.TenantID,
-		arg.Window,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTrendingSpaces, arg.Window, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -647,29 +591,27 @@ func (q *Queries) GetTrendingSpaces(ctx context.Context, arg GetTrendingSpacesPa
 
 const getTrendingTags = `-- name: GetTrendingTags :many
 SELECT id, entity_id, score, "window", geo_code, computed_at,
-       tag_id AS id, name, slug, follower_count
+ tag_id AS id, name, slug, follower_count
 FROM (
-    SELECT DISTINCT ON (t.id)
-           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-           t.id AS tag_id, t.name, t.slug, t.follower_count
-    FROM trending_snapshots ts
-    JOIN tags t ON t.id = ts.entity_id AND t.tenant_id = ts.tenant_id
-    WHERE ts.tenant_id = $1
-      AND ts.entity_type = 'tag'
-      AND ts."window" = $2
-      AND ts.expires_at > now()
-      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-    ORDER BY t.id, ts.score DESC
+ SELECT DISTINCT ON (t.id)
+ ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+ t.id AS tag_id, t.name, t.slug, t.follower_count
+ FROM trending_snapshots ts
+ JOIN tags t ON t.id = ts.entity_id
+ WHERE ts.entity_type = 'tag'
+ AND ts."window" = $1
+ AND ts.expires_at > now()
+ AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
+ ORDER BY t.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTrendingTagsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Window   string      `json:"window"`
-	Column3  string      `json:"column_3"`
-	Limit    int32       `json:"limit"`
+	Window  string `json:"window"`
+	Column2 string `json:"column_2"`
+	Limit   int32  `json:"limit"`
 }
 
 type GetTrendingTagsRow struct {
@@ -686,12 +628,7 @@ type GetTrendingTagsRow struct {
 }
 
 func (q *Queries) GetTrendingTags(ctx context.Context, arg GetTrendingTagsParams) ([]GetTrendingTagsRow, error) {
-	rows, err := q.db.Query(ctx, getTrendingTags,
-		arg.TenantID,
-		arg.Window,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTrendingTags, arg.Window, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -723,32 +660,30 @@ func (q *Queries) GetTrendingTags(ctx context.Context, arg GetTrendingTagsParams
 
 const getTrendingUsers = `-- name: GetTrendingUsers :many
 SELECT id, entity_id, score, "window", geo_code, computed_at,
-       user_id AS id, username, display_name, avatar_url, bio
+ user_id AS id, username, display_name, avatar_url, bio
 FROM (
-    SELECT DISTINCT ON (u.id)
-           ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
-           u.id AS user_id, u.username, up.display_name, up.avatar_url, up.bio
-    FROM trending_snapshots ts
-    JOIN users u ON u.id = ts.entity_id AND u.tenant_id = ts.tenant_id
-    LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ts.tenant_id
-    WHERE ts.tenant_id = $1
-      AND ts.entity_type = 'user'
-      AND ts."window" = $2
-      AND ts.expires_at > now()
-      AND ($3::text IS NULL OR $3::text = '' OR ts.geo_code = $3)
-      AND u.status = 'active'
-      AND u.is_synthetic = false
-    ORDER BY u.id, ts.score DESC
+ SELECT DISTINCT ON (u.id)
+ ts.id, ts.entity_id, ts.score, ts."window", ts.geo_code, ts.computed_at,
+ u.id AS user_id, u.username, up.display_name, up.avatar_url, up.bio
+ FROM trending_snapshots ts
+ JOIN users u ON u.id = ts.entity_id
+ LEFT JOIN user_profiles up ON up.user_id = u.id
+ WHERE ts.entity_type = 'user'
+ AND ts."window" = $1
+ AND ts.expires_at > now()
+ AND ($2::text IS NULL OR $2::text = '' OR ts.geo_code = $2)
+ AND u.status = 'active'
+ AND u.is_synthetic = false
+ ORDER BY u.id, ts.score DESC
 ) dedup
 ORDER BY score DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTrendingUsersParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Window   string      `json:"window"`
-	Column3  string      `json:"column_3"`
-	Limit    int32       `json:"limit"`
+	Window  string `json:"window"`
+	Column2 string `json:"column_2"`
+	Limit   int32  `json:"limit"`
 }
 
 type GetTrendingUsersRow struct {
@@ -766,12 +701,7 @@ type GetTrendingUsersRow struct {
 }
 
 func (q *Queries) GetTrendingUsers(ctx context.Context, arg GetTrendingUsersParams) ([]GetTrendingUsersRow, error) {
-	rows, err := q.db.Query(ctx, getTrendingUsers,
-		arg.TenantID,
-		arg.Window,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTrendingUsers, arg.Window, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -805,26 +735,20 @@ func (q *Queries) GetTrendingUsers(ctx context.Context, arg GetTrendingUsersPara
 const getZeroResultTrendingQueries = `-- name: GetZeroResultTrendingQueries :many
 SELECT query, COUNT(*) AS search_count
 FROM search_analytics
-WHERE tenant_id = $1
-  AND results_count = 0
-  AND created_at >= now() - INTERVAL '7 days'
+WHERE results_count = 0
+ AND created_at >= now() - INTERVAL '7 days'
 GROUP BY query
 ORDER BY search_count DESC
-LIMIT $2
+LIMIT $1
 `
-
-type GetZeroResultTrendingQueriesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-}
 
 type GetZeroResultTrendingQueriesRow struct {
 	Query       string `json:"query"`
 	SearchCount int64  `json:"search_count"`
 }
 
-func (q *Queries) GetZeroResultTrendingQueries(ctx context.Context, arg GetZeroResultTrendingQueriesParams) ([]GetZeroResultTrendingQueriesRow, error) {
-	rows, err := q.db.Query(ctx, getZeroResultTrendingQueries, arg.TenantID, arg.Limit)
+func (q *Queries) GetZeroResultTrendingQueries(ctx context.Context, limit int32) ([]GetZeroResultTrendingQueriesRow, error) {
+	rows, err := q.db.Query(ctx, getZeroResultTrendingQueries, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -846,14 +770,13 @@ func (q *Queries) GetZeroResultTrendingQueries(ctx context.Context, arg GetZeroR
 const upsertTrendingSnapshot = `-- name: UpsertTrendingSnapshot :exec
 
 
-INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
+INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at) VALUES ($1, $2, $3, $4, $5, $6)
+
+ON CONFLICT (entity_type, entity_id, "window", geo_code)
 DO UPDATE SET score = EXCLUDED.score, computed_at = now(), expires_at = EXCLUDED.expires_at
 `
 
 type UpsertTrendingSnapshotParams struct {
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Score      float64            `json:"score"`
@@ -869,7 +792,6 @@ type UpsertTrendingSnapshotParams struct {
 // =====================
 func (q *Queries) UpsertTrendingSnapshot(ctx context.Context, arg UpsertTrendingSnapshotParams) error {
 	_, err := q.db.Exec(ctx, upsertTrendingSnapshot,
-		arg.TenantID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Score,

@@ -189,8 +189,8 @@ func (s *Service) createJCEContentAndMetadata(
 	}
 
 	metadata := gen.ComparisonContentMetadatum{
-		ContentID:      contentRow.ID,
-		TenantID:       tenantID,
+		ContentID: contentRow.ID,
+
 		Depth:          depth,
 		PromotedFromID: pgtype.UUID{Valid: false},
 		PromotedAt:     pgtype.Timestamptz{Valid: false},
@@ -200,8 +200,8 @@ func (s *Service) createJCEContentAndMetadata(
 	}
 
 	if err := q.InsertComparisonContentMetadata(ctx, gen.InsertComparisonContentMetadataParams{
-		ContentID:      contentRow.ID,
-		TenantID:       tenantID,
+		ContentID: contentRow.ID,
+
 		Depth:          depth,
 		PromotedFromID: metadata.PromotedFromID,
 		PromotedAt:     metadata.PromotedAt,
@@ -354,8 +354,8 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 			}
 
 			_, ierr := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
-				ContentID:   contentRow.ID,
-				TenantID:    tenantID,
+				ContentID: contentRow.ID,
+
 				TypeID:      itemTypeID,
 				Title:       title,
 				Description: desc,
@@ -372,8 +372,8 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		if autoFields != nil {
 			for i, f := range autoFields {
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-					ContentID:     contentRow.ID,
-					TenantID:      tenantID,
+					ContentID: contentRow.ID,
+
 					TypeID:        input.TypeID,
 					Label:         f.Label,
 					DimensionType: fieldTypeToDimensionType(f.FieldType),
@@ -390,8 +390,8 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 				}
 
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-					ContentID:     contentRow.ID,
-					TenantID:      tenantID,
+					ContentID: contentRow.ID,
+
 					TypeID:        input.TypeID,
 					Label:         label,
 					DimensionType: DimensionTypeText,
@@ -404,8 +404,8 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		}
 
 		return JCEComparisonResult{
-			ID:         contentRow.ID,
-			TenantID:   contentRow.TenantID,
+			ID: contentRow.ID,
+
 			AuthorID:   contentRow.AuthorID,
 			Title:      contentRow.Title,
 			Slug:       contentRow.Slug,
@@ -538,7 +538,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	items, err := s.store.listComparisonsWithFilters(ctx, gen.ListComparisonsWithFiltersParams{
-		TenantID:   tenantID,
+
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      depth,
@@ -556,7 +556,7 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	total, err := s.store.countComparisonsWithFilters(ctx, gen.CountComparisonsWithFiltersParams{
-		TenantID:   tenantID,
+
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      depth,
@@ -673,8 +673,8 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 		}
 
 		if err := s.store.updateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
-			ContentID:    id,
-			TenantID:     tenantID,
+			ContentID: id,
+
 			Depth:        &metadata.Depth,
 			SmartMode:    metadata.SmartMode,
 			ScoreVersion: &metadata.ScoreVersion,
@@ -748,8 +748,8 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 
 		for i, item := range dedupedItems {
 			newItem, ierr := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
-				ContentID:   newContent.ID,
-				TenantID:    tenantID,
+				ContentID: newContent.ID,
+
 				TypeID:      item.TypeID,
 				Title:       item.Title,
 				Description: item.Description,
@@ -770,8 +770,8 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 
 		for i, dim := range dedupedDimensions {
 			newDim, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-				ContentID:     newContent.ID,
-				TenantID:      tenantID,
+				ContentID: newContent.ID,
+
 				TypeID:        dim.TypeID,
 				Label:         dim.Label,
 				DimensionType: dim.DimensionType,
@@ -786,10 +786,9 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 
 		// Clone values, mapping duplicate source IDs to the surviving row and
 		// merging any values attached to removed duplicates.
-		values, verr := q.GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
-			ContentID: id,
-			TenantID:  tenantID,
-		})
+		values, verr := q.GetComparisonValuesByContent(ctx,
+			id,
+		)
 		if verr != nil {
 			return JCEComparisonResult{}, fmt.Errorf("listing values for promotion: %w", verr)
 		}
@@ -827,9 +826,9 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 		for newItemID, dimMap := range mergedValues {
 			for newDimID, v := range dimMap {
 				_, verr := q.UpsertComparisonValueWithMetadata(ctx, gen.UpsertComparisonValueWithMetadataParams{
-					DimensionID:  newDimID,
-					ItemID:       newItemID,
-					TenantID:     tenantID,
+					DimensionID: newDimID,
+					ItemID:      newItemID,
+
 					Value:        v.Value,
 					ValueRating:  v.ValueRating,
 					ValueBoolean: v.ValueBoolean,
@@ -846,8 +845,8 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 		promotedFromID := existing.Content.ID
 
 		if err := q.UpdateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
-			ContentID:      newContent.ID,
-			TenantID:       tenantID,
+			ContentID: newContent.ID,
+
 			Depth:          &newMetadata.Depth,
 			PromotedFromID: promotedFromID,
 			PromotedAt:     promotedAt,
@@ -859,8 +858,8 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 		}
 
 		return JCEComparisonResult{
-			ID:         newContent.ID,
-			TenantID:   newContent.TenantID,
+			ID: newContent.ID,
+
 			AuthorID:   newContent.AuthorID,
 			Title:      newContent.Title,
 			Slug:       newContent.Slug,

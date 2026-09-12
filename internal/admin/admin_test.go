@@ -50,8 +50,7 @@ func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
 	user := &auth.AuthenticatedUser{
-		UserID:   mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
-		TenantID: mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		UserID: mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
 	}
 	ten := &tenant.Tenant{
 		ID:   mustUUID(t, "00000000-0000-0000-0000-000000000001"),
@@ -73,8 +72,7 @@ func withAuthOnly(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
 	user := &auth.AuthenticatedUser{
-		UserID:   mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
-		TenantID: mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		UserID: mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
 	}
 
 	return r.WithContext(&multiValueCtx{

@@ -14,23 +14,22 @@ import (
 const adminCOLStats = `-- name: AdminCOLStats :many
 
 SELECT
-    ci.id AS city_id,
-    ci.title AS city_name,
-    ci.is_baseline,
-    ci.last_updated_at,
-    COUNT(DISTINCT cd.id) AS total_dimensions,
-    COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
+ ci.id AS city_id,
+ ci.title AS city_name,
+ ci.is_baseline,
+ ci.last_updated_at,
+ COUNT(DISTINCT cd.id) AS total_dimensions,
+ COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
 FROM comparison_items ci
 LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id AND cd.deleted_at IS NULL
 LEFT JOIN comparison_values cv ON cv.dimension_id = cd.id AND cv.item_id = ci.id
-WHERE ci.tenant_id = $1 AND ci.type_id = $2 AND ci.deleted_at IS NULL
+WHERE ci.type_id = $1 AND ci.deleted_at IS NULL
 GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
 ORDER BY ci.is_baseline DESC, ci.title ASC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type AdminCOLStatsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -51,12 +50,7 @@ type AdminCOLStatsRow struct {
 // whether data is stale (last_updated_at older than threshold).
 // =====================================================================
 func (q *Queries) AdminCOLStats(ctx context.Context, arg AdminCOLStatsParams) ([]AdminCOLStatsRow, error) {
-	rows, err := q.db.Query(ctx, adminCOLStats,
-		arg.TenantID,
-		arg.TypeID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, adminCOLStats, arg.TypeID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -90,18 +84,16 @@ LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
 LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
 LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
-WHERE ci.tenant_id = $1
-  AND ci.type_id = $2
-  AND ci.deleted_at IS NULL
-  AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR country.geo_code = $4)
-  AND ($5::uuid IS NULL OR country.id = $5)
-  AND ($6::uuid IS NULL OR state.id = $6)
-  AND ($7::uuid IS NULL OR s.id = $7)
+WHERE ci.type_id = $1
+ AND ci.deleted_at IS NULL
+ AND ($2::text = '' OR ci.title ILIKE '%' || $2 || '%')
+ AND ($3::text = '' OR country.geo_code = $3)
+ AND ($4::uuid IS NULL OR country.id = $4)
+ AND ($5::uuid IS NULL OR state.id = $5)
+ AND ($6::uuid IS NULL OR s.id = $6)
 `
 
 type CountCOLCitiesParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	TypeID      pgtype.UUID `json:"type_id"`
 	Search      string      `json:"search"`
 	CountryCode string      `json:"country_code"`
@@ -112,7 +104,6 @@ type CountCOLCitiesParams struct {
 
 func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countCOLCities,
-		arg.TenantID,
 		arg.TypeID,
 		arg.Search,
 		arg.CountryCode,
@@ -128,22 +119,16 @@ func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) 
 const getCOLBaselineCity = `-- name: GetCOLBaselineCity :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = $1
-  AND ci.type_id = $2
-  AND ci.is_baseline = true
-  AND ci.deleted_at IS NULL
+WHERE ci.type_id = $1
+ AND ci.is_baseline = true
+ AND ci.deleted_at IS NULL
 LIMIT 1
 `
-
-type GetCOLBaselineCityParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TypeID   pgtype.UUID `json:"type_id"`
-}
 
 type GetCOLBaselineCityRow struct {
 	ID                 pgtype.UUID        `json:"id"`
@@ -174,8 +159,8 @@ type GetCOLBaselineCityRow struct {
 // =====================================================================
 // Get the baseline city for the cost_of_living type.
 // =====================================================================
-func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCityParams) (GetCOLBaselineCityRow, error) {
-	row := q.db.QueryRow(ctx, getCOLBaselineCity, arg.TenantID, arg.TypeID)
+func (q *Queries) GetCOLBaselineCity(ctx context.Context, typeID pgtype.UUID) (GetCOLBaselineCityRow, error) {
+	row := q.db.QueryRow(ctx, getCOLBaselineCity, typeID)
 	var i GetCOLBaselineCityRow
 	err := row.Scan(
 		&i.ID,
@@ -208,26 +193,19 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, arg GetCOLBaselineCity
 const getCOLByGeoSpaceID = `-- name: GetCOLByGeoSpaceID :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = $1
-  AND ci.type_id = (SELECT id FROM comparison_type_definitions
-                    WHERE tenant_id = $1
-                      AND slug = 'cost_of_living'
-                      AND is_system = true
-                    LIMIT 1)
-  AND ci.geo_space_id = $2
-  AND ci.deleted_at IS NULL
+WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
+ WHERE slug = 'cost_of_living'
+ AND is_system = true
+ LIMIT 1)
+ AND ci.geo_space_id = $1
+ AND ci.deleted_at IS NULL
 LIMIT 1
 `
-
-type GetCOLByGeoSpaceIDParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	GeoSpaceID pgtype.UUID `json:"geo_space_id"`
-}
 
 type GetCOLByGeoSpaceIDRow struct {
 	ID                 pgtype.UUID        `json:"id"`
@@ -259,8 +237,8 @@ type GetCOLByGeoSpaceIDRow struct {
 // Get a single cost_of-living item by its associated geo space.
 // Used by the JCE resolver to populate real score_inputs for spaces.
 // =====================================================================
-func (q *Queries) GetCOLByGeoSpaceID(ctx context.Context, arg GetCOLByGeoSpaceIDParams) (GetCOLByGeoSpaceIDRow, error) {
-	row := q.db.QueryRow(ctx, getCOLByGeoSpaceID, arg.TenantID, arg.GeoSpaceID)
+func (q *Queries) GetCOLByGeoSpaceID(ctx context.Context, geoSpaceID pgtype.UUID) (GetCOLByGeoSpaceIDRow, error) {
+	row := q.db.QueryRow(ctx, getCOLByGeoSpaceID, geoSpaceID)
 	var i GetCOLByGeoSpaceIDRow
 	err := row.Scan(
 		&i.ID,
@@ -293,26 +271,20 @@ func (q *Queries) GetCOLByGeoSpaceID(ctx context.Context, arg GetCOLByGeoSpaceID
 const getCOLCitiesByIDs = `-- name: GetCOLCitiesByIDs :many
 
 SELECT
-    ci.id,
-    ci.title,
-    ci.description,
-    ci.geo_space_id,
-    ci.is_baseline,
-    ci.last_updated_at,
-    ci.position,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id,
+ ci.title,
+ ci.description,
+ ci.geo_space_id,
+ ci.is_baseline,
+ ci.last_updated_at,
+ ci.position,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = $1
-  AND ci.id = ANY($2::uuid[])
-  AND ci.deleted_at IS NULL
+WHERE ci.id = ANY($1::uuid[])
+ AND ci.deleted_at IS NULL
 `
-
-type GetCOLCitiesByIDsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	Ids      []pgtype.UUID `json:"ids"`
-}
 
 type GetCOLCitiesByIDsRow struct {
 	ID            pgtype.UUID        `json:"id"`
@@ -330,8 +302,8 @@ type GetCOLCitiesByIDsRow struct {
 // Batch-fetch multiple cities by ID (removes N+1 in CompareCities).
 // Returns the same columns as GetCOLCityByID for a set of item IDs.
 // =====================================================================
-func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, arg GetCOLCitiesByIDsParams) ([]GetCOLCitiesByIDsRow, error) {
-	rows, err := q.db.Query(ctx, getCOLCitiesByIDs, arg.TenantID, arg.Ids)
+func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, ids []pgtype.UUID) ([]GetCOLCitiesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getCOLCitiesByIDs, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -363,18 +335,13 @@ func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, arg GetCOLCitiesByIDsPa
 const getCOLCityByID = `-- name: GetCOLCityByID :one
 
 SELECT
-    ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = $1 AND ci.id = $2 AND ci.deleted_at IS NULL
+WHERE ci.id = $1 AND ci.deleted_at IS NULL
 `
-
-type GetCOLCityByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type GetCOLCityByIDRow struct {
 	ID                 pgtype.UUID        `json:"id"`
@@ -405,8 +372,8 @@ type GetCOLCityByIDRow struct {
 // =====================================================================
 // Get a single city (comparison_item) by ID with its geo space info.
 // =====================================================================
-func (q *Queries) GetCOLCityByID(ctx context.Context, arg GetCOLCityByIDParams) (GetCOLCityByIDRow, error) {
-	row := q.db.QueryRow(ctx, getCOLCityByID, arg.TenantID, arg.ID)
+func (q *Queries) GetCOLCityByID(ctx context.Context, id pgtype.UUID) (GetCOLCityByIDRow, error) {
+	row := q.db.QueryRow(ctx, getCOLCityByID, id)
 	var i GetCOLCityByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -439,25 +406,19 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, arg GetCOLCityByIDParams) 
 const getCOLValuesForCities = `-- name: GetCOLValuesForCities :many
 
 SELECT
-    cv.dimension_id,
-    cv.item_id,
-    cv.value,
-    cv.value_rating,
-    cv.value_boolean,
-    cd.label AS dimension_label,
-    cd.slug AS dimension_slug,
-    cd.dimension_type
+ cv.dimension_id,
+ cv.item_id,
+ cv.value,
+ cv.value_rating,
+ cv.value_boolean,
+ cd.label AS dimension_label,
+ cd.slug AS dimension_slug,
+ cd.dimension_type
 FROM comparison_values cv
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.deleted_at IS NULL
-WHERE cv.tenant_id = $1
-  AND cv.item_id = ANY($2::uuid[])
+WHERE cv.item_id = ANY($1::uuid[])
 ORDER BY cd.position, cv.item_id
 `
-
-type GetCOLValuesForCitiesParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	ItemIds  []pgtype.UUID `json:"item_ids"`
-}
 
 type GetCOLValuesForCitiesRow struct {
 	DimensionID    pgtype.UUID    `json:"dimension_id"`
@@ -475,8 +436,8 @@ type GetCOLValuesForCitiesRow struct {
 // Returns dimension_id, item_id, and the value fields for all specified
 // city IDs. The service layer pivots these into a matrix.
 // =====================================================================
-func (q *Queries) GetCOLValuesForCities(ctx context.Context, arg GetCOLValuesForCitiesParams) ([]GetCOLValuesForCitiesRow, error) {
-	rows, err := q.db.Query(ctx, getCOLValuesForCities, arg.TenantID, arg.ItemIds)
+func (q *Queries) GetCOLValuesForCities(ctx context.Context, itemIds []pgtype.UUID) ([]GetCOLValuesForCitiesRow, error) {
+	rows, err := q.db.Query(ctx, getCOLValuesForCities, itemIds)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +469,7 @@ const getCostOfLivingType = `-- name: GetCostOfLivingType :one
 
 
 SELECT id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, created_at, config FROM comparison_type_definitions
-WHERE tenant_id = $1 AND slug = 'cost_of_living' AND is_system = true
+WHERE slug = 'cost_of_living' AND is_system = true
 `
 
 // cost_of_living.sql — Cost of Living Calculator queries (Section 72, ADR-072).
@@ -521,8 +482,8 @@ WHERE tenant_id = $1 AND slug = 'cost_of_living' AND is_system = true
 // Get the cost_of_living comparison type definition (with config JSONB
 // containing the weighted cost index weights).
 // =====================================================================
-func (q *Queries) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID) (ComparisonTypeDefinition, error) {
-	row := q.db.QueryRow(ctx, getCostOfLivingType, tenantID)
+func (q *Queries) GetCostOfLivingType(ctx context.Context) (ComparisonTypeDefinition, error) {
+	row := q.db.QueryRow(ctx, getCostOfLivingType)
 	var i ComparisonTypeDefinition
 	err := row.Scan(
 		&i.ID,
@@ -543,36 +504,34 @@ func (q *Queries) GetCostOfLivingType(ctx context.Context, tenantID pgtype.UUID)
 const listCOLCities = `-- name: ListCOLCities :many
 
 SELECT
-    ci.id,
-    ci.title,
-    ci.description,
-    ci.geo_space_id,
-    ci.is_baseline,
-    ci.last_updated_at,
-    ci.position,
-    ci.intel_cost_data,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id,
+ ci.title,
+ ci.description,
+ ci.geo_space_id,
+ ci.is_baseline,
+ ci.last_updated_at,
+ ci.position,
+ ci.intel_cost_data,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
 LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
 LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
-WHERE ci.tenant_id = $1
-  AND ci.type_id = $2
-  AND ci.deleted_at IS NULL
-  AND ($3::text = '' OR ci.title ILIKE '%' || $3 || '%')
-  AND ($4::text = '' OR country.geo_code = $4)
-  AND ($5::uuid IS NULL OR country.id = $5)
-  AND ($6::uuid IS NULL OR state.id = $6)
-  AND ($7::uuid IS NULL OR s.id = $7)
+WHERE ci.type_id = $1
+ AND ci.deleted_at IS NULL
+ AND ($2::text = '' OR ci.title ILIKE '%' || $2 || '%')
+ AND ($3::text = '' OR country.geo_code = $3)
+ AND ($4::uuid IS NULL OR country.id = $4)
+ AND ($5::uuid IS NULL OR state.id = $5)
+ AND ($6::uuid IS NULL OR s.id = $6)
 ORDER BY ci.is_baseline DESC, ci.title ASC
-LIMIT $9 OFFSET $8
+LIMIT $8 OFFSET $7
 `
 
 type ListCOLCitiesParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	TypeID      pgtype.UUID `json:"type_id"`
 	Search      string      `json:"search"`
 	CountryCode string      `json:"country_code"`
@@ -602,7 +561,6 @@ type ListCOLCitiesRow struct {
 // =====================================================================
 func (q *Queries) ListCOLCities(ctx context.Context, arg ListCOLCitiesParams) ([]ListCOLCitiesRow, error) {
 	rows, err := q.db.Query(ctx, listCOLCities,
-		arg.TenantID,
 		arg.TypeID,
 		arg.Search,
 		arg.CountryCode,

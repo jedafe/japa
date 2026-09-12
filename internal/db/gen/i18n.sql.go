@@ -14,7 +14,7 @@ import (
 const countTranslationsByLocale = `-- name: CountTranslationsByLocale :many
 SELECT locale, COUNT(*)::int AS count
 FROM translations
-WHERE tenant_id = $1
+
 GROUP BY locale
 ORDER BY locale
 `
@@ -24,8 +24,8 @@ type CountTranslationsByLocaleRow struct {
 	Count  int32  `json:"count"`
 }
 
-func (q *Queries) CountTranslationsByLocale(ctx context.Context, tenantID pgtype.UUID) ([]CountTranslationsByLocaleRow, error) {
-	rows, err := q.db.Query(ctx, countTranslationsByLocale, tenantID)
+func (q *Queries) CountTranslationsByLocale(ctx context.Context) ([]CountTranslationsByLocaleRow, error) {
+	rows, err := q.db.Query(ctx, countTranslationsByLocale)
 	if err != nil {
 		return nil, err
 	}
@@ -46,44 +46,33 @@ func (q *Queries) CountTranslationsByLocale(ctx context.Context, tenantID pgtype
 
 const deleteTranslation = `-- name: DeleteTranslation :exec
 DELETE FROM translations
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type DeleteTranslationParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) DeleteTranslation(ctx context.Context, arg DeleteTranslationParams) error {
-	_, err := q.db.Exec(ctx, deleteTranslation, arg.TenantID, arg.ID)
+func (q *Queries) DeleteTranslation(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTranslation, id)
 	return err
 }
 
 const deleteTranslationsByLocale = `-- name: DeleteTranslationsByLocale :exec
 DELETE FROM translations
-WHERE tenant_id = $1 AND locale = $2
+WHERE locale = $1
 `
 
-type DeleteTranslationsByLocaleParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Locale   string      `json:"locale"`
-}
-
-func (q *Queries) DeleteTranslationsByLocale(ctx context.Context, arg DeleteTranslationsByLocaleParams) error {
-	_, err := q.db.Exec(ctx, deleteTranslationsByLocale, arg.TenantID, arg.Locale)
+func (q *Queries) DeleteTranslationsByLocale(ctx context.Context, locale string) error {
+	_, err := q.db.Exec(ctx, deleteTranslationsByLocale, locale)
 	return err
 }
 
 const getTranslation = `-- name: GetTranslation :one
 SELECT id, locale, "key", value, context, created_at, updated_at
 FROM translations
-WHERE tenant_id = $1 AND locale = $2 AND "key" = $3
+WHERE locale = $1 AND "key" = $2
 `
 
 type GetTranslationParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Locale   string      `json:"locale"`
-	Key      string      `json:"key"`
+	Locale string `json:"locale"`
+	Key    string `json:"key"`
 }
 
 type GetTranslationRow struct {
@@ -97,7 +86,7 @@ type GetTranslationRow struct {
 }
 
 func (q *Queries) GetTranslation(ctx context.Context, arg GetTranslationParams) (GetTranslationRow, error) {
-	row := q.db.QueryRow(ctx, getTranslation, arg.TenantID, arg.Locale, arg.Key)
+	row := q.db.QueryRow(ctx, getTranslation, arg.Locale, arg.Key)
 	var i GetTranslationRow
 	err := row.Scan(
 		&i.ID,
@@ -114,13 +103,8 @@ func (q *Queries) GetTranslation(ctx context.Context, arg GetTranslationParams) 
 const getTranslationByID = `-- name: GetTranslationByID :one
 SELECT id, locale, "key", value, context, created_at, updated_at
 FROM translations
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetTranslationByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type GetTranslationByIDRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -132,8 +116,8 @@ type GetTranslationByIDRow struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetTranslationByID(ctx context.Context, arg GetTranslationByIDParams) (GetTranslationByIDRow, error) {
-	row := q.db.QueryRow(ctx, getTranslationByID, arg.TenantID, arg.ID)
+func (q *Queries) GetTranslationByID(ctx context.Context, id pgtype.UUID) (GetTranslationByIDRow, error) {
+	row := q.db.QueryRow(ctx, getTranslationByID, id)
 	var i GetTranslationByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -150,12 +134,12 @@ func (q *Queries) GetTranslationByID(ctx context.Context, arg GetTranslationByID
 const listTranslationLocales = `-- name: ListTranslationLocales :many
 SELECT DISTINCT locale
 FROM translations
-WHERE tenant_id = $1
+
 ORDER BY locale
 `
 
-func (q *Queries) ListTranslationLocales(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
-	rows, err := q.db.Query(ctx, listTranslationLocales, tenantID)
+func (q *Queries) ListTranslationLocales(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTranslationLocales)
 	if err != nil {
 		return nil, err
 	}
@@ -177,14 +161,9 @@ func (q *Queries) ListTranslationLocales(ctx context.Context, tenantID pgtype.UU
 const listTranslationsByKeyPrefix = `-- name: ListTranslationsByKeyPrefix :many
 SELECT id, locale, "key", value, context, created_at, updated_at
 FROM translations
-WHERE tenant_id = $1 AND "key" LIKE $2 || '%'
+WHERE "key" LIKE $1 || '%'
 ORDER BY "key"
 `
-
-type ListTranslationsByKeyPrefixParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Prefix   *string     `json:"prefix"`
-}
 
 type ListTranslationsByKeyPrefixRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -196,8 +175,8 @@ type ListTranslationsByKeyPrefixRow struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListTranslationsByKeyPrefix(ctx context.Context, arg ListTranslationsByKeyPrefixParams) ([]ListTranslationsByKeyPrefixRow, error) {
-	rows, err := q.db.Query(ctx, listTranslationsByKeyPrefix, arg.TenantID, arg.Prefix)
+func (q *Queries) ListTranslationsByKeyPrefix(ctx context.Context, prefix *string) ([]ListTranslationsByKeyPrefixRow, error) {
+	rows, err := q.db.Query(ctx, listTranslationsByKeyPrefix, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -228,14 +207,9 @@ const listTranslationsByLocale = `-- name: ListTranslationsByLocale :many
 
 SELECT id, locale, "key", value, context, created_at, updated_at
 FROM translations
-WHERE tenant_id = $1 AND locale = $2
+WHERE locale = $1
 ORDER BY "key"
 `
-
-type ListTranslationsByLocaleParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Locale   string      `json:"locale"`
-}
 
 type ListTranslationsByLocaleRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -248,8 +222,8 @@ type ListTranslationsByLocaleRow struct {
 }
 
 // Internationalization (i18n) translation system
-func (q *Queries) ListTranslationsByLocale(ctx context.Context, arg ListTranslationsByLocaleParams) ([]ListTranslationsByLocaleRow, error) {
-	rows, err := q.db.Query(ctx, listTranslationsByLocale, arg.TenantID, arg.Locale)
+func (q *Queries) ListTranslationsByLocale(ctx context.Context, locale string) ([]ListTranslationsByLocaleRow, error) {
+	rows, err := q.db.Query(ctx, listTranslationsByLocale, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -277,23 +251,21 @@ func (q *Queries) ListTranslationsByLocale(ctx context.Context, arg ListTranslat
 }
 
 const upsertTranslation = `-- name: UpsertTranslation :exec
-INSERT INTO translations (tenant_id, locale, "key", value, context)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (tenant_id, locale, "key")
+INSERT INTO translations (locale, "key", value, context) VALUES ($1, $2, $3, $4)
+
+ON CONFLICT (locale, "key")
 DO UPDATE SET value = EXCLUDED.value, context = EXCLUDED.context, updated_at = now()
 `
 
 type UpsertTranslationParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Locale   string      `json:"locale"`
-	Key      string      `json:"key"`
-	Value    string      `json:"value"`
-	Context  *string     `json:"context"`
+	Locale  string  `json:"locale"`
+	Key     string  `json:"key"`
+	Value   string  `json:"value"`
+	Context *string `json:"context"`
 }
 
 func (q *Queries) UpsertTranslation(ctx context.Context, arg UpsertTranslationParams) error {
 	_, err := q.db.Exec(ctx, upsertTranslation,
-		arg.TenantID,
 		arg.Locale,
 		arg.Key,
 		arg.Value,

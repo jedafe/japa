@@ -860,7 +860,7 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.Service.CreateSpaceWithOwner(r.Context(), gen.CreateSpaceParams{
-		TenantID:       tenantID,
+
 		ParentID:       parentID,
 		SpaceTypeID:    spaceTypeID,
 		Name:           req.Name,
@@ -1032,7 +1032,6 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		JoiningPerm:    joiningPerm,
 		Status:         status,
 		ID:             id,
-		TenantID:       tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1067,7 +1066,6 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
 			LogoMediaID: logoUUID,
 			ID:          id,
-			TenantID:    tenantID,
 		})
 		if lErr != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "logo_update_failed", "Failed to update logo")
@@ -1092,7 +1090,6 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		headerSpace, hErr := h.Service.UpdateSpaceHeaderImageID(r.Context(), gen.UpdateSpaceHeaderImageIDParams{
 			HeaderImageID: headerUUID,
 			ID:            id,
-			TenantID:      tenantID,
 		})
 		if hErr != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "header_update_failed", "Failed to update header image")

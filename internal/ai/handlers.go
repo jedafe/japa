@@ -2263,7 +2263,7 @@ func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	review, err := CreateHITLReview(r.Context(), h.Store, HITLReview{
-		TenantID:    tenantID,
+
 		ContentID:   contentID,
 		ContentType: input.ContentType,
 		AIOutput:    aiOutputBytes,

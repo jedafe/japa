@@ -44,7 +44,7 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 	}
 
 	tag, err := s.store.createTag(ctx, gen.CreateForumTagParams{
-		TenantID:        tenantID,
+
 		Name:            input.Name,
 		Slug:            input.Slug,
 		Description:     strPtr(input.Description),

@@ -13,25 +13,23 @@ import (
 
 const getSearchAnalyticsSummary = `-- name: GetSearchAnalyticsSummary :many
 SELECT
-    query,
-    COUNT(*) AS search_count,
-    AVG(results_count)::int AS avg_results,
-    COUNT(*) FILTER (WHERE results_count = 0) AS zero_result_count
+ query,
+ COUNT(*) AS search_count,
+ AVG(results_count)::int AS avg_results,
+ COUNT(*) FILTER (WHERE results_count = 0) AS zero_result_count
 FROM search_analytics
-WHERE tenant_id = $1
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+WHERE ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)
 GROUP BY query
 ORDER BY search_count DESC
-LIMIT $4 OFFSET $5
+LIMIT $3 OFFSET $4
 `
 
 type GetSearchAnalyticsSummaryParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
-	Limit    int32              `json:"limit"`
-	Offset   int32              `json:"offset"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Limit   int32              `json:"limit"`
+	Offset  int32              `json:"offset"`
 }
 
 type GetSearchAnalyticsSummaryRow struct {
@@ -43,9 +41,8 @@ type GetSearchAnalyticsSummaryRow struct {
 
 func (q *Queries) GetSearchAnalyticsSummary(ctx context.Context, arg GetSearchAnalyticsSummaryParams) ([]GetSearchAnalyticsSummaryRow, error) {
 	rows, err := q.db.Query(ctx, getSearchAnalyticsSummary,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
-		arg.Column3,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -74,21 +71,19 @@ func (q *Queries) GetSearchAnalyticsSummary(ctx context.Context, arg GetSearchAn
 
 const getSearchVolumeByDay = `-- name: GetSearchVolumeByDay :many
 SELECT
-    DATE(created_at) AS day,
-    COUNT(*) AS total_searches,
-    COUNT(*) FILTER (WHERE results_count = 0) AS zero_result_searches
+ DATE(created_at) AS day,
+ COUNT(*) AS total_searches,
+ COUNT(*) FILTER (WHERE results_count = 0) AS zero_result_searches
 FROM search_analytics
-WHERE tenant_id = $1
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+WHERE ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)
 GROUP BY DATE(created_at)
 ORDER BY day DESC
 `
 
 type GetSearchVolumeByDayParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetSearchVolumeByDayRow struct {
@@ -98,7 +93,7 @@ type GetSearchVolumeByDayRow struct {
 }
 
 func (q *Queries) GetSearchVolumeByDay(ctx context.Context, arg GetSearchVolumeByDayParams) ([]GetSearchVolumeByDayRow, error) {
-	rows, err := q.db.Query(ctx, getSearchVolumeByDay, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getSearchVolumeByDay, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -120,21 +115,19 @@ func (q *Queries) GetSearchVolumeByDay(ctx context.Context, arg GetSearchVolumeB
 const getZeroResultQueries = `-- name: GetZeroResultQueries :many
 SELECT query, COUNT(*) AS search_count
 FROM search_analytics
-WHERE tenant_id = $1
-  AND results_count = 0
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+WHERE results_count = 0
+ AND ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)
 GROUP BY query
 ORDER BY search_count DESC
-LIMIT $4 OFFSET $5
+LIMIT $3 OFFSET $4
 `
 
 type GetZeroResultQueriesParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
-	Limit    int32              `json:"limit"`
-	Offset   int32              `json:"offset"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Limit   int32              `json:"limit"`
+	Offset  int32              `json:"offset"`
 }
 
 type GetZeroResultQueriesRow struct {
@@ -144,9 +137,8 @@ type GetZeroResultQueriesRow struct {
 
 func (q *Queries) GetZeroResultQueries(ctx context.Context, arg GetZeroResultQueriesParams) ([]GetZeroResultQueriesRow, error) {
 	rows, err := q.db.Query(ctx, getZeroResultQueries,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
-		arg.Column3,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -169,12 +161,10 @@ func (q *Queries) GetZeroResultQueries(ctx context.Context, arg GetZeroResultQue
 }
 
 const logSearchQuery = `-- name: LogSearchQuery :exec
-INSERT INTO search_analytics (tenant_id, query, results_count, user_id, content_type)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO search_analytics (query, results_count, user_id, content_type) VALUES ($1, $2, $3, $4)
 `
 
 type LogSearchQueryParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	Query        string      `json:"query"`
 	ResultsCount int32       `json:"results_count"`
 	UserID       pgtype.UUID `json:"user_id"`
@@ -183,7 +173,6 @@ type LogSearchQueryParams struct {
 
 func (q *Queries) LogSearchQuery(ctx context.Context, arg LogSearchQueryParams) error {
 	_, err := q.db.Exec(ctx, logSearchQuery,
-		arg.TenantID,
 		arg.Query,
 		arg.ResultsCount,
 		arg.UserID,

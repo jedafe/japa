@@ -13,9 +13,9 @@ import (
 
 const checkUserOperationBanExists = `-- name: CheckUserOperationBanExists :one
 SELECT EXISTS(
-    SELECT 1 FROM user_operation_bans
-    WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
-    AND (expires_at IS NULL OR expires_at > now())
+ SELECT 1 FROM user_operation_bans
+ WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+ AND (expires_at IS NULL OR expires_at > now())
 )
 `
 
@@ -36,7 +36,7 @@ func (q *Queries) CheckUserOperationBanExists(ctx context.Context, arg CheckUser
 const countActiveOperationBans = `-- name: CountActiveOperationBans :one
 SELECT COUNT(*)::int FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now())
+ AND (expires_at IS NULL OR expires_at > now())
 `
 
 func (q *Queries) CountActiveOperationBans(ctx context.Context, userID pgtype.UUID) (int32, error) {
@@ -64,68 +64,54 @@ func (q *Queries) CountUserWarningsByType(ctx context.Context, arg CountUserWarn
 }
 
 const createOperationBan = `-- name: CreateOperationBan :exec
-INSERT INTO user_operation_bans (user_id, tenant_id, operation, reason, expires_at, issued_by)
-VALUES ($1, $2, $3, $4,
-        CASE WHEN $5::int > 0 THEN now() + ($5 || ' seconds')::interval ELSE NULL END,
-        $6)
+INSERT INTO user_operation_bans (user_id, operation, reason, expires_at, issued_by) VALUES ($1, $2, $3, CASE WHEN $4::int > 0 THEN now() + ($4 || ' seconds')::interval ELSE NULL END, $5)
 `
 
 type CreateOperationBanParams struct {
 	UserID    pgtype.UUID  `json:"user_id"`
-	TenantID  pgtype.UUID  `json:"tenant_id"`
 	Operation BanOperation `json:"operation"`
 	Reason    *string      `json:"reason"`
-	Column5   int32        `json:"column_5"`
+	Column4   int32        `json:"column_4"`
 	IssuedBy  pgtype.UUID  `json:"issued_by"`
 }
 
 func (q *Queries) CreateOperationBan(ctx context.Context, arg CreateOperationBanParams) error {
 	_, err := q.db.Exec(ctx, createOperationBan,
 		arg.UserID,
-		arg.TenantID,
 		arg.Operation,
 		arg.Reason,
-		arg.Column5,
+		arg.Column4,
 		arg.IssuedBy,
 	)
 	return err
 }
 
 const createUserSuspension = `-- name: CreateUserSuspension :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason)
-VALUES ($1, $2, 'suspension', $3)
+INSERT INTO user_moderation_actions (user_id, action, reason) VALUES ($1, 'suspension', $2)
 `
 
 type CreateUserSuspensionParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Reason   *string     `json:"reason"`
+	UserID pgtype.UUID `json:"user_id"`
+	Reason *string     `json:"reason"`
 }
 
 func (q *Queries) CreateUserSuspension(ctx context.Context, arg CreateUserSuspensionParams) error {
-	_, err := q.db.Exec(ctx, createUserSuspension, arg.UserID, arg.TenantID, arg.Reason)
+	_, err := q.db.Exec(ctx, createUserSuspension, arg.UserID, arg.Reason)
 	return err
 }
 
 const createUserTypedWarning = `-- name: CreateUserTypedWarning :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, violation_type)
-VALUES ($1, $2, 'warning', $3, $4)
+INSERT INTO user_moderation_actions (user_id, action, reason, violation_type) VALUES ($1, 'warning', $2, $3)
 `
 
 type CreateUserTypedWarningParams struct {
 	UserID        pgtype.UUID `json:"user_id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	Reason        *string     `json:"reason"`
 	ViolationType *string     `json:"violation_type"`
 }
 
 func (q *Queries) CreateUserTypedWarning(ctx context.Context, arg CreateUserTypedWarningParams) error {
-	_, err := q.db.Exec(ctx, createUserTypedWarning,
-		arg.UserID,
-		arg.TenantID,
-		arg.Reason,
-		arg.ViolationType,
-	)
+	_, err := q.db.Exec(ctx, createUserTypedWarning, arg.UserID, arg.Reason, arg.ViolationType)
 	return err
 }
 
@@ -154,7 +140,7 @@ const getUserOperationBansForCache = `-- name: GetUserOperationBansForCache :man
 SELECT operation::text, expires_at
 FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now())
+ AND (expires_at IS NULL OR expires_at > now())
 `
 
 type GetUserOperationBansForCacheRow struct {
@@ -211,7 +197,7 @@ const listActiveOperationBans = `-- name: ListActiveOperationBans :many
 SELECT id, operation::text, reason, expires_at, created_at
 FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now())
+ AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC
 `
 

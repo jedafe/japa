@@ -122,8 +122,8 @@ func trackFromFields(
 	}
 
 	return Track{
-		ID:                      id,
-		TenantID:                tenantID,
+		ID: id,
+
 		Title:                   title,
 		Slug:                    slug,
 		Description:             description,
@@ -147,7 +147,7 @@ func trackFromFields(
 
 // ListPublishedTracks lists all published tracks for a tenant.
 func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
-	rows, err := s.read.ListPublishedLearningTracks(ctx, tenantID)
+	rows, err := s.read.ListPublishedLearningTracks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list published tracks: %w", err)
 	}
@@ -230,10 +230,10 @@ LIMIT $3
 
 // GetTrackBySlug retrieves a track by its slug.
 func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (*Track, error) {
-	r, err := s.read.GetLearningTrackBySlug(ctx, gen.GetLearningTrackBySlugParams{
-		TenantID: tenantID,
-		Slug:     slug,
-	})
+	r, err := s.read.GetLearningTrackBySlug(ctx,
+
+		slug,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
@@ -245,10 +245,10 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 
 // GetTrackByID retrieves a track by its ID.
 func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Track, error) {
-	r, err := s.read.GetLearningTrackByID(ctx, gen.GetLearningTrackByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	r, err := s.read.GetLearningTrackByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 // CreateTrack creates a new learning track.
 func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input CreateTrackInput) (*Track, error) {
 	r, err := s.write.CreateLearningTrack(ctx, gen.CreateLearningTrackParams{
-		TenantID:             tenantID,
+
 		Title:                input.Title,
 		Slug:                 input.Slug,
 		Description:          input.Description,
@@ -284,7 +284,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 // UpdateTrack updates an existing learning track.
 func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
 	r, err := s.write.UpdateLearningTrack(ctx, gen.UpdateLearningTrackParams{
-		TenantID:             tenantID,
+
 		ID:                   id,
 		Title:                input.Title,
 		Description:          input.Description,
@@ -340,7 +340,7 @@ func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPu
 
 // ListAllTracks lists all tracks including drafts.
 func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
-	rows, err := s.read.ListAllLearningTracks(ctx, tenantID)
+	rows, err := s.read.ListAllLearningTracks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all tracks: %w", err)
 	}
@@ -472,8 +472,8 @@ type UpdateModuleInput struct {
 
 func moduleFromRow(r gen.LearningModule) Module {
 	return Module{
-		ID:          r.ID,
-		TenantID:    r.TenantID,
+		ID: r.ID,
+
 		TrackID:     r.TrackID,
 		Title:       r.Title,
 		Slug:        r.Slug,
@@ -486,10 +486,10 @@ func moduleFromRow(r gen.LearningModule) Module {
 
 // ListModulesByTrack lists all modules for a track.
 func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype.UUID) ([]Module, error) {
-	rows, err := s.read.ListLearningModulesByTrack(ctx, gen.ListLearningModulesByTrackParams{
-		TenantID: tenantID,
-		TrackID:  trackID,
-	})
+	rows, err := s.read.ListLearningModulesByTrack(ctx,
+
+		trackID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list modules by track: %w", err)
 	}
@@ -511,10 +511,10 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype
 // response with nested ModuleWithLessons. This matches the frontend
 // TrackDetail contract (ADR-060) — NOT the legacy `{track, modules}` envelope.
 func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (*TrackDetail, error) {
-	row, err := s.read.GetLearningTrackDetailBySlug(ctx, gen.GetLearningTrackDetailBySlugParams{
-		TenantID: tenantID,
-		Slug:     slug,
-	})
+	row, err := s.read.GetLearningTrackDetailBySlug(ctx,
+
+		slug,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get track detail by slug: %w", err)
 	}
@@ -524,10 +524,10 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		row.InstructorID, row.PriceKobo, row.Currency, row.IsPublishedToUniversity, row.Category,
 		row.Language, row.TotalEnrolled, row.SubscriptionEligible)
 
-	modRows, err := s.read.ListLearningModulesByTrack(ctx, gen.ListLearningModulesByTrackParams{
-		TenantID: tenantID,
-		TrackID:  track.ID,
-	})
+	modRows, err := s.read.ListLearningModulesByTrack(ctx,
+
+		track.ID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list modules by track: %w", err)
 	}
@@ -535,10 +535,10 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	modules := make([]ModuleWithLessons, 0, len(modRows))
 
 	for _, m := range modRows {
-		lessonRows, err := s.read.ListLearningLessonsByModule(ctx, gen.ListLearningLessonsByModuleParams{
-			TenantID: tenantID,
-			ModuleID: m.ID,
-		})
+		lessonRows, err := s.read.ListLearningLessonsByModule(ctx,
+
+			m.ID,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("list lessons by module: %w", err)
 		}
@@ -593,8 +593,8 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	durationLabel, durationISO := formatTrackDuration(totalMinutes)
 
 	detail := &TrackDetail{
-		ID:                      track.ID,
-		TenantID:                track.TenantID,
+		ID: track.ID,
+
 		Title:                   track.Title,
 		Slug:                    track.Slug,
 		Description:             track.Description,
@@ -681,9 +681,9 @@ func formatTrackDuration(totalMinutes int) (label, iso string) {
 // GetModuleBySlug retrieves a module by its slug.
 func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UUID, slug string) (*Module, error) {
 	r, err := s.read.GetLearningModuleBySlug(ctx, gen.GetLearningModuleBySlugParams{
-		TenantID: tenantID,
-		TrackID:  trackID,
-		Slug:     slug,
+
+		TrackID: trackID,
+		Slug:    slug,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get module by slug: %w", err)
@@ -696,10 +696,10 @@ func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UU
 
 // GetModuleByID retrieves a module by its ID.
 func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*Module, error) {
-	r, err := s.read.GetLearningModuleByID(ctx, gen.GetLearningModuleByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	r, err := s.read.GetLearningModuleByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get module by id: %w", err)
 	}
@@ -712,7 +712,7 @@ func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*M
 // CreateModule creates a new module in a track.
 func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
 	r, err := s.write.CreateLearningModule(ctx, gen.CreateLearningModuleParams{
-		TenantID:    tenantID,
+
 		TrackID:     trackID,
 		Title:       input.Title,
 		Slug:        input.Slug,
@@ -731,7 +731,7 @@ func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID,
 // UpdateModule updates an existing module.
 func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
 	r, err := s.write.UpdateLearningModule(ctx, gen.UpdateLearningModuleParams{
-		TenantID:    tenantID,
+
 		ID:          id,
 		Title:       input.Title,
 		Description: input.Description,
@@ -764,7 +764,7 @@ func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) erro
 
 // ListAllModules returns all modules for a tenant (admin view).
 func (s *Store) ListAllModules(ctx context.Context, tenantID pgtype.UUID) ([]Module, error) {
-	rows, err := s.read.ListAllLearningModules(ctx, tenantID)
+	rows, err := s.read.ListAllLearningModules(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all modules: %w", err)
 	}
@@ -780,7 +780,7 @@ func (s *Store) ListAllModules(ctx context.Context, tenantID pgtype.UUID) ([]Mod
 
 // ListAllLessons returns all lessons for a tenant (admin view).
 func (s *Store) ListAllLessons(ctx context.Context, tenantID pgtype.UUID) ([]Lesson, error) {
-	rows, err := s.read.ListAllLearningLessons(ctx, tenantID)
+	rows, err := s.read.ListAllLearningLessons(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all lessons: %w", err)
 	}
@@ -866,8 +866,8 @@ func buildLesson(
 	}
 
 	return Lesson{
-		ID:              id,
-		TenantID:        tenantID,
+		ID: id,
+
 		ModuleID:        moduleID,
 		Title:           title,
 		Slug:            slug,
@@ -915,8 +915,8 @@ func lessonFromListRow(r gen.ListAllLearningLessonsRow) Lesson {
 	}
 
 	return Lesson{
-		ID:              r.ID,
-		TenantID:        r.TenantID,
+		ID: r.ID,
+
 		ModuleID:        r.ModuleID,
 		ModuleTitle:     r.ModuleTitle,
 		Title:           r.Title,
@@ -934,10 +934,10 @@ func lessonFromListRow(r gen.ListAllLearningLessonsRow) Lesson {
 
 // ListLessonsByModule lists all lessons for a module.
 func (s *Store) ListLessonsByModule(ctx context.Context, tenantID, moduleID pgtype.UUID) ([]Lesson, error) {
-	rows, err := s.read.ListLearningLessonsByModule(ctx, gen.ListLearningLessonsByModuleParams{
-		TenantID: tenantID,
-		ModuleID: moduleID,
-	})
+	rows, err := s.read.ListLearningLessonsByModule(ctx,
+
+		moduleID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list lessons by module: %w", err)
 	}
@@ -954,7 +954,7 @@ func (s *Store) ListLessonsByModule(ctx context.Context, tenantID, moduleID pgty
 // GetLessonBySlug retrieves a lesson by its slug.
 func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string) (*Lesson, error) {
 	r, err := s.read.GetLearningLessonBySlug(ctx, gen.GetLearningLessonBySlugParams{
-		TenantID: tenantID,
+
 		ModuleID: moduleID,
 		Slug:     slug,
 	})
@@ -997,7 +997,7 @@ type LessonDetail struct {
 // lesson player can show the "Completed" state on SSR render.
 func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string, userID ...pgtype.UUID) (*LessonDetail, error) {
 	r, err := s.read.GetLearningLessonDetailBySlug(ctx, gen.GetLearningLessonDetailBySlugParams{
-		TenantID: tenantID,
+
 		ModuleID: moduleID,
 		Slug:     slug,
 	})
@@ -1012,8 +1012,8 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 
 	detail := &LessonDetail{
 		Lesson: Lesson{
-			ID:              r.ID,
-			TenantID:        r.TenantID,
+			ID: r.ID,
+
 			ModuleID:        r.ModuleID,
 			Title:           r.Title,
 			Slug:            r.Slug,
@@ -1048,10 +1048,9 @@ func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.U
 	}
 
 	// Compute prev/next lesson navigation across the whole track.
-	navRows, err := s.read.ListTrackLessonsForNav(ctx, gen.ListTrackLessonsForNavParams{
-		TrackID:  r.TrackID,
-		TenantID: tenantID,
-	})
+	navRows, err := s.read.ListTrackLessonsForNav(ctx,
+		r.TrackID,
+	)
 	if err == nil {
 		for i, row := range navRows {
 			if row.ID == r.ID {
@@ -1136,10 +1135,10 @@ func renderLessonContentHTML(content *string) string {
 
 // GetLessonByID retrieves a lesson by its ID.
 func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*Lesson, error) {
-	r, err := s.read.GetLearningLessonByID(ctx, gen.GetLearningLessonByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	r, err := s.read.GetLearningLessonByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get lesson by id: %w", err)
 	}
@@ -1152,7 +1151,7 @@ func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*L
 // CreateLesson creates a new lesson in a module.
 func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
 	r, err := s.write.CreateLearningLesson(ctx, gen.CreateLearningLessonParams{
-		TenantID:        tenantID,
+
 		ModuleID:        moduleID,
 		Title:           input.Title,
 		Slug:            input.Slug,
@@ -1176,7 +1175,7 @@ func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID
 // UpdateLesson updates an existing lesson.
 func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
 	r, err := s.write.UpdateLearningLesson(ctx, gen.UpdateLearningLessonParams{
-		TenantID:        tenantID,
+
 		ID:              id,
 		Title:           input.Title,
 		LessonType:      input.LessonType,
@@ -1243,8 +1242,8 @@ func (s *Store) GetProgress(ctx context.Context, userID, lessonID pgtype.UUID) (
 	}
 
 	return &Progress{
-		ID:          r.ID,
-		TenantID:    r.TenantID,
+		ID: r.ID,
+
 		UserID:      r.UserID,
 		LessonID:    r.LessonID,
 		Status:      r.Status,
@@ -1268,7 +1267,7 @@ func (s *Store) UpsertProgress(ctx context.Context, tenantID, userID, lessonID p
 	}
 
 	r, err := s.write.UpsertLessonProgress(ctx, gen.UpsertLessonProgressParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		LessonID:    lessonID,
 		Status:      input.Status,
@@ -1279,8 +1278,8 @@ func (s *Store) UpsertProgress(ctx context.Context, tenantID, userID, lessonID p
 	}
 
 	return &Progress{
-		ID:          r.ID,
-		TenantID:    r.TenantID,
+		ID: r.ID,
+
 		UserID:      r.UserID,
 		LessonID:    r.LessonID,
 		Status:      r.Status,
@@ -1346,8 +1345,8 @@ func certFromRow(r gen.LearningCertificate) Certificate {
 	}
 
 	return Certificate{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		UserID:            r.UserID,
 		TrackID:           r.TrackID,
 		CertificateNumber: r.CertificateNumber,
@@ -1371,8 +1370,8 @@ func certFromListRow(r gen.ListLearningCertificatesByUserRow) Certificate {
 	}
 
 	return Certificate{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		UserID:            r.UserID,
 		TrackID:           r.TrackID,
 		CertificateNumber: r.CertificateNumber,
@@ -1403,7 +1402,7 @@ func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID)
 // IssueCertificate issues a certificate for a completed track.
 func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID pgtype.UUID, certificateNumber string) (*Certificate, error) {
 	r, err := s.write.IssueLearningCertificate(ctx, gen.IssueLearningCertificateParams{
-		TenantID:          tenantID,
+
 		UserID:            userID,
 		TrackID:           trackID,
 		CertificateNumber: certificateNumber,
@@ -1431,10 +1430,10 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 
 // ListCertificatesByUser lists a user's certificates, tenant-scoped.
 func (s *Store) ListCertificatesByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Certificate, error) {
-	rows, err := s.read.ListLearningCertificatesByUser(ctx, gen.ListLearningCertificatesByUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	rows, err := s.read.ListLearningCertificatesByUser(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list certificates by user: %w", err)
 	}
@@ -1466,8 +1465,8 @@ func (s *Store) GetCertificateByID(ctx context.Context, certID pgtype.UUID) (*Ce
 	}
 
 	c := Certificate{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		UserID:            r.UserID,
 		TrackID:           r.TrackID,
 		CertificateNumber: r.CertificateNumber,
@@ -1518,7 +1517,7 @@ type Enrollment struct {
 // 500 db_error.
 func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
 	r, err := s.write.CreateEnrollment(ctx, gen.CreateEnrollmentParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		TrackID:    trackID,
 		AccessType: accessType,
@@ -1546,10 +1545,9 @@ func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype
 // feeds GET /me/enrollments, which the Continue Learning card and lesson
 // player progress ring consume (ADR-060 CSR boundary).
 func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Enrollment, error) {
-	rows, err := s.read.ListEnrollmentsByUserIDWithDetails(ctx, gen.ListEnrollmentsByUserIDWithDetailsParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	rows, err := s.read.ListEnrollmentsByUserIDWithDetails(ctx,
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list enrollments by user: %w", err)
 	}
@@ -1603,9 +1601,8 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 // GetEnrollment retrieves a specific enrollment.
 func (s *Store) GetEnrollment(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (*Enrollment, error) {
 	r, err := s.read.GetEnrollmentByUserAndTrack(ctx, gen.GetEnrollmentByUserAndTrackParams{
-		UserID:   userID,
-		TrackID:  trackID,
-		TenantID: tenantID,
+		UserID:  userID,
+		TrackID: trackID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("get enrollment: %w", err)
@@ -1670,7 +1667,7 @@ type EnrollmentRow struct {
 // ListEnrollmentsByTrack returns paginated enrollments for a track with user info.
 func (s *Store) ListEnrollmentsByTrack(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
 	rows, err := s.read.ListEnrollmentsByTrackID(ctx, gen.ListEnrollmentsByTrackIDParams{
-		TenantID:   tenantID,
+
 		TrackID:    trackID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -1682,8 +1679,8 @@ func (s *Store) ListEnrollmentsByTrack(ctx context.Context, tenantID, trackID pg
 	result := make([]EnrollmentRow, len(rows))
 	for i, r := range rows {
 		result[i] = EnrollmentRow{
-			ID:          r.ID,
-			TenantID:    r.TenantID,
+			ID: r.ID,
+
 			UserID:      r.UserID,
 			TrackID:     r.TrackID,
 			AccessType:  r.AccessType,
@@ -1717,10 +1714,10 @@ type QuizQuestion struct {
 // explanations. Used by the public GET /learn/quizzes/:id endpoint so users
 // cannot read the correct answers before submitting (§36: "no answers revealed").
 func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
-	rows, err := s.read.GetQuizQuestionsByLesson(ctx, gen.GetQuizQuestionsByLessonParams{
-		TenantID: tenantID,
-		LessonID: lessonID,
-	})
+	rows, err := s.read.GetQuizQuestionsByLesson(ctx,
+
+		lessonID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get quiz questions: %w", err)
 	}
@@ -1746,10 +1743,10 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 // explanations for grading (POST /learn/quizzes/:id/submit). This is the only
 // path that includes the Answer field.
 func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
-	rows, err := s.read.GetQuizQuestionsByLesson(ctx, gen.GetQuizQuestionsByLessonParams{
-		TenantID: tenantID,
-		LessonID: lessonID,
-	})
+	rows, err := s.read.GetQuizQuestionsByLesson(ctx,
+
+		lessonID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get quiz questions with answers: %w", err)
 	}
@@ -1808,7 +1805,7 @@ type TrackReviewAggregate struct {
 // review_aggregates rollup (Section 29). AUDIT-BE-ROUTE-040: entity_type=learning_track.
 func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
 	row, err := s.write.CreateReview(ctx, gen.CreateReviewParams{
-		TenantID:       tenantID,
+
 		EntityType:     "learning_track",
 		EntityID:       trackID,
 		ReviewerUserID: reviewerID,
@@ -1823,7 +1820,7 @@ func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, review
 	// Maintain the review_aggregates rollup so GetTrackReviewAggregate can
 	// read the precomputed count/avg instead of scanning all review rows.
 	if _, aggErr := s.write.UpsertReviewAggregate(ctx, gen.UpsertReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: "learning_track",
 		EntityID:   trackID,
 	}); aggErr != nil {
@@ -1840,7 +1837,7 @@ func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, review
 // for the Reviews tab (ADR-060). Ref: Section 29 polymorphic reviews.
 func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
 	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
-		TenantID:   tenantID,
+
 		EntityType: "learning_track",
 		EntityID:   trackID,
 		PageLimit:  limit,
@@ -1863,7 +1860,7 @@ func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.U
 // Falls back to zeros when no aggregate row exists yet (no reviews posted).
 func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID pgtype.UUID) (TrackReviewAggregate, error) {
 	agg, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: "learning_track",
 		EntityID:   trackID,
 	})

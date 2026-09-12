@@ -92,7 +92,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	offset, limit := computePagination(page, pageSize)
 
 	rows, err := h.Queries.ListTemplateLiterals(r.Context(), gen.ListTemplateLiteralsParams{
-		TenantID:   tenantID,
+
 		Search:     q,
 		IsActive:   isActive,
 		Kind:       kind,
@@ -107,7 +107,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, err := h.Queries.CountTemplateLiterals(r.Context(), gen.CountTemplateLiteralsParams{
-		TenantID: tenantID,
+
 		Search:   q,
 		IsActive: isActive,
 		Kind:     kind,
@@ -183,7 +183,7 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lit, err := h.Queries.CreateTemplateLiteral(r.Context(), gen.CreateTemplateLiteralParams{
-		TenantID:    tenantID,
+
 		Key:         req.Key,
 		Kind:        req.Kind,
 		Value:       req.Value,
@@ -246,10 +246,10 @@ func (h *Handlers) parseCreateRequest(w http.ResponseWriter, r *http.Request) (L
 }
 
 func (h *Handlers) requireUniqueLiteralKey(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID, key string) bool {
-	_, err := h.Queries.GetTemplateLiteralByKey(ctx, gen.GetTemplateLiteralByKeyParams{
-		TenantID: tenantID,
-		Key:      key,
-	})
+	_, err := h.Queries.GetTemplateLiteralByKey(ctx,
+
+		key,
+	)
 	if err == nil {
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_key", "A literal with this key already exists")
 		return false
@@ -280,10 +280,10 @@ func (h *Handlers) GetLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lit, err := h.Queries.GetTemplateLiteral(r.Context(), gen.GetTemplateLiteralParams{
-		TenantID: tenantID,
-		ID:       pgtype.UUID{Bytes: id, Valid: true},
-	})
+	lit, err := h.Queries.GetTemplateLiteral(r.Context(),
+
+		pgtype.UUID{Bytes: id, Valid: true},
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
@@ -343,10 +343,10 @@ func (h *Handlers) loadLiteralForUpdate(w http.ResponseWriter, r *http.Request, 
 		return uuid.UUID{}, gen.TemplateLiteral{}, false
 	}
 
-	existing, err := h.Queries.GetTemplateLiteral(r.Context(), gen.GetTemplateLiteralParams{
-		TenantID: tenantID,
-		ID:       pgtype.UUID{Bytes: id, Valid: true},
-	})
+	existing, err := h.Queries.GetTemplateLiteral(r.Context(),
+
+		pgtype.UUID{Bytes: id, Valid: true},
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
@@ -399,8 +399,8 @@ func (h *Handlers) buildUpdateParams(w http.ResponseWriter, tenantID pgtype.UUID
 		Description: ptrString(description),
 		Category:    ptrString(category),
 		IsActive:    isActive,
-		TenantID:    tenantID,
-		ID:          pgtype.UUID{Bytes: id, Valid: true},
+
+		ID: pgtype.UUID{Bytes: id, Valid: true},
 	}, true
 }
 
@@ -443,10 +443,10 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.Queries.GetTemplateLiteral(r.Context(), gen.GetTemplateLiteralParams{
-		TenantID: tenantID,
-		ID:       pgtype.UUID{Bytes: id, Valid: true},
-	})
+	existing, err := h.Queries.GetTemplateLiteral(r.Context(),
+
+		pgtype.UUID{Bytes: id, Valid: true},
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Literal not found")
@@ -463,10 +463,10 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Queries.DeleteTemplateLiteral(r.Context(), gen.DeleteTemplateLiteralParams{
-		TenantID: tenantID,
-		ID:       pgtype.UUID{Bytes: id, Valid: true},
-	}); err != nil {
+	if err := h.Queries.DeleteTemplateLiteral(r.Context(),
+
+		pgtype.UUID{Bytes: id, Valid: true},
+	); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete literal")
 		return
 	}

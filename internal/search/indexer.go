@@ -82,10 +82,9 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 
 	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
 
-	row, err := ix.read.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       pgtype.UUID{Bytes: contentID, Valid: true},
-		TenantID: tID,
-	})
+	row, err := ix.read.GetContentByID(ctx,
+		pgtype.UUID{Bytes: contentID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching content for index: %w", err)
 	}
@@ -101,8 +100,8 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID, tenantID [16]byt
 	}
 
 	doc := contentDocument{
-		ID:                row.ID.String(),
-		TenantID:          row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Title:             row.Title,
 		Slug:              row.Slug,
 		Excerpt:           buildExcerpt(row.Body),
@@ -138,9 +137,9 @@ func (ix *Indexer) resolveRelevantCountries(ctx context.Context, tenantID, geoSp
 
 	currentID := geoSpaceID
 	for range maxDepth {
-		space, err := ix.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-			ID: currentID, TenantID: tenantID,
-		})
+		space, err := ix.read.GetSpaceByID(ctx,
+			currentID,
+		)
 		if err != nil {
 			return []string{}
 		}
@@ -357,18 +356,17 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 		return nil
 	}
 
-	row, err := ix.read.GetForumThreadByID(ctx, gen.GetForumThreadByIDParams{
-		ID:       pgtype.UUID{Bytes: threadID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetForumThreadByID(ctx,
+		pgtype.UUID{Bytes: threadID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching forum thread for index: %w", err)
 	}
 
 	bodyText := string(row.Body)
 	doc := forumThreadDocument{
-		ID:           row.ID.String(),
-		TenantID:     row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Title:        row.Title,
 		Slug:         row.Slug,
 		BodyPreview:  buildExcerpt(bodyText),
@@ -414,10 +412,9 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 		return nil
 	}
 
-	row, err := ix.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-		ID:       pgtype.UUID{Bytes: spaceID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetSpaceByID(ctx,
+		pgtype.UUID{Bytes: spaceID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching space for index: %w", err)
 	}
@@ -428,8 +425,8 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 	}
 
 	doc := spaceDocument{
-		ID:          row.ID.String(),
-		TenantID:    row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Name:        row.Name,
 		Slug:        row.Slug,
 		Description: desc,
@@ -520,8 +517,8 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 	}
 
 	doc := userDocument{
-		ID:          row.UserID.String(),
-		TenantID:    tID.String(),
+		ID: row.UserID.String(),
+
 		Username:    row.Username,
 		DisplayName: displayName,
 		Bio:         bio,
@@ -563,10 +560,9 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 		return nil
 	}
 
-	row, err := ix.read.GetForumTagByID(ctx, gen.GetForumTagByIDParams{
-		ID:       pgtype.UUID{Bytes: tagID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetForumTagByID(ctx,
+		pgtype.UUID{Bytes: tagID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching forum tag for index: %w", err)
 	}
@@ -577,8 +573,8 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
 	}
 
 	doc := tagDocument{
-		ID:           row.ID.String(),
-		TenantID:     row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Name:         row.Name,
 		Slug:         row.Slug,
 		Description:  desc,
@@ -607,10 +603,9 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]by
 		return nil
 	}
 
-	row, err := ix.read.GetTagByID(ctx, gen.GetTagByIDParams{
-		ID:       pgtype.UUID{Bytes: tagID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetTagByID(ctx,
+		pgtype.UUID{Bytes: tagID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching directory tag for index: %w", err)
 	}
@@ -621,8 +616,8 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]by
 	}
 
 	doc := tagDocument{
-		ID:           row.ID.String(),
-		TenantID:     row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Name:         row.Name,
 		Slug:         row.Slug,
 		Description:  desc,
@@ -671,10 +666,9 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 		return nil
 	}
 
-	row, err := ix.read.GetOrganizationByID(ctx, gen.GetOrganizationByIDParams{
-		ID:       pgtype.UUID{Bytes: orgID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetOrganizationByID(ctx,
+		pgtype.UUID{Bytes: orgID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching organization for index: %w", err)
 	}
@@ -696,8 +690,8 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 	}
 
 	doc := organizationDocument{
-		ID:          row.ID.String(),
-		TenantID:    row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Name:        row.Name,
 		Slug:        row.Slug,
 		Description: desc,
@@ -773,8 +767,8 @@ func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tena
 	}
 
 	doc := languageTestRequirementDocument{
-		ID:                 row.id,
-		TenantID:           row.tenantID,
+		ID: row.id,
+
 		TestSlug:           row.testSlug,
 		TestName:           row.testName,
 		MinimumScore:       row.minimumScore,
@@ -911,9 +905,9 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
 	trID := pgtype.UUID{Bytes: trackID, Valid: true}
 
-	row, err := ix.read.GetUniversityTrackByID(ctx, gen.GetUniversityTrackByIDParams{
-		TenantID: tID, ID: trID,
-	})
+	row, err := ix.read.GetUniversityTrackByID(ctx,
+		trID,
+	)
 	if err != nil {
 		return fmt.Errorf("fetching learning track for index: %w", err)
 	}
@@ -935,8 +929,8 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 	}
 
 	doc := learningTrackDocument{
-		ID:            row.ID.String(),
-		TenantID:      row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Title:         row.Title,
 		Slug:          row.Slug,
 		Description:   desc,
@@ -989,17 +983,16 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) 
 		return nil
 	}
 
-	row, err := ix.read.GetDocPageByID(ctx, gen.GetDocPageByIDParams{
-		ID:       pgtype.UUID{Bytes: pageID, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tenantID, Valid: true},
-	})
+	row, err := ix.read.GetDocPageByID(ctx,
+		pgtype.UUID{Bytes: pageID, Valid: true},
+	)
 	if err != nil {
 		return fmt.Errorf("fetching doc page for index: %w", err)
 	}
 
 	doc := docPageDocument{
-		ID:           row.ID.String(),
-		TenantID:     row.TenantID.String(),
+		ID: row.ID.String(),
+
 		Title:        row.Title,
 		Slug:         row.Slug,
 		Audience:     row.Audience,
@@ -1067,7 +1060,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 
 	for {
 		rows, err := ix.read.ListContentsByTenant(ctx, gen.ListContentsByTenantParams{
-			TenantID:        tenantID,
+
 			Q:               "",
 			CursorCreatedAt: contentCursor,
 			PageLimit:       reindexBatchSize,
@@ -1104,7 +1097,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 
 	for {
 		rows, err := ix.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
-			TenantID:        tenantID,
+
 			CursorCreatedAt: threadCursor,
 			PageLimit:       reindexBatchSize,
 		})
@@ -1137,7 +1130,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// Forum tags — offset-paginated.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListForumTags(ctx, gen.ListForumTagsParams{
-			TenantID:   tenantID,
+
 			PageOffset: offset,
 			PageLimit:  reindexBatchSize,
 		})
@@ -1168,7 +1161,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// index with forum tags; directory docs link to /tags/{slug}.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListTagsPaginated(ctx, gen.ListTagsPaginatedParams{
-			TenantID:   tenantID,
+
 			Q:          "",
 			Sort:       "newest",
 			PageOffset: offset,
@@ -1200,7 +1193,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// Spaces — offset-paginated via the admin list query.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
-			TenantID:   tenantID,
+
 			Search:     "",
 			Status:     "",
 			Visibility: "",
@@ -1268,7 +1261,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// the full row via GetUniversityTrackByID.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
-			TenantID:   tenantID,
+
 			Category:   "",
 			Language:   "",
 			IsFree:     false,
@@ -1299,7 +1292,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	}
 
 	// Doc pages — single query returns all for the tenant.
-	docRows, err := ix.read.ListAllDocPages(ctx, tenantID)
+	docRows, err := ix.read.ListAllDocPages(ctx)
 	if err != nil {
 		slog.Warn("search:reindex: listing doc pages failed", "error", err)
 
@@ -1318,14 +1311,12 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 
 	// Organizations — offset-paginated via ListOrganizations with empty filters.
 	for offset := int32(0); ; offset += reindexBatchSize {
-		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
-			TenantID: tenantID,
-			Column2:  "", // org_type filter (empty = all)
-			Column3:  "", // country_code filter (empty = all)
-			Column4:  "", // name search (empty = all)
-			Column5:  "", // verified filter (empty = all)
-			Limit:    reindexBatchSize,
-			Offset:   offset,
+		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: "", Column2: // org_type filter (empty = all)
+		"", Column3:// country_code filter (empty = all)
+		"", Column4:// name search (empty = all)
+		"", // verified filter (empty = all)
+			Limit:  reindexBatchSize,
+			Offset: offset,
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing organizations failed", "error", err)

@@ -52,7 +52,7 @@ func (s *Service) GetTopContent(ctx context.Context, tenantID pgtype.UUID, perio
 	days := periodToDays(period)
 
 	return s.store.TopContent(ctx, gen.AdvancedAnalyticsTopContentParams{
-		TenantID:    tenantID,
+
 		Days:        int32(days), // #nosec
 		ContentType: contentType,
 		TopN:        int32(limit), // #nosec
@@ -81,7 +81,7 @@ func (s *Service) GetRevenueStreams(ctx context.Context, tenantID pgtype.UUID, p
 	}
 
 	return s.store.RevenueStreams(ctx, gen.AdvancedAnalyticsRevenueStreamsParams{
-		TenantID:  tenantID,
+
 		FromMonth: fromMonth,
 	})
 }
@@ -93,9 +93,9 @@ func (s *Service) GetAdPerformance(ctx context.Context, tenantID pgtype.UUID, st
 	}
 
 	return s.store.AdPerformance(ctx, gen.AdvancedAnalyticsAdPerformanceParams{
-		TenantID: tenantID,
-		Status:   status,
-		TopN:     int32(limit), // #nosec
+
+		Status: status,
+		TopN:   int32(limit), // #nosec
 	})
 }
 
@@ -106,8 +106,8 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, tenantID pgtype.U
 	}
 
 	return s.store.NewsletterEngagement(ctx, gen.AdvancedAnalyticsNewsletterEngagementParams{
-		TenantID: tenantID,
-		TopN:     int32(limit), // #nosec
+
+		TopN: int32(limit), // #nosec
 	})
 }
 
@@ -125,7 +125,7 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, tenantID pgtype.UUID,
 	fromDate := pgtype.Timestamptz{Time: time.Now().AddDate(0, -3, 0), Valid: true}
 
 	return s.store.RetentionCohorts(ctx, gen.AdvancedAnalyticsRetentionCohortsParams{
-		TenantID: tenantID,
+
 		FromDate: fromDate,
 		TopN:     int32(limit), // #nosec
 	})

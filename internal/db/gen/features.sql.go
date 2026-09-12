@@ -91,8 +91,8 @@ func (q *Queries) ListFeatureFlags(ctx context.Context) ([]ListFeatureFlagsRow, 
 }
 
 const upsertFeatureFlagEnabled = `-- name: UpsertFeatureFlagEnabled :exec
-INSERT INTO feature_flags (key, enabled, updated_by)
-VALUES ($1, $2, $3)
+INSERT INTO feature_flags (key, enabled, updated_by) VALUES ($1, $2, $3)
+
 ON CONFLICT (key)
 DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()
 `
@@ -109,8 +109,8 @@ func (q *Queries) UpsertFeatureFlagEnabled(ctx context.Context, arg UpsertFeatur
 }
 
 const upsertFeatureFlagWithConfig = `-- name: UpsertFeatureFlagWithConfig :exec
-INSERT INTO feature_flags (key, enabled, config, updated_by)
-VALUES ($1, $2, $3, $4)
+INSERT INTO feature_flags (key, enabled, config, updated_by) VALUES ($1, $2, $3, $4)
+
 ON CONFLICT (key)
 DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()
 `

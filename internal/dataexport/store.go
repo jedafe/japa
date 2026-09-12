@@ -37,10 +37,9 @@ func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataExportP
 
 // Get retrieves a single export by ID within a tenant.
 func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (gen.PlatformDataExport, error) {
-	return s.queries.GetPlatformDataExport(ctx, gen.GetPlatformDataExportParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.queries.GetPlatformDataExport(ctx,
+		id,
+	)
 }
 
 // GetByID retrieves a single export by ID only (no tenant filter).
@@ -52,7 +51,7 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataEx
 // List returns paginated exports for a tenant, optionally filtered by status.
 func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.PlatformDataExport, error) {
 	return s.queries.ListPlatformDataExports(ctx, gen.ListPlatformDataExportsParams{
-		TenantID:  tenantID,
+
 		Status:    status,
 		LimitVal:  limit,
 		OffsetVal: offset,
@@ -61,10 +60,10 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, l
 
 // Count returns the total number of exports for a tenant, optionally filtered.
 func (s *Store) Count(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
-	return s.queries.CountPlatformDataExports(ctx, gen.CountPlatformDataExportsParams{
-		TenantID: tenantID,
-		Status:   status,
-	})
+	return s.queries.CountPlatformDataExports(ctx,
+
+		status,
+	)
 }
 
 // UpdateStatus updates an export's status, file URL, size, and error message.
@@ -74,10 +73,9 @@ func (s *Store) UpdateStatus(ctx context.Context, params gen.UpdatePlatformDataE
 
 // Delete removes an export row.
 func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.queries.DeletePlatformDataExport(ctx, gen.DeletePlatformDataExportParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.queries.DeletePlatformDataExport(ctx,
+		id,
+	)
 }
 
 // ListPending returns exports with status='pending' for the worker.

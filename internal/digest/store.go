@@ -793,7 +793,7 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.U
 
 	for {
 		rows, err := q.GetDigestSubscribers(ctx, gen.GetDigestSubscribersParams{
-			TenantID:   tenantID,
+
 			PageOffset: (page - 1) * pageSize,
 			PageLimit:  pageSize,
 		})
@@ -826,9 +826,9 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.U
 func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, tenantID pgtype.UUID, emailAddr string) (string, error) {
 	q := gen.New(s.pool.Reader)
 
-	sub, err := q.GetSubscriberByEmail(ctx, gen.GetSubscriberByEmailParams{
-		TenantID: tenantID, Email: emailAddr,
-	})
+	sub, err := q.GetSubscriberByEmail(ctx,
+		emailAddr,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil

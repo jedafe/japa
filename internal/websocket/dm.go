@@ -42,10 +42,9 @@ func NewStore(read, write *gen.Queries) *Store {
 // returns the generated ticket row so the caller can return the ID to the
 // client and cache it in Valkey under jc:ws_ticket:{id}.
 func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID) (gen.CreateWSTicketRow, error) {
-	return s.write.CreateWSTicket(ctx, gen.CreateWSTicketParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.write.CreateWSTicket(ctx,
+		userID,
+	)
 }
 
 // UseWSTicket marks a ticket as used and returns it if valid. The tenant_id
@@ -53,9 +52,8 @@ func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID
 // consumed in tenant B context (Rule 4: tenant-scoped validation).
 func (s *Store) UseWSTicket(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.WsTicket, error) {
 	return s.write.UseWSTicket(ctx, gen.UseWSTicketParams{
-		ID:       id,
-		UserID:   userID,
-		TenantID: tenantID,
+		ID:     id,
+		UserID: userID,
 	})
 }
 
@@ -69,7 +67,7 @@ func (s *Store) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (g
 // GetOrCreateConversation gets existing or creates new DM conversation.
 func (s *DMStore) GetOrCreateConversation(ctx context.Context, tenantID, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error) {
 	return s.write.GetOrCreateConversation(ctx, gen.GetOrCreateConversationParams{
-		TenantID:       tenantID,
+
 		Participant1ID: participant1ID,
 		Participant2ID: participant2ID,
 	})
@@ -81,7 +79,7 @@ func (s *DMStore) GetOrCreateConversation(ctx context.Context, tenantID, partici
 // enforcement for already-active threads.
 func (s *DMStore) GetConversationByParticipants(ctx context.Context, tenantID, userA, userB pgtype.UUID) (gen.DmConversation, error) {
 	return s.read.GetConversationByParticipants(ctx, gen.GetConversationByParticipantsParams{
-		TenantID:       tenantID,
+
 		Participant1ID: userA,
 		Participant2ID: userB,
 	})
@@ -89,10 +87,9 @@ func (s *DMStore) GetConversationByParticipants(ctx context.Context, tenantID, u
 
 // GetConversationByID returns a conversation by ID and tenant.
 func (s *DMStore) GetConversationByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.DmConversation, error) {
-	return s.read.GetConversationByID(ctx, gen.GetConversationByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.read.GetConversationByID(ctx,
+		id,
+	)
 }
 
 // GetUserConversations returns paginated conversations for a user.
@@ -106,8 +103,8 @@ func (s *DMStore) GetUserConversations(ctx context.Context, tenantID, userID pgt
 	}
 
 	return s.read.GetUserConversations(ctx, gen.GetUserConversationsParams{
-		UserID:     userID,
-		TenantID:   tenantID,
+		UserID: userID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -118,8 +115,8 @@ func (s *DMStore) InsertDMMessage(ctx context.Context, tenantID, conversationID,
 	return s.write.InsertDMMessage(ctx, gen.InsertDMMessageParams{
 		ConversationID: conversationID,
 		SenderID:       senderID,
-		TenantID:       tenantID,
-		Body:           body,
+
+		Body: body,
 	})
 }
 
@@ -134,7 +131,7 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, convers
 	}
 
 	return s.read.GetConversationMessages(ctx, gen.GetConversationMessagesParams{
-		TenantID:       tenantID,
+
 		ConversationID: conversationID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -145,8 +142,8 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, tenantID, convers
 func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) error {
 	return s.write.MarkMessagesRead(ctx, gen.MarkMessagesReadParams{
 		ConversationID: conversationID,
-		TenantID:       tenantID,
-		UserID:         userID,
+
+		UserID: userID,
 	})
 }
 
@@ -155,8 +152,8 @@ func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID
 // the actual current time. The tenant_id scopes the update (Rule 4).
 func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, tenantID, conversationID pgtype.UUID, preview *string) error {
 	return s.write.UpdateConversationLastMessage(ctx, gen.UpdateConversationLastMessageParams{
-		ConversationID:     conversationID,
-		TenantID:           tenantID,
+		ConversationID: conversationID,
+
 		LastMessagePreview: preview,
 	})
 }
@@ -180,10 +177,9 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 // GetMessageRequest returns a message request for a conversation, scoped
 // to the tenant (Rule 4).
 func (s *DMStore) GetMessageRequest(ctx context.Context, tenantID, conversationID pgtype.UUID) (gen.DmRequest, error) {
-	return s.read.GetMessageRequest(ctx, gen.GetMessageRequestParams{
-		ConversationID: conversationID,
-		TenantID:       tenantID,
-	})
+	return s.read.GetMessageRequest(ctx,
+		conversationID,
+	)
 }
 
 // CreateMessageRequest creates a pending message request with the actual
@@ -191,7 +187,7 @@ func (s *DMStore) GetMessageRequest(ctx context.Context, tenantID, conversationI
 // ordering). Tenant-scoped (Rule 4).
 func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, requesterID, recipientID, conversationID pgtype.UUID, previewMessage string) error {
 	return s.write.CreateMessageRequest(ctx, gen.CreateMessageRequestParams{
-		TenantID:       tenantID,
+
 		RequesterID:    requesterID,
 		RecipientID:    recipientID,
 		ConversationID: conversationID,
@@ -204,8 +200,8 @@ func (s *DMStore) CreateMessageRequest(ctx context.Context, tenantID, requesterI
 func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, tenantID, conversationID pgtype.UUID, status string) error {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
 		ConversationID: conversationID,
-		TenantID:       tenantID,
-		Status:         status,
+
+		Status: status,
 	})
 }
 
@@ -220,7 +216,7 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recip
 	}
 
 	return s.read.GetPendingMessageRequests(ctx, gen.GetPendingMessageRequestsParams{
-		TenantID:    tenantID,
+
 		RecipientID: recipientID,
 		PageLimit:   limit,
 		PageOffset:  offset,
@@ -229,10 +225,9 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, tenantID, recip
 
 // GetUserDMPrivacy returns the DM privacy setting for a user.
 func (s *DMStore) GetUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	return s.read.GetUserDMPrivacy(ctx, gen.GetUserDMPrivacyParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.read.GetUserDMPrivacy(ctx,
+		userID,
+	)
 }
 
 // IsBlocked returns true if either user has blocked the other (bidirectional
@@ -242,7 +237,6 @@ func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
-		TenantID:  tenantID,
 	})
 }
 
@@ -251,7 +245,7 @@ func (s *DMStore) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // so we call it twice and AND the results.
 func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID) (bool, error) {
 	initiatorFollowsRecipient, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
-		TenantID:   tenantID,
+
 		EntityID:   recipientID,
 		FollowerID: initiatorID,
 	})
@@ -264,7 +258,7 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 	}
 
 	recipientFollowsInitiator, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
-		TenantID:   tenantID,
+
 		EntityID:   initiatorID,
 		FollowerID: recipientID,
 	})
@@ -278,8 +272,8 @@ func (s *DMStore) IsMutualFollow(ctx context.Context, tenantID, initiatorID, rec
 // UpsertUserDMPrivacy creates or updates the DM privacy setting.
 func (s *DMStore) UpsertUserDMPrivacy(ctx context.Context, tenantID, userID pgtype.UUID, privacy string) error {
 	return s.write.UpsertUserDMPrivacy(ctx, gen.UpsertUserDMPrivacyParams{
-		UserID:    userID,
-		TenantID:  tenantID,
+		UserID: userID,
+
 		DmPrivacy: privacy,
 	})
 }

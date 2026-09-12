@@ -47,7 +47,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 	}
 
 	return s.queries.ListAdSlotTypes(ctx, gen.ListAdSlotTypesParams{
-		TenantID:   tenantID,
+
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -55,32 +55,29 @@ func (s *Store) listAdSlotTypes(ctx context.Context, tenantID pgtype.UUID, limit
 
 func (s *Store) updateAdSlotType(ctx context.Context, id, tenantID pgtype.UUID, name, description string) (AdSlotType, error) {
 	return s.queries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		SlotName:    name,
 		Description: &description,
 	})
 }
 
 func (s *Store) deleteAdSlotType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.queries.DeleteAdSlotType(ctx, gen.DeleteAdSlotTypeParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.queries.DeleteAdSlotType(ctx,
+		id,
+	)
 }
 
 func (s *Store) deleteAdCampaign(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.queries.DeleteAdCampaign(ctx, gen.DeleteAdCampaignParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.queries.DeleteAdCampaign(ctx,
+		id,
+	)
 }
 
 func (s *Store) getCampaignStats(ctx context.Context, campaignID, tenantID pgtype.UUID) (map[string]any, error) {
-	row, err := s.queries.GetCampaignStats(ctx, gen.GetCampaignStatsParams{
-		CampaignID: campaignID,
-		TenantID:   tenantID,
-	})
+	row, err := s.queries.GetCampaignStats(ctx,
+		campaignID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get campaign stats: %w", err)
 	}
@@ -128,7 +125,7 @@ func (s *Store) listAdCampaignsByTenant(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	return s.queries.ListAdCampaignsByTenant(ctx, gen.ListAdCampaignsByTenantParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -140,7 +137,7 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, tenantID, slotTyp
 	}
 
 	return s.queries.ListActiveCampaignsBySlot(ctx, gen.ListActiveCampaignsBySlotParams{
-		TenantID:   tenantID,
+
 		SlotTypeID: slotTypeID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -167,11 +164,11 @@ func (s *Store) createAdNetwork(ctx context.Context, tenantID pgtype.UUID, input
 }
 
 func (s *Store) getAdNetworkByID(ctx context.Context, id, tenantID pgtype.UUID) (AdNetwork, error) {
-	return s.queries.GetAdNetworkByID(ctx, gen.GetAdNetworkByIDParams{ID: id, TenantID: tenantID})
+	return s.queries.GetAdNetworkByID(ctx, id)
 }
 
 func (s *Store) getAdNetworkByProvider(ctx context.Context, tenantID pgtype.UUID, provider string) (AdNetwork, error) {
-	return s.queries.GetAdNetworkByProvider(ctx, gen.GetAdNetworkByProviderParams{TenantID: tenantID, Provider: provider})
+	return s.queries.GetAdNetworkByProvider(ctx, provider)
 }
 
 func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]AdNetwork, error) {
@@ -180,14 +177,14 @@ func (s *Store) listAdNetworks(ctx context.Context, tenantID pgtype.UUID, limit,
 	}
 
 	return s.queries.ListAdNetworks(ctx, gen.ListAdNetworksParams{
-		TenantID:   tenantID,
+
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
 }
 
 func (s *Store) listActiveAdNetworks(ctx context.Context, tenantID pgtype.UUID) ([]AdNetwork, error) {
-	return s.queries.ListActiveAdNetworks(ctx, tenantID)
+	return s.queries.ListActiveAdNetworks(ctx)
 }
 
 func (s *Store) updateAdNetwork(ctx context.Context, id, tenantID pgtype.UUID, input gen.UpdateAdNetworkParams) (AdNetwork, error) {
@@ -195,9 +192,9 @@ func (s *Store) updateAdNetwork(ctx context.Context, id, tenantID pgtype.UUID, i
 }
 
 func (s *Store) deleteAdNetwork(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.queries.DeleteAdNetwork(ctx, gen.DeleteAdNetworkParams{ID: id, TenantID: tenantID})
+	return s.queries.DeleteAdNetwork(ctx, id)
 }
 
 func (s *Store) countAdNetworks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.queries.CountAdNetworks(ctx, tenantID)
+	return s.queries.CountAdNetworks(ctx)
 }

@@ -272,7 +272,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 	}
 
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
-		TenantID:         tenantID,
+
 		AuthorUserID:     authorID,
 		SourceType:       metadata.SourceType,
 		SourceUrl:        metadata.SourceURL,
@@ -334,7 +334,7 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 	}
 
 	source, err := s.store.CreateOrUpdateSource(ctx, gen.CreateOrUpdateVideoSourceParams{
-		TenantID:         tenantID,
+
 		AuthorUserID:     uploaderID,
 		SourceType:       SourceUpload,
 		SourceUrl:        sourceURL,
@@ -419,7 +419,7 @@ func (s *Service) SubmitClaim(ctx context.Context, tenantID, claimantUserID pgty
 	}
 
 	return s.store.CreateChannelClaim(ctx, gen.CreateVideoChannelClaimParams{
-		TenantID:          tenantID,
+
 		ClaimantUserID:    claimantUserID,
 		VideoAuthorUserID: videoAuthorUserID,
 		VideoSourceID:     targetSourceID,
@@ -563,10 +563,9 @@ func strPtrOrNil(s string) *string {
 
 // reviewClaimTx performs the claim review inside the passed queries (transaction).
 func (s *Service) reviewClaimTx(ctx context.Context, q *gen.Queries, tenantID, reviewerUserID, claimID pgtype.UUID, status string, notePtr *string) (gen.VideoChannelClaim, error) {
-	existing, err := q.GetVideoChannelClaimByID(ctx, gen.GetVideoChannelClaimByIDParams{
-		ID:       claimID,
-		TenantID: tenantID,
-	})
+	existing, err := q.GetVideoChannelClaimByID(ctx,
+		claimID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoChannelClaim{}, errpkg.ErrNotFound
@@ -590,7 +589,6 @@ func (s *Service) reviewClaimTx(ctx context.Context, q *gen.Queries, tenantID, r
 		ReviewedBy:     reviewerUserID,
 		ResolutionNote: notePtr,
 		ID:             claimID,
-		TenantID:       tenantID,
 	})
 }
 
@@ -620,7 +618,7 @@ func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, tenant
 	case "claim":
 		if err := q.ReassignVideoSourcesAuthor(ctx, gen.ReassignVideoSourcesAuthorParams{
 			NewAuthorUserID: existing.ClaimantUserID,
-			TenantID:        tenantID,
+
 			OldAuthorUserID: existing.VideoAuthorUserID,
 		}); err != nil {
 			return fmt.Errorf("reassigning video sources: %w", err)
@@ -636,9 +634,8 @@ func executeApprovedClaimSideEffects(ctx context.Context, q *gen.Queries, tenant
 		}
 
 		_, err := q.UpdateVideoSourceStatus(ctx, gen.UpdateVideoSourceStatusParams{
-			Status:   "removed",
-			ID:       existing.VideoSourceID,
-			TenantID: tenantID,
+			Status: "removed",
+			ID:     existing.VideoSourceID,
 		})
 		if err != nil {
 			return fmt.Errorf("removing video source: %w", err)
@@ -779,8 +776,8 @@ func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtyp
 	}
 
 	_, err = s.store.UpdateImportJob(ctx, gen.UpdateVideoImportJobParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		Status:        "pending",
 		TotalItems:    0,
 		ImportedCount: 0,
@@ -796,8 +793,8 @@ func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtyp
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(worker.BulkImportPayload{
 			ImportJobID: id.String(),
-			TenantID:    tenantID.String(),
-			UserID:      enqueueUserID.String(),
+
+			UserID: enqueueUserID.String(),
 		})
 		if err != nil {
 			return gen.VideoImportJob{}, fmt.Errorf("encoding bulk import payload: %w", err)
@@ -934,7 +931,7 @@ func (s *Service) EnqueueGenerateSummary(ctx context.Context, tenantID, userID, 
 	}
 
 	payload, err := json.Marshal(worker.GenerateSummaryPayload{
-		TenantID:      tenantID.String(),
+
 		UserID:        userID.String(),
 		VideoSourceID: videoSourceID.String(),
 	})

@@ -13,19 +13,17 @@ import (
 
 const countWithdrawalsByTenant = `-- name: CountWithdrawalsByTenant :one
 SELECT COUNT(*) FROM wallet_withdrawals
-WHERE tenant_id = $1
-  AND ($2::text IS NULL OR status = $2)
-  AND ($3::uuid IS NULL OR user_id = $3)
+WHERE ($1::text IS NULL OR status = $1)
+ AND ($2::uuid IS NULL OR user_id = $2)
 `
 
 type CountWithdrawalsByTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   *string     `json:"status"`
-	UserID   pgtype.UUID `json:"user_id"`
+	Status *string     `json:"status"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) CountWithdrawalsByTenant(ctx context.Context, arg CountWithdrawalsByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countWithdrawalsByTenant, arg.TenantID, arg.Status, arg.UserID)
+	row := q.db.QueryRow(ctx, countWithdrawalsByTenant, arg.Status, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -33,16 +31,11 @@ func (q *Queries) CountWithdrawalsByTenant(ctx context.Context, arg CountWithdra
 
 const countWithdrawalsByUser = `-- name: CountWithdrawalsByUser :one
 SELECT COUNT(*) FROM wallet_withdrawals
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountWithdrawalsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountWithdrawalsByUser(ctx context.Context, arg CountWithdrawalsByUserParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countWithdrawalsByUser, arg.TenantID, arg.UserID)
+func (q *Queries) CountWithdrawalsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countWithdrawalsByUser, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -50,33 +43,23 @@ func (q *Queries) CountWithdrawalsByUser(ctx context.Context, arg CountWithdrawa
 
 const deletePayoutProvider = `-- name: DeletePayoutProvider :exec
 DELETE FROM payout_providers
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeletePayoutProviderParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeletePayoutProvider(ctx context.Context, arg DeletePayoutProviderParams) error {
-	_, err := q.db.Exec(ctx, deletePayoutProvider, arg.ID, arg.TenantID)
+func (q *Queries) DeletePayoutProvider(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePayoutProvider, id)
 	return err
 }
 
 const deleteWithdrawalFeeTier = `-- name: DeleteWithdrawalFeeTier :one
 UPDATE wallet_withdrawal_fee_tiers
 SET is_active = false, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
-type DeleteWithdrawalFeeTierParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, arg DeleteWithdrawalFeeTierParams) (WalletWithdrawalFeeTier, error) {
-	row := q.db.QueryRow(ctx, deleteWithdrawalFeeTier, arg.ID, arg.TenantID)
+func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, id pgtype.UUID) (WalletWithdrawalFeeTier, error) {
+	row := q.db.QueryRow(ctx, deleteWithdrawalFeeTier, id)
 	var i WalletWithdrawalFeeTier
 	err := row.Scan(
 		&i.ID,
@@ -96,16 +79,11 @@ func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, arg DeleteWithdra
 
 const getPayoutProviderByType = `-- name: GetPayoutProviderByType :one
 SELECT id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
-WHERE tenant_id = $1 AND type = $2
+WHERE type = $1
 `
 
-type GetPayoutProviderByTypeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Type     string      `json:"type"`
-}
-
-func (q *Queries) GetPayoutProviderByType(ctx context.Context, arg GetPayoutProviderByTypeParams) (PayoutProvider, error) {
-	row := q.db.QueryRow(ctx, getPayoutProviderByType, arg.TenantID, arg.Type)
+func (q *Queries) GetPayoutProviderByType(ctx context.Context, type_ string) (PayoutProvider, error) {
+	row := q.db.QueryRow(ctx, getPayoutProviderByType, type_)
 	var i PayoutProvider
 	err := row.Scan(
 		&i.ID,
@@ -124,23 +102,17 @@ func (q *Queries) GetPayoutProviderByType(ctx context.Context, arg GetPayoutProv
 
 const getUserGroupByUserID = `-- name: GetUserGroupByUserID :one
 
-SELECT ug.id, ug.tenant_id, ug.name, ug.slug, ug.is_system,
-       ug.auto_withdrawal_limit, ug.requires_withdrawal_approval,
-       ug.created_at, ug.updated_at
+SELECT ug.id, ug.name, ug.slug, ug.is_system,
+ ug.auto_withdrawal_limit, ug.requires_withdrawal_approval,
+ ug.created_at, ug.updated_at
 FROM user_groups ug
 JOIN user_group_memberships ugm ON ugm.group_id = ug.id
-WHERE ugm.tenant_id = $1 AND ugm.user_id = $2
+WHERE ugm.user_id = $1
 LIMIT 1
 `
 
-type GetUserGroupByUserIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 type GetUserGroupByUserIDRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Name                       string             `json:"name"`
 	Slug                       string             `json:"slug"`
 	IsSystem                   bool               `json:"is_system"`
@@ -151,12 +123,11 @@ type GetUserGroupByUserIDRow struct {
 }
 
 // Wallet Withdrawal queries (Section 58 credit withdrawal amendment).
-func (q *Queries) GetUserGroupByUserID(ctx context.Context, arg GetUserGroupByUserIDParams) (GetUserGroupByUserIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserGroupByUserID, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserGroupByUserID(ctx context.Context, userID pgtype.UUID) (GetUserGroupByUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getUserGroupByUserID, userID)
 	var i GetUserGroupByUserIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.IsSystem,
@@ -170,16 +141,11 @@ func (q *Queries) GetUserGroupByUserID(ctx context.Context, arg GetUserGroupByUs
 
 const getWithdrawalByID = `-- name: GetWithdrawalByID :one
 SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetWithdrawalByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetWithdrawalByID(ctx context.Context, arg GetWithdrawalByIDParams) (WalletWithdrawal, error) {
-	row := q.db.QueryRow(ctx, getWithdrawalByID, arg.ID, arg.TenantID)
+func (q *Queries) GetWithdrawalByID(ctx context.Context, id pgtype.UUID) (WalletWithdrawal, error) {
+	row := q.db.QueryRow(ctx, getWithdrawalByID, id)
 	var i WalletWithdrawal
 	err := row.Scan(
 		&i.ID,
@@ -209,17 +175,16 @@ func (q *Queries) GetWithdrawalByID(ctx context.Context, arg GetWithdrawalByIDPa
 
 const getWithdrawalMethodByID = `-- name: GetWithdrawalMethodByID :one
 SELECT id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
-WHERE id = $1 AND tenant_id = $2 AND user_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type GetWithdrawalMethodByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) GetWithdrawalMethodByID(ctx context.Context, arg GetWithdrawalMethodByIDParams) (WalletWithdrawalMethod, error) {
-	row := q.db.QueryRow(ctx, getWithdrawalMethodByID, arg.ID, arg.TenantID, arg.UserID)
+	row := q.db.QueryRow(ctx, getWithdrawalMethodByID, arg.ID, arg.UserID)
 	var i WalletWithdrawalMethod
 	err := row.Scan(
 		&i.ID,
@@ -240,20 +205,11 @@ func (q *Queries) GetWithdrawalMethodByID(ctx context.Context, arg GetWithdrawal
 }
 
 const insertWithdrawal = `-- name: InsertWithdrawal :one
-INSERT INTO wallet_withdrawals (
-    tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount,
-    fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id,
-    payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11, $12,
-    $13, $14, $15, $16, $17, $18
-)
+INSERT INTO wallet_withdrawals (user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
 `
 
 type InsertWithdrawalParams struct {
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	CreditAmount   int64              `json:"credit_amount"`
 	CurrencyCode   string             `json:"currency_code"`
@@ -275,7 +231,6 @@ type InsertWithdrawalParams struct {
 
 func (q *Queries) InsertWithdrawal(ctx context.Context, arg InsertWithdrawalParams) (WalletWithdrawal, error) {
 	row := q.db.QueryRow(ctx, insertWithdrawal,
-		arg.TenantID,
 		arg.UserID,
 		arg.CreditAmount,
 		arg.CurrencyCode,
@@ -322,28 +277,22 @@ func (q *Queries) InsertWithdrawal(ctx context.Context, arg InsertWithdrawalPara
 }
 
 const insertWithdrawalFeeTier = `-- name: InsertWithdrawalFeeTier :one
-INSERT INTO wallet_withdrawal_fee_tiers (
-    tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
-)
+INSERT INTO wallet_withdrawal_fee_tiers (min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position) VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
 type InsertWithdrawalFeeTierParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	MinAmount int32       `json:"min_amount"`
-	MaxAmount *int32      `json:"max_amount"`
-	FeeType   string      `json:"fee_type"`
-	FeeValue  int32       `json:"fee_value"`
-	TierMode  string      `json:"tier_mode"`
-	IsActive  bool        `json:"is_active"`
-	Position  int32       `json:"position"`
+	MinAmount int32  `json:"min_amount"`
+	MaxAmount *int32 `json:"max_amount"`
+	FeeType   string `json:"fee_type"`
+	FeeValue  int32  `json:"fee_value"`
+	TierMode  string `json:"tier_mode"`
+	IsActive  bool   `json:"is_active"`
+	Position  int32  `json:"position"`
 }
 
 func (q *Queries) InsertWithdrawalFeeTier(ctx context.Context, arg InsertWithdrawalFeeTierParams) (WalletWithdrawalFeeTier, error) {
 	row := q.db.QueryRow(ctx, insertWithdrawalFeeTier,
-		arg.TenantID,
 		arg.MinAmount,
 		arg.MaxAmount,
 		arg.FeeType,
@@ -370,18 +319,11 @@ func (q *Queries) InsertWithdrawalFeeTier(ctx context.Context, arg InsertWithdra
 }
 
 const insertWithdrawalMethod = `-- name: InsertWithdrawalMethod :one
-INSERT INTO wallet_withdrawal_methods (
-    tenant_id, user_id, provider, label, account, currency_code,
-    is_verified, is_default, is_active, metadata
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10
-)
+INSERT INTO wallet_withdrawal_methods (user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
 `
 
 type InsertWithdrawalMethodParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	UserID       pgtype.UUID `json:"user_id"`
 	Provider     string      `json:"provider"`
 	Label        *string     `json:"label"`
@@ -395,7 +337,6 @@ type InsertWithdrawalMethodParams struct {
 
 func (q *Queries) InsertWithdrawalMethod(ctx context.Context, arg InsertWithdrawalMethodParams) (WalletWithdrawalMethod, error) {
 	row := q.db.QueryRow(ctx, insertWithdrawalMethod,
-		arg.TenantID,
 		arg.UserID,
 		arg.Provider,
 		arg.Label,
@@ -427,12 +368,12 @@ func (q *Queries) InsertWithdrawalMethod(ctx context.Context, arg InsertWithdraw
 
 const listPayoutProvidersByTenant = `-- name: ListPayoutProvidersByTenant :many
 SELECT id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
-WHERE tenant_id = $1
+
 ORDER BY is_default DESC, name
 `
 
-func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context, tenantID pgtype.UUID) ([]PayoutProvider, error) {
-	rows, err := q.db.Query(ctx, listPayoutProvidersByTenant, tenantID)
+func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context) ([]PayoutProvider, error) {
+	rows, err := q.db.Query(ctx, listPayoutProvidersByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -464,12 +405,12 @@ func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context, tenantID pgty
 
 const listWithdrawalFeeTiersByTenant = `-- name: ListWithdrawalFeeTiersByTenant :many
 SELECT id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at FROM wallet_withdrawal_fee_tiers
-WHERE tenant_id = $1 AND is_active = true
+WHERE is_active = true
 ORDER BY position, min_amount
 `
 
-func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context, tenantID pgtype.UUID) ([]WalletWithdrawalFeeTier, error) {
-	rows, err := q.db.Query(ctx, listWithdrawalFeeTiersByTenant, tenantID)
+func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context) ([]WalletWithdrawalFeeTier, error) {
+	rows, err := q.db.Query(ctx, listWithdrawalFeeTiersByTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -502,17 +443,12 @@ func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context, tenantID p
 
 const listWithdrawalMethodsByUser = `-- name: ListWithdrawalMethodsByUser :many
 SELECT id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
-WHERE tenant_id = $1 AND user_id = $2 AND is_active = true
+WHERE user_id = $1 AND is_active = true
 ORDER BY is_default DESC, created_at DESC
 `
 
-type ListWithdrawalMethodsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, arg ListWithdrawalMethodsByUserParams) ([]WalletWithdrawalMethod, error) {
-	rows, err := q.db.Query(ctx, listWithdrawalMethodsByUser, arg.TenantID, arg.UserID)
+func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, userID pgtype.UUID) ([]WalletWithdrawalMethod, error) {
+	rows, err := q.db.Query(ctx, listWithdrawalMethodsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -547,15 +483,13 @@ func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, arg ListWithd
 
 const listWithdrawalsByTenant = `-- name: ListWithdrawalsByTenant :many
 SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
-WHERE tenant_id = $1
-  AND ($2::text IS NULL OR status = $2)
-  AND ($3::uuid IS NULL OR user_id = $3)
+WHERE ($1::text IS NULL OR status = $1)
+ AND ($2::uuid IS NULL OR user_id = $2)
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListWithdrawalsByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     *string     `json:"status"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -564,7 +498,6 @@ type ListWithdrawalsByTenantParams struct {
 
 func (q *Queries) ListWithdrawalsByTenant(ctx context.Context, arg ListWithdrawalsByTenantParams) ([]WalletWithdrawal, error) {
 	rows, err := q.db.Query(ctx, listWithdrawalsByTenant,
-		arg.TenantID,
 		arg.Status,
 		arg.UserID,
 		arg.PageOffset,
@@ -612,25 +545,19 @@ func (q *Queries) ListWithdrawalsByTenant(ctx context.Context, arg ListWithdrawa
 
 const listWithdrawalsByUser = `-- name: ListWithdrawalsByUser :many
 SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListWithdrawalsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListWithdrawalsByUser(ctx context.Context, arg ListWithdrawalsByUserParams) ([]WalletWithdrawal, error) {
-	rows, err := q.db.Query(ctx, listWithdrawalsByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listWithdrawalsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -674,14 +601,14 @@ func (q *Queries) ListWithdrawalsByUser(ctx context.Context, arg ListWithdrawals
 const updateWithdrawalFeeTier = `-- name: UpdateWithdrawalFeeTier :one
 UPDATE wallet_withdrawal_fee_tiers
 SET min_amount = $1,
-    max_amount = $2,
-    fee_type = $3,
-    fee_value = $4,
-    tier_mode = $5,
-    is_active = $6,
-    position = $7,
-    updated_at = now()
-WHERE id = $8 AND tenant_id = $9
+ max_amount = $2,
+ fee_type = $3,
+ fee_value = $4,
+ tier_mode = $5,
+ is_active = $6,
+ position = $7,
+ updated_at = now()
+WHERE id = $8
 RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
@@ -694,7 +621,6 @@ type UpdateWithdrawalFeeTierParams struct {
 	IsActive  bool        `json:"is_active"`
 	Position  int32       `json:"position"`
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateWithdrawalFeeTier(ctx context.Context, arg UpdateWithdrawalFeeTierParams) (WalletWithdrawalFeeTier, error) {
@@ -707,7 +633,6 @@ func (q *Queries) UpdateWithdrawalFeeTier(ctx context.Context, arg UpdateWithdra
 		arg.IsActive,
 		arg.Position,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i WalletWithdrawalFeeTier
 	err := row.Scan(
@@ -729,9 +654,9 @@ func (q *Queries) UpdateWithdrawalFeeTier(ctx context.Context, arg UpdateWithdra
 const updateWithdrawalMethod = `-- name: UpdateWithdrawalMethod :one
 UPDATE wallet_withdrawal_methods
 SET is_default = $1,
-    is_active = $2,
-    updated_at = now()
-WHERE id = $3 AND tenant_id = $4
+ is_active = $2,
+ updated_at = now()
+WHERE id = $3
 RETURNING id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
 `
 
@@ -739,16 +664,10 @@ type UpdateWithdrawalMethodParams struct {
 	IsDefault bool        `json:"is_default"`
 	IsActive  bool        `json:"is_active"`
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateWithdrawalMethod(ctx context.Context, arg UpdateWithdrawalMethodParams) (WalletWithdrawalMethod, error) {
-	row := q.db.QueryRow(ctx, updateWithdrawalMethod,
-		arg.IsDefault,
-		arg.IsActive,
-		arg.ID,
-		arg.TenantID,
-	)
+	row := q.db.QueryRow(ctx, updateWithdrawalMethod, arg.IsDefault, arg.IsActive, arg.ID)
 	var i WalletWithdrawalMethod
 	err := row.Scan(
 		&i.ID,
@@ -771,28 +690,23 @@ func (q *Queries) UpdateWithdrawalMethod(ctx context.Context, arg UpdateWithdraw
 const updateWithdrawalMethodDefault = `-- name: UpdateWithdrawalMethodDefault :exec
 UPDATE wallet_withdrawal_methods
 SET is_default = false
-WHERE tenant_id = $1 AND user_id = $2 AND is_default = true
+WHERE user_id = $1 AND is_default = true
 `
 
-type UpdateWithdrawalMethodDefaultParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) UpdateWithdrawalMethodDefault(ctx context.Context, arg UpdateWithdrawalMethodDefaultParams) error {
-	_, err := q.db.Exec(ctx, updateWithdrawalMethodDefault, arg.TenantID, arg.UserID)
+func (q *Queries) UpdateWithdrawalMethodDefault(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateWithdrawalMethodDefault, userID)
 	return err
 }
 
 const updateWithdrawalStatus = `-- name: UpdateWithdrawalStatus :one
 UPDATE wallet_withdrawals
 SET status = $1,
-    provider_ref = COALESCE($2, provider_ref),
-    admin_note = COALESCE($3, admin_note),
-    reviewed_by = COALESCE($4, reviewed_by),
-    reviewed_at = COALESCE($5, reviewed_at),
-    updated_at = now()
-WHERE id = $6 AND tenant_id = $7
+ provider_ref = COALESCE($2, provider_ref),
+ admin_note = COALESCE($3, admin_note),
+ reviewed_by = COALESCE($4, reviewed_by),
+ reviewed_at = COALESCE($5, reviewed_at),
+ updated_at = now()
+WHERE id = $6
 RETURNING id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
 `
 
@@ -803,7 +717,6 @@ type UpdateWithdrawalStatusParams struct {
 	ReviewedBy  pgtype.UUID        `json:"reviewed_by"`
 	ReviewedAt  pgtype.Timestamptz `json:"reviewed_at"`
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateWithdrawalStatus(ctx context.Context, arg UpdateWithdrawalStatusParams) (WalletWithdrawal, error) {
@@ -814,7 +727,6 @@ func (q *Queries) UpdateWithdrawalStatus(ctx context.Context, arg UpdateWithdraw
 		arg.ReviewedBy,
 		arg.ReviewedAt,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i WalletWithdrawal
 	err := row.Scan(
@@ -844,34 +756,28 @@ func (q *Queries) UpdateWithdrawalStatus(ctx context.Context, arg UpdateWithdraw
 }
 
 const upsertPayoutProvider = `-- name: UpsertPayoutProvider :one
-INSERT INTO payout_providers (
-    tenant_id, type, name, is_active, is_default, config, supported_currencies
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-)
-ON CONFLICT (tenant_id, type) DO UPDATE SET
-    name = EXCLUDED.name,
-    is_active = EXCLUDED.is_active,
-    is_default = EXCLUDED.is_default,
-    config = EXCLUDED.config,
-    supported_currencies = EXCLUDED.supported_currencies,
-    updated_at = now()
+INSERT INTO payout_providers (type, name, is_active, is_default, config, supported_currencies) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (type) DO UPDATE SET
+ name = EXCLUDED.name,
+ is_active = EXCLUDED.is_active,
+ is_default = EXCLUDED.is_default,
+ config = EXCLUDED.config,
+ supported_currencies = EXCLUDED.supported_currencies,
+ updated_at = now()
 RETURNING id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at
 `
 
 type UpsertPayoutProviderParams struct {
-	TenantID            pgtype.UUID `json:"tenant_id"`
-	Type                string      `json:"type"`
-	Name                string      `json:"name"`
-	IsActive            bool        `json:"is_active"`
-	IsDefault           bool        `json:"is_default"`
-	Config              []byte      `json:"config"`
-	SupportedCurrencies []string    `json:"supported_currencies"`
+	Type                string   `json:"type"`
+	Name                string   `json:"name"`
+	IsActive            bool     `json:"is_active"`
+	IsDefault           bool     `json:"is_default"`
+	Config              []byte   `json:"config"`
+	SupportedCurrencies []string `json:"supported_currencies"`
 }
 
 func (q *Queries) UpsertPayoutProvider(ctx context.Context, arg UpsertPayoutProviderParams) (PayoutProvider, error) {
 	row := q.db.QueryRow(ctx, upsertPayoutProvider,
-		arg.TenantID,
 		arg.Type,
 		arg.Name,
 		arg.IsActive,

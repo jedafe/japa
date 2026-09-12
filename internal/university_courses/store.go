@@ -31,7 +31,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
 	switch r := row.(type) {
 	case gen.ListCourseOfferingsByUniversityRow:
 		return CourseOffering{
-			ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+			ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
 			Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
 			StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
 			Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -42,7 +42,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
 		}, nil
 	case gen.GetCourseOfferingByIDRow:
 		return CourseOffering{
-			ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+			ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
 			Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
 			StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
 			Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -53,7 +53,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
 		}, nil
 	case gen.GetCourseOfferingBySlugRow:
 		return CourseOffering{
-			ID: r.ID, TenantID: r.TenantID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
+			ID: r.ID, CourseID: r.CourseID, UniversityID: r.UniversityID, Slug: r.Slug,
 			Tuition: r.Tuition, Currency: r.Currency, DurationYears: r.DurationYears,
 			StudyMode: r.StudyMode, IntakeMonths: r.IntakeMonths, EntryRequirements: r.EntryRequirements,
 			Accreditation: r.Accreditation, IsPublished: r.IsPublished, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
@@ -71,7 +71,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
 // filtered by university and/or search query.
 func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
 	rows, err := s.read.ListCourseOfferingsByUniversity(ctx, gen.ListCourseOfferingsByUniversityParams{
-		TenantID:     tenantID,
+
 		UniversityID: universityID,
 		Search:       query,
 		LimitVal:     limit,
@@ -97,10 +97,9 @@ func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgty
 
 // GetOfferingByID returns a course offering by its ID.
 func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (CourseOffering, error) {
-	row, err := s.read.GetCourseOfferingByID(ctx, gen.GetCourseOfferingByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetCourseOfferingByID(ctx,
+		id,
+	)
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("university_courses: get offering by id: %w", err)
 	}
@@ -110,10 +109,9 @@ func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (
 
 // GetOfferingBySlug returns a course offering by its tenant-scoped slug.
 func (s *Store) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (CourseOffering, error) {
-	row, err := s.read.GetCourseOfferingBySlug(ctx, gen.GetCourseOfferingBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetCourseOfferingBySlug(ctx,
+		slug,
+	)
 	if err != nil {
 		return CourseOffering{}, fmt.Errorf("university_courses: get offering by slug: %w", err)
 	}

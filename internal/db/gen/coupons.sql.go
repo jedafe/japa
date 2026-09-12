@@ -14,13 +14,13 @@ import (
 const batchFlushCouponEvents = `-- name: BatchFlushCouponEvents :exec
 UPDATE coupons
 SET total_clicks = total_clicks + (
-        SELECT COUNT(*) FROM coupon_events ce
-        WHERE ce.coupon_id = coupons.id AND ce.event_type = 'click'
-    ),
-    total_copies = total_copies + (
-        SELECT COUNT(*) FROM coupon_events ce
-        WHERE ce.coupon_id = coupons.id AND ce.event_type = 'copy'
-    )
+ SELECT COUNT(*) FROM coupon_events ce
+ WHERE ce.coupon_id = coupons.id AND ce.event_type = 'click'
+ ),
+ total_copies = total_copies + (
+ SELECT COUNT(*) FROM coupon_events ce
+ WHERE ce.coupon_id = coupons.id AND ce.event_type = 'copy'
+ )
 WHERE coupons.id = $1
 `
 
@@ -64,11 +64,10 @@ func (q *Queries) CountCouponsByProvider(ctx context.Context, providerID pgtype.
 const countCouponsByTenant = `-- name: CountCouponsByTenant :one
 SELECT COUNT(*) AS count
 FROM coupons
-WHERE tenant_id = $1
 `
 
-func (q *Queries) CountCouponsByTenant(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countCouponsByTenant, tenantID)
+func (q *Queries) CountCouponsByTenant(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countCouponsByTenant)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -77,23 +76,13 @@ func (q *Queries) CountCouponsByTenant(ctx context.Context, tenantID pgtype.UUID
 const createAffiliateProvider = `-- name: CreateAffiliateProvider :one
 
 
-INSERT INTO affiliate_providers (
-    tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8,
-    $9, $10,
-    $11, $12
-)
-RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, author_commission_pct, created_at, updated_at
+INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, created_at, updated_at
 `
 
 type CreateAffiliateProviderParams struct {
-	TenantID       pgtype.UUID    `json:"tenant_id"`
 	Name           string         `json:"name"`
 	Slug           string         `json:"slug"`
 	Description    *string        `json:"description"`
@@ -109,7 +98,6 @@ type CreateAffiliateProviderParams struct {
 
 type CreateAffiliateProviderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
@@ -132,7 +120,6 @@ type CreateAffiliateProviderRow struct {
 // =====================
 func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffiliateProviderParams) (CreateAffiliateProviderRow, error) {
 	row := q.db.QueryRow(ctx, createAffiliateProvider,
-		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -148,7 +135,6 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 	var i CreateAffiliateProviderRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -169,25 +155,14 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 
 const createCoupon = `-- name: CreateCoupon :one
 
-INSERT INTO coupons (
-    tenant_id, provider_id, coupon_type, title, description, code,
-    discount_type, discount_value, currency, terms_url, referral_url,
-    is_verified, status, valid_from, expires_at, created_by
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7,
-    $8, $9, $10,
-    $11, $12, $13, $14,
-    $15, $16
-)
-RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
-    discount_type, discount_value, currency, terms_url, referral_url,
-    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
-    created_by, created_at, updated_at
+INSERT INTO coupons (provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+RETURNING id, provider_id, coupon_type, title, description, code,
+ discount_type, discount_value, currency, terms_url, referral_url,
+ is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+ created_by, created_at, updated_at
 `
 
 type CreateCouponParams struct {
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ProviderID    pgtype.UUID        `json:"provider_id"`
 	CouponType    string             `json:"coupon_type"`
 	Title         string             `json:"title"`
@@ -205,12 +180,34 @@ type CreateCouponParams struct {
 	CreatedBy     pgtype.UUID        `json:"created_by"`
 }
 
+type CreateCouponRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ProviderID    pgtype.UUID        `json:"provider_id"`
+	CouponType    string             `json:"coupon_type"`
+	Title         string             `json:"title"`
+	Description   *string            `json:"description"`
+	Code          string             `json:"code"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	TermsUrl      *string            `json:"terms_url"`
+	ReferralUrl   *string            `json:"referral_url"`
+	IsVerified    bool               `json:"is_verified"`
+	Status        string             `json:"status"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks   int32              `json:"total_clicks"`
+	TotalCopies   int32              `json:"total_copies"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 // =====================
 // Coupons CRUD
 // =====================
-func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Coupon, error) {
+func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (CreateCouponRow, error) {
 	row := q.db.QueryRow(ctx, createCoupon,
-		arg.TenantID,
 		arg.ProviderID,
 		arg.CouponType,
 		arg.Title,
@@ -227,10 +224,9 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 		arg.ExpiresAt,
 		arg.CreatedBy,
 	)
-	var i Coupon
+	var i CreateCouponRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
@@ -256,8 +252,8 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 
 const createCouponEvent = `-- name: CreateCouponEvent :one
 
-INSERT INTO coupon_events (coupon_id, event_type, user_id, content_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO coupon_events (coupon_id, event_type, user_id, content_id) VALUES ($1, $2, $3, $4)
+
 RETURNING id, coupon_id, event_type, user_id, content_id, created_at
 `
 
@@ -292,31 +288,21 @@ func (q *Queries) CreateCouponEvent(ctx context.Context, arg CreateCouponEventPa
 
 const deleteAffiliateProvider = `-- name: DeleteAffiliateProvider :exec
 DELETE FROM affiliate_providers
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteAffiliateProviderParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteAffiliateProvider(ctx context.Context, arg DeleteAffiliateProviderParams) error {
-	_, err := q.db.Exec(ctx, deleteAffiliateProvider, arg.ID, arg.TenantID)
+func (q *Queries) DeleteAffiliateProvider(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAffiliateProvider, id)
 	return err
 }
 
 const deleteCoupon = `-- name: DeleteCoupon :exec
 DELETE FROM coupons
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteCouponParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteCoupon(ctx context.Context, arg DeleteCouponParams) error {
-	_, err := q.db.Exec(ctx, deleteCoupon, arg.ID, arg.TenantID)
+func (q *Queries) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteCoupon, id)
 	return err
 }
 
@@ -339,8 +325,8 @@ const expireCoupons = `-- name: ExpireCoupons :exec
 UPDATE coupons
 SET status = 'expired', updated_at = now()
 WHERE status = 'active'
-    AND expires_at IS NOT NULL
-    AND expires_at < now()
+ AND expires_at IS NOT NULL
+ AND expires_at < now()
 `
 
 func (q *Queries) ExpireCoupons(ctx context.Context) error {
@@ -349,21 +335,15 @@ func (q *Queries) ExpireCoupons(ctx context.Context) error {
 }
 
 const getAffiliateProviderByID = `-- name: GetAffiliateProviderByID :one
-SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, author_commission_pct, created_at, updated_at
+SELECT id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetAffiliateProviderByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetAffiliateProviderByIDRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
@@ -380,12 +360,11 @@ type GetAffiliateProviderByIDRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliateProviderByIDParams) (GetAffiliateProviderByIDRow, error) {
-	row := q.db.QueryRow(ctx, getAffiliateProviderByID, arg.ID, arg.TenantID)
+func (q *Queries) GetAffiliateProviderByID(ctx context.Context, id pgtype.UUID) (GetAffiliateProviderByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProviderByID, id)
 	var i GetAffiliateProviderByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -405,21 +384,15 @@ func (q *Queries) GetAffiliateProviderByID(ctx context.Context, arg GetAffiliate
 }
 
 const getAffiliateProviderBySlug = `-- name: GetAffiliateProviderBySlug :one
-SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, author_commission_pct, created_at, updated_at
+SELECT id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
-WHERE slug = $1 AND tenant_id = $2
+WHERE slug = $1
 `
-
-type GetAffiliateProviderBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetAffiliateProviderBySlugRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
@@ -436,12 +409,11 @@ type GetAffiliateProviderBySlugRow struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffiliateProviderBySlugParams) (GetAffiliateProviderBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getAffiliateProviderBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, slug string) (GetAffiliateProviderBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProviderBySlug, slug)
 	var i GetAffiliateProviderBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -463,13 +435,8 @@ func (q *Queries) GetAffiliateProviderBySlug(ctx context.Context, arg GetAffilia
 const getAffiliateProviderForRender = `-- name: GetAffiliateProviderForRender :one
 SELECT id, base_url, tracking_param, tracking_value, is_active
 FROM affiliate_providers
-WHERE id = $1 AND tenant_id = $2 AND is_active = true
+WHERE id = $1 AND is_active = true
 `
-
-type GetAffiliateProviderForRenderParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetAffiliateProviderForRenderRow struct {
 	ID            pgtype.UUID `json:"id"`
@@ -480,8 +447,8 @@ type GetAffiliateProviderForRenderRow struct {
 }
 
 // BE-LOW-001: tenant-scoped render resolution.
-func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, arg GetAffiliateProviderForRenderParams) (GetAffiliateProviderForRenderRow, error) {
-	row := q.db.QueryRow(ctx, getAffiliateProviderForRender, arg.ID, arg.TenantID)
+func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.UUID) (GetAffiliateProviderForRenderRow, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProviderForRender, id)
 	var i GetAffiliateProviderForRenderRow
 	err := row.Scan(
 		&i.ID,
@@ -494,24 +461,18 @@ func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, arg GetAffi
 }
 
 const getCouponByCode = `-- name: GetCouponByCode :one
-SELECT c.id, c.tenant_id, c.provider_id, c.coupon_type, c.title, c.description,
-    c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
-    c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
-    c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
-    ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.code = $1 AND c.tenant_id = $2
+WHERE c.code = $1
 `
-
-type GetCouponByCodeParams struct {
-	Code     string      `json:"code"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetCouponByCodeRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
@@ -536,12 +497,11 @@ type GetCouponByCodeRow struct {
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
 }
 
-func (q *Queries) GetCouponByCode(ctx context.Context, arg GetCouponByCodeParams) (GetCouponByCodeRow, error) {
-	row := q.db.QueryRow(ctx, getCouponByCode, arg.Code, arg.TenantID)
+func (q *Queries) GetCouponByCode(ctx context.Context, code string) (GetCouponByCodeRow, error) {
+	row := q.db.QueryRow(ctx, getCouponByCode, code)
 	var i GetCouponByCodeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
@@ -569,24 +529,18 @@ func (q *Queries) GetCouponByCode(ctx context.Context, arg GetCouponByCodeParams
 }
 
 const getCouponByID = `-- name: GetCouponByID :one
-SELECT c.id, c.tenant_id, c.provider_id, c.coupon_type, c.title, c.description,
-    c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
-    c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
-    c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
-    ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.id = $1 AND c.tenant_id = $2
+WHERE c.id = $1
 `
-
-type GetCouponByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetCouponByIDRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
@@ -611,12 +565,11 @@ type GetCouponByIDRow struct {
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
 }
 
-func (q *Queries) GetCouponByID(ctx context.Context, arg GetCouponByIDParams) (GetCouponByIDRow, error) {
-	row := q.db.QueryRow(ctx, getCouponByID, arg.ID, arg.TenantID)
+func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponByIDRow, error) {
+	row := q.db.QueryRow(ctx, getCouponByID, id)
 	var i GetCouponByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
@@ -646,17 +599,12 @@ func (q *Queries) GetCouponByID(ctx context.Context, arg GetCouponByIDParams) (G
 const getCouponForRender = `-- name: GetCouponForRender :one
 
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
-    c.referral_url, c.status, c.expires_at,
-    ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+ c.referral_url, c.status, c.expires_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.id = $1 AND c.tenant_id = $2
+WHERE c.id = $1
 `
-
-type GetCouponForRenderParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetCouponForRenderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
@@ -678,8 +626,8 @@ type GetCouponForRenderRow struct {
 // BE-LOW-001: tenant-scoped so a render request cannot resolve a coupon
 // from another tenant. The InternalGuard on the render routes is defense-
 // in-depth; this query is the primary tenant isolation control.
-func (q *Queries) GetCouponForRender(ctx context.Context, arg GetCouponForRenderParams) (GetCouponForRenderRow, error) {
-	row := q.db.QueryRow(ctx, getCouponForRender, arg.ID, arg.TenantID)
+func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCouponForRenderRow, error) {
+	row := q.db.QueryRow(ctx, getCouponForRender, id)
 	var i GetCouponForRenderRow
 	err := row.Scan(
 		&i.ID,
@@ -708,25 +656,23 @@ func (q *Queries) InvalidateCouponCache(ctx context.Context) error {
 }
 
 const listActiveCouponsByTenant = `-- name: ListActiveCouponsByTenant :many
-SELECT c.id, c.tenant_id, c.provider_id, c.coupon_type, c.title, c.description,
-    c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
-    c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
-    c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
-    ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.tenant_id = $1
-    AND c.status = 'active'
-    AND (c.expires_at IS NULL OR c.expires_at > now())
-    AND ($2::uuid IS NULL OR c.provider_id = $2)
-    AND ($3::text IS NULL OR c.coupon_type = $3)
-    AND ($4::text IS NULL OR c.title ILIKE '%' || $4 || '%')
+WHERE c.status = 'active'
+ AND (c.expires_at IS NULL OR c.expires_at > now())
+ AND ($1::uuid IS NULL OR c.provider_id = $1)
+ AND ($2::text IS NULL OR c.coupon_type = $2)
+ AND ($3::text IS NULL OR c.title ILIKE '%' || $3 || '%')
 ORDER BY c.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListActiveCouponsByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ProviderID pgtype.UUID `json:"provider_id"`
 	CouponType *string     `json:"coupon_type"`
 	Search     *string     `json:"search"`
@@ -736,7 +682,6 @@ type ListActiveCouponsByTenantParams struct {
 
 type ListActiveCouponsByTenantRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
@@ -763,7 +708,6 @@ type ListActiveCouponsByTenantRow struct {
 
 func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveCouponsByTenantParams) ([]ListActiveCouponsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listActiveCouponsByTenant,
-		arg.TenantID,
 		arg.ProviderID,
 		arg.CouponType,
 		arg.Search,
@@ -779,7 +723,6 @@ func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveC
 		var i ListActiveCouponsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProviderID,
 			&i.CouponType,
 			&i.Title,
@@ -814,26 +757,23 @@ func (q *Queries) ListActiveCouponsByTenant(ctx context.Context, arg ListActiveC
 }
 
 const listAffiliateProvidersByTenant = `-- name: ListAffiliateProvidersByTenant :many
-SELECT id, tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, author_commission_pct, created_at, updated_at
+SELECT id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, created_at, updated_at
 FROM affiliate_providers
-WHERE tenant_id = $1
-    AND ($2::bool IS NULL OR is_active = $2)
+WHERE ($1::bool IS NULL OR is_active = $1)
 ORDER BY name ASC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListAffiliateProvidersByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	IsActive   bool        `json:"is_active"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	IsActive   bool  `json:"is_active"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListAffiliateProvidersByTenantRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
@@ -851,12 +791,7 @@ type ListAffiliateProvidersByTenantRow struct {
 }
 
 func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAffiliateProvidersByTenantParams) ([]ListAffiliateProvidersByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listAffiliateProvidersByTenant,
-		arg.TenantID,
-		arg.IsActive,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listAffiliateProvidersByTenant, arg.IsActive, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -866,7 +801,6 @@ func (q *Queries) ListAffiliateProvidersByTenant(ctx context.Context, arg ListAf
 		var i ListAffiliateProvidersByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -896,7 +830,7 @@ const listCouponEvents = `-- name: ListCouponEvents :many
 SELECT id, coupon_id, event_type, user_id, content_id, created_at
 FROM coupon_events
 WHERE coupon_id = $1
-    AND ($2::text IS NULL OR event_type = $2)
+ AND ($2::text IS NULL OR event_type = $2)
 ORDER BY created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -941,24 +875,22 @@ func (q *Queries) ListCouponEvents(ctx context.Context, arg ListCouponEventsPara
 }
 
 const listCouponsByTenant = `-- name: ListCouponsByTenant :many
-SELECT c.id, c.tenant_id, c.provider_id, c.coupon_type, c.title, c.description,
-    c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
-    c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
-    c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
-    ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.tenant_id = $1
-    AND ($2::text IS NULL OR c.status = $2)
-    AND ($3::text IS NULL OR c.coupon_type = $3)
-    AND ($4::uuid IS NULL OR c.provider_id = $4)
-    AND ($5::text IS NULL OR c.title ILIKE '%' || $5 || '%' OR c.code ILIKE '%' || $5 || '%')
+WHERE ($1::text IS NULL OR c.status = $1)
+ AND ($2::text IS NULL OR c.coupon_type = $2)
+ AND ($3::uuid IS NULL OR c.provider_id = $3)
+ AND ($4::text IS NULL OR c.title ILIKE '%' || $4 || '%' OR c.code ILIKE '%' || $4 || '%')
 ORDER BY c.created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $6 OFFSET $5
 `
 
 type ListCouponsByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     *string     `json:"status"`
 	CouponType *string     `json:"coupon_type"`
 	ProviderID pgtype.UUID `json:"provider_id"`
@@ -969,7 +901,6 @@ type ListCouponsByTenantParams struct {
 
 type ListCouponsByTenantRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
@@ -996,7 +927,6 @@ type ListCouponsByTenantRow struct {
 
 func (q *Queries) ListCouponsByTenant(ctx context.Context, arg ListCouponsByTenantParams) ([]ListCouponsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listCouponsByTenant,
-		arg.TenantID,
 		arg.Status,
 		arg.CouponType,
 		arg.ProviderID,
@@ -1013,7 +943,6 @@ func (q *Queries) ListCouponsByTenant(ctx context.Context, arg ListCouponsByTena
 		var i ListCouponsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProviderID,
 			&i.CouponType,
 			&i.Title,
@@ -1050,14 +979,14 @@ func (q *Queries) ListCouponsByTenant(ctx context.Context, arg ListCouponsByTena
 const updateAffiliateProvider = `-- name: UpdateAffiliateProvider :one
 UPDATE affiliate_providers
 SET name = $1, description = $2, provider_type = $3,
-    logo_media_id = $4, base_url = $5,
-    tracking_param = $6, tracking_value = $7,
-    commission_rate = $8, is_active = $9,
-    is_featured = $10, updated_at = now()
-WHERE id = $11 AND tenant_id = $12
-RETURNING id, tenant_id, name, slug, description, provider_type, logo_media_id,
-    base_url, tracking_param, tracking_value, commission_rate,
-    is_active, is_featured, author_commission_pct, created_at, updated_at
+ logo_media_id = $4, base_url = $5,
+ tracking_param = $6, tracking_value = $7,
+ commission_rate = $8, is_active = $9,
+ is_featured = $10, updated_at = now()
+WHERE id = $11
+RETURNING id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, created_at, updated_at
 `
 
 type UpdateAffiliateProviderParams struct {
@@ -1072,12 +1001,10 @@ type UpdateAffiliateProviderParams struct {
 	IsActive       bool           `json:"is_active"`
 	IsFeatured     bool           `json:"is_featured"`
 	ID             pgtype.UUID    `json:"id"`
-	TenantID       pgtype.UUID    `json:"tenant_id"`
 }
 
 type UpdateAffiliateProviderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
@@ -1107,12 +1034,10 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 		arg.IsActive,
 		arg.IsFeatured,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateAffiliateProviderRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1134,17 +1059,17 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 const updateCoupon = `-- name: UpdateCoupon :one
 UPDATE coupons
 SET title = $1, description = $2, code = $3,
-    provider_id = $4,
-    discount_type = $5, discount_value = $6,
-    currency = $7, terms_url = $8,
-    referral_url = $9, is_verified = $10,
-    status = $11, valid_from = $12,
-    expires_at = $13, updated_at = now()
-WHERE id = $14 AND tenant_id = $15
-RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
-    discount_type, discount_value, currency, terms_url, referral_url,
-    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
-    created_by, created_at, updated_at
+ provider_id = $4,
+ discount_type = $5, discount_value = $6,
+ currency = $7, terms_url = $8,
+ referral_url = $9, is_verified = $10,
+ status = $11, valid_from = $12,
+ expires_at = $13, updated_at = now()
+WHERE id = $14
+RETURNING id, provider_id, coupon_type, title, description, code,
+ discount_type, discount_value, currency, terms_url, referral_url,
+ is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+ created_by, created_at, updated_at
 `
 
 type UpdateCouponParams struct {
@@ -1162,10 +1087,32 @@ type UpdateCouponParams struct {
 	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Coupon, error) {
+type UpdateCouponRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ProviderID    pgtype.UUID        `json:"provider_id"`
+	CouponType    string             `json:"coupon_type"`
+	Title         string             `json:"title"`
+	Description   *string            `json:"description"`
+	Code          string             `json:"code"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	TermsUrl      *string            `json:"terms_url"`
+	ReferralUrl   *string            `json:"referral_url"`
+	IsVerified    bool               `json:"is_verified"`
+	Status        string             `json:"status"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks   int32              `json:"total_clicks"`
+	TotalCopies   int32              `json:"total_copies"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (UpdateCouponRow, error) {
 	row := q.db.QueryRow(ctx, updateCoupon,
 		arg.Title,
 		arg.Description,
@@ -1181,12 +1128,10 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 		arg.ValidFrom,
 		arg.ExpiresAt,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i Coupon
+	var i UpdateCouponRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
@@ -1213,13 +1158,13 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 const updateCouponClickCounts = `-- name: UpdateCouponClickCounts :exec
 UPDATE coupons c
 SET total_clicks = (
-    SELECT COUNT(*)::int FROM coupon_events ce
-    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+ SELECT COUNT(*)::int FROM coupon_events ce
+ WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
 ),
-    updated_at = now()
+ updated_at = now()
 WHERE EXISTS (
-    SELECT 1 FROM coupon_events ce
-    WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
+ SELECT 1 FROM coupon_events ce
+ WHERE ce.coupon_id = c.id AND ce.event_type = 'click'
 )
 `
 
@@ -1231,13 +1176,13 @@ func (q *Queries) UpdateCouponClickCounts(ctx context.Context) error {
 const updateCouponCopyCounts = `-- name: UpdateCouponCopyCounts :exec
 UPDATE coupons c
 SET total_copies = (
-    SELECT COUNT(*)::int FROM coupon_events ce
-    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+ SELECT COUNT(*)::int FROM coupon_events ce
+ WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
 ),
-    updated_at = now()
+ updated_at = now()
 WHERE EXISTS (
-    SELECT 1 FROM coupon_events ce
-    WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
+ SELECT 1 FROM coupon_events ce
+ WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
 )
 `
 

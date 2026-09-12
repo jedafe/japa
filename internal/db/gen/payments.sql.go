@@ -14,23 +14,18 @@ import (
 const cancelSubscription = `-- name: CancelSubscription :one
 UPDATE subscriptions
 SET cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
-  AND status = 'active'
+WHERE id = $1
+ AND status = 'active'
 RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
-
-type CancelSubscriptionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // JEOS §17: POST /me/subscription/cancel cancels at period end — the user
 // keeps access until current_period_end, then the subscription ends. We set
 // cancel_at_period_end = true and cancelled_at = now() but leave status
 // 'active' so entitlements remain until the period ends. A scheduled job
 // transitions to 'canceled' at current_period_end (BUG-002).
-func (q *Queries) CancelSubscription(ctx context.Context, arg CancelSubscriptionParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, cancelSubscription, arg.ID, arg.TenantID)
+func (q *Queries) CancelSubscription(ctx context.Context, id pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, cancelSubscription, id)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -86,19 +81,11 @@ func (q *Queries) CountDiscountCodeUsesByUser(ctx context.Context, arg CountDisc
 
 const createDiscountCode = `-- name: CreateDiscountCode :one
 
-INSERT INTO discount_codes (
-    tenant_id, code, discount_type, discount_value, applicable_to,
-    max_uses, uses_per_user, group_id, valid_from, valid_until, created_by
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8,
-    $9, $10, $11
-)
+INSERT INTO discount_codes (code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at
 `
 
 type CreateDiscountCodeParams struct {
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Code          string             `json:"code"`
 	DiscountType  string             `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
@@ -116,7 +103,6 @@ type CreateDiscountCodeParams struct {
 // =====================
 func (q *Queries) CreateDiscountCode(ctx context.Context, arg CreateDiscountCodeParams) (DiscountCode, error) {
 	row := q.db.QueryRow(ctx, createDiscountCode,
-		arg.TenantID,
 		arg.Code,
 		arg.DiscountType,
 		arg.DiscountValue,
@@ -150,21 +136,11 @@ func (q *Queries) CreateDiscountCode(ctx context.Context, arg CreateDiscountCode
 const createPayment = `-- name: CreatePayment :one
 
 
-INSERT INTO payments (
-    tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id,
-    amount, currency, status, metadata, subscription_id,
-    discount_code_id, discount_amount, idempotency_key
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10,
-    $11, $12, $13,
-    $14
-)
+INSERT INTO payments (user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key
 `
 
 type CreatePaymentParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 	Provider       string      `json:"provider"`
 	ProviderRef    *string     `json:"provider_ref"`
@@ -186,7 +162,6 @@ type CreatePaymentParams struct {
 // =====================
 func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error) {
 	row := q.db.QueryRow(ctx, createPayment,
-		arg.TenantID,
 		arg.UserID,
 		arg.Provider,
 		arg.ProviderRef,
@@ -226,11 +201,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 
 const createRefund = `-- name: CreateRefund :one
 
-INSERT INTO payment_refunds (
-    payment_id, amount, reason, status, provider_ref
-) VALUES (
-    $1, $2, $3, $4, $5
-)
+INSERT INTO payment_refunds (payment_id, amount, reason, status, provider_ref) VALUES ($1, $2, $3, $4, $5)
 RETURNING id, payment_id, amount, reason, status, provider_ref, created_at
 `
 
@@ -268,18 +239,11 @@ func (q *Queries) CreateRefund(ctx context.Context, arg CreateRefundParams) (Pay
 
 const createSubscription = `-- name: CreateSubscription :one
 
-INSERT INTO subscriptions (
-    tenant_id, user_id, plan, provider, provider_ref,
-    status, current_period_start, current_period_end, cancel_at
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
-)
+INSERT INTO subscriptions (user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type CreateSubscriptionParams struct {
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	Plan               string             `json:"plan"`
 	Provider           string             `json:"provider"`
@@ -295,7 +259,6 @@ type CreateSubscriptionParams struct {
 // =====================
 func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (Subscription, error) {
 	row := q.db.QueryRow(ctx, createSubscription,
-		arg.TenantID,
 		arg.UserID,
 		arg.Plan,
 		arg.Provider,
@@ -328,36 +291,25 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 
 const deleteDiscountCode = `-- name: DeleteDiscountCode :exec
 DELETE FROM discount_codes
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteDiscountCodeParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteDiscountCode(ctx context.Context, arg DeleteDiscountCodeParams) error {
-	_, err := q.db.Exec(ctx, deleteDiscountCode, arg.ID, arg.TenantID)
+func (q *Queries) DeleteDiscountCode(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDiscountCode, id)
 	return err
 }
 
 const getActiveSubscriptionByUser = `-- name: GetActiveSubscriptionByUser :one
 SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
-WHERE tenant_id = $1
-  AND user_id = $2
-  AND status = 'active'
-  AND current_period_end > now()
+WHERE user_id = $1
+ AND status = 'active'
+ AND current_period_end > now()
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-type GetActiveSubscriptionByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetActiveSubscriptionByUser(ctx context.Context, arg GetActiveSubscriptionByUserParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, getActiveSubscriptionByUser, arg.TenantID, arg.UserID)
+func (q *Queries) GetActiveSubscriptionByUser(ctx context.Context, userID pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getActiveSubscriptionByUser, userID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -381,18 +333,13 @@ func (q *Queries) GetActiveSubscriptionByUser(ctx context.Context, arg GetActive
 
 const getAdminPaymentByID = `-- name: GetAdminPaymentByID :one
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetAdminPaymentByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Admin payment detail (JEOS §17). Same as GetPaymentByID but used by
 // the admin route to signal admin context for audit logging.
-func (q *Queries) GetAdminPaymentByID(ctx context.Context, arg GetAdminPaymentByIDParams) (Payment, error) {
-	row := q.db.QueryRow(ctx, getAdminPaymentByID, arg.ID, arg.TenantID)
+func (q *Queries) GetAdminPaymentByID(ctx context.Context, id pgtype.UUID) (Payment, error) {
+	row := q.db.QueryRow(ctx, getAdminPaymentByID, id)
 	var i Payment
 	err := row.Scan(
 		&i.ID,
@@ -418,16 +365,11 @@ func (q *Queries) GetAdminPaymentByID(ctx context.Context, arg GetAdminPaymentBy
 
 const getDiscountCodeByCode = `-- name: GetDiscountCodeByCode :one
 SELECT id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
-WHERE tenant_id = $1 AND code = $2
+WHERE code = $1
 `
 
-type GetDiscountCodeByCodeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Code     string      `json:"code"`
-}
-
-func (q *Queries) GetDiscountCodeByCode(ctx context.Context, arg GetDiscountCodeByCodeParams) (DiscountCode, error) {
-	row := q.db.QueryRow(ctx, getDiscountCodeByCode, arg.TenantID, arg.Code)
+func (q *Queries) GetDiscountCodeByCode(ctx context.Context, code string) (DiscountCode, error) {
+	row := q.db.QueryRow(ctx, getDiscountCodeByCode, code)
 	var i DiscountCode
 	err := row.Scan(
 		&i.ID,
@@ -449,16 +391,11 @@ func (q *Queries) GetDiscountCodeByCode(ctx context.Context, arg GetDiscountCode
 
 const getDiscountCodeByID = `-- name: GetDiscountCodeByID :one
 SELECT id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetDiscountCodeByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetDiscountCodeByID(ctx context.Context, arg GetDiscountCodeByIDParams) (DiscountCode, error) {
-	row := q.db.QueryRow(ctx, getDiscountCodeByID, arg.ID, arg.TenantID)
+func (q *Queries) GetDiscountCodeByID(ctx context.Context, id pgtype.UUID) (DiscountCode, error) {
+	row := q.db.QueryRow(ctx, getDiscountCodeByID, id)
 	var i DiscountCode
 	err := row.Scan(
 		&i.ID,
@@ -480,16 +417,11 @@ func (q *Queries) GetDiscountCodeByID(ctx context.Context, arg GetDiscountCodeBy
 
 const getPaymentByID = `-- name: GetPaymentByID :one
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetPaymentByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetPaymentByID(ctx context.Context, arg GetPaymentByIDParams) (Payment, error) {
-	row := q.db.QueryRow(ctx, getPaymentByID, arg.ID, arg.TenantID)
+func (q *Queries) GetPaymentByID(ctx context.Context, id pgtype.UUID) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByID, id)
 	var i Payment
 	err := row.Scan(
 		&i.ID,
@@ -515,23 +447,17 @@ func (q *Queries) GetPaymentByID(ctx context.Context, arg GetPaymentByIDParams) 
 
 const getPaymentByProviderRef = `-- name: GetPaymentByProviderRef :one
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE tenant_id = $1
-  AND provider_ref = $2
+WHERE provider_ref = $1
 ORDER BY created_at DESC
 LIMIT 1
 `
-
-type GetPaymentByProviderRefParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ProviderRef *string     `json:"provider_ref"`
-}
 
 // Direct lookup by provider reference (Stripe pi_.../cs_..., Paystack
 // reference, NOWPayments order_id). Uses idx_payments_provider_ref.
 // Replaces the full-scan ListPaymentsByStatus + iterate match in the
 // webhook worker (BUG-019).
-func (q *Queries) GetPaymentByProviderRef(ctx context.Context, arg GetPaymentByProviderRefParams) (Payment, error) {
-	row := q.db.QueryRow(ctx, getPaymentByProviderRef, arg.TenantID, arg.ProviderRef)
+func (q *Queries) GetPaymentByProviderRef(ctx context.Context, providerRef *string) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByProviderRef, providerRef)
 	var i Payment
 	err := row.Scan(
 		&i.ID,
@@ -557,16 +483,11 @@ func (q *Queries) GetPaymentByProviderRef(ctx context.Context, arg GetPaymentByP
 
 const getSubscriptionByID = `-- name: GetSubscriptionByID :one
 SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetSubscriptionByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetSubscriptionByID(ctx context.Context, arg GetSubscriptionByIDParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, getSubscriptionByID, arg.ID, arg.TenantID)
+func (q *Queries) GetSubscriptionByID(ctx context.Context, id pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, getSubscriptionByID, id)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -590,11 +511,7 @@ func (q *Queries) GetSubscriptionByID(ctx context.Context, arg GetSubscriptionBy
 
 const insertDiscountCodeUse = `-- name: InsertDiscountCodeUse :one
 
-INSERT INTO discount_code_uses (
-    code_id, user_id, payment_id
-) VALUES (
-    $1, $2, $3
-)
+INSERT INTO discount_code_uses (code_id, user_id, payment_id) VALUES ($1, $2, $3)
 ON CONFLICT (code_id, user_id) DO NOTHING
 RETURNING code_id, user_id, payment_id, used_at
 `
@@ -622,21 +539,16 @@ func (q *Queries) InsertDiscountCodeUse(ctx context.Context, arg InsertDiscountC
 
 const insertWebhookEvent = `-- name: InsertWebhookEvent :one
 
-INSERT INTO payment_webhook_events (
-    tenant_id, provider, event_id, event_type, raw_payload
-) VALUES (
-    $1, $2, $3, $4, $5
-)
-ON CONFLICT (tenant_id, provider, event_id) DO NOTHING
+INSERT INTO payment_webhook_events (provider, event_id, event_type, raw_payload) VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider, event_id) DO NOTHING
 RETURNING id, tenant_id, provider, event_id, raw_payload, processed_at, created_at, event_type
 `
 
 type InsertWebhookEventParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Provider   string      `json:"provider"`
-	EventID    string      `json:"event_id"`
-	EventType  string      `json:"event_type"`
-	RawPayload []byte      `json:"raw_payload"`
+	Provider   string `json:"provider"`
+	EventID    string `json:"event_id"`
+	EventType  string `json:"event_type"`
+	RawPayload []byte `json:"raw_payload"`
 }
 
 // =====================
@@ -644,7 +556,6 @@ type InsertWebhookEventParams struct {
 // =====================
 func (q *Queries) InsertWebhookEvent(ctx context.Context, arg InsertWebhookEventParams) (PaymentWebhookEvent, error) {
 	row := q.db.QueryRow(ctx, insertWebhookEvent,
-		arg.TenantID,
 		arg.Provider,
 		arg.EventID,
 		arg.EventType,
@@ -666,22 +577,20 @@ func (q *Queries) InsertWebhookEvent(ctx context.Context, arg InsertWebhookEvent
 
 const isWebhookEventProcessed = `-- name: IsWebhookEventProcessed :one
 SELECT EXISTS(
-    SELECT 1 FROM payment_webhook_events
-    WHERE tenant_id = $1
-      AND provider = $2
-      AND event_id = $3
-      AND processed_at IS NOT NULL
+ SELECT 1 FROM payment_webhook_events
+ WHERE provider = $1
+ AND event_id = $2
+ AND processed_at IS NOT NULL
 )
 `
 
 type IsWebhookEventProcessedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Provider string      `json:"provider"`
-	EventID  string      `json:"event_id"`
+	Provider string `json:"provider"`
+	EventID  string `json:"event_id"`
 }
 
 func (q *Queries) IsWebhookEventProcessed(ctx context.Context, arg IsWebhookEventProcessedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isWebhookEventProcessed, arg.TenantID, arg.Provider, arg.EventID)
+	row := q.db.QueryRow(ctx, isWebhookEventProcessed, arg.Provider, arg.EventID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -689,19 +598,18 @@ func (q *Queries) IsWebhookEventProcessed(ctx context.Context, arg IsWebhookEven
 
 const listActiveSubscriptions = `-- name: ListActiveSubscriptions :many
 SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
-WHERE tenant_id = $1 AND status = 'active'
+WHERE status = 'active'
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListActiveSubscriptionsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListActiveSubscriptions(ctx context.Context, arg ListActiveSubscriptionsParams) ([]Subscription, error) {
-	rows, err := q.db.Query(ctx, listActiveSubscriptions, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listActiveSubscriptions, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -738,19 +646,17 @@ func (q *Queries) ListActiveSubscriptions(ctx context.Context, arg ListActiveSub
 
 const listAdminPayments = `-- name: ListAdminPayments :many
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE tenant_id = $1
-  AND ($2::uuid IS NULL OR user_id = $2)
-  AND ($3::text IS NULL OR status = $3)
-  AND ($4::text IS NULL OR purpose_type = $4)
-  AND ($5::text IS NULL OR provider = $5)
-  AND ($6::timestamptz IS NULL OR created_at >= $6)
-  AND ($7::timestamptz IS NULL OR created_at <= $7)
+WHERE ($1::uuid IS NULL OR user_id = $1)
+ AND ($2::text IS NULL OR status = $2)
+ AND ($3::text IS NULL OR purpose_type = $3)
+ AND ($4::text IS NULL OR provider = $4)
+ AND ($5::timestamptz IS NULL OR created_at >= $5)
+ AND ($6::timestamptz IS NULL OR created_at <= $6)
 ORDER BY created_at DESC
-LIMIT $9 OFFSET $8
+LIMIT $8 OFFSET $7
 `
 
 type ListAdminPaymentsParams struct {
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	Status      *string            `json:"status"`
 	PurposeType *string            `json:"purpose_type"`
@@ -765,7 +671,6 @@ type ListAdminPaymentsParams struct {
 // "Admin Payment Routes"). Nullable parameters are skipped via sqlc.narg.
 func (q *Queries) ListAdminPayments(ctx context.Context, arg ListAdminPaymentsParams) ([]Payment, error) {
 	rows, err := q.db.Query(ctx, listAdminPayments,
-		arg.TenantID,
 		arg.UserID,
 		arg.Status,
 		arg.PurposeType,
@@ -851,19 +756,18 @@ func (q *Queries) ListDiscountCodeUses(ctx context.Context, arg ListDiscountCode
 
 const listDiscountCodes = `-- name: ListDiscountCodes :many
 SELECT id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
-WHERE tenant_id = $1
+
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListDiscountCodesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListDiscountCodes(ctx context.Context, arg ListDiscountCodesParams) ([]DiscountCode, error) {
-	rows, err := q.db.Query(ctx, listDiscountCodes, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listDiscountCodes, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -898,25 +802,19 @@ func (q *Queries) ListDiscountCodes(ctx context.Context, arg ListDiscountCodesPa
 
 const listPaymentsByStatus = `-- name: ListPaymentsByStatus :many
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE tenant_id = $1 AND status = $2
+WHERE status = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPaymentsByStatusParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListPaymentsByStatus(ctx context.Context, arg ListPaymentsByStatusParams) ([]Payment, error) {
-	rows, err := q.db.Query(ctx, listPaymentsByStatus,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPaymentsByStatus, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -955,25 +853,19 @@ func (q *Queries) ListPaymentsByStatus(ctx context.Context, arg ListPaymentsBySt
 
 const listPaymentsByUser = `-- name: ListPaymentsByUser :many
 SELECT id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key FROM payments
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPaymentsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListPaymentsByUser(ctx context.Context, arg ListPaymentsByUserParams) ([]Payment, error) {
-	rows, err := q.db.Query(ctx, listPaymentsByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPaymentsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1046,25 +938,19 @@ func (q *Queries) ListRefundsByPayment(ctx context.Context, paymentID pgtype.UUI
 
 const listSubscriptionsByUser = `-- name: ListSubscriptionsByUser :many
 SELECT id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at FROM subscriptions
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListSubscriptionsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListSubscriptionsByUser(ctx context.Context, arg ListSubscriptionsByUserParams) ([]Subscription, error) {
-	rows, err := q.db.Query(ctx, listSubscriptionsByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listSubscriptionsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1102,19 +988,17 @@ func (q *Queries) ListSubscriptionsByUser(ctx context.Context, arg ListSubscript
 const markWebhookEventProcessed = `-- name: MarkWebhookEventProcessed :exec
 UPDATE payment_webhook_events
 SET processed_at = now()
-WHERE tenant_id = $1
-  AND provider = $2
-  AND event_id = $3
+WHERE provider = $1
+ AND event_id = $2
 `
 
 type MarkWebhookEventProcessedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Provider string      `json:"provider"`
-	EventID  string      `json:"event_id"`
+	Provider string `json:"provider"`
+	EventID  string `json:"event_id"`
 }
 
 func (q *Queries) MarkWebhookEventProcessed(ctx context.Context, arg MarkWebhookEventProcessedParams) error {
-	_, err := q.db.Exec(ctx, markWebhookEventProcessed, arg.TenantID, arg.Provider, arg.EventID)
+	_, err := q.db.Exec(ctx, markWebhookEventProcessed, arg.Provider, arg.EventID)
 	return err
 }
 
@@ -1122,26 +1006,21 @@ const reactivateSubscription = `-- name: ReactivateSubscription :one
 UPDATE subscriptions
 SET status = 'active', cancel_at = NULL, cancel_at_period_end = false, cancelled_at = NULL, updated_at = now()
 WHERE id = (
-    SELECT s.id FROM subscriptions s
-    WHERE s.user_id = $1 AND s.tenant_id = $2
-      AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
-    ORDER BY s.updated_at DESC
-    LIMIT 1
+ SELECT s.id FROM subscriptions s
+ WHERE s.user_id = $1
+ AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
+ ORDER BY s.updated_at DESC
+ LIMIT 1
 )
 RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
-
-type ReactivateSubscriptionParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Reactivates the caller's most recently canceled or scheduled-for-cancellation
 // subscription. Matches both 'canceled' rows and 'active' rows with
 // cancel_at_period_end = true so a user can undo a period-end cancel before
 // the period ends (BUG-002).
-func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubscriptionParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, reactivateSubscription, arg.UserID, arg.TenantID)
+func (q *Queries) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (Subscription, error) {
+	row := q.db.QueryRow(ctx, reactivateSubscription, userID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,
@@ -1166,30 +1045,25 @@ func (q *Queries) ReactivateSubscription(ctx context.Context, arg ReactivateSubs
 const softDeleteSubscription = `-- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
 SET status = 'canceled', cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type SoftDeleteSubscriptionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteSubscription(ctx context.Context, arg SoftDeleteSubscriptionParams) error {
-	_, err := q.db.Exec(ctx, softDeleteSubscription, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteSubscription(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteSubscription, id)
 	return err
 }
 
 const updateDiscountCode = `-- name: UpdateDiscountCode :one
 UPDATE discount_codes
 SET
-    code = COALESCE(NULLIF($1, ''), code),
-    discount_type = COALESCE(NULLIF($2, ''), discount_type),
-    discount_value = COALESCE($3, discount_value),
-    applicable_to = COALESCE(NULLIF($4, ''), applicable_to),
-    max_uses = $5,
-    valid_from = COALESCE($6, valid_from),
-    valid_until = $7
-WHERE id = $8 AND tenant_id = $9
+ code = COALESCE(NULLIF($1, ''), code),
+ discount_type = COALESCE(NULLIF($2, ''), discount_type),
+ discount_value = COALESCE($3, discount_value),
+ applicable_to = COALESCE(NULLIF($4, ''), applicable_to),
+ max_uses = $5,
+ valid_from = COALESCE($6, valid_from),
+ valid_until = $7
+WHERE id = $8
 RETURNING id, tenant_id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at
 `
 
@@ -1202,7 +1076,6 @@ type UpdateDiscountCodeParams struct {
 	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
 	ValidUntil    pgtype.Timestamptz `json:"valid_until"`
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCodeParams) (DiscountCode, error) {
@@ -1215,7 +1088,6 @@ func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCode
 		arg.ValidFrom,
 		arg.ValidUntil,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i DiscountCode
 	err := row.Scan(
@@ -1239,18 +1111,17 @@ func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCode
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :one
 UPDATE payments
 SET status = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 RETURNING id, tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key
 `
 
 type UpdatePaymentStatusParams struct {
-	Status   string      `json:"status"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) (Payment, error) {
-	row := q.db.QueryRow(ctx, updatePaymentStatus, arg.Status, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, updatePaymentStatus, arg.Status, arg.ID)
 	var i Payment
 	err := row.Scan(
 		&i.ID,
@@ -1277,18 +1148,17 @@ func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStat
 const updateSubscriptionStatus = `-- name: UpdateSubscriptionStatus :one
 UPDATE subscriptions
 SET status = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 RETURNING id, tenant_id, user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at, created_at, updated_at, provider_sub_id, cancel_at_period_end, cancelled_at
 `
 
 type UpdateSubscriptionStatusParams struct {
-	Status   string      `json:"status"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateSubscriptionStatus(ctx context.Context, arg UpdateSubscriptionStatusParams) (Subscription, error) {
-	row := q.db.QueryRow(ctx, updateSubscriptionStatus, arg.Status, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, updateSubscriptionStatus, arg.Status, arg.ID)
 	var i Subscription
 	err := row.Scan(
 		&i.ID,

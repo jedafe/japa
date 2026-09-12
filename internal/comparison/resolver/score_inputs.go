@@ -262,7 +262,6 @@ func customFieldValues(ctx context.Context, tenantID pgtype.UUID, q *gen.Queries
 	rows, err := q.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
 		EntityType: "space",
 		EntityID:   entityID,
-		TenantID:   tenantID,
 	})
 	if err != nil {
 		return nil
@@ -514,10 +513,9 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 	}
 
 	if base.GeoCode != nil && *base.GeoCode != "" {
-		row, err := deps.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-			GeoCode:  base.GeoCode,
-			TenantID: tenantID,
-		})
+		row, err := deps.queries.GetSpaceByGeoCode(ctx,
+			base.GeoCode,
+		)
 		if err == nil && row.Level == "country" {
 			if b, ok := spaceBaseFromRow(row); ok {
 				return b
@@ -539,10 +537,9 @@ func findCountrySpace(ctx context.Context, tenantID pgtype.UUID, deps *scoreDeps
 
 		seen[current.ParentID] = true
 
-		row, err := deps.queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-			ID:       current.ParentID,
-			TenantID: tenantID,
-		})
+		row, err := deps.queries.GetSpaceByID(ctx,
+			current.ParentID,
+		)
 		if err != nil {
 			break
 		}

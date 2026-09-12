@@ -25,8 +25,8 @@ func testAuthMiddleware(userID, tenantID pgtype.UUID) func(http.Handler) http.Ha
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
 			ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-				UserID:    userID,
-				TenantID:  tenantID,
+				UserID: userID,
+
 				SessionID: "test-session",
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))

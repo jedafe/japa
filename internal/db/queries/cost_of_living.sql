@@ -10,7 +10,7 @@
 
 -- name: GetCostOfLivingType :one
 SELECT * FROM comparison_type_definitions
-WHERE tenant_id = @tenant_id AND slug = 'cost_of_living' AND is_system = true;
+WHERE slug = 'cost_of_living' AND is_system = true;
 
 -- =====================================================================
 -- List cities (comparison_items) with cost_of_living data, paginated +
@@ -19,30 +19,29 @@ WHERE tenant_id = @tenant_id AND slug = 'cost_of_living' AND is_system = true;
 
 -- name: ListCOLCities :many
 SELECT
-    ci.id,
-    ci.title,
-    ci.description,
-    ci.geo_space_id,
-    ci.is_baseline,
-    ci.last_updated_at,
-    ci.position,
-    ci.intel_cost_data,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id,
+ ci.title,
+ ci.description,
+ ci.geo_space_id,
+ ci.is_baseline,
+ ci.last_updated_at,
+ ci.position,
+ ci.intel_cost_data,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
 LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
 LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
-WHERE ci.tenant_id = @tenant_id
-  AND ci.type_id = @type_id
-  AND ci.deleted_at IS NULL
-  AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
-  AND (@country_code::text = '' OR country.geo_code = @country_code)
-  AND (@country_id::uuid IS NULL OR country.id = @country_id)
-  AND (@state_id::uuid IS NULL OR state.id = @state_id)
-  AND (@city_id::uuid IS NULL OR s.id = @city_id)
+WHERE ci.type_id = @type_id
+ AND ci.deleted_at IS NULL
+ AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
+ AND (@country_code::text = '' OR country.geo_code = @country_code)
+ AND (@country_id::uuid IS NULL OR country.id = @country_id)
+ AND (@state_id::uuid IS NULL OR state.id = @state_id)
+ AND (@city_id::uuid IS NULL OR s.id = @city_id)
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -54,14 +53,13 @@ LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
 LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
 LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
-WHERE ci.tenant_id = @tenant_id
-  AND ci.type_id = @type_id
-  AND ci.deleted_at IS NULL
-  AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
-  AND (@country_code::text = '' OR country.geo_code = @country_code)
-  AND (@country_id::uuid IS NULL OR country.id = @country_id)
-  AND (@state_id::uuid IS NULL OR state.id = @state_id)
-  AND (@city_id::uuid IS NULL OR s.id = @city_id);
+WHERE ci.type_id = @type_id
+ AND ci.deleted_at IS NULL
+ AND (@search::text = '' OR ci.title ILIKE '%' || @search || '%')
+ AND (@country_code::text = '' OR country.geo_code = @country_code)
+ AND (@country_id::uuid IS NULL OR country.id = @country_id)
+ AND (@state_id::uuid IS NULL OR state.id = @state_id)
+ AND (@city_id::uuid IS NULL OR s.id = @city_id);
 
 -- =====================================================================
 -- Get a single city (comparison_item) by ID with its geo space info.
@@ -69,12 +67,12 @@ WHERE ci.tenant_id = @tenant_id
 
 -- name: GetCOLCityByID :one
 SELECT
-    ci.*,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.*,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = @tenant_id AND ci.id = @id AND ci.deleted_at IS NULL;
+WHERE ci.id = @id AND ci.deleted_at IS NULL;
 
 -- =====================================================================
 -- Batch-fetch multiple cities by ID (removes N+1 in CompareCities).
@@ -83,20 +81,19 @@ WHERE ci.tenant_id = @tenant_id AND ci.id = @id AND ci.deleted_at IS NULL;
 
 -- name: GetCOLCitiesByIDs :many
 SELECT
-    ci.id,
-    ci.title,
-    ci.description,
-    ci.geo_space_id,
-    ci.is_baseline,
-    ci.last_updated_at,
-    ci.position,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.id,
+ ci.title,
+ ci.description,
+ ci.geo_space_id,
+ ci.is_baseline,
+ ci.last_updated_at,
+ ci.position,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = @tenant_id
-  AND ci.id = ANY(@ids::uuid[])
-  AND ci.deleted_at IS NULL;
+WHERE ci.id = ANY(@ids::uuid[])
+ AND ci.deleted_at IS NULL;
 
 -- =====================================================================
 -- Get the baseline city for the cost_of_living type.
@@ -104,15 +101,14 @@ WHERE ci.tenant_id = @tenant_id
 
 -- name: GetCOLBaselineCity :one
 SELECT
-    ci.*,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.*,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = @tenant_id
-  AND ci.type_id = @type_id
-  AND ci.is_baseline = true
-  AND ci.deleted_at IS NULL
+WHERE ci.type_id = @type_id
+ AND ci.is_baseline = true
+ AND ci.deleted_at IS NULL
 LIMIT 1;
 
 -- =====================================================================
@@ -123,18 +119,17 @@ LIMIT 1;
 
 -- name: GetCOLValuesForCities :many
 SELECT
-    cv.dimension_id,
-    cv.item_id,
-    cv.value,
-    cv.value_rating,
-    cv.value_boolean,
-    cd.label AS dimension_label,
-    cd.slug AS dimension_slug,
-    cd.dimension_type
+ cv.dimension_id,
+ cv.item_id,
+ cv.value,
+ cv.value_rating,
+ cv.value_boolean,
+ cd.label AS dimension_label,
+ cd.slug AS dimension_slug,
+ cd.dimension_type
 FROM comparison_values cv
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.deleted_at IS NULL
-WHERE cv.tenant_id = @tenant_id
-  AND cv.item_id = ANY(@item_ids::uuid[])
+WHERE cv.item_id = ANY(@item_ids::uuid[])
 ORDER BY cd.position, cv.item_id;
 
 -- =====================================================================
@@ -145,16 +140,16 @@ ORDER BY cd.position, cv.item_id;
 
 -- name: AdminCOLStats :many
 SELECT
-    ci.id AS city_id,
-    ci.title AS city_name,
-    ci.is_baseline,
-    ci.last_updated_at,
-    COUNT(DISTINCT cd.id) AS total_dimensions,
-    COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
+ ci.id AS city_id,
+ ci.title AS city_name,
+ ci.is_baseline,
+ ci.last_updated_at,
+ COUNT(DISTINCT cd.id) AS total_dimensions,
+ COUNT(DISTINCT CASE WHEN cv.value IS NOT NULL AND cv.value != '' THEN cd.id END) AS filled_dimensions
 FROM comparison_items ci
 LEFT JOIN comparison_dimensions cd ON cd.content_id = ci.content_id AND cd.deleted_at IS NULL
 LEFT JOIN comparison_values cv ON cv.dimension_id = cd.id AND cv.item_id = ci.id
-WHERE ci.tenant_id = @tenant_id AND ci.type_id = @type_id AND ci.deleted_at IS NULL
+WHERE ci.type_id = @type_id AND ci.deleted_at IS NULL
 GROUP BY ci.id, ci.title, ci.is_baseline, ci.last_updated_at
 ORDER BY ci.is_baseline DESC, ci.title ASC
 LIMIT @page_limit OFFSET @page_offset;
@@ -166,17 +161,15 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetCOLByGeoSpaceID :one
 SELECT
-    ci.*,
-    s.name AS geo_space_name,
-    s.slug AS geo_space_slug
+ ci.*,
+ s.name AS geo_space_name,
+ s.slug AS geo_space_slug
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
-WHERE ci.tenant_id = @tenant_id
-  AND ci.type_id = (SELECT id FROM comparison_type_definitions
-                    WHERE tenant_id = @tenant_id
-                      AND slug = 'cost_of_living'
-                      AND is_system = true
-                    LIMIT 1)
-  AND ci.geo_space_id = @geo_space_id
-  AND ci.deleted_at IS NULL
+WHERE ci.type_id = (SELECT id FROM comparison_type_definitions
+ WHERE slug = 'cost_of_living'
+ AND is_system = true
+ LIMIT 1)
+ AND ci.geo_space_id = @geo_space_id
+ AND ci.deleted_at IS NULL
 LIMIT 1;

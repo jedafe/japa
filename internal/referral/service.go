@@ -260,10 +260,10 @@ func GenerateReferralCode() (string, error) {
 
 // GetOrCreateCode returns the user's referral code, creating one if it doesn't exist.
 func (s *Service) GetOrCreateCode(ctx context.Context, tenantID, userID pgtype.UUID) (gen.ReferralCode, error) {
-	code, err := s.queries.GetReferralCodeByUserID(ctx, gen.GetReferralCodeByUserIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	code, err := s.queries.GetReferralCodeByUserID(ctx,
+
+		userID,
+	)
 	if err == nil {
 		return code, nil
 	}
@@ -274,9 +274,9 @@ func (s *Service) GetOrCreateCode(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	code, err = s.queries.CreateReferralCode(ctx, gen.CreateReferralCodeParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		Code:     newCode,
+
+		UserID: userID,
+		Code:   newCode,
 	})
 	if err != nil {
 		return gen.ReferralCode{}, fmt.Errorf("referral: create code: %w", err)
@@ -293,7 +293,7 @@ func (s *Service) GetReferralStats(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-		TenantID:   tenantID,
+
 		ReferrerID: userID,
 		Status:     "",
 	})
@@ -302,7 +302,7 @@ func (s *Service) GetReferralStats(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	credited, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-		TenantID:   tenantID,
+
 		ReferrerID: userID,
 		Status:     StatusCredited,
 	})
@@ -311,7 +311,7 @@ func (s *Service) GetReferralStats(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	pending, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-		TenantID:   tenantID,
+
 		ReferrerID: userID,
 		Status:     StatusPending,
 	})
@@ -393,7 +393,7 @@ func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string,
 // CreateReferral creates a pending referral record linking referrer to referee.
 func (s *Service) CreateReferral(ctx context.Context, tenantID, referrerID, refereeID pgtype.UUID, code string) (gen.Referral, error) {
 	referral, err := s.queries.CreateReferral(ctx, gen.CreateReferralParams{
-		TenantID:     tenantID,
+
 		ReferrerID:   referrerID,
 		RefereeID:    refereeID,
 		ReferralCode: code,
@@ -453,10 +453,10 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 		return s.flagReferral(ctx, tenantID, payerID, "self_referral")
 	}
 
-	referral, err := s.queries.GetReferralByReferee(ctx, gen.GetReferralByRefereeParams{
-		TenantID:  tenantID,
-		RefereeID: payerID,
-	})
+	referral, err := s.queries.GetReferralByReferee(ctx,
+
+		payerID,
+	)
 	if err != nil {
 		return nil // No referral record — nothing to do.
 	}
@@ -470,7 +470,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	periodStart := time.Now().AddDate(0, -1, 0)
 
 	creditedThisPeriod, err := s.queries.CountCreditedReferralsByReferrerThisPeriod(ctx, gen.CountCreditedReferralsByReferrerThisPeriodParams{
-		TenantID:    tenantID,
+
 		ReferrerID:  referral.ReferrerID,
 		PeriodStart: pgtype.Timestamptz{Time: periodStart, Valid: true},
 	})
@@ -500,7 +500,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	qtx := s.queries.WithTx(tx)
 
 	if _, err = qtx.QualifyReferral(ctx, gen.QualifyReferralParams{
-		TenantID:           tenantID,
+
 		ID:                 referral.ID,
 		QualifiedPaymentID: paymentID,
 	}); err != nil {
@@ -508,7 +508,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	}
 
 	if _, err = qtx.CreditReferral(ctx, gen.CreditReferralParams{
-		TenantID:     tenantID,
+
 		ID:           referral.ID,
 		RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
 	}); err != nil {
@@ -537,10 +537,10 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 }
 
 func (s *Service) flagReferral(ctx context.Context, tenantID, refereeID pgtype.UUID, reason string) error {
-	referral, err := s.queries.GetReferralByReferee(ctx, gen.GetReferralByRefereeParams{
-		TenantID:  tenantID,
-		RefereeID: refereeID,
-	})
+	referral, err := s.queries.GetReferralByReferee(ctx,
+
+		refereeID,
+	)
 	if err != nil {
 		return nil
 	}
@@ -550,7 +550,7 @@ func (s *Service) flagReferral(ctx context.Context, tenantID, refereeID pgtype.U
 
 func (s *Service) flagReferralByID(ctx context.Context, tenantID, referralID pgtype.UUID, reason string) error {
 	_, err := s.queries.FlagReferral(ctx, gen.FlagReferralParams{
-		TenantID:      tenantID,
+
 		ID:            referralID,
 		FlaggedReason: &reason,
 	})
@@ -571,7 +571,7 @@ func (s *Service) ListReferralHistory(ctx context.Context, tenantID, referrerID 
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.ListReferralsByReferrer(ctx, gen.ListReferralsByReferrerParams{
-		TenantID:   tenantID,
+
 		ReferrerID: referrerID,
 		Status:     status,
 		PageLimit:  int32(limit), // #nosec
@@ -582,7 +582,7 @@ func (s *Service) ListReferralHistory(ctx context.Context, tenantID, referrerID 
 	}
 
 	total, err := s.queries.CountReferralsByReferrer(ctx, gen.CountReferralsByReferrerParams{
-		TenantID:   tenantID,
+
 		ReferrerID: referrerID,
 		Status:     status,
 	})
@@ -606,7 +606,7 @@ func (s *Service) AdminListReferrals(ctx context.Context, tenantID pgtype.UUID, 
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListReferrals(ctx, gen.AdminListReferralsParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
@@ -615,10 +615,10 @@ func (s *Service) AdminListReferrals(ctx context.Context, tenantID pgtype.UUID, 
 		return nil, 0, fmt.Errorf("referral: admin list: %w", err)
 	}
 
-	total, err := s.queries.AdminCountReferrals(ctx, gen.AdminCountReferralsParams{
-		TenantID: tenantID,
-		Status:   status,
-	})
+	total, err := s.queries.AdminCountReferrals(ctx,
+
+		status,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("referral: admin count: %w", err)
 	}
@@ -639,17 +639,17 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID 
 		}
 
 		_, err := s.queries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
-			TenantID:     tenantID,
+
 			ID:           referralID,
 			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
 		})
 
 		return err
 	case "reject":
-		return s.queries.RejectReferral(ctx, gen.RejectReferralParams{
-			TenantID: tenantID,
-			ID:       referralID,
-		})
+		return s.queries.RejectReferral(ctx,
+
+			referralID,
+		)
 	default:
 		return fmt.Errorf("referral: invalid action: %s", action)
 	}
@@ -657,7 +657,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID 
 
 // AdminReferralStats returns totals by status.
 func (s *Service) AdminReferralStats(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminReferralStatsRow, error) {
-	return s.queries.AdminReferralStats(ctx, tenantID)
+	return s.queries.AdminReferralStats(ctx)
 }
 
 // AdminListFlagged returns the flagged referral queue.
@@ -673,7 +673,7 @@ func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, pa
 	offset := int32((page - 1) * limit) // #nosec
 
 	rows, err := s.queries.AdminListFlaggedReferrals(ctx, gen.AdminListFlaggedReferralsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  int32(limit), // #nosec
 		PageOffset: offset,
 	})
@@ -681,7 +681,7 @@ func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, pa
 		return nil, 0, fmt.Errorf("referral: admin flagged list: %w", err)
 	}
 
-	total, err := s.queries.AdminCountFlaggedReferrals(ctx, tenantID)
+	total, err := s.queries.AdminCountFlaggedReferrals(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("referral: admin flagged count: %w", err)
 	}

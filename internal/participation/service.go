@@ -615,7 +615,6 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 		return p, err
 	}
 
-	p.TenantID = tenantID.String()
 	p.UserID = userID.String()
 	p.ProfileID = profileID.String()
 	p.CreatedBy = createdBy.String()

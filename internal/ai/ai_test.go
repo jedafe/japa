@@ -600,8 +600,8 @@ func TestHITLReviewFields(t *testing.T) {
 	t.Parallel()
 
 	review := HITLReview{
-		ID:          pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
-		TenantID:    pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+		ID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+
 		ContentID:   pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
 		ContentType: "blog_post",
 		AIOutput:    []byte(`{"text":"hello"}`),

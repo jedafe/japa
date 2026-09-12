@@ -36,10 +36,10 @@ func (s *DBStore) Queries() *gen.Queries {
 
 // GetUserByEmail looks up a user by email within a tenant.
 func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
-	row, err := s.read.GetUserByEmail(ctx, gen.GetUserByEmailParams{
-		TenantID: tenantID,
-		Email:    email,
-	})
+	row, err := s.read.GetUserByEmail(ctx,
+
+		email,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user by email: %w", err)
 	}
@@ -50,8 +50,8 @@ func (s *DBStore) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, emai
 	}
 
 	return &User{
-		ID:              row.ID,
-		TenantID:        row.TenantID,
+		ID: row.ID,
+
 		Email:           row.Email,
 		PasswordHash:    passwordHash,
 		Username:        row.Username,
@@ -70,9 +70,9 @@ func (s *DBStore) GetRefreshToken(ctx context.Context, tokenHash string) (*Refre
 	}
 
 	return &RefreshToken{
-		ID:        row.ID,
-		UserID:    row.UserID,
-		TenantID:  row.TenantID,
+		ID:     row.ID,
+		UserID: row.UserID,
+
 		TokenHash: row.TokenHash,
 		ExpiresAt: row.ExpiresAt.Time,
 		RevokedAt: row.RevokedAt,
@@ -93,8 +93,8 @@ func (s *DBStore) GetValidResetToken(ctx context.Context, tokenHash string) (*Re
 	}
 
 	return &ResetTokenRecord{
-		UserID:    row.UserID,
-		TenantID:  row.TenantID,
+		UserID: row.UserID,
+
 		ExpiresAt: row.ExpiresAt.Time,
 		UsedAt:    row.UsedAt,
 	}, nil
@@ -121,8 +121,8 @@ func (s *DBStore) GetValidVerificationToken(ctx context.Context, tokenHash strin
 	}
 
 	return &VerificationTokenRecord{
-		UserID:     row.UserID,
-		TenantID:   row.TenantID,
+		UserID: row.UserID,
+
 		ExpiresAt:  row.ExpiresAt.Time,
 		VerifiedAt: row.VerifiedAt,
 	}, nil

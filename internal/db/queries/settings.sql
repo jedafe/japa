@@ -10,13 +10,13 @@ SELECT key, value FROM system_settings WHERE is_public = true ORDER BY key;
 SELECT key, value, is_public, updated_at FROM system_settings ORDER BY key;
 
 -- name: UpsertSystemSetting :exec
-INSERT INTO system_settings (key, value, is_public, updated_at)
-VALUES ($1, $2, $3, now())
+INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, now())
+
 ON CONFLICT (key) DO UPDATE SET value = $2, is_public = $3, updated_at = now();
 
 -- name: UpsertSystemSettingPreservePublic :exec
-INSERT INTO system_settings (key, value, is_public, created_at, updated_at)
-VALUES ($1, $2, false, now(), now())
+INSERT INTO system_settings (key, value, is_public, created_at, updated_at) VALUES ($1, $2, false, now(), now())
+
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 
 -- name: DeleteSystemSetting :exec

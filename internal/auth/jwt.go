@@ -144,9 +144,9 @@ func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, t
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        jti,
 		},
-		UserID:   userID.String(),
-		TenantID: tenantID.String(),
-		JTI:      jti,
+		UserID: userID.String(),
+
+		JTI: jti,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -185,10 +185,10 @@ func (kr *KeyRotation) MintTOTPChallengeToken(userID, tenantID pgtype.UUID) (str
 			IssuedAt:  jwt.NewNumericDate(now),
 			ID:        jti,
 		},
-		UserID:   userID.String(),
-		TenantID: tenantID.String(),
-		JTI:      jti,
-		Scope:    "totp_verify",
+		UserID: userID.String(),
+
+		JTI:   jti,
+		Scope: "totp_verify",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

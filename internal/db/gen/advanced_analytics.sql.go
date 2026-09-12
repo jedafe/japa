@@ -14,34 +14,32 @@ import (
 const advancedAnalyticsAdPerformance = `-- name: AdvancedAnalyticsAdPerformance :many
 
 SELECT
-    ac.id AS campaign_id,
-    ac.name AS campaign_name,
-    ac.status,
-    ac.budget_credits,
-    ac.spent,
-    COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression') AS impressions,
-    COUNT(ae.id) FILTER (WHERE ae.event_type = 'click') AS clicks,
-    CASE
-        WHEN COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression') > 0
-        THEN ROUND(
-            COUNT(ae.id) FILTER (WHERE ae.event_type = 'click')::numeric /
-            COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression')::numeric * 100, 2
-        )
-        ELSE 0
-    END AS ctr
+ ac.id AS campaign_id,
+ ac.name AS campaign_name,
+ ac.status,
+ ac.budget_credits,
+ ac.spent,
+ COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression') AS impressions,
+ COUNT(ae.id) FILTER (WHERE ae.event_type = 'click') AS clicks,
+ CASE
+ WHEN COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression') > 0
+ THEN ROUND(
+ COUNT(ae.id) FILTER (WHERE ae.event_type = 'click')::numeric /
+ COUNT(ae.id) FILTER (WHERE ae.event_type = 'impression')::numeric * 100, 2
+ )
+ ELSE 0
+ END AS ctr
 FROM ad_campaigns ac
 LEFT JOIN ad_events ae ON ae.campaign_id = ac.id
-WHERE ac.tenant_id = $1
-  AND ($2::text = '' OR ac.status = $2)
+WHERE ($1::text = '' OR ac.status = $1)
 GROUP BY ac.id, ac.name, ac.status, ac.budget_credits, ac.spent
 ORDER BY ac.spent DESC
-LIMIT $3
+LIMIT $2
 `
 
 type AdvancedAnalyticsAdPerformanceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-	TopN     int32       `json:"top_n"`
+	Status string `json:"status"`
+	TopN   int32  `json:"top_n"`
 }
 
 type AdvancedAnalyticsAdPerformanceRow struct {
@@ -59,7 +57,7 @@ type AdvancedAnalyticsAdPerformanceRow struct {
 // Ad campaign aggregate performance.
 // =====================================================================
 func (q *Queries) AdvancedAnalyticsAdPerformance(ctx context.Context, arg AdvancedAnalyticsAdPerformanceParams) ([]AdvancedAnalyticsAdPerformanceRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsAdPerformance, arg.TenantID, arg.Status, arg.TopN)
+	rows, err := q.db.Query(ctx, advancedAnalyticsAdPerformance, arg.Status, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -90,42 +88,36 @@ func (q *Queries) AdvancedAnalyticsAdPerformance(ctx context.Context, arg Advanc
 const advancedAnalyticsNewsletterEngagement = `-- name: AdvancedAnalyticsNewsletterEngagement :many
 
 SELECT
-    nc.id AS campaign_id,
-    nc.name AS campaign_name,
-    nc.subject,
-    nc.sent_at,
-    COUNT(nss.campaign_id) AS total_sent,
-    COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'opened') AS total_opened,
-    COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'clicked') AS total_clicked,
-    CASE
-        WHEN COUNT(nss.campaign_id) > 0
-        THEN ROUND(
-            COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'opened')::numeric /
-            COUNT(nss.campaign_id)::numeric * 100, 2
-        )
-        ELSE 0
-    END AS open_rate,
-    CASE
-        WHEN COUNT(nss.campaign_id) > 0
-        THEN ROUND(
-            COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'clicked')::numeric /
-            COUNT(nss.campaign_id)::numeric * 100, 2
-        )
-        ELSE 0
-    END AS click_rate
+ nc.id AS campaign_id,
+ nc.name AS campaign_name,
+ nc.subject,
+ nc.sent_at,
+ COUNT(nss.campaign_id) AS total_sent,
+ COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'opened') AS total_opened,
+ COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'clicked') AS total_clicked,
+ CASE
+ WHEN COUNT(nss.campaign_id) > 0
+ THEN ROUND(
+ COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'opened')::numeric /
+ COUNT(nss.campaign_id)::numeric * 100, 2
+ )
+ ELSE 0
+ END AS open_rate,
+ CASE
+ WHEN COUNT(nss.campaign_id) > 0
+ THEN ROUND(
+ COUNT(nss.campaign_id) FILTER (WHERE nss.status = 'clicked')::numeric /
+ COUNT(nss.campaign_id)::numeric * 100, 2
+ )
+ ELSE 0
+ END AS click_rate
 FROM newsletter_campaigns nc
 LEFT JOIN newsletter_send_state nss ON nss.campaign_id = nc.id
-WHERE nc.tenant_id = $1
-  AND nc.sent_at IS NOT NULL
+WHERE nc.sent_at IS NOT NULL
 GROUP BY nc.id, nc.name, nc.subject, nc.sent_at
 ORDER BY nc.sent_at DESC
-LIMIT $2
+LIMIT $1
 `
-
-type AdvancedAnalyticsNewsletterEngagementParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TopN     int32       `json:"top_n"`
-}
 
 type AdvancedAnalyticsNewsletterEngagementRow struct {
 	CampaignID   pgtype.UUID        `json:"campaign_id"`
@@ -142,8 +134,8 @@ type AdvancedAnalyticsNewsletterEngagementRow struct {
 // =====================================================================
 // Newsletter engagement: open rates, click rates, subscriber growth.
 // =====================================================================
-func (q *Queries) AdvancedAnalyticsNewsletterEngagement(ctx context.Context, arg AdvancedAnalyticsNewsletterEngagementParams) ([]AdvancedAnalyticsNewsletterEngagementRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsNewsletterEngagement, arg.TenantID, arg.TopN)
+func (q *Queries) AdvancedAnalyticsNewsletterEngagement(ctx context.Context, topN int32) ([]AdvancedAnalyticsNewsletterEngagementRow, error) {
+	rows, err := q.db.Query(ctx, advancedAnalyticsNewsletterEngagement, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -175,44 +167,42 @@ func (q *Queries) AdvancedAnalyticsNewsletterEngagement(ctx context.Context, arg
 const advancedAnalyticsRetentionCohorts = `-- name: AdvancedAnalyticsRetentionCohorts :many
 
 SELECT
-    date_trunc('day', u.created_at)::date AS cohort_date,
-    COUNT(DISTINCT u.id) AS cohort_size,
-    COUNT(DISTINCT pe_d1.user_id) AS retained_d1,
-    COUNT(DISTINCT pe_d7.user_id) AS retained_d7,
-    COUNT(DISTINCT pe_d30.user_id) AS retained_d30,
-    CASE WHEN COUNT(DISTINCT u.id) > 0
-        THEN ROUND(COUNT(DISTINCT pe_d1.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
-        ELSE 0 END AS d1_rate,
-    CASE WHEN COUNT(DISTINCT u.id) > 0
-        THEN ROUND(COUNT(DISTINCT pe_d7.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
-        ELSE 0 END AS d7_rate,
-    CASE WHEN COUNT(DISTINCT u.id) > 0
-        THEN ROUND(COUNT(DISTINCT pe_d30.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
-        ELSE 0 END AS d30_rate
+ date_trunc('day', u.created_at)::date AS cohort_date,
+ COUNT(DISTINCT u.id) AS cohort_size,
+ COUNT(DISTINCT pe_d1.user_id) AS retained_d1,
+ COUNT(DISTINCT pe_d7.user_id) AS retained_d7,
+ COUNT(DISTINCT pe_d30.user_id) AS retained_d30,
+ CASE WHEN COUNT(DISTINCT u.id) > 0
+ THEN ROUND(COUNT(DISTINCT pe_d1.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
+ ELSE 0 END AS d1_rate,
+ CASE WHEN COUNT(DISTINCT u.id) > 0
+ THEN ROUND(COUNT(DISTINCT pe_d7.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
+ ELSE 0 END AS d7_rate,
+ CASE WHEN COUNT(DISTINCT u.id) > 0
+ THEN ROUND(COUNT(DISTINCT pe_d30.user_id)::numeric / COUNT(DISTINCT u.id)::numeric * 100, 2)
+ ELSE 0 END AS d30_rate
 FROM users u
 LEFT JOIN platform_events pe_d1
-    ON pe_d1.user_id = u.id
-    AND pe_d1.created_at >= u.created_at + INTERVAL '1 day'
-    AND pe_d1.created_at < u.created_at + INTERVAL '2 days'
+ ON pe_d1.user_id = u.id
+ AND pe_d1.created_at >= u.created_at + INTERVAL '1 day'
+ AND pe_d1.created_at < u.created_at + INTERVAL '2 days'
 LEFT JOIN platform_events pe_d7
-    ON pe_d7.user_id = u.id
-    AND pe_d7.created_at >= u.created_at + INTERVAL '7 days'
-    AND pe_d7.created_at < u.created_at + INTERVAL '8 days'
+ ON pe_d7.user_id = u.id
+ AND pe_d7.created_at >= u.created_at + INTERVAL '7 days'
+ AND pe_d7.created_at < u.created_at + INTERVAL '8 days'
 LEFT JOIN platform_events pe_d30
-    ON pe_d30.user_id = u.id
-    AND pe_d30.created_at >= u.created_at + INTERVAL '30 days'
-    AND pe_d30.created_at < u.created_at + INTERVAL '31 days'
-WHERE u.tenant_id = $1
-  AND u.created_at >= $2
-  AND u.is_bot = false
-  AND u.is_synthetic = false
+ ON pe_d30.user_id = u.id
+ AND pe_d30.created_at >= u.created_at + INTERVAL '30 days'
+ AND pe_d30.created_at < u.created_at + INTERVAL '31 days'
+WHERE u.created_at >= $1
+ AND u.is_bot = false
+ AND u.is_synthetic = false
 GROUP BY cohort_date
 ORDER BY cohort_date DESC
-LIMIT $3
+LIMIT $2
 `
 
 type AdvancedAnalyticsRetentionCohortsParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	FromDate pgtype.Timestamptz `json:"from_date"`
 	TopN     int32              `json:"top_n"`
 }
@@ -234,7 +224,7 @@ type AdvancedAnalyticsRetentionCohortsRow struct {
 // retained = user generated an event on day N after signup.
 // =====================================================================
 func (q *Queries) AdvancedAnalyticsRetentionCohorts(ctx context.Context, arg AdvancedAnalyticsRetentionCohortsParams) ([]AdvancedAnalyticsRetentionCohortsRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsRetentionCohorts, arg.TenantID, arg.FromDate, arg.TopN)
+	rows, err := q.db.Query(ctx, advancedAnalyticsRetentionCohorts, arg.FromDate, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -265,21 +255,15 @@ func (q *Queries) AdvancedAnalyticsRetentionCohorts(ctx context.Context, arg Adv
 const advancedAnalyticsRevenueStreams = `-- name: AdvancedAnalyticsRevenueStreams :many
 
 SELECT month, tenant_id, subscription_revenue, course_revenue, ad_revenue, credit_revenue FROM mv_revenue_streams
-WHERE tenant_id = $1
-  AND month >= $2
+WHERE month >= $1
 ORDER BY month DESC
 `
-
-type AdvancedAnalyticsRevenueStreamsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	FromMonth pgtype.Date `json:"from_month"`
-}
 
 // =====================================================================
 // Revenue streams (from mv_revenue_streams).
 // =====================================================================
-func (q *Queries) AdvancedAnalyticsRevenueStreams(ctx context.Context, arg AdvancedAnalyticsRevenueStreamsParams) ([]MvRevenueStream, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsRevenueStreams, arg.TenantID, arg.FromMonth)
+func (q *Queries) AdvancedAnalyticsRevenueStreams(ctx context.Context, fromMonth pgtype.Date) ([]MvRevenueStream, error) {
+	rows, err := q.db.Query(ctx, advancedAnalyticsRevenueStreams, fromMonth)
 	if err != nil {
 		return nil, err
 	}
@@ -308,12 +292,12 @@ func (q *Queries) AdvancedAnalyticsRevenueStreams(ctx context.Context, arg Advan
 const advancedAnalyticsSubscriberGrowth = `-- name: AdvancedAnalyticsSubscriberGrowth :many
 
 SELECT
-    nl.id AS list_id,
-    nl.name AS list_name,
-    COUNT(nls.subscriber_id) AS subscriber_count
+ nl.id AS list_id,
+ nl.name AS list_name,
+ COUNT(nls.subscriber_id) AS subscriber_count
 FROM newsletter_lists nl
 LEFT JOIN newsletter_list_subscribers nls ON nls.list_id = nl.id
-WHERE nl.tenant_id = $1
+
 GROUP BY nl.id, nl.name
 ORDER BY subscriber_count DESC
 `
@@ -327,8 +311,8 @@ type AdvancedAnalyticsSubscriberGrowthRow struct {
 // =====================================================================
 // Newsletter subscriber growth (total subscribers per list).
 // =====================================================================
-func (q *Queries) AdvancedAnalyticsSubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]AdvancedAnalyticsSubscriberGrowthRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsSubscriberGrowth, tenantID)
+func (q *Queries) AdvancedAnalyticsSubscriberGrowth(ctx context.Context) ([]AdvancedAnalyticsSubscriberGrowthRow, error) {
+	rows, err := q.db.Query(ctx, advancedAnalyticsSubscriberGrowth)
 	if err != nil {
 		return nil, err
 	}
@@ -351,35 +335,31 @@ const advancedAnalyticsTopContent = `-- name: AdvancedAnalyticsTopContent :many
 
 
 SELECT
-    mdc.content_id,
-    mdc.tenant_id,
-    SUM(mdc.views) AS total_views,
-    SUM(mdc.reactions) AS total_reactions,
-    SUM(mdc.comments) AS total_comments,
-    SUM(mdc.views) + (SUM(mdc.reactions) * 3) + (SUM(mdc.comments) * 5) AS engagement_score,
-    c.title,
-    c.slug,
-    c.content_type
+ mdc.content_id,
+ SUM(mdc.views) AS total_views,
+ SUM(mdc.reactions) AS total_reactions,
+ SUM(mdc.comments) AS total_comments,
+ SUM(mdc.views) + (SUM(mdc.reactions) * 3) + (SUM(mdc.comments) * 5) AS engagement_score,
+ c.title,
+ c.slug,
+ c.content_type
 FROM mv_daily_content_stats mdc
 LEFT JOIN contents c ON c.id = mdc.content_id
-WHERE mdc.tenant_id = $1
-  AND mdc.day >= CURRENT_DATE - $2::int
-  AND ($3::text = '' OR c.content_type = $3)
-GROUP BY mdc.content_id, mdc.tenant_id, c.title, c.slug, c.content_type
+WHERE mdc.day >= CURRENT_DATE - $1::int
+ AND ($2::text = '' OR c.content_type = $2)
+GROUP BY mdc.content_id, c.title, c.slug, c.content_type
 ORDER BY engagement_score DESC
-LIMIT $4
+LIMIT $3
 `
 
 type AdvancedAnalyticsTopContentParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Days        int32       `json:"days"`
-	ContentType string      `json:"content_type"`
-	TopN        int32       `json:"top_n"`
+	Days        int32  `json:"days"`
+	ContentType string `json:"content_type"`
+	TopN        int32  `json:"top_n"`
 }
 
 type AdvancedAnalyticsTopContentRow struct {
 	ContentID       pgtype.UUID `json:"content_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	TotalViews      int64       `json:"total_views"`
 	TotalReactions  int64       `json:"total_reactions"`
 	TotalComments   int64       `json:"total_comments"`
@@ -403,12 +383,7 @@ type AdvancedAnalyticsTopContentRow struct {
 // single query serves all three periods (§66 ?period=7d|30d|90d).
 // =====================================================================
 func (q *Queries) AdvancedAnalyticsTopContent(ctx context.Context, arg AdvancedAnalyticsTopContentParams) ([]AdvancedAnalyticsTopContentRow, error) {
-	rows, err := q.db.Query(ctx, advancedAnalyticsTopContent,
-		arg.TenantID,
-		arg.Days,
-		arg.ContentType,
-		arg.TopN,
-	)
+	rows, err := q.db.Query(ctx, advancedAnalyticsTopContent, arg.Days, arg.ContentType, arg.TopN)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +393,6 @@ func (q *Queries) AdvancedAnalyticsTopContent(ctx context.Context, arg AdvancedA
 		var i AdvancedAnalyticsTopContentRow
 		if err := rows.Scan(
 			&i.ContentID,
-			&i.TenantID,
 			&i.TotalViews,
 			&i.TotalReactions,
 			&i.TotalComments,

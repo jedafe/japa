@@ -314,7 +314,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 		}
 
 		userID, err := h.Queries.CreateUser(ctx, gen.CreateUserParams{
-			TenantID:     tenantID,
+
 			Email:        strings.ToLower(strings.TrimSpace(info.Email)),
 			Username:     candidate,
 			PasswordHash: nil, // OAuth-only account
@@ -435,7 +435,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(refreshTTL), Valid: true},

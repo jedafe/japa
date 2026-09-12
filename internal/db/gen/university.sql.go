@@ -13,13 +13,13 @@ import (
 
 const approveInstructorApplication = `-- name: ApproveInstructorApplication :one
 UPDATE instructor_profiles
-SET status      = 'approved',
-    reviewed_by = $1,
-    reviewed_at = now(),
-    tier        = COALESCE($2, tier),
-    commission_pct_override = $3,
-    updated_at  = now()
-WHERE tenant_id = $4 AND id = $5 AND status = 'pending'
+SET status = 'approved',
+ reviewed_by = $1,
+ reviewed_at = now(),
+ tier = COALESCE($2, tier),
+ commission_pct_override = $3,
+ updated_at = now()
+WHERE id = $4 AND status = 'pending'
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
@@ -27,7 +27,6 @@ type ApproveInstructorApplicationParams struct {
 	ReviewedBy            pgtype.UUID    `json:"reviewed_by"`
 	Tier                  *string        `json:"tier"`
 	CommissionPctOverride pgtype.Numeric `json:"commission_pct_override"`
-	TenantID              pgtype.UUID    `json:"tenant_id"`
 	ID                    pgtype.UUID    `json:"id"`
 }
 
@@ -36,7 +35,6 @@ func (q *Queries) ApproveInstructorApplication(ctx context.Context, arg ApproveI
 		arg.ReviewedBy,
 		arg.Tier,
 		arg.CommissionPctOverride,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i InstructorProfile
@@ -64,30 +62,24 @@ func (q *Queries) ApproveInstructorApplication(ctx context.Context, arg ApproveI
 
 const approveUniversityTrack = `-- name: ApproveUniversityTrack :one
 UPDATE learning_tracks
-SET is_published_to_university   = true,
-    university_submission_status = 'approved',
-    university_reviewed_at       = now(),
-    university_rejection_reason  = NULL,
-    updated_at                   = now()
-WHERE tenant_id = $1 AND id = $2
-  AND instructor_id IS NOT NULL
-  AND is_published_to_university = false
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, geo_space_id, total_enrolled,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+SET is_published_to_university = true,
+ university_submission_status = 'approved',
+ university_reviewed_at = now(),
+ university_rejection_reason = NULL,
+ updated_at = now()
+WHERE id = $1
+ AND instructor_id IS NOT NULL
+ AND is_published_to_university = false
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
-
-type ApproveUniversityTrackParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type ApproveUniversityTrackRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -113,12 +105,11 @@ type ApproveUniversityTrackRow struct {
 
 // Admin approves a submitted track to the marketplace. Sets submission_status
 // to 'approved' and stamps reviewed_at.
-func (q *Queries) ApproveUniversityTrack(ctx context.Context, arg ApproveUniversityTrackParams) (ApproveUniversityTrackRow, error) {
-	row := q.db.QueryRow(ctx, approveUniversityTrack, arg.TenantID, arg.ID)
+func (q *Queries) ApproveUniversityTrack(ctx context.Context, id pgtype.UUID) (ApproveUniversityTrackRow, error) {
+	row := q.db.QueryRow(ctx, approveUniversityTrack, id)
 	var i ApproveUniversityTrackRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -146,20 +137,18 @@ func (q *Queries) ApproveUniversityTrack(ctx context.Context, arg ApproveUnivers
 
 const countAllUniversityTracks = `-- name: CountAllUniversityTracks :one
 SELECT COUNT(*) FROM learning_tracks
-WHERE tenant_id = $1
-  AND instructor_id IS NOT NULL
-  AND ($2::text = '' OR university_submission_status = $2)
-  AND ($3::uuid IS NULL OR geo_space_id = $3)
+WHERE instructor_id IS NOT NULL
+ AND ($1::text = '' OR university_submission_status = $1)
+ AND ($2::uuid IS NULL OR geo_space_id = $2)
 `
 
 type CountAllUniversityTracksParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	Status  string      `json:"status"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) CountAllUniversityTracks(ctx context.Context, arg CountAllUniversityTracksParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAllUniversityTracks, arg.TenantID, arg.Status, arg.SpaceID)
+	row := q.db.QueryRow(ctx, countAllUniversityTracks, arg.Status, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -168,25 +157,23 @@ func (q *Queries) CountAllUniversityTracks(ctx context.Context, arg CountAllUniv
 const countInstructorPayoutsByStatus = `-- name: CountInstructorPayoutsByStatus :one
 SELECT COUNT(*) FROM instructor_payouts p
 LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
-WHERE p.tenant_id = $1
-  AND ($2::text = '' OR p.status = $2)
-  AND ($3::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.instructor_id = p.instructor_id
-          AND lt.geo_space_id = $3))
+WHERE ($1::text = '' OR p.status = $1)
+ AND ($2::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.instructor_id = p.instructor_id
+ AND lt.geo_space_id = $2))
 `
 
 type CountInstructorPayoutsByStatusParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	Status  string      `json:"status"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 // Count of payouts matching the status/space filter (mirrors
 // ListInstructorPayoutsByStatus WHERE clause). Used by the admin hub
 // and the payout-queue list meta envelope.
 func (q *Queries) CountInstructorPayoutsByStatus(ctx context.Context, arg CountInstructorPayoutsByStatusParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countInstructorPayoutsByStatus, arg.TenantID, arg.Status, arg.SpaceID)
+	row := q.db.QueryRow(ctx, countInstructorPayoutsByStatus, arg.Status, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -194,22 +181,20 @@ func (q *Queries) CountInstructorPayoutsByStatus(ctx context.Context, arg CountI
 
 const countInstructorProfilesByStatus = `-- name: CountInstructorProfilesByStatus :one
 SELECT COUNT(*) FROM instructor_profiles ip
-WHERE ip.tenant_id = $1
-  AND ($2::text = '' OR ip.status = $2)
-  AND ($3::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.instructor_id = ip.id
-          AND lt.geo_space_id = $3))
+WHERE ($1::text = '' OR ip.status = $1)
+ AND ($2::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.instructor_id = ip.id
+ AND lt.geo_space_id = $2))
 `
 
 type CountInstructorProfilesByStatusParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-	SpaceID  pgtype.UUID `json:"space_id"`
+	Status  string      `json:"status"`
+	SpaceID pgtype.UUID `json:"space_id"`
 }
 
 func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg CountInstructorProfilesByStatusParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countInstructorProfilesByStatus, arg.TenantID, arg.Status, arg.SpaceID)
+	row := q.db.QueryRow(ctx, countInstructorProfilesByStatus, arg.Status, arg.SpaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -218,24 +203,18 @@ func (q *Queries) CountInstructorProfilesByStatus(ctx context.Context, arg Count
 const countPendingUniversityTracks = `-- name: CountPendingUniversityTracks :one
 SELECT COUNT(*) FROM learning_tracks lt
 JOIN instructor_profiles ip ON ip.id = lt.instructor_id
-WHERE lt.tenant_id = $1
-  AND lt.instructor_id IS NOT NULL
-  AND lt.is_published_to_university = false
-  AND lt.is_published = true
-  AND ip.status = 'approved'
-  AND ($2::uuid IS NULL OR lt.geo_space_id = $2)
+WHERE lt.instructor_id IS NOT NULL
+ AND lt.is_published_to_university = false
+ AND lt.is_published = true
+ AND ip.status = 'approved'
+ AND ($1::uuid IS NULL OR lt.geo_space_id = $1)
 `
-
-type CountPendingUniversityTracksParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
-}
 
 // Count of tracks awaiting marketplace approval (mirrors
 // ListPendingUniversityTracks WHERE clause). Used by the admin hub and
 // the pending-tracks list meta envelope.
-func (q *Queries) CountPendingUniversityTracks(ctx context.Context, arg CountPendingUniversityTracksParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPendingUniversityTracks, arg.TenantID, arg.SpaceID)
+func (q *Queries) CountPendingUniversityTracks(ctx context.Context, spaceID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingUniversityTracks, spaceID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -244,21 +223,19 @@ func (q *Queries) CountPendingUniversityTracks(ctx context.Context, arg CountPen
 const countRevenueSplits = `-- name: CountRevenueSplits :one
 SELECT COUNT(*)::bigint AS total
 FROM revenue_splits rs
-WHERE rs.tenant_id = $1
-  AND ($2::uuid IS NULL OR rs.instructor_id = $2)
-  AND ($3::uuid IS NULL OR rs.track_id = $3)
-  AND ($4::text = '' OR rs.source = $4)
-  AND ($5::uuid IS NULL OR rs.payout_id = $5)
-  AND ($6::timestamptz IS NULL OR rs.created_at >= $6)
-  AND ($7::timestamptz IS NULL OR rs.created_at < $7)
-  AND ($8::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.id = rs.track_id
-          AND lt.geo_space_id = $8))
+WHERE ($1::uuid IS NULL OR rs.instructor_id = $1)
+ AND ($2::uuid IS NULL OR rs.track_id = $2)
+ AND ($3::text = '' OR rs.source = $3)
+ AND ($4::uuid IS NULL OR rs.payout_id = $4)
+ AND ($5::timestamptz IS NULL OR rs.created_at >= $5)
+ AND ($6::timestamptz IS NULL OR rs.created_at < $6)
+ AND ($7::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.id = rs.track_id
+ AND lt.geo_space_id = $7))
 `
 
 type CountRevenueSplitsParams struct {
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	InstructorID pgtype.UUID        `json:"instructor_id"`
 	TrackID      pgtype.UUID        `json:"track_id"`
 	Source       string             `json:"source"`
@@ -272,7 +249,6 @@ type CountRevenueSplitsParams struct {
 // for the pagination meta envelope.
 func (q *Queries) CountRevenueSplits(ctx context.Context, arg CountRevenueSplitsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countRevenueSplits,
-		arg.TenantID,
 		arg.InstructorID,
 		arg.TrackID,
 		arg.Source,
@@ -288,17 +264,12 @@ func (q *Queries) CountRevenueSplits(ctx context.Context, arg CountRevenueSplits
 
 const countTracksByCategory = `-- name: CountTracksByCategory :one
 SELECT count(*) FROM learning_tracks
-WHERE tenant_id = $1 AND category = $2
+WHERE category = $1
 `
 
-type CountTracksByCategoryParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Category *string     `json:"category"`
-}
-
 // Used by the delete handler to block removal when tracks still reference the slug.
-func (q *Queries) CountTracksByCategory(ctx context.Context, arg CountTracksByCategoryParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countTracksByCategory, arg.TenantID, arg.Category)
+func (q *Queries) CountTracksByCategory(ctx context.Context, category *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countTracksByCategory, category)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -307,20 +278,17 @@ func (q *Queries) CountTracksByCategory(ctx context.Context, arg CountTracksByCa
 const countUniversityCatalog = `-- name: CountUniversityCatalog :one
 SELECT COUNT(*) FROM learning_tracks lt
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
-                              AND ra.entity_id = lt.id
-                              AND ra.tenant_id = lt.tenant_id
-WHERE lt.tenant_id = $1
-  AND lt.is_published_to_university = true
-  AND ($2::text = '' OR lt.category = $2)
-  AND ($3::text = '' OR lt.language = $3)
-  AND ($4::bool = false OR lt.price_kobo IS NULL)
-  AND ($5::text = '' OR lt.difficulty = $5)
-  AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
-  AND ($7::uuid IS NULL OR lt.geo_space_id = $7)
+ AND ra.entity_id = lt.id
+WHERE lt.is_published_to_university = true
+ AND ($1::text = '' OR lt.category = $1)
+ AND ($2::text = '' OR lt.language = $2)
+ AND ($3::bool = false OR lt.price_kobo IS NULL)
+ AND ($4::text = '' OR lt.difficulty = $4)
+ AND ($5::text = '' OR lt.title ILIKE '%' || $5 || '%')
+ AND ($6::uuid IS NULL OR lt.geo_space_id = $6)
 `
 
 type CountUniversityCatalogParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Category string      `json:"category"`
 	Language string      `json:"language"`
 	IsFree   bool        `json:"is_free"`
@@ -331,7 +299,6 @@ type CountUniversityCatalogParams struct {
 
 func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversityCatalogParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countUniversityCatalog,
-		arg.TenantID,
 		arg.Category,
 		arg.Language,
 		arg.IsFree,
@@ -346,19 +313,17 @@ func (q *Queries) CountUniversityCatalog(ctx context.Context, arg CountUniversit
 
 const countUniversityTrackCategories = `-- name: CountUniversityTrackCategories :one
 SELECT count(*) FROM university_track_categories
-WHERE tenant_id = $1
-  AND ($2::text = '' OR is_active = ($2::text = 'true'))
-  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
+WHERE ($1::text = '' OR is_active = ($1::text = 'true'))
+ AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
 `
 
 type CountUniversityTrackCategoriesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Active   string      `json:"active"`
-	Search   string      `json:"search"`
+	Active string `json:"active"`
+	Search string `json:"search"`
 }
 
 func (q *Queries) CountUniversityTrackCategories(ctx context.Context, arg CountUniversityTrackCategoriesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUniversityTrackCategories, arg.TenantID, arg.Active, arg.Search)
+	row := q.db.QueryRow(ctx, countUniversityTrackCategories, arg.Active, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -366,21 +331,13 @@ func (q *Queries) CountUniversityTrackCategories(ctx context.Context, arg CountU
 
 const createInstructorPayout = `-- name: CreateInstructorPayout :one
 
-INSERT INTO instructor_payouts (
-    tenant_id, instructor_id, period_start, period_end,
-    gross_kobo, platform_commission_kobo, net_kobo, currency, status
-)
-VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7,
-    COALESCE($8, 'NGN'), 'pending'
-)
-ON CONFLICT (tenant_id, instructor_id, period_start, period_end) DO NOTHING
+INSERT INTO instructor_payouts (instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'NGN'), 'pending')
+
+ON CONFLICT (instructor_id, period_start, period_end) DO NOTHING
 RETURNING id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
 `
 
 type CreateInstructorPayoutParams struct {
-	TenantID               pgtype.UUID `json:"tenant_id"`
 	InstructorID           pgtype.UUID `json:"instructor_id"`
 	PeriodStart            pgtype.Date `json:"period_start"`
 	PeriodEnd              pgtype.Date `json:"period_end"`
@@ -395,7 +352,6 @@ type CreateInstructorPayoutParams struct {
 // =====================================================================
 func (q *Queries) CreateInstructorPayout(ctx context.Context, arg CreateInstructorPayoutParams) (InstructorPayout, error) {
 	row := q.db.QueryRow(ctx, createInstructorPayout,
-		arg.TenantID,
 		arg.InstructorID,
 		arg.PeriodStart,
 		arg.PeriodEnd,
@@ -425,28 +381,18 @@ func (q *Queries) CreateInstructorPayout(ctx context.Context, arg CreateInstruct
 }
 
 const createUniversityTrack = `-- name: CreateUniversityTrack :one
-INSERT INTO learning_tracks (
-    tenant_id, title, slug, description, difficulty, cover_media_id,
-    is_published, sort_order, instructor_id, price_kobo, currency,
-    is_published_to_university, category, language, geo_space_id, subscription_eligible
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6,
-    false, 0, $7, $8, COALESCE($9, 'NGN'),
-    false, $10, COALESCE($11, 'en'), $12,
-    COALESCE($13, false)
-)
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, geo_space_id, total_enrolled,
-          subscription_eligible,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+INSERT INTO learning_tracks (title, slug, description, difficulty, cover_media_id, is_published, sort_order, instructor_id, price_kobo, currency, is_published_to_university, category, language, geo_space_id, subscription_eligible) VALUES ($1, $2, $3, $4, $5, false, 0, $6, $7, COALESCE($8, 'NGN'), false, $9, COALESCE($10, 'en'), $11, COALESCE($12, false))
+
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ subscription_eligible,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
 
 type CreateUniversityTrackParams struct {
-	TenantID             pgtype.UUID `json:"tenant_id"`
 	Title                string      `json:"title"`
 	Slug                 string      `json:"slug"`
 	Description          *string     `json:"description"`
@@ -463,7 +409,6 @@ type CreateUniversityTrackParams struct {
 
 type CreateUniversityTrackRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -490,7 +435,6 @@ type CreateUniversityTrackRow struct {
 
 func (q *Queries) CreateUniversityTrack(ctx context.Context, arg CreateUniversityTrackParams) (CreateUniversityTrackRow, error) {
 	row := q.db.QueryRow(ctx, createUniversityTrack,
-		arg.TenantID,
 		arg.Title,
 		arg.Slug,
 		arg.Description,
@@ -507,7 +451,6 @@ func (q *Queries) CreateUniversityTrack(ctx context.Context, arg CreateUniversit
 	var i CreateUniversityTrackRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -536,17 +479,16 @@ func (q *Queries) CreateUniversityTrack(ctx context.Context, arg CreateUniversit
 
 const createUniversityTrackCategory = `-- name: CreateUniversityTrackCategory :one
 
-INSERT INTO university_track_categories (tenant_id, slug, name, sort_order, is_active)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO university_track_categories (slug, name, sort_order, is_active) VALUES ($1, $2, $3, $4)
+
 RETURNING id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at
 `
 
 type CreateUniversityTrackCategoryParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Slug      string      `json:"slug"`
-	Name      string      `json:"name"`
-	SortOrder int32       `json:"sort_order"`
-	IsActive  bool        `json:"is_active"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	SortOrder int32  `json:"sort_order"`
+	IsActive  bool   `json:"is_active"`
 }
 
 // =====================================================================
@@ -555,7 +497,6 @@ type CreateUniversityTrackCategoryParams struct {
 // =====================================================================
 func (q *Queries) CreateUniversityTrackCategory(ctx context.Context, arg CreateUniversityTrackCategoryParams) (UniversityTrackCategory, error) {
 	row := q.db.QueryRow(ctx, createUniversityTrackCategory,
-		arg.TenantID,
 		arg.Slug,
 		arg.Name,
 		arg.SortOrder,
@@ -577,14 +518,9 @@ func (q *Queries) CreateUniversityTrackCategory(ctx context.Context, arg CreateU
 
 const deleteInstructorProfile = `-- name: DeleteInstructorProfile :one
 DELETE FROM instructor_profiles
-WHERE tenant_id = $1 AND id = $2 AND status != 'approved'
+WHERE id = $1 AND status != 'approved'
 RETURNING id, user_id
 `
-
-type DeleteInstructorProfileParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type DeleteInstructorProfileRow struct {
 	ID     pgtype.UUID `json:"id"`
@@ -596,8 +532,8 @@ type DeleteInstructorProfileRow struct {
 // identity cannot disappear out from under their live marketplace courses.
 // revenue_splits/instructor_payouts.instructor_id are ON DELETE SET NULL
 // (migration 000181) so financial audit records survive the delete.
-func (q *Queries) DeleteInstructorProfile(ctx context.Context, arg DeleteInstructorProfileParams) (DeleteInstructorProfileRow, error) {
-	row := q.db.QueryRow(ctx, deleteInstructorProfile, arg.TenantID, arg.ID)
+func (q *Queries) DeleteInstructorProfile(ctx context.Context, id pgtype.UUID) (DeleteInstructorProfileRow, error) {
+	row := q.db.QueryRow(ctx, deleteInstructorProfile, id)
 	var i DeleteInstructorProfileRow
 	err := row.Scan(&i.ID, &i.UserID)
 	return i, err
@@ -605,37 +541,37 @@ func (q *Queries) DeleteInstructorProfile(ctx context.Context, arg DeleteInstruc
 
 const deleteUniversityTrackCategory = `-- name: DeleteUniversityTrackCategory :exec
 DELETE FROM university_track_categories
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type DeleteUniversityTrackCategoryParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) DeleteUniversityTrackCategory(ctx context.Context, arg DeleteUniversityTrackCategoryParams) error {
-	_, err := q.db.Exec(ctx, deleteUniversityTrackCategory, arg.TenantID, arg.ID)
+func (q *Queries) DeleteUniversityTrackCategory(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUniversityTrackCategory, id)
 	return err
 }
 
 const getEnrollmentByID = `-- name: GetEnrollmentByID :one
-SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
-       enrolled_at, completed_at, payment_id
+SELECT id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id
 FROM enrollments
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetEnrollmentByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
+type GetEnrollmentByIDRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
 }
 
-func (q *Queries) GetEnrollmentByID(ctx context.Context, arg GetEnrollmentByIDParams) (Enrollment, error) {
-	row := q.db.QueryRow(ctx, getEnrollmentByID, arg.TenantID, arg.ID)
-	var i Enrollment
+func (q *Queries) GetEnrollmentByID(ctx context.Context, id pgtype.UUID) (GetEnrollmentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getEnrollmentByID, id)
+	var i GetEnrollmentByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -649,18 +585,13 @@ func (q *Queries) GetEnrollmentByID(ctx context.Context, arg GetEnrollmentByIDPa
 
 const getInstructorDashboardSummary = `-- name: GetInstructorDashboardSummary :one
 SELECT
-    COALESCE(SUM(lt.total_enrolled), 0)::int AS total_enrolled,
-    COALESCE(SUM(rs.creator_kobo), 0)::bigint AS total_revenue_kobo,
-    COUNT(DISTINCT lt.id)::int AS courses_count
+ COALESCE(SUM(lt.total_enrolled), 0)::int AS total_enrolled,
+ COALESCE(SUM(rs.creator_kobo), 0)::bigint AS total_revenue_kobo,
+ COUNT(DISTINCT lt.id)::int AS courses_count
 FROM learning_tracks lt
-LEFT JOIN revenue_splits rs ON rs.track_id = lt.id AND rs.tenant_id = lt.tenant_id
-WHERE lt.tenant_id = $1 AND lt.instructor_id = $2
+LEFT JOIN revenue_splits rs ON rs.track_id = lt.id
+WHERE lt.instructor_id = $1
 `
-
-type GetInstructorDashboardSummaryParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
 
 type GetInstructorDashboardSummaryRow struct {
 	TotalEnrolled    int32 `json:"total_enrolled"`
@@ -670,8 +601,8 @@ type GetInstructorDashboardSummaryRow struct {
 
 // Aggregate stats for the instructor dashboard (BUG-003): total enrolled
 // across all tracks, total creator revenue, and course count.
-func (q *Queries) GetInstructorDashboardSummary(ctx context.Context, arg GetInstructorDashboardSummaryParams) (GetInstructorDashboardSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getInstructorDashboardSummary, arg.TenantID, arg.InstructorID)
+func (q *Queries) GetInstructorDashboardSummary(ctx context.Context, instructorID pgtype.UUID) (GetInstructorDashboardSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getInstructorDashboardSummary, instructorID)
 	var i GetInstructorDashboardSummaryRow
 	err := row.Scan(&i.TotalEnrolled, &i.TotalRevenueKobo, &i.CoursesCount)
 	return i, err
@@ -680,17 +611,12 @@ func (q *Queries) GetInstructorDashboardSummary(ctx context.Context, arg GetInst
 const getInstructorEarningsSummary = `-- name: GetInstructorEarningsSummary :one
 
 SELECT
-    COALESCE(SUM(creator_kobo) FILTER (WHERE payout_id IS NULL), 0)::bigint  AS open_kobo,
-    COALESCE(SUM(creator_kobo) FILTER (WHERE payout_id IS NOT NULL), 0)::bigint AS paid_kobo,
-    COUNT(*)::bigint AS total_splits
+ COALESCE(SUM(creator_kobo) FILTER (WHERE payout_id IS NULL), 0)::bigint AS open_kobo,
+ COALESCE(SUM(creator_kobo) FILTER (WHERE payout_id IS NOT NULL), 0)::bigint AS paid_kobo,
+ COUNT(*)::bigint AS total_splits
 FROM revenue_splits
-WHERE tenant_id = $1 AND instructor_id = $2
+WHERE instructor_id = $1
 `
-
-type GetInstructorEarningsSummaryParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
 
 type GetInstructorEarningsSummaryRow struct {
 	OpenKobo    int64 `json:"open_kobo"`
@@ -701,8 +627,8 @@ type GetInstructorEarningsSummaryRow struct {
 // =====================================================================
 // Creator earnings summary (self)
 // =====================================================================
-func (q *Queries) GetInstructorEarningsSummary(ctx context.Context, arg GetInstructorEarningsSummaryParams) (GetInstructorEarningsSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getInstructorEarningsSummary, arg.TenantID, arg.InstructorID)
+func (q *Queries) GetInstructorEarningsSummary(ctx context.Context, instructorID pgtype.UUID) (GetInstructorEarningsSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getInstructorEarningsSummary, instructorID)
 	var i GetInstructorEarningsSummaryRow
 	err := row.Scan(&i.OpenKobo, &i.PaidKobo, &i.TotalSplits)
 	return i, err
@@ -710,16 +636,11 @@ func (q *Queries) GetInstructorEarningsSummary(ctx context.Context, arg GetInstr
 
 const getInstructorPayoutByID = `-- name: GetInstructorPayoutByID :one
 SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetInstructorPayoutByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetInstructorPayoutByID(ctx context.Context, arg GetInstructorPayoutByIDParams) (InstructorPayout, error) {
-	row := q.db.QueryRow(ctx, getInstructorPayoutByID, arg.TenantID, arg.ID)
+func (q *Queries) GetInstructorPayoutByID(ctx context.Context, id pgtype.UUID) (InstructorPayout, error) {
+	row := q.db.QueryRow(ctx, getInstructorPayoutByID, id)
 	var i InstructorPayout
 	err := row.Scan(
 		&i.ID,
@@ -742,16 +663,11 @@ func (q *Queries) GetInstructorPayoutByID(ctx context.Context, arg GetInstructor
 
 const getInstructorProfileByID = `-- name: GetInstructorProfileByID :one
 SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetInstructorProfileByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetInstructorProfileByID(ctx context.Context, arg GetInstructorProfileByIDParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, getInstructorProfileByID, arg.TenantID, arg.ID)
+func (q *Queries) GetInstructorProfileByID(ctx context.Context, id pgtype.UUID) (InstructorProfile, error) {
+	row := q.db.QueryRow(ctx, getInstructorProfileByID, id)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -777,16 +693,11 @@ func (q *Queries) GetInstructorProfileByID(ctx context.Context, arg GetInstructo
 
 const getInstructorProfileByUser = `-- name: GetInstructorProfileByUser :one
 SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetInstructorProfileByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetInstructorProfileByUser(ctx context.Context, arg GetInstructorProfileByUserParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, getInstructorProfileByUser, arg.TenantID, arg.UserID)
+func (q *Queries) GetInstructorProfileByUser(ctx context.Context, userID pgtype.UUID) (InstructorProfile, error) {
+	row := q.db.QueryRow(ctx, getInstructorProfileByUser, userID)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -812,18 +723,13 @@ func (q *Queries) GetInstructorProfileByUser(ctx context.Context, arg GetInstruc
 
 const getInstructorRevenueSeries = `-- name: GetInstructorRevenueSeries :many
 SELECT
-    date_trunc('day', created_at)::date AS rev_date,
-    SUM(creator_kobo)::bigint AS kobo
+ date_trunc('day', created_at)::date AS rev_date,
+ SUM(creator_kobo)::bigint AS kobo
 FROM revenue_splits
-WHERE tenant_id = $1 AND instructor_id = $2
+WHERE instructor_id = $1
 GROUP BY rev_date
 ORDER BY rev_date ASC
 `
-
-type GetInstructorRevenueSeriesParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
 
 type GetInstructorRevenueSeriesRow struct {
 	RevDate pgtype.Date `json:"rev_date"`
@@ -832,8 +738,8 @@ type GetInstructorRevenueSeriesRow struct {
 
 // Daily creator revenue series for the earnings LayerChart (BUG-005).
 // Grouped by date (truncated to day), ordered ascending.
-func (q *Queries) GetInstructorRevenueSeries(ctx context.Context, arg GetInstructorRevenueSeriesParams) ([]GetInstructorRevenueSeriesRow, error) {
-	rows, err := q.db.Query(ctx, getInstructorRevenueSeries, arg.TenantID, arg.InstructorID)
+func (q *Queries) GetInstructorRevenueSeries(ctx context.Context, instructorID pgtype.UUID) ([]GetInstructorRevenueSeriesRow, error) {
+	rows, err := q.db.Query(ctx, getInstructorRevenueSeries, instructorID)
 	if err != nil {
 		return nil, err
 	}
@@ -853,20 +759,14 @@ func (q *Queries) GetInstructorRevenueSeries(ctx context.Context, arg GetInstruc
 }
 
 const getPublicInstructorProfile = `-- name: GetPublicInstructorProfile :one
-SELECT id, tenant_id, user_id, display_name, headline, bio, social_links,
-       tier, status, created_at, updated_at
+SELECT id, user_id, display_name, headline, bio, social_links,
+ tier, status, created_at, updated_at
 FROM instructor_profiles
-WHERE tenant_id = $1 AND id = $2 AND status = 'approved'
+WHERE id = $1 AND status = 'approved'
 `
-
-type GetPublicInstructorProfileParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type GetPublicInstructorProfileRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	DisplayName string             `json:"display_name"`
 	Headline    *string            `json:"headline"`
@@ -879,12 +779,11 @@ type GetPublicInstructorProfileRow struct {
 }
 
 // Public marketplace view: only approved instructors, no payout_method/KYC.
-func (q *Queries) GetPublicInstructorProfile(ctx context.Context, arg GetPublicInstructorProfileParams) (GetPublicInstructorProfileRow, error) {
-	row := q.db.QueryRow(ctx, getPublicInstructorProfile, arg.TenantID, arg.ID)
+func (q *Queries) GetPublicInstructorProfile(ctx context.Context, id pgtype.UUID) (GetPublicInstructorProfileRow, error) {
+	row := q.db.QueryRow(ctx, getPublicInstructorProfile, id)
 	var i GetPublicInstructorProfileRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -900,17 +799,12 @@ func (q *Queries) GetPublicInstructorProfile(ctx context.Context, arg GetPublicI
 
 const getRevenueSplitByID = `-- name: GetRevenueSplitByID :one
 SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetRevenueSplitByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // ADR-063 §9: admin audit viewer, single fetch, tenant-scoped.
-func (q *Queries) GetRevenueSplitByID(ctx context.Context, arg GetRevenueSplitByIDParams) (RevenueSplit, error) {
-	row := q.db.QueryRow(ctx, getRevenueSplitByID, arg.TenantID, arg.ID)
+func (q *Queries) GetRevenueSplitByID(ctx context.Context, id pgtype.UUID) (RevenueSplit, error) {
+	row := q.db.QueryRow(ctx, getRevenueSplitByID, id)
 	var i RevenueSplit
 	err := row.Scan(
 		&i.ID,
@@ -934,16 +828,11 @@ func (q *Queries) GetRevenueSplitByID(ctx context.Context, arg GetRevenueSplitBy
 
 const getTrackCompletionRate = `-- name: GetTrackCompletionRate :one
 SELECT
-    COUNT(*)::int AS total_enrolled,
-    COUNT(completed_at)::int AS completed
+ COUNT(*)::int AS total_enrolled,
+ COUNT(completed_at)::int AS completed
 FROM enrollments
-WHERE tenant_id = $1 AND track_id = $2
+WHERE track_id = $1
 `
-
-type GetTrackCompletionRateParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-}
 
 type GetTrackCompletionRateRow struct {
 	TotalEnrolled int32 `json:"total_enrolled"`
@@ -951,8 +840,8 @@ type GetTrackCompletionRateRow struct {
 }
 
 // Percentage of enrollments with completed_at set (BUG-007).
-func (q *Queries) GetTrackCompletionRate(ctx context.Context, arg GetTrackCompletionRateParams) (GetTrackCompletionRateRow, error) {
-	row := q.db.QueryRow(ctx, getTrackCompletionRate, arg.TenantID, arg.TrackID)
+func (q *Queries) GetTrackCompletionRate(ctx context.Context, trackID pgtype.UUID) (GetTrackCompletionRateRow, error) {
+	row := q.db.QueryRow(ctx, getTrackCompletionRate, trackID)
 	var i GetTrackCompletionRateRow
 	err := row.Scan(&i.TotalEnrolled, &i.Completed)
 	return i, err
@@ -960,18 +849,13 @@ func (q *Queries) GetTrackCompletionRate(ctx context.Context, arg GetTrackComple
 
 const getTrackEnrollmentSeries = `-- name: GetTrackEnrollmentSeries :many
 SELECT
-    date_trunc('day', enrolled_at)::date AS enroll_date,
-    COUNT(*)::int AS count
+ date_trunc('day', enrolled_at)::date AS enroll_date,
+ COUNT(*)::int AS count
 FROM enrollments
-WHERE tenant_id = $1 AND track_id = $2
+WHERE track_id = $1
 GROUP BY enroll_date
 ORDER BY enroll_date ASC
 `
-
-type GetTrackEnrollmentSeriesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-}
 
 type GetTrackEnrollmentSeriesRow struct {
 	EnrollDate pgtype.Date `json:"enroll_date"`
@@ -979,8 +863,8 @@ type GetTrackEnrollmentSeriesRow struct {
 }
 
 // Daily enrollment count series for a single track (BUG-007).
-func (q *Queries) GetTrackEnrollmentSeries(ctx context.Context, arg GetTrackEnrollmentSeriesParams) ([]GetTrackEnrollmentSeriesRow, error) {
-	rows, err := q.db.Query(ctx, getTrackEnrollmentSeries, arg.TenantID, arg.TrackID)
+func (q *Queries) GetTrackEnrollmentSeries(ctx context.Context, trackID pgtype.UUID) ([]GetTrackEnrollmentSeriesRow, error) {
+	rows, err := q.db.Query(ctx, getTrackEnrollmentSeries, trackID)
 	if err != nil {
 		return nil, err
 	}
@@ -1001,18 +885,13 @@ func (q *Queries) GetTrackEnrollmentSeries(ctx context.Context, arg GetTrackEnro
 
 const getTrackRevenueSeries = `-- name: GetTrackRevenueSeries :many
 SELECT
-    date_trunc('day', created_at)::date AS rev_date,
-    SUM(creator_kobo)::bigint AS kobo
+ date_trunc('day', created_at)::date AS rev_date,
+ SUM(creator_kobo)::bigint AS kobo
 FROM revenue_splits
-WHERE tenant_id = $1 AND track_id = $2
+WHERE track_id = $1
 GROUP BY rev_date
 ORDER BY rev_date ASC
 `
-
-type GetTrackRevenueSeriesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
-}
 
 type GetTrackRevenueSeriesRow struct {
 	RevDate pgtype.Date `json:"rev_date"`
@@ -1020,8 +899,8 @@ type GetTrackRevenueSeriesRow struct {
 }
 
 // Daily creator revenue series for a single track (BUG-007).
-func (q *Queries) GetTrackRevenueSeries(ctx context.Context, arg GetTrackRevenueSeriesParams) ([]GetTrackRevenueSeriesRow, error) {
-	rows, err := q.db.Query(ctx, getTrackRevenueSeries, arg.TenantID, arg.TrackID)
+func (q *Queries) GetTrackRevenueSeries(ctx context.Context, trackID pgtype.UUID) ([]GetTrackRevenueSeriesRow, error) {
+	rows, err := q.db.Query(ctx, getTrackRevenueSeries, trackID)
 	if err != nil {
 		return nil, err
 	}
@@ -1041,25 +920,19 @@ func (q *Queries) GetTrackRevenueSeries(ctx context.Context, arg GetTrackRevenue
 }
 
 const getUniversityTrackByID = `-- name: GetUniversityTrackByID :one
-SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
-       is_published, sort_order, instructor_id, price_kobo, currency,
-       is_published_to_university, category, language, geo_space_id, total_enrolled,
-       subscription_eligible,
-       university_submission_status, university_submitted_at,
-       university_reviewed_at, university_rejection_reason,
-       created_at, updated_at
+SELECT id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ subscription_eligible,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 FROM learning_tracks
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetUniversityTrackByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type GetUniversityTrackByIDRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -1084,12 +957,11 @@ type GetUniversityTrackByIDRow struct {
 	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetUniversityTrackByID(ctx context.Context, arg GetUniversityTrackByIDParams) (GetUniversityTrackByIDRow, error) {
-	row := q.db.QueryRow(ctx, getUniversityTrackByID, arg.TenantID, arg.ID)
+func (q *Queries) GetUniversityTrackByID(ctx context.Context, id pgtype.UUID) (GetUniversityTrackByIDRow, error) {
+	row := q.db.QueryRow(ctx, getUniversityTrackByID, id)
 	var i GetUniversityTrackByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -1117,33 +989,26 @@ func (q *Queries) GetUniversityTrackByID(ctx context.Context, arg GetUniversityT
 }
 
 const getUniversityTrackBySlug = `-- name: GetUniversityTrackBySlug :one
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
-       lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
-       lt.is_published, lt.is_published_to_university,
-       lt.created_at, lt.updated_at,
-       ip.display_name  AS instructor_name,
-       ip.headline      AS instructor_headline,
-       ip.tier          AS instructor_tier,
-       COALESCE(ra.average_rating, 0)   AS avg_rating,
-       COALESCE(ra.review_count, 0) AS review_count
+SELECT lt.id, lt.title, lt.slug, lt.description,
+ lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
+ lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
+ lt.is_published, lt.is_published_to_university,
+ lt.created_at, lt.updated_at,
+ ip.display_name AS instructor_name,
+ ip.headline AS instructor_headline,
+ ip.tier AS instructor_tier,
+ COALESCE(ra.average_rating, 0) AS avg_rating,
+ COALESCE(ra.review_count, 0) AS review_count
 FROM learning_tracks lt
 LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
-                              AND ra.entity_id = lt.id
-                              AND ra.tenant_id = lt.tenant_id
-WHERE lt.tenant_id = $1 AND lt.slug = $2
-  AND lt.is_published_to_university = true
+ AND ra.entity_id = lt.id
+WHERE lt.slug = $1
+ AND lt.is_published_to_university = true
 `
-
-type GetUniversityTrackBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
 
 type GetUniversityTrackBySlugRow struct {
 	ID                      pgtype.UUID        `json:"id"`
-	TenantID                pgtype.UUID        `json:"tenant_id"`
 	Title                   string             `json:"title"`
 	Slug                    string             `json:"slug"`
 	Description             *string            `json:"description"`
@@ -1168,12 +1033,11 @@ type GetUniversityTrackBySlugRow struct {
 	ReviewCount             int32              `json:"review_count"`
 }
 
-func (q *Queries) GetUniversityTrackBySlug(ctx context.Context, arg GetUniversityTrackBySlugParams) (GetUniversityTrackBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getUniversityTrackBySlug, arg.TenantID, arg.Slug)
+func (q *Queries) GetUniversityTrackBySlug(ctx context.Context, slug string) (GetUniversityTrackBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getUniversityTrackBySlug, slug)
 	var i GetUniversityTrackBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -1202,16 +1066,11 @@ func (q *Queries) GetUniversityTrackBySlug(ctx context.Context, arg GetUniversit
 
 const getUniversityTrackCategory = `-- name: GetUniversityTrackCategory :one
 SELECT id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetUniversityTrackCategoryParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetUniversityTrackCategory(ctx context.Context, arg GetUniversityTrackCategoryParams) (UniversityTrackCategory, error) {
-	row := q.db.QueryRow(ctx, getUniversityTrackCategory, arg.TenantID, arg.ID)
+func (q *Queries) GetUniversityTrackCategory(ctx context.Context, id pgtype.UUID) (UniversityTrackCategory, error) {
+	row := q.db.QueryRow(ctx, getUniversityTrackCategory, id)
 	var i UniversityTrackCategory
 	err := row.Scan(
 		&i.ID,
@@ -1230,19 +1089,14 @@ const getUserContentCountryPreference = `-- name: GetUserContentCountryPreferenc
 
 SELECT content_country_preference
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetUserContentCountryPreferenceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // =====================================================================
 // Geo personalization (ADR-064) — user override column
 // =====================================================================
-func (q *Queries) GetUserContentCountryPreference(ctx context.Context, arg GetUserContentCountryPreferenceParams) (*string, error) {
-	row := q.db.QueryRow(ctx, getUserContentCountryPreference, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserContentCountryPreference(ctx context.Context, userID pgtype.UUID) (*string, error) {
+	row := q.db.QueryRow(ctx, getUserContentCountryPreference, userID)
 	var content_country_preference *string
 	err := row.Scan(&content_country_preference)
 	return content_country_preference, err
@@ -1250,24 +1104,19 @@ func (q *Queries) GetUserContentCountryPreference(ctx context.Context, arg GetUs
 
 const getUserGeoProfileFields = `-- name: GetUserGeoProfileFields :one
 SELECT
-    COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
-    COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
-    COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
-    COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route,
-    COALESCE(MAX(CASE WHEN cf.key = 'purpose' THEN cfv.value_text END), '')::text AS purpose,
-    COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date
+ COALESCE(MAX(CASE WHEN cf.key = 'japa_status' THEN cfv.value_text END), '')::text AS japa_status,
+ COALESCE(MAX(CASE WHEN cf.key = 'destination_country' THEN cfv.value_text END), '')::text AS destination_country,
+ COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
+ COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route,
+ COALESCE(MAX(CASE WHEN cf.key = 'purpose' THEN cfv.value_text END), '')::text AS purpose,
+ COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
-    ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
+ ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id
 LEFT JOIN custom_fields cf
-    ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route', 'purpose', 'planned_travel_date')
-WHERE up.tenant_id = $1 AND up.user_id = $2
+ ON cf.id = cfv.field_id AND cf.key IN ('japa_status', 'destination_country', 'origin_country', 'visa_route', 'purpose', 'planned_travel_date')
+WHERE up.user_id = $1
 `
-
-type GetUserGeoProfileFieldsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetUserGeoProfileFieldsRow struct {
 	JapaStatus         string `json:"japa_status"`
@@ -1282,8 +1131,8 @@ type GetUserGeoProfileFieldsRow struct {
 // needs (japa_status, destination_country, origin_country) in a single
 // round-trip. All live in custom_field_values (entity_type='user_profile',
 // entity_id=profile id). Returns empty strings when the user has not set a field.
-func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoProfileFieldsParams) (GetUserGeoProfileFieldsRow, error) {
-	row := q.db.QueryRow(ctx, getUserGeoProfileFields, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserGeoProfileFields(ctx context.Context, userID pgtype.UUID) (GetUserGeoProfileFieldsRow, error) {
+	row := q.db.QueryRow(ctx, getUserGeoProfileFields, userID)
 	var i GetUserGeoProfileFieldsRow
 	err := row.Scan(
 		&i.JapaStatus,
@@ -1298,19 +1147,18 @@ func (q *Queries) GetUserGeoProfileFields(ctx context.Context, arg GetUserGeoPro
 
 const hasEnrollmentForTrack = `-- name: HasEnrollmentForTrack :one
 SELECT EXISTS (
-    SELECT 1 FROM enrollments
-    WHERE tenant_id = $1 AND user_id = $2 AND track_id = $3
+ SELECT 1 FROM enrollments
+ WHERE user_id = $1 AND track_id = $2
 ) AS has_enrollment
 `
 
 type HasEnrollmentForTrackParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	TrackID  pgtype.UUID `json:"track_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	TrackID pgtype.UUID `json:"track_id"`
 }
 
 func (q *Queries) HasEnrollmentForTrack(ctx context.Context, arg HasEnrollmentForTrackParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasEnrollmentForTrack, arg.TenantID, arg.UserID, arg.TrackID)
+	row := q.db.QueryRow(ctx, hasEnrollmentForTrack, arg.UserID, arg.TrackID)
 	var has_enrollment bool
 	err := row.Scan(&has_enrollment)
 	return has_enrollment, err
@@ -1318,33 +1166,26 @@ func (q *Queries) HasEnrollmentForTrack(ctx context.Context, arg HasEnrollmentFo
 
 const hasProStreamSplitForPeriod = `-- name: HasProStreamSplitForPeriod :one
 SELECT EXISTS (
-    SELECT 1 FROM revenue_splits rs
-    JOIN enrollments e ON e.id = rs.enrollment_id
-    WHERE rs.tenant_id = $1
-      AND rs.instructor_id = $2
-      AND rs.track_id = $3
-      AND e.user_id = $4
-      AND rs.source = 'pro_stream'
+ SELECT 1 FROM revenue_splits rs
+ JOIN enrollments e ON e.id = rs.enrollment_id
+ WHERE rs.instructor_id = $1
+ AND rs.track_id = $2
+ AND e.user_id = $3
+ AND rs.source = 'pro_stream'
 ) AS has_split
 `
 
 type HasProStreamSplitForPeriodParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	InstructorID pgtype.UUID `json:"instructor_id"`
 	TrackID      pgtype.UUID `json:"track_id"`
 	UserID       pgtype.UUID `json:"user_id"`
 }
 
 // Idempotency guard for pro_stream revenue splits (BUG-008). A pro_stream
-// split is identified by (tenant_id, instructor_id, track_id, user_id, source).
+// split is identified by (instructor_id, track_id, user_id, source).
 // Since pro_stream has no payment_id, we guard on the enrollment_id instead.
 func (q *Queries) HasProStreamSplitForPeriod(ctx context.Context, arg HasProStreamSplitForPeriodParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasProStreamSplitForPeriod,
-		arg.TenantID,
-		arg.InstructorID,
-		arg.TrackID,
-		arg.UserID,
-	)
+	row := q.db.QueryRow(ctx, hasProStreamSplitForPeriod, arg.InstructorID, arg.TrackID, arg.UserID)
 	var has_split bool
 	err := row.Scan(&has_split)
 	return has_split, err
@@ -1352,19 +1193,14 @@ func (q *Queries) HasProStreamSplitForPeriod(ctx context.Context, arg HasProStre
 
 const hasRevenueSplitForPayment = `-- name: HasRevenueSplitForPayment :one
 SELECT EXISTS (
-    SELECT 1 FROM revenue_splits
-    WHERE tenant_id = $1 AND payment_id = $2
+ SELECT 1 FROM revenue_splits
+ WHERE payment_id = $1
 ) AS has_split
 `
 
-type HasRevenueSplitForPaymentParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	PaymentID pgtype.UUID `json:"payment_id"`
-}
-
 // Idempotency guard for university:process_enrollment (AUDIT-BE-005).
-func (q *Queries) HasRevenueSplitForPayment(ctx context.Context, arg HasRevenueSplitForPaymentParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasRevenueSplitForPayment, arg.TenantID, arg.PaymentID)
+func (q *Queries) HasRevenueSplitForPayment(ctx context.Context, paymentID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasRevenueSplitForPayment, paymentID)
 	var has_split bool
 	err := row.Scan(&has_split)
 	return has_split, err
@@ -1373,37 +1209,23 @@ func (q *Queries) HasRevenueSplitForPayment(ctx context.Context, arg HasRevenueS
 const incrementTrackTotalEnrolled = `-- name: IncrementTrackTotalEnrolled :exec
 UPDATE learning_tracks
 SET total_enrolled = total_enrolled + 1,
-    updated_at = now()
-WHERE tenant_id = $1 AND id = $2
+ updated_at = now()
+WHERE id = $1
 `
 
-type IncrementTrackTotalEnrolledParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) IncrementTrackTotalEnrolled(ctx context.Context, arg IncrementTrackTotalEnrolledParams) error {
-	_, err := q.db.Exec(ctx, incrementTrackTotalEnrolled, arg.TenantID, arg.ID)
+func (q *Queries) IncrementTrackTotalEnrolled(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementTrackTotalEnrolled, id)
 	return err
 }
 
 const insertRevenueSplit = `-- name: InsertRevenueSplit :one
 
-INSERT INTO revenue_splits (
-    tenant_id, instructor_id, track_id, enrollment_id, payment_id,
-    source, gross_kobo, creator_pct, platform_pct, creator_kobo,
-    platform_kobo, currency
-)
-VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10,
-    $11, COALESCE($12, 'NGN')
-)
+INSERT INTO revenue_splits (instructor_id, track_id, enrollment_id, payment_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'NGN'))
+
 RETURNING id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at
 `
 
 type InsertRevenueSplitParams struct {
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 	InstructorID pgtype.UUID    `json:"instructor_id"`
 	TrackID      pgtype.UUID    `json:"track_id"`
 	EnrollmentID pgtype.UUID    `json:"enrollment_id"`
@@ -1422,7 +1244,6 @@ type InsertRevenueSplitParams struct {
 // =====================================================================
 func (q *Queries) InsertRevenueSplit(ctx context.Context, arg InsertRevenueSplitParams) (RevenueSplit, error) {
 	row := q.db.QueryRow(ctx, insertRevenueSplit,
-		arg.TenantID,
 		arg.InstructorID,
 		arg.TrackID,
 		arg.EnrollmentID,
@@ -1459,7 +1280,7 @@ func (q *Queries) InsertRevenueSplit(ctx context.Context, arg InsertRevenueSplit
 const listActiveUniversityTrackCategories = `-- name: ListActiveUniversityTrackCategories :many
 SELECT id, slug, name, sort_order
 FROM university_track_categories
-WHERE tenant_id = $1 AND is_active = true
+WHERE is_active = true
 ORDER BY sort_order ASC, name ASC
 `
 
@@ -1471,8 +1292,8 @@ type ListActiveUniversityTrackCategoriesRow struct {
 }
 
 // Public catalog endpoint — no auth required, returns only active rows.
-func (q *Queries) ListActiveUniversityTrackCategories(ctx context.Context, tenantID pgtype.UUID) ([]ListActiveUniversityTrackCategoriesRow, error) {
-	rows, err := q.db.Query(ctx, listActiveUniversityTrackCategories, tenantID)
+func (q *Queries) ListActiveUniversityTrackCategories(ctx context.Context) ([]ListActiveUniversityTrackCategoriesRow, error) {
+	rows, err := q.db.Query(ctx, listActiveUniversityTrackCategories)
 	if err != nil {
 		return nil, err
 	}
@@ -1498,26 +1319,24 @@ func (q *Queries) ListActiveUniversityTrackCategories(ctx context.Context, tenan
 
 const listAllUniversityTracks = `-- name: ListAllUniversityTracks :many
 
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
-       lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
-       lt.is_published, lt.is_published_to_university,
-       lt.university_submission_status, lt.university_submitted_at,
-       lt.university_reviewed_at, lt.university_rejection_reason,
-       lt.created_at, lt.updated_at,
-       ip.display_name AS instructor_name
+SELECT lt.id, lt.title, lt.slug, lt.description,
+ lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
+ lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
+ lt.is_published, lt.is_published_to_university,
+ lt.university_submission_status, lt.university_submitted_at,
+ lt.university_reviewed_at, lt.university_rejection_reason,
+ lt.created_at, lt.updated_at,
+ ip.display_name AS instructor_name
 FROM learning_tracks lt
 LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
-WHERE lt.tenant_id = $1
-  AND lt.instructor_id IS NOT NULL
-  AND ($2::text = '' OR lt.university_submission_status = $2)
-  AND ($3::uuid IS NULL OR lt.geo_space_id = $3)
+WHERE lt.instructor_id IS NOT NULL
+ AND ($1::text = '' OR lt.university_submission_status = $1)
+ AND ($2::uuid IS NULL OR lt.geo_space_id = $2)
 ORDER BY lt.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListAllUniversityTracksParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -1526,7 +1345,6 @@ type ListAllUniversityTracksParams struct {
 
 type ListAllUniversityTracksRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -1558,7 +1376,6 @@ type ListAllUniversityTracksRow struct {
 // instructor name and submission status.
 func (q *Queries) ListAllUniversityTracks(ctx context.Context, arg ListAllUniversityTracksParams) ([]ListAllUniversityTracksRow, error) {
 	rows, err := q.db.Query(ctx, listAllUniversityTracks,
-		arg.TenantID,
 		arg.Status,
 		arg.SpaceID,
 		arg.PageOffset,
@@ -1573,7 +1390,6 @@ func (q *Queries) ListAllUniversityTracks(ctx context.Context, arg ListAllUniver
 		var i ListAllUniversityTracksRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -1609,25 +1425,19 @@ func (q *Queries) ListAllUniversityTracks(ctx context.Context, arg ListAllUniver
 
 const listInstructorPayoutsByInstructor = `-- name: ListInstructorPayoutsByInstructor :many
 SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
-WHERE tenant_id = $1 AND instructor_id = $2
+WHERE instructor_id = $1
 ORDER BY period_start DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListInstructorPayoutsByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	InstructorID pgtype.UUID `json:"instructor_id"`
 	PageOffset   int32       `json:"page_offset"`
 	PageLimit    int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListInstructorPayoutsByInstructor(ctx context.Context, arg ListInstructorPayoutsByInstructorParams) ([]InstructorPayout, error) {
-	rows, err := q.db.Query(ctx, listInstructorPayoutsByInstructor,
-		arg.TenantID,
-		arg.InstructorID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listInstructorPayoutsByInstructor, arg.InstructorID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1665,18 +1475,16 @@ const listInstructorPayoutsByStatus = `-- name: ListInstructorPayoutsByStatus :m
 SELECT p.id, p.tenant_id, p.instructor_id, p.period_start, p.period_end, p.gross_kobo, p.platform_commission_kobo, p.net_kobo, p.currency, p.status, p.payout_reference, p.failure_reason, p.processed_at, p.created_at, ip.display_name AS instructor_name
 FROM instructor_payouts p
 LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
-WHERE p.tenant_id = $1
-  AND ($2::text = '' OR p.status = $2)
-  AND ($3::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.instructor_id = p.instructor_id
-          AND lt.geo_space_id = $3))
+WHERE ($1::text = '' OR p.status = $1)
+ AND ($2::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.instructor_id = p.instructor_id
+ AND lt.geo_space_id = $2))
 ORDER BY p.created_at ASC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListInstructorPayoutsByStatusParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -1705,7 +1513,6 @@ type ListInstructorPayoutsByStatusRow struct {
 // to payouts for instructors who have a track targeted at that space.
 func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListInstructorPayoutsByStatusParams) ([]ListInstructorPayoutsByStatusRow, error) {
 	rows, err := q.db.Query(ctx, listInstructorPayoutsByStatus,
-		arg.TenantID,
 		arg.Status,
 		arg.SpaceID,
 		arg.PageOffset,
@@ -1747,18 +1554,16 @@ func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListIns
 
 const listInstructorProfilesByStatus = `-- name: ListInstructorProfilesByStatus :many
 SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles ip
-WHERE ip.tenant_id = $1
-  AND ($2::text = '' OR ip.status = $2)
-  AND ($3::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.instructor_id = ip.id
-          AND lt.geo_space_id = $3))
+WHERE ($1::text = '' OR ip.status = $1)
+ AND ($2::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.instructor_id = ip.id
+ AND lt.geo_space_id = $2))
 ORDER BY ip.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListInstructorProfilesByStatusParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -1769,7 +1574,6 @@ type ListInstructorProfilesByStatusParams struct {
 // to instructors who have at least one track targeted at that space.
 func (q *Queries) ListInstructorProfilesByStatus(ctx context.Context, arg ListInstructorProfilesByStatusParams) ([]InstructorProfile, error) {
 	rows, err := q.db.Query(ctx, listInstructorProfilesByStatus,
-		arg.TenantID,
 		arg.Status,
 		arg.SpaceID,
 		arg.PageOffset,
@@ -1813,17 +1617,12 @@ func (q *Queries) ListInstructorProfilesByStatus(ctx context.Context, arg ListIn
 
 const listOpenRevenueSplitsByInstructor = `-- name: ListOpenRevenueSplitsByInstructor :many
 SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
-WHERE tenant_id = $1 AND instructor_id = $2 AND payout_id IS NULL
+WHERE instructor_id = $1 AND payout_id IS NULL
 ORDER BY created_at ASC
 `
 
-type ListOpenRevenueSplitsByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
-
-func (q *Queries) ListOpenRevenueSplitsByInstructor(ctx context.Context, arg ListOpenRevenueSplitsByInstructorParams) ([]RevenueSplit, error) {
-	rows, err := q.db.Query(ctx, listOpenRevenueSplitsByInstructor, arg.TenantID, arg.InstructorID)
+func (q *Queries) ListOpenRevenueSplitsByInstructor(ctx context.Context, instructorID pgtype.UUID) ([]RevenueSplit, error) {
+	rows, err := q.db.Query(ctx, listOpenRevenueSplitsByInstructor, instructorID)
 	if err != nil {
 		return nil, err
 	}
@@ -1859,28 +1658,26 @@ func (q *Queries) ListOpenRevenueSplitsByInstructor(ctx context.Context, arg Lis
 }
 
 const listPendingUniversityTracks = `-- name: ListPendingUniversityTracks :many
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
-       lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
-       lt.is_published, lt.is_published_to_university,
-       lt.university_submission_status, lt.university_submitted_at,
-       lt.university_reviewed_at, lt.university_rejection_reason,
-       lt.created_at, lt.updated_at,
-       ip.display_name AS instructor_name
+SELECT lt.id, lt.title, lt.slug, lt.description,
+ lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
+ lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
+ lt.is_published, lt.is_published_to_university,
+ lt.university_submission_status, lt.university_submitted_at,
+ lt.university_reviewed_at, lt.university_rejection_reason,
+ lt.created_at, lt.updated_at,
+ ip.display_name AS instructor_name
 FROM learning_tracks lt
 JOIN instructor_profiles ip ON ip.id = lt.instructor_id
-WHERE lt.tenant_id = $1
-  AND lt.instructor_id IS NOT NULL
-  AND lt.is_published_to_university = false
-  AND lt.is_published = true
-  AND ip.status = 'approved'
-  AND ($2::uuid IS NULL OR lt.geo_space_id = $2)
+WHERE lt.instructor_id IS NOT NULL
+ AND lt.is_published_to_university = false
+ AND lt.is_published = true
+ AND ip.status = 'approved'
+ AND ($1::uuid IS NULL OR lt.geo_space_id = $1)
 ORDER BY lt.updated_at ASC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPendingUniversityTracksParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -1888,7 +1685,6 @@ type ListPendingUniversityTracksParams struct {
 
 type ListPendingUniversityTracksRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -1918,12 +1714,7 @@ type ListPendingUniversityTracksRow struct {
 // (the creator has published the underlying track content; the marketplace
 // gate is the only thing pending).
 func (q *Queries) ListPendingUniversityTracks(ctx context.Context, arg ListPendingUniversityTracksParams) ([]ListPendingUniversityTracksRow, error) {
-	rows, err := q.db.Query(ctx, listPendingUniversityTracks,
-		arg.TenantID,
-		arg.SpaceID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPendingUniversityTracks, arg.SpaceID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1933,7 +1724,6 @@ func (q *Queries) ListPendingUniversityTracks(ctx context.Context, arg ListPendi
 		var i ListPendingUniversityTracksRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -1968,31 +1758,24 @@ func (q *Queries) ListPendingUniversityTracks(ctx context.Context, arg ListPendi
 }
 
 const listPublishedTracksByInstructor = `-- name: ListPublishedTracksByInstructor :many
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
-       lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
-       lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
-       lt.language, lt.geo_space_id, lt.total_enrolled,
-       lt.subscription_eligible,
-       lt.university_submission_status, lt.university_submitted_at,
-       lt.university_reviewed_at, lt.university_rejection_reason,
-       lt.created_at, lt.updated_at,
-       m.storage_path AS thumbnail_url
+SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
+ lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
+ lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
+ lt.language, lt.geo_space_id, lt.total_enrolled,
+ lt.subscription_eligible,
+ lt.university_submission_status, lt.university_submitted_at,
+ lt.university_reviewed_at, lt.university_rejection_reason,
+ lt.created_at, lt.updated_at,
+ m.storage_path AS thumbnail_url
 FROM learning_tracks lt
 LEFT JOIN media m ON m.id = lt.cover_media_id
-WHERE lt.tenant_id = $1
-  AND lt.instructor_id = $2
-  AND lt.is_published_to_university = true
+WHERE lt.instructor_id = $1
+ AND lt.is_published_to_university = true
 ORDER BY lt.total_enrolled DESC, lt.created_at DESC
 `
 
-type ListPublishedTracksByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
-
 type ListPublishedTracksByInstructorRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -2020,8 +1803,8 @@ type ListPublishedTracksByInstructorRow struct {
 
 // Public instructor profile: only live marketplace tracks, filtered at the
 // DB level (BUG-017 — avoids in-memory filter).
-func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, arg ListPublishedTracksByInstructorParams) ([]ListPublishedTracksByInstructorRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedTracksByInstructor, arg.TenantID, arg.InstructorID)
+func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, instructorID pgtype.UUID) ([]ListPublishedTracksByInstructorRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedTracksByInstructor, instructorID)
 	if err != nil {
 		return nil, err
 	}
@@ -2031,7 +1814,6 @@ func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, arg ListP
 		var i ListPublishedTracksByInstructorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -2070,23 +1852,21 @@ const listRevenueSplits = `-- name: ListRevenueSplits :many
 SELECT rs.id, rs.tenant_id, rs.instructor_id, rs.track_id, rs.enrollment_id, rs.payment_id, rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct, rs.platform_pct, rs.creator_kobo, rs.platform_kobo, rs.currency, rs.created_at, ip.display_name AS instructor_name
 FROM revenue_splits rs
 LEFT JOIN instructor_profiles ip ON ip.id = rs.instructor_id
-WHERE rs.tenant_id = $1
-  AND ($2::uuid IS NULL OR rs.instructor_id = $2)
-  AND ($3::uuid IS NULL OR rs.track_id = $3)
-  AND ($4::text = '' OR rs.source = $4)
-  AND ($5::uuid IS NULL OR rs.payout_id = $5)
-  AND ($6::timestamptz IS NULL OR rs.created_at >= $6)
-  AND ($7::timestamptz IS NULL OR rs.created_at < $7)
-  AND ($8::uuid IS NULL OR EXISTS (
-        SELECT 1 FROM learning_tracks lt
-        WHERE lt.id = rs.track_id
-          AND lt.geo_space_id = $8))
+WHERE ($1::uuid IS NULL OR rs.instructor_id = $1)
+ AND ($2::uuid IS NULL OR rs.track_id = $2)
+ AND ($3::text = '' OR rs.source = $3)
+ AND ($4::uuid IS NULL OR rs.payout_id = $4)
+ AND ($5::timestamptz IS NULL OR rs.created_at >= $5)
+ AND ($6::timestamptz IS NULL OR rs.created_at < $6)
+ AND ($7::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.id = rs.track_id
+ AND lt.geo_space_id = $7))
 ORDER BY rs.created_at DESC
-LIMIT $10 OFFSET $9
+LIMIT $9 OFFSET $8
 `
 
 type ListRevenueSplitsParams struct {
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	InstructorID pgtype.UUID        `json:"instructor_id"`
 	TrackID      pgtype.UUID        `json:"track_id"`
 	Source       string             `json:"source"`
@@ -2123,7 +1903,6 @@ type ListRevenueSplitsRow struct {
 // recent revenue events appear first.
 func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsParams) ([]ListRevenueSplitsRow, error) {
 	rows, err := q.db.Query(ctx, listRevenueSplits,
-		arg.TenantID,
 		arg.InstructorID,
 		arg.TrackID,
 		arg.Source,
@@ -2171,25 +1950,19 @@ func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsPa
 
 const listRevenueSplitsByInstructor = `-- name: ListRevenueSplitsByInstructor :many
 SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
-WHERE tenant_id = $1 AND instructor_id = $2
+WHERE instructor_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListRevenueSplitsByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	InstructorID pgtype.UUID `json:"instructor_id"`
 	PageOffset   int32       `json:"page_offset"`
 	PageLimit    int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListRevenueSplitsByInstructor(ctx context.Context, arg ListRevenueSplitsByInstructorParams) ([]RevenueSplit, error) {
-	rows, err := q.db.Query(ctx, listRevenueSplitsByInstructor,
-		arg.TenantID,
-		arg.InstructorID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listRevenueSplitsByInstructor, arg.InstructorID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2226,37 +1999,34 @@ func (q *Queries) ListRevenueSplitsByInstructor(ctx context.Context, arg ListRev
 
 const listUniversityCatalog = `-- name: ListUniversityCatalog :many
 
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description,
-       lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
-       lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
-       lt.created_at, lt.updated_at,
-       m.storage_path AS thumbnail_url,
-       ip.display_name AS instructor_name,
-       COALESCE(ra.average_rating, 0)  AS avg_rating,
-       COALESCE(ra.review_count, 0) AS review_count
+SELECT lt.id, lt.title, lt.slug, lt.description,
+ lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
+ lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
+ lt.created_at, lt.updated_at,
+ m.storage_path AS thumbnail_url,
+ ip.display_name AS instructor_name,
+ COALESCE(ra.average_rating, 0) AS avg_rating,
+ COALESCE(ra.review_count, 0) AS review_count
 FROM learning_tracks lt
 LEFT JOIN media m ON m.id = lt.cover_media_id
 LEFT JOIN instructor_profiles ip ON ip.id = lt.instructor_id
 LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
-                              AND ra.entity_id = lt.id
-                              AND ra.tenant_id = lt.tenant_id
-WHERE lt.tenant_id = $1
-  AND lt.is_published_to_university = true
-  AND ($2::text = '' OR lt.category = $2)
-  AND ($3::text = '' OR lt.language = $3)
-  AND ($4::bool = false OR lt.price_kobo IS NULL)
-  AND ($5::text = '' OR lt.difficulty = $5)
-  AND ($6::text = '' OR lt.title ILIKE '%' || $6 || '%')
-  AND ($7::uuid IS NULL OR lt.geo_space_id = $7)
+ AND ra.entity_id = lt.id
+WHERE lt.is_published_to_university = true
+ AND ($1::text = '' OR lt.category = $1)
+ AND ($2::text = '' OR lt.language = $2)
+ AND ($3::bool = false OR lt.price_kobo IS NULL)
+ AND ($4::text = '' OR lt.difficulty = $4)
+ AND ($5::text = '' OR lt.title ILIKE '%' || $5 || '%')
+ AND ($6::uuid IS NULL OR lt.geo_space_id = $6)
 ORDER BY
-  CASE WHEN $8::text = 'newest' THEN lt.created_at END DESC,
-  CASE WHEN $8::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
-  lt.total_enrolled DESC, lt.created_at DESC
-LIMIT $10 OFFSET $9
+ CASE WHEN $7::text = 'newest' THEN lt.created_at END DESC,
+ CASE WHEN $7::text = 'rating' THEN COALESCE(ra.average_rating, 0) END DESC,
+ lt.total_enrolled DESC, lt.created_at DESC
+LIMIT $9 OFFSET $8
 `
 
 type ListUniversityCatalogParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Category   string      `json:"category"`
 	Language   string      `json:"language"`
 	IsFree     bool        `json:"is_free"`
@@ -2270,7 +2040,6 @@ type ListUniversityCatalogParams struct {
 
 type ListUniversityCatalogRow struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	Title                string             `json:"title"`
 	Slug                 string             `json:"slug"`
 	Description          *string            `json:"description"`
@@ -2303,7 +2072,6 @@ type ListUniversityCatalogRow struct {
 // given space (used by the University page Courses tab, ADR-063).
 func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityCatalogParams) ([]ListUniversityCatalogRow, error) {
 	rows, err := q.db.Query(ctx, listUniversityCatalog,
-		arg.TenantID,
 		arg.Category,
 		arg.Language,
 		arg.IsFree,
@@ -2323,7 +2091,6 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 		var i ListUniversityCatalogRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -2356,24 +2123,21 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 
 const listUniversityTrackCategories = `-- name: ListUniversityTrackCategories :many
 SELECT id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
-WHERE tenant_id = $1
-  AND ($2::text = '' OR is_active = ($2::text = 'true'))
-  AND ($3::text = '' OR name ILIKE '%' || $3 || '%' OR slug ILIKE '%' || $3 || '%')
+WHERE ($1::text = '' OR is_active = ($1::text = 'true'))
+ AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
 ORDER BY sort_order ASC, name ASC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListUniversityTrackCategoriesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Active     string      `json:"active"`
-	Search     string      `json:"search"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Active     string `json:"active"`
+	Search     string `json:"search"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListUniversityTrackCategories(ctx context.Context, arg ListUniversityTrackCategoriesParams) ([]UniversityTrackCategory, error) {
 	rows, err := q.db.Query(ctx, listUniversityTrackCategories,
-		arg.TenantID,
 		arg.Active,
 		arg.Search,
 		arg.PageOffset,
@@ -2407,36 +2171,30 @@ func (q *Queries) ListUniversityTrackCategories(ctx context.Context, arg ListUni
 }
 
 const listUniversityTracksByInstructor = `-- name: ListUniversityTracksByInstructor :many
-SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
-       lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
-       lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
-       lt.language, lt.geo_space_id, lt.total_enrolled,
-       lt.subscription_eligible,
-       lt.university_submission_status, lt.university_submitted_at,
-       lt.university_reviewed_at, lt.university_rejection_reason,
-       lt.created_at, lt.updated_at,
-       COALESCE(rs.total_revenue_kobo, 0)::bigint AS total_revenue_kobo,
-       m.storage_path AS thumbnail_url
+SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
+ lt.cover_media_id, lt.is_published, lt.sort_order, lt.instructor_id,
+ lt.price_kobo, lt.currency, lt.is_published_to_university, lt.category,
+ lt.language, lt.geo_space_id, lt.total_enrolled,
+ lt.subscription_eligible,
+ lt.university_submission_status, lt.university_submitted_at,
+ lt.university_reviewed_at, lt.university_rejection_reason,
+ lt.created_at, lt.updated_at,
+ COALESCE(rs.total_revenue_kobo, 0)::bigint AS total_revenue_kobo,
+ m.storage_path AS thumbnail_url
 FROM learning_tracks lt
 LEFT JOIN (
-    SELECT track_id, SUM(creator_kobo)::bigint AS total_revenue_kobo
-    FROM revenue_splits rs
-    WHERE rs.tenant_id = $1
-    GROUP BY track_id
+ SELECT track_id, SUM(creator_kobo)::bigint AS total_revenue_kobo
+ FROM revenue_splits rs
+
+ GROUP BY track_id
 ) rs ON rs.track_id = lt.id
 LEFT JOIN media m ON m.id = lt.cover_media_id
-WHERE lt.tenant_id = $1 AND lt.instructor_id = $2
+WHERE lt.instructor_id = $1
 ORDER BY lt.created_at DESC
 `
 
-type ListUniversityTracksByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
-
 type ListUniversityTracksByInstructorRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -2463,8 +2221,8 @@ type ListUniversityTracksByInstructorRow struct {
 	ThumbnailUrl               *string            `json:"thumbnail_url"`
 }
 
-func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, arg ListUniversityTracksByInstructorParams) ([]ListUniversityTracksByInstructorRow, error) {
-	rows, err := q.db.Query(ctx, listUniversityTracksByInstructor, arg.TenantID, arg.InstructorID)
+func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, instructorID pgtype.UUID) ([]ListUniversityTracksByInstructorRow, error) {
+	rows, err := q.db.Query(ctx, listUniversityTracksByInstructor, instructorID)
 	if err != nil {
 		return nil, err
 	}
@@ -2474,7 +2232,6 @@ func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, arg List
 		var i ListUniversityTracksByInstructorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -2512,23 +2269,22 @@ func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, arg List
 
 const reinstateInstructor = `-- name: ReinstateInstructor :one
 UPDATE instructor_profiles
-SET status      = 'approved',
-    reviewed_by = $1,
-    reviewed_at = now(),
-    updated_at  = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'suspended'
+SET status = 'approved',
+ reviewed_by = $1,
+ reviewed_at = now(),
+ updated_at = now()
+WHERE id = $2 AND status = 'suspended'
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type ReinstateInstructorParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ID         pgtype.UUID `json:"id"`
 }
 
 // Reverse of suspend: an admin restores a suspended instructor to approved.
 func (q *Queries) ReinstateInstructor(ctx context.Context, arg ReinstateInstructorParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, reinstateInstructor, arg.ReviewedBy, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, reinstateInstructor, arg.ReviewedBy, arg.ID)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -2554,22 +2310,21 @@ func (q *Queries) ReinstateInstructor(ctx context.Context, arg ReinstateInstruct
 
 const rejectInstructorApplication = `-- name: RejectInstructorApplication :one
 UPDATE instructor_profiles
-SET status      = 'rejected',
-    reviewed_by = $1,
-    reviewed_at = now(),
-    updated_at  = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'pending'
+SET status = 'rejected',
+ reviewed_by = $1,
+ reviewed_at = now(),
+ updated_at = now()
+WHERE id = $2 AND status = 'pending'
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type RejectInstructorApplicationParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ID         pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) RejectInstructorApplication(ctx context.Context, arg RejectInstructorApplicationParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, rejectInstructorApplication, arg.ReviewedBy, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, rejectInstructorApplication, arg.ReviewedBy, arg.ID)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -2596,30 +2351,28 @@ func (q *Queries) RejectInstructorApplication(ctx context.Context, arg RejectIns
 const rejectUniversityTrack = `-- name: RejectUniversityTrack :one
 UPDATE learning_tracks
 SET university_submission_status = 'rejected',
-    university_reviewed_at       = now(),
-    university_rejection_reason  = $1,
-    updated_at                   = now()
-WHERE tenant_id = $2 AND id = $3
-  AND instructor_id IS NOT NULL
-  AND is_published_to_university = false
-  AND university_submission_status = 'pending'
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, geo_space_id, total_enrolled,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+ university_reviewed_at = now(),
+ university_rejection_reason = $1,
+ updated_at = now()
+WHERE id = $2
+ AND instructor_id IS NOT NULL
+ AND is_published_to_university = false
+ AND university_submission_status = 'pending'
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
 
 type RejectUniversityTrackParams struct {
 	RejectionReason *string     `json:"rejection_reason"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	ID              pgtype.UUID `json:"id"`
 }
 
 type RejectUniversityTrackRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -2646,11 +2399,10 @@ type RejectUniversityTrackRow struct {
 // Admin rejects a submitted track. Sets submission_status to 'rejected'
 // and records the rejection reason (BUG-002, BUG-004).
 func (q *Queries) RejectUniversityTrack(ctx context.Context, arg RejectUniversityTrackParams) (RejectUniversityTrackRow, error) {
-	row := q.db.QueryRow(ctx, rejectUniversityTrack, arg.RejectionReason, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, rejectUniversityTrack, arg.RejectionReason, arg.ID)
 	var i RejectUniversityTrackRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -2679,26 +2431,24 @@ func (q *Queries) RejectUniversityTrack(ctx context.Context, arg RejectUniversit
 const setUniversityTrackFeatured = `-- name: SetUniversityTrackFeatured :one
 UPDATE learning_tracks
 SET university_featured = $1,
-    updated_at          = now()
-WHERE tenant_id = $2 AND id = $3
-  AND is_published_to_university = true
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, geo_space_id, total_enrolled,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+ updated_at = now()
+WHERE id = $2
+ AND is_published_to_university = true
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
 
 type SetUniversityTrackFeaturedParams struct {
 	Featured bool        `json:"featured"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	ID       pgtype.UUID `json:"id"`
 }
 
 type SetUniversityTrackFeaturedRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -2725,11 +2475,10 @@ type SetUniversityTrackFeaturedRow struct {
 // Admin features/unfeatures a marketplace track (BUG-012: wires the
 // university.course.feature RBAC node to a route).
 func (q *Queries) SetUniversityTrackFeatured(ctx context.Context, arg SetUniversityTrackFeaturedParams) (SetUniversityTrackFeaturedRow, error) {
-	row := q.db.QueryRow(ctx, setUniversityTrackFeatured, arg.Featured, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, setUniversityTrackFeatured, arg.Featured, arg.ID)
 	var i SetUniversityTrackFeaturedRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -2758,32 +2507,30 @@ func (q *Queries) SetUniversityTrackFeatured(ctx context.Context, arg SetUnivers
 const setUserContentCountryPreference = `-- name: SetUserContentCountryPreference :exec
 UPDATE user_profiles
 SET content_country_preference = $1,
-    updated_at = now()
-WHERE tenant_id = $2 AND user_id = $3
+ updated_at = now()
+WHERE user_id = $2
 `
 
 type SetUserContentCountryPreferenceParams struct {
 	ContentCountryPreference *string     `json:"content_country_preference"`
-	TenantID                 pgtype.UUID `json:"tenant_id"`
 	UserID                   pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) SetUserContentCountryPreference(ctx context.Context, arg SetUserContentCountryPreferenceParams) error {
-	_, err := q.db.Exec(ctx, setUserContentCountryPreference, arg.ContentCountryPreference, arg.TenantID, arg.UserID)
+	_, err := q.db.Exec(ctx, setUserContentCountryPreference, arg.ContentCountryPreference, arg.UserID)
 	return err
 }
 
 const stampRevenueSplitsWithPayout = `-- name: StampRevenueSplitsWithPayout :execrows
 UPDATE revenue_splits
 SET payout_id = $1
-WHERE tenant_id = $2 AND instructor_id = $3
-  AND payout_id IS NULL
-  AND created_at >= $4 AND created_at < $5
+WHERE instructor_id = $2
+ AND payout_id IS NULL
+ AND created_at >= $3 AND created_at < $4
 `
 
 type StampRevenueSplitsWithPayoutParams struct {
 	PayoutID     pgtype.UUID        `json:"payout_id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	InstructorID pgtype.UUID        `json:"instructor_id"`
 	PeriodStart  pgtype.Timestamptz `json:"period_start"`
 	PeriodEnd    pgtype.Timestamptz `json:"period_end"`
@@ -2792,7 +2539,6 @@ type StampRevenueSplitsWithPayoutParams struct {
 func (q *Queries) StampRevenueSplitsWithPayout(ctx context.Context, arg StampRevenueSplitsWithPayoutParams) (int64, error) {
 	result, err := q.db.Exec(ctx, stampRevenueSplitsWithPayout,
 		arg.PayoutID,
-		arg.TenantID,
 		arg.InstructorID,
 		arg.PeriodStart,
 		arg.PeriodEnd,
@@ -2805,31 +2551,29 @@ func (q *Queries) StampRevenueSplitsWithPayout(ctx context.Context, arg StampRev
 
 const submitUniversityTrack = `-- name: SubmitUniversityTrack :one
 UPDATE learning_tracks
-SET is_published_to_university   = false,
-    university_submission_status = 'pending',
-    university_submitted_at      = now(),
-    university_rejection_reason  = NULL,
-    updated_at                   = now()
-WHERE tenant_id = $1 AND id = $2 AND instructor_id = $3
-  AND is_published_to_university = false
-  AND university_submission_status IN ('draft','rejected')
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, total_enrolled,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+SET is_published_to_university = false,
+ university_submission_status = 'pending',
+ university_submitted_at = now(),
+ university_rejection_reason = NULL,
+ updated_at = now()
+WHERE id = $1 AND instructor_id = $2
+ AND is_published_to_university = false
+ AND university_submission_status IN ('draft','rejected')
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, total_enrolled,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
 
 type SubmitUniversityTrackParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	ID           pgtype.UUID `json:"id"`
 	InstructorID pgtype.UUID `json:"instructor_id"`
 }
 
 type SubmitUniversityTrackRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -2857,11 +2601,10 @@ type SubmitUniversityTrackRow struct {
 // the rejection_reason. is_published_to_university stays false until
 // ApproveUniversityTrack sets it.
 func (q *Queries) SubmitUniversityTrack(ctx context.Context, arg SubmitUniversityTrackParams) (SubmitUniversityTrackRow, error) {
-	row := q.db.QueryRow(ctx, submitUniversityTrack, arg.TenantID, arg.ID, arg.InstructorID)
+	row := q.db.QueryRow(ctx, submitUniversityTrack, arg.ID, arg.InstructorID)
 	var i SubmitUniversityTrackRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -2888,12 +2631,12 @@ func (q *Queries) SubmitUniversityTrack(ctx context.Context, arg SubmitUniversit
 
 const sumOpenSplitsByAllInstructors = `-- name: SumOpenSplitsByAllInstructors :many
 SELECT
-    instructor_id,
-    COALESCE(SUM(creator_kobo), 0)::bigint AS creator_kobo_total,
-    COALESCE(SUM(platform_kobo), 0)::bigint AS platform_kobo_total,
-    COALESCE(SUM(gross_kobo), 0)::bigint AS gross_kobo_total
+ instructor_id,
+ COALESCE(SUM(creator_kobo), 0)::bigint AS creator_kobo_total,
+ COALESCE(SUM(platform_kobo), 0)::bigint AS platform_kobo_total,
+ COALESCE(SUM(gross_kobo), 0)::bigint AS gross_kobo_total
 FROM revenue_splits
-WHERE tenant_id = $1 AND payout_id IS NULL
+WHERE payout_id IS NULL
 GROUP BY instructor_id
 `
 
@@ -2904,8 +2647,8 @@ type SumOpenSplitsByAllInstructorsRow struct {
 	GrossKoboTotal    int64       `json:"gross_kobo_total"`
 }
 
-func (q *Queries) SumOpenSplitsByAllInstructors(ctx context.Context, tenantID pgtype.UUID) ([]SumOpenSplitsByAllInstructorsRow, error) {
-	rows, err := q.db.Query(ctx, sumOpenSplitsByAllInstructors, tenantID)
+func (q *Queries) SumOpenSplitsByAllInstructors(ctx context.Context) ([]SumOpenSplitsByAllInstructorsRow, error) {
+	rows, err := q.db.Query(ctx, sumOpenSplitsByAllInstructors)
 	if err != nil {
 		return nil, err
 	}
@@ -2931,17 +2674,12 @@ func (q *Queries) SumOpenSplitsByAllInstructors(ctx context.Context, tenantID pg
 
 const sumOpenSplitsByInstructor = `-- name: SumOpenSplitsByInstructor :one
 SELECT
-    COALESCE(SUM(creator_kobo), 0)::bigint AS creator_kobo_total,
-    COALESCE(SUM(platform_kobo), 0)::bigint AS platform_kobo_total,
-    COALESCE(SUM(gross_kobo), 0)::bigint AS gross_kobo_total
+ COALESCE(SUM(creator_kobo), 0)::bigint AS creator_kobo_total,
+ COALESCE(SUM(platform_kobo), 0)::bigint AS platform_kobo_total,
+ COALESCE(SUM(gross_kobo), 0)::bigint AS gross_kobo_total
 FROM revenue_splits
-WHERE tenant_id = $1 AND instructor_id = $2 AND payout_id IS NULL
+WHERE instructor_id = $1 AND payout_id IS NULL
 `
-
-type SumOpenSplitsByInstructorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	InstructorID pgtype.UUID `json:"instructor_id"`
-}
 
 type SumOpenSplitsByInstructorRow struct {
 	CreatorKoboTotal  int64 `json:"creator_kobo_total"`
@@ -2949,8 +2687,8 @@ type SumOpenSplitsByInstructorRow struct {
 	GrossKoboTotal    int64 `json:"gross_kobo_total"`
 }
 
-func (q *Queries) SumOpenSplitsByInstructor(ctx context.Context, arg SumOpenSplitsByInstructorParams) (SumOpenSplitsByInstructorRow, error) {
-	row := q.db.QueryRow(ctx, sumOpenSplitsByInstructor, arg.TenantID, arg.InstructorID)
+func (q *Queries) SumOpenSplitsByInstructor(ctx context.Context, instructorID pgtype.UUID) (SumOpenSplitsByInstructorRow, error) {
+	row := q.db.QueryRow(ctx, sumOpenSplitsByInstructor, instructorID)
 	var i SumOpenSplitsByInstructorRow
 	err := row.Scan(&i.CreatorKoboTotal, &i.PlatformKoboTotal, &i.GrossKoboTotal)
 	return i, err
@@ -2958,22 +2696,21 @@ func (q *Queries) SumOpenSplitsByInstructor(ctx context.Context, arg SumOpenSpli
 
 const suspendInstructor = `-- name: SuspendInstructor :one
 UPDATE instructor_profiles
-SET status      = 'suspended',
-    reviewed_by = $1,
-    reviewed_at = now(),
-    updated_at  = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'approved'
+SET status = 'suspended',
+ reviewed_by = $1,
+ reviewed_at = now(),
+ updated_at = now()
+WHERE id = $2 AND status = 'approved'
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type SuspendInstructorParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	ID         pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) SuspendInstructor(ctx context.Context, arg SuspendInstructorParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, suspendInstructor, arg.ReviewedBy, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, suspendInstructor, arg.ReviewedBy, arg.ID)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -2999,30 +2736,24 @@ func (q *Queries) SuspendInstructor(ctx context.Context, arg SuspendInstructorPa
 
 const updateInstructorProfileAdmin = `-- name: UpdateInstructorProfileAdmin :one
 UPDATE instructor_profiles
-SET tier                    = COALESCE($1, tier),
-    commission_pct_override = $2,
-    updated_at              = now()
-WHERE tenant_id = $3 AND id = $4
-  AND status IN ('approved','suspended')
+SET tier = COALESCE($1, tier),
+ commission_pct_override = $2,
+ updated_at = now()
+WHERE id = $3
+ AND status IN ('approved','suspended')
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type UpdateInstructorProfileAdminParams struct {
 	Tier                  *string        `json:"tier"`
 	CommissionPctOverride pgtype.Numeric `json:"commission_pct_override"`
-	TenantID              pgtype.UUID    `json:"tenant_id"`
 	ID                    pgtype.UUID    `json:"id"`
 }
 
 // Admin updates an instructor's tier and/or commission override (BUG-002).
 // Only applies to approved or suspended instructors.
 func (q *Queries) UpdateInstructorProfileAdmin(ctx context.Context, arg UpdateInstructorProfileAdminParams) (InstructorProfile, error) {
-	row := q.db.QueryRow(ctx, updateInstructorProfileAdmin,
-		arg.Tier,
-		arg.CommissionPctOverride,
-		arg.TenantID,
-		arg.ID,
-	)
+	row := q.db.QueryRow(ctx, updateInstructorProfileAdmin, arg.Tier, arg.CommissionPctOverride, arg.ID)
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
@@ -3049,13 +2780,13 @@ func (q *Queries) UpdateInstructorProfileAdmin(ctx context.Context, arg UpdateIn
 const updateInstructorProfileSelf = `-- name: UpdateInstructorProfileSelf :one
 UPDATE instructor_profiles
 SET display_name = COALESCE($1, display_name),
-    headline     = COALESCE($2, headline),
-    bio          = COALESCE($3, bio),
-    social_links = COALESCE($4, social_links),
-    payout_method = COALESCE($5, payout_method),
-    updated_at   = now()
-WHERE tenant_id = $6 AND user_id = $7
-  AND status IN ('pending','approved')
+ headline = COALESCE($2, headline),
+ bio = COALESCE($3, bio),
+ social_links = COALESCE($4, social_links),
+ payout_method = COALESCE($5, payout_method),
+ updated_at = now()
+WHERE user_id = $6
+ AND status IN ('pending','approved')
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
@@ -3065,7 +2796,6 @@ type UpdateInstructorProfileSelfParams struct {
 	Bio          *string     `json:"bio"`
 	SocialLinks  []byte      `json:"social_links"`
 	PayoutMethod []byte      `json:"payout_method"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	UserID       pgtype.UUID `json:"user_id"`
 }
 
@@ -3077,7 +2807,6 @@ func (q *Queries) UpdateInstructorProfileSelf(ctx context.Context, arg UpdateIns
 		arg.Bio,
 		arg.SocialLinks,
 		arg.PayoutMethod,
-		arg.TenantID,
 		arg.UserID,
 	)
 	var i InstructorProfile
@@ -3105,11 +2834,11 @@ func (q *Queries) UpdateInstructorProfileSelf(ctx context.Context, arg UpdateIns
 
 const updatePayoutStatus = `-- name: UpdatePayoutStatus :one
 UPDATE instructor_payouts
-SET status            = $1,
-    payout_reference  = COALESCE($2, payout_reference),
-    failure_reason    = COALESCE($3, failure_reason),
-    processed_at      = CASE WHEN $1 IN ('paid','failed') THEN now() ELSE processed_at END
-WHERE tenant_id = $4 AND id = $5
+SET status = $1,
+ payout_reference = COALESCE($2, payout_reference),
+ failure_reason = COALESCE($3, failure_reason),
+ processed_at = CASE WHEN $1 IN ('paid','failed') THEN now() ELSE processed_at END
+WHERE id = $4
 RETURNING id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
 `
 
@@ -3117,7 +2846,6 @@ type UpdatePayoutStatusParams struct {
 	Status          string      `json:"status"`
 	PayoutReference *string     `json:"payout_reference"`
 	FailureReason   *string     `json:"failure_reason"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	ID              pgtype.UUID `json:"id"`
 }
 
@@ -3126,7 +2854,6 @@ func (q *Queries) UpdatePayoutStatus(ctx context.Context, arg UpdatePayoutStatus
 		arg.Status,
 		arg.PayoutReference,
 		arg.FailureReason,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i InstructorPayout
@@ -3151,25 +2878,25 @@ func (q *Queries) UpdatePayoutStatus(ctx context.Context, arg UpdatePayoutStatus
 
 const updateUniversityTrack = `-- name: UpdateUniversityTrack :one
 UPDATE learning_tracks
-SET title       = COALESCE($1, title),
-    description = COALESCE($2, description),
-    difficulty  = COALESCE($3, difficulty),
-    cover_media_id = COALESCE($4, cover_media_id),
-    price_kobo  = COALESCE($5, price_kobo),
-    currency    = COALESCE($6, currency),
-    category    = COALESCE($7, category),
-    language    = COALESCE($8, language),
-    geo_space_id = COALESCE($9, geo_space_id),
-    subscription_eligible = COALESCE($10, subscription_eligible),
-    updated_at  = now()
-WHERE tenant_id = $11 AND id = $12 AND instructor_id = $13
-RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id,
-          is_published, sort_order, instructor_id, price_kobo, currency,
-          is_published_to_university, category, language, geo_space_id, total_enrolled,
-          subscription_eligible,
-          university_submission_status, university_submitted_at,
-          university_reviewed_at, university_rejection_reason,
-          created_at, updated_at
+SET title = COALESCE($1, title),
+ description = COALESCE($2, description),
+ difficulty = COALESCE($3, difficulty),
+ cover_media_id = COALESCE($4, cover_media_id),
+ price_kobo = COALESCE($5, price_kobo),
+ currency = COALESCE($6, currency),
+ category = COALESCE($7, category),
+ language = COALESCE($8, language),
+ geo_space_id = COALESCE($9, geo_space_id),
+ subscription_eligible = COALESCE($10, subscription_eligible),
+ updated_at = now()
+WHERE id = $11 AND instructor_id = $12
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_university, category, language, geo_space_id, total_enrolled,
+ subscription_eligible,
+ university_submission_status, university_submitted_at,
+ university_reviewed_at, university_rejection_reason,
+ created_at, updated_at
 `
 
 type UpdateUniversityTrackParams struct {
@@ -3183,14 +2910,12 @@ type UpdateUniversityTrackParams struct {
 	Language             *string     `json:"language"`
 	GeoSpaceID           pgtype.UUID `json:"geo_space_id"`
 	SubscriptionEligible *bool       `json:"subscription_eligible"`
-	TenantID             pgtype.UUID `json:"tenant_id"`
 	ID                   pgtype.UUID `json:"id"`
 	InstructorID         pgtype.UUID `json:"instructor_id"`
 }
 
 type UpdateUniversityTrackRow struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Title                      string             `json:"title"`
 	Slug                       string             `json:"slug"`
 	Description                *string            `json:"description"`
@@ -3229,14 +2954,12 @@ func (q *Queries) UpdateUniversityTrack(ctx context.Context, arg UpdateUniversit
 		arg.Language,
 		arg.GeoSpaceID,
 		arg.SubscriptionEligible,
-		arg.TenantID,
 		arg.ID,
 		arg.InstructorID,
 	)
 	var i UpdateUniversityTrackRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -3265,12 +2988,12 @@ func (q *Queries) UpdateUniversityTrack(ctx context.Context, arg UpdateUniversit
 
 const updateUniversityTrackCategory = `-- name: UpdateUniversityTrackCategory :one
 UPDATE university_track_categories
-SET name       = COALESCE($1, name),
-    slug       = COALESCE($2, slug),
-    sort_order = COALESCE($3, sort_order),
-    is_active  = COALESCE($4, is_active),
-    updated_at = now()
-WHERE tenant_id = $5 AND id = $6
+SET name = COALESCE($1, name),
+ slug = COALESCE($2, slug),
+ sort_order = COALESCE($3, sort_order),
+ is_active = COALESCE($4, is_active),
+ updated_at = now()
+WHERE id = $5
 RETURNING id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at
 `
 
@@ -3279,7 +3002,6 @@ type UpdateUniversityTrackCategoryParams struct {
 	Slug      *string     `json:"slug"`
 	SortOrder *int32      `json:"sort_order"`
 	IsActive  *bool       `json:"is_active"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	ID        pgtype.UUID `json:"id"`
 }
 
@@ -3289,7 +3011,6 @@ func (q *Queries) UpdateUniversityTrackCategory(ctx context.Context, arg UpdateU
 		arg.Slug,
 		arg.SortOrder,
 		arg.IsActive,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i UniversityTrackCategory
@@ -3308,22 +3029,32 @@ func (q *Queries) UpdateUniversityTrackCategory(ctx context.Context, arg UpdateU
 
 const upsertEnrollmentWithPayment = `-- name: UpsertEnrollmentWithPayment :one
 
-INSERT INTO enrollments (tenant_id, user_id, track_id, access_type, payment_id)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO enrollments (user_id, track_id, access_type, payment_id) VALUES ($1, $2, $3, $4)
+
 ON CONFLICT (user_id, track_id) DO UPDATE
 SET payment_id = COALESCE(EXCLUDED.payment_id, enrollments.payment_id),
-    access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
-                       ELSE EXCLUDED.access_type END
-RETURNING id, tenant_id, user_id, track_id, access_type, progress_pct,
-          enrolled_at, completed_at, payment_id
+ access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
+ ELSE EXCLUDED.access_type END
+RETURNING id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id
 `
 
 type UpsertEnrollmentWithPaymentParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	TrackID    pgtype.UUID `json:"track_id"`
 	AccessType string      `json:"access_type"`
 	PaymentID  pgtype.UUID `json:"payment_id"`
+}
+
+type UpsertEnrollmentWithPaymentRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	PaymentID   pgtype.UUID        `json:"payment_id"`
 }
 
 // =====================================================================
@@ -3331,18 +3062,16 @@ type UpsertEnrollmentWithPaymentParams struct {
 // =====================================================================
 // Idempotent on (user_id, track_id): a re-process of the same payment does
 // not create a duplicate enrollment. payment_id is set only when provided.
-func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnrollmentWithPaymentParams) (Enrollment, error) {
+func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnrollmentWithPaymentParams) (UpsertEnrollmentWithPaymentRow, error) {
 	row := q.db.QueryRow(ctx, upsertEnrollmentWithPayment,
-		arg.TenantID,
 		arg.UserID,
 		arg.TrackID,
 		arg.AccessType,
 		arg.PaymentID,
 	)
-	var i Enrollment
+	var i UpsertEnrollmentWithPaymentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -3357,26 +3086,21 @@ func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnr
 const upsertInstructorApplication = `-- name: UpsertInstructorApplication :one
 
 
-INSERT INTO instructor_profiles (
-    tenant_id, user_id, display_name, headline, bio, social_links,
-    tier, status, application_note
-)
-VALUES ($1, $2, $3, $4, $5, $6,
-        'standard', 'pending', $7)
-ON CONFLICT (tenant_id, user_id) DO UPDATE
-SET display_name      = EXCLUDED.display_name,
-    headline          = COALESCE(EXCLUDED.headline, instructor_profiles.headline),
-    bio               = COALESCE(EXCLUDED.bio, instructor_profiles.bio),
-    social_links      = COALESCE(EXCLUDED.social_links, instructor_profiles.social_links),
-    application_note  = COALESCE(EXCLUDED.application_note, instructor_profiles.application_note),
-    status            = CASE WHEN instructor_profiles.status IN ('pending','rejected')
-                             THEN 'pending' ELSE instructor_profiles.status END,
-    updated_at        = now()
+INSERT INTO instructor_profiles (user_id, display_name, headline, bio, social_links, tier, status, application_note) VALUES ($1, $2, $3, $4, $5, 'standard', 'pending', $6)
+
+ON CONFLICT (user_id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+ headline = COALESCE(EXCLUDED.headline, instructor_profiles.headline),
+ bio = COALESCE(EXCLUDED.bio, instructor_profiles.bio),
+ social_links = COALESCE(EXCLUDED.social_links, instructor_profiles.social_links),
+ application_note = COALESCE(EXCLUDED.application_note, instructor_profiles.application_note),
+ status = CASE WHEN instructor_profiles.status IN ('pending','rejected')
+ THEN 'pending' ELSE instructor_profiles.status END,
+ updated_at = now()
 RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type UpsertInstructorApplicationParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	UserID          pgtype.UUID `json:"user_id"`
 	DisplayName     string      `json:"display_name"`
 	Headline        *string     `json:"headline"`
@@ -3401,7 +3125,6 @@ type UpsertInstructorApplicationParams struct {
 // from the self-service path (admin manages those states).
 func (q *Queries) UpsertInstructorApplication(ctx context.Context, arg UpsertInstructorApplicationParams) (InstructorProfile, error) {
 	row := q.db.QueryRow(ctx, upsertInstructorApplication,
-		arg.TenantID,
 		arg.UserID,
 		arg.DisplayName,
 		arg.Headline,

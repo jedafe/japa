@@ -783,7 +783,6 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 		blocked, err := h.queries.IsBlocked(ctx, gen.IsBlockedParams{
 			BlockerID: currentUserID,
 			BlockedID: uid,
-			TenantID:  tenantID,
 		})
 		if err != nil {
 			slog.Warn("autocomplete: IsBlocked check failed",
@@ -1115,12 +1114,8 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 
 	limit := int32(20)
 
-	topQueries, err := h.queries.GetSearchAnalyticsSummary(r.Context(), gen.GetSearchAnalyticsSummaryParams{
-		TenantID: t.ID,
-		Column2:  pgtype.Timestamptz{Time: since, Valid: sinceValid},
-		Column3:  pgtype.Timestamptz{Time: until, Valid: untilValid},
-		Limit:    limit,
-		Offset:   0,
+	topQueries, err := h.queries.GetSearchAnalyticsSummary(r.Context(), gen.GetSearchAnalyticsSummaryParams{Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
+		Offset: 0,
 	})
 	if err != nil {
 		slog.Warn("failed to fetch search analytics", "error", err)
@@ -1129,12 +1124,8 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	zeroResultQueries, err := h.queries.GetZeroResultQueries(r.Context(), gen.GetZeroResultQueriesParams{
-		TenantID: t.ID,
-		Column2:  pgtype.Timestamptz{Time: since, Valid: sinceValid},
-		Column3:  pgtype.Timestamptz{Time: until, Valid: untilValid},
-		Limit:    limit,
-		Offset:   0,
+	zeroResultQueries, err := h.queries.GetZeroResultQueries(r.Context(), gen.GetZeroResultQueriesParams{Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}, Limit: limit,
+		Offset: 0,
 	})
 	if err != nil {
 		slog.Warn("failed to fetch zero-result queries", "error", err)
@@ -1143,11 +1134,7 @@ func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	dailyVolume, err := h.queries.GetSearchVolumeByDay(r.Context(), gen.GetSearchVolumeByDayParams{
-		TenantID: t.ID,
-		Column2:  pgtype.Timestamptz{Time: since, Valid: sinceValid},
-		Column3:  pgtype.Timestamptz{Time: until, Valid: untilValid},
-	})
+	dailyVolume, err := h.queries.GetSearchVolumeByDay(r.Context(), gen.GetSearchVolumeByDayParams{Column1: pgtype.Timestamptz{Time: since, Valid: sinceValid}, Column2: pgtype.Timestamptz{Time: until, Valid: untilValid}})
 	if err != nil {
 		slog.Warn("failed to fetch search volume", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "analytics_error", "Failed to fetch analytics")
@@ -1182,7 +1169,7 @@ func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, que
 		defer cancel()
 
 		if err := h.queries.LogSearchQuery(bgCtx, gen.LogSearchQueryParams{
-			TenantID:     tenantID,
+
 			Query:        query,
 			ResultsCount: int32(resultsCount), // #nosec G115 -- search result count, bounded by page size
 			UserID:       userID,

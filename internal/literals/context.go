@@ -25,7 +25,6 @@ func NewRequestContext(r *http.Request, tenantID pgtype.UUID, tenantName string)
 		Now:        time.Now().UTC(),
 		Locale:     requestLocale(r),
 		TenantName: tenantName,
-		TenantID:   tenantID,
 	}
 	FillRequestContext(r, &rc)
 

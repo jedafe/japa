@@ -51,7 +51,7 @@ func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 	sk := "official"
 
 	payload, err := json.Marshal(JceRefreshValuesPayload{
-		TenantID:       tenantID,
+
 		ContentID:      contentID,
 		SourceKind:     &sk,
 		IngestionJobID: jobID,
@@ -98,7 +98,7 @@ func TestIngestion_JCERefresh_UUIDValidation(t *testing.T) {
 	defer RegisterJCEService(nil)
 
 	badPayload, err := json.Marshal(JceRefreshValuesPayload{
-		TenantID:       "not-a-uuid",
+
 		ContentID:      uuid.New().String(),
 		IngestionJobID: uuid.New().String(),
 		RequestedBy:    uuid.New().String(),
@@ -149,7 +149,7 @@ func TestIngestion_JCERefresh_ServiceNotRegistered(t *testing.T) {
 	RegisterJCEService(nil)
 
 	payload, err := json.Marshal(JceRefreshValuesPayload{
-		TenantID:       uuid.New().String(),
+
 		ContentID:      uuid.New().String(),
 		IngestionJobID: uuid.New().String(),
 		RequestedBy:    uuid.New().String(),
@@ -177,7 +177,7 @@ func TestIngestion_JCERefresh_RetryableServiceError(t *testing.T) {
 	defer RegisterJCEService(nil)
 
 	payload, err := json.Marshal(JceRefreshValuesPayload{
-		TenantID:       uuid.New().String(),
+
 		ContentID:      uuid.New().String(),
 		IngestionJobID: uuid.New().String(),
 		RequestedBy:    uuid.New().String(),

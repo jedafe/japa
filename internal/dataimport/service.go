@@ -158,7 +158,7 @@ func (s *Service) CreateImport(ctx context.Context, tenantID, userID pgtype.UUID
 	}
 
 	imp, err := s.store.Create(ctx, gen.CreatePlatformDataImportParams{
-		TenantID:   tenantID,
+
 		Name:       name,
 		ImportType: importType,
 		Format:     format,

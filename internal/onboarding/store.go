@@ -21,10 +21,10 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // getState returns the onboarding state for a user, or false if not found.
 func (s *Store) getState(ctx context.Context, tenantID, userID pgtype.UUID) (gen.OnboardingState, error) {
-	row, err := s.read.GetOnboardingState(ctx, gen.GetOnboardingStateParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetOnboardingState(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.OnboardingState{}, fmt.Errorf("getting onboarding state: %w", err)
 	}
@@ -35,7 +35,7 @@ func (s *Store) getState(ctx context.Context, tenantID, userID pgtype.UUID) (gen
 // upsertState inserts or updates the onboarding state.
 func (s *Store) upsertState(ctx context.Context, tenantID, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool) error {
 	if err := s.write.UpsertOnboardingState(ctx, gen.UpsertOnboardingStateParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		CurrentStep:   currentStep,
 		Completed:     completed,
@@ -50,10 +50,10 @@ func (s *Store) upsertState(ctx context.Context, tenantID, userID pgtype.UUID, c
 
 // completeOnboarding marks the onboarding as completed.
 func (s *Store) completeOnboarding(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	if err := s.write.CompleteOnboarding(ctx, gen.CompleteOnboardingParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	}); err != nil {
+	if err := s.write.CompleteOnboarding(ctx,
+
+		userID,
+	); err != nil {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
 
@@ -62,10 +62,10 @@ func (s *Store) completeOnboarding(ctx context.Context, tenantID, userID pgtype.
 
 // dismissTour marks the product tour as dismissed.
 func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	if err := s.write.DismissTour(ctx, gen.DismissTourParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	}); err != nil {
+	if err := s.write.DismissTour(ctx,
+
+		userID,
+	); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
 
@@ -74,7 +74,7 @@ func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) e
 
 // listTemplates returns all onboarding templates for a tenant.
 func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
-	rows, err := s.read.ListOnboardingTemplates(ctx, tenantID)
+	rows, err := s.read.ListOnboardingTemplates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing onboarding templates: %w", err)
 	}
@@ -84,10 +84,9 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 
 // getTemplate retrieves a single onboarding template by ID.
 func (s *Store) getTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.OnboardingTemplate, error) {
-	row, err := s.read.GetOnboardingTemplate(ctx, gen.GetOnboardingTemplateParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetOnboardingTemplate(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.OnboardingTemplate{}, fmt.Errorf("getting onboarding template: %w", err)
 	}
@@ -98,7 +97,7 @@ func (s *Store) getTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 // createTemplate inserts a new onboarding template.
 func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
 	row, err := s.write.CreateOnboardingTemplate(ctx, gen.CreateOnboardingTemplateParams{
-		TenantID:    tenantID,
+
 		Name:        name,
 		Description: &description,
 		Steps:       steps,
@@ -115,7 +114,7 @@ func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, 
 // updateTemplate updates an existing onboarding template.
 func (s *Store) updateTemplate(ctx context.Context, tenantID, id pgtype.UUID, name, description string, steps []byte, isActive bool) error {
 	return s.write.UpdateOnboardingTemplate(ctx, gen.UpdateOnboardingTemplateParams{
-		TenantID:    tenantID,
+
 		ID:          id,
 		Name:        name,
 		Description: &description,
@@ -126,8 +125,8 @@ func (s *Store) updateTemplate(ctx context.Context, tenantID, id pgtype.UUID, na
 
 // deleteTemplate removes an onboarding template.
 func (s *Store) deleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.write.DeleteOnboardingTemplate(ctx, gen.DeleteOnboardingTemplateParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	return s.write.DeleteOnboardingTemplate(ctx,
+
+		id,
+	)
 }

@@ -492,8 +492,8 @@ type adminImportResponse struct {
 // serializeImport converts a gen.ContentImport to its JSON response form.
 func serializeImport(imp gen.ContentImport) importResponse {
 	resp := importResponse{
-		ID:            imp.ID.String(),
-		TenantID:      imp.TenantID.String(),
+		ID: imp.ID.String(),
+
 		UserID:        imp.UserID.String(),
 		SourceType:    imp.SourceType,
 		SourceURL:     imp.SourceUrl,
@@ -531,8 +531,8 @@ func serializeAdminImports(rows []gen.AdminListContentImportsRow) []adminImportR
 	for _, row := range rows {
 		resp := adminImportResponse{
 			importResponse: importResponse{
-				ID:            row.ID.String(),
-				TenantID:      row.TenantID.String(),
+				ID: row.ID.String(),
+
 				UserID:        row.UserID.String(),
 				SourceType:    row.SourceType,
 				SourceURL:     row.SourceUrl,

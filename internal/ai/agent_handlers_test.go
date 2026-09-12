@@ -88,8 +88,8 @@ func (s *stubAgentSessions) ListAgentSessionsByUser(_ context.Context, arg gen.L
 
 func (s *stubAgentSessions) CountAgentSessionsByUser(_ context.Context, arg gen.CountAgentSessionsByUserParams) (int64, error) {
 	rows, _ := s.ListAgentSessionsByUser(context.Background(), gen.ListAgentSessionsByUserParams{
-		TenantID: arg.TenantID,
-		UserID:   arg.UserID,
+
+		UserID: arg.UserID,
 	})
 
 	return int64(len(rows)), nil
@@ -149,7 +149,7 @@ func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen
 
 func (s *stubAgentSessions) CountAgentSessionsForAdmin(_ context.Context, arg gen.CountAgentSessionsForAdminParams) (int64, error) {
 	rows, _ := s.ListAgentSessionsForAdmin(context.Background(), gen.ListAgentSessionsForAdminParams{
-		TenantID:     arg.TenantID,
+
 		StatusFilter: arg.StatusFilter,
 	})
 
@@ -185,7 +185,7 @@ func (s *stubAgentSessions) GetUserAIExempt(_ context.Context, _ gen.GetUserAIEx
 }
 
 func (s *stubAgentSessions) SetContentAIExempt(_ context.Context, arg gen.SetContentAIExemptParams) (gen.SetContentAIExemptRow, error) {
-	return gen.SetContentAIExemptRow{ID: arg.ID, TenantID: arg.TenantID, AiExempt: arg.AiExempt}, nil
+	return gen.SetContentAIExemptRow{ID: arg.ID, AiExempt: arg.AiExempt}, nil
 }
 
 func (s *stubAgentSessions) SetCustomFieldValueAIExempt(_ context.Context, arg gen.SetCustomFieldValueAIExemptParams) (gen.SetCustomFieldValueAIExemptRow, error) {
@@ -193,7 +193,7 @@ func (s *stubAgentSessions) SetCustomFieldValueAIExempt(_ context.Context, arg g
 }
 
 func (s *stubAgentSessions) SetUserAIExempt(_ context.Context, arg gen.SetUserAIExemptParams) (gen.SetUserAIExemptRow, error) {
-	return gen.SetUserAIExemptRow{ID: arg.ID, TenantID: arg.TenantID, AiExempt: arg.AiExempt}, nil
+	return gen.SetUserAIExemptRow{ID: arg.ID, AiExempt: arg.AiExempt}, nil
 }
 
 // stubContentStore implements ContentAuthorQueries for handler tests.
@@ -238,8 +238,8 @@ func (s *stubContentStore) ReassignSingleContentAuthor(_ context.Context, arg ge
 	s.contents[arg.ID.String()] = row
 
 	return gen.ReassignSingleContentAuthorRow{
-		ID:       row.ID,
-		TenantID: row.TenantID,
+		ID: row.ID,
+
 		AuthorID: row.AuthorID,
 	}, nil
 }
@@ -276,7 +276,7 @@ func testUserAndTenant() (*auth.AuthenticatedUser, *tenant.Tenant) {
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tid := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
-	return &auth.AuthenticatedUser{UserID: uid, TenantID: tid, SessionID: "test-jti"},
+	return &auth.AuthenticatedUser{UserID: uid, SessionID: "test-jti"},
 		&tenant.Tenant{ID: tid, Name: "Test", Slug: "test"}
 }
 
@@ -454,11 +454,11 @@ func TestHandleListSessions_Pagination(t *testing.T) {
 	for range 3 {
 		id := randomUUID()
 		sessions.sessions[id.String()] = gen.AiAgentSession{
-			ID:       id,
-			TenantID: tn.ID,
-			UserID:   user.UserID,
-			Prompt:   "test",
-			Status:   "completed",
+			ID: id,
+
+			UserID: user.UserID,
+			Prompt: "test",
+			Status: "completed",
 		}
 	}
 
@@ -509,19 +509,19 @@ func TestHandleListSessions_TenantScoping(t *testing.T) {
 	otherTID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 	otherID := randomUUID()
 	sessions.sessions[otherID.String()] = gen.AiAgentSession{
-		ID:       otherID,
-		TenantID: otherTID,
-		UserID:   user.UserID,
-		Prompt:   "other",
+		ID: otherID,
+
+		UserID: user.UserID,
+		Prompt: "other",
 	}
 
 	// Seed a session for the user's tenant.
 	myID := randomUUID()
 	sessions.sessions[myID.String()] = gen.AiAgentSession{
-		ID:       myID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Prompt:   "mine",
+		ID: myID,
+
+		UserID: user.UserID,
+		Prompt: "mine",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/ai/agent/sessions", nil)
@@ -578,11 +578,11 @@ func TestHandleGetSession_WithToolCalls(t *testing.T) {
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Prompt:   "test",
-		Status:   "completed",
+		ID: sessID,
+
+		UserID: user.UserID,
+		Prompt: "test",
+		Status: "completed",
 	}
 	sessions.toolCalls[sessID.String()] = []gen.AiAgentToolCall{
 		{ID: randomUUID(), SessionID: sessID, ToolName: "content.search", Status: "success", Arguments: []byte(`{"query":"go"}`), Result: []byte(`{"results":[]}`)},
@@ -627,10 +627,10 @@ func TestHandleGetSession_OwnershipEnforced(t *testing.T) {
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   otherUID,
-		Prompt:   "not yours",
+		ID: sessID,
+
+		UserID: otherUID,
+		Prompt: "not yours",
 	}
 
 	r := chi.NewRouter()
@@ -680,10 +680,10 @@ func TestHandleCancelSession_Success(t *testing.T) {
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Status:   "running",
+		ID: sessID,
+
+		UserID: user.UserID,
+		Status: "running",
 	}
 
 	r := chi.NewRouter()
@@ -711,10 +711,10 @@ func TestHandleCancelSession_AlreadyCompleted(t *testing.T) {
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Status:   "completed",
+		ID: sessID,
+
+		UserID: user.UserID,
+		Status: "completed",
 	}
 
 	r := chi.NewRouter()
@@ -743,10 +743,10 @@ func TestHandleCancelSession_NotOwner(t *testing.T) {
 	otherUID := pgtype.UUID{Bytes: [16]byte{8}, Valid: true}
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   otherUID,
-		Status:   "running",
+		ID: sessID,
+
+		UserID: otherUID,
+		Status: "running",
 	}
 
 	r := chi.NewRouter()
@@ -774,10 +774,10 @@ func TestHandleCancelSession_RaceCompleted(t *testing.T) {
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Status:   "running",
+		ID: sessID,
+
+		UserID: user.UserID,
+		Status: "running",
 	}
 	// Set the race flag: CancelAgentSession will return ErrNoRows even
 	// though the session appears "running" to GetAgentSessionForUser.
@@ -812,8 +812,8 @@ func TestHandleReassignAuthor_Success(t *testing.T) {
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
-		ID:          contentID,
-		TenantID:    tn.ID,
+		ID: contentID,
+
 		AuthorID:    user.UserID,
 		FieldValues: []byte(`{"title":"Test"}`),
 	}
@@ -902,8 +902,8 @@ func TestHandleReassignAuthor_InvalidAuthor(t *testing.T) {
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
-		ID:       contentID,
-		TenantID: tn.ID,
+		ID: contentID,
+
 		AuthorID: user.UserID,
 	}
 	// Do NOT seed the new author — the validity check should fail.
@@ -1102,8 +1102,8 @@ func TestHandleSetAIPrivacy_ContentNotOwner(t *testing.T) {
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
-		ID:       contentID,
-		TenantID: tn.ID,
+		ID: contentID,
+
 		AuthorID: otherUID, // owned by someone else
 	}
 
@@ -1175,8 +1175,8 @@ func TestHandleSetAIPrivacy_CFV_ContentEntityOwner(t *testing.T) {
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
-		ID:       contentID,
-		TenantID: tn.ID,
+		ID: contentID,
+
 		AuthorID: user.UserID,
 	}
 
@@ -1205,8 +1205,8 @@ func TestHandleSetAIPrivacy_CFV_ContentEntityNotOwner(t *testing.T) {
 
 	contentID := randomUUID()
 	content.contents[contentID.String()] = gen.GetContentByIDRow{
-		ID:       contentID,
-		TenantID: tn.ID,
+		ID: contentID,
+
 		AuthorID: otherUID, // owned by someone else
 	}
 
@@ -1323,10 +1323,10 @@ func TestHandleAdminListSessions_Success(t *testing.T) {
 	for range 2 {
 		id := randomUUID()
 		sessions.sessions[id.String()] = gen.AiAgentSession{
-			ID:       id,
-			TenantID: tn.ID,
-			UserID:   user.UserID,
-			Status:   "completed",
+			ID: id,
+
+			UserID: user.UserID,
+			Status: "completed",
 		}
 	}
 
@@ -1358,8 +1358,8 @@ func TestHandleAdminListSessions_StatusFilter(t *testing.T) {
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
 	user, tn := testUserAndTenant()
 
-	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), TenantID: tn.ID, UserID: user.UserID, Status: "running"}
-	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), TenantID: tn.ID, UserID: user.UserID, Status: "completed"}
+	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), UserID: user.UserID, Status: "running"}
+	sessions.sessions[randomUUID().String()] = gen.AiAgentSession{ID: randomUUID(), UserID: user.UserID, Status: "completed"}
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/agent/sessions?status=running", nil)
 	req = withAuthContext(req, user, tn)
@@ -1386,10 +1386,10 @@ func TestHandleAdminGetSession_Success(t *testing.T) {
 
 	sessID := randomUUID()
 	sessions.sessions[sessID.String()] = gen.AiAgentSession{
-		ID:       sessID,
-		TenantID: tn.ID,
-		UserID:   user.UserID,
-		Status:   "completed",
+		ID: sessID,
+
+		UserID: user.UserID,
+		Status: "completed",
 	}
 	sessions.toolCalls[sessID.String()] = []gen.AiAgentToolCall{
 		{ID: randomUUID(), SessionID: sessID, ToolName: "rag.search", Status: "success"},

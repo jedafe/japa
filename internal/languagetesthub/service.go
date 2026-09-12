@@ -258,7 +258,7 @@ func (s *Service) SearchTests(ctx context.Context, query string, limit int32) ([
 // visa category.
 func (s *Service) ListRequirements(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory string) ([]RequirementDTO, error) {
 	rows, err := s.store.ListRequirements(ctx, ListRequirementsFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 	})
@@ -370,7 +370,7 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	row, err := s.store.CreateStory(ctx, CreateStoryInput{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		TestID:             test.ID,
 		StartingLevel:      startingLevel,
@@ -504,7 +504,7 @@ func (s *Service) CreateRequirement(ctx context.Context, tenantID pgtype.UUID, i
 	}
 
 	row, err := s.store.CreateRequirement(ctx, CreateRequirementInput{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		TestID:             test.ID,
@@ -715,7 +715,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	row, err := s.store.CreateRequirement(ctx, CreateRequirementInput{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		TestID:             test.ID,
@@ -816,7 +816,7 @@ func (s *Service) AdminListRequirements(ctx context.Context, tenantID, destSpace
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListRequirements(ctx, AdminListRequirementsFilter{
-		TenantID:           tenantID,
+
 		Status:             status,
 		DestinationSpaceID: destSpaceID,
 		Q:                  q,

@@ -35,7 +35,7 @@ func (s *profileStore) create(ctx context.Context, tenantID, userID pgtype.UUID,
 // createWithTx creates a profile inside an existing transaction.
 func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
 	row, err := q.CreateComparisonProfile(ctx, gen.CreateComparisonProfileParams{
-		TenantID:       tenantID,
+
 		UserID:         userID,
 		Title:          in.Title,
 		SourceSpaceID:  stringToUUID(ptrString(in.SourceSpaceID)),
@@ -55,10 +55,10 @@ func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, tenantI
 
 // listByUser returns a user's profiles (non-template), ordered by default first, then updated_at desc.
 func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]ComparisonProfile, error) {
-	rows, err := s.read.ListComparisonProfilesByUser(ctx, gen.ListComparisonProfilesByUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	rows, err := s.read.ListComparisonProfilesByUser(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profiles by user: %w", err)
 	}
@@ -83,7 +83,7 @@ func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.U
 
 // listByTenant returns all non-deleted profiles for the tenant, ordered by default first, then updated_at desc.
 func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
-	rows, err := s.read.ListComparisonProfilesByTenant(ctx, tenantID)
+	rows, err := s.read.ListComparisonProfilesByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profiles by tenant: %w", err)
 	}
@@ -104,7 +104,7 @@ func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) (
 
 // listTemplates returns all tenant-level profile templates, ordered by title.
 func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
-	rows, err := s.read.ListComparisonProfileTemplates(ctx, tenantID)
+	rows, err := s.read.ListComparisonProfileTemplates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profile templates: %w", err)
 	}
@@ -125,10 +125,9 @@ func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) 
 
 // get returns a profile by id and tenant.
 func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonProfile, error) {
-	row, err := s.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetComparisonProfile(ctx,
+		id,
+	)
 	if err != nil {
 		return ComparisonProfile{}, fmt.Errorf("getting comparison profile: %w", err)
 	}
@@ -155,7 +154,6 @@ func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, ten
 		IsDefault:      in.IsDefault,
 		IsTemplate:     in.IsTemplate,
 		ID:             id,
-		TenantID:       tenantID,
 	})
 	if err != nil {
 		return ComparisonProfile{}, fmt.Errorf("updating comparison profile: %w", err)
@@ -166,10 +164,9 @@ func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, ten
 
 // delete soft-deletes a profile.
 func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonProfile(ctx, gen.DeleteComparisonProfileParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteComparisonProfile(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting comparison profile: %w", err)
 	}
 
@@ -185,17 +182,16 @@ func (s *profileStore) setDefault(ctx context.Context, id, tenantID, userID pgty
 // default inside an existing transaction.
 func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id, tenantID, userID pgtype.UUID) error {
 	if err := q.ClearDefaultProfileForUser(ctx, gen.ClearDefaultProfileForUserParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		ExcludeID: id,
 	}); err != nil {
 		return fmt.Errorf("clearing default profile: %w", err)
 	}
 
-	existing, err := q.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	existing, err := q.GetComparisonProfile(ctx,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("getting profile to mark default: %w", err)
 	}
@@ -210,7 +206,6 @@ func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id,
 		IsDefault:      true,
 		IsTemplate:     existing.IsTemplate,
 		ID:             id,
-		TenantID:       tenantID,
 	}); err != nil {
 		return fmt.Errorf("setting profile default flag: %w", err)
 	}
@@ -220,10 +215,10 @@ func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id,
 
 // countBySourceSpace returns the number of non-template profiles per source space.
 func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error) {
-	rows, err := s.read.CountComparisonProfilesBySourceSpace(ctx, gen.CountComparisonProfilesBySourceSpaceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	rows, err := s.read.CountComparisonProfilesBySourceSpace(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("counting comparison profiles by source space: %w", err)
 	}
@@ -285,8 +280,8 @@ func profileFromRow(row gen.ComparisonProfile) (ComparisonProfile, error) {
 	}
 
 	return ComparisonProfile{
-		ID:             row.ID.String(),
-		TenantID:       row.TenantID.String(),
+		ID: row.ID.String(),
+
 		UserID:         uuidPtr(row.UserID),
 		Title:          row.Title,
 		SourceSpaceID:  uuidPtr(row.SourceSpaceID),

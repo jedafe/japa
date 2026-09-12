@@ -751,7 +751,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
-		TenantID:       tenantID,
+
 		SpaceTypeID:    spaceType.ID,
 		Name:           strings.TrimSpace(input.Name),
 		Slug:           slug,
@@ -845,8 +845,8 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		Name:           name,
 		Description:    existing.Description,
 		WikiContent:    existing.WikiContent,
@@ -941,8 +941,8 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		Name:           existing.Name,
 		Description:    existing.Description,
 		WikiContent:    existing.WikiContent,
@@ -984,8 +984,8 @@ func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		Name:           existing.Name,
 		Description:    existing.Description,
 		WikiContent:    existing.WikiContent,
@@ -1052,8 +1052,8 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	space, err := h.spaces.UpdateSpace(r.Context(), gen.UpdateSpaceParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		Name:           existing.Name,
 		Description:    existing.Description,
 		WikiContent:    existing.WikiContent,
@@ -1178,7 +1178,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		}
 
 		space, err := h.spaces.CreateSpace(r.Context(), gen.CreateSpaceParams{
-			TenantID:       tenantID,
+
 			SpaceTypeID:    spaceType.ID,
 			Name:           name,
 			Slug:           slug,

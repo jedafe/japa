@@ -644,8 +644,8 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 		e := &Engine{read: gen.New(db)}
 
 		_, err := e.GetScore(ctx, jce.GetScoreInput{
-			ContentID:         contentID.String(),
-			TenantID:          tenantID.String(),
+			ContentID: contentID.String(),
+
 			UserID:            &callerID,
 			PermissionChecker: viewOnly,
 		})
@@ -675,8 +675,8 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 		e := &Engine{read: gen.New(db)}
 
 		_, err := e.GetScore(ctx, jce.GetScoreInput{
-			ContentID:         contentID.String(),
-			TenantID:          tenantID.String(),
+			ContentID: contentID.String(),
+
 			UserID:            &authorIDStr,
 			PermissionChecker: nil,
 		})

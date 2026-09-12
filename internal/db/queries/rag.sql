@@ -14,16 +14,14 @@
 -- =====================================================================
 
 -- name: UpsertContentEmbedding :one
-INSERT INTO content_embeddings (
-    tenant_id, entity_type, entity_id, chunk_index, chunk_text, embedding, language
-)
-VALUES (@tenant_id, @entity_type, @entity_id, @chunk_index, @chunk_text, @embedding, @language)
-ON CONFLICT (tenant_id, entity_type, entity_id, chunk_index)
+INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language) VALUES (@entity_type, @entity_id, @chunk_index, @chunk_text, @embedding, @language)
+
+ON CONFLICT (entity_type, entity_id, chunk_index)
 DO UPDATE SET
-    chunk_text  = EXCLUDED.chunk_text,
-    embedding   = EXCLUDED.embedding,
-    language    = EXCLUDED.language,
-    created_at  = now()
+ chunk_text = EXCLUDED.chunk_text,
+ embedding = EXCLUDED.embedding,
+ language = EXCLUDED.language,
+ created_at = now()
 RETURNING *;
 
 -- =====================================================================
@@ -33,7 +31,7 @@ RETURNING *;
 
 -- name: DeleteContentEmbeddingsByEntity :exec
 DELETE FROM content_embeddings
-WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================================================================
 -- Delete all chunks for every entity of a given type within a tenant.
@@ -42,7 +40,7 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 
 -- name: DeleteContentEmbeddingsByType :exec
 DELETE FROM content_embeddings
-WHERE tenant_id = @tenant_id AND entity_type = @entity_type;
+WHERE entity_type = @entity_type;
 
 -- =====================================================================
 -- Delete chunks for an entity that exceed the current chunk count.
@@ -52,8 +50,8 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type;
 
 -- name: DeleteContentEmbeddingsAboveIndex :exec
 DELETE FROM content_embeddings
-WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id
-  AND chunk_index >= @max_index;
+WHERE entity_type = @entity_type AND entity_id = @entity_id
+ AND chunk_index >= @max_index;
 
 -- =====================================================================
 -- HNSW cosine similarity retrieval (the core RAG query).
@@ -69,7 +67,7 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 -- returned in RAG retrieval. Non-content entity types (forum_thread, space,
 -- learning_track) pass through the entity_type != 'content' branch.
 -- Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
---      content_embeddings rows" implies only published content is retrievable.
+-- content_embeddings rows" implies only published content is retrievable.
 --
 -- BUG-001 (rag-audit): return the content_type for content entities so the
 -- store layer can classify the source tier correctly (editorial vs community).
@@ -82,45 +80,43 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 -- delete, but those are fire-and-forget — a failed purge leaves orphaned
 -- embeddings. The CASE expression checks each entity type's status condition.
 SELECT
-    ce.id,
-    ce.tenant_id,
-    ce.entity_type,
-    ce.entity_id,
-    ce.chunk_index,
-    ce.chunk_text,
-    ce.language,
-    ce.created_at,
-    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
-    CASE WHEN ce.entity_type = 'content' THEN
-        (SELECT c.content_type FROM contents c
-         WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id)
-    ELSE NULL END AS content_type
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+ CASE WHEN ce.entity_type = 'content' THEN
+ (SELECT c.content_type FROM contents c
+ WHERE c.id = ce.entity_id)
+ ELSE NULL END AS content_type
 FROM content_embeddings ce
-WHERE ce.tenant_id = @tenant_id
-  AND (@language::text = '' OR ce.language = @language)
-  AND CASE ce.entity_type
-      WHEN 'content' THEN EXISTS (
-          SELECT 1 FROM contents c
-          WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id
-            AND c.status = 'published' AND c.deleted_at IS NULL
-      )
-      WHEN 'forum_thread' THEN EXISTS (
-          SELECT 1 FROM forum_threads ft
-          WHERE ft.id = ce.entity_id AND ft.tenant_id = ce.tenant_id
-            AND ft.deleted_at IS NULL
-      )
-      WHEN 'space' THEN EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = ce.entity_id AND s.tenant_id = ce.tenant_id
-            AND s.status = 'active'
-      )
-      WHEN 'learning_track' THEN EXISTS (
-          SELECT 1 FROM learning_tracks lt
-          WHERE lt.id = ce.entity_id AND lt.tenant_id = ce.tenant_id
-            AND lt.is_published = true
-      )
-      ELSE true
-  END
+WHERE (@language::text = '' OR ce.language = @language)
+ AND CASE ce.entity_type
+ WHEN 'content' THEN EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.id = ce.entity_id
+ AND c.status = 'published' AND c.deleted_at IS NULL
+ )
+ WHEN 'forum_thread' THEN EXISTS (
+ SELECT 1 FROM forum_threads ft
+ WHERE ft.id = ce.entity_id
+ AND ft.deleted_at IS NULL
+ )
+ WHEN 'space' THEN EXISTS (
+ SELECT 1 FROM spaces s
+ WHERE s.id = ce.entity_id
+ AND s.status = 'active'
+ )
+ WHEN 'learning_track' THEN EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.id = ce.entity_id
+ AND lt.is_published = true
+ )
+ ELSE true
+ END
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
@@ -145,27 +141,25 @@ LIMIT @top_k;
 -- the source tier correctly (editorial vs community). The geo-filtered query
 -- already JOINs to contents, so c.content_type is always available.
 SELECT
-    ce.id,
-    ce.tenant_id,
-    ce.entity_type,
-    ce.entity_id,
-    ce.chunk_index,
-    ce.chunk_text,
-    ce.language,
-    ce.created_at,
-    (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
-    c.content_type
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+ c.content_type
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
-WHERE ce.tenant_id = @tenant_id
-  AND (@language::text = '' OR ce.language = @language)
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND (
-      sqlc.narg(geo_space_id)::uuid IS NULL
-      OR c.geo_space_id = sqlc.narg(geo_space_id)
-      OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = sqlc.narg(geo_space_id))
-  )
+WHERE (@language::text = '' OR ce.language = @language)
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND (
+ sqlc.narg(geo_space_id)::uuid IS NULL
+ OR c.geo_space_id = sqlc.narg(geo_space_id)
+ OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = sqlc.narg(geo_space_id))
+ )
 ORDER BY ce.embedding <=> @query_embedding
 LIMIT @top_k;
 
@@ -175,19 +169,19 @@ LIMIT @top_k;
 
 -- name: GetContentEmbeddingStats :one
 SELECT
-    COUNT(*) AS total_chunks,
-    COUNT(DISTINCT (entity_type, entity_id)) AS total_entities,
-    MAX(created_at)::timestamptz AS last_indexed_at
+ COUNT(*) AS total_chunks,
+ COUNT(DISTINCT (entity_type, entity_id)) AS total_entities,
+ MAX(created_at)::timestamptz AS last_indexed_at
 FROM content_embeddings
-WHERE tenant_id = @tenant_id;
+;
 
 -- name: GetContentEmbeddingStatsByType :many
 SELECT
-    entity_type,
-    COUNT(*) AS chunk_count,
-    COUNT(DISTINCT entity_id) AS entity_count
+ entity_type,
+ COUNT(*) AS chunk_count,
+ COUNT(DISTINCT entity_id) AS entity_count
 FROM content_embeddings
-WHERE tenant_id = @tenant_id
+
 GROUP BY entity_type
 ORDER BY entity_type;
 
@@ -199,7 +193,7 @@ ORDER BY entity_type;
 -- name: CountContentEmbeddingsByEntity :one
 SELECT COUNT(*) AS count
 FROM content_embeddings
-WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @entity_id;
+WHERE entity_type = @entity_type AND entity_id = @entity_id;
 
 -- =====================================================================
 -- List all published content IDs for a tenant (for full corpus re-index).
@@ -207,10 +201,9 @@ WHERE tenant_id = @tenant_id AND entity_type = @entity_type AND entity_id = @ent
 -- =====================================================================
 
 -- name: ListPublishedContentIDsForReindex :many
-SELECT id, tenant_id FROM contents
-WHERE tenant_id = @tenant_id
-  AND status = 'published'
-  AND deleted_at IS NULL
+SELECT id FROM contents
+WHERE status = 'published'
+ AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -220,9 +213,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 
 -- name: ListForumThreadIDsForReindex :many
-SELECT id, tenant_id FROM forum_threads
-WHERE tenant_id = @tenant_id
-  AND deleted_at IS NULL
+SELECT id FROM forum_threads
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -232,9 +224,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 
 -- name: ListSpaceIDsForReindex :many
-SELECT id, tenant_id FROM spaces
-WHERE tenant_id = @tenant_id
-  AND status = 'active'
+SELECT id FROM spaces
+WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -246,8 +237,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 
 -- name: ListLearningTrackIDsForReindex :many
-SELECT id, tenant_id FROM learning_tracks
-WHERE tenant_id = @tenant_id
-  AND is_published = true
+SELECT id FROM learning_tracks
+WHERE is_published = true
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

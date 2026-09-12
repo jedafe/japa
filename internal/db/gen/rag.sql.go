@@ -16,11 +16,10 @@ const countContentEmbeddingsByEntity = `-- name: CountContentEmbeddingsByEntity 
 
 SELECT COUNT(*) AS count
 FROM content_embeddings
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE entity_type = $1 AND entity_id = $2
 `
 
 type CountContentEmbeddingsByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
@@ -30,7 +29,7 @@ type CountContentEmbeddingsByEntityParams struct {
 // is needed after a re-index with fewer chunks).
 // =====================================================================
 func (q *Queries) CountContentEmbeddingsByEntity(ctx context.Context, arg CountContentEmbeddingsByEntityParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countContentEmbeddingsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, countContentEmbeddingsByEntity, arg.EntityType, arg.EntityID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -39,12 +38,11 @@ func (q *Queries) CountContentEmbeddingsByEntity(ctx context.Context, arg CountC
 const deleteContentEmbeddingsAboveIndex = `-- name: DeleteContentEmbeddingsAboveIndex :exec
 
 DELETE FROM content_embeddings
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
-  AND chunk_index >= $4
+WHERE entity_type = $1 AND entity_id = $2
+ AND chunk_index >= $3
 `
 
 type DeleteContentEmbeddingsAboveIndexParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	MaxIndex   int32       `json:"max_index"`
@@ -56,23 +54,17 @@ type DeleteContentEmbeddingsAboveIndexParams struct {
 // removed so the table never holds orphaned chunks from a shorter re-index.
 // =====================================================================
 func (q *Queries) DeleteContentEmbeddingsAboveIndex(ctx context.Context, arg DeleteContentEmbeddingsAboveIndexParams) error {
-	_, err := q.db.Exec(ctx, deleteContentEmbeddingsAboveIndex,
-		arg.TenantID,
-		arg.EntityType,
-		arg.EntityID,
-		arg.MaxIndex,
-	)
+	_, err := q.db.Exec(ctx, deleteContentEmbeddingsAboveIndex, arg.EntityType, arg.EntityID, arg.MaxIndex)
 	return err
 }
 
 const deleteContentEmbeddingsByEntity = `-- name: DeleteContentEmbeddingsByEntity :exec
 
 DELETE FROM content_embeddings
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE entity_type = $1 AND entity_id = $2
 `
 
 type DeleteContentEmbeddingsByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
@@ -82,38 +74,32 @@ type DeleteContentEmbeddingsByEntityParams struct {
 // by the admin DELETE /admin/rag/entity/:type/:id route).
 // =====================================================================
 func (q *Queries) DeleteContentEmbeddingsByEntity(ctx context.Context, arg DeleteContentEmbeddingsByEntityParams) error {
-	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByEntity, arg.EntityType, arg.EntityID)
 	return err
 }
 
 const deleteContentEmbeddingsByType = `-- name: DeleteContentEmbeddingsByType :exec
 
 DELETE FROM content_embeddings
-WHERE tenant_id = $1 AND entity_type = $2
+WHERE entity_type = $1
 `
-
-type DeleteContentEmbeddingsByTypeParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	EntityType string      `json:"entity_type"`
-}
 
 // =====================================================================
 // Delete all chunks for every entity of a given type within a tenant.
 // Used by the admin by-type aggregate purge (DELETE /admin/rag/entity/:type/all).
 // =====================================================================
-func (q *Queries) DeleteContentEmbeddingsByType(ctx context.Context, arg DeleteContentEmbeddingsByTypeParams) error {
-	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByType, arg.TenantID, arg.EntityType)
+func (q *Queries) DeleteContentEmbeddingsByType(ctx context.Context, entityType string) error {
+	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByType, entityType)
 	return err
 }
 
 const getContentEmbeddingStats = `-- name: GetContentEmbeddingStats :one
 
 SELECT
-    COUNT(*) AS total_chunks,
-    COUNT(DISTINCT (entity_type, entity_id)) AS total_entities,
-    MAX(created_at)::timestamptz AS last_indexed_at
+ COUNT(*) AS total_chunks,
+ COUNT(DISTINCT (entity_type, entity_id)) AS total_entities,
+ MAX(created_at)::timestamptz AS last_indexed_at
 FROM content_embeddings
-WHERE tenant_id = $1
 `
 
 type GetContentEmbeddingStatsRow struct {
@@ -125,8 +111,8 @@ type GetContentEmbeddingStatsRow struct {
 // =====================================================================
 // Index stats for GET /admin/rag/status.
 // =====================================================================
-func (q *Queries) GetContentEmbeddingStats(ctx context.Context, tenantID pgtype.UUID) (GetContentEmbeddingStatsRow, error) {
-	row := q.db.QueryRow(ctx, getContentEmbeddingStats, tenantID)
+func (q *Queries) GetContentEmbeddingStats(ctx context.Context) (GetContentEmbeddingStatsRow, error) {
+	row := q.db.QueryRow(ctx, getContentEmbeddingStats)
 	var i GetContentEmbeddingStatsRow
 	err := row.Scan(&i.TotalChunks, &i.TotalEntities, &i.LastIndexedAt)
 	return i, err
@@ -134,11 +120,11 @@ func (q *Queries) GetContentEmbeddingStats(ctx context.Context, tenantID pgtype.
 
 const getContentEmbeddingStatsByType = `-- name: GetContentEmbeddingStatsByType :many
 SELECT
-    entity_type,
-    COUNT(*) AS chunk_count,
-    COUNT(DISTINCT entity_id) AS entity_count
+ entity_type,
+ COUNT(*) AS chunk_count,
+ COUNT(DISTINCT entity_id) AS entity_count
 FROM content_embeddings
-WHERE tenant_id = $1
+
 GROUP BY entity_type
 ORDER BY entity_type
 `
@@ -149,8 +135,8 @@ type GetContentEmbeddingStatsByTypeRow struct {
 	EntityCount int64  `json:"entity_count"`
 }
 
-func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context, tenantID pgtype.UUID) ([]GetContentEmbeddingStatsByTypeRow, error) {
-	rows, err := q.db.Query(ctx, getContentEmbeddingStatsByType, tenantID)
+func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context) ([]GetContentEmbeddingStatsByTypeRow, error) {
+	rows, err := q.db.Query(ctx, getContentEmbeddingStatsByType)
 	if err != nil {
 		return nil, err
 	}
@@ -171,41 +157,34 @@ func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context, tenantID p
 
 const listForumThreadIDsForReindex = `-- name: ListForumThreadIDsForReindex :many
 
-SELECT id, tenant_id FROM forum_threads
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
+SELECT id FROM forum_threads
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListForumThreadIDsForReindexParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListForumThreadIDsForReindexRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 // =====================================================================
 // List all non-deleted forum thread IDs for a tenant (for full corpus
 // re-index). Forum threads are part of the RAG corpus (ADR-069 §2).
 // =====================================================================
-func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForumThreadIDsForReindexParams) ([]ListForumThreadIDsForReindexRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForumThreadIDsForReindexParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listForumThreadIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListForumThreadIDsForReindexRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListForumThreadIDsForReindexRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -215,22 +194,15 @@ func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForu
 
 const listLearningTrackIDsForReindex = `-- name: ListLearningTrackIDsForReindex :many
 
-SELECT id, tenant_id FROM learning_tracks
-WHERE tenant_id = $1
-  AND is_published = true
+SELECT id FROM learning_tracks
+WHERE is_published = true
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListLearningTrackIDsForReindexParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListLearningTrackIDsForReindexRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 // =====================================================================
@@ -239,19 +211,19 @@ type ListLearningTrackIDsForReindexRow struct {
 // Only published tracks are indexed; learning_tracks has no deleted_at
 // column (tracks are hard-deleted).
 // =====================================================================
-func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLearningTrackIDsForReindexParams) ([]ListLearningTrackIDsForReindexRow, error) {
-	rows, err := q.db.Query(ctx, listLearningTrackIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLearningTrackIDsForReindexParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listLearningTrackIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListLearningTrackIDsForReindexRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListLearningTrackIDsForReindexRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -261,42 +233,35 @@ func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLe
 
 const listPublishedContentIDsForReindex = `-- name: ListPublishedContentIDsForReindex :many
 
-SELECT id, tenant_id FROM contents
-WHERE tenant_id = $1
-  AND status = 'published'
-  AND deleted_at IS NULL
+SELECT id FROM contents
+WHERE status = 'published'
+ AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListPublishedContentIDsForReindexParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListPublishedContentIDsForReindexRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 // =====================================================================
 // List all published content IDs for a tenant (for full corpus re-index).
 // Only 'published' content is indexed in the RAG layer (Section 69).
 // =====================================================================
-func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg ListPublishedContentIDsForReindexParams) ([]ListPublishedContentIDsForReindexRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg ListPublishedContentIDsForReindexParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPublishedContentIDsForReindexRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListPublishedContentIDsForReindexRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -306,41 +271,34 @@ func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg Lis
 
 const listSpaceIDsForReindex = `-- name: ListSpaceIDsForReindex :many
 
-SELECT id, tenant_id FROM spaces
-WHERE tenant_id = $1
-  AND status = 'active'
+SELECT id FROM spaces
+WHERE status = 'active'
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListSpaceIDsForReindexParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
-}
-
-type ListSpaceIDsForReindexRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 // =====================================================================
 // List all active space IDs for a tenant (for full corpus re-index).
 // Spaces are part of the RAG corpus (ADR-069 §2).
 // =====================================================================
-func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsForReindexParams) ([]ListSpaceIDsForReindexRow, error) {
-	rows, err := q.db.Query(ctx, listSpaceIDsForReindex, arg.TenantID, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsForReindexParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listSpaceIDsForReindex, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSpaceIDsForReindexRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListSpaceIDsForReindexRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -351,59 +309,55 @@ func (q *Queries) ListSpaceIDsForReindex(ctx context.Context, arg ListSpaceIDsFo
 const searchContentEmbeddings = `-- name: SearchContentEmbeddings :many
 
 SELECT
-    ce.id,
-    ce.tenant_id,
-    ce.entity_type,
-    ce.entity_id,
-    ce.chunk_index,
-    ce.chunk_text,
-    ce.language,
-    ce.created_at,
-    (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
-    CASE WHEN ce.entity_type = 'content' THEN
-        (SELECT c.content_type FROM contents c
-         WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id)
-    ELSE NULL END AS content_type
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+ CASE WHEN ce.entity_type = 'content' THEN
+ (SELECT c.content_type FROM contents c
+ WHERE c.id = ce.entity_id)
+ ELSE NULL END AS content_type
 FROM content_embeddings ce
-WHERE ce.tenant_id = $2
-  AND ($3::text = '' OR ce.language = $3)
-  AND CASE ce.entity_type
-      WHEN 'content' THEN EXISTS (
-          SELECT 1 FROM contents c
-          WHERE c.id = ce.entity_id AND c.tenant_id = ce.tenant_id
-            AND c.status = 'published' AND c.deleted_at IS NULL
-      )
-      WHEN 'forum_thread' THEN EXISTS (
-          SELECT 1 FROM forum_threads ft
-          WHERE ft.id = ce.entity_id AND ft.tenant_id = ce.tenant_id
-            AND ft.deleted_at IS NULL
-      )
-      WHEN 'space' THEN EXISTS (
-          SELECT 1 FROM spaces s
-          WHERE s.id = ce.entity_id AND s.tenant_id = ce.tenant_id
-            AND s.status = 'active'
-      )
-      WHEN 'learning_track' THEN EXISTS (
-          SELECT 1 FROM learning_tracks lt
-          WHERE lt.id = ce.entity_id AND lt.tenant_id = ce.tenant_id
-            AND lt.is_published = true
-      )
-      ELSE true
-  END
+WHERE ($2::text = '' OR ce.language = $2)
+ AND CASE ce.entity_type
+ WHEN 'content' THEN EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.id = ce.entity_id
+ AND c.status = 'published' AND c.deleted_at IS NULL
+ )
+ WHEN 'forum_thread' THEN EXISTS (
+ SELECT 1 FROM forum_threads ft
+ WHERE ft.id = ce.entity_id
+ AND ft.deleted_at IS NULL
+ )
+ WHEN 'space' THEN EXISTS (
+ SELECT 1 FROM spaces s
+ WHERE s.id = ce.entity_id
+ AND s.status = 'active'
+ )
+ WHEN 'learning_track' THEN EXISTS (
+ SELECT 1 FROM learning_tracks lt
+ WHERE lt.id = ce.entity_id
+ AND lt.is_published = true
+ )
+ ELSE true
+ END
 ORDER BY ce.embedding <=> $1
-LIMIT $4
+LIMIT $3
 `
 
 type SearchContentEmbeddingsParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	TenantID       pgtype.UUID      `json:"tenant_id"`
 	Language       string           `json:"language"`
 	TopK           int32            `json:"top_k"`
 }
 
 type SearchContentEmbeddingsRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`
 	ChunkIndex  int32              `json:"chunk_index"`
@@ -426,8 +380,7 @@ type SearchContentEmbeddingsRow struct {
 // returned in RAG retrieval. Non-content entity types (forum_thread, space,
 // learning_track) pass through the entity_type != 'content' branch.
 // Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
-//
-//	content_embeddings rows" implies only published content is retrievable.
+// content_embeddings rows" implies only published content is retrievable.
 //
 // BUG-001 (rag-audit): return the content_type for content entities so the
 // store layer can classify the source tier correctly (editorial vs community).
@@ -440,12 +393,7 @@ type SearchContentEmbeddingsRow struct {
 // delete, but those are fire-and-forget — a failed purge leaves orphaned
 // embeddings. The CASE expression checks each entity type's status condition.
 func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContentEmbeddingsParams) ([]SearchContentEmbeddingsRow, error) {
-	rows, err := q.db.Query(ctx, searchContentEmbeddings,
-		arg.QueryEmbedding,
-		arg.TenantID,
-		arg.Language,
-		arg.TopK,
-	)
+	rows, err := q.db.Query(ctx, searchContentEmbeddings, arg.QueryEmbedding, arg.Language, arg.TopK)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +403,6 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 		var i SearchContentEmbeddingsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ChunkIndex,
@@ -478,34 +425,31 @@ func (q *Queries) SearchContentEmbeddings(ctx context.Context, arg SearchContent
 const searchContentEmbeddingsGeoFiltered = `-- name: SearchContentEmbeddingsGeoFiltered :many
 
 SELECT
-    ce.id,
-    ce.tenant_id,
-    ce.entity_type,
-    ce.entity_id,
-    ce.chunk_index,
-    ce.chunk_text,
-    ce.language,
-    ce.created_at,
-    (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
-    c.content_type
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+ c.content_type
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
-WHERE ce.tenant_id = $2
-  AND ($3::text = '' OR ce.language = $3)
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND (
-      $4::uuid IS NULL
-      OR c.geo_space_id = $4
-      OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $4)
-  )
+WHERE ($2::text = '' OR ce.language = $2)
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND (
+ $3::uuid IS NULL
+ OR c.geo_space_id = $3
+ OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $3)
+ )
 ORDER BY ce.embedding <=> $1
-LIMIT $5
+LIMIT $4
 `
 
 type SearchContentEmbeddingsGeoFilteredParams struct {
 	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
-	TenantID       pgtype.UUID      `json:"tenant_id"`
 	Language       string           `json:"language"`
 	GeoSpaceID     pgtype.UUID      `json:"geo_space_id"`
 	TopK           int32            `json:"top_k"`
@@ -513,7 +457,6 @@ type SearchContentEmbeddingsGeoFilteredParams struct {
 
 type SearchContentEmbeddingsGeoFilteredRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`
 	ChunkIndex  int32              `json:"chunk_index"`
@@ -545,7 +488,6 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg SearchContentEmbeddingsGeoFilteredParams) ([]SearchContentEmbeddingsGeoFilteredRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddingsGeoFiltered,
 		arg.QueryEmbedding,
-		arg.TenantID,
 		arg.Language,
 		arg.GeoSpaceID,
 		arg.TopK,
@@ -559,7 +501,6 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 		var i SearchContentEmbeddingsGeoFilteredRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ChunkIndex,
@@ -582,21 +523,18 @@ func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg Se
 const upsertContentEmbedding = `-- name: UpsertContentEmbedding :one
 
 
-INSERT INTO content_embeddings (
-    tenant_id, entity_type, entity_id, chunk_index, chunk_text, embedding, language
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (tenant_id, entity_type, entity_id, chunk_index)
+INSERT INTO content_embeddings (entity_type, entity_id, chunk_index, chunk_text, embedding, language) VALUES ($1, $2, $3, $4, $5, $6)
+
+ON CONFLICT (entity_type, entity_id, chunk_index)
 DO UPDATE SET
-    chunk_text  = EXCLUDED.chunk_text,
-    embedding   = EXCLUDED.embedding,
-    language    = EXCLUDED.language,
-    created_at  = now()
+ chunk_text = EXCLUDED.chunk_text,
+ embedding = EXCLUDED.embedding,
+ language = EXCLUDED.language,
+ created_at = now()
 RETURNING id, tenant_id, entity_type, entity_id, chunk_index, chunk_text, embedding, language, created_at
 `
 
 type UpsertContentEmbeddingParams struct {
-	TenantID   pgtype.UUID      `json:"tenant_id"`
 	EntityType string           `json:"entity_type"`
 	EntityID   pgtype.UUID      `json:"entity_id"`
 	ChunkIndex int32            `json:"chunk_index"`
@@ -622,7 +560,6 @@ type UpsertContentEmbeddingParams struct {
 // =====================================================================
 func (q *Queries) UpsertContentEmbedding(ctx context.Context, arg UpsertContentEmbeddingParams) (ContentEmbedding, error) {
 	row := q.db.QueryRow(ctx, upsertContentEmbedding,
-		arg.TenantID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.ChunkIndex,

@@ -12,31 +12,23 @@ import (
 )
 
 const getContentSEOByID = `-- name: GetContentSEOByID :one
-SELECT c.id, c.tenant_id,
-       c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
-       COALESCE(c.meta_title, '') AS meta_title,
-       COALESCE(c.meta_description, '') AS meta_description,
-       COALESCE(c.og_image_url, '') AS og_image_url,
-       COALESCE(c.canonical_url, '') AS canonical_url,
-       COALESCE(c.meta_title, c.title) AS og_title,
-       COALESCE(c.meta_description, '') AS og_description,
-       COALESCE(jt.template, '{}'::jsonb) AS jsonld_template
+SELECT c.id, c.title, c.slug, c.content_type, c.body, c.visibility, c.seo_indexable,
+ COALESCE(c.meta_title, '') AS meta_title,
+ COALESCE(c.meta_description, '') AS meta_description,
+ COALESCE(c.og_image_url, '') AS og_image_url,
+ COALESCE(c.canonical_url, '') AS canonical_url,
+ COALESCE(c.meta_title, c.title) AS og_title,
+ COALESCE(c.meta_description, '') AS og_description,
+ COALESCE(jt.template, '{}'::jsonb) AS jsonld_template
 FROM contents c
 LEFT JOIN content_type_jsonld_templates jt
-       ON jt.content_type = c.content_type
-      AND jt.tenant_id = c.tenant_id
-      AND jt.is_active = true
-WHERE c.id = $1 AND c.tenant_id = $2
+ ON jt.content_type = c.content_type
+ AND jt.is_active = true
+WHERE c.id = $1
 `
-
-type GetContentSEOByIDParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentSEOByIDRow struct {
 	ID              pgtype.UUID `json:"id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	Title           string      `json:"title"`
 	Slug            string      `json:"slug"`
 	ContentType     string      `json:"content_type"`
@@ -57,12 +49,11 @@ type GetContentSEOByIDRow struct {
 // title/slug/body/visibility the validator needs to compute issues and score.
 // Unlike GetPageMetadataBySlug this does NOT filter by status — admins must be
 // able to validate drafts too.
-func (q *Queries) GetContentSEOByID(ctx context.Context, arg GetContentSEOByIDParams) (GetContentSEOByIDRow, error) {
-	row := q.db.QueryRow(ctx, getContentSEOByID, arg.ContentID, arg.TenantID)
+func (q *Queries) GetContentSEOByID(ctx context.Context, contentID pgtype.UUID) (GetContentSEOByIDRow, error) {
+	row := q.db.QueryRow(ctx, getContentSEOByID, contentID)
 	var i GetContentSEOByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.ContentType,
@@ -81,32 +72,25 @@ func (q *Queries) GetContentSEOByID(ctx context.Context, arg GetContentSEOByIDPa
 }
 
 const getPageMetadataBySlug = `-- name: GetPageMetadataBySlug :one
-SELECT c.id, c.tenant_id,
-       COALESCE(c.meta_title, c.title) AS title,
-       COALESCE(c.meta_description, '') AS description,
-       c.slug, c.content_type,
-       COALESCE(c.og_image_url, '') AS og_image,
-       COALESCE(c.canonical_url, '') AS canonical_url,
-       COALESCE(c.meta_title, c.title) AS og_title,
-       COALESCE(c.meta_description, '') AS og_description,
-       c.seo_indexable,
-       COALESCE(up.display_name, u.username, '') AS author,
-       COALESCE(c.published_at, c.created_at) AS published_at,
-       c.updated_at
+SELECT c.id, COALESCE(c.meta_title, c.title) AS title,
+ COALESCE(c.meta_description, '') AS description,
+ c.slug, c.content_type,
+ COALESCE(c.og_image_url, '') AS og_image,
+ COALESCE(c.canonical_url, '') AS canonical_url,
+ COALESCE(c.meta_title, c.title) AS og_title,
+ COALESCE(c.meta_description, '') AS og_description,
+ c.seo_indexable,
+ COALESCE(up.display_name, u.username, '') AS author,
+ COALESCE(c.published_at, c.created_at) AS published_at,
+ c.updated_at
 FROM contents c
 LEFT JOIN users u ON c.author_id = u.id
-LEFT JOIN user_profiles up ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE c.slug = $1 AND c.tenant_id = $2 AND c.status = 'published'
+LEFT JOIN user_profiles up ON u.id = up.user_id
+WHERE c.slug = $1 AND c.status = 'published'
 `
-
-type GetPageMetadataBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetPageMetadataBySlugRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Title         string             `json:"title"`
 	Description   string             `json:"description"`
 	Slug          string             `json:"slug"`
@@ -130,12 +114,11 @@ type GetPageMetadataBySlugRow struct {
 // excerpt(body, 160) when og_description is empty. Using the title as the
 // OG description is wrong — it duplicates og_title and is useless for
 // social sharing.
-func (q *Queries) GetPageMetadataBySlug(ctx context.Context, arg GetPageMetadataBySlugParams) (GetPageMetadataBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getPageMetadataBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetPageMetadataBySlug(ctx context.Context, slug string) (GetPageMetadataBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getPageMetadataBySlug, slug)
 	var i GetPageMetadataBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.Slug,
@@ -153,10 +136,9 @@ func (q *Queries) GetPageMetadataBySlug(ctx context.Context, arg GetPageMetadata
 }
 
 const listContentForSitemap = `-- name: ListContentForSitemap :many
-SELECT id, slug, updated_at, content_type, status, tenant_id
+SELECT id, slug, updated_at, content_type, status
 FROM contents
-WHERE tenant_id = $1
-  AND status = 'published'
+WHERE status = 'published'
 ORDER BY updated_at DESC
 `
 
@@ -166,11 +148,10 @@ type ListContentForSitemapRow struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	ContentType string             `json:"content_type"`
 	Status      string             `json:"status"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) ListContentForSitemap(ctx context.Context, tenantID pgtype.UUID) ([]ListContentForSitemapRow, error) {
-	rows, err := q.db.Query(ctx, listContentForSitemap, tenantID)
+func (q *Queries) ListContentForSitemap(ctx context.Context) ([]ListContentForSitemapRow, error) {
+	rows, err := q.db.Query(ctx, listContentForSitemap)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +165,6 @@ func (q *Queries) ListContentForSitemap(ctx context.Context, tenantID pgtype.UUI
 			&i.UpdatedAt,
 			&i.ContentType,
 			&i.Status,
-			&i.TenantID,
 		); err != nil {
 			return nil, err
 		}

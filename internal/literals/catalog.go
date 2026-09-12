@@ -58,7 +58,7 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 	active := true
 
 	rows, err := c.queries.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
-		TenantID:   tenantID,
+
 		Search:     "",
 		IsActive:   &active,
 		Kind:       "",
@@ -74,8 +74,8 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 	lits := make([]TemplateLiteral, len(rows))
 	for i, r := range rows {
 		lits[i] = TemplateLiteral{
-			ID:          r.ID.String(),
-			TenantID:    r.TenantID.String(),
+			ID: r.ID.String(),
+
 			Key:         r.Key,
 			Kind:        r.Kind,
 			Value:       r.Value,

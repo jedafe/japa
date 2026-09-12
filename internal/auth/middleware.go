@@ -73,8 +73,8 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 			}
 
 			user := &AuthenticatedUser{
-				UserID:    userID,
-				TenantID:  tenantID,
+				UserID: userID,
+
 				SessionID: claims.JTI,
 			}
 
@@ -128,8 +128,8 @@ func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Hand
 			}
 
 			user := &AuthenticatedUser{
-				UserID:    userID,
-				TenantID:  tenantID,
+				UserID: userID,
+
 				SessionID: claims.JTI,
 			}
 

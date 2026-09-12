@@ -112,7 +112,7 @@ func TestAwardPointsOneTimeRule(t *testing.T) {
 
 	payload := func(ref string) []byte {
 		p := AwardPointsPayload{
-			TenantID:    tenantID.String(),
+
 			UserID:      userID.String(),
 			Points:      25,
 			Reason:      "scholarship_saved",

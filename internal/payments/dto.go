@@ -46,8 +46,8 @@ func toPaymentAPIResponse(p gen.Payment, checkoutURL string) PaymentAPIResponse 
 	}
 
 	return PaymentAPIResponse{
-		ID:             p.ID,
-		TenantID:       p.TenantID,
+		ID: p.ID,
+
 		UserID:         p.UserID,
 		Provider:       p.Provider,
 		ProviderRef:    p.ProviderRef,

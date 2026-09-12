@@ -14,21 +14,20 @@ import (
 const acknowledgeModerationAlert = `-- name: AcknowledgeModerationAlert :one
 UPDATE moderation_alerts
 SET status = 'acknowledged',
-    acknowledged_at = now(),
-    acknowledged_by = $1,
-    updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+ acknowledged_at = now(),
+ acknowledged_by = $1,
+ updated_at = now()
+WHERE id = $2
 RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type AcknowledgeModerationAlertParams struct {
 	AcknowledgedBy pgtype.UUID `json:"acknowledged_by"`
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) AcknowledgeModerationAlert(ctx context.Context, arg AcknowledgeModerationAlertParams) (ModerationAlert, error) {
-	row := q.db.QueryRow(ctx, acknowledgeModerationAlert, arg.AcknowledgedBy, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, acknowledgeModerationAlert, arg.AcknowledgedBy, arg.ID)
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
@@ -51,18 +50,17 @@ func (q *Queries) AcknowledgeModerationAlert(ctx context.Context, arg Acknowledg
 
 const countPendingReportsByEntity = `-- name: CountPendingReportsByEntity :one
 SELECT COUNT(*) FROM content_reports
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
-  AND status = 'pending'
+WHERE entity_type = $1 AND entity_id = $2
+ AND status = 'pending'
 `
 
 type CountPendingReportsByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) CountPendingReportsByEntity(ctx context.Context, arg CountPendingReportsByEntityParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPendingReportsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	row := q.db.QueryRow(ctx, countPendingReportsByEntity, arg.EntityType, arg.EntityID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -70,27 +68,21 @@ func (q *Queries) CountPendingReportsByEntity(ctx context.Context, arg CountPend
 
 const createModerationAlert = `-- name: CreateModerationAlert :one
 
-INSERT INTO moderation_alerts (
-    tenant_id, alert_type, severity, title, description, meta
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-)
+INSERT INTO moderation_alerts (alert_type, severity, title, description, meta) VALUES ($1, $2, $3, $4, $5)
 RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type CreateModerationAlertParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	AlertType   string      `json:"alert_type"`
-	Severity    string      `json:"severity"`
-	Title       string      `json:"title"`
-	Description *string     `json:"description"`
-	Meta        []byte      `json:"meta"`
+	AlertType   string  `json:"alert_type"`
+	Severity    string  `json:"severity"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"`
+	Meta        []byte  `json:"meta"`
 }
 
 // Moderation alert queries (audit A13).
 func (q *Queries) CreateModerationAlert(ctx context.Context, arg CreateModerationAlertParams) (ModerationAlert, error) {
 	row := q.db.QueryRow(ctx, createModerationAlert,
-		arg.TenantID,
 		arg.AlertType,
 		arg.Severity,
 		arg.Title,
@@ -121,8 +113,8 @@ const expireModerationBans = `-- name: ExpireModerationBans :exec
 UPDATE user_moderation_actions
 SET action = 'unban'
 WHERE action = 'ban'
-  AND expires_at IS NOT NULL
-  AND expires_at < now()
+ AND expires_at IS NOT NULL
+ AND expires_at < now()
 `
 
 func (q *Queries) ExpireModerationBans(ctx context.Context) error {
@@ -132,16 +124,11 @@ func (q *Queries) ExpireModerationBans(ctx context.Context) error {
 
 const getModerationAlert = `-- name: GetModerationAlert :one
 SELECT id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetModerationAlertParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetModerationAlert(ctx context.Context, arg GetModerationAlertParams) (ModerationAlert, error) {
-	row := q.db.QueryRow(ctx, getModerationAlert, arg.ID, arg.TenantID)
+func (q *Queries) GetModerationAlert(ctx context.Context, id pgtype.UUID) (ModerationAlert, error) {
+	row := q.db.QueryRow(ctx, getModerationAlert, id)
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
@@ -164,20 +151,14 @@ func (q *Queries) GetModerationAlert(ctx context.Context, arg GetModerationAlert
 
 const listModerationAlerts = `-- name: ListModerationAlerts :many
 SELECT id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
-WHERE tenant_id = $1
-  AND (NULLIF($2, '') IS NULL OR status = $2)
+WHERE (NULLIF($1, '') IS NULL OR status = $1)
 ORDER BY
-    CASE WHEN status = 'open' THEN 0 ELSE 1 END,
-    created_at DESC
+ CASE WHEN status = 'open' THEN 0 ELSE 1 END,
+ created_at DESC
 `
 
-type ListModerationAlertsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   interface{} `json:"status"`
-}
-
-func (q *Queries) ListModerationAlerts(ctx context.Context, arg ListModerationAlertsParams) ([]ModerationAlert, error) {
-	rows, err := q.db.Query(ctx, listModerationAlerts, arg.TenantID, arg.Status)
+func (q *Queries) ListModerationAlerts(ctx context.Context, status interface{}) ([]ModerationAlert, error) {
+	rows, err := q.db.Query(ctx, listModerationAlerts, status)
 	if err != nil {
 		return nil, err
 	}
@@ -214,21 +195,20 @@ func (q *Queries) ListModerationAlerts(ctx context.Context, arg ListModerationAl
 const resolveModerationAlert = `-- name: ResolveModerationAlert :one
 UPDATE moderation_alerts
 SET status = 'resolved',
-    resolved_at = now(),
-    resolved_by = $1,
-    updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+ resolved_at = now(),
+ resolved_by = $1,
+ updated_at = now()
+WHERE id = $2
 RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type ResolveModerationAlertParams struct {
 	ResolvedBy pgtype.UUID `json:"resolved_by"`
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) ResolveModerationAlert(ctx context.Context, arg ResolveModerationAlertParams) (ModerationAlert, error) {
-	row := q.db.QueryRow(ctx, resolveModerationAlert, arg.ResolvedBy, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, resolveModerationAlert, arg.ResolvedBy, arg.ID)
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,

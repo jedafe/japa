@@ -25,7 +25,7 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterT
 	}
 
 	rows, err := s.read.ListEmailTemplates(ctx, gen.ListEmailTemplatesParams{
-		TenantID: tenantID, Type: filterType, IsActive: filterIsActive, PageOffset: offset, PageLimit: limit,
+		Type: filterType, IsActive: filterIsActive, PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing email templates: %w", err)
@@ -36,7 +36,7 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterT
 
 func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string) (int32, error) {
 	count, err := s.read.CountEmailTemplates(ctx, gen.CountEmailTemplatesParams{
-		TenantID: tenantID, Type: filterType, IsActive: filterIsActive,
+		Type: filterType, IsActive: filterIsActive,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting email templates: %w", err)
@@ -46,7 +46,7 @@ func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filter
 }
 
 func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetEmailTemplateRow, error) {
-	row, err := s.read.GetEmailTemplate(ctx, gen.GetEmailTemplateParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetEmailTemplate(ctx, id)
 	if err != nil {
 		return gen.GetEmailTemplateRow{}, fmt.Errorf("getting email template: %w", err)
 	}
@@ -56,7 +56,7 @@ func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 
 func (s *Store) getTemplateByType(ctx context.Context, tenantID pgtype.UUID, templateType string) (gen.GetEmailTemplateByTypeRow, error) {
 	row, err := s.read.GetEmailTemplateByType(ctx, gen.GetEmailTemplateByTypeParams{
-		TenantID: tenantID, Type: templateType,
+		Type: templateType,
 	})
 	if err != nil {
 		return gen.GetEmailTemplateByTypeRow{}, fmt.Errorf("getting email template by type: %w", err)
@@ -75,9 +75,9 @@ func (s *Store) updateTemplate(ctx context.Context, p gen.UpdateEmailTemplatePar
 }
 
 func (s *Store) resetTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.ResetEmailTemplate(ctx, gen.ResetEmailTemplateParams{
-		ID: id, TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.ResetEmailTemplate(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("resetting email template: %w", err)
 	}
 

@@ -841,7 +841,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.default_reminder_days", 14))
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		GuideID:          guideID,
 		RemindBeforeDays: defaultReminderDays,
@@ -852,9 +852,9 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		// row so a repeat save is idempotent rather than a 400.
 		if errors.Is(err, pgx.ErrNoRows) {
 			existing, gerr := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
-				TenantID: tenantID,
-				UserID:   userID,
-				GuideID:  guideID,
+
+				UserID:  userID,
+				GuideID: guideID,
 			})
 			if gerr != nil {
 				return gen.SavedScholarship{}, gerr
@@ -904,7 +904,7 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, 
 	}
 
 	return s.store.UpdateSavedScholarship(ctx, gen.UpdateSavedScholarshipParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		GuideID:          guideID,
 		Status:           statusArg,
@@ -916,9 +916,9 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, tenantID, userID, 
 // DeleteSavedScholarship removes a scholarship from the tracker.
 func (s *Service) DeleteSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
 	return s.store.DeleteSavedScholarship(ctx, gen.DeleteSavedScholarshipParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
+
+		UserID:  userID,
+		GuideID: guideID,
 	})
 }
 
@@ -926,9 +926,9 @@ func (s *Service) DeleteSavedScholarship(ctx context.Context, tenantID, userID, 
 // Returns false (not an error) when no saved-tracker row exists.
 func (s *Service) IsSavedScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (bool, error) {
 	_, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
+
+		UserID:  userID,
+		GuideID: guideID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -956,7 +956,7 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	offset := safeOffset(page, limit)
 
 	rows, err := s.store.ListSavedScholarships(ctx, gen.ListSavedScholarshipsParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		Status:     status,
 		PageLimit:  safeInt32(limit),
@@ -967,9 +967,9 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	}
 
 	total, err := s.store.CountSavedScholarships(ctx, gen.CountSavedScholarshipsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		Status:   status,
+
+		UserID: userID,
+		Status: status,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -1024,7 +1024,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 	// large page to get aggregate counts (acceptable for v2 scale per
 	// ADR-073; a dedicated count query is the future migration path).
 	dl, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  1000,
 		PageOffset: 0,
 	})
@@ -1035,7 +1035,7 @@ func (s *Service) AdminStats(ctx context.Context, tenantID pgtype.UUID) (AdminSt
 	upcoming := int64(len(dl))
 
 	rl, err := s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
-		TenantID:   tenantID,
+
 		PageLimit:  1000,
 		PageOffset: 0,
 	})
@@ -1070,7 +1070,7 @@ func (s *Service) AdminDeadlines(ctx context.Context, tenantID pgtype.UUID, page
 	offset := safeOffset(page, limit)
 
 	rows, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1197,7 +1197,7 @@ func (s *Service) AdminTopSaved(ctx context.Context, tenantID pgtype.UUID, page,
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminTopSaved(ctx, gen.AdminScholarshipTopSavedParams{
-		TenantID:   tenantID,
+
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1216,7 +1216,7 @@ func (s *Service) AdminUpcomingDeadlines(ctx context.Context, tenantID pgtype.UU
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1235,7 +1235,7 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 	offset := safeOffset(page, limit)
 
 	return s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
-		TenantID:   tenantID,
+
 		PageLimit:  safeInt32(limit),
 		PageOffset: offset,
 	})
@@ -1252,7 +1252,7 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 // (and re-notify every day), which is notification spam (ADR-073 §3).
 func (s *Service) FindNeedingReminders(ctx context.Context, tenantID pgtype.UUID, batchLimit int32) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
 	rows, err := s.store.FindNeedingReminders(ctx, gen.FindScholarshipsNeedingRemindersParams{
-		TenantID:   tenantID,
+
 		BatchLimit: batchLimit,
 	})
 	if err != nil {

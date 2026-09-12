@@ -339,7 +339,7 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 
 	// Create an audit session for the tool call.
 	session, err := s.sessions.CreateAgentSession(ctx, gen.CreateAgentSessionParams{
-		TenantID:       user.TenantID,
+
 		UserID:         user.UserID,
 		Prompt:         "mcp:" + callReq.Name,
 		PresearchLevel: "none",
@@ -360,7 +360,6 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		Call:      call,
 		SessionID: session.ID,
 		UserID:    user.UserID,
-		TenantID:  user.TenantID,
 	})
 
 	s.finalizeSession(ctx, session.ID, user.TenantID, callReq.Name, res, execErr)
@@ -457,7 +456,6 @@ func (s *Server) finalizeSession(ctx context.Context, sessionID, tenantID pgtype
 			TotalTokens:   0,
 			EstimatedCost: zeroNumeric(),
 			ID:            sessionID,
-			TenantID:      tenantID,
 		}); err != nil {
 			slog.ErrorContext(ctx, "mcp: fail agent session", "error", err)
 		}
@@ -477,7 +475,6 @@ func (s *Server) finalizeSession(ctx context.Context, sessionID, tenantID pgtype
 		TotalTokens:   0,
 		EstimatedCost: zeroNumeric(),
 		ID:            sessionID,
-		TenantID:      tenantID,
 	}); err != nil {
 		slog.ErrorContext(ctx, "mcp: complete agent session", "error", err)
 	}

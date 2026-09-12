@@ -317,8 +317,8 @@ func (h *Handlers) enrichFieldGroups(
 		}
 
 		enriched = append(enriched, fieldGroupEnriched{
-			ID:          g.ID,
-			TenantID:    g.TenantID,
+			ID: g.ID,
+
 			Name:        g.Name,
 			Slug:        g.Slug,
 			Description: g.Description,
@@ -826,8 +826,8 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 	}
 
 	field, err := h.Service.CreateField(r.Context(), gen.CreateCustomFieldParams{
-		GroupID:        groupID,
-		TenantID:       tenantID,
+		GroupID: groupID,
+
 		Label:          req.Label,
 		Key:            req.Key,
 		FieldType:      req.FieldType,
@@ -925,7 +925,6 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		Searchable:     req.Searchable,
 		Position:       req.Position,
 		ID:             id,
-		TenantID:       tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1645,7 +1644,7 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form, err := h.Service.CreateForm(r.Context(), gen.CreateFormParams{
-		TenantID:       tenantID,
+
 		Name:           req.Name,
 		Slug:           req.Slug,
 		Description:    req.Description,
@@ -1852,7 +1851,6 @@ func (h *Handlers) UpdateForm(w http.ResponseWriter, r *http.Request) {
 		Status:               req.Status,
 		SubmissionFeeCredits: feeCredits,
 		ID:                   id,
-		TenantID:             tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -2166,8 +2164,8 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	// Free submission — no payment needed.
 	if feeCredits <= 0 {
 		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
-			FormID:      formID,
-			TenantID:    tenantID,
+			FormID: formID,
+
 			UserID:      userID,
 			IpAddress:   ipAddr,
 			FieldValues: fieldValues,
@@ -2220,8 +2218,8 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 
 		// Create the submission with status='new' (payment confirmed).
 		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
-			FormID:      formID,
-			TenantID:    tenantID,
+			FormID: formID,
+
 			UserID:      userID,
 			IpAddress:   ipAddr,
 			FieldValues: fieldValues,
@@ -2268,8 +2266,8 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 		}
 
 		submission, sErr := h.Service.CreateFormSubmission(r.Context(), gen.CreateFormSubmissionParams{
-			FormID:      formID,
-			TenantID:    tenantID,
+			FormID: formID,
+
 			UserID:      userID,
 			IpAddress:   ipAddr,
 			FieldValues: fieldValues,
@@ -2326,10 +2324,10 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 		FieldValues  []byte `json:"field_values"`
 	}{
 		SubmissionID: payload["submission_id"],
-		TenantID:     payload["tenant_id"],
-		FormID:       payload["form_id"],
-		UserID:       payload["user_id"],
-		FieldValues:  fieldValues,
+
+		FormID:      payload["form_id"],
+		UserID:      payload["user_id"],
+		FieldValues: fieldValues,
 	})
 	if err != nil {
 		slog.Warn("customfields: encoding form trigger payload", "error", err)
@@ -2681,8 +2679,8 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := gen.ListFormSubmissionsByFormParams{
-		FormID:       formID,
-		TenantID:     tenantID,
+		FormID: formID,
+
 		StatusFilter: statusFilter,
 		PageLimit:    pageSize,
 		PageOffset:   pageOffset,
@@ -2696,8 +2694,8 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 
 	// Total count for the pagination envelope.
 	total, err := h.Service.CountFormSubmissions(r.Context(), gen.CountFormSubmissionsByFormParams{
-		FormID:       formID,
-		TenantID:     tenantID,
+		FormID: formID,
+
 		StatusFilter: statusFilter,
 	})
 	if err != nil {
@@ -3430,7 +3428,7 @@ func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	et, err := h.Service.CreateEntityType(r.Context(), gen.CreateCustomFieldEntityTypeParams{
-		TenantID:  tenantID,
+
 		Value:     req.Value,
 		Label:     req.Label,
 		SortOrder: req.SortOrder,
@@ -3472,8 +3470,8 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 	}
 
 	et, err := h.Service.UpdateEntityType(r.Context(), gen.UpdateCustomFieldEntityTypeParams{
-		ID:        id,
-		TenantID:  tenantID,
+		ID: id,
+
 		Label:     req.Label,
 		SortOrder: req.SortOrder,
 	})

@@ -13,34 +13,39 @@ import (
 
 const addReaction = `-- name: AddReaction :one
 
-INSERT INTO reactions (tenant_id, entity_type, entity_id, user_id, reaction_key)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (tenant_id, entity_type, entity_id, user_id, reaction_key) DO NOTHING
-RETURNING tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key) VALUES ($1, $2, $3, $4)
+
+ON CONFLICT (entity_type, entity_id, user_id, reaction_key) DO NOTHING
+RETURNING entity_type, entity_id, user_id, reaction_key, created_at
 `
 
 type AddReactionParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	EntityType  string      `json:"entity_type"`
 	EntityID    pgtype.UUID `json:"entity_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	ReactionKey string      `json:"reaction_key"`
 }
 
+type AddReactionRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ReactionKey string             `json:"reaction_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Reactions
 // =====================
-func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (Reaction, error) {
+func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (AddReactionRow, error) {
 	row := q.db.QueryRow(ctx, addReaction,
-		arg.TenantID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.UserID,
 		arg.ReactionKey,
 	)
-	var i Reaction
+	var i AddReactionRow
 	err := row.Scan(
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.UserID,
@@ -53,13 +58,12 @@ func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (React
 const countReactionsByEntity = `-- name: CountReactionsByEntity :many
 SELECT reaction_key, COUNT(*) AS count
 FROM reactions
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE entity_type = $1 AND entity_id = $2
 GROUP BY reaction_key
 ORDER BY count DESC
 `
 
 type CountReactionsByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
@@ -70,7 +74,7 @@ type CountReactionsByEntityRow struct {
 }
 
 func (q *Queries) CountReactionsByEntity(ctx context.Context, arg CountReactionsByEntityParams) ([]CountReactionsByEntityRow, error) {
-	rows, err := q.db.Query(ctx, countReactionsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+	rows, err := q.db.Query(ctx, countReactionsByEntity, arg.EntityType, arg.EntityID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,32 +94,39 @@ func (q *Queries) CountReactionsByEntity(ctx context.Context, arg CountReactions
 }
 
 const createReactionType = `-- name: CreateReactionType :one
-INSERT INTO reaction_types (tenant_id, key, emoji, label, enabled, position)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+INSERT INTO reaction_types (key, emoji, label, enabled, position) VALUES ($1, $2, $3, $4, $5)
+
+RETURNING key, emoji, label, enabled, position, created_at, updated_at
 `
 
 type CreateReactionTypeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-	Emoji    string      `json:"emoji"`
-	Label    string      `json:"label"`
-	Enabled  bool        `json:"enabled"`
-	Position int32       `json:"position"`
+	Key      string `json:"key"`
+	Emoji    string `json:"emoji"`
+	Label    string `json:"label"`
+	Enabled  bool   `json:"enabled"`
+	Position int32  `json:"position"`
 }
 
-func (q *Queries) CreateReactionType(ctx context.Context, arg CreateReactionTypeParams) (ReactionType, error) {
+type CreateReactionTypeRow struct {
+	Key       string             `json:"key"`
+	Emoji     string             `json:"emoji"`
+	Label     string             `json:"label"`
+	Enabled   bool               `json:"enabled"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateReactionType(ctx context.Context, arg CreateReactionTypeParams) (CreateReactionTypeRow, error) {
 	row := q.db.QueryRow(ctx, createReactionType,
-		arg.TenantID,
 		arg.Key,
 		arg.Emoji,
 		arg.Label,
 		arg.Enabled,
 		arg.Position,
 	)
-	var i ReactionType
+	var i CreateReactionTypeRow
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,
@@ -128,35 +139,34 @@ func (q *Queries) CreateReactionType(ctx context.Context, arg CreateReactionType
 }
 
 const deleteReactionType = `-- name: DeleteReactionType :exec
-DELETE FROM reaction_types WHERE tenant_id = $1 AND key = $2
+DELETE FROM reaction_types WHERE key = $1
 `
 
-type DeleteReactionTypeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-}
-
-func (q *Queries) DeleteReactionType(ctx context.Context, arg DeleteReactionTypeParams) error {
-	_, err := q.db.Exec(ctx, deleteReactionType, arg.TenantID, arg.Key)
+func (q *Queries) DeleteReactionType(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteReactionType, key)
 	return err
 }
 
 const getReactionType = `-- name: GetReactionType :one
-SELECT tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+SELECT key, emoji, label, enabled, position, created_at, updated_at
 FROM reaction_types
-WHERE tenant_id = $1 AND key = $2
+WHERE key = $1
 `
 
-type GetReactionTypeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
+type GetReactionTypeRow struct {
+	Key       string             `json:"key"`
+	Emoji     string             `json:"emoji"`
+	Label     string             `json:"label"`
+	Enabled   bool               `json:"enabled"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetReactionType(ctx context.Context, arg GetReactionTypeParams) (ReactionType, error) {
-	row := q.db.QueryRow(ctx, getReactionType, arg.TenantID, arg.Key)
-	var i ReactionType
+func (q *Queries) GetReactionType(ctx context.Context, key string) (GetReactionTypeRow, error) {
+	row := q.db.QueryRow(ctx, getReactionType, key)
+	var i GetReactionTypeRow
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,
@@ -169,34 +179,35 @@ func (q *Queries) GetReactionType(ctx context.Context, arg GetReactionTypeParams
 }
 
 const getUserReactions = `-- name: GetUserReactions :many
-SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+SELECT entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3 AND user_id = $4
+WHERE entity_type = $1 AND entity_id = $2 AND user_id = $3
 `
 
 type GetUserReactionsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 }
 
-func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsParams) ([]Reaction, error) {
-	rows, err := q.db.Query(ctx, getUserReactions,
-		arg.TenantID,
-		arg.EntityType,
-		arg.EntityID,
-		arg.UserID,
-	)
+type GetUserReactionsRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ReactionKey string             `json:"reaction_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsParams) ([]GetUserReactionsRow, error) {
+	rows, err := q.db.Query(ctx, getUserReactions, arg.EntityType, arg.EntityID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Reaction
+	var items []GetUserReactionsRow
 	for rows.Next() {
-		var i Reaction
+		var i GetUserReactionsRow
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.UserID,
@@ -215,29 +226,27 @@ func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsPara
 
 const listContentLikedByUser = `-- name: ListContentLikedByUser :many
 SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-       c.created_at, c.view_count, c.comment_count,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       LEFT(c.body, 200) AS excerpt,
-       MAX(r.created_at)::timestamptz AS reacted_at
+ c.created_at, c.view_count, c.comment_count,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ LEFT(c.body, 200) AS excerpt,
+ MAX(r.created_at)::timestamptz AS reacted_at
 FROM reactions r
-JOIN contents c ON c.id = r.entity_id AND c.tenant_id = r.tenant_id
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-WHERE r.tenant_id = $1
-  AND r.user_id = $2
-  AND r.entity_type = 'content'
-  AND c.status = 'published'
-  AND c.visibility = 'public'
+JOIN contents c ON c.id = r.entity_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE r.user_id = $1
+ AND r.entity_type = 'content'
+ AND c.status = 'published'
+ AND c.visibility = 'public'
 GROUP BY c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
-         c.created_at, c.view_count, c.comment_count,
-         up.display_name, u.username, up.avatar_url, c.body
+ c.created_at, c.view_count, c.comment_count,
+ up.display_name, u.username, up.avatar_url, c.body
 ORDER BY reacted_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListContentLikedByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -263,12 +272,7 @@ type ListContentLikedByUserRow struct {
 // reaction key), one row per content (GROUP BY collapses multiple reaction
 // keys), newest reaction first. Public-safe: draft/private content excluded.
 func (q *Queries) ListContentLikedByUser(ctx context.Context, arg ListContentLikedByUserParams) ([]ListContentLikedByUserRow, error) {
-	rows, err := q.db.Query(ctx, listContentLikedByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listContentLikedByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -304,27 +308,36 @@ func (q *Queries) ListContentLikedByUser(ctx context.Context, arg ListContentLik
 const listReactionTypes = `-- name: ListReactionTypes :many
 
 
-SELECT tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+SELECT key, emoji, label, enabled, position, created_at, updated_at
 FROM reaction_types
-WHERE tenant_id = $1
+
 ORDER BY position ASC, key ASC
 `
+
+type ListReactionTypesRow struct {
+	Key       string             `json:"key"`
+	Emoji     string             `json:"emoji"`
+	Label     string             `json:"label"`
+	Enabled   bool               `json:"enabled"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
 
 // Reaction types and polymorphic reactions (tenant-scoped).
 // =====================
 // Reaction Types
 // =====================
-func (q *Queries) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) ([]ReactionType, error) {
-	rows, err := q.db.Query(ctx, listReactionTypes, tenantID)
+func (q *Queries) ListReactionTypes(ctx context.Context) ([]ListReactionTypesRow, error) {
+	rows, err := q.db.Query(ctx, listReactionTypes)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ReactionType
+	var items []ListReactionTypesRow
 	for rows.Next() {
-		var i ReactionType
+		var i ListReactionTypesRow
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.Key,
 			&i.Emoji,
 			&i.Label,
@@ -344,29 +357,35 @@ func (q *Queries) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) (
 }
 
 const listReactionsByEntity = `-- name: ListReactionsByEntity :many
-SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+SELECT entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3
+WHERE entity_type = $1 AND entity_id = $2
 ORDER BY created_at DESC
 `
 
 type ListReactionsByEntityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsByEntityParams) ([]Reaction, error) {
-	rows, err := q.db.Query(ctx, listReactionsByEntity, arg.TenantID, arg.EntityType, arg.EntityID)
+type ListReactionsByEntityRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	ReactionKey string             `json:"reaction_key"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsByEntityParams) ([]ListReactionsByEntityRow, error) {
+	rows, err := q.db.Query(ctx, listReactionsByEntity, arg.EntityType, arg.EntityID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Reaction
+	var items []ListReactionsByEntityRow
 	for rows.Next() {
-		var i Reaction
+		var i ListReactionsByEntityRow
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.UserID,
@@ -385,11 +404,10 @@ func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsBy
 
 const removeReaction = `-- name: RemoveReaction :exec
 DELETE FROM reactions
-WHERE tenant_id = $1 AND entity_type = $2 AND entity_id = $3 AND user_id = $4 AND reaction_key = $5
+WHERE entity_type = $1 AND entity_id = $2 AND user_id = $3 AND reaction_key = $4
 `
 
 type RemoveReactionParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	EntityType  string      `json:"entity_type"`
 	EntityID    pgtype.UUID `json:"entity_id"`
 	UserID      pgtype.UUID `json:"user_id"`
@@ -398,7 +416,6 @@ type RemoveReactionParams struct {
 
 func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
 	_, err := q.db.Exec(ctx, removeReaction,
-		arg.TenantID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.UserID,
@@ -410,31 +427,38 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 const updateReactionType = `-- name: UpdateReactionType :one
 UPDATE reaction_types
 SET emoji = $1, label = $2, enabled = $3, position = $4, updated_at = now()
-WHERE tenant_id = $5 AND key = $6
-RETURNING tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+WHERE key = $5
+RETURNING key, emoji, label, enabled, position, created_at, updated_at
 `
 
 type UpdateReactionTypeParams struct {
-	Emoji    string      `json:"emoji"`
-	Label    string      `json:"label"`
-	Enabled  bool        `json:"enabled"`
-	Position int32       `json:"position"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
+	Emoji    string `json:"emoji"`
+	Label    string `json:"label"`
+	Enabled  bool   `json:"enabled"`
+	Position int32  `json:"position"`
+	Key      string `json:"key"`
 }
 
-func (q *Queries) UpdateReactionType(ctx context.Context, arg UpdateReactionTypeParams) (ReactionType, error) {
+type UpdateReactionTypeRow struct {
+	Key       string             `json:"key"`
+	Emoji     string             `json:"emoji"`
+	Label     string             `json:"label"`
+	Enabled   bool               `json:"enabled"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateReactionType(ctx context.Context, arg UpdateReactionTypeParams) (UpdateReactionTypeRow, error) {
 	row := q.db.QueryRow(ctx, updateReactionType,
 		arg.Emoji,
 		arg.Label,
 		arg.Enabled,
 		arg.Position,
-		arg.TenantID,
 		arg.Key,
 	)
-	var i ReactionType
+	var i UpdateReactionTypeRow
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,

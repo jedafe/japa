@@ -35,7 +35,7 @@ func (s *Store) createProvider(ctx context.Context, p gen.CreateAffiliateProvide
 }
 
 func (s *Store) getProviderByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
-	row, err := s.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetAffiliateProviderByID(ctx, id)
 	if err != nil {
 		return gen.AffiliateProvider{}, err
 	}
@@ -45,7 +45,7 @@ func (s *Store) getProviderByID(ctx context.Context, id, tenantID pgtype.UUID) (
 
 func (s *Store) listProviders(ctx context.Context, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProvidersByTenant(ctx, gen.ListAffiliateProvidersByTenantParams{
-		TenantID:   tenantID,
+
 		IsActive:   isActive,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -72,7 +72,7 @@ func (s *Store) updateProvider(ctx context.Context, p gen.UpdateAffiliateProvide
 }
 
 func (s *Store) deleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.DeleteAffiliateProvider(ctx, gen.DeleteAffiliateProviderParams{ID: id, TenantID: tenantID})
+	return s.write.DeleteAffiliateProvider(ctx, id)
 }
 
 func (s *Store) countCouponsByProvider(ctx context.Context, providerID pgtype.UUID) (int64, error) {
@@ -86,16 +86,16 @@ func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen
 }
 
 func (s *Store) getCouponByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
-	return s.read.GetCouponByID(ctx, gen.GetCouponByIDParams{ID: id, TenantID: tenantID})
+	return s.read.GetCouponByID(ctx, id)
 }
 
 func (s *Store) getCouponByCode(ctx context.Context, code string, tenantID pgtype.UUID) (gen.GetCouponByCodeRow, error) {
-	return s.read.GetCouponByCode(ctx, gen.GetCouponByCodeParams{Code: code, TenantID: tenantID})
+	return s.read.GetCouponByCode(ctx, code)
 }
 
 func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
 	return s.read.ListCouponsByTenant(ctx, gen.ListCouponsByTenantParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		CouponType: couponType,
 		ProviderID: providerID,
@@ -107,7 +107,7 @@ func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, c
 
 func (s *Store) listActiveCoupons(ctx context.Context, tenantID, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
 	return s.read.ListActiveCouponsByTenant(ctx, gen.ListActiveCouponsByTenantParams{
-		TenantID:   tenantID,
+
 		ProviderID: providerID,
 		CouponType: couponType,
 		Search:     search,
@@ -121,7 +121,7 @@ func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen
 }
 
 func (s *Store) deleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.DeleteCoupon(ctx, gen.DeleteCouponParams{ID: id, TenantID: tenantID})
+	return s.write.DeleteCoupon(ctx, id)
 }
 
 // ── Coupon Events ───────────────────────────────────────────────────
@@ -133,17 +133,17 @@ func (s *Store) createCouponEvent(ctx context.Context, e gen.CreateCouponEventPa
 // ── Render Helpers ──────────────────────────────────────────────────
 
 func (s *Store) getCouponForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponForRenderRow, error) {
-	return s.read.GetCouponForRender(ctx, gen.GetCouponForRenderParams{ID: id, TenantID: tenantID})
+	return s.read.GetCouponForRender(ctx, id)
 }
 
 func (s *Store) getAffiliateProviderForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetAffiliateProviderForRenderRow, error) {
-	return s.read.GetAffiliateProviderForRender(ctx, gen.GetAffiliateProviderForRenderParams{ID: id, TenantID: tenantID})
+	return s.read.GetAffiliateProviderForRender(ctx, id)
 }
 
 // ── Count ───────────────────────────────────────────────────────────
 
 func (s *Store) countCouponsByTenant(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.read.CountCouponsByTenant(ctx, tenantID)
+	return s.read.CountCouponsByTenant(ctx)
 }
 
 // ── Affiliate Enhancement Queries (BE-LOW-002) ─────────────────────
@@ -177,7 +177,7 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 	switch r := any(row).(type) {
 	case gen.CreateAffiliateProviderRow:
 		return gen.AffiliateProvider{
-			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
@@ -185,7 +185,7 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 		}
 	case gen.GetAffiliateProviderByIDRow:
 		return gen.AffiliateProvider{
-			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
@@ -193,7 +193,7 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 		}
 	case gen.ListAffiliateProvidersByTenantRow:
 		return gen.AffiliateProvider{
-			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
@@ -201,7 +201,7 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 		}
 	case gen.UpdateAffiliateProviderRow:
 		return gen.AffiliateProvider{
-			ID: r.ID, TenantID: r.TenantID, Name: r.Name, Slug: r.Slug,
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,

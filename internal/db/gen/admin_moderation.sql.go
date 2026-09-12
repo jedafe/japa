@@ -12,8 +12,8 @@ import (
 )
 
 const addUserGroupMembership = `-- name: AddUserGroupMembership :exec
-INSERT INTO user_group_memberships (user_id, group_id)
-VALUES ($1, $2)
+INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2)
+
 ON CONFLICT (user_id, group_id) DO NOTHING
 `
 
@@ -30,33 +30,27 @@ func (q *Queries) AddUserGroupMembership(ctx context.Context, arg AddUserGroupMe
 const adminUpdateReviewStatus = `-- name: AdminUpdateReviewStatus :exec
 UPDATE reviews
 SET status = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND status = 'flagged'
+WHERE id = $2 AND status = 'flagged'
 `
 
 type AdminUpdateReviewStatusParams struct {
-	Status   string      `json:"status"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) AdminUpdateReviewStatus(ctx context.Context, arg AdminUpdateReviewStatusParams) error {
-	_, err := q.db.Exec(ctx, adminUpdateReviewStatus, arg.Status, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, adminUpdateReviewStatus, arg.Status, arg.ID)
 	return err
 }
 
 const appealReviewToFlagged = `-- name: AppealReviewToFlagged :execrows
 UPDATE reviews
 SET status = 'flagged', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status IN ('removed')
+WHERE id = $1 AND status IN ('removed')
 `
 
-type AppealReviewToFlaggedParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) AppealReviewToFlagged(ctx context.Context, arg AppealReviewToFlaggedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, appealReviewToFlagged, arg.ID, arg.TenantID)
+func (q *Queries) AppealReviewToFlagged(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, appealReviewToFlagged, id)
 	if err != nil {
 		return 0, err
 	}
@@ -83,9 +77,9 @@ func (q *Queries) AssignContentReport(ctx context.Context, arg AssignContentRepo
 
 const checkUserBanExists = `-- name: CheckUserBanExists :one
 SELECT EXISTS(
-    SELECT 1 FROM user_moderation_actions
-    WHERE user_id = $1 AND action IN ('ban', 'suspension')
-    AND (expires_at IS NULL OR expires_at > now())
+ SELECT 1 FROM user_moderation_actions
+ WHERE user_id = $1 AND action IN ('ban', 'suspension')
+ AND (expires_at IS NULL OR expires_at > now())
 )
 `
 
@@ -99,8 +93,7 @@ func (q *Queries) CheckUserBanExists(ctx context.Context, userID pgtype.UUID) (b
 }
 
 const createAdminBroadcastRecord = `-- name: CreateAdminBroadcastRecord :exec
-INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO admin_broadcasts (title, body, sent_by, recipient_count, sent_at) VALUES ($1, $2, $3, $4, now())
 `
 
 type CreateAdminBroadcastRecordParams struct {
@@ -121,34 +114,33 @@ func (q *Queries) CreateAdminBroadcastRecord(ctx context.Context, arg CreateAdmi
 }
 
 const createBroadcastNotifications = `-- name: CreateBroadcastNotifications :exec
-INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
+INSERT INTO notifications (recipient_id, notification_type, actor_type, actor_id, title, body, created_at, updated_at)
 SELECT $1, unnest($2::uuid[]), 'system_announcement', 'system', $3, $4, $5, now(), now()
 `
 
 type CreateBroadcastNotificationsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	Column2  []pgtype.UUID `json:"column_2"`
-	ActorID  pgtype.UUID   `json:"actor_id"`
-	Title    string        `json:"title"`
-	Body     *string       `json:"body"`
+	RecipientID pgtype.UUID        `json:"recipient_id"`
+	Column2     []pgtype.UUID      `json:"column_2"`
+	Title       string             `json:"title"`
+	Body        *string            `json:"body"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) CreateBroadcastNotifications(ctx context.Context, arg CreateBroadcastNotificationsParams) error {
 	_, err := q.db.Exec(ctx, createBroadcastNotifications,
-		arg.TenantID,
+		arg.RecipientID,
 		arg.Column2,
-		arg.ActorID,
 		arg.Title,
 		arg.Body,
+		arg.CreatedAt,
 	)
 	return err
 }
 
 const createUserBan = `-- name: CreateUserBan :exec
 
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, expires_at, created_at)
-VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'ban', $2,
-        CASE WHEN $3 > 0 THEN now() + ($3 || ' days')::interval ELSE NULL END, now())
+INSERT INTO user_moderation_actions (user_id, action, reason, expires_at, created_at) VALUES ($1, 'ban', $2, CASE WHEN $3 > 0 THEN now() + ($3 || ' days')::interval ELSE NULL END, now())
+
 ON CONFLICT DO NOTHING
 `
 
@@ -167,8 +159,7 @@ func (q *Queries) CreateUserBan(ctx context.Context, arg CreateUserBanParams) er
 }
 
 const createUserUnban = `-- name: CreateUserUnban :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
-VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'unban', 'Admin unbanned', now())
+INSERT INTO user_moderation_actions (user_id, action, reason, created_at) VALUES ($1, 'unban', 'Admin unbanned', now())
 `
 
 func (q *Queries) CreateUserUnban(ctx context.Context, userID pgtype.UUID) error {
@@ -177,8 +168,7 @@ func (q *Queries) CreateUserUnban(ctx context.Context, userID pgtype.UUID) error
 }
 
 const createUserWarning = `-- name: CreateUserWarning :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, created_at)
-VALUES ($1, (SELECT tenant_id FROM users WHERE id = $1), 'warning', $2, now())
+INSERT INTO user_moderation_actions (user_id, action, reason, created_at) VALUES ($1, 'warning', $2, now())
 `
 
 type CreateUserWarningParams struct {
@@ -251,7 +241,7 @@ const listActiveUserBans = `-- name: ListActiveUserBans :many
 SELECT id, action, reason, expires_at, created_at
 FROM user_moderation_actions
 WHERE user_id = $1 AND action = 'ban' AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now())
+ AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC
 `
 
@@ -291,14 +281,14 @@ func (q *Queries) ListActiveUserBans(ctx context.Context, userID pgtype.UUID) ([
 
 const listActiveUserIDs = `-- name: ListActiveUserIDs :many
 
-SELECT id FROM users WHERE tenant_id = $1 AND status = 'active'
+SELECT id FROM users WHERE status = 'active'
 `
 
 // =====================
 // Broadcast Helpers
 // =====================
-func (q *Queries) ListActiveUserIDs(ctx context.Context, tenantID pgtype.UUID) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listActiveUserIDs, tenantID)
+func (q *Queries) ListActiveUserIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveUserIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -319,17 +309,12 @@ func (q *Queries) ListActiveUserIDs(ctx context.Context, tenantID pgtype.UUID) (
 
 const listActiveUserIDsByGeoSpace = `-- name: ListActiveUserIDsByGeoSpace :many
 SELECT u.id FROM users u
-JOIN space_members sm ON sm.user_id = u.id AND sm.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1 AND u.status = 'active' AND sm.space_id = $2
+JOIN space_members sm ON sm.user_id = u.id
+WHERE u.status = 'active' AND sm.space_id = $1
 `
 
-type ListActiveUserIDsByGeoSpaceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
-}
-
-func (q *Queries) ListActiveUserIDsByGeoSpace(ctx context.Context, arg ListActiveUserIDsByGeoSpaceParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listActiveUserIDsByGeoSpace, arg.TenantID, arg.SpaceID)
+func (q *Queries) ListActiveUserIDsByGeoSpace(ctx context.Context, spaceID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveUserIDsByGeoSpace, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -350,17 +335,12 @@ func (q *Queries) ListActiveUserIDsByGeoSpace(ctx context.Context, arg ListActiv
 
 const listActiveUserIDsByGroup = `-- name: ListActiveUserIDsByGroup :many
 SELECT u.id FROM users u
-JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1 AND u.status = 'active' AND gm.group_id = $2
+JOIN user_group_memberships gm ON gm.user_id = u.id
+WHERE u.status = 'active' AND gm.group_id = $1
 `
 
-type ListActiveUserIDsByGroupParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	GroupID  pgtype.UUID `json:"group_id"`
-}
-
-func (q *Queries) ListActiveUserIDsByGroup(ctx context.Context, arg ListActiveUserIDsByGroupParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listActiveUserIDsByGroup, arg.TenantID, arg.GroupID)
+func (q *Queries) ListActiveUserIDsByGroup(ctx context.Context, groupID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listActiveUserIDsByGroup, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -418,26 +398,19 @@ func (q *Queries) ListAdminBroadcasts(ctx context.Context) ([]AdminBroadcast, er
 }
 
 const listDeletedContents = `-- name: ListDeletedContents :many
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.content_type, c.status,
-       c.deleted_at, c.updated_at, c.created_at,
-       u.username, up.display_name
+SELECT c.id, c.author_id, c.title, c.content_type, c.status,
+ c.deleted_at, c.updated_at, c.created_at,
+ u.username, up.display_name
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE c.tenant_id = $1
-  AND c.deleted_at IS NOT NULL
+WHERE c.deleted_at IS NOT NULL
 ORDER BY c.deleted_at DESC NULLS LAST, c.updated_at DESC
-LIMIT $2
+LIMIT $1
 `
-
-type ListDeletedContentsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-}
 
 type ListDeletedContentsRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	AuthorID    pgtype.UUID        `json:"author_id"`
 	Title       string             `json:"title"`
 	ContentType string             `json:"content_type"`
@@ -449,8 +422,8 @@ type ListDeletedContentsRow struct {
 	DisplayName *string            `json:"display_name"`
 }
 
-func (q *Queries) ListDeletedContents(ctx context.Context, arg ListDeletedContentsParams) ([]ListDeletedContentsRow, error) {
-	rows, err := q.db.Query(ctx, listDeletedContents, arg.TenantID, arg.Limit)
+func (q *Queries) ListDeletedContents(ctx context.Context, limit int32) ([]ListDeletedContentsRow, error) {
+	rows, err := q.db.Query(ctx, listDeletedContents, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +433,6 @@ func (q *Queries) ListDeletedContents(ctx context.Context, arg ListDeletedConten
 		var i ListDeletedContentsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.Title,
 			&i.ContentType,
@@ -485,19 +457,17 @@ const listFlaggedReviews = `-- name: ListFlaggedReviews :many
 
 
 SELECT r.id, r.body, r.status, r.created_at, r.reviewer_user_id,
-       COALESCE(u.username, 'unknown') AS author_username
+ COALESCE(u.username, 'unknown') AS author_username
 FROM reviews r
 LEFT JOIN users u ON u.id = r.reviewer_user_id
-WHERE r.tenant_id = $1
-  AND r.status = 'flagged'
+WHERE r.status = 'flagged'
 ORDER BY r.created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $1 OFFSET $2
 `
 
 type ListFlaggedReviewsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
 }
 
 type ListFlaggedReviewsRow struct {
@@ -514,7 +484,7 @@ type ListFlaggedReviewsRow struct {
 // Flagged Reviews
 // =====================
 func (q *Queries) ListFlaggedReviews(ctx context.Context, arg ListFlaggedReviewsParams) ([]ListFlaggedReviewsRow, error) {
-	rows, err := q.db.Query(ctx, listFlaggedReviews, arg.TenantID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listFlaggedReviews, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -543,15 +513,15 @@ func (q *Queries) ListFlaggedReviews(ctx context.Context, arg ListFlaggedReviews
 const listModerationAppeals = `-- name: ListModerationAppeals :many
 
 SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.status, ma.created_at,
-       u.username, up.display_name
+ u.username, up.display_name
 FROM moderation_appeals ma
 LEFT JOIN users u ON u.id = ma.user_id
 LEFT JOIN user_profiles up ON up.user_id = ma.user_id
 WHERE ($1::text IS NULL OR (
-        ma.entity_id::text ILIKE '%' || $1 || '%'
-     OR ma.reason ILIKE '%' || $1 || '%'
-     OR ma.entity_type ILIKE '%' || $1 || '%'
-  ))
+ ma.entity_id::text ILIKE '%' || $1 || '%'
+ OR ma.reason ILIKE '%' || $1 || '%'
+ OR ma.entity_type ILIKE '%' || $1 || '%'
+ ))
 ORDER BY ma.created_at DESC
 LIMIT 50
 `
@@ -603,16 +573,16 @@ func (q *Queries) ListModerationAppeals(ctx context.Context, search *string) ([]
 
 const listTenantAdminIDs = `-- name: ListTenantAdminIDs :many
 SELECT u.id FROM users u
-JOIN user_group_memberships gm ON gm.user_id = u.id AND gm.tenant_id = u.tenant_id
-JOIN user_groups ug ON ug.id = gm.group_id AND ug.tenant_id = u.tenant_id
-WHERE u.tenant_id = $1 AND u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true
+JOIN user_group_memberships gm ON gm.user_id = u.id
+JOIN user_groups ug ON ug.id = gm.group_id
+WHERE u.status = 'active' AND ug.slug = 'super_admin' AND ug.is_system = true
 `
 
 // Returns active user IDs in the system super_admin group for a tenant.
 // Used by the notify_admin form trigger (Section 06) to fan out admin
 // notifications via the notification service. Scoped to the caller's tenant.
-func (q *Queries) ListTenantAdminIDs(ctx context.Context, tenantID pgtype.UUID) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listTenantAdminIDs, tenantID)
+func (q *Queries) ListTenantAdminIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listTenantAdminIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -667,7 +637,7 @@ func (q *Queries) ListUserWarnings(ctx context.Context, userID pgtype.UUID) ([]L
 const moderateContentReport = `-- name: ModerateContentReport :exec
 UPDATE content_reports
 SET status = $1, reviewed_by = $2, resolution_note = $3
-WHERE id = $4 AND tenant_id = $5
+WHERE id = $4
 `
 
 type ModerateContentReportParams struct {
@@ -675,7 +645,6 @@ type ModerateContentReportParams struct {
 	ReviewedBy     pgtype.UUID `json:"reviewed_by"`
 	ResolutionNote *string     `json:"resolution_note"`
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContentReportParams) error {
@@ -684,7 +653,6 @@ func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContent
 		arg.ReviewedBy,
 		arg.ResolutionNote,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -692,34 +660,24 @@ func (q *Queries) ModerateContentReport(ctx context.Context, arg ModerateContent
 const removeContentByAdmin = `-- name: RemoveContentByAdmin :exec
 
 UPDATE contents SET status = 'archived', auto_hidden = true, deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type RemoveContentByAdminParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Content Moderation
 // =====================
-func (q *Queries) RemoveContentByAdmin(ctx context.Context, arg RemoveContentByAdminParams) error {
-	_, err := q.db.Exec(ctx, removeContentByAdmin, arg.ID, arg.TenantID)
+func (q *Queries) RemoveContentByAdmin(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeContentByAdmin, id)
 	return err
 }
 
 const restoreContentByAdmin = `-- name: RestoreContentByAdmin :exec
 UPDATE contents SET status = 'draft', auto_hidden = false, deleted_at = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NOT NULL
+WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
-type RestoreContentByAdminParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) RestoreContentByAdmin(ctx context.Context, arg RestoreContentByAdminParams) error {
-	_, err := q.db.Exec(ctx, restoreContentByAdmin, arg.ID, arg.TenantID)
+func (q *Queries) RestoreContentByAdmin(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, restoreContentByAdmin, id)
 	return err
 }
 
@@ -745,17 +703,12 @@ func (q *Queries) SoftDeleteUserWarning(ctx context.Context, id pgtype.UUID) err
 
 const unverifyOrganization = `-- name: UnverifyOrganization :exec
 UPDATE organizations SET verified = false, verification_type = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type UnverifyOrganizationParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Tenant-scoped and clears verification_type (BUG-002, BUG-016).
-func (q *Queries) UnverifyOrganization(ctx context.Context, arg UnverifyOrganizationParams) error {
-	_, err := q.db.Exec(ctx, unverifyOrganization, arg.ID, arg.TenantID)
+func (q *Queries) UnverifyOrganization(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unverifyOrganization, id)
 	return err
 }
 
@@ -794,19 +747,14 @@ func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusPara
 const verifyOrganization = `-- name: VerifyOrganization :exec
 
 UPDATE organizations SET verified = true, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type VerifyOrganizationParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Organization Verification
 // =====================
 // Tenant-scoped to prevent cross-tenant verification (BUG-002).
-func (q *Queries) VerifyOrganization(ctx context.Context, arg VerifyOrganizationParams) error {
-	_, err := q.db.Exec(ctx, verifyOrganization, arg.ID, arg.TenantID)
+func (q *Queries) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, verifyOrganization, id)
 	return err
 }

@@ -73,7 +73,7 @@ func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtyp
 
 	thread, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.ForumThread, error) {
 		t, err := q.CreateForumThread(ctx, gen.CreateForumThreadParams{
-			TenantID:          tenantID,
+
 			ContentID:         input.ContentID,
 			SpaceID:           input.SpaceID,
 			AuthorUserID:      authorUserID,
@@ -200,8 +200,8 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 	}
 
 	updated, err := s.store.updateThread(ctx, gen.UpdateForumThreadParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		Title:       title,
 		Body:        body,
 		IsAnonymous: isAnonymous,
@@ -355,7 +355,7 @@ func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUse
 	}
 
 	reply, err := s.store.createReply(ctx, gen.CreateForumReplyParams{
-		TenantID:      tenantID,
+
 		ThreadID:      threadID,
 		ParentReplyID: input.ParentReplyID,
 		AuthorUserID:  authorUserID,
@@ -490,9 +490,9 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 	}
 
 	updated, err := s.store.updateReply(ctx, gen.UpdateForumReplyParams{
-		ID:       id,
-		TenantID: tenantID,
-		Body:     body,
+		ID: id,
+
+		Body: body,
 	})
 	if err != nil {
 		return gen.ForumReply{}, err
@@ -575,7 +575,7 @@ func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input 
 	}
 
 	vote, err := s.store.upsertVote(ctx, gen.UpsertForumVoteParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		EntityType: input.EntityType,
 		EntityID:   input.EntityID,
@@ -670,7 +670,7 @@ func (s *Service) AddBookmark(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	bm, err := s.store.addBookmark(ctx, gen.AddForumBookmarkParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		EntityType: normalized,
 		EntityID:   entityID,
@@ -796,19 +796,17 @@ func (s *Service) GetThreadBySlugWithDetails(ctx context.Context, slug string, t
 // thread, used as the accepted-answer candidate for QAPage JSON-LD on solved
 // threads (BL-012). Returns pgx.ErrNoRows when the thread has no replies.
 func (s *Service) GetTopReplyForThread(ctx context.Context, threadID, tenantID pgtype.UUID) (gen.GetTopReplyForThreadRow, error) {
-	return s.store.read.GetTopReplyForThread(ctx, gen.GetTopReplyForThreadParams{
-		ThreadID: threadID,
-		TenantID: tenantID,
-	})
+	return s.store.read.GetTopReplyForThread(ctx,
+		threadID,
+	)
 }
 
 // GetReplyByIDWithAuthor returns a single reply with author details.
 // Used for the accepted-answer in QAPage JSON-LD (BL-012).
 func (s *Service) GetReplyByIDWithAuthor(ctx context.Context, replyID, tenantID pgtype.UUID) (gen.GetForumReplyByIDWithAuthorRow, error) {
-	return s.store.read.GetForumReplyByIDWithAuthor(ctx, gen.GetForumReplyByIDWithAuthorParams{
-		ID:       replyID,
-		TenantID: tenantID,
-	})
+	return s.store.read.GetForumReplyByIDWithAuthor(ctx,
+		replyID,
+	)
 }
 
 // ListThreadsByTenantWithDetails returns paginated threads with author + space.

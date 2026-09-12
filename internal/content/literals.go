@@ -125,7 +125,7 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 	active := true
 
 	rows, err := s.read.ListTemplateLiterals(ctx, gen.ListTemplateLiteralsParams{
-		TenantID:   tenantID,
+
 		Search:     "",
 		IsActive:   &active,
 		Kind:       "",
@@ -141,8 +141,8 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 	out := make([]literals.TemplateLiteral, len(rows))
 	for i, r := range rows {
 		out[i] = literals.TemplateLiteral{
-			ID:          r.ID.String(),
-			TenantID:    r.TenantID.String(),
+			ID: r.ID.String(),
+
 			Key:         r.Key,
 			Kind:        r.Kind,
 			Value:       r.Value,

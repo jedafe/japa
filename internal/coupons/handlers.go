@@ -572,7 +572,7 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 	limit, offset := paginate(page, pageSize)
 
 	rows, err := h.Service.store.listAffiliateScanResults(r.Context(), gen.ListAffiliateScanResultsParams{
-		TenantID:    tenantID,
+
 		Domain:      parseQueryString(r, "domain"),
 		ActionTaken: parseQueryString(r, "action"),
 		PageLimit:   limit,
@@ -635,7 +635,6 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 		ReviewedBy:  reviewerID,
 		Notes:       input.Notes,
 		ID:          id,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to review scan result")
@@ -680,7 +679,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 	}
 
 	rows, err := h.Service.store.listAffiliateCommissions(r.Context(), gen.ListAffiliateCommissionsParams{
-		TenantID:   tenantID,
+
 		Credited:   creditedFilter,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -739,7 +738,6 @@ func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http
 	rowsAffected, err := h.Service.store.updateProviderAuthorCommission(r.Context(), gen.UpdateProviderAuthorCommissionParams{
 		AuthorCommissionPct: numericFromFloat(input.AuthorCommissionPct),
 		ID:                  id,
-		TenantID:            tenantID,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update author commission percentage")

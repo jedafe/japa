@@ -25,7 +25,6 @@ func (c *DBCheckers) IsBlocked(ctx context.Context, tenantID, blockerID, blocked
 	blocked, err := c.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
-		TenantID:  tenantID,
 	})
 
 	return blocked, err
@@ -35,9 +34,8 @@ func (c *DBCheckers) IsBlocked(ctx context.Context, tenantID, blockerID, blocked
 // Tenant-scoped per Section 04 (BUG-005).
 func (c *DBCheckers) IsMember(ctx context.Context, tenantID, spaceID, userID pgtype.UUID) (bool, error) {
 	isMember, err := c.read.CheckSpaceMembership(ctx, gen.CheckSpaceMembershipParams{
-		SpaceID:  spaceID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: spaceID,
+		UserID:  userID,
 	})
 
 	return isMember, err
@@ -65,10 +63,9 @@ func (c *DBCheckers) IsPrivateSpace(ctx context.Context, tenantID, spaceID pgtyp
 		return false, nil
 	}
 
-	space, err := c.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-		ID:       spaceID,
-		TenantID: tenantID,
-	})
+	space, err := c.read.GetSpaceByID(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return false, err
 	}

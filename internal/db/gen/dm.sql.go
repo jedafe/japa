@@ -14,7 +14,7 @@ import (
 const cleanupDeclinedDMRequests = `-- name: CleanupDeclinedDMRequests :exec
 DELETE FROM dm_requests
 WHERE status = 'declined'
-  AND updated_at < now() - interval '90 days'
+ AND updated_at < now() - interval '90 days'
 `
 
 func (q *Queries) CleanupDeclinedDMRequests(ctx context.Context) error {
@@ -23,13 +23,12 @@ func (q *Queries) CleanupDeclinedDMRequests(ctx context.Context) error {
 }
 
 const createMessageRequest = `-- name: CreateMessageRequest :exec
-INSERT INTO dm_requests (tenant_id, requester_id, recipient_id, conversation_id, preview_message, status)
-VALUES ($1, $2, $3, $4, $5, 'pending')
+INSERT INTO dm_requests (requester_id, recipient_id, conversation_id, preview_message, status) VALUES ($1, $2, $3, $4, 'pending')
+
 ON CONFLICT (requester_id, recipient_id) DO NOTHING
 `
 
 type CreateMessageRequestParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	RequesterID    pgtype.UUID `json:"requester_id"`
 	RecipientID    pgtype.UUID `json:"recipient_id"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
@@ -38,7 +37,6 @@ type CreateMessageRequestParams struct {
 
 func (q *Queries) CreateMessageRequest(ctx context.Context, arg CreateMessageRequestParams) error {
 	_, err := q.db.Exec(ctx, createMessageRequest,
-		arg.TenantID,
 		arg.RequesterID,
 		arg.RecipientID,
 		arg.ConversationID,
@@ -49,33 +47,26 @@ func (q *Queries) CreateMessageRequest(ctx context.Context, arg CreateMessageReq
 
 const createWSTicket = `-- name: CreateWSTicket :one
 
-INSERT INTO ws_tickets (user_id, tenant_id, expires_at)
-VALUES ($1, $2, now() + interval '60 seconds')
-RETURNING id, user_id, tenant_id, used, expires_at, created_at
-`
+INSERT INTO ws_tickets (user_id, expires_at) VALUES ($1, now() + interval '60 seconds')
 
-type CreateWSTicketParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
+RETURNING id, user_id, used, expires_at, created_at
+`
 
 type CreateWSTicketRow struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Used      bool               `json:"used"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // Section 10: Real-Time WebSockets + Direct Messaging
-func (q *Queries) CreateWSTicket(ctx context.Context, arg CreateWSTicketParams) (CreateWSTicketRow, error) {
-	row := q.db.QueryRow(ctx, createWSTicket, arg.UserID, arg.TenantID)
+func (q *Queries) CreateWSTicket(ctx context.Context, userID pgtype.UUID) (CreateWSTicketRow, error) {
+	row := q.db.QueryRow(ctx, createWSTicket, userID)
 	var i CreateWSTicketRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.TenantID,
 		&i.Used,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -87,8 +78,8 @@ const editDMMessage = `-- name: EditDMMessage :exec
 UPDATE dm_messages
 SET body = $1, edited_at = now()
 WHERE id = $2 AND conversation_id = $3 AND sender_id = $4
-  AND deleted_at IS NULL
-  AND created_at > now() - interval '15 minutes'
+ AND deleted_at IS NULL
+ AND created_at > now() - interval '15 minutes'
 `
 
 type EditDMMessageParams struct {
@@ -109,16 +100,11 @@ func (q *Queries) EditDMMessage(ctx context.Context, arg EditDMMessageParams) er
 }
 
 const getConversationByID = `-- name: GetConversationByID :one
-SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1 AND tenant_id = $2
+SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1
 `
 
-type GetConversationByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetConversationByID(ctx context.Context, arg GetConversationByIDParams) (DmConversation, error) {
-	row := q.db.QueryRow(ctx, getConversationByID, arg.ID, arg.TenantID)
+func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmConversation, error) {
+	row := q.db.QueryRow(ctx, getConversationByID, id)
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
@@ -137,13 +123,11 @@ func (q *Queries) GetConversationByID(ctx context.Context, arg GetConversationBy
 
 const getConversationByParticipants = `-- name: GetConversationByParticipants :one
 SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
-WHERE tenant_id = $1
-  AND participant_1_id = LEAST($2, $3)::uuid
-  AND participant_2_id = GREATEST($2, $3)::uuid
+WHERE participant_1_id = LEAST($1, $2)::uuid
+ AND participant_2_id = GREATEST($1, $2)::uuid
 `
 
 type GetConversationByParticipantsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	Participant1ID pgtype.UUID `json:"participant_1_id"`
 	Participant2ID pgtype.UUID `json:"participant_2_id"`
 }
@@ -153,7 +137,7 @@ type GetConversationByParticipantsParams struct {
 // when a conversation already exists (existing threads stay active even
 // when dm_privacy is later set to 'nobody').
 func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConversationByParticipantsParams) (DmConversation, error) {
-	row := q.db.QueryRow(ctx, getConversationByParticipants, arg.TenantID, arg.Participant1ID, arg.Participant2ID)
+	row := q.db.QueryRow(ctx, getConversationByParticipants, arg.Participant1ID, arg.Participant2ID)
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
@@ -174,15 +158,14 @@ const getConversationMessages = `-- name: GetConversationMessages :many
 SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.tenant_id, u.username AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
-LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = $1
-WHERE dm.conversation_id = $2 AND dm.tenant_id = $1
-  AND dm.deleted_at IS NULL
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE dm.conversation_id = $1
+ AND dm.deleted_at IS NULL
 ORDER BY dm.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type GetConversationMessagesParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
@@ -203,12 +186,7 @@ type GetConversationMessagesRow struct {
 }
 
 func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversationMessagesParams) ([]GetConversationMessagesRow, error) {
-	rows, err := q.db.Query(ctx, getConversationMessages,
-		arg.TenantID,
-		arg.ConversationID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, getConversationMessages, arg.ConversationID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -266,16 +244,11 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
-SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1 AND tenant_id = $2
+SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
 `
 
-type GetMessageRequestParams struct {
-	ConversationID pgtype.UUID `json:"conversation_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetMessageRequest(ctx context.Context, arg GetMessageRequestParams) (DmRequest, error) {
-	row := q.db.QueryRow(ctx, getMessageRequest, arg.ConversationID, arg.TenantID)
+func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmRequest, error) {
+	row := q.db.QueryRow(ctx, getMessageRequest, conversationID)
 	var i DmRequest
 	err := row.Scan(
 		&i.ID,
@@ -293,24 +266,21 @@ func (q *Queries) GetMessageRequest(ctx context.Context, arg GetMessageRequestPa
 }
 
 const getOrCreateConversation = `-- name: GetOrCreateConversation :one
-INSERT INTO dm_conversations (tenant_id, participant_1_id, participant_2_id)
-VALUES ($1,
-    LEAST($2, $3)::uuid,
-    GREATEST($2, $3)::uuid)
-ON CONFLICT (tenant_id, participant_1_id, participant_2_id) DO UPDATE
+INSERT INTO dm_conversations (participant_1_id, participant_2_id) VALUES (LEAST($1, $2)::uuid, GREATEST($1, $2)::uuid)
+
+ON CONFLICT (participant_1_id, participant_2_id) DO UPDATE
 SET updated_at = now()
 RETURNING id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at
 `
 
 type GetOrCreateConversationParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	Participant1ID pgtype.UUID `json:"participant_1_id"`
 	Participant2ID pgtype.UUID `json:"participant_2_id"`
 }
 
 // Get existing conversation or create new one (ordering participant IDs)
 func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateConversationParams) (DmConversation, error) {
-	row := q.db.QueryRow(ctx, getOrCreateConversation, arg.TenantID, arg.Participant1ID, arg.Participant2ID)
+	row := q.db.QueryRow(ctx, getOrCreateConversation, arg.Participant1ID, arg.Participant2ID)
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
@@ -331,15 +301,14 @@ const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
 SELECT dr.id, dr.tenant_id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
-LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = dr.tenant_id
-WHERE dr.recipient_id = $1 AND dr.tenant_id = $2 AND dr.status = 'pending'
+LEFT JOIN user_profiles p ON p.user_id = u.id
+WHERE dr.recipient_id = $1 AND dr.status = 'pending'
 ORDER BY dr.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type GetPendingMessageRequestsParams struct {
 	RecipientID pgtype.UUID `json:"recipient_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 }
@@ -364,12 +333,7 @@ type GetPendingMessageRequestsRow struct {
 // recipient_id and status = 'pending' so the handler returns only
 // actionable requests, not all conversations.
 func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingMessageRequestsParams) ([]GetPendingMessageRequestsRow, error) {
-	rows, err := q.db.Query(ctx, getPendingMessageRequests,
-		arg.RecipientID,
-		arg.TenantID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, getPendingMessageRequests, arg.RecipientID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -403,34 +367,31 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 }
 
 const getUserConversations = `-- name: GetUserConversations :many
-SELECT dc.id, dc.tenant_id, dc.participant_1_id, dc.participant_2_id,
-    dc.last_message_at, dc.last_message_preview,
-    dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
-    (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_username,
-    (CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END)::text AS other_display_name,
-    (CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END)::text AS other_avatar_url,
-    (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
+SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
+ dc.last_message_at, dc.last_message_preview,
+ dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
+ (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_username,
+ (CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END)::text AS other_display_name,
+ (CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END)::text AS other_avatar_url,
+ (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
 JOIN users u1 ON u1.id = dc.participant_1_id
 JOIN users u2 ON u2.id = dc.participant_2_id
-LEFT JOIN user_profiles p1 ON p1.user_id = u1.id AND p1.tenant_id = dc.tenant_id
-LEFT JOIN user_profiles p2 ON p2.user_id = u2.id AND p2.tenant_id = dc.tenant_id
-WHERE dc.tenant_id = $2
-  AND (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
+LEFT JOIN user_profiles p1 ON p1.user_id = u1.id
+LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
+WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
 ORDER BY dc.last_message_at DESC NULLS LAST
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type GetUserConversationsParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 type GetUserConversationsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Participant1ID     pgtype.UUID        `json:"participant_1_id"`
 	Participant2ID     pgtype.UUID        `json:"participant_2_id"`
 	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
@@ -446,12 +407,7 @@ type GetUserConversationsRow struct {
 }
 
 func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversationsParams) ([]GetUserConversationsRow, error) {
-	rows, err := q.db.Query(ctx, getUserConversations,
-		arg.UserID,
-		arg.TenantID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, getUserConversations, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +417,6 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 		var i GetUserConversationsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Participant1ID,
 			&i.Participant2ID,
 			&i.LastMessageAt,
@@ -487,16 +442,11 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 
 const getUserDMPrivacy = `-- name: GetUserDMPrivacy :one
 SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
 
-type GetUserDMPrivacyParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetUserDMPrivacy(ctx context.Context, arg GetUserDMPrivacyParams) (string, error) {
-	row := q.db.QueryRow(ctx, getUserDMPrivacy, arg.UserID, arg.TenantID)
+func (q *Queries) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserDMPrivacy, userID)
 	var dm_privacy string
 	err := row.Scan(&dm_privacy)
 	return dm_privacy, err
@@ -526,7 +476,7 @@ func (q *Queries) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) 
 const incrementUnreadCount = `-- name: IncrementUnreadCount :exec
 UPDATE dm_conversations
 SET p1_unread_count = CASE WHEN participant_1_id = $1 THEN p1_unread_count + 1 ELSE p1_unread_count END,
-    p2_unread_count = CASE WHEN participant_2_id = $1 THEN p2_unread_count + 1 ELSE p2_unread_count END
+ p2_unread_count = CASE WHEN participant_2_id = $1 THEN p2_unread_count + 1 ELSE p2_unread_count END
 WHERE id = $2
 `
 
@@ -541,48 +491,40 @@ func (q *Queries) IncrementUnreadCount(ctx context.Context, arg IncrementUnreadC
 }
 
 const insertDMMessage = `-- name: InsertDMMessage :exec
-INSERT INTO dm_messages (conversation_id, sender_id, tenant_id, body)
-VALUES ($1, $2, $3, $4)
+INSERT INTO dm_messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)
 `
 
 type InsertDMMessageParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	SenderID       pgtype.UUID `json:"sender_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	Body           string      `json:"body"`
 }
 
 func (q *Queries) InsertDMMessage(ctx context.Context, arg InsertDMMessageParams) error {
-	_, err := q.db.Exec(ctx, insertDMMessage,
-		arg.ConversationID,
-		arg.SenderID,
-		arg.TenantID,
-		arg.Body,
-	)
+	_, err := q.db.Exec(ctx, insertDMMessage, arg.ConversationID, arg.SenderID, arg.Body)
 	return err
 }
 
 const markMessagesRead = `-- name: MarkMessagesRead :exec
 UPDATE dm_messages SET read_at = now()
-WHERE conversation_id = $1 AND tenant_id = $2
-  AND sender_id != $3 AND read_at IS NULL
+WHERE conversation_id = $1
+ AND sender_id != $2 AND read_at IS NULL
 `
 
 type MarkMessagesReadParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) MarkMessagesRead(ctx context.Context, arg MarkMessagesReadParams) error {
-	_, err := q.db.Exec(ctx, markMessagesRead, arg.ConversationID, arg.TenantID, arg.UserID)
+	_, err := q.db.Exec(ctx, markMessagesRead, arg.ConversationID, arg.UserID)
 	return err
 }
 
 const resetUnreadCount = `-- name: ResetUnreadCount :exec
 UPDATE dm_conversations
 SET p1_unread_count = CASE WHEN participant_1_id = $1 THEN 0 ELSE p1_unread_count END,
-    p2_unread_count = CASE WHEN participant_2_id = $1 THEN 0 ELSE p2_unread_count END
+ p2_unread_count = CASE WHEN participant_2_id = $1 THEN 0 ELSE p2_unread_count END
 WHERE id = $2
 `
 
@@ -600,7 +542,7 @@ const softDeleteDMMessage = `-- name: SoftDeleteDMMessage :exec
 UPDATE dm_messages
 SET deleted_at = now(), body = ''
 WHERE id = $1 AND conversation_id = $2 AND sender_id = $3
-  AND deleted_at IS NULL
+ AND deleted_at IS NULL
 `
 
 type SoftDeleteDMMessageParams struct {
@@ -627,69 +569,65 @@ func (q *Queries) SoftDeleteDMMessageByID(ctx context.Context, id pgtype.UUID) e
 const updateConversationLastMessage = `-- name: UpdateConversationLastMessage :exec
 UPDATE dm_conversations
 SET last_message_at = now(),
-    last_message_preview = $1,
-    updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+ last_message_preview = $1,
+ updated_at = now()
+WHERE id = $2
 `
 
 type UpdateConversationLastMessageParams struct {
 	LastMessagePreview *string     `json:"last_message_preview"`
 	ConversationID     pgtype.UUID `json:"conversation_id"`
-	TenantID           pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateConversationLastMessageParams) error {
-	_, err := q.db.Exec(ctx, updateConversationLastMessage, arg.LastMessagePreview, arg.ConversationID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateConversationLastMessage, arg.LastMessagePreview, arg.ConversationID)
 	return err
 }
 
 const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :exec
 UPDATE dm_requests SET status = $1, resolved_at = now()
-WHERE conversation_id = $2 AND tenant_id = $3
+WHERE conversation_id = $2
 `
 
 type UpdateMessageRequestStatusParams struct {
 	Status         string      `json:"status"`
 	ConversationID pgtype.UUID `json:"conversation_id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) error {
-	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ConversationID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ConversationID)
 	return err
 }
 
 const upsertUserDMPrivacy = `-- name: UpsertUserDMPrivacy :exec
-INSERT INTO user_dm_settings (user_id, tenant_id, dm_privacy, updated_at)
-VALUES ($1, $2, $3, now())
-ON CONFLICT (tenant_id, user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now()
+INSERT INTO user_dm_settings (user_id, dm_privacy, updated_at) VALUES ($1, $2, now())
+
+ON CONFLICT (user_id) DO UPDATE SET dm_privacy = EXCLUDED.dm_privacy, updated_at = now()
 `
 
 type UpsertUserDMPrivacyParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	DmPrivacy string      `json:"dm_privacy"`
 }
 
 func (q *Queries) UpsertUserDMPrivacy(ctx context.Context, arg UpsertUserDMPrivacyParams) error {
-	_, err := q.db.Exec(ctx, upsertUserDMPrivacy, arg.UserID, arg.TenantID, arg.DmPrivacy)
+	_, err := q.db.Exec(ctx, upsertUserDMPrivacy, arg.UserID, arg.DmPrivacy)
 	return err
 }
 
 const useWSTicket = `-- name: UseWSTicket :one
 UPDATE ws_tickets SET used = true
-WHERE id = $1 AND user_id = $2 AND tenant_id = $3 AND used = false AND expires_at > now()
+WHERE id = $1 AND user_id = $2 AND used = false AND expires_at > now()
 RETURNING id, user_id, tenant_id, used, created_at, expires_at
 `
 
 type UseWSTicketParams struct {
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) UseWSTicket(ctx context.Context, arg UseWSTicketParams) (WsTicket, error) {
-	row := q.db.QueryRow(ctx, useWSTicket, arg.ID, arg.UserID, arg.TenantID)
+	row := q.db.QueryRow(ctx, useWSTicket, arg.ID, arg.UserID)
 	var i WsTicket
 	err := row.Scan(
 		&i.ID,

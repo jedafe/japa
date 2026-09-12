@@ -157,7 +157,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			}
 
 			src, cerr := deps.IntelSourceManager.Create(ctx, tenantID, gen.CreateIntelSourceParams{
-				TenantID:            tenantID,
+
 				Name:                name,
 				Domain:              domain,
 				SourceUrl:           r.URL,

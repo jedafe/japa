@@ -36,7 +36,7 @@ func (s *Store) createBlogSeries(ctx context.Context, p gen.CreateBlogSeriesPara
 }
 
 func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.BlogSeries, error) {
-	row, err := s.read.GetBlogSeriesByID(ctx, gen.GetBlogSeriesByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetBlogSeriesByID(ctx, id)
 	if err != nil {
 		return gen.BlogSeries{}, fmt.Errorf("getting blog series by ID: %w", err)
 	}
@@ -45,7 +45,7 @@ func (s *Store) getBlogSeriesByID(ctx context.Context, id, tenantID pgtype.UUID)
 }
 
 func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetBlogSeriesBySlugRow, error) {
-	row, err := s.read.GetBlogSeriesBySlug(ctx, gen.GetBlogSeriesBySlugParams{Slug: slug, TenantID: tenantID})
+	row, err := s.read.GetBlogSeriesBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetBlogSeriesBySlugRow{}, fmt.Errorf("getting blog series by slug: %w", err)
 	}
@@ -59,7 +59,7 @@ func (s *Store) listBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	rows, err := s.read.ListBlogSeriesByTenant(ctx, gen.ListBlogSeriesByTenantParams{
-		TenantID:    tenantID,
+
 		Q:           q,
 		ContentType: contentType,
 		PageLimit:   limit,
@@ -78,7 +78,7 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 	}
 
 	rows, err := s.read.ListBlogSeriesByAuthor(ctx, gen.ListBlogSeriesByAuthorParams{
-		TenantID:     tenantID,
+
 		AuthorUserID: authorUserID,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -92,7 +92,7 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, tenantID, authorUser
 
 func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUID, q, contentType string) (int64, error) {
 	count, err := s.read.CountBlogSeriesByTenant(ctx, gen.CountBlogSeriesByTenantParams{
-		TenantID:    tenantID,
+
 		Q:           q,
 		ContentType: contentType,
 	})
@@ -104,10 +104,10 @@ func (s *Store) countBlogSeriesByTenant(ctx context.Context, tenantID pgtype.UUI
 }
 
 func (s *Store) countBlogSeriesByAuthor(ctx context.Context, tenantID, authorUserID pgtype.UUID) (int64, error) {
-	count, err := s.read.CountBlogSeriesByAuthor(ctx, gen.CountBlogSeriesByAuthorParams{
-		TenantID:     tenantID,
-		AuthorUserID: authorUserID,
-	})
+	count, err := s.read.CountBlogSeriesByAuthor(ctx,
+
+		authorUserID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting blog series by author: %w", err)
 	}
@@ -125,7 +125,7 @@ func (s *Store) updateBlogSeries(ctx context.Context, p gen.UpdateBlogSeriesPara
 }
 
 func (s *Store) deleteBlogSeries(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteBlogSeries(ctx, gen.DeleteBlogSeriesParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteBlogSeries(ctx, id); err != nil {
 		return fmt.Errorf("deleting blog series: %w", err)
 	}
 
@@ -156,10 +156,9 @@ func (s *Store) removePostFromSeries(ctx context.Context, seriesID, contentID pg
 }
 
 func (s *Store) listPostsInSeries(ctx context.Context, seriesID, tenantID pgtype.UUID) ([]gen.ListPostsInSeriesRow, error) {
-	rows, err := s.read.ListPostsInSeries(ctx, gen.ListPostsInSeriesParams{
-		SeriesID: seriesID,
-		TenantID: tenantID,
-	})
+	rows, err := s.read.ListPostsInSeries(ctx,
+		seriesID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing posts in series: %w", err)
 	}
@@ -178,10 +177,9 @@ func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (
 // load to restore the series selector when editing existing content.
 // BUG-009: tenant-scoped to prevent cross-tenant information disclosure.
 func (s *Store) getSeriesForContent(ctx context.Context, contentID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	return s.read.GetSeriesForContent(ctx, gen.GetSeriesForContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	return s.read.GetSeriesForContent(ctx,
+		contentID,
+	)
 }
 
 func (s *Store) reorderSeriesPosts(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
@@ -239,15 +237,15 @@ func (s *Store) bulkReorderSeriesPosts(ctx context.Context, seriesID pgtype.UUID
 func contentReviewFromRow(r any) gen.ContentReview {
 	switch v := r.(type) {
 	case gen.CreateContentReviewRow:
-		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.GetContentReviewByIDRow:
-		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.ListContentReviewsByContentRow:
-		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.ListPendingContentReviewsRow:
-		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	case gen.UpdateContentReviewStatusRow:
-		return gen.ContentReview{ID: v.ID, TenantID: v.TenantID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
+		return gen.ContentReview{ID: v.ID, ContentID: v.ContentID, ReviewerUserID: v.ReviewerUserID, Status: v.Status, Feedback: v.Feedback, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, DeletedAt: v.DeletedAt}
 	}
 
 	return gen.ContentReview{}
@@ -263,7 +261,7 @@ func (s *Store) createContentReview(ctx context.Context, p gen.CreateContentRevi
 }
 
 func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReview, error) {
-	row, err := s.read.GetContentReviewByID(ctx, gen.GetContentReviewByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetContentReviewByID(ctx, id)
 	if err != nil {
 		return gen.ContentReview{}, fmt.Errorf("getting content review by ID: %w", err)
 	}
@@ -272,10 +270,9 @@ func (s *Store) getContentReviewByID(ctx context.Context, id, tenantID pgtype.UU
 }
 
 func (s *Store) listContentReviewsByContent(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ContentReview, error) {
-	rows, err := s.read.ListContentReviewsByContent(ctx, gen.ListContentReviewsByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	rows, err := s.read.ListContentReviewsByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing content reviews by content: %w", err)
 	}
@@ -294,7 +291,7 @@ func (s *Store) listPendingContentReviews(ctx context.Context, tenantID pgtype.U
 	}
 
 	rows, err := s.read.ListPendingContentReviews(ctx, gen.ListPendingContentReviewsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -320,10 +317,9 @@ func (s *Store) updateContentReviewStatus(ctx context.Context, p gen.UpdateConte
 }
 
 func (s *Store) deleteContentReview(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.DeleteContentReview(ctx, gen.DeleteContentReviewParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	return s.write.DeleteContentReview(ctx,
+		id,
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -340,10 +336,10 @@ func (s *Store) featureContent(ctx context.Context, p gen.FeatureContentParams) 
 }
 
 func (s *Store) unfeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
-	if err := s.write.UnfeatureContent(ctx, gen.UnfeatureContentParams{
-		TenantID:  tenantID,
-		ContentID: contentID,
-	}); err != nil {
+	if err := s.write.UnfeatureContent(ctx,
+
+		contentID,
+	); err != nil {
 		return fmt.Errorf("unfeaturing content: %w", err)
 	}
 
@@ -356,7 +352,7 @@ func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, lim
 	}
 
 	rows, err := s.read.ListFeaturedPosts(ctx, gen.ListFeaturedPostsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -369,8 +365,8 @@ func (s *Store) listFeaturedPosts(ctx context.Context, tenantID pgtype.UUID, lim
 
 func (s *Store) updateFeaturedOrder(ctx context.Context, id, tenantID pgtype.UUID, featuredOrder int32) error {
 	if err := s.write.UpdateFeaturedOrder(ctx, gen.UpdateFeaturedOrderParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		FeaturedOrder: featuredOrder,
 	}); err != nil {
 		return fmt.Errorf("updating featured order: %w", err)
@@ -395,7 +391,7 @@ func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.U
 	}
 
 	rows, err := s.read.ListFeaturedBlogPostCards(ctx, gen.ListFeaturedBlogPostCardsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -409,7 +405,7 @@ func (s *Store) listFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.U
 // countFeaturedBlogPostCards returns the total number of active featured blog
 // posts for pagination meta.
 func (s *Store) countFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	count, err := s.read.CountFeaturedBlogPostCards(ctx, tenantID)
+	count, err := s.read.CountFeaturedBlogPostCards(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("counting featured blog post cards: %w", err)
 	}
@@ -435,8 +431,8 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUI
 
 	for _, item := range items {
 		if err := q.UpdateFeaturedOrder(ctx, gen.UpdateFeaturedOrderParams{
-			ID:            item.ID,
-			TenantID:      tenantID,
+			ID: item.ID,
+
 			FeaturedOrder: item.Order,
 		}); err != nil {
 			return fmt.Errorf("updating featured order in bulk: %w", err)
@@ -456,8 +452,8 @@ func (s *Store) bulkUpdateFeaturedOrder(ctx context.Context, tenantID pgtype.UUI
 // tenant for moderation. Ref: japaconnect-engineering/sections/24-blog-extension.md.
 func (s *Store) getBlogPostDetail(ctx context.Context, slug string, tenantID, viewerUserID pgtype.UUID, isSuperAdmin bool) (gen.GetBlogPostDetailRow, error) {
 	row, err := s.read.GetBlogPostDetail(ctx, gen.GetBlogPostDetailParams{
-		Slug:         slug,
-		TenantID:     tenantID,
+		Slug: slug,
+
 		ViewerUserID: viewerUserID,
 		IsSuperAdmin: &isSuperAdmin,
 	})
@@ -488,7 +484,7 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, li
 	}
 
 	rows, err := s.read.ListPublishedBlogPosts(ctx, gen.ListPublishedBlogPostsParams{
-		TenantID:   f.TenantID,
+
 		SpaceID:    f.SpaceID,
 		AuthorID:   f.AuthorID,
 		SeriesID:   f.SeriesID,
@@ -510,7 +506,7 @@ func (s *Store) listPublishedBlogPosts(ctx context.Context, f BlogListFilter, li
 // pagination total reflects the active filter set.
 func (s *Store) countPublishedBlogPosts(ctx context.Context, f BlogListFilter) (int64, error) {
 	count, err := s.read.CountPublishedBlogPosts(ctx, gen.CountPublishedBlogPostsParams{
-		TenantID: f.TenantID,
+
 		SpaceID:  f.SpaceID,
 		AuthorID: f.AuthorID,
 		SeriesID: f.SeriesID,
@@ -535,7 +531,7 @@ func (s *Store) listAdminBlogPosts(ctx context.Context, tenantID pgtype.UUID, li
 	}
 
 	rows, err := s.read.ListAdminBlogPosts(ctx, gen.ListAdminBlogPostsParams{
-		TenantID:   tenantID,
+
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -554,7 +550,7 @@ func (s *Store) listPendingReviewSummaries(ctx context.Context, tenantID pgtype.
 	}
 
 	rows, err := s.read.ListPendingReviewSummaries(ctx, gen.ListPendingReviewSummariesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -574,10 +570,10 @@ func (s *Store) listPublishedPostsForRSS(ctx context.Context, tenantID pgtype.UU
 		limit = 50
 	}
 
-	rows, err := s.read.ListPublishedPostsForRSS(ctx, gen.ListPublishedPostsForRSSParams{
-		TenantID:  tenantID,
-		PageLimit: limit,
-	})
+	rows, err := s.read.ListPublishedPostsForRSS(ctx,
+
+		limit,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing published posts for RSS: %w", err)
 	}

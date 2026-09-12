@@ -106,13 +106,13 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 
 	qtx := gen.New(tx)
 
-	lockKey := "wallet:" + row.TenantID.String() + ":" + row.AuthorUserID.String()
+	lockKey := "wallet:" + row.AuthorUserID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("affiliate: acquiring wallet lock: %w", err)
 	}
 
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   row.TenantID,
+
 		UserID:     row.AuthorUserID,
 		LedgerType: affiliateLedgerTypeCredits,
 	})
@@ -127,7 +127,7 @@ func creditAuthorCommissionTx(ctx context.Context, row gen.GetAffiliateContentCo
 	reference := row.ID.String()
 
 	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         row.TenantID,
+
 		UserID:           row.AuthorUserID,
 		LedgerType:       affiliateLedgerTypeCredits,
 		Operation:        affiliateOperationEarn,

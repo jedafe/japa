@@ -14,16 +14,11 @@ import (
 const countVideoSourcesBySourceID = `-- name: CountVideoSourcesBySourceID :one
 SELECT COUNT(*)::int AS total
 FROM video_sources
-WHERE tenant_id = $1 AND source_id = $2 AND status = 'active'
+WHERE source_id = $1 AND status = 'active'
 `
 
-type CountVideoSourcesBySourceIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	SourceID pgtype.UUID `json:"source_id"`
-}
-
-func (q *Queries) CountVideoSourcesBySourceID(ctx context.Context, arg CountVideoSourcesBySourceIDParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countVideoSourcesBySourceID, arg.TenantID, arg.SourceID)
+func (q *Queries) CountVideoSourcesBySourceID(ctx context.Context, sourceID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countVideoSourcesBySourceID, sourceID)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -32,28 +27,21 @@ func (q *Queries) CountVideoSourcesBySourceID(ctx context.Context, arg CountVide
 const countVideoSourcesForAdmin = `-- name: CountVideoSourcesForAdmin :one
 SELECT COUNT(*)::int AS total
 FROM video_sources vs
-JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
-WHERE vs.tenant_id = $1
-  AND ($2::text = '' OR vs.status = $2)
-  AND ($3::text = '' OR vs.source_type = $3)
-  AND ($4::text = '' OR vs.title ILIKE '%' || $4 || '%' OR vs.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+JOIN users u ON u.id = vs.author_user_id
+WHERE ($1::text = '' OR vs.status = $1)
+ AND ($2::text = '' OR vs.source_type = $2)
+ AND ($3::text = '' OR vs.title ILIKE '%' || $3 || '%' OR vs.source_url ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 `
 
 type CountVideoSourcesForAdminParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	SourceType string      `json:"source_type"`
-	Q          string      `json:"q"`
+	Status     string `json:"status"`
+	SourceType string `json:"source_type"`
+	Q          string `json:"q"`
 }
 
 // Total for admin video sources list (same filters as ListVideoSourcesForAdmin).
 func (q *Queries) CountVideoSourcesForAdmin(ctx context.Context, arg CountVideoSourcesForAdminParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countVideoSourcesForAdmin,
-		arg.TenantID,
-		arg.Status,
-		arg.SourceType,
-		arg.Q,
-	)
+	row := q.db.QueryRow(ctx, countVideoSourcesForAdmin, arg.Status, arg.SourceType, arg.Q)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -61,34 +49,25 @@ func (q *Queries) CountVideoSourcesForAdmin(ctx context.Context, arg CountVideoS
 
 const createOrUpdateVideoSource = `-- name: CreateOrUpdateVideoSource :one
 
-INSERT INTO video_sources (
-    tenant_id, author_user_id, source_type, source_url, external_id, title,
-    description, category, thumbnail_url, thumbnail_media_id, duration_secs,
-    field_values, status, source_id
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11,
-    COALESCE($12, '{}'::jsonb), COALESCE($13, 'active'), $14
-)
-ON CONFLICT (tenant_id, source_url) DO UPDATE SET
-    author_user_id = EXCLUDED.author_user_id,
-    source_type = EXCLUDED.source_type,
-    external_id = EXCLUDED.external_id,
-    title = EXCLUDED.title,
-    description = EXCLUDED.description,
-    category = COALESCE(EXCLUDED.category, video_sources.category),
-    thumbnail_url = EXCLUDED.thumbnail_url,
-    thumbnail_media_id = EXCLUDED.thumbnail_media_id,
-    duration_secs = EXCLUDED.duration_secs,
-    field_values = EXCLUDED.field_values,
-    source_id = COALESCE(EXCLUDED.source_id, video_sources.source_id),
-    status = 'active',
-    updated_at = now()
+INSERT INTO video_sources (author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, field_values, status, source_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, '{}'::jsonb), COALESCE($12, 'active'), $13)
+ON CONFLICT (source_url) DO UPDATE SET
+ author_user_id = EXCLUDED.author_user_id,
+ source_type = EXCLUDED.source_type,
+ external_id = EXCLUDED.external_id,
+ title = EXCLUDED.title,
+ description = EXCLUDED.description,
+ category = COALESCE(EXCLUDED.category, video_sources.category),
+ thumbnail_url = EXCLUDED.thumbnail_url,
+ thumbnail_media_id = EXCLUDED.thumbnail_media_id,
+ duration_secs = EXCLUDED.duration_secs,
+ field_values = EXCLUDED.field_values,
+ source_id = COALESCE(EXCLUDED.source_id, video_sources.source_id),
+ status = 'active',
+ updated_at = now()
 RETURNING id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 `
 
 type CreateOrUpdateVideoSourceParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	AuthorUserID     pgtype.UUID `json:"author_user_id"`
 	SourceType       string      `json:"source_type"`
 	SourceUrl        string      `json:"source_url"`
@@ -107,7 +86,6 @@ type CreateOrUpdateVideoSourceParams struct {
 // Video sources: canonical external video records for imports and uploads.
 func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpdateVideoSourceParams) (VideoSource, error) {
 	row := q.db.QueryRow(ctx, createOrUpdateVideoSource,
-		arg.TenantID,
 		arg.AuthorUserID,
 		arg.SourceType,
 		arg.SourceUrl,
@@ -148,17 +126,16 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 const getVideoSourceByExternalID = `-- name: GetVideoSourceByExternalID :one
 SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
-WHERE tenant_id = $1 AND source_type = $2 AND external_id = $3
+WHERE source_type = $1 AND external_id = $2
 `
 
 type GetVideoSourceByExternalIDParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	SourceType string      `json:"source_type"`
-	ExternalID *string     `json:"external_id"`
+	SourceType string  `json:"source_type"`
+	ExternalID *string `json:"external_id"`
 }
 
 func (q *Queries) GetVideoSourceByExternalID(ctx context.Context, arg GetVideoSourceByExternalIDParams) (VideoSource, error) {
-	row := q.db.QueryRow(ctx, getVideoSourceByExternalID, arg.TenantID, arg.SourceType, arg.ExternalID)
+	row := q.db.QueryRow(ctx, getVideoSourceByExternalID, arg.SourceType, arg.ExternalID)
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
@@ -185,16 +162,11 @@ func (q *Queries) GetVideoSourceByExternalID(ctx context.Context, arg GetVideoSo
 const getVideoSourceByID = `-- name: GetVideoSourceByID :one
 SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetVideoSourceByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetVideoSourceByID(ctx context.Context, arg GetVideoSourceByIDParams) (VideoSource, error) {
-	row := q.db.QueryRow(ctx, getVideoSourceByID, arg.ID, arg.TenantID)
+func (q *Queries) GetVideoSourceByID(ctx context.Context, id pgtype.UUID) (VideoSource, error) {
+	row := q.db.QueryRow(ctx, getVideoSourceByID, id)
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
@@ -221,16 +193,11 @@ func (q *Queries) GetVideoSourceByID(ctx context.Context, arg GetVideoSourceByID
 const getVideoSourceByURL = `-- name: GetVideoSourceByURL :one
 SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
-WHERE tenant_id = $1 AND source_url = $2
+WHERE source_url = $1
 `
 
-type GetVideoSourceByURLParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	SourceUrl string      `json:"source_url"`
-}
-
-func (q *Queries) GetVideoSourceByURL(ctx context.Context, arg GetVideoSourceByURLParams) (VideoSource, error) {
-	row := q.db.QueryRow(ctx, getVideoSourceByURL, arg.TenantID, arg.SourceUrl)
+func (q *Queries) GetVideoSourceByURL(ctx context.Context, sourceUrl string) (VideoSource, error) {
+	row := q.db.QueryRow(ctx, getVideoSourceByURL, sourceUrl)
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
@@ -257,26 +224,20 @@ func (q *Queries) GetVideoSourceByURL(ctx context.Context, arg GetVideoSourceByU
 const listVideoSourcesByAuthor = `-- name: ListVideoSourcesByAuthor :many
 SELECT vs.id, vs.tenant_id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id
 FROM video_sources vs
-JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
-WHERE vs.tenant_id = $1 AND u.username = $2 AND vs.status = 'active'
+JOIN users u ON u.id = vs.author_user_id
+WHERE u.username = $1 AND vs.status = 'active'
 ORDER BY vs.created_at DESC, vs.id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListVideoSourcesByAuthorParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Username   string      `json:"username"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Username   string `json:"username"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSourcesByAuthorParams) ([]VideoSource, error) {
-	rows, err := q.db.Query(ctx, listVideoSourcesByAuthor,
-		arg.TenantID,
-		arg.Username,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listVideoSourcesByAuthor, arg.Username, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -316,25 +277,19 @@ func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSou
 const listVideoSourcesByAuthorUserID = `-- name: ListVideoSourcesByAuthorUserID :many
 SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
-WHERE tenant_id = $1 AND author_user_id = $2
+WHERE author_user_id = $1
 ORDER BY created_at DESC, id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListVideoSourcesByAuthorUserIDParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 	PageOffset   int32       `json:"page_offset"`
 	PageLimit    int32       `json:"page_limit"`
 }
 
 func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVideoSourcesByAuthorUserIDParams) ([]VideoSource, error) {
-	rows, err := q.db.Query(ctx, listVideoSourcesByAuthorUserID,
-		arg.TenantID,
-		arg.AuthorUserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listVideoSourcesByAuthorUserID, arg.AuthorUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -374,13 +329,12 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 const listVideoSourcesBySourceID = `-- name: ListVideoSourcesBySourceID :many
 SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
-WHERE tenant_id = $1 AND source_id = $2 AND status = 'active'
+WHERE source_id = $1 AND status = 'active'
 ORDER BY created_at DESC, id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListVideoSourcesBySourceIDParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SourceID   pgtype.UUID `json:"source_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -388,12 +342,7 @@ type ListVideoSourcesBySourceIDParams struct {
 
 // Returns active video sources linked to a canonical intel_sources row.
 func (q *Queries) ListVideoSourcesBySourceID(ctx context.Context, arg ListVideoSourcesBySourceIDParams) ([]VideoSource, error) {
-	rows, err := q.db.Query(ctx, listVideoSourcesBySourceID,
-		arg.TenantID,
-		arg.SourceID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listVideoSourcesBySourceID, arg.SourceID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -432,31 +381,29 @@ func (q *Queries) ListVideoSourcesBySourceID(ctx context.Context, arg ListVideoS
 
 const listVideoSourcesForAdmin = `-- name: ListVideoSourcesForAdmin :many
 SELECT
-    vs.id, vs.tenant_id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id,
-    vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id,
-    vs.duration_secs, vs.status, vs.field_values, vs.source_id, vs.created_at, vs.updated_at,
-    u.username AS author_username
+ vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id,
+ vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id,
+ vs.duration_secs, vs.status, vs.field_values, vs.source_id, vs.created_at, vs.updated_at,
+ u.username AS author_username
 FROM video_sources vs
-JOIN users u ON u.id = vs.author_user_id AND u.tenant_id = vs.tenant_id
-WHERE vs.tenant_id = $1
-  AND ($2::text = '' OR vs.status = $2)
-  AND ($3::text = '' OR vs.source_type = $3)
-  AND ($4::text = '' OR vs.title ILIKE '%' || $4 || '%' OR vs.source_url ILIKE '%' || $4 || '%' OR u.username ILIKE '%' || $4 || '%')
+JOIN users u ON u.id = vs.author_user_id
+WHERE ($1::text = '' OR vs.status = $1)
+ AND ($2::text = '' OR vs.source_type = $2)
+ AND ($3::text = '' OR vs.title ILIKE '%' || $3 || '%' OR vs.source_url ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
 ORDER BY
-    CASE WHEN $5 = 'title' AND $6 = 'asc' THEN vs.title END ASC NULLS LAST,
-    CASE WHEN $5 = 'title' AND $6 = 'desc' THEN vs.title END DESC NULLS FIRST,
-    CASE WHEN $5 = 'source_type' AND $6 = 'asc' THEN vs.source_type END ASC NULLS LAST,
-    CASE WHEN $5 = 'source_type' AND $6 = 'desc' THEN vs.source_type END DESC NULLS FIRST,
-    CASE WHEN $5 = 'status' AND $6 = 'asc' THEN vs.status END ASC NULLS LAST,
-    CASE WHEN $5 = 'status' AND $6 = 'desc' THEN vs.status END DESC NULLS FIRST,
-    CASE WHEN $5 = 'created_at' AND $6 = 'asc' THEN vs.created_at END ASC NULLS LAST,
-    CASE WHEN $5 = 'created_at' AND $6 = 'desc' THEN vs.created_at END DESC NULLS FIRST,
-    vs.created_at DESC
-LIMIT $8 OFFSET $7
+ CASE WHEN $4 = 'title' AND $5 = 'asc' THEN vs.title END ASC NULLS LAST,
+ CASE WHEN $4 = 'title' AND $5 = 'desc' THEN vs.title END DESC NULLS FIRST,
+ CASE WHEN $4 = 'source_type' AND $5 = 'asc' THEN vs.source_type END ASC NULLS LAST,
+ CASE WHEN $4 = 'source_type' AND $5 = 'desc' THEN vs.source_type END DESC NULLS FIRST,
+ CASE WHEN $4 = 'status' AND $5 = 'asc' THEN vs.status END ASC NULLS LAST,
+ CASE WHEN $4 = 'status' AND $5 = 'desc' THEN vs.status END DESC NULLS FIRST,
+ CASE WHEN $4 = 'created_at' AND $5 = 'asc' THEN vs.created_at END ASC NULLS LAST,
+ CASE WHEN $4 = 'created_at' AND $5 = 'desc' THEN vs.created_at END DESC NULLS FIRST,
+ vs.created_at DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListVideoSourcesForAdminParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	SourceType string      `json:"source_type"`
 	Q          string      `json:"q"`
@@ -468,7 +415,6 @@ type ListVideoSourcesForAdminParams struct {
 
 type ListVideoSourcesForAdminRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	AuthorUserID     pgtype.UUID        `json:"author_user_id"`
 	SourceType       string             `json:"source_type"`
 	SourceUrl        string             `json:"source_url"`
@@ -490,7 +436,6 @@ type ListVideoSourcesForAdminRow struct {
 // Admin queue with optional status/source_type filters, text search, and sorting.
 func (q *Queries) ListVideoSourcesForAdmin(ctx context.Context, arg ListVideoSourcesForAdminParams) ([]ListVideoSourcesForAdminRow, error) {
 	rows, err := q.db.Query(ctx, listVideoSourcesForAdmin,
-		arg.TenantID,
 		arg.Status,
 		arg.SourceType,
 		arg.Q,
@@ -508,7 +453,6 @@ func (q *Queries) ListVideoSourcesForAdmin(ctx context.Context, arg ListVideoSou
 		var i ListVideoSourcesForAdminRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorUserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -539,37 +483,35 @@ func (q *Queries) ListVideoSourcesForAdmin(ctx context.Context, arg ListVideoSou
 const reassignVideoSourcesAuthor = `-- name: ReassignVideoSourcesAuthor :exec
 UPDATE video_sources
 SET author_user_id = $1, updated_at = now()
-WHERE tenant_id = $2 AND author_user_id = $3
+WHERE author_user_id = $2
 `
 
 type ReassignVideoSourcesAuthorParams struct {
 	NewAuthorUserID pgtype.UUID `json:"new_author_user_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	OldAuthorUserID pgtype.UUID `json:"old_author_user_id"`
 }
 
 // Transfer all sources from a synthetic channel user to a real claimant.
 func (q *Queries) ReassignVideoSourcesAuthor(ctx context.Context, arg ReassignVideoSourcesAuthorParams) error {
-	_, err := q.db.Exec(ctx, reassignVideoSourcesAuthor, arg.NewAuthorUserID, arg.TenantID, arg.OldAuthorUserID)
+	_, err := q.db.Exec(ctx, reassignVideoSourcesAuthor, arg.NewAuthorUserID, arg.OldAuthorUserID)
 	return err
 }
 
 const updateVideoSourceStatus = `-- name: UpdateVideoSourceStatus :one
 UPDATE video_sources
 SET status = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 RETURNING id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 `
 
 type UpdateVideoSourceStatusParams struct {
-	Status   string      `json:"status"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 // Used by the takedown approval flow to hide a specific video.
 func (q *Queries) UpdateVideoSourceStatus(ctx context.Context, arg UpdateVideoSourceStatusParams) (VideoSource, error) {
-	row := q.db.QueryRow(ctx, updateVideoSourceStatus, arg.Status, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, updateVideoSourceStatus, arg.Status, arg.ID)
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,

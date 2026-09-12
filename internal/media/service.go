@@ -103,7 +103,7 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 		ext)
 
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
-		TenantID:         tenantID,
+
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,
@@ -308,8 +308,8 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, revi
 	}
 
 	return s.store.AdminUpdateStatus(ctx, gen.AdminUpdateMediaStatusParams{
-		ID:               mediaID,
-		TenantID:         tenantID,
+		ID: mediaID,
+
 		Confirmed:        confirmed,
 		QuarantineReason: reason,
 		ReviewedBy:       reviewerID,
@@ -342,8 +342,8 @@ func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.U
 	}
 
 	return s.store.UpdateMediaMetadata(ctx, gen.UpdateMediaMetadataParams{
-		ID:           mediaID,
-		TenantID:     tenantID,
+		ID: mediaID,
+
 		AltText:      altText,
 		Caption:      caption,
 		WidthPx:      width,
@@ -364,8 +364,8 @@ func (s *Service) UpdateMetadataOwn(ctx context.Context, tenantID, uploaderID, m
 	}
 
 	return s.store.UpdateMediaMetadataOwn(ctx, gen.UpdateMediaMetadataOwnParams{
-		ID:             mediaID,
-		TenantID:       tenantID,
+		ID: mediaID,
+
 		UploaderUserID: uploaderID,
 		AltText:        altText,
 		Caption:        caption,
@@ -573,7 +573,7 @@ func NormalizeMIMEType(mimeType string) string {
 // DirectUpload stores a file locally and creates the media record.
 func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, localPath, storagePath string) (pgtype.UUID, error) {
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
-		TenantID:         tenantID,
+
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,
@@ -637,7 +637,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Build insert params with optional attribution.
 	params := gen.InsertMediaParams{
-		TenantID:         tenantID,
+
 		UploaderUserID:   uploaderID,
 		OriginalFilename: filename,
 		MimeType:         mimeType,

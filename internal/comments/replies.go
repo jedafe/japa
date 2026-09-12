@@ -19,7 +19,7 @@ import (
 // content and soft-deleted comments are excluded by the query.
 func (s *Service) ListByAuthor(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByAuthorRow, int32, error) {
 	rows, err := s.read.ListCommentsByAuthor(ctx, gen.ListCommentsByAuthorParams{
-		TenantID:     tenantID,
+
 		AuthorUserID: authorID,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -28,10 +28,10 @@ func (s *Service) ListByAuthor(ctx context.Context, tenantID, authorID pgtype.UU
 		return nil, 0, fmt.Errorf("listing comments by author: %w", err)
 	}
 
-	total, err := s.read.CountCommentsByAuthor(ctx, gen.CountCommentsByAuthorParams{
-		TenantID:     tenantID,
-		AuthorUserID: authorID,
-	})
+	total, err := s.read.CountCommentsByAuthor(ctx,
+
+		authorID,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting comments by author: %w", err)
 	}

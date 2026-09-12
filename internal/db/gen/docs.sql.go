@@ -12,13 +12,12 @@ import (
 )
 
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (tenant_id, title, slug, audience, content, ai_generated, review_status, parent_id, position)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+
 RETURNING id
 `
 
 type CreateDocPageParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	Title        string      `json:"title"`
 	Slug         string      `json:"slug"`
 	Audience     string      `json:"audience"`
@@ -31,7 +30,6 @@ type CreateDocPageParams struct {
 
 func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createDocPage,
-		arg.TenantID,
 		arg.Title,
 		arg.Slug,
 		arg.Audience,
@@ -47,34 +45,23 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 }
 
 const deleteDocPage = `-- name: DeleteDocPage :exec
-DELETE FROM doc_pages WHERE id = $1 AND tenant_id = $2
+DELETE FROM doc_pages WHERE id = $1
 `
 
-type DeleteDocPageParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteDocPage(ctx context.Context, arg DeleteDocPageParams) error {
-	_, err := q.db.Exec(ctx, deleteDocPage, arg.ID, arg.TenantID)
+func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDocPage, id)
 	return err
 }
 
 const getDocPageByID = `-- name: GetDocPageByID :one
-SELECT id, tenant_id, title, slug, audience, content, ai_generated, review_status,
-       last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
+SELECT id, title, slug, audience, content, ai_generated, review_status,
+ last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
 FROM doc_pages
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetDocPageByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetDocPageByIDRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Title          string             `json:"title"`
 	Slug           string             `json:"slug"`
 	Audience       string             `json:"audience"`
@@ -89,12 +76,11 @@ type GetDocPageByIDRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetDocPageByID(ctx context.Context, arg GetDocPageByIDParams) (GetDocPageByIDRow, error) {
-	row := q.db.QueryRow(ctx, getDocPageByID, arg.ID, arg.TenantID)
+func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPageByIDRow, error) {
+	row := q.db.QueryRow(ctx, getDocPageByID, id)
 	var i GetDocPageByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Audience,
@@ -112,21 +98,19 @@ func (q *Queries) GetDocPageByID(ctx context.Context, arg GetDocPageByIDParams) 
 }
 
 const getDocPageBySlug = `-- name: GetDocPageBySlug :one
-SELECT id, tenant_id, title, slug, audience, content, ai_generated, review_status,
-       last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
+SELECT id, title, slug, audience, content, ai_generated, review_status,
+ last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
 FROM doc_pages
-WHERE tenant_id = $1 AND audience = $2 AND slug = $3 AND review_status = 'published'
+WHERE audience = $1 AND slug = $2 AND review_status = 'published'
 `
 
 type GetDocPageBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Audience string      `json:"audience"`
-	Slug     string      `json:"slug"`
+	Audience string `json:"audience"`
+	Slug     string `json:"slug"`
 }
 
 type GetDocPageBySlugRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Title          string             `json:"title"`
 	Slug           string             `json:"slug"`
 	Audience       string             `json:"audience"`
@@ -142,11 +126,10 @@ type GetDocPageBySlugRow struct {
 }
 
 func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugParams) (GetDocPageBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getDocPageBySlug, arg.TenantID, arg.Audience, arg.Slug)
+	row := q.db.QueryRow(ctx, getDocPageBySlug, arg.Audience, arg.Slug)
 	var i GetDocPageBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Audience,
@@ -164,16 +147,11 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 }
 
 const getDocPageStatus = `-- name: GetDocPageStatus :one
-SELECT review_status FROM doc_pages WHERE id = $1 AND tenant_id = $2
+SELECT review_status FROM doc_pages WHERE id = $1
 `
 
-type GetDocPageStatusParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetDocPageStatus(ctx context.Context, arg GetDocPageStatusParams) (string, error) {
-	row := q.db.QueryRow(ctx, getDocPageStatus, arg.ID, arg.TenantID)
+func (q *Queries) GetDocPageStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getDocPageStatus, id)
 	var review_status string
 	err := row.Scan(&review_status)
 	return review_status, err
@@ -182,32 +160,26 @@ func (q *Queries) GetDocPageStatus(ctx context.Context, arg GetDocPageStatusPara
 const incrementDocPageHelpful = `-- name: IncrementDocPageHelpful :exec
 UPDATE doc_pages
 SET helpful_yes = helpful_yes + CASE WHEN $1 = 'up' THEN 1 ELSE 0 END,
-    helpful_no = helpful_no + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END
-WHERE tenant_id = $2 AND audience = $3 AND slug = $4
+ helpful_no = helpful_no + CASE WHEN $1 = 'down' THEN 1 ELSE 0 END
+WHERE audience = $2 AND slug = $3
 `
 
 type IncrementDocPageHelpfulParams struct {
 	Vote     interface{} `json:"vote"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Audience string      `json:"audience"`
 	Slug     string      `json:"slug"`
 }
 
 func (q *Queries) IncrementDocPageHelpful(ctx context.Context, arg IncrementDocPageHelpfulParams) error {
-	_, err := q.db.Exec(ctx, incrementDocPageHelpful,
-		arg.Vote,
-		arg.TenantID,
-		arg.Audience,
-		arg.Slug,
-	)
+	_, err := q.db.Exec(ctx, incrementDocPageHelpful, arg.Vote, arg.Audience, arg.Slug)
 	return err
 }
 
 const listAllDocPages = `-- name: ListAllDocPages :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
-       last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_at, parent_id, position, created_at, updated_at
 FROM doc_pages
-WHERE tenant_id = $1
+
 ORDER BY audience ASC, position ASC, title ASC
 `
 
@@ -226,8 +198,8 @@ type ListAllDocPagesRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ListAllDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPages, tenantID)
+func (q *Queries) ListAllDocPages(ctx context.Context) ([]ListAllDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listAllDocPages)
 	if err != nil {
 		return nil, err
 	}
@@ -261,16 +233,11 @@ func (q *Queries) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]
 
 const listAllDocPagesByAudience = `-- name: ListAllDocPagesByAudience :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
-       last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_at, parent_id, position, created_at, updated_at
 FROM doc_pages
-WHERE tenant_id = $1 AND audience = $2
+WHERE audience = $1
 ORDER BY position ASC, title ASC
 `
-
-type ListAllDocPagesByAudienceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Audience string      `json:"audience"`
-}
 
 type ListAllDocPagesByAudienceRow struct {
 	ID             pgtype.UUID        `json:"id"`
@@ -287,8 +254,8 @@ type ListAllDocPagesByAudienceRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocPagesByAudienceParams) ([]ListAllDocPagesByAudienceRow, error) {
-	rows, err := q.db.Query(ctx, listAllDocPagesByAudience, arg.TenantID, arg.Audience)
+func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]ListAllDocPagesByAudienceRow, error) {
+	rows, err := q.db.Query(ctx, listAllDocPagesByAudience, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -323,14 +290,9 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, arg ListAllDocP
 const listDocPagesByAudience = `-- name: ListDocPagesByAudience :many
 SELECT id, title, slug, audience, review_status, parent_id, position, created_at
 FROM doc_pages
-WHERE tenant_id = $1 AND audience = $2 AND review_status = 'published'
+WHERE audience = $1 AND review_status = 'published'
 ORDER BY position ASC, title ASC
 `
-
-type ListDocPagesByAudienceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Audience string      `json:"audience"`
-}
 
 type ListDocPagesByAudienceRow struct {
 	ID           pgtype.UUID        `json:"id"`
@@ -343,8 +305,8 @@ type ListDocPagesByAudienceRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListDocPagesByAudience(ctx context.Context, arg ListDocPagesByAudienceParams) ([]ListDocPagesByAudienceRow, error) {
-	rows, err := q.db.Query(ctx, listDocPagesByAudience, arg.TenantID, arg.Audience)
+func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) ([]ListDocPagesByAudienceRow, error) {
+	rows, err := q.db.Query(ctx, listDocPagesByAudience, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -375,14 +337,9 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, arg ListDocPagesBy
 const listDocPagesTree = `-- name: ListDocPagesTree :many
 SELECT id, title, slug, audience, parent_id, position, review_status
 FROM doc_pages
-WHERE tenant_id = $1 AND audience = $2 AND review_status = 'published'
+WHERE audience = $1 AND review_status = 'published'
 ORDER BY position ASC
 `
-
-type ListDocPagesTreeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Audience string      `json:"audience"`
-}
 
 type ListDocPagesTreeRow struct {
 	ID           pgtype.UUID `json:"id"`
@@ -394,8 +351,8 @@ type ListDocPagesTreeRow struct {
 	ReviewStatus string      `json:"review_status"`
 }
 
-func (q *Queries) ListDocPagesTree(ctx context.Context, arg ListDocPagesTreeParams) ([]ListDocPagesTreeRow, error) {
-	rows, err := q.db.Query(ctx, listDocPagesTree, arg.TenantID, arg.Audience)
+func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]ListDocPagesTreeRow, error) {
+	rows, err := q.db.Query(ctx, listDocPagesTree, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +382,7 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, arg ListDocPagesTreePara
 const listPublishedDocPages = `-- name: ListPublishedDocPages :many
 SELECT id, title, slug, audience, parent_id, position, created_at
 FROM doc_pages
-WHERE tenant_id = $1 AND review_status = 'published'
+WHERE review_status = 'published'
 ORDER BY audience ASC, position ASC, title ASC
 `
 
@@ -439,8 +396,8 @@ type ListPublishedDocPagesRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListPublishedDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedDocPages, tenantID)
+func (q *Queries) ListPublishedDocPages(ctx context.Context) ([]ListPublishedDocPagesRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedDocPages)
 	if err != nil {
 		return nil, err
 	}
@@ -470,18 +427,17 @@ func (q *Queries) ListPublishedDocPages(ctx context.Context, tenantID pgtype.UUI
 const searchDocPages = `-- name: SearchDocPages :many
 SELECT id, title, slug, audience, content, parent_id, position, created_at
 FROM doc_pages
-WHERE tenant_id = $1 AND review_status = 'published'
-  AND ($2::text IS NULL OR audience = $2)
-  AND (title ILIKE '%' || $3::text || '%' OR content::text ILIKE '%' || $3::text || '%')
+WHERE review_status = 'published'
+ AND ($1::text IS NULL OR audience = $1)
+ AND (title ILIKE '%' || $2::text || '%' OR content::text ILIKE '%' || $2::text || '%')
 ORDER BY position ASC, title ASC
-LIMIT $4
+LIMIT $3
 `
 
 type SearchDocPagesParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Audience    *string     `json:"audience"`
-	Query       string      `json:"query"`
-	ResultLimit int32       `json:"result_limit"`
+	Audience    *string `json:"audience"`
+	Query       string  `json:"query"`
+	ResultLimit int32   `json:"result_limit"`
 }
 
 type SearchDocPagesRow struct {
@@ -496,12 +452,7 @@ type SearchDocPagesRow struct {
 }
 
 func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) ([]SearchDocPagesRow, error) {
-	rows, err := q.db.Query(ctx, searchDocPages,
-		arg.TenantID,
-		arg.Audience,
-		arg.Query,
-		arg.ResultLimit,
-	)
+	rows, err := q.db.Query(ctx, searchDocPages, arg.Audience, arg.Query, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -532,8 +483,8 @@ func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) 
 const updateDocPage = `-- name: UpdateDocPage :exec
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
-    last_reviewed_by = $4, last_reviewed_at = now(), updated_at = now()
-WHERE id = $5 AND tenant_id = $6
+ last_reviewed_by = $4, last_reviewed_at = now(), updated_at = now()
+WHERE id = $5
 `
 
 type UpdateDocPageParams struct {
@@ -542,7 +493,6 @@ type UpdateDocPageParams struct {
 	ReviewStatus   string      `json:"review_status"`
 	LastReviewedBy pgtype.UUID `json:"last_reviewed_by"`
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) error {
@@ -552,7 +502,6 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) er
 		arg.ReviewStatus,
 		arg.LastReviewedBy,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -560,23 +509,17 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) er
 const updateDocPageStatus = `-- name: UpdateDocPageStatus :exec
 UPDATE doc_pages
 SET review_status = $1, last_reviewed_by = $2,
-    last_reviewed_at = now(), updated_at = now()
-WHERE id = $3 AND tenant_id = $4
+ last_reviewed_at = now(), updated_at = now()
+WHERE id = $3
 `
 
 type UpdateDocPageStatusParams struct {
 	ReviewStatus   string      `json:"review_status"`
 	LastReviewedBy pgtype.UUID `json:"last_reviewed_by"`
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateDocPageStatus(ctx context.Context, arg UpdateDocPageStatusParams) error {
-	_, err := q.db.Exec(ctx, updateDocPageStatus,
-		arg.ReviewStatus,
-		arg.LastReviewedBy,
-		arg.ID,
-		arg.TenantID,
-	)
+	_, err := q.db.Exec(ctx, updateDocPageStatus, arg.ReviewStatus, arg.LastReviewedBy, arg.ID)
 	return err
 }

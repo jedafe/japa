@@ -13,12 +13,8 @@ import (
 
 const addPostToSeries = `-- name: AddPostToSeries :exec
 
-INSERT INTO blog_series_posts (series_id, content_id, position)
-VALUES (
-    $1,
-    $2,
-    COALESCE((SELECT MAX(position) + 1 FROM blog_series_posts WHERE series_id = $1), 0)
-)
+INSERT INTO blog_series_posts (series_id, content_id, position) VALUES ($1, $2, COALESCE((SELECT MAX(position) + 1 FROM blog_series_posts WHERE series_id = $1), 0))
+
 ON CONFLICT (series_id, content_id) DO NOTHING
 `
 
@@ -43,37 +39,30 @@ func (q *Queries) AddPostToSeries(ctx context.Context, arg AddPostToSeriesParams
 const bulkUpdateFeaturedOrder = `-- name: BulkUpdateFeaturedOrder :exec
 UPDATE content_featured
 SET featured_order = $1
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type BulkUpdateFeaturedOrderParams struct {
 	FeaturedOrder int32       `json:"featured_order"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 // M3: transactional bulk reorder — all-or-nothing.
 func (q *Queries) BulkUpdateFeaturedOrder(ctx context.Context, arg BulkUpdateFeaturedOrderParams) error {
-	_, err := q.db.Exec(ctx, bulkUpdateFeaturedOrder, arg.FeaturedOrder, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, bulkUpdateFeaturedOrder, arg.FeaturedOrder, arg.ID)
 	return err
 }
 
 const countBlogSeriesByAuthor = `-- name: CountBlogSeriesByAuthor :one
 SELECT COUNT(*)
 FROM blog_series bs
-WHERE bs.tenant_id = $1
-  AND bs.author_user_id = $2
-  AND bs.deleted_at IS NULL
+WHERE bs.author_user_id = $1
+ AND bs.deleted_at IS NULL
 `
 
-type CountBlogSeriesByAuthorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	AuthorUserID pgtype.UUID `json:"author_user_id"`
-}
-
 // Returns the total number of blog series for a given author.
-func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, arg CountBlogSeriesByAuthorParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, arg.TenantID, arg.AuthorUserID)
+func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, authorUserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -82,27 +71,25 @@ func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, arg CountBlogSeri
 const countBlogSeriesByTenant = `-- name: CountBlogSeriesByTenant :one
 SELECT COUNT(*)
 FROM blog_series bs
-WHERE bs.tenant_id = $1
-  AND bs.deleted_at IS NULL
-  AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR EXISTS (
-      SELECT 1 FROM blog_series_posts bsp2
-      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
-      WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
-  ))
+WHERE bs.deleted_at IS NULL
+ AND ($1::text IS NULL OR bs.title ILIKE '%' || $1 || '%' OR bs.slug ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = $2::text
+ ))
 `
 
 type CountBlogSeriesByTenantParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Q           string      `json:"q"`
-	ContentType string      `json:"content_type"`
+	Q           string `json:"q"`
+	ContentType string `json:"content_type"`
 }
 
 // Returns the total number of tenant-scoped blog series for pagination meta.
 // L2: mirrors the q filter used by ListBlogSeriesByTenant so the total
 // reflects the active search.
 func (q *Queries) CountBlogSeriesByTenant(ctx context.Context, arg CountBlogSeriesByTenantParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByTenant, arg.TenantID, arg.Q, arg.ContentType)
+	row := q.db.QueryRow(ctx, countBlogSeriesByTenant, arg.Q, arg.ContentType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -112,16 +99,15 @@ const countFeaturedBlogPostCards = `-- name: CountFeaturedBlogPostCards :one
 SELECT COUNT(*)
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
-WHERE cf.tenant_id = $1
-  AND (cf.featured_until IS NULL OR cf.featured_until > now())
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.content_type = 'blog_post'
+WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.content_type = 'blog_post'
 `
 
 // Returns the total number of active featured blog posts for pagination meta.
-func (q *Queries) CountFeaturedBlogPostCards(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countFeaturedBlogPostCards, tenantID)
+func (q *Queries) CountFeaturedBlogPostCards(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countFeaturedBlogPostCards)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -129,24 +115,22 @@ func (q *Queries) CountFeaturedBlogPostCards(ctx context.Context, tenantID pgtyp
 
 const countPublishedBlogPosts = `-- name: CountPublishedBlogPosts :one
 SELECT COUNT(*) FROM contents c
-WHERE c.tenant_id = $1
-  AND c.content_type = 'blog_post'
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND ($3::uuid IS NULL OR c.author_id = $3)
-  AND ($4::uuid IS NULL OR EXISTS (
-      SELECT 1 FROM blog_series_posts bsp
-      WHERE bsp.content_id = c.id AND bsp.series_id = $4))
-  AND ($5::text IS NULL OR EXISTS (
-      SELECT 1 FROM content_tags ct2
-      JOIN tags t2 ON t2.id = ct2.tag_id
-      WHERE ct2.content_id = c.id AND t2.slug = $5))
+WHERE c.content_type = 'blog_post'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND ($2::uuid IS NULL OR c.author_id = $2)
+ AND ($3::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp
+ WHERE bsp.content_id = c.id AND bsp.series_id = $3))
+ AND ($4::text IS NULL OR EXISTS (
+ SELECT 1 FROM content_tags ct2
+ JOIN tags t2 ON t2.id = ct2.tag_id
+ WHERE ct2.content_id = c.id AND t2.slug = $4))
 `
 
 type CountPublishedBlogPostsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	SpaceID  pgtype.UUID `json:"space_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 	SeriesID pgtype.UUID `json:"series_id"`
@@ -158,7 +142,6 @@ type CountPublishedBlogPostsParams struct {
 // pagination total reflects the active filter set.
 func (q *Queries) CountPublishedBlogPosts(ctx context.Context, arg CountPublishedBlogPostsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countPublishedBlogPosts,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.AuthorID,
 		arg.SeriesID,
@@ -172,18 +155,12 @@ func (q *Queries) CountPublishedBlogPosts(ctx context.Context, arg CountPublishe
 const createBlogSeries = `-- name: CreateBlogSeries :one
 
 
-INSERT INTO blog_series (
-    tenant_id, title, slug, description, cover_image_id, author_user_id
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6
-)
-RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at, deleted_at
+INSERT INTO blog_series (title, slug, description, cover_image_id, author_user_id) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type CreateBlogSeriesParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	Title        string      `json:"title"`
 	Slug         string      `json:"slug"`
 	Description  *string     `json:"description"`
@@ -191,24 +168,35 @@ type CreateBlogSeriesParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 }
 
+type CreateBlogSeriesRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	CoverImageID pgtype.UUID        `json:"cover_image_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	Status       string             `json:"status"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // Blog Extension — series, content reviews, featured posts, RSS feed.
 // Ref: japaconnect-engineering/sections/24-blog-extension.md
 // =====================
 // Blog Series
 // =====================
-func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesParams) (BlogSeries, error) {
+func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesParams) (CreateBlogSeriesRow, error) {
 	row := q.db.QueryRow(ctx, createBlogSeries,
-		arg.TenantID,
 		arg.Title,
 		arg.Slug,
 		arg.Description,
 		arg.CoverImageID,
 		arg.AuthorUserID,
 	)
-	var i BlogSeries
+	var i CreateBlogSeriesRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -224,17 +212,12 @@ func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesPara
 
 const createContentReview = `-- name: CreateContentReview :one
 
-INSERT INTO content_reviews (
-    tenant_id, content_id, reviewer_user_id, status, feedback
-) VALUES (
-    $1, $2, $3, $4, $5
-)
-RETURNING id, tenant_id, content_id, reviewer_user_id, status, feedback,
-          created_at, updated_at, deleted_at
+INSERT INTO content_reviews (content_id, reviewer_user_id, status, feedback) VALUES ($1, $2, $3, $4)
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
 `
 
 type CreateContentReviewParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ContentID      pgtype.UUID `json:"content_id"`
 	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
 	Status         string      `json:"status"`
@@ -243,7 +226,6 @@ type CreateContentReviewParams struct {
 
 type CreateContentReviewRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -258,7 +240,6 @@ type CreateContentReviewRow struct {
 // =====================
 func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentReviewParams) (CreateContentReviewRow, error) {
 	row := q.db.QueryRow(ctx, createContentReview,
-		arg.TenantID,
 		arg.ContentID,
 		arg.ReviewerUserID,
 		arg.Status,
@@ -267,7 +248,6 @@ func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentRevi
 	var i CreateContentReviewRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ReviewerUserID,
 		&i.Status,
@@ -282,34 +262,24 @@ func (q *Queries) CreateContentReview(ctx context.Context, arg CreateContentRevi
 const deleteBlogSeries = `-- name: DeleteBlogSeries :exec
 UPDATE blog_series
 SET deleted_at = now(), status = 'archived', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DeleteBlogSeriesParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Soft-delete (Rule 11): blog_series is user-authored content.
-func (q *Queries) DeleteBlogSeries(ctx context.Context, arg DeleteBlogSeriesParams) error {
-	_, err := q.db.Exec(ctx, deleteBlogSeries, arg.ID, arg.TenantID)
+func (q *Queries) DeleteBlogSeries(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBlogSeries, id)
 	return err
 }
 
 const deleteContentReview = `-- name: DeleteContentReview :exec
 UPDATE content_reviews
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DeleteContentReviewParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Soft-delete (Rule 11 / H1): content_reviews is editorial audit history.
-func (q *Queries) DeleteContentReview(ctx context.Context, arg DeleteContentReviewParams) error {
-	_, err := q.db.Exec(ctx, deleteContentReview, arg.ID, arg.TenantID)
+func (q *Queries) DeleteContentReview(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContentReview, id)
 	return err
 }
 
@@ -327,7 +297,7 @@ const expireFeaturedPosts = `-- name: ExpireFeaturedPosts :exec
 UPDATE content_featured
 SET featured_until = now()
 WHERE featured_until IS NOT NULL AND featured_until <= now()
-  AND featured_until > '2000-01-01'
+ AND featured_until > '2000-01-01'
 `
 
 func (q *Queries) ExpireFeaturedPosts(ctx context.Context) error {
@@ -337,38 +307,35 @@ func (q *Queries) ExpireFeaturedPosts(ctx context.Context) error {
 
 const featureContent = `-- name: FeatureContent :one
 
-INSERT INTO content_featured (
-    tenant_id, content_id, featured_order, featured_until
-) VALUES (
-    $1, $2, $3, $4
-)
-ON CONFLICT (tenant_id, content_id) DO UPDATE
-    SET featured_order = $3,
-        featured_until = $4
-RETURNING id, tenant_id, content_id, featured_order, featured_until, created_at
+INSERT INTO content_featured (content_id, featured_order, featured_until) VALUES ($1, $2, $3)
+ON CONFLICT (content_id) DO UPDATE
+ SET featured_order = $2,
+ featured_until = $3
+RETURNING id, content_id, featured_order, featured_until, created_at
 `
 
 type FeatureContentParams struct {
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
 	FeaturedOrder int32              `json:"featured_order"`
 	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
 }
 
+type FeatureContentRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	FeaturedOrder int32              `json:"featured_order"`
+	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Content Featured
 // =====================
-func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) (ContentFeatured, error) {
-	row := q.db.QueryRow(ctx, featureContent,
-		arg.TenantID,
-		arg.ContentID,
-		arg.FeaturedOrder,
-		arg.FeaturedUntil,
-	)
-	var i ContentFeatured
+func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) (FeatureContentRow, error) {
+	row := q.db.QueryRow(ctx, featureContent, arg.ContentID, arg.FeaturedOrder, arg.FeaturedUntil)
+	var i FeatureContentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.FeaturedOrder,
 		&i.FeaturedUntil,
@@ -379,37 +346,36 @@ func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) 
 
 const getBlogPostDetail = `-- name: GetBlogPostDetail :one
 
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
-       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count,
-       c.source_country, c.target_country,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       c.share_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       m.storage_bucket AS featured_storage_bucket,
-       m.storage_path AS featured_storage_path,
-       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
-       bs.id AS series_id,
-       bs.title AS series_title,
-       bs.slug AS series_slug,
-       bsp.position AS series_part,
-       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
-       COALESCE(prev_c.slug, '') AS series_prev_slug,
-       COALESCE(next_c.slug, '') AS series_next_slug
+SELECT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+ c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.read_time_minutes, c.view_count,
+ c.source_country, c.target_country,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ c.share_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ m.storage_bucket AS featured_storage_bucket,
+ m.storage_path AS featured_storage_path,
+ COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ bs.id AS series_id,
+ bs.title AS series_title,
+ bs.slug AS series_slug,
+ bsp.position AS series_part,
+ (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+ COALESCE(prev_c.slug, '') AS series_prev_slug,
+ COALESCE(next_c.slug, '') AS series_next_slug
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
@@ -420,45 +386,43 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 LEFT JOIN LATERAL (
-    SELECT c3.slug
-    FROM blog_series_posts bsp4
-    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
-    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
-    ORDER BY bsp4.position DESC
-    LIMIT 1
+ SELECT c3.slug
+ FROM blog_series_posts bsp4
+ JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+ WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+ ORDER BY bsp4.position DESC
+ LIMIT 1
 ) prev_c ON true
 LEFT JOIN LATERAL (
-    SELECT c2.slug
-    FROM blog_series_posts bsp3
-    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
-    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
-    ORDER BY bsp3.position ASC
-    LIMIT 1
+ SELECT c2.slug
+ FROM blog_series_posts bsp3
+ JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+ WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+ ORDER BY bsp3.position ASC
+ LIMIT 1
 ) next_c ON true
-WHERE c.slug = $1 AND c.tenant_id = $2
-  AND c.content_type = 'blog_post'
-  AND c.deleted_at IS NULL
-  AND (
-    c.status = 'published'
-    OR c.author_id = $3::uuid
-    OR COALESCE($4::boolean, false) = true
-  )
+WHERE c.slug = $1
+ AND c.content_type = 'blog_post'
+ AND c.deleted_at IS NULL
+ AND (
+ c.status = 'published'
+ OR c.author_id = $2::uuid
+ OR COALESCE($3::boolean, false) = true
+ )
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
-         m.storage_bucket, m.storage_path,
-         bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug
+ m.storage_bucket, m.storage_path,
+ bs.id, bs.title, bs.slug, bsp.position,
+ prev_c.slug, next_c.slug
 `
 
 type GetBlogPostDetailParams struct {
 	Slug         string      `json:"slug"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	ViewerUserID pgtype.UUID `json:"viewer_user_id"`
 	IsSuperAdmin *bool       `json:"is_super_admin"`
 }
 
 type GetBlogPostDetailRow struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	SpaceID               pgtype.UUID        `json:"space_id"`
 	ContentType           string             `json:"content_type"`
@@ -514,16 +478,10 @@ type GetBlogPostDetailRow struct {
 // C4: enriched DTO with author name, avatar, featured image, space name,
 // tags, and series navigation (prev/next within the series).
 func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailParams) (GetBlogPostDetailRow, error) {
-	row := q.db.QueryRow(ctx, getBlogPostDetail,
-		arg.Slug,
-		arg.TenantID,
-		arg.ViewerUserID,
-		arg.IsSuperAdmin,
-	)
+	row := q.db.QueryRow(ctx, getBlogPostDetail, arg.Slug, arg.ViewerUserID, arg.IsSuperAdmin)
 	var i GetBlogPostDetailRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -576,23 +534,30 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 }
 
 const getBlogSeriesByID = `-- name: GetBlogSeriesByID :one
-SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at, deleted_at
+SELECT id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetBlogSeriesByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetBlogSeriesByIDRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	CoverImageID pgtype.UUID        `json:"cover_image_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	Status       string             `json:"status"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetBlogSeriesByID(ctx context.Context, arg GetBlogSeriesByIDParams) (BlogSeries, error) {
-	row := q.db.QueryRow(ctx, getBlogSeriesByID, arg.ID, arg.TenantID)
-	var i BlogSeries
+func (q *Queries) GetBlogSeriesByID(ctx context.Context, id pgtype.UUID) (GetBlogSeriesByIDRow, error) {
+	row := q.db.QueryRow(ctx, getBlogSeriesByID, id)
+	var i GetBlogSeriesByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -607,23 +572,17 @@ func (q *Queries) GetBlogSeriesByID(ctx context.Context, arg GetBlogSeriesByIDPa
 }
 
 const getBlogSeriesBySlug = `-- name: GetBlogSeriesBySlug :one
-SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
-       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path
+SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+ bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path
 FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
-WHERE bs.slug = $1 AND bs.tenant_id = $2 AND bs.deleted_at IS NULL
+WHERE bs.slug = $1 AND bs.deleted_at IS NULL
 `
-
-type GetBlogSeriesBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetBlogSeriesBySlugRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Slug               string             `json:"slug"`
 	Description        *string            `json:"description"`
@@ -637,12 +596,11 @@ type GetBlogSeriesBySlugRow struct {
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 }
 
-func (q *Queries) GetBlogSeriesBySlug(ctx context.Context, arg GetBlogSeriesBySlugParams) (GetBlogSeriesBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getBlogSeriesBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetBlogSeriesBySlug(ctx context.Context, slug string) (GetBlogSeriesBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getBlogSeriesBySlug, slug)
 	var i GetBlogSeriesBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -659,20 +617,14 @@ func (q *Queries) GetBlogSeriesBySlug(ctx context.Context, arg GetBlogSeriesBySl
 }
 
 const getContentReviewByID = `-- name: GetContentReviewByID :one
-SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at, deleted_at
+SELECT id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetContentReviewByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentReviewByIDRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -682,12 +634,11 @@ type GetContentReviewByIDRow struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetContentReviewByID(ctx context.Context, arg GetContentReviewByIDParams) (GetContentReviewByIDRow, error) {
-	row := q.db.QueryRow(ctx, getContentReviewByID, arg.ID, arg.TenantID)
+func (q *Queries) GetContentReviewByID(ctx context.Context, id pgtype.UUID) (GetContentReviewByIDRow, error) {
+	row := q.db.QueryRow(ctx, getContentReviewByID, id)
 	var i GetContentReviewByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ReviewerUserID,
 		&i.Status,
@@ -716,30 +667,24 @@ SELECT bsp.series_id
 FROM blog_series_posts bsp
 JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 WHERE bsp.content_id = $1
-  AND bs.tenant_id = $2
 `
-
-type GetSeriesForContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
 
 // Returns the series_id for a given content_id, or no rows if the content
 // is not part of any series. Used by the editor load to restore the series
 // selector when editing existing content. BUG-009: tenant-scoped to
 // prevent cross-tenant information disclosure.
-func (q *Queries) GetSeriesForContent(ctx context.Context, arg GetSeriesForContentParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getSeriesForContent, arg.ContentID, arg.TenantID)
+func (q *Queries) GetSeriesForContent(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getSeriesForContent, contentID)
 	var series_id pgtype.UUID
 	err := row.Scan(&series_id)
 	return series_id, err
 }
 
 const insertSeriesPostWithPosition = `-- name: InsertSeriesPostWithPosition :exec
-INSERT INTO blog_series_posts (series_id, content_id, position)
-VALUES ($1, $2, $3)
+INSERT INTO blog_series_posts (series_id, content_id, position) VALUES ($1, $2, $3)
+
 ON CONFLICT (series_id, content_id) DO UPDATE
-    SET position = $3
+ SET position = $3
 `
 
 type InsertSeriesPostWithPositionParams struct {
@@ -757,39 +702,36 @@ func (q *Queries) InsertSeriesPostWithPosition(ctx context.Context, arg InsertSe
 }
 
 const listAdminBlogPosts = `-- name: ListAdminBlogPosts :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
-       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count,
-       c.source_country, c.target_country,
-       (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND tenant_id = c.tenant_id AND deleted_at IS NULL) AS comment_count,
-       c.share_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+SELECT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+ c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.read_time_minutes, c.view_count,
+ c.source_country, c.target_country,
+ (SELECT COUNT(*) FROM comments WHERE content_id = c.id AND deleted_at IS NULL) AS comment_count,
+ c.share_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(LEFT(c.body, 200), '') AS excerpt
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'blog_post'
-  AND c.deleted_at IS NULL
+WHERE c.content_type = 'blog_post'
+ AND c.deleted_at IS NULL
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListAdminBlogPostsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListAdminBlogPostsRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -832,7 +774,7 @@ type ListAdminBlogPostsRow struct {
 // showed "—" for every author). Admin sees all statuses (not just
 // published); deleted_at filtered per Rule 11. Offset-paginated per Rule 5.
 func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPostsParams) ([]ListAdminBlogPostsRow, error) {
-	rows, err := q.db.Query(ctx, listAdminBlogPosts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listAdminBlogPosts, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -842,7 +784,6 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 		var i ListAdminBlogPostsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -890,20 +831,19 @@ func (q *Queries) ListAdminBlogPosts(ctx context.Context, arg ListAdminBlogPosts
 }
 
 const listBlogSeriesByAuthor = `-- name: ListBlogSeriesByAuthor :many
-SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
-       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path
+SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+ bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path
 FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
-WHERE bs.tenant_id = $1 AND bs.author_user_id = $2
-  AND bs.deleted_at IS NULL
+WHERE bs.author_user_id = $1
+ AND bs.deleted_at IS NULL
 ORDER BY bs.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListBlogSeriesByAuthorParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 	PageOffset   int32       `json:"page_offset"`
 	PageLimit    int32       `json:"page_limit"`
@@ -911,7 +851,6 @@ type ListBlogSeriesByAuthorParams struct {
 
 type ListBlogSeriesByAuthorRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Slug               string             `json:"slug"`
 	Description        *string            `json:"description"`
@@ -926,12 +865,7 @@ type ListBlogSeriesByAuthorRow struct {
 }
 
 func (q *Queries) ListBlogSeriesByAuthor(ctx context.Context, arg ListBlogSeriesByAuthorParams) ([]ListBlogSeriesByAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listBlogSeriesByAuthor,
-		arg.TenantID,
-		arg.AuthorUserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listBlogSeriesByAuthor, arg.AuthorUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -941,7 +875,6 @@ func (q *Queries) ListBlogSeriesByAuthor(ctx context.Context, arg ListBlogSeries
 		var i ListBlogSeriesByAuthorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -965,36 +898,34 @@ func (q *Queries) ListBlogSeriesByAuthor(ctx context.Context, arg ListBlogSeries
 }
 
 const listBlogSeriesByTenant = `-- name: ListBlogSeriesByTenant :many
-SELECT bs.id, bs.tenant_id, bs.title, bs.slug, bs.description, bs.cover_image_id,
-       bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path
+SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
+ bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path
 FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
-WHERE bs.tenant_id = $1 AND bs.deleted_at IS NULL
-  AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
-  -- §14 generic featured/series tabs: optional content_type filter limits the
-  -- series directory to series containing a published item of that type.
-  AND ($3::text = '' OR EXISTS (
-      SELECT 1 FROM blog_series_posts bsp2
-      JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
-      WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
-  ))
+WHERE bs.deleted_at IS NULL
+ AND ($1::text IS NULL OR bs.title ILIKE '%' || $1 || '%' OR bs.slug ILIKE '%' || $1 || '%')
+ -- §14 generic featured/series tabs: optional content_type filter limits the
+ -- series directory to series containing a published item of that type.
+ AND ($2::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = $2::text
+ ))
 ORDER BY bs.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListBlogSeriesByTenantParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Q           string      `json:"q"`
-	ContentType string      `json:"content_type"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	Q           string `json:"q"`
+	ContentType string `json:"content_type"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
 }
 
 type ListBlogSeriesByTenantRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Slug               string             `json:"slug"`
 	Description        *string            `json:"description"`
@@ -1010,7 +941,6 @@ type ListBlogSeriesByTenantRow struct {
 
 func (q *Queries) ListBlogSeriesByTenant(ctx context.Context, arg ListBlogSeriesByTenantParams) ([]ListBlogSeriesByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listBlogSeriesByTenant,
-		arg.TenantID,
 		arg.Q,
 		arg.ContentType,
 		arg.PageOffset,
@@ -1025,7 +955,6 @@ func (q *Queries) ListBlogSeriesByTenant(ctx context.Context, arg ListBlogSeries
 		var i ListBlogSeriesByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Description,
@@ -1049,21 +978,15 @@ func (q *Queries) ListBlogSeriesByTenant(ctx context.Context, arg ListBlogSeries
 }
 
 const listContentReviewsByContent = `-- name: ListContentReviewsByContent :many
-SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at, deleted_at
+SELECT id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE content_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE content_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 `
 
-type ListContentReviewsByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
 type ListContentReviewsByContentRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -1073,8 +996,8 @@ type ListContentReviewsByContentRow struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListContentReviewsByContentParams) ([]ListContentReviewsByContentRow, error) {
-	rows, err := q.db.Query(ctx, listContentReviewsByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) ListContentReviewsByContent(ctx context.Context, contentID pgtype.UUID) ([]ListContentReviewsByContentRow, error) {
+	rows, err := q.db.Query(ctx, listContentReviewsByContent, contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -1084,7 +1007,6 @@ func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListConte
 		var i ListContentReviewsByContentRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.ReviewerUserID,
 			&i.Status,
@@ -1105,47 +1027,44 @@ func (q *Queries) ListContentReviewsByContent(ctx context.Context, arg ListConte
 
 const listFeaturedBlogPostCards = `-- name: ListFeaturedBlogPostCards :many
 SELECT cf.id AS featured_id, cf.content_id, cf.featured_order, cf.featured_until,
-       c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
-       c.source_country, c.target_country,
-       c.view_count,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.author_id,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       m.storage_bucket AS featured_storage_bucket,
-       m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt,
-       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
-        FROM content_tags ct
-        JOIN tags t ON t.id = ct.tag_id
-        WHERE ct.content_id = c.id) AS tags_csv
+ c.title, c.slug, c.body, c.body_html, c.read_time_minutes,
+ c.source_country, c.target_country,
+ c.view_count,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.author_id,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ m.storage_bucket AS featured_storage_bucket,
+ m.storage_path AS featured_storage_path,
+ COALESCE(LEFT(c.body, 200), '') AS excerpt,
+ (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+ FROM content_tags ct
+ JOIN tags t ON t.id = ct.tag_id
+ WHERE ct.content_id = c.id) AS tags_csv
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
-WHERE cf.tenant_id = $1
-  AND (cf.featured_until IS NULL OR cf.featured_until > now())
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.content_type = 'blog_post'
+WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.content_type = 'blog_post'
 ORDER BY cf.featured_order ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListFeaturedBlogPostCardsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListFeaturedBlogPostCardsRow struct {
@@ -1176,7 +1095,7 @@ type ListFeaturedBlogPostCardsRow struct {
 
 // H6: JOIN content_featured → contents → media → users for the featured tab.
 func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeaturedBlogPostCardsParams) ([]ListFeaturedBlogPostCardsRow, error) {
-	rows, err := q.db.Query(ctx, listFeaturedBlogPostCards, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listFeaturedBlogPostCards, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1220,33 +1139,38 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 }
 
 const listFeaturedPosts = `-- name: ListFeaturedPosts :many
-SELECT cf.id, cf.tenant_id, cf.content_id, cf.featured_order,
-       cf.featured_until, cf.created_at
+SELECT cf.id, cf.content_id, cf.featured_order,
+ cf.featured_until, cf.created_at
 FROM content_featured cf
-WHERE cf.tenant_id = $1
-  AND (cf.featured_until IS NULL OR cf.featured_until > now())
+WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
 ORDER BY cf.featured_order ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListFeaturedPostsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsParams) ([]ContentFeatured, error) {
-	rows, err := q.db.Query(ctx, listFeaturedPosts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+type ListFeaturedPostsRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ContentID     pgtype.UUID        `json:"content_id"`
+	FeaturedOrder int32              `json:"featured_order"`
+	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsParams) ([]ListFeaturedPostsRow, error) {
+	rows, err := q.db.Query(ctx, listFeaturedPosts, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentFeatured
+	var items []ListFeaturedPostsRow
 	for rows.Next() {
-		var i ContentFeatured
+		var i ListFeaturedPostsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.FeaturedOrder,
 			&i.FeaturedUntil,
@@ -1263,23 +1187,21 @@ func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsPa
 }
 
 const listPendingContentReviews = `-- name: ListPendingContentReviews :many
-SELECT id, tenant_id, content_id, reviewer_user_id, status, feedback,
-       created_at, updated_at, deleted_at
+SELECT id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
 FROM content_reviews
-WHERE tenant_id = $1 AND status = 'pending' AND deleted_at IS NULL
+WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListPendingContentReviewsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListPendingContentReviewsRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -1290,7 +1212,7 @@ type ListPendingContentReviewsRow struct {
 }
 
 func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPendingContentReviewsParams) ([]ListPendingContentReviewsRow, error) {
-	rows, err := q.db.Query(ctx, listPendingContentReviews, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPendingContentReviews, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1300,7 +1222,6 @@ func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPending
 		var i ListPendingContentReviewsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.ReviewerUserID,
 			&i.Status,
@@ -1321,28 +1242,26 @@ func (q *Queries) ListPendingContentReviews(ctx context.Context, arg ListPending
 
 const listPendingReviewSummaries = `-- name: ListPendingReviewSummaries :many
 SELECT cr.id, cr.content_id, cr.status, cr.created_at AS submitted_at,
-       cr.feedback,
-       c.title, c.slug, c.author_id,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt
+ cr.feedback,
+ c.title, c.slug, c.author_id,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(LEFT(c.body, 200), '') AS excerpt
 FROM content_reviews cr
 JOIN contents c ON c.id = cr.content_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE cr.tenant_id = $1
-  AND cr.status = 'pending'
-  AND cr.deleted_at IS NULL
-  AND c.deleted_at IS NULL
-  AND c.content_type = 'blog_post'
+WHERE cr.status = 'pending'
+ AND cr.deleted_at IS NULL
+ AND c.deleted_at IS NULL
+ AND c.content_type = 'blog_post'
 ORDER BY cr.created_at ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListPendingReviewSummariesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListPendingReviewSummariesRow struct {
@@ -1362,7 +1281,7 @@ type ListPendingReviewSummariesRow struct {
 // C3: JOIN content_reviews → contents → users for the admin review-queue.
 // Returns the post title/slug/author/excerpt the frontend ReviewItem expects.
 func (q *Queries) ListPendingReviewSummaries(ctx context.Context, arg ListPendingReviewSummariesParams) ([]ListPendingReviewSummariesRow, error) {
-	rows, err := q.db.Query(ctx, listPendingReviewSummaries, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPendingReviewSummaries, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1395,21 +1314,15 @@ func (q *Queries) ListPendingReviewSummaries(ctx context.Context, arg ListPendin
 
 const listPostsInSeries = `-- name: ListPostsInSeries :many
 SELECT bsp.series_id, bsp.content_id, bsp.position,
-       c.id AS content_id, c.title, c.slug, c.status, c.created_at
+ c.id AS content_id, c.title, c.slug, c.status, c.created_at
 FROM blog_series_posts bsp
 JOIN contents c ON c.id = bsp.content_id
 JOIN blog_series bs ON bs.id = bsp.series_id
 WHERE bsp.series_id = $1
-  AND bs.tenant_id = $2
-  AND c.deleted_at IS NULL
-  AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.status = 'published'
 ORDER BY bsp.position ASC
 `
-
-type ListPostsInSeriesParams struct {
-	SeriesID pgtype.UUID `json:"series_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type ListPostsInSeriesRow struct {
 	SeriesID    pgtype.UUID        `json:"series_id"`
@@ -1424,8 +1337,8 @@ type ListPostsInSeriesRow struct {
 
 // H5: filter deleted_at + published-only so public series detail pages do
 // not leak drafts.
-func (q *Queries) ListPostsInSeries(ctx context.Context, arg ListPostsInSeriesParams) ([]ListPostsInSeriesRow, error) {
-	rows, err := q.db.Query(ctx, listPostsInSeries, arg.SeriesID, arg.TenantID)
+func (q *Queries) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]ListPostsInSeriesRow, error) {
+	rows, err := q.db.Query(ctx, listPostsInSeries, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -1454,61 +1367,58 @@ func (q *Queries) ListPostsInSeries(ctx context.Context, arg ListPostsInSeriesPa
 }
 
 const listPublishedBlogPosts = `-- name: ListPublishedBlogPosts :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
-       c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
-       c.read_time_minutes, c.view_count,
-       c.source_country, c.target_country,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       c.share_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       m.storage_bucket AS featured_storage_bucket,
-       m.storage_path AS featured_storage_path,
-       COALESCE(LEFT(c.body, 200), '') AS excerpt,
-       (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
-        FROM content_tags ct
-        JOIN tags t ON t.id = ct.tag_id
-        WHERE ct.content_id = c.id) AS tags_csv
+SELECT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url,
+ c.seo_indexable, c.status, c.visibility, c.is_locked, c.is_pinned,
+ c.read_time_minutes, c.view_count,
+ c.source_country, c.target_country,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ c.share_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ m.storage_bucket AS featured_storage_bucket,
+ m.storage_path AS featured_storage_path,
+ COALESCE(LEFT(c.body, 200), '') AS excerpt,
+ (SELECT COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')
+ FROM content_tags ct
+ JOIN tags t ON t.id = ct.tag_id
+ WHERE ct.content_id = c.id) AS tags_csv
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
-WHERE c.tenant_id = $1
-  AND c.content_type = 'blog_post'
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND ($3::uuid IS NULL OR c.author_id = $3)
-  AND ($4::uuid IS NULL OR EXISTS (
-      SELECT 1 FROM blog_series_posts bsp
-      WHERE bsp.content_id = c.id AND bsp.series_id = $4))
-  AND ($5::text IS NULL OR EXISTS (
-      SELECT 1 FROM content_tags ct2
-      JOIN tags t2 ON t2.id = ct2.tag_id
-      WHERE ct2.content_id = c.id AND t2.slug = $5))
+WHERE c.content_type = 'blog_post'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND ($2::uuid IS NULL OR c.author_id = $2)
+ AND ($3::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp
+ WHERE bsp.content_id = c.id AND bsp.series_id = $3))
+ AND ($4::text IS NULL OR EXISTS (
+ SELECT 1 FROM content_tags ct2
+ JOIN tags t2 ON t2.id = ct2.tag_id
+ WHERE ct2.content_id = c.id AND t2.slug = $4))
 ORDER BY
-    CASE WHEN $6::text = 'top' THEN c.view_count END DESC,
-    CASE WHEN $6::text = 'top' THEN c.reshare_count END DESC,
-    c.created_at DESC, c.id DESC
-LIMIT $8 OFFSET $7
+ CASE WHEN $5::text = 'top' THEN c.view_count END DESC,
+ CASE WHEN $5::text = 'top' THEN c.reshare_count END DESC,
+ c.created_at DESC, c.id DESC
+LIMIT $7 OFFSET $6
 `
 
 type ListPublishedBlogPostsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
 	SeriesID   pgtype.UUID `json:"series_id"`
@@ -1520,7 +1430,6 @@ type ListPublishedBlogPostsParams struct {
 
 type ListPublishedBlogPostsRow struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	SpaceID               pgtype.UUID        `json:"space_id"`
 	ContentType           string             `json:"content_type"`
@@ -1571,7 +1480,6 @@ type ListPublishedBlogPostsRow struct {
 // /blog/featured endpoint. All filters are optional (NULL = no filter).
 func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedBlogPostsParams) ([]ListPublishedBlogPostsRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedBlogPosts,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.AuthorID,
 		arg.SeriesID,
@@ -1589,7 +1497,6 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 		var i ListPublishedBlogPostsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -1644,21 +1551,15 @@ func (q *Queries) ListPublishedBlogPosts(ctx context.Context, arg ListPublishedB
 const listPublishedPostsForRSS = `-- name: ListPublishedPostsForRSS :many
 
 SELECT c.id, c.title, c.slug, c.body_html, c.body, c.author_id,
-       c.published_at, c.created_at, c.read_time_minutes
+ c.published_at, c.created_at, c.read_time_minutes
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.status = 'published'
-  AND c.content_type = 'blog_post'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
+WHERE c.status = 'published'
+ AND c.content_type = 'blog_post'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST
-LIMIT $2
+LIMIT $1
 `
-
-type ListPublishedPostsForRSSParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	PageLimit int32       `json:"page_limit"`
-}
 
 type ListPublishedPostsForRSSRow struct {
 	ID              pgtype.UUID        `json:"id"`
@@ -1679,8 +1580,8 @@ type ListPublishedPostsForRSSRow struct {
 // RSS-002: filter auto_hidden = false so spam/auto-hidden posts don't leak
 // into the public blog RSS feed (matches every query in rss.sql, §51).
 // RSS-007: NULLS LAST so a NULL published_at doesn't sort ahead of real dates.
-func (q *Queries) ListPublishedPostsForRSS(ctx context.Context, arg ListPublishedPostsForRSSParams) ([]ListPublishedPostsForRSSRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedPostsForRSS, arg.TenantID, arg.PageLimit)
+func (q *Queries) ListPublishedPostsForRSS(ctx context.Context, pageLimit int32) ([]ListPublishedPostsForRSSRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedPostsForRSS, pageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1743,27 +1644,22 @@ func (q *Queries) ReorderSeriesPosts(ctx context.Context, arg ReorderSeriesPosts
 
 const unfeatureContent = `-- name: UnfeatureContent :exec
 DELETE FROM content_featured
-WHERE tenant_id = $1 AND content_id = $2
+WHERE content_id = $1
 `
 
-type UnfeatureContentParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	ContentID pgtype.UUID `json:"content_id"`
-}
-
-func (q *Queries) UnfeatureContent(ctx context.Context, arg UnfeatureContentParams) error {
-	_, err := q.db.Exec(ctx, unfeatureContent, arg.TenantID, arg.ContentID)
+func (q *Queries) UnfeatureContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unfeatureContent, contentID)
 	return err
 }
 
 const updateBlogSeries = `-- name: UpdateBlogSeries :one
 UPDATE blog_series
 SET title = $1, slug = $2, description = $3,
-    cover_image_id = $4, status = $5,
-    updated_at = now()
-WHERE id = $6 AND tenant_id = $7 AND deleted_at IS NULL
-RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at, deleted_at
+ cover_image_id = $4, status = $5,
+ updated_at = now()
+WHERE id = $6 AND deleted_at IS NULL
+RETURNING id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type UpdateBlogSeriesParams struct {
@@ -1773,10 +1669,22 @@ type UpdateBlogSeriesParams struct {
 	CoverImageID pgtype.UUID `json:"cover_image_id"`
 	Status       string      `json:"status"`
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesParams) (BlogSeries, error) {
+type UpdateBlogSeriesRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	CoverImageID pgtype.UUID        `json:"cover_image_id"`
+	AuthorUserID pgtype.UUID        `json:"author_user_id"`
+	Status       string             `json:"status"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesParams) (UpdateBlogSeriesRow, error) {
 	row := q.db.QueryRow(ctx, updateBlogSeries,
 		arg.Title,
 		arg.Slug,
@@ -1784,12 +1692,10 @@ func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesPara
 		arg.CoverImageID,
 		arg.Status,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i BlogSeries
+	var i UpdateBlogSeriesRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -1806,11 +1712,11 @@ func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesPara
 const updateContentReviewStatus = `-- name: UpdateContentReviewStatus :one
 UPDATE content_reviews
 SET status = $1, feedback = $2,
-    reviewer_user_id = COALESCE($3, reviewer_user_id),
-    updated_at = now()
-WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, reviewer_user_id, status, feedback,
-          created_at, updated_at, deleted_at
+ reviewer_user_id = COALESCE($3, reviewer_user_id),
+ updated_at = now()
+WHERE id = $4 AND deleted_at IS NULL
+RETURNING id, content_id, reviewer_user_id, status, feedback,
+ created_at, updated_at, deleted_at
 `
 
 type UpdateContentReviewStatusParams struct {
@@ -1818,12 +1724,10 @@ type UpdateContentReviewStatusParams struct {
 	Feedback       *string     `json:"feedback"`
 	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateContentReviewStatusRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -1841,12 +1745,10 @@ func (q *Queries) UpdateContentReviewStatus(ctx context.Context, arg UpdateConte
 		arg.Feedback,
 		arg.ReviewerUserID,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateContentReviewStatusRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ReviewerUserID,
 		&i.Status,
@@ -1861,16 +1763,15 @@ func (q *Queries) UpdateContentReviewStatus(ctx context.Context, arg UpdateConte
 const updateFeaturedOrder = `-- name: UpdateFeaturedOrder :exec
 UPDATE content_featured
 SET featured_order = $1
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateFeaturedOrderParams struct {
 	FeaturedOrder int32       `json:"featured_order"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateFeaturedOrder(ctx context.Context, arg UpdateFeaturedOrderParams) error {
-	_, err := q.db.Exec(ctx, updateFeaturedOrder, arg.FeaturedOrder, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateFeaturedOrder, arg.FeaturedOrder, arg.ID)
 	return err
 }

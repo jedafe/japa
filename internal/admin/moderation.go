@@ -568,9 +568,8 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		}
 
 		err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
-			Status:   newStatus,
-			ID:       reviewID,
-			TenantID: tenantID,
+			Status: newStatus,
+			ID:     reviewID,
 		})
 		if err != nil {
 			slog.Warn("moderation: updating review status", "id", action.ID, "error", err)
@@ -631,10 +630,9 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.Queries.AppealReviewToFlagged(r.Context(), gen.AppealReviewToFlaggedParams{
-		ID:       reviewID,
-		TenantID: tenantID,
-	})
+	tag, err := h.Queries.AppealReviewToFlagged(r.Context(),
+		reviewID,
+	)
 	if err != nil {
 		slog.Error("moderation: appeal failed", "id", req.ID, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to process appeal")
@@ -774,10 +772,10 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
 		}
 
-		rows, err = h.Queries.ListActiveUserIDsByGeoSpace(ctx, gen.ListActiveUserIDsByGeoSpaceParams{
-			TenantID: tenantID,
-			SpaceID:  spaceID,
-		})
+		rows, err = h.Queries.ListActiveUserIDsByGeoSpace(ctx,
+
+			spaceID,
+		)
 	case "user_group":
 		if targetID == "" {
 			return 0, errors.New("target_id is required for user_group targeting")
@@ -788,12 +786,12 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 			return 0, fmt.Errorf("invalid target_id: %w", scanErr)
 		}
 
-		rows, err = h.Queries.ListActiveUserIDsByGroup(ctx, gen.ListActiveUserIDsByGroupParams{
-			TenantID: tenantID,
-			GroupID:  groupID,
-		})
+		rows, err = h.Queries.ListActiveUserIDsByGroup(ctx,
+
+			groupID,
+		)
 	default: // "all", "unverified", "pro_members", or empty
-		rows, err = h.Queries.ListActiveUserIDs(ctx, tenantID)
+		rows, err = h.Queries.ListActiveUserIDs(ctx)
 	}
 
 	if err != nil {
@@ -805,12 +803,8 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 	}
 
 	// Batch insert notifications using unnest for a single round-trip.
-	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
-		TenantID: tenantID,
-		Column2:  rows,
-		ActorID:  senderID,
-		Title:    title,
-		Body:     &body,
+	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{RecipientID: rows, Column2: senderID, Title: title,
+		Body: &body,
 	})
 	if err != nil {
 		return 0, err
@@ -857,9 +851,8 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 
 	err := h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
 		UserID: uid,
-		Reason: &input.Reason,
-		// #nosec G115 // value bounded by caller
-		Column3: int32(input.Days),
+		Reason: &input.Reason, Column3: // #nosec G115 // value bounded by caller
+		int32(input.Days),
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")
@@ -1155,7 +1148,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		err := h.Queries.VerifyOrganization(r.Context(), gen.VerifyOrganizationParams{ID: oid, TenantID: tenantID})
+		err := h.Queries.VerifyOrganization(r.Context(), oid)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 			return
@@ -1196,7 +1189,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	} else {
-		err := h.Queries.UnverifyOrganization(r.Context(), gen.UnverifyOrganizationParams{ID: oid, TenantID: tenantID})
+		err := h.Queries.UnverifyOrganization(r.Context(), oid)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 			return
@@ -1413,9 +1406,8 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	} else {
 		err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
-			Status:   newStatus,
-			ID:       rid,
-			TenantID: tenantID,
+			Status: newStatus,
+			ID:     rid,
 		})
 		if err != nil {
 			slog.Error("moderation: updating item", "id", id, "error", err)
@@ -1430,7 +1422,6 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 			ReviewedBy:     user.UserID,
 			ResolutionNote: &input.Reason,
 			ID:             rid,
-			TenantID:       tenantID,
 		})
 		if err != nil {
 			slog.Error("moderation: updating content report", "id", id, "error", err)
@@ -1714,10 +1705,9 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.RemoveContentByAdmin(r.Context(), gen.RemoveContentByAdminParams{
-		ID:       cid,
-		TenantID: tenantID,
-	})
+	err := h.Queries.RemoveContentByAdmin(r.Context(),
+		cid,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove content")
 		return
@@ -1742,10 +1732,9 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.RestoreContentByAdmin(r.Context(), gen.RestoreContentByAdminParams{
-		ID:       cid,
-		TenantID: tenantID,
-	})
+	err := h.Queries.RestoreContentByAdmin(r.Context(),
+		cid,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restore content")
 		return
@@ -1772,10 +1761,10 @@ func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := h.Queries.ListDeletedContents(r.Context(), gen.ListDeletedContentsParams{
-		TenantID: tenantID,
-		Limit:    limit,
-	})
+	rows, err := h.Queries.ListDeletedContents(r.Context(),
+
+		limit,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list deleted content")
 		return

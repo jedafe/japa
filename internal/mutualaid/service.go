@@ -179,7 +179,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	}
 
 	storeInput := CreatePostInput{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		PostType:           input.PostType,
 		Title:              input.Title,
@@ -237,7 +237,7 @@ func (s *Service) List(ctx context.Context, tenantID pgtype.UUID, postType, cate
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPosts(ctx, ListPostsFilter{
-		TenantID:           tenantID,
+
 		PostType:           postType,
 		Category:           category,
 		DestinationSpaceID: destSpaceID,
@@ -388,7 +388,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, postType,
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListPosts(ctx, AdminListPostsFilter{
-		TenantID:           tenantID,
+
 		PostType:           postType,
 		Status:             status,
 		DestinationSpaceID: destSpaceID,

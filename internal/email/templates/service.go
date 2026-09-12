@@ -69,8 +69,8 @@ func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 
 	return s.store.updateTemplate(ctx, gen.UpdateEmailTemplateParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		Subject:       subject,
 		HtmlBody:      htmlBody,
 		PlainTextBody: plainTextBody,

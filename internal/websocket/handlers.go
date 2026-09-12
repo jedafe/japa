@@ -214,10 +214,10 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Create Client.
 	client := &Client{
-		Hub:            h.hub,
-		Conn:           conn,
-		UserID:         userID.String(),
-		TenantID:       tenantID.String(),
+		Hub:    h.hub,
+		Conn:   conn,
+		UserID: userID.String(),
+
 		Send:           make(chan []byte, 256),
 		SpaceIDs:       make(map[string]bool),
 		SessionChecker: h.sessionChecker, // BUG-018

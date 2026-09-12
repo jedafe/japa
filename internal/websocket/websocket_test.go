@@ -125,9 +125,9 @@ func TestHubRegisterAndUnregister(t *testing.T) {
 
 	hub := NewHub()
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -165,9 +165,9 @@ func TestHubIsUserOnline(t *testing.T) {
 	}
 
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -183,9 +183,9 @@ func TestHubBroadcastToUser(t *testing.T) {
 
 	hub := NewHub()
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -226,9 +226,9 @@ func TestHubSubscribeToSpace(t *testing.T) {
 
 	hub := NewHub()
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -262,16 +262,16 @@ func TestHubBroadcastToSpace(t *testing.T) {
 
 	hub := NewHub()
 	client1 := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
 	client2 := &Client{
-		Hub:      hub,
-		UserID:   "user-2",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-2",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -311,9 +311,9 @@ func TestHubUnregisterCleansUpSpaceSubscriptions(t *testing.T) {
 
 	hub := NewHub()
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -600,18 +600,18 @@ func TestHandleTypingEventBroadcastsToOtherParticipant(t *testing.T) {
 
 	hub := NewHub()
 	otherClient := &Client{
-		Hub:      hub,
-		UserID:   recipientID,
-		TenantID: tenantID,
+		Hub:    hub,
+		UserID: recipientID,
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
 	hub.Register(otherClient)
 
 	sender := &Client{
-		Hub:      hub,
-		UserID:   senderID,
-		TenantID: tenantID,
+		Hub:    hub,
+		UserID: senderID,
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -669,18 +669,18 @@ func TestHandleTypingEventNonParticipantSilentlyDrops(t *testing.T) {
 
 	hub := NewHub()
 	otherClient := &Client{
-		Hub:      hub,
-		UserID:   recipientID,
-		TenantID: tenantID,
+		Hub:    hub,
+		UserID: recipientID,
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
 	hub.Register(otherClient)
 
 	sender := &Client{
-		Hub:      hub,
-		UserID:   "55555555-5555-5555-5555-555555555555",
-		TenantID: tenantID,
+		Hub:    hub,
+		UserID: "55555555-5555-5555-5555-555555555555",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -709,9 +709,9 @@ func TestHandleTypingEventNilDMServiceIsNoOp(t *testing.T) {
 
 	hub := NewHub()
 	sender := &Client{
-		Hub:      hub,
-		UserID:   "11111111-1111-1111-1111-111111111111",
-		TenantID: "33333333-3333-3333-3333-333333333333",
+		Hub:    hub,
+		UserID: "11111111-1111-1111-1111-111111111111",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -728,9 +728,9 @@ func TestHandleTypingEventMissingConversationIDIgnores(t *testing.T) {
 
 	hub := NewHub()
 	sender := &Client{
-		Hub:      hub,
-		UserID:   "11111111-1111-1111-1111-111111111111",
-		TenantID: "33333333-3333-3333-3333-333333333333",
+		Hub:    hub,
+		UserID: "11111111-1111-1111-1111-111111111111",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 	}
@@ -760,9 +760,9 @@ func TestSessionCheckerReceivesTenantID(t *testing.T) {
 
 	hub := NewHub()
 	client := &Client{
-		Hub:      hub,
-		UserID:   "user-1",
-		TenantID: "tenant-1",
+		Hub:    hub,
+		UserID: "user-1",
+
 		Send:     make(chan []byte, 256),
 		SpaceIDs: make(map[string]bool),
 		SessionChecker: func(userID, tenantID string) bool {

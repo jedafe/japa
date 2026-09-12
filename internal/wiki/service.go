@@ -548,7 +548,7 @@ func (s *Service) AdminListPages(ctx context.Context, tenantID, spaceID pgtype.U
 	offset := (page - 1) * limit
 
 	pages, total, err := s.store.AdminListPages(ctx, AdminListPagesFilter{
-		TenantID: tenantID,
+
 		SpaceID:  spaceID,
 		Category: category,
 		IsLocked: isLocked,

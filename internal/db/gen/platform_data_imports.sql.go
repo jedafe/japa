@@ -13,17 +13,11 @@ import (
 
 const countPlatformDataImports = `-- name: CountPlatformDataImports :one
 SELECT count(*) FROM platform_data_imports
-WHERE tenant_id = $1
-  AND ($2 = '' OR status = $2)
+WHERE ($1 = '' OR status = $1)
 `
 
-type CountPlatformDataImportsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   interface{} `json:"status"`
-}
-
-func (q *Queries) CountPlatformDataImports(ctx context.Context, arg CountPlatformDataImportsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPlatformDataImports, arg.TenantID, arg.Status)
+func (q *Queries) CountPlatformDataImports(ctx context.Context, status interface{}) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlatformDataImports, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -31,16 +25,11 @@ func (q *Queries) CountPlatformDataImports(ctx context.Context, arg CountPlatfor
 
 const createPlatformDataImport = `-- name: CreatePlatformDataImport :one
 
-INSERT INTO platform_data_imports (
-    tenant_id, name, import_type, format, file_url, mode, created_by
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-)
+INSERT INTO platform_data_imports (name, import_type, format, file_url, mode, created_by) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
 `
 
 type CreatePlatformDataImportParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Name       string      `json:"name"`
 	ImportType string      `json:"import_type"`
 	Format     string      `json:"format"`
@@ -53,7 +42,6 @@ type CreatePlatformDataImportParams struct {
 // Admin-initiated imports of platform data from CSV/JSON files.
 func (q *Queries) CreatePlatformDataImport(ctx context.Context, arg CreatePlatformDataImportParams) (PlatformDataImport, error) {
 	row := q.db.QueryRow(ctx, createPlatformDataImport,
-		arg.TenantID,
 		arg.Name,
 		arg.ImportType,
 		arg.Format,
@@ -84,31 +72,21 @@ func (q *Queries) CreatePlatformDataImport(ctx context.Context, arg CreatePlatfo
 
 const deletePlatformDataImport = `-- name: DeletePlatformDataImport :exec
 DELETE FROM platform_data_imports
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeletePlatformDataImportParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeletePlatformDataImport(ctx context.Context, arg DeletePlatformDataImportParams) error {
-	_, err := q.db.Exec(ctx, deletePlatformDataImport, arg.ID, arg.TenantID)
+func (q *Queries) DeletePlatformDataImport(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePlatformDataImport, id)
 	return err
 }
 
 const getPlatformDataImport = `-- name: GetPlatformDataImport :one
 SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetPlatformDataImportParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetPlatformDataImport(ctx context.Context, arg GetPlatformDataImportParams) (PlatformDataImport, error) {
-	row := q.db.QueryRow(ctx, getPlatformDataImport, arg.ID, arg.TenantID)
+func (q *Queries) GetPlatformDataImport(ctx context.Context, id pgtype.UUID) (PlatformDataImport, error) {
+	row := q.db.QueryRow(ctx, getPlatformDataImport, id)
 	var i PlatformDataImport
 	err := row.Scan(
 		&i.ID,
@@ -204,26 +182,19 @@ func (q *Queries) ListPendingPlatformDataImports(ctx context.Context, limitVal i
 
 const listPlatformDataImports = `-- name: ListPlatformDataImports :many
 SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
-WHERE tenant_id = $1
-  AND ($2 = '' OR status = $2)
+WHERE ($1 = '' OR status = $1)
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPlatformDataImportsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	Status    interface{} `json:"status"`
 	OffsetVal int32       `json:"offset_val"`
 	LimitVal  int32       `json:"limit_val"`
 }
 
 func (q *Queries) ListPlatformDataImports(ctx context.Context, arg ListPlatformDataImportsParams) ([]PlatformDataImport, error) {
-	rows, err := q.db.Query(ctx, listPlatformDataImports,
-		arg.TenantID,
-		arg.Status,
-		arg.OffsetVal,
-		arg.LimitVal,
-	)
+	rows, err := q.db.Query(ctx, listPlatformDataImports, arg.Status, arg.OffsetVal, arg.LimitVal)
 	if err != nil {
 		return nil, err
 	}
@@ -261,31 +232,30 @@ func (q *Queries) ListPlatformDataImports(ctx context.Context, arg ListPlatformD
 const reassignPlatformDataImportCreatedBy = `-- name: ReassignPlatformDataImportCreatedBy :exec
 UPDATE platform_data_imports
 SET created_by = $1
-WHERE created_by = $2 AND tenant_id = $3
+WHERE created_by = $2
 `
 
 type ReassignPlatformDataImportCreatedByParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // Reassign created_by to a placeholder user during GDPR erasure so the
 // import audit trail survives when the admin who created the import is
 // erased (BUG-013, Section 67 / Section 15 compliance).
 func (q *Queries) ReassignPlatformDataImportCreatedBy(ctx context.Context, arg ReassignPlatformDataImportCreatedByParams) error {
-	_, err := q.db.Exec(ctx, reassignPlatformDataImportCreatedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignPlatformDataImportCreatedBy, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const updatePlatformDataImportStatus = `-- name: UpdatePlatformDataImportStatus :one
 UPDATE platform_data_imports
 SET status = $1,
-    total_rows = $2,
-    imported_rows = $3,
-    failed_rows = $4,
-    error_log = $5,
-    completed_at = $6
+ total_rows = $2,
+ imported_rows = $3,
+ failed_rows = $4,
+ error_log = $5,
+ completed_at = $6
 WHERE id = $7
 RETURNING id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
 `

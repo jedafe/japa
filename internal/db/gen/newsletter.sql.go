@@ -14,13 +14,8 @@ import (
 const getNewsletterCampaign = `-- name: GetNewsletterCampaign :one
 
 SELECT subject, html FROM newsletter_campaigns
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetNewsletterCampaignParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetNewsletterCampaignRow struct {
 	Subject string `json:"subject"`
@@ -28,8 +23,8 @@ type GetNewsletterCampaignRow struct {
 }
 
 // Newsletter system queries (Section 35 — bulk email campaigns).
-func (q *Queries) GetNewsletterCampaign(ctx context.Context, arg GetNewsletterCampaignParams) (GetNewsletterCampaignRow, error) {
-	row := q.db.QueryRow(ctx, getNewsletterCampaign, arg.ID, arg.TenantID)
+func (q *Queries) GetNewsletterCampaign(ctx context.Context, id pgtype.UUID) (GetNewsletterCampaignRow, error) {
+	row := q.db.QueryRow(ctx, getNewsletterCampaign, id)
 	var i GetNewsletterCampaignRow
 	err := row.Scan(&i.Subject, &i.Html)
 	return i, err
@@ -97,16 +92,11 @@ const upsertNewsletterSendState = `-- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
 SELECT $1, ns.email, 'pending'
 FROM newsletter_subscribers ns
-WHERE ns.tenant_id = $2 AND ns.status = 'subscribed' AND ns.campaign_enabled = true
+WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
 ON CONFLICT (campaign_id, recipient) DO NOTHING
 `
 
-type UpsertNewsletterSendStateParams struct {
-	CampaignID pgtype.UUID `json:"campaign_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) UpsertNewsletterSendState(ctx context.Context, arg UpsertNewsletterSendStateParams) error {
-	_, err := q.db.Exec(ctx, upsertNewsletterSendState, arg.CampaignID, arg.TenantID)
+func (q *Queries) UpsertNewsletterSendState(ctx context.Context, campaignID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, upsertNewsletterSendState, campaignID)
 	return err
 }

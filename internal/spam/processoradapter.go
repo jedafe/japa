@@ -52,17 +52,15 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 
 			switch entityType {
 			case "post", "content":
-				if row, err := queries.GetContentByID(ctx, gen.GetContentByIDParams{
-					ID:       eid,
-					TenantID: tid,
-				}); err == nil {
+				if row, err := queries.GetContentByID(ctx,
+					eid,
+				); err == nil {
 					body = row.Body
 				}
 			case "comment":
-				if row, err := queries.GetComment(ctx, gen.GetCommentParams{
-					ID:       eid,
-					TenantID: tid,
-				}); err == nil {
+				if row, err := queries.GetComment(ctx,
+					eid,
+				); err == nil {
 					body = string(row.Body)
 				}
 			}

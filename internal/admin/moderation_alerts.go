@@ -29,10 +29,10 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 
 	status := r.URL.Query().Get("status")
 
-	alerts, err := gen.New(h.DB.Reader).ListModerationAlerts(r.Context(), gen.ListModerationAlertsParams{
-		TenantID: tenantID,
-		Status:   status,
-	})
+	alerts, err := gen.New(h.DB.Reader).ListModerationAlerts(r.Context(),
+
+		status,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load moderation alerts")
 		return
@@ -77,8 +77,8 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 	}
 
 	alert, err := gen.New(h.DB.Writer).AcknowledgeModerationAlert(r.Context(), gen.AcknowledgeModerationAlertParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		AcknowledgedBy: user.UserID,
 	})
 	if err != nil {
@@ -109,8 +109,8 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 	}
 
 	alert, err := gen.New(h.DB.Writer).ResolveModerationAlert(r.Context(), gen.ResolveModerationAlertParams{
-		ID:         id,
-		TenantID:   tenantID,
+		ID: id,
+
 		ResolvedBy: user.UserID,
 	})
 	if err != nil {
@@ -177,10 +177,9 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	claimID, err := h.Queries.GetPendingOwnershipClaim(ctx, gen.GetPendingOwnershipClaimParams{
-		OrganizationID: orgID,
-		TenantID:       tenantID,
-	})
+	claimID, err := h.Queries.GetPendingOwnershipClaim(ctx,
+		orgID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "no_pending_claim", "No pending ownership claim for this organization")
 		return
@@ -189,8 +188,8 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	if action == "reject" {
 		rejected := "rejected"
 		if err := h.Queries.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
-			ID:             claimID,
-			TenantID:       tenantID,
+			ID: claimID,
+
 			Status:         rejected,
 			ReviewedBy:     user.UserID,
 			ResolutionNote: &note,
@@ -205,8 +204,8 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Queries.ApproveOwnershipClaim(ctx, gen.ApproveOwnershipClaimParams{
-		ID:             claimID,
-		TenantID:       tenantID,
+		ID: claimID,
+
 		ReviewedBy:     user.UserID,
 		ResolutionNote: &note,
 	}); err != nil {
@@ -236,8 +235,8 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 	}
 
 	claims, err := h.Queries.ListOwnershipClaimsForAdmin(r.Context(), gen.ListOwnershipClaimsForAdminParams{
-		TenantID: tenantID,
-		Column2:  status,
+
+		Column2: status,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
@@ -323,10 +322,9 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 	}
 
 	// Fetch the claim to get the form_submission_id.
-	claim, err := h.Queries.GetOwnershipClaimByID(r.Context(), gen.GetOwnershipClaimByIDParams{
-		ID:       pgtype.UUID{Bytes: claimID, Valid: true},
-		TenantID: tenantID,
-	})
+	claim, err := h.Queries.GetOwnershipClaimByID(r.Context(),
+		pgtype.UUID{Bytes: claimID, Valid: true},
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "claim_not_found", "Claim not found")
 		return
@@ -337,10 +335,9 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	submission, err := h.Queries.GetFormSubmissionByID(r.Context(), gen.GetFormSubmissionByIDParams{
-		ID:       claim.FormSubmissionID,
-		TenantID: tenantID,
-	})
+	submission, err := h.Queries.GetFormSubmissionByID(r.Context(),
+		claim.FormSubmissionID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "submission_not_found", "Form submission not found")
 		return

@@ -36,7 +36,7 @@ func (s *Store) createPayment(ctx context.Context, p gen.CreatePaymentParams) (g
 }
 
 func (s *Store) getPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
-	row, err := s.read.GetPaymentByID(ctx, gen.GetPaymentByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetPaymentByID(ctx, id)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("getting payment by ID: %w", err)
 	}
@@ -50,7 +50,7 @@ func (s *Store) listPaymentsByUser(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	rows, err := s.read.ListPaymentsByUser(ctx, gen.ListPaymentsByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -68,7 +68,7 @@ func (s *Store) listPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID, 
 	}
 
 	rows, err := s.read.ListPaymentsByStatus(ctx, gen.ListPaymentsByStatusParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -82,9 +82,9 @@ func (s *Store) listPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID, 
 
 func (s *Store) updatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Payment, error) {
 	row, err := s.write.UpdatePaymentStatus(ctx, gen.UpdatePaymentStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
+		ID: id,
+
+		Status: status,
 	})
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("updating payment status: %w", err)
@@ -130,7 +130,7 @@ func (s *Store) insertWebhookEventIfNew(ctx context.Context, p gen.InsertWebhook
 
 func (s *Store) isWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUID, provider, eventID string) (bool, error) {
 	processed, err := s.read.IsWebhookEventProcessed(ctx, gen.IsWebhookEventProcessedParams{
-		TenantID: tenantID,
+
 		Provider: provider,
 		EventID:  eventID,
 	})
@@ -143,7 +143,7 @@ func (s *Store) isWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUI
 
 func (s *Store) markWebhookEventProcessed(ctx context.Context, tenantID pgtype.UUID, provider, eventID string) error {
 	if err := s.write.MarkWebhookEventProcessed(ctx, gen.MarkWebhookEventProcessedParams{
-		TenantID: tenantID,
+
 		Provider: provider,
 		EventID:  eventID,
 	}); err != nil {
@@ -158,10 +158,10 @@ func (s *Store) markWebhookEventProcessed(ctx context.Context, tenantID pgtype.U
 // idx_payments_provider_ref. Replaces the full-scan match in the webhook
 // worker (BUG-019).
 func (s *Store) getPaymentByProviderRef(ctx context.Context, tenantID pgtype.UUID, providerRef string) (gen.Payment, error) {
-	row, err := s.read.GetPaymentByProviderRef(ctx, gen.GetPaymentByProviderRefParams{
-		TenantID:    tenantID,
-		ProviderRef: &providerRef,
-	})
+	row, err := s.read.GetPaymentByProviderRef(ctx,
+
+		&providerRef,
+	)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("getting payment by provider_ref: %w", err)
 	}
@@ -192,10 +192,9 @@ func (s *Store) listAdminPayments(ctx context.Context, p gen.ListAdminPaymentsPa
 
 // getAdminPaymentByID retrieves a payment for admin detail view (JEOS §17).
 func (s *Store) getAdminPaymentByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
-	row, err := s.read.GetAdminPaymentByID(ctx, gen.GetAdminPaymentByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetAdminPaymentByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("getting admin payment: %w", err)
 	}
@@ -218,7 +217,7 @@ func (s *Store) createSubscription(ctx context.Context, p gen.CreateSubscription
 }
 
 func (s *Store) getSubscriptionByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
-	row, err := s.read.GetSubscriptionByID(ctx, gen.GetSubscriptionByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetSubscriptionByID(ctx, id)
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("getting subscription by ID: %w", err)
 	}
@@ -227,10 +226,10 @@ func (s *Store) getSubscriptionByID(ctx context.Context, id, tenantID pgtype.UUI
 }
 
 func (s *Store) getActiveSubscriptionByUser(ctx context.Context, tenantID, userID pgtype.UUID) (gen.Subscription, error) {
-	row, err := s.read.GetActiveSubscriptionByUser(ctx, gen.GetActiveSubscriptionByUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetActiveSubscriptionByUser(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("getting active subscription by user: %w", err)
 	}
@@ -244,7 +243,7 @@ func (s *Store) listSubscriptionsByUser(ctx context.Context, tenantID, userID pg
 	}
 
 	rows, err := s.read.ListSubscriptionsByUser(ctx, gen.ListSubscriptionsByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -263,7 +262,7 @@ func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	rows, err := s.read.ListActiveSubscriptions(ctx, gen.ListActiveSubscriptionsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -277,9 +276,9 @@ func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUI
 //nolint:unused // reserved for future features
 func (s *Store) updateSubscriptionStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Subscription, error) {
 	row, err := s.write.UpdateSubscriptionStatus(ctx, gen.UpdateSubscriptionStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
+		ID: id,
+
+		Status: status,
 	})
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("updating subscription status: %w", err)
@@ -289,10 +288,9 @@ func (s *Store) updateSubscriptionStatus(ctx context.Context, id, tenantID pgtyp
 }
 
 func (s *Store) cancelSubscription(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
-	row, err := s.write.CancelSubscription(ctx, gen.CancelSubscriptionParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.write.CancelSubscription(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("canceling subscription: %w", err)
 	}
@@ -304,10 +302,9 @@ func (s *Store) cancelSubscription(ctx context.Context, id, tenantID pgtype.UUID
 // subscription for the tenant. The subquery in the sqlc query already scopes
 // by (user_id, tenant_id, status='canceled'), so we only forward the params.
 func (s *Store) reactivateSubscription(ctx context.Context, userID, tenantID pgtype.UUID) (gen.Subscription, error) {
-	row, err := s.write.ReactivateSubscription(ctx, gen.ReactivateSubscriptionParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	row, err := s.write.ReactivateSubscription(ctx,
+		userID,
+	)
 	if err != nil {
 		return gen.Subscription{}, fmt.Errorf("reactivating subscription: %w", err)
 	}
@@ -329,10 +326,10 @@ func (s *Store) createDiscountCode(ctx context.Context, p gen.CreateDiscountCode
 }
 
 func (s *Store) getDiscountCodeByCode(ctx context.Context, tenantID pgtype.UUID, code string) (gen.DiscountCode, error) {
-	row, err := s.read.GetDiscountCodeByCode(ctx, gen.GetDiscountCodeByCodeParams{
-		TenantID: tenantID,
-		Code:     code,
-	})
+	row, err := s.read.GetDiscountCodeByCode(ctx,
+
+		code,
+	)
 	if err != nil {
 		return gen.DiscountCode{}, fmt.Errorf("getting discount code by code: %w", err)
 	}
@@ -341,10 +338,9 @@ func (s *Store) getDiscountCodeByCode(ctx context.Context, tenantID pgtype.UUID,
 }
 
 func (s *Store) getDiscountCodeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.DiscountCode, error) {
-	row, err := s.read.GetDiscountCodeByID(ctx, gen.GetDiscountCodeByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetDiscountCodeByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.DiscountCode{}, fmt.Errorf("getting discount code by ID: %w", err)
 	}
@@ -358,7 +354,7 @@ func (s *Store) listDiscountCodes(ctx context.Context, tenantID pgtype.UUID, lim
 	}
 
 	rows, err := s.read.ListDiscountCodes(ctx, gen.ListDiscountCodesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -370,10 +366,9 @@ func (s *Store) listDiscountCodes(ctx context.Context, tenantID pgtype.UUID, lim
 }
 
 func (s *Store) deleteDiscountCode(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteDiscountCode(ctx, gen.DeleteDiscountCodeParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteDiscountCode(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting discount code: %w", err)
 	}
 

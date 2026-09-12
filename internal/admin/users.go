@@ -61,7 +61,7 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var userID pgtype.UUID
 
 	userID, err = h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
-		TenantID:     tenantID,
+
 		Email:        input.Email,
 		Username:     input.Username,
 		PasswordHash: &passwordHash,

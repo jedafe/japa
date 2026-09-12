@@ -18,8 +18,8 @@ func TestToPostCards_LeanAndCorrect(t *testing.T) {
 	hash := "deadbeef"
 	canonical := "https://example.com/x"
 	row := gen.ListPublishedContentByAuthorRow{
-		ID:           mustUUID(t, "11111111-1111-1111-1111-111111111111"),
-		TenantID:     mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		ID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
+
 		AuthorID:     mustUUID(t, "33333333-3333-3333-3333-333333333333"),
 		SpaceID:      mustUUID(t, "44444444-4444-4444-4444-444444444444"),
 		ContentType:  "discussion",

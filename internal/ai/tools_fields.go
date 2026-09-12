@@ -512,8 +512,8 @@ func CustomFieldsCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		field, err := deps.CustomFieldDefs.CreateField(ctx, gen.CreateCustomFieldParams{
-			GroupID:        groupID,
-			TenantID:       tenantID,
+			GroupID: groupID,
+
 			Label:          a.Label,
 			Key:            a.Key,
 			FieldType:      a.FieldType,
@@ -597,8 +597,8 @@ func CustomFieldsUpdateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		field, err := deps.CustomFieldDefs.UpdateField(ctx, gen.UpdateCustomFieldParams{
-			ID:             fieldID,
-			TenantID:       tenantID,
+			ID: fieldID,
+
 			Label:          a.Label,
 			FieldType:      fieldType,
 			Options:        options,

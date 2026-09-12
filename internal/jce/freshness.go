@@ -195,10 +195,9 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		return FreshnessSummary{}, fmt.Errorf("loading comparison matrix: %w", err)
 	}
 
-	values, err := gen.New(s.db.Reader).GetComparisonValuesByContent(ctx, gen.GetComparisonValuesByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	values, err := gen.New(s.db.Reader).GetComparisonValuesByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return FreshnessSummary{}, fmt.Errorf("loading comparison values: %w", err)
 	}
@@ -244,9 +243,9 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 			v, ok := valueIndex[key]
 			if !ok {
 				v = gen.ComparisonValue{
-					ItemID:       item.Item.ID,
-					DimensionID:  dim.DimensionID,
-					TenantID:     tenantID,
+					ItemID:      item.Item.ID,
+					DimensionID: dim.DimensionID,
+
 					Metadata:     []byte("{}"),
 					UpdatedAt:    pgtype.Timestamptz{},
 					CreatedAt:    pgtype.Timestamptz{},

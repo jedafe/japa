@@ -720,7 +720,7 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 	}
 
 	token, err := h.Service.CreateSelectionToken(r.Context(), CreateSelectionTokenInput{
-		TenantID: tenantID,
+
 		TypeSlug: req.TypeSlug,
 		ItemRefs: req.ItemRefs,
 	})

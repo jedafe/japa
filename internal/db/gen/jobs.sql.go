@@ -14,17 +14,11 @@ import (
 const adminCountJobApplications = `-- name: AdminCountJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 `
 
-type AdminCountJobApplicationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-}
-
-func (q *Queries) AdminCountJobApplications(ctx context.Context, arg AdminCountJobApplicationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountJobApplications, arg.TenantID, arg.Status)
+func (q *Queries) AdminCountJobApplications(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountJobApplications, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -33,10 +27,10 @@ func (q *Queries) AdminCountJobApplications(ctx context.Context, arg AdminCountJ
 const adminJobApplicationStatusDistribution = `-- name: AdminJobApplicationStatusDistribution :many
 
 SELECT
-    status,
-    COUNT(*) AS count
+ status,
+ COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = $1
+
 GROUP BY status
 ORDER BY count DESC
 `
@@ -49,8 +43,8 @@ type AdminJobApplicationStatusDistributionRow struct {
 // =====================================================================
 // Admin: application status distribution.
 // =====================================================================
-func (q *Queries) AdminJobApplicationStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminJobApplicationStatusDistributionRow, error) {
-	rows, err := q.db.Query(ctx, adminJobApplicationStatusDistribution, tenantID)
+func (q *Queries) AdminJobApplicationStatusDistribution(ctx context.Context) ([]AdminJobApplicationStatusDistributionRow, error) {
+	rows, err := q.db.Query(ctx, adminJobApplicationStatusDistribution)
 	if err != nil {
 		return nil, err
 	}
@@ -72,23 +66,21 @@ func (q *Queries) AdminJobApplicationStatusDistribution(ctx context.Context, ten
 const adminListJobApplications = `-- name: AdminListJobApplications :many
 
 SELECT
-    ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
-    u.username AS applicant_username,
-    c.title    AS job_title
+ ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ u.username AS applicant_username,
+ c.title AS job_title
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
 JOIN contents c ON c.id = ja.job_id
-WHERE ja.tenant_id = $1
-  AND ($2::text = '' OR ja.status = $2)
+WHERE ($1::text = '' OR ja.status = $1)
 ORDER BY ja.applied_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type AdminListJobApplicationsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type AdminListJobApplicationsRow struct {
@@ -109,12 +101,7 @@ type AdminListJobApplicationsRow struct {
 // Admin: list all applications across all jobs.
 // =====================================================================
 func (q *Queries) AdminListJobApplications(ctx context.Context, arg AdminListJobApplicationsParams) ([]AdminListJobApplicationsRow, error) {
-	rows, err := q.db.Query(ctx, adminListJobApplications,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, adminListJobApplications, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -148,18 +135,17 @@ func (q *Queries) AdminListJobApplications(ctx context.Context, arg AdminListJob
 const countJobApplicationsByJob = `-- name: CountJobApplicationsByJob :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = $1 AND job_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE job_id = $1
+ AND ($2::text = '' OR status = $2)
 `
 
 type CountJobApplicationsByJobParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	JobID    pgtype.UUID `json:"job_id"`
-	Status   string      `json:"status"`
+	JobID  pgtype.UUID `json:"job_id"`
+	Status string      `json:"status"`
 }
 
 func (q *Queries) CountJobApplicationsByJob(ctx context.Context, arg CountJobApplicationsByJobParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countJobApplicationsByJob, arg.TenantID, arg.JobID, arg.Status)
+	row := q.db.QueryRow(ctx, countJobApplicationsByJob, arg.JobID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -168,16 +154,11 @@ func (q *Queries) CountJobApplicationsByJob(ctx context.Context, arg CountJobApp
 const countUserJobApplications = `-- name: CountUserJobApplications :one
 SELECT COUNT(*) AS count
 FROM job_applications
-WHERE tenant_id = $1 AND applicant_id = $2
+WHERE applicant_id = $1
 `
 
-type CountUserJobApplicationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountUserJobApplications(ctx context.Context, arg CountUserJobApplicationsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserJobApplications, arg.TenantID, arg.UserID)
+func (q *Queries) CountUserJobApplications(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserJobApplications, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -186,14 +167,13 @@ func (q *Queries) CountUserJobApplications(ctx context.Context, arg CountUserJob
 const createJobApplication = `-- name: CreateJobApplication :one
 
 
-INSERT INTO job_applications (tenant_id, job_id, applicant_id, submission_id)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (tenant_id, job_id, applicant_id) DO NOTHING
+INSERT INTO job_applications (job_id, applicant_id, submission_id) VALUES ($1, $2, $3)
+
+ON CONFLICT (job_id, applicant_id) DO NOTHING
 RETURNING id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
 `
 
 type CreateJobApplicationParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	JobID        pgtype.UUID `json:"job_id"`
 	ApplicantID  pgtype.UUID `json:"applicant_id"`
 	SubmissionID pgtype.UUID `json:"submission_id"`
@@ -210,12 +190,7 @@ type CreateJobApplicationParams struct {
 // Apply to a job (create application record).
 // =====================================================================
 func (q *Queries) CreateJobApplication(ctx context.Context, arg CreateJobApplicationParams) (JobApplication, error) {
-	row := q.db.QueryRow(ctx, createJobApplication,
-		arg.TenantID,
-		arg.JobID,
-		arg.ApplicantID,
-		arg.SubmissionID,
-	)
+	row := q.db.QueryRow(ctx, createJobApplication, arg.JobID, arg.ApplicantID, arg.SubmissionID)
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,
@@ -235,21 +210,19 @@ const expireJobListingsPastDeadline = `-- name: ExpireJobListingsPastDeadline :e
 
 UPDATE contents c
 SET status = 'archived', updated_at = now()
-WHERE c.tenant_id = $1
-  AND c.content_type = 'job_listing'
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
-  AND EXISTS (
-    SELECT 1
-    FROM custom_field_values cfv
-    JOIN custom_fields cf ON cf.id = cfv.field_id
-    WHERE cfv.entity_type = 'content'
-      AND cfv.entity_id = c.id
-      AND cf.tenant_id = c.tenant_id
-      AND cf.key = 'application_deadline'
-      AND cfv.value_text IS NOT NULL
-      AND cfv.value_text::timestamptz < now()
-  )
+WHERE c.content_type = 'job_listing'
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
+ AND EXISTS (
+ SELECT 1
+ FROM custom_field_values cfv
+ JOIN custom_fields cf ON cf.id = cfv.field_id
+ WHERE cfv.entity_type = 'content'
+ AND cfv.entity_id = c.id
+ AND cf.key = 'application_deadline'
+ AND cfv.value_text IS NOT NULL
+ AND cfv.value_text::timestamptz < now()
+ )
 `
 
 // =====================================================================
@@ -263,8 +236,8 @@ WHERE c.tenant_id = $1
 // custom_fields.id, entity_type='content', entity_id = contents.id. The
 // application_deadline field is field_type='date' and stored in value_text
 // (ISO date) so it is cast to timestamptz for comparison.
-func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, expireJobListingsPastDeadline, tenantID)
+func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, expireJobListingsPastDeadline)
 	if err != nil {
 		return 0, err
 	}
@@ -274,19 +247,14 @@ func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context, tenantID pg
 const getJobApplicationByID = `-- name: GetJobApplicationByID :one
 
 SELECT id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at FROM job_applications
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetJobApplicationByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Get a single application by ID.
 // =====================================================================
-func (q *Queries) GetJobApplicationByID(ctx context.Context, arg GetJobApplicationByIDParams) (JobApplication, error) {
-	row := q.db.QueryRow(ctx, getJobApplicationByID, arg.TenantID, arg.ID)
+func (q *Queries) GetJobApplicationByID(ctx context.Context, id pgtype.UUID) (JobApplication, error) {
+	row := q.db.QueryRow(ctx, getJobApplicationByID, id)
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,
@@ -305,19 +273,18 @@ func (q *Queries) GetJobApplicationByID(ctx context.Context, arg GetJobApplicati
 const listJobApplicationsByJob = `-- name: ListJobApplicationsByJob :many
 
 SELECT
-    ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
-    u.username AS applicant_username,
-    u.email    AS applicant_email
+ ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ u.username AS applicant_username,
+ u.email AS applicant_email
 FROM job_applications ja
 JOIN users u ON u.id = ja.applicant_id
-WHERE ja.tenant_id = $1 AND ja.job_id = $2
-  AND ($3::text = '' OR ja.status = $3)
+WHERE ja.job_id = $1
+ AND ($2::text = '' OR ja.status = $2)
 ORDER BY ja.applied_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListJobApplicationsByJobParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	JobID      pgtype.UUID `json:"job_id"`
 	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
@@ -343,7 +310,6 @@ type ListJobApplicationsByJobRow struct {
 // =====================================================================
 func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobApplicationsByJobParams) ([]ListJobApplicationsByJobRow, error) {
 	rows, err := q.db.Query(ctx, listJobApplicationsByJob,
-		arg.TenantID,
 		arg.JobID,
 		arg.Status,
 		arg.PageOffset,
@@ -382,18 +348,17 @@ func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobAppli
 const listUserJobApplications = `-- name: ListUserJobApplications :many
 
 SELECT
-    ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
-    c.title AS job_title,
-    c.slug  AS job_slug
+ ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ c.title AS job_title,
+ c.slug AS job_slug
 FROM job_applications ja
 JOIN contents c ON c.id = ja.job_id
-WHERE ja.tenant_id = $1 AND ja.applicant_id = $2
+WHERE ja.applicant_id = $1
 ORDER BY ja.applied_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListUserJobApplicationsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -417,12 +382,7 @@ type ListUserJobApplicationsRow struct {
 // List an applicant's application history.
 // =====================================================================
 func (q *Queries) ListUserJobApplications(ctx context.Context, arg ListUserJobApplicationsParams) ([]ListUserJobApplicationsRow, error) {
-	rows, err := q.db.Query(ctx, listUserJobApplications,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listUserJobApplications, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -457,17 +417,16 @@ const updateJobApplicationStatus = `-- name: UpdateJobApplicationStatus :one
 
 UPDATE job_applications
 SET
-    status            = $1,
-    employer_notes    = COALESCE($2, employer_notes),
-    status_updated_at = now()
-WHERE tenant_id = $3 AND id = $4
+ status = $1,
+ employer_notes = COALESCE($2, employer_notes),
+ status_updated_at = now()
+WHERE id = $3
 RETURNING id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
 `
 
 type UpdateJobApplicationStatusParams struct {
 	Status        string      `json:"status"`
 	EmployerNotes *string     `json:"employer_notes"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ID            pgtype.UUID `json:"id"`
 }
 
@@ -475,12 +434,7 @@ type UpdateJobApplicationStatusParams struct {
 // Update application status (employer or admin).
 // =====================================================================
 func (q *Queries) UpdateJobApplicationStatus(ctx context.Context, arg UpdateJobApplicationStatusParams) (JobApplication, error) {
-	row := q.db.QueryRow(ctx, updateJobApplicationStatus,
-		arg.Status,
-		arg.EmployerNotes,
-		arg.TenantID,
-		arg.ID,
-	)
+	row := q.db.QueryRow(ctx, updateJobApplicationStatus, arg.Status, arg.EmployerNotes, arg.ID)
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,

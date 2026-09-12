@@ -540,10 +540,9 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 func (s *Service) fetchForumThreadText(ctx context.Context, tenantID, threadID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
-	row, err := q.GetForumThreadByID(ctx, gen.GetForumThreadByIDParams{
-		ID:       threadID,
-		TenantID: tenantID,
-	})
+	row, err := q.GetForumThreadByID(ctx,
+		threadID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -565,10 +564,9 @@ func (s *Service) fetchForumThreadText(ctx context.Context, tenantID, threadID p
 func (s *Service) fetchSpaceText(ctx context.Context, tenantID, spaceID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
-	row, err := q.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-		ID:       spaceID,
-		TenantID: tenantID,
-	})
+	row, err := q.GetSpaceByID(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -598,10 +596,9 @@ func (s *Service) fetchSpaceText(ctx context.Context, tenantID, spaceID pgtype.U
 func (s *Service) fetchLearningTrackText(ctx context.Context, tenantID, trackID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
-	row, err := q.GetLearningTrackByID(ctx, gen.GetLearningTrackByIDParams{
-		ID:       trackID,
-		TenantID: tenantID,
-	})
+	row, err := q.GetLearningTrackByID(ctx,
+		trackID,
+	)
 	if err != nil {
 		return "", err
 	}

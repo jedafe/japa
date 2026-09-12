@@ -31,7 +31,7 @@ const getEnabledBlocksForGroups = `-- name: GetEnabledBlocksForGroups :many
 SELECT DISTINCT block_type
 FROM editor_block_permissions
 WHERE user_group_id = ANY($1::uuid[])
-  AND enabled = true
+ AND enabled = true
 `
 
 // Editor block permissions.
@@ -57,25 +57,19 @@ func (q *Queries) GetEnabledBlocksForGroups(ctx context.Context, groupIds []pgty
 }
 
 const upsertEditorBlockPermission = `-- name: UpsertEditorBlockPermission :exec
-INSERT INTO editor_block_permissions (tenant_id, block_type, user_group_id, enabled)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (tenant_id, block_type, user_group_id) DO UPDATE
-SET enabled = $4
+INSERT INTO editor_block_permissions (block_type, user_group_id, enabled) VALUES ($1, $2, $3)
+
+ON CONFLICT (block_type, user_group_id) DO UPDATE
+SET enabled = $3
 `
 
 type UpsertEditorBlockPermissionParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	BlockType   string      `json:"block_type"`
 	UserGroupID pgtype.UUID `json:"user_group_id"`
 	Enabled     bool        `json:"enabled"`
 }
 
 func (q *Queries) UpsertEditorBlockPermission(ctx context.Context, arg UpsertEditorBlockPermissionParams) error {
-	_, err := q.db.Exec(ctx, upsertEditorBlockPermission,
-		arg.TenantID,
-		arg.BlockType,
-		arg.UserGroupID,
-		arg.Enabled,
-	)
+	_, err := q.db.Exec(ctx, upsertEditorBlockPermission, arg.BlockType, arg.UserGroupID, arg.Enabled)
 	return err
 }

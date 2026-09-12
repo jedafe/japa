@@ -39,7 +39,7 @@ func NewStore(database *db.DB) *Store {
 // returns the full record. The source_url may be nil for ZIP uploads.
 func (s *Store) Create(ctx context.Context, tenantID, userID pgtype.UUID, sourceType string, sourceURL *string) (gen.ContentImport, error) {
 	imp, err := s.queries.CreateContentImport(ctx, gen.CreateContentImportParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		SourceType: sourceType,
 		SourceUrl:  sourceURL,
@@ -53,10 +53,10 @@ func (s *Store) Create(ctx context.Context, tenantID, userID pgtype.UUID, source
 
 // GetByID returns a single content_imports row scoped to the tenant.
 func (s *Store) GetByID(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
-	imp, err := s.queries.GetContentImportByID(ctx, gen.GetContentImportByIDParams{
-		TenantID: tenantID,
-		ID:       importID,
-	})
+	imp, err := s.queries.GetContentImportByID(ctx,
+
+		importID,
+	)
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: get by id: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *Store) GetByID(ctx context.Context, tenantID, importID pgtype.UUID) (ge
 // ListUserImports returns a page of a user's import history, newest first.
 func (s *Store) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUID, offset, limit int32) ([]gen.ContentImport, error) {
 	rows, err := s.queries.ListUserContentImports(ctx, gen.ListUserContentImportsParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -81,10 +81,10 @@ func (s *Store) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUI
 
 // CountUserImports returns the total number of imports for a user.
 func (s *Store) CountUserImports(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
-	count, err := s.queries.CountUserContentImports(ctx, gen.CountUserContentImportsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	count, err := s.queries.CountUserContentImports(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("contentimport: count user imports: %w", err)
 	}
@@ -96,7 +96,7 @@ func (s *Store) CountUserImports(ctx context.Context, tenantID, userID pgtype.UU
 // filtered by status. An empty status string returns all statuses.
 func (s *Store) AdminListImports(ctx context.Context, tenantID pgtype.UUID, status string, offset, limit int32) ([]gen.AdminListContentImportsRow, error) {
 	rows, err := s.queries.AdminListContentImports(ctx, gen.AdminListContentImportsParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -111,10 +111,10 @@ func (s *Store) AdminListImports(ctx context.Context, tenantID pgtype.UUID, stat
 // AdminCountImports returns the total number of imports for a tenant,
 // optionally filtered by status.
 func (s *Store) AdminCountImports(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
-	count, err := s.queries.AdminCountContentImports(ctx, gen.AdminCountContentImportsParams{
-		TenantID: tenantID,
-		Status:   status,
-	})
+	count, err := s.queries.AdminCountContentImports(ctx,
+
+		status,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("contentimport: admin count imports: %w", err)
 	}
@@ -126,10 +126,10 @@ func (s *Store) AdminCountImports(ctx context.Context, tenantID pgtype.UUID, sta
 // zeroing the counts and clearing the error log. Only imports with status
 // 'failed' or 'partial' can be retried.
 func (s *Store) ResetForRetry(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
-	imp, err := s.queries.ResetContentImportForRetry(ctx, gen.ResetContentImportForRetryParams{
-		TenantID: tenantID,
-		ID:       importID,
-	})
+	imp, err := s.queries.ResetContentImportForRetry(ctx,
+
+		importID,
+	)
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: reset for retry: %w", err)
 	}
@@ -147,8 +147,8 @@ func (s *Store) UpdateStatus(ctx context.Context, tenantID, importID pgtype.UUID
 		FailedCount:   failedCount,
 		ErrorLog:      errorLog,
 		CompletedAt:   completedAt,
-		TenantID:      tenantID,
-		ID:            importID,
+
+		ID: importID,
 	})
 	if err != nil {
 		return gen.ContentImport{}, fmt.Errorf("contentimport: update status: %w", err)

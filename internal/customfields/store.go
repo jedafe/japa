@@ -24,7 +24,7 @@ import (
 // ListFieldGroups returns every custom field group owned by the given tenant,
 // newest first.
 func (s *Service) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error) {
-	groups, err := s.read.ListCustomFieldGroupsByTenant(ctx, tenantID)
+	groups, err := s.read.ListCustomFieldGroupsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field groups: %w", err)
 	}
@@ -36,10 +36,10 @@ func (s *Service) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]
 // tenant that are assigned to the given entity class (e.g. "form", "space_type"),
 // newest first.
 func (s *Service) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error) {
-	groups, err := s.read.ListCustomFieldGroupsByTenantAndEntityClass(ctx, gen.ListCustomFieldGroupsByTenantAndEntityClassParams{
-		TenantID:    tenantID,
-		EntityClass: entityClass,
-	})
+	groups, err := s.read.ListCustomFieldGroupsByTenantAndEntityClass(ctx,
+
+		entityClass,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field groups by entity class: %w", err)
 	}
@@ -51,7 +51,7 @@ func (s *Service) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgt
 // by the given tenant. Used to enrich ListFieldGroups with entity_type without
 // N+1 per-group assignment lookups.
 func (s *Service) ListAllAssignmentsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroupAssignment, error) {
-	assignments, err := s.read.ListAssignmentsByTenantGroups(ctx, tenantID)
+	assignments, err := s.read.ListAssignmentsByTenantGroups(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing assignments by tenant groups: %w", err)
 	}
@@ -63,7 +63,7 @@ func (s *Service) ListAllAssignmentsByTenant(ctx context.Context, tenantID pgtyp
 // given tenant. Used to enrich ListFieldGroups with fields[] without N+1
 // per-group field lookups.
 func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListAllCustomFieldsByTenantRow, error) {
-	fields, err := s.read.ListAllCustomFieldsByTenant(ctx, tenantID)
+	fields, err := s.read.ListAllCustomFieldsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing all custom fields by tenant: %w", err)
 	}
@@ -74,10 +74,9 @@ func (s *Service) ListAllFieldsByTenant(ctx context.Context, tenantID pgtype.UUI
 // GetFieldGroup returns the custom field group with the given ID, scoped to
 // the tenant.
 func (s *Service) GetFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) (gen.CustomFieldGroup, error) {
-	group, err := s.read.GetCustomFieldGroupByID(ctx, gen.GetCustomFieldGroupByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	group, err := s.read.GetCustomFieldGroupByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group: %w", err)
 	}
@@ -88,10 +87,9 @@ func (s *Service) GetFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) (
 // GetFieldGroupBySlug returns the custom field group matching the given slug,
 // scoped to the tenant.
 func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.CustomFieldGroup, error) {
-	group, err := s.read.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	group, err := s.read.GetCustomFieldGroupBySlug(ctx,
+		slug,
+	)
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("getting custom field group by slug: %w", err)
 	}
@@ -103,7 +101,7 @@ func (s *Service) GetFieldGroupBySlug(ctx context.Context, slug string, tenantID
 // seeded at install time; set isSystem to false for tenant-created groups.
 func (s *Service) CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
 	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-		TenantID:    tenantID,
+
 		Name:        name,
 		Slug:        slug,
 		Description: description,
@@ -123,7 +121,6 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 		Name:        name,
 		Description: description,
 		ID:          id,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		return gen.CustomFieldGroup{}, fmt.Errorf("updating custom field group: %w", err)
@@ -139,10 +136,9 @@ func (s *Service) UpdateFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 // silent data loss when an admin deletes a group that's in use.
 func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID) error {
 	// Check for existing field values referencing this group's fields.
-	count, err := s.read.CountCustomFieldValuesByGroup(ctx, gen.CountCustomFieldValuesByGroupParams{
-		GroupID:  id,
-		TenantID: tenantID,
-	})
+	count, err := s.read.CountCustomFieldValuesByGroup(ctx,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("checking field group usage: %w", err)
 	}
@@ -151,10 +147,9 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 		return fmt.Errorf("%w: cannot delete field group with %d existing value(s)", errpkg.ErrInUse, count)
 	}
 
-	if err := s.write.DeleteCustomFieldGroup(ctx, gen.DeleteCustomFieldGroupParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteCustomFieldGroup(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting custom field group: %w", err)
 	}
 
@@ -168,10 +163,9 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id, tenantID pgtype.UUID
 // ListFieldsByGroup returns every custom field belonging to the given group,
 // ordered by position then creation time.
 func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
-	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
-		GroupID:  groupID,
-		TenantID: tenantID,
-	})
+	fields, err := s.read.ListCustomFieldsByGroup(ctx,
+		groupID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing custom fields by group: %w", err)
 	}
@@ -181,10 +175,9 @@ func (s *Service) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtyp
 
 // GetField returns the custom field with the given ID, scoped to the tenant.
 func (s *Service) GetField(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCustomFieldByIDRow, error) {
-	field, err := s.read.GetCustomFieldByID(ctx, gen.GetCustomFieldByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	field, err := s.read.GetCustomFieldByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.GetCustomFieldByIDRow{}, fmt.Errorf("getting custom field: %w", err)
 	}
@@ -217,10 +210,9 @@ func (s *Service) UpdateField(ctx context.Context, params gen.UpdateCustomFieldP
 // DeleteField deletes a non-system custom field, scoped to the tenant. System
 // fields are protected at the database level.
 func (s *Service) DeleteField(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteCustomField(ctx, gen.DeleteCustomFieldParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteCustomField(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting custom field: %w", err)
 	}
 
@@ -236,7 +228,6 @@ func (s *Service) UpdateFieldPosition(ctx context.Context, id, groupID, tenantID
 		Position: position,
 		ID:       id,
 		GroupID:  groupID,
-		TenantID: tenantID,
 	}); err != nil {
 		return fmt.Errorf("updating custom field position: %w", err)
 	}
@@ -346,7 +337,7 @@ func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entity
 // zero-value UUID would yield no rows.
 func (s *Service) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -372,9 +363,9 @@ func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, tenantID p
 	}
 
 	values, err := s.read.ListCustomFieldValuesByEntityForUser(ctx, gen.ListCustomFieldValuesByEntityForUserParams{
-		EntityType:      entityType,
-		EntityID:        entityID,
-		TenantID:        tenantID,
+		EntityType: entityType,
+		EntityID:   entityID,
+
 		VisibleFieldIds: visibleFieldIDs,
 	})
 	if err != nil {
@@ -396,7 +387,6 @@ func (s *Service) ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID 
 	rows, err := s.read.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
 		EntityType: entityType,
 		EntityID:   entityID,
-		TenantID:   tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field values with defs by entity: %w", err)
@@ -542,7 +532,7 @@ func (s *Service) DeleteFieldValue(ctx context.Context, fieldID pgtype.UUID, ent
 
 // ListForms returns every form owned by the given tenant, newest first.
 func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListFormsByTenantRow, error) {
-	forms, err := s.read.ListFormsByTenant(ctx, tenantID)
+	forms, err := s.read.ListFormsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing forms: %w", err)
 	}
@@ -553,10 +543,10 @@ func (s *Service) ListForms(ctx context.Context, tenantID pgtype.UUID) ([]gen.Li
 // ListFormsBySpace returns every form scoped to the given space, with
 // submission counts, newest first.
 func (s *Service) ListFormsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]gen.ListFormsBySpaceRow, error) {
-	forms, err := s.read.ListFormsBySpace(ctx, gen.ListFormsBySpaceParams{
-		TenantID: tenantID,
-		SpaceID:  spaceID,
-	})
+	forms, err := s.read.ListFormsBySpace(ctx,
+
+		spaceID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing forms by space: %w", err)
 	}
@@ -566,10 +556,9 @@ func (s *Service) ListFormsBySpace(ctx context.Context, tenantID, spaceID pgtype
 
 // GetForm returns the form with the given ID, scoped to the tenant.
 func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetFormByIDRow, error) {
-	form, err := s.read.GetFormByID(ctx, gen.GetFormByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	form, err := s.read.GetFormByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.GetFormByIDRow{}, fmt.Errorf("getting form: %w", err)
 	}
@@ -580,10 +569,9 @@ func (s *Service) GetForm(ctx context.Context, id, tenantID pgtype.UUID) (gen.Ge
 // GetFormBySlug returns the form matching the given slug, scoped to the
 // tenant.
 func (s *Service) GetFormBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetFormBySlugRow, error) {
-	form, err := s.read.GetFormBySlug(ctx, gen.GetFormBySlugParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	form, err := s.read.GetFormBySlug(ctx,
+		slug,
+	)
 	if err != nil {
 		return gen.GetFormBySlugRow{}, fmt.Errorf("getting form by slug: %w", err)
 	}
@@ -616,10 +604,9 @@ func (s *Service) UpdateForm(ctx context.Context, params gen.UpdateFormParams) (
 // DeleteForm deletes a non-system form, scoped to the tenant. System forms
 // are protected at the database level.
 func (s *Service) DeleteForm(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteForm(ctx, gen.DeleteFormParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteForm(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting form: %w", err)
 	}
 
@@ -643,7 +630,7 @@ func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pg
 	return db.WithTxResult(ctx, s.pool, func(q *gen.Queries) (gen.CreateFormRow, error) {
 		// 1. Create the form
 		form, err := q.CreateForm(ctx, gen.CreateFormParams{
-			TenantID:    tenantID,
+
 			SpaceID:     spaceID,
 			Name:        name,
 			Slug:        slug,
@@ -659,7 +646,7 @@ func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pg
 		groupSlug := "form-" + slug
 
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-			TenantID: tenantID,
+
 			Name:     "Form: " + name,
 			Slug:     groupSlug,
 			IsSystem: false,
@@ -671,8 +658,8 @@ func (s *Service) CreateFormWithFields(ctx context.Context, tenantID, spaceID pg
 		// 3. Create each field in the group
 		for _, fd := range fieldDefs {
 			_, err := q.CreateCustomField(ctx, gen.CreateCustomFieldParams{
-				GroupID:        group.ID,
-				TenantID:       tenantID,
+				GroupID: group.ID,
+
 				Label:          fd.Label,
 				Key:            fd.Key,
 				FieldType:      fd.FieldType,
@@ -716,10 +703,9 @@ func (s *Service) GetFormFields(ctx context.Context, formID, tenantID pgtype.UUI
 		return nil, fmt.Errorf("getting form field assignment: %w", err)
 	}
 
-	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
-		GroupID:  assignment.GroupID,
-		TenantID: tenantID,
-	})
+	fields, err := s.read.ListCustomFieldsByGroup(ctx,
+		assignment.GroupID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing form fields: %w", err)
 	}
@@ -764,7 +750,7 @@ func (s *Service) EnsureFormGroup(ctx context.Context, tenantID, formID pgtype.U
 	groupSlug := "form-" + formSlug
 
 	group, err := s.write.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-		TenantID: tenantID,
+
 		Name:     "Form: " + formName,
 		Slug:     groupSlug,
 		IsSystem: false,
@@ -817,10 +803,9 @@ func (s *Service) GetStepFields(ctx context.Context, stepID, tenantID pgtype.UUI
 		return nil, fmt.Errorf("getting step field assignment: %w", err)
 	}
 
-	fields, err := s.read.ListCustomFieldsByGroup(ctx, gen.ListCustomFieldsByGroupParams{
-		GroupID:  assignment.GroupID,
-		TenantID: tenantID,
-	})
+	fields, err := s.read.ListCustomFieldsByGroup(ctx,
+		assignment.GroupID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing step fields: %w", err)
 	}
@@ -861,7 +846,7 @@ func (s *Service) CreateFormStep(ctx context.Context, tenantID pgtype.UUID, form
 
 		// Create a backing field group for this step.
 		group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-			TenantID: tenantID,
+
 			Name:     "Form step: " + params.Title,
 			Slug:     "form-" + formSlug + "-step-" + strconv.Itoa(int(params.Position)),
 			IsSystem: false,
@@ -984,10 +969,9 @@ func (s *Service) CreateFormSubmission(ctx context.Context, params gen.CreateFor
 // GetFormSubmission returns the submission with the given ID, scoped to the
 // tenant.
 func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
-	submission, err := s.read.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	submission, err := s.read.GetFormSubmissionByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.GetFormSubmissionByIDRow{}, fmt.Errorf("getting form submission: %w", err)
 	}
@@ -999,9 +983,8 @@ func (s *Service) GetFormSubmission(ctx context.Context, id, tenantID pgtype.UUI
 // scoped to the tenant.
 func (s *Service) UpdateFormSubmissionStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
 	if err := s.write.UpdateFormSubmissionStatus(ctx, gen.UpdateFormSubmissionStatusParams{
-		Status:   status,
-		ID:       id,
-		TenantID: tenantID,
+		Status: status,
+		ID:     id,
 	}); err != nil {
 		return fmt.Errorf("updating form submission status: %w", err)
 	}
@@ -1011,10 +994,9 @@ func (s *Service) UpdateFormSubmissionStatus(ctx context.Context, id, tenantID p
 
 // DeleteFormSubmission deletes a submission, scoped to the tenant.
 func (s *Service) DeleteFormSubmission(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteFormSubmission(ctx, gen.DeleteFormSubmissionParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteFormSubmission(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting form submission: %w", err)
 	}
 
@@ -1089,7 +1071,7 @@ func (s *Service) ReorderFormTriggers(ctx context.Context, formID pgtype.UUID, t
 
 // ListEntityTypes returns all entity types for a tenant, ordered by sort_order.
 func (s *Service) ListEntityTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldEntityType, error) {
-	types, err := s.read.ListCustomFieldEntityTypes(ctx, tenantID)
+	types, err := s.read.ListCustomFieldEntityTypes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing custom field entity types: %w", err)
 	}
@@ -1120,10 +1102,9 @@ func (s *Service) UpdateEntityType(ctx context.Context, params gen.UpdateCustomF
 // DeleteEntityType deletes a non-system entity type. System types (is_system=true)
 // are protected at the SQL layer and will return 0 rows affected.
 func (s *Service) DeleteEntityType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	rows, err := s.write.DeleteCustomFieldEntityType(ctx, gen.DeleteCustomFieldEntityTypeParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	rows, err := s.write.DeleteCustomFieldEntityType(ctx,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("deleting custom field entity type: %w", err)
 	}

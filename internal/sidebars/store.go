@@ -32,7 +32,7 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 	}
 
 	rows, err := s.read.ListSidebars(ctx, gen.ListSidebarsParams{
-		TenantID: tenantID, App: app, Position: position, Status: status, Q: q, Sort: sort,
+		App: app, Position: position, Status: status, Q: q, Sort: sort,
 		PageOffset: offset, PageLimit: limit,
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *Store) listSidebars(ctx context.Context, tenantID pgtype.UUID, app, pos
 
 func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, position, status, q string) (int32, error) {
 	count, err := s.read.CountSidebars(ctx, gen.CountSidebarsParams{
-		TenantID: tenantID, App: app, Position: position, Status: status, Q: q,
+		App: app, Position: position, Status: status, Q: q,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting sidebars: %w", err)
@@ -54,7 +54,7 @@ func (s *Store) countSidebars(ctx context.Context, tenantID pgtype.UUID, app, po
 }
 
 func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Sidebar, error) {
-	row, err := s.read.GetSidebarByID(ctx, gen.GetSidebarByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetSidebarByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.Sidebar{}, ErrSidebarNotFound
@@ -98,7 +98,7 @@ func (s *Store) updateSidebar(ctx context.Context, p gen.UpdateSidebarParams) (g
 }
 
 func (s *Store) deleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteSidebar(ctx, gen.DeleteSidebarParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteSidebar(ctx, id); err != nil {
 		return fmt.Errorf("deleting sidebar: %w", err)
 	}
 
@@ -108,9 +108,9 @@ func (s *Store) deleteSidebar(ctx context.Context, id, tenantID pgtype.UUID) err
 // ── Sidebar Widgets ───────────────────────────────────────────────────
 
 func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
-	rows, err := s.read.ListSidebarWidgets(ctx, gen.ListSidebarWidgetsParams{
-		TenantID: tenantID, SidebarID: sidebarID,
-	})
+	rows, err := s.read.ListSidebarWidgets(ctx,
+		sidebarID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebar widgets: %w", err)
 	}
@@ -119,7 +119,7 @@ func (s *Store) listSidebarWidgets(ctx context.Context, tenantID, sidebarID pgty
 }
 
 func (s *Store) getSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) (gen.SidebarWidget, error) {
-	row, err := s.read.GetSidebarWidget(ctx, gen.GetSidebarWidgetParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetSidebarWidget(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.SidebarWidget{}, ErrSidebarWidgetNotFound
@@ -154,7 +154,7 @@ func (s *Store) updateSidebarWidget(ctx context.Context, p gen.UpdateSidebarWidg
 }
 
 func (s *Store) deleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteSidebarWidget(ctx, gen.DeleteSidebarWidgetParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteSidebarWidget(ctx, id); err != nil {
 		return fmt.Errorf("deleting sidebar widget: %w", err)
 	}
 
@@ -163,7 +163,7 @@ func (s *Store) deleteSidebarWidget(ctx context.Context, id, tenantID pgtype.UUI
 
 func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID, sortOrders []int32) error {
 	if err := s.write.BulkUpdateSidebarWidgetSortOrder(ctx, gen.BulkUpdateSidebarWidgetSortOrderParams{
-		TenantID: tenantID, Ids: ids, SortOrders: sortOrders,
+		Ids: ids, SortOrders: sortOrders,
 	}); err != nil {
 		return fmt.Errorf("bulk updating sidebar widget sort order: %w", err)
 	}
@@ -174,9 +174,9 @@ func (s *Store) bulkUpdateSidebarWidgetSortOrder(ctx context.Context, tenantID p
 // ── User group resolution ──────────────────────────────────────────────
 
 func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUID) ([]string, error) {
-	rows, err := s.read.GetUserGroupIDs(ctx, gen.GetUserGroupIDsParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	rows, err := s.read.GetUserGroupIDs(ctx,
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting user group ids: %w", err)
 	}
@@ -188,7 +188,7 @@ func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUI
 
 func (s *Store) listActiveSidebarsForResolve(ctx context.Context, tenantID pgtype.UUID, app, position string) ([]gen.Sidebar, error) {
 	rows, err := s.read.ListActiveSidebarsForResolve(ctx, gen.ListActiveSidebarsForResolveParams{
-		TenantID: tenantID, App: app, Position: position,
+		App: app, Position: position,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing active sidebars for resolve: %w", err)
@@ -198,9 +198,9 @@ func (s *Store) listActiveSidebarsForResolve(ctx context.Context, tenantID pgtyp
 }
 
 func (s *Store) listActiveSidebarWidgets(ctx context.Context, tenantID, sidebarID pgtype.UUID) ([]gen.SidebarWidget, error) {
-	rows, err := s.read.ListActiveSidebarWidgets(ctx, gen.ListActiveSidebarWidgetsParams{
-		TenantID: tenantID, SidebarID: sidebarID,
-	})
+	rows, err := s.read.ListActiveSidebarWidgets(ctx,
+		sidebarID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing active sidebar widgets: %w", err)
 	}
@@ -252,8 +252,8 @@ type SidebarJSON struct {
 // genSidebarToJSON converts a sqlc-generated Sidebar row into a JSON-safe SidebarJSON.
 func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 	s := SidebarJSON{
-		ID:               row.ID.String(),
-		TenantID:         row.TenantID.String(),
+		ID: row.ID.String(),
+
 		App:              row.App,
 		Position:         row.Position,
 		Slug:             row.Slug,
@@ -281,8 +281,8 @@ func genSidebarToJSON(row gen.Sidebar) SidebarJSON {
 // widget_count via a subquery) into a JSON-safe SidebarJSON.
 func genListSidebarsRowToJSON(row gen.ListSidebarsRow) SidebarJSON {
 	s := genSidebarToJSON(gen.Sidebar{
-		ID:               row.ID,
-		TenantID:         row.TenantID,
+		ID: row.ID,
+
 		App:              row.App,
 		Position:         row.Position,
 		Slug:             row.Slug,
@@ -311,8 +311,8 @@ func timestampToISO(ts pgtype.Timestamptz) string {
 // genSidebarWidgetToJSON converts a sqlc-generated SidebarWidget row into a JSON-safe SidebarWidgetJSON.
 func genSidebarWidgetToJSON(row gen.SidebarWidget) SidebarWidgetJSON {
 	w := SidebarWidgetJSON{
-		ID:               row.ID.String(),
-		TenantID:         row.TenantID.String(),
+		ID: row.ID.String(),
+
 		SidebarID:        row.SidebarID.String(),
 		WidgetType:       row.WidgetType,
 		Label:            row.Label,

@@ -262,10 +262,9 @@ func (s *Service) SetCache(rdb valkeycompat.Cmdable) {
 // a tenant. Used by the organizations handler to read the org_type select
 // field's options from the custom field system (Section 07 + 08).
 func (s *Service) GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error) {
-	return s.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      key,
-		TenantID: tenantID,
-	})
+	return s.read.GetCustomFieldByKey(ctx,
+		key,
+	)
 }
 
 // ListGuideCategories returns all guide categories for a tenant. Guide
@@ -274,10 +273,10 @@ func (s *Service) GetCustomFieldByKey(ctx context.Context, key string, tenantID 
 // each category with its field group ID so the admin panel can link to the
 // field editor.
 func (s *Service) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error) {
-	rows, err := s.read.ListCustomFieldEntityTypesByPrefix(ctx, gen.ListCustomFieldEntityTypesByPrefixParams{
-		TenantID: tenantID,
-		Prefix:   "guide_category:%",
-	})
+	rows, err := s.read.ListCustomFieldEntityTypesByPrefix(ctx,
+
+		"guide_category:%",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing guide categories: %w", err)
 	}
@@ -291,10 +290,10 @@ func (s *Service) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID)
 		// Try to find the associated field group (slug = "guide_{slug}_fields").
 		groupSlug := "guide_" + slug + "_fields"
 
-		group, err := s.read.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
-			TenantID: tenantID,
-			Slug:     groupSlug,
-		})
+		group, err := s.read.GetCustomFieldGroupBySlug(ctx,
+
+			groupSlug,
+		)
 		if err == nil {
 			cat.GroupID = group.ID.String()
 			cat.GroupSlug = group.Slug
@@ -329,7 +328,7 @@ func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 	value := "guide_category:" + input.Slug
 
 	_, err = q.CreateCustomFieldEntityType(ctx, gen.CreateCustomFieldEntityTypeParams{
-		TenantID:  tenantID,
+
 		Value:     value,
 		Label:     input.Label,
 		SortOrder: 0,
@@ -341,7 +340,7 @@ func (s *Service) CreateGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 	groupSlug := "guide_" + input.Slug + "_fields"
 
 	group, err := q.CreateCustomFieldGroup(ctx, gen.CreateCustomFieldGroupParams{
-		TenantID:    tenantID,
+
 		Name:        input.Label + " Fields",
 		Slug:        groupSlug,
 		Description: ptr("Custom fields for " + input.Label),
@@ -375,10 +374,10 @@ func (s *Service) DeleteGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 	value := "guide_category:" + slug
 
 	// Find the entity type to get its ID and check is_system.
-	et, err := s.read.GetCustomFieldEntityTypeByValue(ctx, gen.GetCustomFieldEntityTypeByValueParams{
-		TenantID: tenantID,
-		Value:    value,
-	})
+	et, err := s.read.GetCustomFieldEntityTypeByValue(ctx,
+
+		value,
+	)
 	if err != nil {
 		return fmt.Errorf("finding guide category: %w", err)
 	}
@@ -398,24 +397,22 @@ func (s *Service) DeleteGuideCategory(ctx context.Context, tenantID pgtype.UUID,
 	// Delete the field group (cascades to fields and assignments).
 	groupSlug := "guide_" + slug + "_fields"
 
-	group, err := q.GetCustomFieldGroupBySlug(ctx, gen.GetCustomFieldGroupBySlugParams{
-		TenantID: tenantID,
-		Slug:     groupSlug,
-	})
+	group, err := q.GetCustomFieldGroupBySlug(ctx,
+
+		groupSlug,
+	)
 	if err == nil {
-		if err := q.DeleteCustomFieldGroup(ctx, gen.DeleteCustomFieldGroupParams{
-			ID:       group.ID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteCustomFieldGroup(ctx,
+			group.ID,
+		); err != nil {
 			return fmt.Errorf("deleting field group: %w", err)
 		}
 	}
 
 	// Delete the entity type.
-	if _, err := q.DeleteCustomFieldEntityType(ctx, gen.DeleteCustomFieldEntityTypeParams{
-		ID:       et.ID,
-		TenantID: tenantID,
-	}); err != nil {
+	if _, err := q.DeleteCustomFieldEntityType(ctx,
+		et.ID,
+	); err != nil {
 		return fmt.Errorf("deleting entity type: %w", err)
 	}
 

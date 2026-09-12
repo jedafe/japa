@@ -214,9 +214,9 @@ LIMIT 1
 // ListChecklistProgress returns all progress rows for a user + guide.
 func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]gen.ChecklistProgress, error) {
 	return s.queries.ListChecklistProgressByUserGuide(ctx, gen.ListChecklistProgressByUserGuideParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
+
+		UserID:  userID,
+		GuideID: guideID,
 	})
 }
 
@@ -225,10 +225,10 @@ func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, gui
 // for a note-only PATCH (where completed is nil in the request body).
 func (s *Store) GetSingleProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string) (gen.ChecklistProgress, error) {
 	return s.queries.GetSingleChecklistProgress(ctx, gen.GetSingleChecklistProgressParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
-		ItemKey:  itemKey,
+
+		UserID:  userID,
+		GuideID: guideID,
+		ItemKey: itemKey,
 	})
 }
 
@@ -240,9 +240,9 @@ func (s *Store) UpsertChecklistProgress(ctx context.Context, arg gen.UpsertCheck
 // DeleteChecklistProgress resets all progress for a user + guide.
 func (s *Store) DeleteChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
 	return s.queries.DeleteChecklistProgressByUserGuide(ctx, gen.DeleteChecklistProgressByUserGuideParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
+
+		UserID:  userID,
+		GuideID: guideID,
 	})
 }
 
@@ -250,9 +250,9 @@ func (s *Store) DeleteChecklistProgress(ctx context.Context, tenantID, userID, g
 // user + guide (used for the full-completion check before awarding points).
 func (s *Store) CountCompletedChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (int64, error) {
 	return s.queries.CountCompletedChecklistItems(ctx, gen.CountCompletedChecklistItemsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		GuideID:  guideID,
+
+		UserID:  userID,
+		GuideID: guideID,
 	})
 }
 
@@ -266,16 +266,16 @@ func (s *Store) AdminListChecklistProgress(ctx context.Context, arg gen.AdminLis
 // (with the same guide_id/user_id filters applied).
 func (s *Store) AdminCountChecklistProgress(ctx context.Context, tenantID, guideID, userID pgtype.UUID) (int64, error) {
 	return s.queries.AdminCountChecklistProgress(ctx, gen.AdminCountChecklistProgressParams{
-		TenantID: tenantID,
-		GuideID:  guideID,
-		UserID:   userID,
+
+		GuideID: guideID,
+		UserID:  userID,
 	})
 }
 
 // AdminCompletionStats returns per-guide completion aggregates (admin).
 func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AdminChecklistCompletionStatsRow, error) {
 	return s.queries.AdminChecklistCompletionStats(ctx, gen.AdminChecklistCompletionStatsParams{
-		TenantID:   tenantID,
+
 		PageOffset: pageOffset,
 		PageLimit:  pageLimit,
 	})

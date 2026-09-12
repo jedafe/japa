@@ -706,7 +706,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	alert, err := s.store.CreateAlert(ctx, gen.CreateRateAlertParams{
-		TenantID:        tenantID,
+
 		UserID:          userID,
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
@@ -728,9 +728,9 @@ func (s *Service) UpdateAlert(ctx context.Context, tenantID, userID, alertID pgt
 	}
 
 	arg := gen.UpdateRateAlertParams{
-		TenantID: tenantID,
-		ID:       alertID,
-		UserID:   userID,
+
+		ID:     alertID,
+		UserID: userID,
 	}
 	if targetRate != nil {
 		arg.TargetRate = numericFromFloat(*targetRate)
@@ -832,7 +832,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 // corridor's rate cache.
 func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgtype.UUID, sendCurrency, receiveCurrency string, rate, feeFlat, feePct float64, transferTime, sourceURL *string) (gen.RemittanceRate, error) {
 	arg := gen.InsertRemittanceRateParams{
-		TenantID:        tenantID,
+
 		ProviderID:      providerID,
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
@@ -898,7 +898,7 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 	}
 
 	arg := gen.InsertRemittanceRateParams{
-		TenantID:        tenantID,
+
 		ProviderID:      input.ProviderID,
 		SendCurrency:    input.SendCurrency,
 		ReceiveCurrency: input.ReceiveCurrency,
@@ -1169,7 +1169,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 	// corridor cache. ADR-075 §3: rate history is append-only — never UPDATE.
 	for _, snap := range snapshots {
 		arg := gen.InsertRemittanceRateParams{
-			TenantID:        tenantID,
+
 			ProviderID:      providerID,
 			SendCurrency:    snap.SendCurrency,
 			ReceiveCurrency: snap.ReceiveCurrency,

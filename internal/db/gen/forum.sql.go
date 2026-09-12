@@ -13,15 +13,14 @@ import (
 
 const addForumBookmark = `-- name: AddForumBookmark :one
 
-INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO bookmarks (user_id, entity_type, entity_id, folder, folder_id) VALUES ($1, $2, $3, $4, $5)
+
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
-    SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+ SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
+RETURNING id, user_id, entity_type, entity_id, folder, folder_id, created_at
 `
 
 type AddForumBookmarkParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -31,7 +30,6 @@ type AddForumBookmarkParams struct {
 
 type AddForumBookmarkRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -48,7 +46,6 @@ type AddForumBookmarkRow struct {
 // =====================
 func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkParams) (AddForumBookmarkRow, error) {
 	row := q.db.QueryRow(ctx, addForumBookmark,
-		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
@@ -58,7 +55,6 @@ func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkPara
 	var i AddForumBookmarkRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -70,8 +66,8 @@ func (q *Queries) AddForumBookmark(ctx context.Context, arg AddForumBookmarkPara
 }
 
 const addForumPollOption = `-- name: AddForumPollOption :one
-INSERT INTO forum_poll_options (poll_id, label, position)
-VALUES ($1, $2, $3)
+INSERT INTO forum_poll_options (poll_id, label, position) VALUES ($1, $2, $3)
+
 RETURNING id, poll_id, label, position
 `
 
@@ -94,8 +90,8 @@ func (q *Queries) AddForumPollOption(ctx context.Context, arg AddForumPollOption
 }
 
 const addForumThreadTag = `-- name: AddForumThreadTag :exec
-INSERT INTO forum_thread_tags (thread_id, tag_id)
-VALUES ($1, $2)
+INSERT INTO forum_thread_tags (thread_id, tag_id) VALUES ($1, $2)
+
 ON CONFLICT DO NOTHING
 `
 
@@ -126,8 +122,8 @@ func (q *Queries) CountForumThreadTags(ctx context.Context, threadID pgtype.UUID
 
 const createForumPoll = `-- name: CreateForumPoll :one
 
-INSERT INTO forum_polls (thread_id, question, is_multi_select, close_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO forum_polls (thread_id, question, is_multi_select, close_at) VALUES ($1, $2, $3, $4)
+
 RETURNING id, thread_id, question, is_multi_select, close_at, created_at
 `
 
@@ -162,20 +158,13 @@ func (q *Queries) CreateForumPoll(ctx context.Context, arg CreateForumPollParams
 
 const createForumReply = `-- name: CreateForumReply :one
 
-INSERT INTO forum_replies (
-    tenant_id, thread_id, parent_reply_id, author_user_id,
-    body, is_anonymous
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6
-)
-RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
-          body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 `
 
 type CreateForumReplyParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ThreadID      pgtype.UUID `json:"thread_id"`
 	ParentReplyID pgtype.UUID `json:"parent_reply_id"`
 	AuthorUserID  pgtype.UUID `json:"author_user_id"`
@@ -183,22 +172,37 @@ type CreateForumReplyParams struct {
 	IsAnonymous   bool        `json:"is_anonymous"`
 }
 
+type CreateForumReplyRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ThreadID      pgtype.UUID        `json:"thread_id"`
+	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	Body          []byte             `json:"body"`
+	VoteScore     int32              `json:"vote_score"`
+	ViewCount     int32              `json:"view_count"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	IsEdited      bool               `json:"is_edited"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending    bool               `json:"ama_pending"`
+	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
+}
+
 // =====================
 // Replies
 // =====================
-func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyParams) (ForumReply, error) {
+func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyParams) (CreateForumReplyRow, error) {
 	row := q.db.QueryRow(ctx, createForumReply,
-		arg.TenantID,
 		arg.ThreadID,
 		arg.ParentReplyID,
 		arg.AuthorUserID,
 		arg.Body,
 		arg.IsAnonymous,
 	)
-	var i ForumReply
+	var i CreateForumReplyRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -218,15 +222,13 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 
 const createForumTag = `-- name: CreateForumTag :one
 
-INSERT INTO forum_tags (tenant_id, name, slug, description, rules, cover_image_id, moderator_user_id)
-VALUES ($1, $2, $3, $4, $5,
-        $6, $7)
-RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at, deleted_at
+INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES ($1, $2, $3, $4, $5, $6)
+
+RETURNING id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type CreateForumTagParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	Name            string      `json:"name"`
 	Slug            string      `json:"slug"`
 	Description     *string     `json:"description"`
@@ -235,12 +237,24 @@ type CreateForumTagParams struct {
 	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
 }
 
+type CreateForumTagRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
 // =====================
 // Tags
 // =====================
-func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) (ForumTag, error) {
+func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) (CreateForumTagRow, error) {
 	row := q.db.QueryRow(ctx, createForumTag,
-		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -248,10 +262,9 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 		arg.CoverImageID,
 		arg.ModeratorUserID,
 	)
-	var i ForumTag
+	var i CreateForumTagRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -268,22 +281,14 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 const createForumThread = `-- name: CreateForumThread :one
 
 
-INSERT INTO forum_threads (
-    tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-    title, slug, body, is_anonymous, edit_window_minutes
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, $8, $9,
-    $10
-)
-RETURNING id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-          title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-          vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-          is_edited, created_at, updated_at, deleted_at
+INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 `
 
 type CreateForumThreadParams struct {
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	ContentID         pgtype.UUID `json:"content_id"`
 	SpaceID           pgtype.UUID `json:"space_id"`
 	AuthorUserID      pgtype.UUID `json:"author_user_id"`
@@ -297,7 +302,6 @@ type CreateForumThreadParams struct {
 
 type CreateForumThreadRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -326,7 +330,6 @@ type CreateForumThreadRow struct {
 // =====================
 func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadParams) (CreateForumThreadRow, error) {
 	row := q.db.QueryRow(ctx, createForumThread,
-		arg.TenantID,
 		arg.ContentID,
 		arg.SpaceID,
 		arg.AuthorUserID,
@@ -340,7 +343,6 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 	var i CreateForumThreadRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -367,17 +369,16 @@ func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadPa
 
 const deleteForumBookmarkByID = `-- name: DeleteForumBookmarkByID :exec
 DELETE FROM bookmarks
-WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type DeleteForumBookmarkByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) DeleteForumBookmarkByID(ctx context.Context, arg DeleteForumBookmarkByIDParams) error {
-	_, err := q.db.Exec(ctx, deleteForumBookmarkByID, arg.ID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, deleteForumBookmarkByID, arg.ID, arg.UserID)
 	return err
 }
 
@@ -436,7 +437,7 @@ func (q *Queries) DeleteForumVoteByEntity(ctx context.Context, arg DeleteForumVo
 }
 
 const getForumBookmarkByEntity = `-- name: GetForumBookmarkByEntity :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+SELECT id, user_id, entity_type, entity_id, folder, folder_id, created_at
 FROM bookmarks
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -449,7 +450,6 @@ type GetForumBookmarkByEntityParams struct {
 
 type GetForumBookmarkByEntityRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -465,7 +465,6 @@ func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBook
 	var i GetForumBookmarkByEntityRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -477,20 +476,18 @@ func (q *Queries) GetForumBookmarkByEntity(ctx context.Context, arg GetForumBook
 }
 
 const getForumBookmarkByID = `-- name: GetForumBookmarkByID :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+SELECT id, user_id, entity_type, entity_id, folder, folder_id, created_at
 FROM bookmarks
-WHERE id = $1 AND user_id = $2 AND tenant_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type GetForumBookmarkByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 type GetForumBookmarkByIDRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -503,11 +500,10 @@ type GetForumBookmarkByIDRow struct {
 // /forum/bookmarks/{id} can resolve the entity to decrement the
 // denormalized bookmark_count. Ref: api-routes-catalog L610.
 func (q *Queries) GetForumBookmarkByID(ctx context.Context, arg GetForumBookmarkByIDParams) (GetForumBookmarkByIDRow, error) {
-	row := q.db.QueryRow(ctx, getForumBookmarkByID, arg.ID, arg.UserID, arg.TenantID)
+	row := q.db.QueryRow(ctx, getForumBookmarkByID, arg.ID, arg.UserID)
 	var i GetForumBookmarkByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -584,10 +580,10 @@ func (q *Queries) GetForumPollByThreadID(ctx context.Context, threadID pgtype.UU
 
 const getForumPollResults = `-- name: GetForumPollResults :many
 SELECT
-    fpo.id AS option_id,
-    fpo.label,
-    fpo.position,
-    COUNT(fpv.id)::int AS vote_count
+ fpo.id AS option_id,
+ fpo.label,
+ fpo.position,
+ COUNT(fpv.id)::int AS vote_count
 FROM forum_poll_options fpo
 LEFT JOIN forum_poll_votes fpv ON fpv.option_id = fpo.id
 WHERE fpo.poll_id = $1
@@ -628,24 +624,35 @@ func (q *Queries) GetForumPollResults(ctx context.Context, pollID pgtype.UUID) (
 }
 
 const getForumReplyByID = `-- name: GetForumReplyByID :one
-SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
-       body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetForumReplyByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetForumReplyByIDRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ThreadID      pgtype.UUID        `json:"thread_id"`
+	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	Body          []byte             `json:"body"`
+	VoteScore     int32              `json:"vote_score"`
+	ViewCount     int32              `json:"view_count"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	IsEdited      bool               `json:"is_edited"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending    bool               `json:"ama_pending"`
+	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
 }
 
-func (q *Queries) GetForumReplyByID(ctx context.Context, arg GetForumReplyByIDParams) (ForumReply, error) {
-	row := q.db.QueryRow(ctx, getForumReplyByID, arg.ID, arg.TenantID)
-	var i ForumReply
+func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (GetForumReplyByIDRow, error) {
+	row := q.db.QueryRow(ctx, getForumReplyByID, id)
+	var i GetForumReplyByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -664,28 +671,21 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, arg GetForumReplyByIDPa
 }
 
 const getForumReplyByIDWithAuthor = `-- name: GetForumReplyByIDWithAuthor :one
-SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
-       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-       fr.created_at, fr.updated_at, fr.deleted_at,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
 WHERE fr.id = $1
-  AND fr.tenant_id = $2
-  AND fr.deleted_at IS NULL
+ AND fr.deleted_at IS NULL
 `
-
-type GetForumReplyByIDWithAuthorParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetForumReplyByIDWithAuthorRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -704,12 +704,11 @@ type GetForumReplyByIDWithAuthorRow struct {
 
 // Returns a single reply with author details. Used for the accepted-answer
 // in QAPage JSON-LD and the solved thread highlight (BL-012).
-func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, arg GetForumReplyByIDWithAuthorParams) (GetForumReplyByIDWithAuthorRow, error) {
-	row := q.db.QueryRow(ctx, getForumReplyByIDWithAuthor, arg.ID, arg.TenantID)
+func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, id pgtype.UUID) (GetForumReplyByIDWithAuthorRow, error) {
+	row := q.db.QueryRow(ctx, getForumReplyByIDWithAuthor, id)
 	var i GetForumReplyByIDWithAuthorRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -729,23 +728,30 @@ func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, arg GetForumR
 }
 
 const getForumTagByID = `-- name: GetForumTagByID :one
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetForumTagByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetForumTagByIDRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetForumTagByID(ctx context.Context, arg GetForumTagByIDParams) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, getForumTagByID, arg.ID, arg.TenantID)
-	var i ForumTag
+func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (GetForumTagByIDRow, error) {
+	row := q.db.QueryRow(ctx, getForumTagByID, id)
+	var i GetForumTagByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -760,23 +766,30 @@ func (q *Queries) GetForumTagByID(ctx context.Context, arg GetForumTagByIDParams
 }
 
 const getForumTagBySlug = `-- name: GetForumTagBySlug :one
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE slug = $1 AND deleted_at IS NULL
 `
 
-type GetForumTagBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetForumTagBySlugRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetForumTagBySlug(ctx context.Context, arg GetForumTagBySlugParams) (ForumTag, error) {
-	row := q.db.QueryRow(ctx, getForumTagBySlug, arg.Slug, arg.TenantID)
-	var i ForumTag
+func (q *Queries) GetForumTagBySlug(ctx context.Context, slug string) (GetForumTagBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getForumTagBySlug, slug)
+	var i GetForumTagBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -791,22 +804,16 @@ func (q *Queries) GetForumTagBySlug(ctx context.Context, arg GetForumTagBySlugPa
 }
 
 const getForumThreadByID = `-- name: GetForumThreadByID :one
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
+SELECT id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetForumThreadByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetForumThreadByIDRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -829,12 +836,11 @@ type GetForumThreadByIDRow struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetForumThreadByID(ctx context.Context, arg GetForumThreadByIDParams) (GetForumThreadByIDRow, error) {
-	row := q.db.QueryRow(ctx, getForumThreadByID, arg.ID, arg.TenantID)
+func (q *Queries) GetForumThreadByID(ctx context.Context, id pgtype.UUID) (GetForumThreadByIDRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadByID, id)
 	var i GetForumThreadByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -860,22 +866,16 @@ func (q *Queries) GetForumThreadByID(ctx context.Context, arg GetForumThreadByID
 }
 
 const getForumThreadBySlug = `-- name: GetForumThreadBySlug :one
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
+SELECT id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
-WHERE slug = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE slug = $1 AND deleted_at IS NULL
 `
-
-type GetForumThreadBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetForumThreadBySlugRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -898,12 +898,11 @@ type GetForumThreadBySlugRow struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetForumThreadBySlug(ctx context.Context, arg GetForumThreadBySlugParams) (GetForumThreadBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getForumThreadBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetForumThreadBySlug(ctx context.Context, slug string) (GetForumThreadBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadBySlug, slug)
 	var i GetForumThreadBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -930,36 +929,30 @@ func (q *Queries) GetForumThreadBySlug(ctx context.Context, arg GetForumThreadBy
 
 const getForumThreadBySlugWithDetails = `-- name: GetForumThreadBySlugWithDetails :one
 
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
-       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE su.username END AS solved_by_username,
-       CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       s.level AS space_level
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE su.username END AS solved_by_username,
+ CASE WHEN ft.solved_by_user_id IS NULL THEN NULL ELSE sup.display_name END AS solved_by_display_name,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN users su ON su.id = ft.solved_by_user_id
 LEFT JOIN user_profiles sup ON sup.user_id = ft.solved_by_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.slug = $1 AND ft.tenant_id = $2 AND ft.deleted_at IS NULL
+WHERE ft.slug = $1 AND ft.deleted_at IS NULL
 `
-
-type GetForumThreadBySlugWithDetailsParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetForumThreadBySlugWithDetailsRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ContentID           pgtype.UUID        `json:"content_id"`
 	SpaceID             pgtype.UUID        `json:"space_id"`
 	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
@@ -997,12 +990,11 @@ type GetForumThreadBySlugWithDetailsRow struct {
 // response. When is_anonymous = true, author fields are nulled out so
 // the frontend never receives identifying data for anonymous posts.
 // =====================
-func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, arg GetForumThreadBySlugWithDetailsParams) (GetForumThreadBySlugWithDetailsRow, error) {
-	row := q.db.QueryRow(ctx, getForumThreadBySlugWithDetails, arg.Slug, arg.TenantID)
+func (q *Queries) GetForumThreadBySlugWithDetails(ctx context.Context, slug string) (GetForumThreadBySlugWithDetailsRow, error) {
+	row := q.db.QueryRow(ctx, getForumThreadBySlugWithDetails, slug)
 	var i GetForumThreadBySlugWithDetailsRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -1052,25 +1044,20 @@ func (q *Queries) GetForumThreadSpaceIDByID(ctx context.Context, id pgtype.UUID)
 }
 
 const getForumThreadTenantAndSpaceByID = `-- name: GetForumThreadTenantAndSpaceByID :one
-SELECT tenant_id, space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
+SELECT space_id FROM forum_threads WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetForumThreadTenantAndSpaceByIDRow struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
-}
 
 // Returns the tenant and space for a thread without requiring a tenant filter.
 // Used by background/WS paths that only have the thread_id (e.g. poll broadcasts).
-func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (GetForumThreadTenantAndSpaceByIDRow, error) {
+func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getForumThreadTenantAndSpaceByID, id)
-	var i GetForumThreadTenantAndSpaceByIDRow
-	err := row.Scan(&i.TenantID, &i.SpaceID)
-	return i, err
+	var space_id pgtype.UUID
+	err := row.Scan(&space_id)
+	return space_id, err
 }
 
 const getForumVote = `-- name: GetForumVote :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
+SELECT id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -1081,12 +1068,20 @@ type GetForumVoteParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (ForumVote, error) {
+type GetForumVoteRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Value      int16              `json:"value"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (GetForumVoteRow, error) {
 	row := q.db.QueryRow(ctx, getForumVote, arg.UserID, arg.EntityType, arg.EntityID)
-	var i ForumVote
+	var i GetForumVoteRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -1126,30 +1121,23 @@ func (q *Queries) GetReplyViewCount(ctx context.Context, replyID pgtype.UUID) (i
 }
 
 const getTopReplyForThread = `-- name: GetTopReplyForThread :one
-SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
-       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-       fr.created_at, fr.updated_at, fr.deleted_at,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
 WHERE fr.thread_id = $1
-  AND fr.tenant_id = $2
-  AND fr.deleted_at IS NULL
+ AND fr.deleted_at IS NULL
 ORDER BY fr.vote_score DESC, fr.created_at ASC
 LIMIT 1
 `
 
-type GetTopReplyForThreadParams struct {
-	ThreadID pgtype.UUID `json:"thread_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 type GetTopReplyForThreadRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1168,12 +1156,11 @@ type GetTopReplyForThreadRow struct {
 
 // Returns the highest-voted non-deleted reply for a thread. Used as the
 // accepted-answer candidate for QAPage JSON-LD on solved threads (BL-012).
-func (q *Queries) GetTopReplyForThread(ctx context.Context, arg GetTopReplyForThreadParams) (GetTopReplyForThreadRow, error) {
-	row := q.db.QueryRow(ctx, getTopReplyForThread, arg.ThreadID, arg.TenantID)
+func (q *Queries) GetTopReplyForThread(ctx context.Context, threadID pgtype.UUID) (GetTopReplyForThreadRow, error) {
+	row := q.db.QueryRow(ctx, getTopReplyForThread, threadID)
 	var i GetTopReplyForThreadRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -1210,41 +1197,39 @@ func (q *Queries) IncrementEntityBookmarkCount(ctx context.Context, arg Incremen
 
 const incrementForumThreadViewCount = `-- name: IncrementForumThreadViewCount :exec
 UPDATE forum_threads SET view_count = view_count + $1
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+WHERE id = $2 AND deleted_at IS NULL
 `
 
 type IncrementForumThreadViewCountParams struct {
-	Delta    int32       `json:"delta"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Delta int32       `json:"delta"`
+	ID    pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) IncrementForumThreadViewCount(ctx context.Context, arg IncrementForumThreadViewCountParams) error {
-	_, err := q.db.Exec(ctx, incrementForumThreadViewCount, arg.Delta, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, incrementForumThreadViewCount, arg.Delta, arg.ID)
 	return err
 }
 
 const incrementThreadReplyCount = `-- name: IncrementThreadReplyCount :exec
 UPDATE forum_threads
 SET reply_count = reply_count + $1
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type IncrementThreadReplyCountParams struct {
-	Delta    int32       `json:"delta"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Delta int32       `json:"delta"`
+	ID    pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) IncrementThreadReplyCount(ctx context.Context, arg IncrementThreadReplyCountParams) error {
-	_, err := q.db.Exec(ctx, incrementThreadReplyCount, arg.Delta, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, incrementThreadReplyCount, arg.Delta, arg.ID)
 	return err
 }
 
 const insertReplyView = `-- name: InsertReplyView :exec
 
-INSERT INTO reply_views (reply_id, user_id)
-VALUES ($1, $2)
+INSERT INTO reply_views (reply_id, user_id) VALUES ($1, $2)
+
 ON CONFLICT (reply_id, user_id) DO NOTHING
 `
 
@@ -1263,8 +1248,8 @@ func (q *Queries) InsertReplyView(ctx context.Context, arg InsertReplyViewParams
 
 const isForumBookmarked = `-- name: IsForumBookmarked :one
 SELECT EXISTS(
-    SELECT 1 FROM bookmarks
-    WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+ SELECT 1 FROM bookmarks
+ WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 ) AS is_bookmarked
 `
 
@@ -1282,24 +1267,22 @@ func (q *Queries) IsForumBookmarked(ctx context.Context, arg IsForumBookmarkedPa
 }
 
 const listForumBookmarksByUser = `-- name: ListForumBookmarksByUser :many
-SELECT id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+SELECT id, user_id, entity_type, entity_id, folder, folder_id, created_at
 FROM bookmarks
-WHERE user_id = $1 AND tenant_id = $2
-  AND entity_type IN ('forum_thread', 'forum_reply')
+WHERE user_id = $1
+ AND entity_type IN ('forum_thread', 'forum_reply')
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListForumBookmarksByUserParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListForumBookmarksByUserRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -1309,12 +1292,7 @@ type ListForumBookmarksByUserRow struct {
 }
 
 func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBookmarksByUserParams) ([]ListForumBookmarksByUserRow, error) {
-	rows, err := q.db.Query(ctx, listForumBookmarksByUser,
-		arg.UserID,
-		arg.TenantID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listForumBookmarksByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1324,7 +1302,6 @@ func (q *Queries) ListForumBookmarksByUser(ctx context.Context, arg ListForumBoo
 		var i ListForumBookmarksByUserRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.EntityType,
 			&i.EntityID,
@@ -1382,33 +1359,43 @@ func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollU
 }
 
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
-SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
-       body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = $1
-  AND tenant_id = $2
-  AND deleted_at IS NULL
+ AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
-type ListForumRepliesByThreadParams struct {
-	ThreadID pgtype.UUID `json:"thread_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type ListForumRepliesByThreadRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ThreadID      pgtype.UUID        `json:"thread_id"`
+	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	Body          []byte             `json:"body"`
+	VoteScore     int32              `json:"vote_score"`
+	ViewCount     int32              `json:"view_count"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	IsEdited      bool               `json:"is_edited"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending    bool               `json:"ama_pending"`
+	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
 }
 
-func (q *Queries) ListForumRepliesByThread(ctx context.Context, arg ListForumRepliesByThreadParams) ([]ForumReply, error) {
-	rows, err := q.db.Query(ctx, listForumRepliesByThread, arg.ThreadID, arg.TenantID)
+func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]ListForumRepliesByThreadRow, error) {
+	rows, err := q.db.Query(ctx, listForumRepliesByThread, threadID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumReply
+	var items []ListForumRepliesByThreadRow
 	for rows.Next() {
-		var i ForumReply
+		var i ListForumRepliesByThreadRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ThreadID,
 			&i.ParentReplyID,
 			&i.AuthorUserID,
@@ -1434,29 +1421,22 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, arg ListForumRep
 }
 
 const listForumRepliesByThreadWithAuthor = `-- name: ListForumRepliesByThreadWithAuthor :many
-SELECT fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
-       fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-       fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+SELECT fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN fr.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_replies fr
 LEFT JOIN users u ON u.id = fr.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = fr.author_user_id
 WHERE fr.thread_id = $1
-  AND fr.tenant_id = $2
-  AND fr.deleted_at IS NULL
+ AND fr.deleted_at IS NULL
 ORDER BY fr.created_at ASC
 `
 
-type ListForumRepliesByThreadWithAuthorParams struct {
-	ThreadID pgtype.UUID `json:"thread_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 type ListForumRepliesByThreadWithAuthorRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ThreadID          pgtype.UUID        `json:"thread_id"`
 	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1475,8 +1455,8 @@ type ListForumRepliesByThreadWithAuthorRow struct {
 	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
 }
 
-func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg ListForumRepliesByThreadWithAuthorParams) ([]ListForumRepliesByThreadWithAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listForumRepliesByThreadWithAuthor, arg.ThreadID, arg.TenantID)
+func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, threadID pgtype.UUID) ([]ListForumRepliesByThreadWithAuthorRow, error) {
+	rows, err := q.db.Query(ctx, listForumRepliesByThreadWithAuthor, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -1486,7 +1466,6 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg Li
 		var i ListForumRepliesByThreadWithAuthorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ThreadID,
 			&i.ParentReplyID,
 			&i.AuthorUserID,
@@ -1515,32 +1494,43 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, arg Li
 }
 
 const listForumTags = `-- name: ListForumTags :many
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
-WHERE tenant_id = $1 AND deleted_at IS NULL
+WHERE deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListForumTagsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
-func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([]ForumTag, error) {
-	rows, err := q.db.Query(ctx, listForumTags, arg.TenantID, arg.PageOffset, arg.PageLimit)
+type ListForumTagsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([]ListForumTagsRow, error) {
+	rows, err := q.db.Query(ctx, listForumTags, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ForumTag
+	var items []ListForumTagsRow
 	for rows.Next() {
-		var i ForumTag
+		var i ListForumTagsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1562,8 +1552,8 @@ func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([
 }
 
 const listForumThreadTags = `-- name: ListForumThreadTags :many
-SELECT ft.id, ft.tenant_id, ft.name, ft.slug, ft.description, ft.rules,
-       ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
+SELECT ft.id, ft.name, ft.slug, ft.description, ft.rules,
+ ft.cover_image_id, ft.follower_count, ft.moderator_user_id, ft.created_at
 FROM forum_thread_tags ftt
 JOIN forum_tags ft ON ft.id = ftt.tag_id
 WHERE ftt.thread_id = $1 AND ft.deleted_at IS NULL
@@ -1572,7 +1562,6 @@ ORDER BY ft.name ASC
 
 type ListForumThreadTagsRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Name            string             `json:"name"`
 	Slug            string             `json:"slug"`
 	Description     *string            `json:"description"`
@@ -1597,7 +1586,6 @@ func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID)
 		var i ListForumThreadTagsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1618,20 +1606,18 @@ func (q *Queries) ListForumThreadTags(ctx context.Context, threadID pgtype.UUID)
 }
 
 const listForumThreadsByAuthor = `-- name: ListForumThreadsByAuthor :many
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
+SELECT id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
-WHERE tenant_id = $1
-  AND author_user_id = $2
-  AND (created_at < $3 OR ($3 IS NULL))
+WHERE author_user_id = $1
+ AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $3
 `
 
 type ListForumThreadsByAuthorParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageLimit       int32              `json:"page_limit"`
@@ -1639,7 +1625,6 @@ type ListForumThreadsByAuthorParams struct {
 
 type ListForumThreadsByAuthorRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1663,12 +1648,7 @@ type ListForumThreadsByAuthorRow struct {
 }
 
 func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThreadsByAuthorParams) ([]ListForumThreadsByAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByAuthor,
-		arg.TenantID,
-		arg.AuthorUserID,
-		arg.CursorCreatedAt,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listForumThreadsByAuthor, arg.AuthorUserID, arg.CursorCreatedAt, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1678,7 +1658,6 @@ func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThr
 		var i ListForumThreadsByAuthorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -1711,49 +1690,47 @@ func (q *Queries) ListForumThreadsByAuthor(ctx context.Context, arg ListForumThr
 }
 
 const listForumThreadsByAuthorWithDetails = `-- name: ListForumThreadsByAuthorWithDetails :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       s.level AS space_level
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.tenant_id = $1
-  AND ft.author_user_id = $2
-  AND ft.deleted_at IS NULL
-  AND ft.solved = COALESCE($3::bool, ft.solved)
-  AND (
-    ($4 = 'top' AND (
-      $5::int IS NULL
-      OR ft.vote_score < $5::int
-      OR (ft.vote_score = $5::int AND (
-        ft.created_at < $6
-        OR (ft.created_at = $6 AND ft.id < $7::uuid)
-        OR $6 IS NULL
-      ))
-    ))
-    OR
-    ($4 != 'top' AND (
-      $6 IS NULL
-      OR ft.created_at < $6
-      OR (ft.created_at = $6 AND ft.id < $7::uuid)
-    ))
-  )
-ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
-         ft.created_at DESC, ft.id DESC
-LIMIT $8
+WHERE ft.author_user_id = $1
+ AND ft.deleted_at IS NULL
+ AND ft.solved = COALESCE($2::bool, ft.solved)
+ AND (
+ ($3 = 'top' AND (
+ $4::int IS NULL
+ OR ft.vote_score < $4::int
+ OR (ft.vote_score = $4::int AND (
+ ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ OR $5 IS NULL
+ ))
+ ))
+ OR
+ ($3 != 'top' AND (
+ $5 IS NULL
+ OR ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ ))
+ )
+ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+ ft.created_at DESC, ft.id DESC
+LIMIT $7
 `
 
 type ListForumThreadsByAuthorWithDetailsParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorUserID    pgtype.UUID        `json:"author_user_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
@@ -1765,7 +1742,6 @@ type ListForumThreadsByAuthorWithDetailsParams struct {
 
 type ListForumThreadsByAuthorWithDetailsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1796,7 +1772,6 @@ type ListForumThreadsByAuthorWithDetailsRow struct {
 
 func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg ListForumThreadsByAuthorWithDetailsParams) ([]ListForumThreadsByAuthorWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByAuthorWithDetails,
-		arg.TenantID,
 		arg.AuthorUserID,
 		arg.Solved,
 		arg.SortBy,
@@ -1814,7 +1789,6 @@ func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg L
 		var i ListForumThreadsByAuthorWithDetailsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -1853,20 +1827,18 @@ func (q *Queries) ListForumThreadsByAuthorWithDetails(ctx context.Context, arg L
 }
 
 const listForumThreadsBySpace = `-- name: ListForumThreadsBySpace :many
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
+SELECT id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
-WHERE tenant_id = $1
-  AND space_id = $2
-  AND (created_at < $3 OR ($3 IS NULL))
+WHERE space_id = $1
+ AND (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
-LIMIT $4
+LIMIT $3
 `
 
 type ListForumThreadsBySpaceParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageLimit       int32              `json:"page_limit"`
@@ -1874,7 +1846,6 @@ type ListForumThreadsBySpaceParams struct {
 
 type ListForumThreadsBySpaceRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1898,12 +1869,7 @@ type ListForumThreadsBySpaceRow struct {
 }
 
 func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThreadsBySpaceParams) ([]ListForumThreadsBySpaceRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsBySpace,
-		arg.TenantID,
-		arg.SpaceID,
-		arg.CursorCreatedAt,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listForumThreadsBySpace, arg.SpaceID, arg.CursorCreatedAt, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1913,7 +1879,6 @@ func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThre
 		var i ListForumThreadsBySpaceRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -1946,49 +1911,47 @@ func (q *Queries) ListForumThreadsBySpace(ctx context.Context, arg ListForumThre
 }
 
 const listForumThreadsBySpaceWithDetails = `-- name: ListForumThreadsBySpaceWithDetails :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       s.level AS space_level
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.tenant_id = $1
-  AND ft.space_id = $2
-  AND ft.deleted_at IS NULL
-  AND ft.solved = COALESCE($3::bool, ft.solved)
-  AND (
-    ($4 = 'top' AND (
-      $5::int IS NULL
-      OR ft.vote_score < $5::int
-      OR (ft.vote_score = $5::int AND (
-        ft.created_at < $6
-        OR (ft.created_at = $6 AND ft.id < $7::uuid)
-        OR $6 IS NULL
-      ))
-    ))
-    OR
-    ($4 != 'top' AND (
-      $6 IS NULL
-      OR ft.created_at < $6
-      OR (ft.created_at = $6 AND ft.id < $7::uuid)
-    ))
-  )
-ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
-         ft.created_at DESC, ft.id DESC
-LIMIT $8
+WHERE ft.space_id = $1
+ AND ft.deleted_at IS NULL
+ AND ft.solved = COALESCE($2::bool, ft.solved)
+ AND (
+ ($3 = 'top' AND (
+ $4::int IS NULL
+ OR ft.vote_score < $4::int
+ OR (ft.vote_score = $4::int AND (
+ ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ OR $5 IS NULL
+ ))
+ ))
+ OR
+ ($3 != 'top' AND (
+ $5 IS NULL
+ OR ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ ))
+ )
+ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+ ft.created_at DESC, ft.id DESC
+LIMIT $7
 `
 
 type ListForumThreadsBySpaceWithDetailsParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
@@ -2000,7 +1963,6 @@ type ListForumThreadsBySpaceWithDetailsParams struct {
 
 type ListForumThreadsBySpaceWithDetailsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2031,7 +1993,6 @@ type ListForumThreadsBySpaceWithDetailsRow struct {
 
 func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg ListForumThreadsBySpaceWithDetailsParams) ([]ListForumThreadsBySpaceWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsBySpaceWithDetails,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.Solved,
 		arg.SortBy,
@@ -2049,7 +2010,6 @@ func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg Li
 		var i ListForumThreadsBySpaceWithDetailsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -2088,23 +2048,21 @@ func (q *Queries) ListForumThreadsBySpaceWithDetails(ctx context.Context, arg Li
 }
 
 const listForumThreadsByTag = `-- name: ListForumThreadsByTag :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at
 FROM forum_threads ft
 JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
-WHERE ft.tenant_id = $1
-  AND ftt.tag_id = $2
-  AND ft.deleted_at IS NULL
-  AND (ft.created_at < $3 OR ($3 IS NULL))
+WHERE ftt.tag_id = $1
+ AND ft.deleted_at IS NULL
+ AND (ft.created_at < $2 OR ($2 IS NULL))
 ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $4
+LIMIT $3
 `
 
 type ListForumThreadsByTagParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	TagID           pgtype.UUID        `json:"tag_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageLimit       int32              `json:"page_limit"`
@@ -2112,7 +2070,6 @@ type ListForumThreadsByTagParams struct {
 
 type ListForumThreadsByTagRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2136,12 +2093,7 @@ type ListForumThreadsByTagRow struct {
 }
 
 func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThreadsByTagParams) ([]ListForumThreadsByTagRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByTag,
-		arg.TenantID,
-		arg.TagID,
-		arg.CursorCreatedAt,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listForumThreadsByTag, arg.TagID, arg.CursorCreatedAt, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2151,7 +2103,6 @@ func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThread
 		var i ListForumThreadsByTagRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -2184,50 +2135,48 @@ func (q *Queries) ListForumThreadsByTag(ctx context.Context, arg ListForumThread
 }
 
 const listForumThreadsByTagWithDetails = `-- name: ListForumThreadsByTagWithDetails :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       s.level AS space_level
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ s.level AS space_level
 FROM forum_threads ft
 JOIN forum_thread_tags ftt ON ftt.thread_id = ft.id
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.tenant_id = $1
-  AND ftt.tag_id = $2
-  AND ft.deleted_at IS NULL
-  AND ft.solved = COALESCE($3::bool, ft.solved)
-  AND (
-    ($4 = 'top' AND (
-      $5::int IS NULL
-      OR ft.vote_score < $5::int
-      OR (ft.vote_score = $5::int AND (
-        ft.created_at < $6
-        OR (ft.created_at = $6 AND ft.id < $7::uuid)
-        OR $6 IS NULL
-      ))
-    ))
-    OR
-    ($4 != 'top' AND (
-      $6 IS NULL
-      OR ft.created_at < $6
-      OR (ft.created_at = $6 AND ft.id < $7::uuid)
-    ))
-  )
-ORDER BY CASE WHEN $4 = 'top' THEN ft.vote_score END DESC,
-         ft.created_at DESC, ft.id DESC
-LIMIT $8
+WHERE ftt.tag_id = $1
+ AND ft.deleted_at IS NULL
+ AND ft.solved = COALESCE($2::bool, ft.solved)
+ AND (
+ ($3 = 'top' AND (
+ $4::int IS NULL
+ OR ft.vote_score < $4::int
+ OR (ft.vote_score = $4::int AND (
+ ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ OR $5 IS NULL
+ ))
+ ))
+ OR
+ ($3 != 'top' AND (
+ $5 IS NULL
+ OR ft.created_at < $5
+ OR (ft.created_at = $5 AND ft.id < $6::uuid)
+ ))
+ )
+ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
+ ft.created_at DESC, ft.id DESC
+LIMIT $7
 `
 
 type ListForumThreadsByTagWithDetailsParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	TagID           pgtype.UUID        `json:"tag_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
@@ -2239,7 +2188,6 @@ type ListForumThreadsByTagWithDetailsParams struct {
 
 type ListForumThreadsByTagWithDetailsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2270,7 +2218,6 @@ type ListForumThreadsByTagWithDetailsRow struct {
 
 func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg ListForumThreadsByTagWithDetailsParams) ([]ListForumThreadsByTagWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByTagWithDetails,
-		arg.TenantID,
 		arg.TagID,
 		arg.Solved,
 		arg.SortBy,
@@ -2288,7 +2235,6 @@ func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg List
 		var i ListForumThreadsByTagWithDetailsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -2327,27 +2273,24 @@ func (q *Queries) ListForumThreadsByTagWithDetails(ctx context.Context, arg List
 }
 
 const listForumThreadsByTenant = `-- name: ListForumThreadsByTenant :many
-SELECT id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-       title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-       vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-       is_edited, created_at, updated_at, deleted_at
+SELECT id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 FROM forum_threads
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND (created_at < $2 OR ($2 IS NULL))
+WHERE deleted_at IS NULL
+ AND (created_at < $1 OR ($1 IS NULL))
 ORDER BY created_at DESC, id DESC
-LIMIT $3
+LIMIT $2
 `
 
 type ListForumThreadsByTenantParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
 	PageLimit       int32              `json:"page_limit"`
 }
 
 type ListForumThreadsByTenantRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2371,7 +2314,7 @@ type ListForumThreadsByTenantRow struct {
 }
 
 func (q *Queries) ListForumThreadsByTenant(ctx context.Context, arg ListForumThreadsByTenantParams) ([]ListForumThreadsByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listForumThreadsByTenant, arg.TenantID, arg.CursorCreatedAt, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listForumThreadsByTenant, arg.CursorCreatedAt, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2381,7 +2324,6 @@ func (q *Queries) ListForumThreadsByTenant(ctx context.Context, arg ListForumThr
 		var i ListForumThreadsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -2414,48 +2356,46 @@ func (q *Queries) ListForumThreadsByTenant(ctx context.Context, arg ListForumThr
 }
 
 const listForumThreadsByTenantWithDetails = `-- name: ListForumThreadsByTenantWithDetails :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       s.level AS space_level
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.display_name END AS author_display_name,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ s.level AS space_level
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
 LEFT JOIN spaces s ON s.id = ft.space_id
-WHERE ft.tenant_id = $1
-  AND ft.deleted_at IS NULL
-  AND ft.solved = COALESCE($2::bool, ft.solved)
-  AND (
-    ($3 = 'top' AND (
-      $4::int IS NULL
-      OR ft.vote_score < $4::int
-      OR (ft.vote_score = $4::int AND (
-        ft.created_at < $5
-        OR (ft.created_at = $5 AND ft.id < $6::uuid)
-        OR $5 IS NULL
-      ))
-    ))
-    OR
-    ($3 != 'top' AND (
-      $5 IS NULL
-      OR ft.created_at < $5
-      OR (ft.created_at = $5 AND ft.id < $6::uuid)
-    ))
-  )
-ORDER BY CASE WHEN $3 = 'top' THEN ft.vote_score END DESC,
-         ft.created_at DESC, ft.id DESC
-LIMIT $7
+WHERE ft.deleted_at IS NULL
+ AND ft.solved = COALESCE($1::bool, ft.solved)
+ AND (
+ ($2 = 'top' AND (
+ $3::int IS NULL
+ OR ft.vote_score < $3::int
+ OR (ft.vote_score = $3::int AND (
+ ft.created_at < $4
+ OR (ft.created_at = $4 AND ft.id < $5::uuid)
+ OR $4 IS NULL
+ ))
+ ))
+ OR
+ ($2 != 'top' AND (
+ $4 IS NULL
+ OR ft.created_at < $4
+ OR (ft.created_at = $4 AND ft.id < $5::uuid)
+ ))
+ )
+ORDER BY CASE WHEN $2 = 'top' THEN ft.vote_score END DESC,
+ ft.created_at DESC, ft.id DESC
+LIMIT $6
 `
 
 type ListForumThreadsByTenantWithDetailsParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Solved          *bool              `json:"solved"`
 	SortBy          interface{}        `json:"sort_by"`
 	CursorVoteScore *int32             `json:"cursor_vote_score"`
@@ -2466,7 +2406,6 @@ type ListForumThreadsByTenantWithDetailsParams struct {
 
 type ListForumThreadsByTenantWithDetailsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2497,7 +2436,6 @@ type ListForumThreadsByTenantWithDetailsRow struct {
 
 func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg ListForumThreadsByTenantWithDetailsParams) ([]ListForumThreadsByTenantWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listForumThreadsByTenantWithDetails,
-		arg.TenantID,
 		arg.Solved,
 		arg.SortBy,
 		arg.CursorVoteScore,
@@ -2514,7 +2452,6 @@ func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg L
 		var i ListForumThreadsByTenantWithDetailsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -2555,16 +2492,14 @@ func (q *Queries) ListForumThreadsByTenantWithDetails(ctx context.Context, arg L
 const listUserVotesForThread = `-- name: ListUserVotesForThread :many
 SELECT fv.entity_type, fv.entity_id, fv.value
 FROM forum_votes fv
-WHERE fv.tenant_id = $1
-  AND fv.user_id = $2
-  AND ((fv.entity_type = 'thread' AND fv.entity_id = $3)
-       OR (fv.entity_type = 'reply' AND fv.entity_id IN (
-           SELECT id FROM forum_replies WHERE thread_id = $3 AND tenant_id = $1
-       )))
+WHERE fv.user_id = $1
+ AND ((fv.entity_type = 'thread' AND fv.entity_id = $2)
+ OR (fv.entity_type = 'reply' AND fv.entity_id IN (
+ SELECT id FROM forum_replies WHERE thread_id = $2
+ )))
 `
 
 type ListUserVotesForThreadParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	UserID   pgtype.UUID `json:"user_id"`
 	ThreadID pgtype.UUID `json:"thread_id"`
 }
@@ -2578,7 +2513,7 @@ type ListUserVotesForThreadRow struct {
 // Returns all forum vote values for a given user on a thread and its replies.
 // Used to hydrate per-entity user_vote state in the detail page (BUG-006).
 func (q *Queries) ListUserVotesForThread(ctx context.Context, arg ListUserVotesForThreadParams) ([]ListUserVotesForThreadRow, error) {
-	rows, err := q.db.Query(ctx, listUserVotesForThread, arg.TenantID, arg.UserID, arg.ThreadID)
+	rows, err := q.db.Query(ctx, listUserVotesForThread, arg.UserID, arg.ThreadID)
 	if err != nil {
 		return nil, err
 	}
@@ -2599,23 +2534,17 @@ func (q *Queries) ListUserVotesForThread(ctx context.Context, arg ListUserVotesF
 
 const removeForumBookmark = `-- name: RemoveForumBookmark :exec
 DELETE FROM bookmarks
-WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3 AND tenant_id = $4
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
 type RemoveForumBookmarkParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) RemoveForumBookmark(ctx context.Context, arg RemoveForumBookmarkParams) error {
-	_, err := q.db.Exec(ctx, removeForumBookmark,
-		arg.UserID,
-		arg.EntityType,
-		arg.EntityID,
-		arg.TenantID,
-	)
+	_, err := q.db.Exec(ctx, removeForumBookmark, arg.UserID, arg.EntityType, arg.EntityID)
 	return err
 }
 
@@ -2653,121 +2582,110 @@ func (q *Queries) RetractForumPollVote(ctx context.Context, arg RetractForumPoll
 const softDeleteForumReply = `-- name: SoftDeleteForumReply :exec
 UPDATE forum_replies
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type SoftDeleteForumReplyParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteForumReply(ctx context.Context, arg SoftDeleteForumReplyParams) error {
-	_, err := q.db.Exec(ctx, softDeleteForumReply, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteForumReply(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteForumReply, id)
 	return err
 }
 
 const softDeleteForumTag = `-- name: SoftDeleteForumTag :exec
 UPDATE forum_tags SET deleted_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type SoftDeleteForumTagParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteForumTag(ctx context.Context, arg SoftDeleteForumTagParams) error {
-	_, err := q.db.Exec(ctx, softDeleteForumTag, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteForumTag(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteForumTag, id)
 	return err
 }
 
 const softDeleteForumThread = `-- name: SoftDeleteForumThread :exec
 UPDATE forum_threads
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type SoftDeleteForumThreadParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) SoftDeleteForumThread(ctx context.Context, arg SoftDeleteForumThreadParams) error {
-	_, err := q.db.Exec(ctx, softDeleteForumThread, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteForumThread(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteForumThread, id)
 	return err
 }
 
 const solveForumThread = `-- name: SolveForumThread :exec
 UPDATE forum_threads
 SET solved = true, solved_at = now(), solved_by_user_id = $1,
-    parent_reply_id = $2, updated_at = now()
-WHERE id = $3 AND tenant_id = $4 AND deleted_at IS NULL
+ parent_reply_id = $2, updated_at = now()
+WHERE id = $3 AND deleted_at IS NULL
 `
 
 type SolveForumThreadParams struct {
 	SolverUserID  pgtype.UUID `json:"solver_user_id"`
 	ParentReplyID pgtype.UUID `json:"parent_reply_id"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) SolveForumThread(ctx context.Context, arg SolveForumThreadParams) error {
-	_, err := q.db.Exec(ctx, solveForumThread,
-		arg.SolverUserID,
-		arg.ParentReplyID,
-		arg.ID,
-		arg.TenantID,
-	)
+	_, err := q.db.Exec(ctx, solveForumThread, arg.SolverUserID, arg.ParentReplyID, arg.ID)
 	return err
 }
 
 const unsolveForumThread = `-- name: UnsolveForumThread :exec
 UPDATE forum_threads
 SET solved = false, solved_at = NULL, solved_by_user_id = NULL,
-    parent_reply_id = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+ parent_reply_id = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type UnsolveForumThreadParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Reverts the solved flag (DELETE /forum/{id}/solve). Ref: Section 08 Solved flag.
-func (q *Queries) UnsolveForumThread(ctx context.Context, arg UnsolveForumThreadParams) error {
-	_, err := q.db.Exec(ctx, unsolveForumThread, arg.ID, arg.TenantID)
+func (q *Queries) UnsolveForumThread(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, unsolveForumThread, id)
 	return err
 }
 
 const updateForumReply = `-- name: UpdateForumReply :one
 UPDATE forum_replies fr
 SET body = $1,
-    is_edited = CASE
-      WHEN ft.edit_window_minutes IS NULL OR ft.edit_window_minutes = 0 THEN true
-      WHEN now() > fr.created_at + (ft.edit_window_minutes * interval '1 minute') THEN true
-      ELSE false
-    END,
-    updated_at = now()
+ is_edited = CASE
+ WHEN ft.edit_window_minutes IS NULL OR ft.edit_window_minutes = 0 THEN true
+ WHEN now() > fr.created_at + (ft.edit_window_minutes * interval '1 minute') THEN true
+ ELSE false
+ END,
+ updated_at = now()
 FROM forum_threads ft
-WHERE fr.id = $2 AND fr.tenant_id = $3 AND fr.deleted_at IS NULL
-  AND ft.id = fr.thread_id AND ft.tenant_id = fr.tenant_id
-RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
-          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+WHERE fr.id = $2 AND fr.deleted_at IS NULL
+ AND ft.id = fr.thread_id
+RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
 `
 
 type UpdateForumReplyParams struct {
-	Body     []byte      `json:"body"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Body []byte      `json:"body"`
+	ID   pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyParams) (ForumReply, error) {
-	row := q.db.QueryRow(ctx, updateForumReply, arg.Body, arg.ID, arg.TenantID)
-	var i ForumReply
+type UpdateForumReplyRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ThreadID      pgtype.UUID        `json:"thread_id"`
+	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
+	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
+	Body          []byte             `json:"body"`
+	VoteScore     int32              `json:"vote_score"`
+	ViewCount     int32              `json:"view_count"`
+	IsAnonymous   bool               `json:"is_anonymous"`
+	IsEdited      bool               `json:"is_edited"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	AmaPending    bool               `json:"ama_pending"`
+	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
+}
+
+func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyParams) (UpdateForumReplyRow, error) {
+	row := q.db.QueryRow(ctx, updateForumReply, arg.Body, arg.ID)
+	var i UpdateForumReplyRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -2788,14 +2706,14 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 const updateForumTag = `-- name: UpdateForumTag :one
 UPDATE forum_tags
 SET name = $1,
-    slug = $2,
-    description = $3,
-    rules = $4,
-    cover_image_id = $5,
-    moderator_user_id = $6
-WHERE id = $7 AND tenant_id = $8 AND deleted_at IS NULL
-RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at, deleted_at
+ slug = $2,
+ description = $3,
+ rules = $4,
+ cover_image_id = $5,
+ moderator_user_id = $6
+WHERE id = $7 AND deleted_at IS NULL
+RETURNING id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type UpdateForumTagParams struct {
@@ -2806,10 +2724,22 @@ type UpdateForumTagParams struct {
 	CoverImageID    pgtype.UUID `json:"cover_image_id"`
 	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
 	ID              pgtype.UUID `json:"id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (ForumTag, error) {
+type UpdateForumTagRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	Slug            string             `json:"slug"`
+	Description     *string            `json:"description"`
+	Rules           *string            `json:"rules"`
+	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
+	FollowerCount   int32              `json:"follower_count"`
+	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (UpdateForumTagRow, error) {
 	row := q.db.QueryRow(ctx, updateForumTag,
 		arg.Name,
 		arg.Slug,
@@ -2818,12 +2748,10 @@ func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) 
 		arg.CoverImageID,
 		arg.ModeratorUserID,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i ForumTag
+	var i UpdateForumTagRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -2840,34 +2768,33 @@ func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) 
 const updateForumTagFollowerCount = `-- name: UpdateForumTagFollowerCount :exec
 UPDATE forum_tags
 SET follower_count = GREATEST(0, follower_count + $1)
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateForumTagFollowerCountParams struct {
-	Delta    int32       `json:"delta"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Delta int32       `json:"delta"`
+	ID    pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateForumTagFollowerCount(ctx context.Context, arg UpdateForumTagFollowerCountParams) error {
-	_, err := q.db.Exec(ctx, updateForumTagFollowerCount, arg.Delta, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateForumTagFollowerCount, arg.Delta, arg.ID)
 	return err
 }
 
 const updateForumThread = `-- name: UpdateForumThread :one
 UPDATE forum_threads
 SET title = $1, body = $2, is_anonymous = $3,
-    is_edited = CASE
-      WHEN edit_window_minutes IS NULL OR edit_window_minutes = 0 THEN true
-      WHEN now() > created_at + (edit_window_minutes * interval '1 minute') THEN true
-      ELSE false
-    END,
-    updated_at = now()
-WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-          title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-          vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-          is_edited, created_at, updated_at, deleted_at
+ is_edited = CASE
+ WHEN edit_window_minutes IS NULL OR edit_window_minutes = 0 THEN true
+ WHEN now() > created_at + (edit_window_minutes * interval '1 minute') THEN true
+ ELSE false
+ END,
+ updated_at = now()
+WHERE id = $4 AND deleted_at IS NULL
+RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at
 `
 
 type UpdateForumThreadParams struct {
@@ -2875,12 +2802,10 @@ type UpdateForumThreadParams struct {
 	Body        []byte      `json:"body"`
 	IsAnonymous bool        `json:"is_anonymous"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateForumThreadRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -2909,12 +2834,10 @@ func (q *Queries) UpdateForumThread(ctx context.Context, arg UpdateForumThreadPa
 		arg.Body,
 		arg.IsAnonymous,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateForumThreadRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -2963,36 +2886,42 @@ func (q *Queries) UpdateThreadVoteScore(ctx context.Context, entityID pgtype.UUI
 
 const upsertForumVote = `-- name: UpsertForumVote :one
 
-INSERT INTO forum_votes (tenant_id, user_id, entity_type, entity_id, value)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES ($1, $2, $3, $4)
+
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
-    SET value = $5
-RETURNING id, tenant_id, user_id, entity_type, entity_id, value, created_at
+ SET value = $4
+RETURNING id, user_id, entity_type, entity_id, value, created_at
 `
 
 type UpsertForumVoteParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 	Value      int16       `json:"value"`
 }
 
+type UpsertForumVoteRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	EntityType string             `json:"entity_type"`
+	EntityID   pgtype.UUID        `json:"entity_id"`
+	Value      int16              `json:"value"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Votes
 // =====================
-func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams) (ForumVote, error) {
+func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams) (UpsertForumVoteRow, error) {
 	row := q.db.QueryRow(ctx, upsertForumVote,
-		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Value,
 	)
-	var i ForumVote
+	var i UpsertForumVoteRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -3003,10 +2932,10 @@ func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams
 }
 
 const voteForumPoll = `-- name: VoteForumPoll :one
-INSERT INTO forum_poll_votes (poll_id, option_id, user_id)
-VALUES ($1, $2, $3)
+INSERT INTO forum_poll_votes (poll_id, option_id, user_id) VALUES ($1, $2, $3)
+
 ON CONFLICT (option_id, user_id) DO UPDATE
-    SET created_at = now()
+ SET created_at = now()
 RETURNING id, poll_id, option_id, user_id, created_at
 `
 

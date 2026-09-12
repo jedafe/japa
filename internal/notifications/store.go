@@ -39,7 +39,7 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 	}
 
 	rows, err := s.read.GetNotificationsByRecipient(ctx, gen.GetNotificationsByRecipientParams{
-		TenantID:    tenantID,
+
 		RecipientID: recipientID,
 		PageLimit:   limit,
 		PageOffset:  offset,
@@ -54,10 +54,10 @@ func (s *Store) getNotificationsByRecipient(ctx context.Context, tenantID, recip
 
 // getUnreadCount returns the number of unread notifications.
 func (s *Store) getUnreadCount(ctx context.Context, tenantID, recipientID pgtype.UUID) (int32, error) {
-	count, err := s.read.GetUnreadNotificationCount(ctx, gen.GetUnreadNotificationCountParams{
-		TenantID:    tenantID,
-		RecipientID: recipientID,
-	})
+	count, err := s.read.GetUnreadNotificationCount(ctx,
+
+		recipientID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting unread notifications: %w", err)
 	}
@@ -79,10 +79,10 @@ func (s *Store) markNotificationRead(ctx context.Context, notificationID, recipi
 
 // markAllNotificationsRead marks all notifications as read for a user.
 func (s *Store) markAllNotificationsRead(ctx context.Context, tenantID, recipientID pgtype.UUID) error {
-	if err := s.write.MarkAllNotificationsRead(ctx, gen.MarkAllNotificationsReadParams{
-		TenantID:    tenantID,
-		RecipientID: recipientID,
-	}); err != nil {
+	if err := s.write.MarkAllNotificationsRead(ctx,
+
+		recipientID,
+	); err != nil {
 		return fmt.Errorf("marking all notifications read: %w", err)
 	}
 

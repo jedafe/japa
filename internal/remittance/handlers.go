@@ -554,7 +554,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.CreateProvider(r.Context(), gen.CreateRemittanceProviderParams{
-		TenantID:     tenantID,
+
 		Name:         body.Name,
 		Slug:         body.Slug,
 		WebsiteUrl:   body.WebsiteURL,
@@ -626,7 +626,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.UpdateProvider(r.Context(), gen.UpdateRemittanceProviderParams{
-		TenantID:     tenantID,
+
 		ID:           providerID,
 		Name:         body.Name,
 		WebsiteUrl:   body.WebsiteURL,
