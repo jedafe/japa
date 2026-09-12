@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,8 +19,8 @@ import (
 
 // slugify helpers mirror content.Slugify to avoid an import cycle.
 var (
-	invalidSlugChars     = regexp.MustCompile(`[^a-z0-9-]+`)
-	multipleHyphens      = regexp.MustCompile(`-{2,}`)
+	invalidSlugChars       = regexp.MustCompile(`[^a-z0-9-]+`)
+	multipleHyphens        = regexp.MustCompile(`-{2,}`)
 	leadingTrailingHyphens = regexp.MustCompile(`^-+|-+$`)
 )
 
@@ -42,12 +43,32 @@ func slugify(title string) string {
 // at the domain layer lives here, while persistence is delegated to the
 // Store.
 type Service struct {
-	store *Store
+	store         *Store
+	metadataQueue func(ctx context.Context, tenantID pgtype.UUID, sourceID SourceID) error
 }
 
 // NewService creates a sources service backed by the given store.
 func NewService(store *Store) *Service {
 	return &Service{store: store}
+}
+
+// SetMetadataQueue wires a background task enqueue function for source
+// metadata refresh. It is called after a source becomes active so the public
+// directory can show its logo and description without live link-preview fetches.
+func (s *Service) SetMetadataQueue(q func(ctx context.Context, tenantID pgtype.UUID, sourceID SourceID) error) {
+	s.metadataQueue = q
+}
+
+// queueMetadataFetch enqueues a metadata fetch for active sources. Failures are
+// logged but not returned so DB writes do not fail when the queue is down.
+func (s *Service) queueMetadataFetch(ctx context.Context, tenantID pgtype.UUID, src Source) {
+	if s.metadataQueue == nil || !src.Enabled || src.Status != "active" || !src.ID.Valid {
+		return
+	}
+
+	if err := s.metadataQueue(ctx, tenantID, src.ID); err != nil {
+		slog.Warn("sources: metadata enqueue failed", "source_id", src.ID.String(), "error", err)
+	}
 }
 
 // Create registers a new source in the registry. Defaults status to 'active'
@@ -57,7 +78,13 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, arg gen.Crea
 		arg.Status = "active"
 	}
 
-	return s.store.Create(ctx, tenantID, arg)
+	src, err := s.store.Create(ctx, tenantID, arg)
+	if err != nil {
+		return Source{}, err
+	}
+
+	s.queueMetadataFetch(ctx, tenantID, src)
+	return src, nil
 }
 
 // Get retrieves a source by ID.
@@ -117,7 +144,13 @@ func (s *Service) ListProposed(ctx context.Context, tenantID pgtype.UUID, limit,
 // ApproveProposed activates a proposed source (status='active', enabled=true)
 // and records the approver. Tenant-scoped.
 func (s *Service) ApproveProposed(ctx context.Context, tenantID, id, approvedBy pgtype.UUID) (Source, error) {
-	return s.store.ApproveProposed(ctx, tenantID, id, approvedBy)
+	src, err := s.store.ApproveProposed(ctx, tenantID, id, approvedBy)
+	if err != nil {
+		return Source{}, err
+	}
+
+	s.queueMetadataFetch(ctx, tenantID, src)
+	return src, nil
 }
 
 // CrawlNow is a no-op service method retained for API surface compatibility.
@@ -245,6 +278,7 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 
 	existing, err := s.store.GetByURL(ctx, tenantID, *sourceURL)
 	if err == nil {
+		s.queueMetadataFetch(ctx, tenantID, existing)
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -260,24 +294,24 @@ func (s *Service) CreateAutoForVideo(ctx context.Context, tenantID, userID pgtyp
 	slug := s.uniqueSlug(ctx, tenantID, *title)
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:        tenantID,
-		Name:            *title,
-		Slug:            &slug,
-		Domain:          domain,
-		SourceUrl:       *sourceURL,
-		Category:        "video",
-		SourceType:      "video_upload",
-		SourceKind:      "publisher",
-		TrustLevel:      2,
-		CrawlMethod:     "manual",
-		CrawlFrequency:  "manual",
+		TenantID:           tenantID,
+		Name:               *title,
+		Slug:               &slug,
+		Domain:             domain,
+		SourceUrl:          *sourceURL,
+		Category:           "video",
+		SourceType:         "video_upload",
+		SourceKind:         "publisher",
+		TrustLevel:         2,
+		CrawlMethod:        "manual",
+		CrawlFrequency:     "manual",
 		CrawlFrequencyMins: 0,
-		Enabled:         true,
-		Status:          "active",
-		LogoUrl:         thumbnailURL,
+		Enabled:            true,
+		Status:             "active",
+		LogoUrl:            thumbnailURL,
 	}
 
-	return s.store.Create(ctx, tenantID, arg)
+	return s.Create(ctx, tenantID, arg)
 }
 
 func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (Source, error) {
@@ -291,6 +325,7 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 	if sourceURL != "" {
 		existing, err := s.store.GetByURL(ctx, tenantID, sourceURL)
 		if err == nil {
+			s.queueMetadataFetch(ctx, tenantID, existing)
 			return existing, nil
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -310,23 +345,23 @@ func (s *Service) CreateSourceFromEntity(ctx context.Context, tenantID, entityID
 	}
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:            tenantID,
-		Name:                name,
-		Slug:                &slug,
-		Domain:              domain,
-		SourceUrl:           sourceURL,
-		Category:            category,
-		SourceType:          "static",
-		SourceKind:          sourceKind,
-		TrustLevel:          3,
-		CrawlMethod:         "manual",
-		CrawlFrequency:      "manual",
-		CrawlFrequencyMins:  0,
-		Enabled:             true,
-		Status:              "active",
+		TenantID:           tenantID,
+		Name:               name,
+		Slug:               &slug,
+		Domain:             domain,
+		SourceUrl:          sourceURL,
+		Category:           category,
+		SourceType:         "static",
+		SourceKind:         sourceKind,
+		TrustLevel:         3,
+		CrawlMethod:        "manual",
+		CrawlFrequency:     "manual",
+		CrawlFrequencyMins: 0,
+		Enabled:            true,
+		Status:             "active",
 	}
 
-	return s.store.Create(ctx, tenantID, arg)
+	return s.Create(ctx, tenantID, arg)
 }
 
 func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID pgtype.UUID, sourceName, sourceURL *string, trustLevel int32) (Source, error) {
@@ -336,6 +371,7 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 
 	existing, err := s.store.GetByURL(ctx, tenantID, derefString(sourceURL))
 	if err == nil {
+		s.queueMetadataFetch(ctx, tenantID, existing)
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -353,23 +389,23 @@ func (s *Service) CreateAutoForComparison(ctx context.Context, tenantID, userID 
 	slug := s.uniqueSlug(ctx, tenantID, *sourceName)
 
 	arg := gen.CreateIntelSourceParams{
-		TenantID:        tenantID,
-		Name:            *sourceName,
-		Slug:            &slug,
-		Domain:          domain,
-		SourceUrl:       derefString(sourceURL),
-		Category:        "comparison",
-		SourceType:      "comparison_api",
-		SourceKind:      "publisher",
-		TrustLevel:      int16(max(1, min(5, trustLevel))),
-		CrawlMethod:     "api",
-		CrawlFrequency:  "daily",
+		TenantID:           tenantID,
+		Name:               *sourceName,
+		Slug:               &slug,
+		Domain:             domain,
+		SourceUrl:          derefString(sourceURL),
+		Category:           "comparison",
+		SourceType:         "comparison_api",
+		SourceKind:         "publisher",
+		TrustLevel:         int16(max(1, min(5, trustLevel))),
+		CrawlMethod:        "api",
+		CrawlFrequency:     "daily",
 		CrawlFrequencyMins: 0,
-		Enabled:         true,
-		Status:          "active",
+		Enabled:            true,
+		Status:             "active",
 	}
 
-	return s.store.Create(ctx, tenantID, arg)
+	return s.Create(ctx, tenantID, arg)
 }
 
 func (s *Service) uniqueSlug(ctx context.Context, tenantID pgtype.UUID, base string) string {

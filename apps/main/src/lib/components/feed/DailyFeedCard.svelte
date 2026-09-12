@@ -6,7 +6,7 @@
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Bookmark, Flag, Link, MessageSquare, MoreVertical, Play } from 'lucide-svelte';
+	import { Bookmark, Check, Flag, MessageSquare, MoreVertical, Play, Share2 } from 'lucide-svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
@@ -17,6 +17,7 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
 	import ShareButton from '$lib/components/ui/ShareButton.svelte';
+	import ShareMenuItems from '$lib/components/feed/ShareMenuItems.svelte';
 	import type { FeedItem } from '$lib/types';
 
 	interface Props {
@@ -26,6 +27,7 @@
 	let { item }: Props = $props();
 
 	let copied = $state(false);
+	let shared = $state(false);
 	let reported = $state(false);
 	let bookmarked = $state(false);
 	let bookmarkCount = $state(0);
@@ -55,6 +57,7 @@
 	const duration = $derived(formatDuration(item.duration_secs));
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
 	const canonicalHref = $derived(contentHref(item));
+	const sharedOrCopied = $derived(shared || copied);
 	const actionLabel = $derived(readPostLabel(item.content_type));
 	const meta = $derived(contentTypeMeta(item.content_type));
 	const Icon = $derived(meta.icon);
@@ -154,14 +157,20 @@
 		}
 	}
 
-	async function copyPostLink(e: Event) {
+	async function nativeShare(e: Event) {
 		e.stopPropagation();
 		try {
-			await navigator.clipboard.writeText(shareUrl);
-			copied = true;
-			setTimeout(() => (copied = false), 1500);
+			if (navigator.share) {
+				await navigator.share({ title: item.title ?? '', url: shareUrl });
+				shared = true;
+				setTimeout(() => (shared = false), 2000);
+			} else if (navigator.clipboard) {
+				await navigator.clipboard.writeText(shareUrl);
+				copied = true;
+				setTimeout(() => (copied = false), 1500);
+			}
 		} catch {
-			// Clipboard not available — ignore.
+			// User cancelled or share unavailable.
 		}
 	}
 
@@ -199,19 +208,12 @@
 		<div class="ml-auto flex shrink-0 items-center gap-3">
 			<a
 				href={canonicalHref}
-				class="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-2.5 py-1 text-[11px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
+				class="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)]/20"
 				aria-label={actionLabel}
 			>
-				<Icon size={12} />
+				<Icon size={15} />
 				{actionLabel}
 			</a>
-			<ShareButton
-				contentId={item.id}
-				url={shareUrl}
-				title={item.title}
-				size={18}
-				class="flex shrink-0 items-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-			/>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					class="flex shrink-0 items-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
@@ -225,12 +227,31 @@
 						sideOffset={8}
 						class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 					>
+						<div class="mb-1 px-3 py-1.5 text-xs font-semibold uppercase text-[var(--color-muted)]">
+							{t('feed.share_to', 'Share to')}
+						</div>
+						<ShareMenuItems
+							contentId={item.id}
+							url={shareUrl}
+							title={item.title ?? ''}
+							onShared={() => {
+								shared = true;
+								setTimeout(() => (shared = false), 2000);
+							}}
+						/>
 						<DropdownMenu.Item
 							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							onclick={copyPostLink}
+							onclick={nativeShare}
 						>
-							<Link size={14} /> {copied ? t('feed.copied', 'Link copied') : t('feed.card.copy_link', 'Copy link')}
+							{#if sharedOrCopied}
+								<Check size={14} class={copied ? 'text-[var(--color-success)]' : ''} />
+								{copied ? t('feed.copied', 'Link copied') : t('common.shared', 'Shared!')}
+							{:else}
+								<Share2 size={14} />
+								{t('blog.copy_link', 'Copy link / Native share')}
+							{/if}
 						</DropdownMenu.Item>
+						<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
 						<DropdownMenu.Item
 							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)] data-[disabled]:opacity-50"
 							onclick={reportPost}

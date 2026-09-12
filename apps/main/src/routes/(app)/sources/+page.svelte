@@ -1,61 +1,80 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Rss, Users, FileText } from 'lucide-svelte';
-	import { DirectoryCard, UrlTabs, type UrlTab, type CardMetaItem } from '$lib/components/ui';
+	import { Rss } from 'lucide-svelte';
+	import {
+		FilterToggle,
+		ListPageBar,
+		SearchInput,
+		SelectField,
+		UrlTabs,
+		type SearchSuggestion,
+		type UrlTab
+	} from '$lib/components/ui';
+	import SourceCard from '$lib/components/source/SourceCard.svelte';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import type { Source, SourceCollection } from '$lib/types/sources';
+	import type { Source } from '$lib/types/sources';
 
 	let { data }: { data: PageData } = $props();
 
-	const showCollections = $derived(!data.q && !data.category && !data.sourceKind && data.page === 1);
+	const title = $derived(t('sources.title', 'Sources — JapaConnect'));
+	const description = $derived(
+		t(
+			'sources.description',
+			'Browse trusted sources for scholarships, jobs, remittance, universities, and more.'
+		)
+	);
 
-	const tabs = $derived<UrlTab[]>(
+	// Header state — mirrors /tags header.
+	let query = $state(untrack(() => data.q));
+	let selectedSort = $state(untrack(() => data.sort));
+	let selectedCategory = $state(untrack(() => data.category));
+	let selectedSourceKind = $state(untrack(() => data.sourceKind));
+
+	$effect(() => {
+		query = data.q;
+		selectedSort = data.sort;
+		selectedCategory = data.category;
+		selectedSourceKind = data.sourceKind;
+	});
+
+	const sortTabs = $derived<UrlTab[]>(
 		(data.sourceMeta?.sorts ?? []).map((s) => ({ value: s.value, label: s.label }))
 	);
 
-	const title = $derived(t('sources.title', 'Sources — JapaConnect'));
-	const description = $derived(t('sources.description', 'Browse trusted sources for scholarships, jobs, remittance, universities, and more.'));
+	const categoryOptions = $derived(data.sourceMeta?.categories ?? []);
+	const sourceTypeOptions = $derived(data.sourceMeta?.source_types ?? []);
 
-	function searchUrl(q: string) {
-		const url = new URL(page.url);
-		if (q) {
-			url.searchParams.set('q', q);
-		} else {
-			url.searchParams.delete('q');
-		}
-		url.searchParams.delete('page');
-		return url;
-	}
+	const categorySelectOptions = $derived([
+		{ value: '', label: t('sources.category.all', 'All categories') },
+		...categoryOptions.map((c) => ({ value: c, label: c }))
+	]);
 
-	function changeSort(sort: string) {
-		const url = new URL(page.url);
-		url.searchParams.set('sort', sort);
-		url.searchParams.delete('page');
-		goto(url, { keepFocus: true });
-	}
+	const sourceTypeSelectOptions = $derived([
+		{ value: '', label: t('sources.source_kind.all', 'All source types') },
+		...sourceTypeOptions.map((k) => ({ value: k, label: k }))
+	]);
 
-	function sourceIcon(source: Source) {
-		if (source.source_type === 'youtube') return undefined;
-		return Rss;
-	}
+	// Only category / source type are inside the filter panel now.
+	const hasActiveFilters = $derived(!!selectedCategory || !!selectedSourceKind);
+	let showFilters = $state(false);
+	$effect(() => {
+		if (hasActiveFilters) showFilters = true;
+	});
 
-	function sourceMeta(source: Source): CardMetaItem[] {
-		return [
-			{ icon: Users, text: `${source.follower_count} ${t('sources.followers', 'followers')}` },
-			{ icon: FileText, text: `${source.post_count} ${t('sources.posts', 'posts')}` }
-		];
-	}
+	const searchPlaceholder = $derived(t('sources.search_placeholder', 'Search sources…'));
 
-	function filterUrl(category: string, sourceKind: string) {
-		const url = new URL(page.url);
-		if (category) url.searchParams.set('category', category);
-		else url.searchParams.delete('category');
-		if (sourceKind) url.searchParams.set('source_kind', sourceKind);
-		else url.searchParams.delete('source_kind');
-		url.searchParams.delete('page');
-		return url;
+	function onFilterChange() {
+		const params = new URLSearchParams();
+		if (query.trim()) params.set('q', query.trim());
+		if (selectedSort) params.set('sort', selectedSort);
+		if (selectedCategory) params.set('category', selectedCategory);
+		if (selectedSourceKind) params.set('source_kind', selectedSourceKind);
+		const qs = params.toString();
+		goto(qs ? `/sources?${qs}` : '/sources', { keepFocus: true });
 	}
 
 	function pageUrl(pageNumber: number) {
@@ -71,6 +90,19 @@
 		else url.searchParams.delete('page');
 		return url;
 	}
+
+	async function sourceSearchFetcher(q: string): Promise<SearchSuggestion[]> {
+		const res = await api.get<Source[]>(`/sources?q=${encodeURIComponent(q)}&page_size=8`);
+		if (res.error || !res.data) return [];
+		return res.data.map((s) => ({
+			id: s.id,
+			title: s.name,
+			url: `/sources/${s.slug}`,
+			excerpt: s.domain,
+			type: 'source'
+		}));
+	}
+
 </script>
 
 <svelte:head>
@@ -78,160 +110,148 @@
 	<meta name="description" content={description} />
 </svelte:head>
 
-<div class="flex flex-col gap-4 p-4">
-	<div class="flex flex-col gap-2">
-		<h1 class="text-xl font-bold">{t('sources.heading', 'Sources')}</h1>
-		<p class="text-sm text-[var(--color-text-muted)]">{description}</p>
-	</div>
-
-	{#if showCollections && data.collections && data.collections.length > 0}
-		<div class="flex flex-col gap-6">
-			{#each data.collections as collection (collection.slug)}
-				<div class="flex flex-col gap-2">
-					<div class="flex items-baseline justify-between">
-						<h2 class="text-lg font-semibold">{collection.name}</h2>
-					</div>
-					{#if collection.description}
-						<p class="text-sm text-[var(--color-text-muted)]">{collection.description}</p>
-					{/if}
-					<div class="flex gap-3 overflow-x-auto pb-2">
-						{#each collection.sources as source (source.slug)}
-							<div class="min-w-[260px]">
-								<DirectoryCard
-									href="/sources/{source.slug}"
-									title={source.name}
-									subtitle={source.domain}
-									description={source.description}
-									imageUrl={source.logo_url}
-									fallback={source.name.charAt(0).toUpperCase()}
-									icon={sourceIcon(source)}
-									meta={sourceMeta(source)}
-									hueSeed={source.slug}
-									entityType="source"
-									entityId={source.id}
-									entitySlug={source.slug}
-									entityCount={source.follower_count}
-								/>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/each}
-		</div>
-	{/if}
-
-	<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-		<form
-			method="GET"
-			action="/sources"
-			class="flex gap-2"
-			onsubmit={(e) => {
-				e.preventDefault();
-				const fd = new FormData(e.currentTarget);
-				goto(searchUrl(String(fd.get('q') ?? '')));
-			}}
-		>
-			<input
-				name="q"
-				type="search"
-				value={data.q}
-				placeholder={t('sources.search.placeholder', 'Search sources…')}
-				class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+<div class="mx-auto w-full max-w-full">
+	<!-- Header -->
+	<div class="border-b border-[var(--color-border)] px-4 py-4">
+		<div class="flex items-start justify-between gap-4">
+			<div>
+				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+					<Rss size={20} /> {t('sources.heading', 'Sources')}
+				</h1>
+				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+					{description}
+				</p>
+			</div>
+			<FilterToggle
+				bind:show={showFilters}
+				active={hasActiveFilters}
+				controls="sources-filter-panel"
 			/>
-			<button
-				type="submit"
-				class="rounded-md bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white"
-			>
-				{t('sources.search.label', 'Search')}
-			</button>
-		</form>
-
-		<UrlTabs {tabs} value={data.sort} onValueChange={changeSort} />
+		</div>
 	</div>
 
-	<div class="flex flex-wrap items-center gap-3 text-sm">
-		{#if data.sourceMeta?.categories?.length}
-			<select
-				value={data.category}
-				onchange={(e) => goto(filterUrl(e.currentTarget.value, data.sourceKind), { keepFocus: true })}
-				class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-			>
-				<option value="">{t('sources.category.all', 'All categories')}</option>
-				{#each data.sourceMeta.categories as cat}
-					<option value={cat}>{cat}</option>
-				{/each}
-			</select>
-		{/if}
-		{#if data.sourceMeta?.source_types?.length}
-			<select
-				value={data.sourceKind}
-				onchange={(e) => goto(filterUrl(data.category, e.currentTarget.value), { keepFocus: true })}
-				class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-			>
-				<option value="">{t('sources.source_kind.all', 'All source types')}</option>
-				{#each data.sourceMeta.source_types as kind}
-					<option value={kind}>{kind}</option>
-				{/each}
-			</select>
-		{/if}
-	</div>
+	{#if showFilters}
+		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+			<div class="grid gap-3 sm:grid-cols-3">
+				<form
+					class="w-full"
+					role="search"
+					onsubmit={(e) => {
+						e.preventDefault();
+						onFilterChange();
+					}}
+				>
+					<SearchInput
+						bind:value={query}
+						placeholder={searchPlaceholder}
+						ariaLabel={t('sources.heading', 'Sources')}
+						fetcher={sourceSearchFetcher}
+					/>
+				</form>
 
-	{#if data.sources.length === 0}
-		<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
-			{t('sources.empty', 'No sources found.')}
-		</p>
-	{:else}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each data.sources as source (source.slug)}
-				<DirectoryCard
-					href="/sources/{source.slug}"
-					title={source.name}
-					subtitle={source.domain}
-					description={source.description}
-					imageUrl={source.logo_url}
-					fallback={source.name.charAt(0).toUpperCase()}
-					icon={sourceIcon(source)}
-					meta={sourceMeta(source)}
-					hueSeed={source.slug}
-					entityType="source"
-					entityId={source.id}
-					entitySlug={source.slug}
-					entityCount={source.follower_count}
-				/>
-			{/each}
+				{#if categoryOptions.length > 0}
+					<div>
+						<label for="sources-category" class="sr-only">
+							{t('sources.category_label', 'Category')}
+						</label>
+						<SelectField
+							id="sources-category"
+							value={selectedCategory}
+							options={categorySelectOptions}
+							placeholder={t('sources.category.all', 'All categories')}
+							onValueChange={(v) => {
+								selectedCategory = v;
+								onFilterChange();
+							}}
+							class="w-full"
+						/>
+					</div>
+				{/if}
+
+				{#if sourceTypeOptions.length > 0}
+					<div>
+						<label for="sources-source-kind" class="sr-only">
+							{t('sources.source_type_label', 'Source type')}
+						</label>
+						<SelectField
+							id="sources-source-kind"
+							value={selectedSourceKind}
+							options={sourceTypeSelectOptions}
+							placeholder={t('sources.source_kind.all', 'All source types')}
+							onValueChange={(v) => {
+								selectedSourceKind = v;
+								onFilterChange();
+							}}
+							class="w-full"
+						/>
+					</div>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
-	{#if data.meta && data.meta.total}
-		{@const total = data.meta.total}
-		{@const pageSize = data.pageSize}
-		{@const lastPage = Math.max(1, Math.ceil(total / pageSize))}
-		<div class="flex items-center justify-between pt-4 text-sm">
-			{#if data.page > 1}
-				<a
-					href={pageUrl(data.page - 1).toString()}
-					class="rounded-md border border-[var(--color-border)] px-3 py-2"
-				>
-					{t('pagination.previous', 'Previous')}
-				</a>
-			{:else}
-				<span></span>
-			{/if}
-			<span class="text-[var(--color-text-muted)]">
-				{t('pagination.page', 'Page {page} of {total}')
-					.replace('{page}', String(data.page))
-					.replace('{total}', String(lastPage))}
-			</span>
-			{#if data.page < lastPage}
-				<a
-					href={pageUrl(data.page + 1).toString()}
-					class="rounded-md border border-[var(--color-border)] px-3 py-2"
-				>
-					{t('pagination.next', 'Next')}
-				</a>
-			{:else}
-				<span></span>
-			{/if}
-		</div>
-	{/if}
+	<!-- Sort tabs -->
+	<ListPageBar>
+		{#if sortTabs.length > 0}
+			<UrlTabs
+				tabs={sortTabs}
+				value={selectedSort}
+				onValueChange={(v) => {
+					selectedSort = v;
+					onFilterChange();
+				}}
+				class="!border-b-0 !bg-transparent"
+			/>
+		{/if}
+	</ListPageBar>
+
+	<div class="p-4">
+		{#if data.sources.length === 0}
+			<p class="py-8 text-center text-sm text-[var(--color-text-subtle)]">
+				{t('sources.empty', 'No sources found.')}
+			</p>
+		{:else}
+			<p class="mb-3 text-xs text-[var(--color-muted)]">
+				{data.meta?.total ?? 0} {t('sources.results', 'sources')}
+			</p>
+			<div class="grid gap-3 grid-cols-1 sm:grid-cols-2">
+				{#each data.sources as source (source.slug)}
+					<SourceCard {source} />
+				{/each}
+			</div>
+		{/if}
+
+		{#if data.meta && data.meta.total}
+			{@const total = data.meta.total}
+			{@const pageSize = data.pageSize}
+			{@const lastPage = Math.max(1, Math.ceil(total / pageSize))}
+			<div class="flex items-center justify-between pt-4 text-sm">
+				{#if data.page > 1}
+					<a
+						href={pageUrl(data.page - 1).toString()}
+						class="rounded-md border border-[var(--color-border)] px-3 py-2"
+					>
+						{t('pagination.previous', 'Previous')}
+					</a>
+				{:else}
+					<span></span>
+				{/if}
+				<span class="text-[var(--color-text-subtle)]">
+					{t('pagination.page', 'Page {page} of {total}')
+						.replace('{page}', String(data.page))
+						.replace('{total}', String(lastPage))}
+				</span>
+				{#if data.page < lastPage}
+					<a
+						href={pageUrl(data.page + 1).toString()}
+						class="rounded-md border border-[var(--color-border)] px-3 py-2"
+					>
+						{t('pagination.next', 'Next')}
+					</a>
+				{:else}
+					<span></span>
+				{/if}
+			</div>
+		{/if}
+	</div>
 </div>

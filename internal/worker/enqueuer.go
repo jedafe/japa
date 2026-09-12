@@ -112,6 +112,10 @@ func taskDefaults(taskType string) []asynq.Option {
 	// temporarily unavailable (§71, ADR-071).
 	case TypeAssessmentScoreSubmission:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(5))
+	// Source metadata enrichment: external HTTP fetch, short timeout,
+	// limited retries because failures are often site-side and permanent.
+	case TypeIntelSourceMetadata:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -202,6 +206,8 @@ var taskTier = func() map[string]string {
 		TypeIntelPostPublish,
 		TypeIntelNotifyDiscoveries,
 		TypeIntelRetryFailedSource,
+		// §INTEL — source metadata enrichment, default tier.
+		TypeIntelSourceMetadata,
 	} {
 		m[t] = QueueDefault
 	}
@@ -369,6 +375,7 @@ var taskTypeCatalog = []struct {
 	{TypeIntelPostPublish, "default", "Post-publish fan-out: Meilisearch index + RAG embedding + event publish"},
 	{TypeIntelNotifyDiscoveries, "default", "Fan-out discovery notifications to country space followers"},
 	{TypeIntelRetryFailedSource, "default", "Manual retry trigger for a failed intelligence source"},
+	{TypeIntelSourceMetadata, "default", "Fetch and store public-site metadata for a source"},
 	// Low tier
 	{TypeDigestEmail, "low", "Send digest email"},
 	{TypeSitemapGenerate, "low", "Generate sitemap XML"},

@@ -66,24 +66,24 @@ var sourceItemSortOptions = []sourceOption{
 // directory and /sources/{slug} detail endpoints. It omits internal crawl
 // configuration (provider_config, robots_policy, error state).
 type publicSource struct {
-	ID            string         `json:"id"`
-	Slug          string         `json:"slug"`
-	Name          string         `json:"name"`
-	Description   *string        `json:"description,omitempty"`
-	Domain        string         `json:"domain"`
-	SourceURL     string         `json:"source_url,omitempty"`
-	Category      string         `json:"category"`
-	SourceType    string         `json:"source_type"`
-	SourceKind    string         `json:"source_kind"`
-	TrustLevel    int16          `json:"trust_level"`
-	FollowerCount int32          `json:"follower_count"`
-	PostCount     int32          `json:"post_count"`
-	LogoURL       *string        `json:"logo_url,omitempty"`
-	Keywords      []string       `json:"keywords,omitempty"`
+	ID            string            `json:"id"`
+	Slug          string            `json:"slug"`
+	Name          string            `json:"name"`
+	Description   *string           `json:"description,omitempty"`
+	Domain        string            `json:"domain"`
+	SourceURL     string            `json:"source_url,omitempty"`
+	Category      string            `json:"category"`
+	SourceType    string            `json:"source_type"`
+	SourceKind    string            `json:"source_kind"`
+	TrustLevel    int16             `json:"trust_level"`
+	FollowerCount int32             `json:"follower_count"`
+	PostCount     int32             `json:"post_count"`
+	LogoURL       *string           `json:"logo_url,omitempty"`
+	Keywords      []string          `json:"keywords,omitempty"`
 	TagSlugs      map[string]string `json:"tag_slugs,omitempty"`
-	IsFollowing   bool           `json:"is_following"`
-	IsBlocked     bool           `json:"is_blocked"`
-	LinkedEntity  *linkedEntity  `json:"linked_entity,omitempty"`
+	IsFollowing   bool              `json:"is_following"`
+	IsBlocked     bool              `json:"is_blocked"`
+	LinkedEntity  *linkedEntity     `json:"linked_entity,omitempty"`
 }
 
 type linkedEntity struct {
@@ -108,11 +108,11 @@ type sourceCollection struct {
 }
 
 type collectionQuery struct {
-	Category      string `json:"category"`
-	SourceKind    string `json:"source_kind"`
-	Sort          string `json:"sort"`
-	Search        string `json:"q"`
-	CreatedAfter  string `json:"created_after"`
+	Category     string `json:"category"`
+	SourceKind   string `json:"source_kind"`
+	Sort         string `json:"sort"`
+	Search       string `json:"q"`
+	CreatedAfter string `json:"created_after"`
 }
 
 // HandleListSourceCollections returns the curated directory sections for the
@@ -349,13 +349,12 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		FollowerCount: row.FollowerCount,
 		PostCount:     row.PostCount,
 		LogoURL:       row.LogoUrl,
-		Keywords:      []string{},
+		Keywords:      row.Keywords,
 		IsFollowing:   isFollowing,
 		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
 	}
 
-	h.enrichPublicSource(r.Context(), &src, tenantID)
 	h.ensureSourceTags(r.Context(), &src, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -427,38 +426,6 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"data": report,
 	})
-}
-
-// enrichPublicSource fetches the source's public site metadata and overlays
-// any missing description, logo, or keywords. Failures are logged but ignored
-// so a 3rd-party outage never breaks the source detail page.
-func (h *Handlers) enrichPublicSource(ctx context.Context, src *publicSource, tenantID pgtype.UUID) {
-	if h.linkPreview == nil {
-		return
-	}
-
-	pageURL := src.SourceURL
-	if pageURL == "" {
-		pageURL = "https://" + src.Domain
-	}
-
-	preview, err := h.linkPreview.Fetch(ctx, pageURL, tenantID)
-	if err != nil {
-		slog.Debug("intel: source preview fetch failed; using registry values", "url", pageURL, "error", err)
-		return
-	}
-
-	if preview.Description != "" {
-		src.Description = &preview.Description
-	}
-	if preview.Favicon != "" {
-		src.LogoURL = &preview.Favicon
-	} else if preview.Image != "" && src.LogoURL == nil {
-		src.LogoURL = &preview.Image
-	}
-	if len(preview.Keywords) > 0 {
-		src.Keywords = preview.Keywords
-	}
 }
 
 // ensureSourceTags converts one-word source keywords into directory tags,
@@ -577,7 +544,7 @@ func intelSourceToPublic(s gen.IntelSource, isFollowing, isBlocked bool, linked 
 		FollowerCount: s.FollowerCount,
 		PostCount:     s.PostCount,
 		LogoURL:       s.LogoUrl,
-		Keywords:      []string{},
+		Keywords:      s.Keywords,
 		IsFollowing:   isFollowing,
 		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,

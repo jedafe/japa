@@ -2030,6 +2030,7 @@ type IntelSource struct {
 	FollowerCount int32              `json:"follower_count"`
 	PostCount     int32              `json:"post_count"`
 	SourceKind    string             `json:"source_kind"`
+	Keywords      []string           `json:"keywords"`
 }
 
 type IpBlock struct {

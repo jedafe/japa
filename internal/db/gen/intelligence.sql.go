@@ -19,7 +19,7 @@ SET status = 'active',
     approved_at = now(),
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND status = 'proposed'
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords
 `
 
 type ApproveProposedIntelSourceParams struct {
@@ -70,6 +70,7 @@ func (q *Queries) ApproveProposedIntelSource(ctx context.Context, arg ApprovePro
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
@@ -272,15 +273,15 @@ func (q *Queries) CreateIntelReviewLog(ctx context.Context, arg CreateIntelRevie
 
 const createIntelSource = `-- name: CreateIntelSource :one
 
-INSERT INTO intel_sources (tenant_id, name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
-VALUES ($1, $2, $17, $3, $4, $18, $5, $6, COALESCE($19, 'publisher'), $7, $8, $9, $10, $11, $12, $13, $14, $15, $20, $16,
-        COALESCE($21, 'active'),
-        $22,
+INSERT INTO intel_sources (tenant_id, name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
+VALUES ($1, $2, $17, $3, $4, $18, $5, $6, COALESCE($19, 'publisher'), $7, $8, $9, $10, $11, $12, $13, $14, $15, $20, $21, $16,
+        COALESCE($22, 'active'),
         $23,
         $24,
         $25,
-        $26)
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind
+        $26,
+        $27)
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords
 `
 
 type CreateIntelSourceParams struct {
@@ -304,6 +305,7 @@ type CreateIntelSourceParams struct {
 	Description         *string            `json:"description"`
 	SourceKind          interface{}        `json:"source_kind"`
 	LogoUrl             *string            `json:"logo_url"`
+	Keywords            []string           `json:"keywords"`
 	Status              interface{}        `json:"status"`
 	ProposedBy          pgtype.UUID        `json:"proposed_by"`
 	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
@@ -340,6 +342,7 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		arg.Description,
 		arg.SourceKind,
 		arg.LogoUrl,
+		arg.Keywords,
 		arg.Status,
 		arg.ProposedBy,
 		arg.ProposedAt,
@@ -386,6 +389,7 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
@@ -590,7 +594,7 @@ func (q *Queries) GetIntelRecordByExternalKey(ctx context.Context, arg GetIntelR
 }
 
 const getIntelSource = `-- name: GetIntelSource :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources WHERE tenant_id = $1 AND id = $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources WHERE tenant_id = $1 AND id = $2
 `
 
 type GetIntelSourceParams struct {
@@ -639,12 +643,13 @@ func (q *Queries) GetIntelSource(ctx context.Context, arg GetIntelSourceParams) 
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
 
 const getIntelSourceBySlug = `-- name: GetIntelSourceBySlug :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources WHERE tenant_id = $1 AND slug = $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources WHERE tenant_id = $1 AND slug = $2
 `
 
 type GetIntelSourceBySlugParams struct {
@@ -693,12 +698,13 @@ func (q *Queries) GetIntelSourceBySlug(ctx context.Context, arg GetIntelSourceBy
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
 
 const getIntelSourceBySlugWithLinkedEntity = `-- name: GetIntelSourceBySlugWithLinkedEntity :one
-SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind,
+SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords,
        sp.slug AS space_slug, sp.name AS space_name,
        o.slug AS org_slug, o.name AS org_name,
        u.username AS user_slug, COALESCE(up.display_name, u.username, '') AS user_name
@@ -753,6 +759,7 @@ type GetIntelSourceBySlugWithLinkedEntityRow struct {
 	FollowerCount       int32              `json:"follower_count"`
 	PostCount           int32              `json:"post_count"`
 	SourceKind          string             `json:"source_kind"`
+	Keywords            []string           `json:"keywords"`
 	SpaceSlug           *string            `json:"space_slug"`
 	SpaceName           *string            `json:"space_name"`
 	OrgSlug             *string            `json:"org_slug"`
@@ -802,6 +809,7 @@ func (q *Queries) GetIntelSourceBySlugWithLinkedEntity(ctx context.Context, arg 
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 		&i.SpaceSlug,
 		&i.SpaceName,
 		&i.OrgSlug,
@@ -813,7 +821,7 @@ func (q *Queries) GetIntelSourceBySlugWithLinkedEntity(ctx context.Context, arg 
 }
 
 const getIntelSourceByURL = `-- name: GetIntelSourceByURL :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources WHERE tenant_id = $1 AND source_url = $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources WHERE tenant_id = $1 AND source_url = $2
 `
 
 type GetIntelSourceByURLParams struct {
@@ -862,6 +870,7 @@ func (q *Queries) GetIntelSourceByURL(ctx context.Context, arg GetIntelSourceByU
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
@@ -949,7 +958,7 @@ func (q *Queries) ListBlockedSourceIDs(ctx context.Context, arg ListBlockedSourc
 }
 
 const listDueIntelSources = `-- name: ListDueIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
@@ -1010,6 +1019,7 @@ func (q *Queries) ListDueIntelSources(ctx context.Context, arg ListDueIntelSourc
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1293,7 +1303,7 @@ func (q *Queries) ListIntelReviewLog(ctx context.Context, arg ListIntelReviewLog
 }
 
 const listIntelSources = `-- name: ListIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type ListIntelSourcesParams struct {
@@ -1349,6 +1359,7 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1361,7 +1372,7 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 }
 
 const listIntelSourcesByCategory = `-- name: ListIntelSourcesByCategory :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true AND status = 'active' ORDER BY trust_level, name
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources WHERE tenant_id = $1 AND category = $2 AND enabled = true AND status = 'active' ORDER BY trust_level, name
 `
 
 type ListIntelSourcesByCategoryParams struct {
@@ -1416,6 +1427,7 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, arg ListIntelS
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1428,7 +1440,7 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, arg ListIntelS
 }
 
 const listProposedIntelSources = `-- name: ListProposedIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
 WHERE tenant_id = $1 AND status = 'proposed'
 ORDER BY proposed_at DESC NULLS LAST
 LIMIT $2 OFFSET $3
@@ -1488,6 +1500,7 @@ func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposed
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1500,7 +1513,7 @@ func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposed
 }
 
 const listPublicSourcesPopular = `-- name: ListPublicSourcesPopular :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
@@ -1574,6 +1587,7 @@ func (q *Queries) ListPublicSourcesPopular(ctx context.Context, arg ListPublicSo
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1586,7 +1600,7 @@ func (q *Queries) ListPublicSourcesPopular(ctx context.Context, arg ListPublicSo
 }
 
 const listPublicSourcesRecent = `-- name: ListPublicSourcesRecent :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
@@ -1660,6 +1674,7 @@ func (q *Queries) ListPublicSourcesRecent(ctx context.Context, arg ListPublicSou
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1672,7 +1687,7 @@ func (q *Queries) ListPublicSourcesRecent(ctx context.Context, arg ListPublicSou
 }
 
 const listPublicSourcesTrending = `-- name: ListPublicSourcesTrending :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords FROM intel_sources
 WHERE tenant_id = $1
   AND enabled = true
   AND status = 'active'
@@ -1747,6 +1762,7 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -1761,7 +1777,7 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 const listSourceCollectionItems = `-- name: ListSourceCollectionItems :many
 SELECT
     i.position,
-    s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind
+    s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords
 FROM source_collection_items i
 JOIN intel_sources s ON s.id = i.source_id AND s.tenant_id = $1
 WHERE i.collection_id = $2
@@ -1812,6 +1828,7 @@ type ListSourceCollectionItemsRow struct {
 	FollowerCount       int32              `json:"follower_count"`
 	PostCount           int32              `json:"post_count"`
 	SourceKind          string             `json:"source_kind"`
+	Keywords            []string           `json:"keywords"`
 }
 
 func (q *Queries) ListSourceCollectionItems(ctx context.Context, arg ListSourceCollectionItemsParams) ([]ListSourceCollectionItemsRow, error) {
@@ -1862,6 +1879,7 @@ func (q *Queries) ListSourceCollectionItems(ctx context.Context, arg ListSourceC
 			&i.FollowerCount,
 			&i.PostCount,
 			&i.SourceKind,
+			&i.Keywords,
 		); err != nil {
 			return nil, err
 		}
@@ -2080,16 +2098,17 @@ SET name = $3,
     attribution_required = $13,
     usage_restriction = $14,
     logo_url = COALESCE($19, logo_url),
+    keywords = COALESCE($20, keywords),
     enabled = $15,
-    status = COALESCE($20, status),
-    proposed_by = COALESCE($21, proposed_by),
-    proposed_at = COALESCE($22, proposed_at),
-    approved_by = COALESCE($23, approved_by),
-    approved_at = COALESCE($24, approved_at),
-    persona_id = COALESCE($25, persona_id),
+    status = COALESCE($21, status),
+    proposed_by = COALESCE($22, proposed_by),
+    proposed_at = COALESCE($23, proposed_at),
+    approved_by = COALESCE($24, approved_by),
+    approved_at = COALESCE($25, approved_at),
+    persona_id = COALESCE($26, persona_id),
     updated_at = now()
 WHERE tenant_id = $1 AND id = $2
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, tenant_id, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords
 `
 
 type UpdateIntelSourceParams struct {
@@ -2112,6 +2131,7 @@ type UpdateIntelSourceParams struct {
 	Description         *string            `json:"description"`
 	SourceKind          *string            `json:"source_kind"`
 	LogoUrl             *string            `json:"logo_url"`
+	Keywords            []string           `json:"keywords"`
 	Status              *string            `json:"status"`
 	ProposedBy          pgtype.UUID        `json:"proposed_by"`
 	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
@@ -2141,6 +2161,7 @@ func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourcePa
 		arg.Description,
 		arg.SourceKind,
 		arg.LogoUrl,
+		arg.Keywords,
 		arg.Status,
 		arg.ProposedBy,
 		arg.ProposedAt,
@@ -2187,6 +2208,7 @@ func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourcePa
 		&i.FollowerCount,
 		&i.PostCount,
 		&i.SourceKind,
+		&i.Keywords,
 	)
 	return i, err
 }
@@ -2245,6 +2267,34 @@ type UpdateIntelSourceLastChangedParams struct {
 
 func (q *Queries) UpdateIntelSourceLastChanged(ctx context.Context, arg UpdateIntelSourceLastChangedParams) error {
 	_, err := q.db.Exec(ctx, updateIntelSourceLastChanged, arg.TenantID, arg.ID)
+	return err
+}
+
+const updateIntelSourceMetadata = `-- name: UpdateIntelSourceMetadata :exec
+UPDATE intel_sources
+SET description = COALESCE($3, description),
+    logo_url = COALESCE($4, logo_url),
+    keywords = COALESCE($5, keywords),
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2
+`
+
+type UpdateIntelSourceMetadataParams struct {
+	TenantID    pgtype.UUID `json:"tenant_id"`
+	ID          pgtype.UUID `json:"id"`
+	Description *string     `json:"description"`
+	LogoUrl     *string     `json:"logo_url"`
+	Keywords    []string    `json:"keywords"`
+}
+
+func (q *Queries) UpdateIntelSourceMetadata(ctx context.Context, arg UpdateIntelSourceMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateIntelSourceMetadata,
+		arg.TenantID,
+		arg.ID,
+		arg.Description,
+		arg.LogoUrl,
+		arg.Keywords,
+	)
 	return err
 }
 
