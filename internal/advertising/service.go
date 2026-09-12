@@ -51,10 +51,10 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 		}
 	}
 
-	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx, gen.GetAdSlotTypeByNameParams{
+	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx,
 
-		SlotName: input.SlotTypeName,
-	})
+		input.SlotTypeName,
+	)
 	if err != nil {
 		return AdCampaign{}, fmt.Errorf("resolving slot type: %w", err)
 	}
@@ -99,9 +99,9 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 
 // GetCampaign retrieves a campaign by ID.
 func (s *Service) GetCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
-	return s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID: id,
-	})
+	return s.store.Queries().GetAdCampaignByID(ctx,
+		id,
+	)
 }
 
 // ListCampaigns returns all campaigns for a tenant.
@@ -115,9 +115,9 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit
 // serving impressions.
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
-	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID: id,
-	})
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx,
+		id,
+	)
 	if err != nil {
 		return AdCampaign{}, err
 	}
@@ -139,9 +139,9 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 // ads:refund_campaign_credits Asynq task enqueued by the handler.
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
-	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID: id,
-	})
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx,
+		id,
+	)
 	if err != nil {
 		return AdCampaign{}, err
 	}
@@ -159,9 +159,9 @@ func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) 
 // PauseCampaign pauses an active campaign.
 // Only campaigns in 'active' status can be paused.
 func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
-	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID: id,
-	})
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx,
+		id,
+	)
 	if err != nil {
 		return AdCampaign{}, err
 	}
@@ -179,9 +179,9 @@ func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (
 // EndCampaign permanently ends a campaign.
 // Only campaigns in 'active' or 'paused' status can be ended.
 func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
-	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID: id,
-	})
+	campaign, err := s.store.Queries().GetAdCampaignByID(ctx,
+		id,
+	)
 	if err != nil {
 		return AdCampaign{}, err
 	}
@@ -213,18 +213,18 @@ func (s *Service) UpdateCampaignDetails(ctx context.Context, id, tenantID pgtype
 // GetAdSlotTypeByID query; the previous raw-SQL handler referenced
 // non-existent width/height columns and would 500.
 func (s *Service) GetSlotType(ctx context.Context, id, tenantID pgtype.UUID) (AdSlotType, error) {
-	return s.store.Queries().GetAdSlotTypeByID(ctx, gen.GetAdSlotTypeByIDParams{
-		ID: id,
-	})
+	return s.store.Queries().GetAdSlotTypeByID(ctx,
+		id,
+	)
 }
 
 // RenderSlot returns eligible campaigns for a slot.
 // Returns empty slice (never an error with nil campaigns) when no match.
 func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, slotName string) ([]AdCampaign, error) {
-	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx, gen.GetAdSlotTypeByNameParams{
+	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx,
 
-		SlotName: slotName,
-	})
+		slotName,
+	)
 	if err != nil {
 		return []AdCampaign{}, fmt.Errorf("resolving slot type: %w", err)
 	}
@@ -438,22 +438,22 @@ func (s *Service) CreateBoost(ctx context.Context, tenantID pgtype.UUID, input C
 
 // ListBoosts returns all boosts for an organization.
 func (s *Service) ListBoosts(ctx context.Context, tenantID, organizationID pgtype.UUID) ([]OrganizationBoost, error) {
-	return s.store.Queries().ListOrganizationBoosts(ctx, gen.ListOrganizationBoostsParams{
+	return s.store.Queries().ListOrganizationBoosts(ctx,
 
-		OrganizationID: organizationID,
-	})
+		organizationID,
+	)
 }
 
 // ListActiveBoosts returns all currently active boosts for a tenant.
 func (s *Service) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListActiveBoostsRow, error) {
-	return s.store.Queries().ListActiveBoosts(ctx, tenantID)
+	return s.store.Queries().ListActiveBoosts(ctx)
 }
 
 // EndBoost ends an active boost.
 func (s *Service) EndBoost(ctx context.Context, id, tenantID pgtype.UUID) (OrganizationBoost, error) {
-	return s.store.Queries().EndOrganizationBoost(ctx, gen.EndOrganizationBoostParams{
-		ID: id,
-	})
+	return s.store.Queries().EndOrganizationBoost(ctx,
+		id,
+	)
 }
 
 // UpdateBoost updates an existing boost's status and/or end date.
@@ -473,9 +473,9 @@ func (s *Service) UpdateBoost(ctx context.Context, id, tenantID pgtype.UUID, sta
 
 // DeleteBoost removes a boost.
 func (s *Service) DeleteBoost(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.Queries().DeleteOrganizationBoost(ctx, gen.DeleteOrganizationBoostParams{
-		ID: id,
-	})
+	return s.store.Queries().DeleteOrganizationBoost(ctx,
+		id,
+	)
 }
 
 // ---------------------------------------------------------------------------

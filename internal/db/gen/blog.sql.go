@@ -153,11 +153,9 @@ func (q *Queries) CountPublishedBlogPosts(ctx context.Context, arg CountPublishe
 }
 
 const createBlogSeries = `-- name: CreateBlogSeries :one
-
-
 INSERT INTO blog_series (title, slug, description, cover_image_id, author_user_id) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, title, slug, description, cover_image_id,
+          author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type CreateBlogSeriesParams struct {
@@ -168,25 +166,7 @@ type CreateBlogSeriesParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
 }
 
-type CreateBlogSeriesRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	CoverImageID pgtype.UUID        `json:"cover_image_id"`
-	AuthorUserID pgtype.UUID        `json:"author_user_id"`
-	Status       string             `json:"status"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
-}
-
-// Blog Extension — series, content reviews, featured posts, RSS feed.
-// Ref: japaconnect-engineering/sections/24-blog-extension.md
-// =====================
-// Blog Series
-// =====================
-func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesParams) (CreateBlogSeriesRow, error) {
+func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesParams) (BlogSeries, error) {
 	row := q.db.QueryRow(ctx, createBlogSeries,
 		arg.Title,
 		arg.Slug,
@@ -194,9 +174,10 @@ func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesPara
 		arg.CoverImageID,
 		arg.AuthorUserID,
 	)
-	var i CreateBlogSeriesRow
+	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -311,7 +292,7 @@ INSERT INTO content_featured (content_id, featured_order, featured_until) VALUES
 ON CONFLICT (content_id) DO UPDATE
  SET featured_order = $2,
  featured_until = $3
-RETURNING id, content_id, featured_order, featured_until, created_at
+RETURNING id, tenant_id, content_id, featured_order, featured_until, created_at
 `
 
 type FeatureContentParams struct {
@@ -320,22 +301,15 @@ type FeatureContentParams struct {
 	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
 }
 
-type FeatureContentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	FeaturedOrder int32              `json:"featured_order"`
-	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Content Featured
 // =====================
-func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) (FeatureContentRow, error) {
+func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) (ContentFeatured, error) {
 	row := q.db.QueryRow(ctx, featureContent, arg.ContentID, arg.FeaturedOrder, arg.FeaturedUntil)
-	var i FeatureContentRow
+	var i ContentFeatured
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ContentID,
 		&i.FeaturedOrder,
 		&i.FeaturedUntil,
@@ -534,30 +508,18 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 }
 
 const getBlogSeriesByID = `-- name: GetBlogSeriesByID :one
-SELECT id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at
+SELECT id, tenant_id, title, slug, description, cover_image_id,
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetBlogSeriesByIDRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	CoverImageID pgtype.UUID        `json:"cover_image_id"`
-	AuthorUserID pgtype.UUID        `json:"author_user_id"`
-	Status       string             `json:"status"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) GetBlogSeriesByID(ctx context.Context, id pgtype.UUID) (GetBlogSeriesByIDRow, error) {
+func (q *Queries) GetBlogSeriesByID(ctx context.Context, id pgtype.UUID) (BlogSeries, error) {
 	row := q.db.QueryRow(ctx, getBlogSeriesByID, id)
-	var i GetBlogSeriesByIDRow
+	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -1139,8 +1101,8 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 }
 
 const listFeaturedPosts = `-- name: ListFeaturedPosts :many
-SELECT cf.id, cf.content_id, cf.featured_order,
- cf.featured_until, cf.created_at
+SELECT cf.id, cf.tenant_id, cf.content_id, cf.featured_order,
+       cf.featured_until, cf.created_at
 FROM content_featured cf
 WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
 ORDER BY cf.featured_order ASC
@@ -1152,25 +1114,18 @@ type ListFeaturedPostsParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListFeaturedPostsRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ContentID     pgtype.UUID        `json:"content_id"`
-	FeaturedOrder int32              `json:"featured_order"`
-	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsParams) ([]ListFeaturedPostsRow, error) {
+func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsParams) ([]ContentFeatured, error) {
 	rows, err := q.db.Query(ctx, listFeaturedPosts, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListFeaturedPostsRow
+	var items []ContentFeatured
 	for rows.Next() {
-		var i ListFeaturedPostsRow
+		var i ContentFeatured
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ContentID,
 			&i.FeaturedOrder,
 			&i.FeaturedUntil,
@@ -1658,8 +1613,8 @@ SET title = $1, slug = $2, description = $3,
  cover_image_id = $4, status = $5,
  updated_at = now()
 WHERE id = $6 AND deleted_at IS NULL
-RETURNING id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, title, slug, description, cover_image_id,
+          author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type UpdateBlogSeriesParams struct {
@@ -1671,20 +1626,7 @@ type UpdateBlogSeriesParams struct {
 	ID           pgtype.UUID `json:"id"`
 }
 
-type UpdateBlogSeriesRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	CoverImageID pgtype.UUID        `json:"cover_image_id"`
-	AuthorUserID pgtype.UUID        `json:"author_user_id"`
-	Status       string             `json:"status"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt    pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesParams) (UpdateBlogSeriesRow, error) {
+func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesParams) (BlogSeries, error) {
 	row := q.db.QueryRow(ctx, updateBlogSeries,
 		arg.Title,
 		arg.Slug,
@@ -1693,9 +1635,10 @@ func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesPara
 		arg.Status,
 		arg.ID,
 	)
-	var i UpdateBlogSeriesRow
+	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,

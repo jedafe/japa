@@ -724,7 +724,7 @@ func (q *Queries) CreateSpaceRule(ctx context.Context, arg CreateSpaceRuleParams
 const createSpaceType = `-- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type CreateSpaceTypeParams struct {
@@ -737,20 +737,7 @@ type CreateSpaceTypeParams struct {
 	IsSystem     bool        `json:"is_system"`
 }
 
-type CreateSpaceTypeRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
-func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams) (CreateSpaceTypeRow, error) {
+func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams) (SpaceType, error) {
 	row := q.db.QueryRow(ctx, createSpaceType,
 		arg.Name,
 		arg.Slug,
@@ -760,9 +747,10 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		arg.Category,
 		arg.IsSystem,
 	)
-	var i CreateSpaceTypeRow
+	var i SpaceType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1265,29 +1253,17 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, spaceID pgtype.U
 }
 
 const getPermissionPresetByName = `-- name: GetPermissionPresetByName :one
-SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 WHERE name = $1
 `
 
-type GetPermissionPresetByNameRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Name           string             `json:"name"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetPermissionPresetByName(ctx context.Context, name string) (GetPermissionPresetByNameRow, error) {
+func (q *Queries) GetPermissionPresetByName(ctx context.Context, name string) (SpacePermissionPreset, error) {
 	row := q.db.QueryRow(ctx, getPermissionPresetByName, name)
-	var i GetPermissionPresetByNameRow
+	var i SpacePermissionPreset
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Visibility,
 		&i.PostingPerm,
@@ -1597,7 +1573,7 @@ func (q *Queries) GetSpaceKeywords(ctx context.Context, id pgtype.UUID) ([]strin
 }
 
 const getSpaceModerator = `-- name: GetSpaceModerator :one
-SELECT id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
+SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
 WHERE space_id = $1 AND user_id = $2
 `
@@ -1607,21 +1583,13 @@ type GetSpaceModeratorParams struct {
 	UserID  pgtype.UUID `json:"user_id"`
 }
 
-type GetSpaceModeratorRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	SpaceID          pgtype.UUID        `json:"space_id"`
-	UserID           pgtype.UUID        `json:"user_id"`
-	AssignedBy       string             `json:"assigned_by"`
-	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
 // SPACES-015: tenant-scoped for defense-in-depth.
-func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorParams) (GetSpaceModeratorRow, error) {
+func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorParams) (SpaceModerator, error) {
 	row := q.db.QueryRow(ctx, getSpaceModerator, arg.SpaceID, arg.UserID)
-	var i GetSpaceModeratorRow
+	var i SpaceModerator
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.SpaceID,
 		&i.UserID,
 		&i.AssignedBy,
@@ -1680,29 +1648,17 @@ func (q *Queries) GetSpaceRegionByGeoCode(ctx context.Context, geoCode *string) 
 }
 
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE id = $1
 `
 
-type GetSpaceTypeByIDRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
-func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (GetSpaceTypeByIDRow, error) {
+func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (SpaceType, error) {
 	row := q.db.QueryRow(ctx, getSpaceTypeByID, id)
-	var i GetSpaceTypeByIDRow
+	var i SpaceType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1717,29 +1673,17 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (GetSpac
 }
 
 const getSpaceTypeBySlug = `-- name: GetSpaceTypeBySlug :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE slug = $1
 `
 
-type GetSpaceTypeBySlugRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
-func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, slug string) (GetSpaceTypeBySlugRow, error) {
+func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, slug string) (SpaceType, error) {
 	row := q.db.QueryRow(ctx, getSpaceTypeBySlug, slug)
-	var i GetSpaceTypeBySlugRow
+	var i SpaceType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -2193,42 +2137,24 @@ func (q *Queries) ListDistinctSubregions(ctx context.Context, region *string) ([
 }
 
 const listPermissionPresetsByTenant = `-- name: ListPermissionPresetsByTenant :many
-
-
-SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 
 ORDER BY created_at ASC, id ASC
 `
 
-type ListPermissionPresetsByTenantRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Name           string             `json:"name"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Space type, space, space rule, and permission preset queries.
-// =====================
-// Space Permission Presets
-// =====================
-func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context) ([]ListPermissionPresetsByTenantRow, error) {
+func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context) ([]SpacePermissionPreset, error) {
 	rows, err := q.db.Query(ctx, listPermissionPresetsByTenant)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPermissionPresetsByTenantRow
+	var items []SpacePermissionPreset
 	for rows.Next() {
-		var i ListPermissionPresetsByTenantRow
+		var i SpacePermissionPreset
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Visibility,
 			&i.PostingPerm,
@@ -2578,39 +2504,27 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 
 const listSpaceTypesByTenant = `-- name: ListSpaceTypesByTenant :many
 
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 
 ORDER BY created_at ASC, id ASC
 `
 
-type ListSpaceTypesByTenantRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
 // =====================
 // Space Types
 // =====================
-func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]ListSpaceTypesByTenantRow, error) {
+func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]SpaceType, error) {
 	rows, err := q.db.Query(ctx, listSpaceTypesByTenant)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSpaceTypesByTenantRow
+	var items []SpaceType
 	for rows.Next() {
-		var i ListSpaceTypesByTenantRow
+		var i SpaceType
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -2632,7 +2546,7 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]ListSpaceTypesB
 }
 
 const listSpaceTypesByTenantFiltered = `-- name: ListSpaceTypesByTenantFiltered :many
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR category = $2)
@@ -2646,33 +2560,21 @@ type ListSpaceTypesByTenantFilteredParams struct {
 	SelectableOnly bool   `json:"selectable_only"`
 }
 
-type ListSpaceTypesByTenantFilteredRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
 // Supports optional search (q), category filter, and a selectable-only flag
 // for the admin panel and the member space-creation flow. Pass empty strings
 // and false booleans to skip filters.
-func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSpaceTypesByTenantFilteredParams) ([]ListSpaceTypesByTenantFilteredRow, error) {
+func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSpaceTypesByTenantFilteredParams) ([]SpaceType, error) {
 	rows, err := q.db.Query(ctx, listSpaceTypesByTenantFiltered, arg.Search, arg.CategoryFilter, arg.SelectableOnly)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSpaceTypesByTenantFilteredRow
+	var items []SpaceType
 	for rows.Next() {
-		var i ListSpaceTypesByTenantFilteredRow
+		var i SpaceType
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -4103,7 +4005,7 @@ UPDATE space_permission_presets
 SET visibility = $1, posting_perm = $2, replying_perm = $3,
  commenting_perm = $4, joining_perm = $5
 WHERE id = $6 AND is_system = true
-RETURNING id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+RETURNING id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 `
 
 type UpdatePermissionPresetParams struct {
@@ -4115,20 +4017,7 @@ type UpdatePermissionPresetParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-type UpdatePermissionPresetRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	Name           string             `json:"name"`
-	Visibility     string             `json:"visibility"`
-	PostingPerm    string             `json:"posting_perm"`
-	ReplyingPerm   string             `json:"replying_perm"`
-	CommentingPerm string             `json:"commenting_perm"`
-	JoiningPerm    string             `json:"joining_perm"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdatePermissionPreset(ctx context.Context, arg UpdatePermissionPresetParams) (UpdatePermissionPresetRow, error) {
+func (q *Queries) UpdatePermissionPreset(ctx context.Context, arg UpdatePermissionPresetParams) (SpacePermissionPreset, error) {
 	row := q.db.QueryRow(ctx, updatePermissionPreset,
 		arg.Visibility,
 		arg.PostingPerm,
@@ -4137,9 +4026,10 @@ func (q *Queries) UpdatePermissionPreset(ctx context.Context, arg UpdatePermissi
 		arg.JoiningPerm,
 		arg.ID,
 	)
-	var i UpdatePermissionPresetRow
+	var i SpacePermissionPreset
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Visibility,
 		&i.PostingPerm,
@@ -4622,7 +4512,7 @@ UPDATE space_types
 SET name = $1, description = $2, icon = $3,
  field_group_id = $4, category = $5
 WHERE id = $6 AND is_system = false
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type UpdateSpaceTypeParams struct {
@@ -4634,20 +4524,7 @@ type UpdateSpaceTypeParams struct {
 	ID           pgtype.UUID `json:"id"`
 }
 
-type UpdateSpaceTypeRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Icon         *string            `json:"icon"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Category     *string            `json:"category"`
-}
-
-func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams) (UpdateSpaceTypeRow, error) {
+func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams) (SpaceType, error) {
 	row := q.db.QueryRow(ctx, updateSpaceType,
 		arg.Name,
 		arg.Description,
@@ -4656,9 +4533,10 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		arg.Category,
 		arg.ID,
 	)
-	var i UpdateSpaceTypeRow
+	var i SpaceType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

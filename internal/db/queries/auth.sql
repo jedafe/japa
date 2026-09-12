@@ -1,9 +1,3 @@
--- Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys, user management.
-
--- =====================
--- User Management
--- =====================
-
 -- name: CreateUser :one
 -- New users start on the regular tier (BUG-019).
 INSERT INTO users (email, username, password_hash, profile_type) VALUES (@email, @username, @password_hash, 'regular')
@@ -111,12 +105,12 @@ SELECT EXISTS(
 -- =====================
 
 -- name: GetOAuthAccountByProvider :one
-SELECT id, user_id, provider, provider_user_id, created_at
+SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE provider = @provider AND provider_user_id = @provider_user_id;
 
 -- name: GetOAuthAccountsByUser :many
-SELECT id, user_id, provider, provider_user_id, created_at
+SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE user_id = @user_id;
 
@@ -125,7 +119,7 @@ INSERT INTO oauth_accounts (user_id, provider, provider_user_id) VALUES (@user_i
 
 ON CONFLICT (provider, provider_user_id) DO UPDATE SET
  user_id = EXCLUDED.user_id
-RETURNING id, user_id, provider, provider_user_id, created_at;
+RETURNING id, tenant_id, user_id, provider, provider_user_id, created_at;
 
 -- name: UnlinkOAuthAccount :exec
 DELETE FROM oauth_accounts
@@ -140,7 +134,7 @@ INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (@use
 ;
 
 -- name: GetPasswordResetTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, used_at, created_at
+SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
 FROM password_reset_tokens
 WHERE token_hash = @token_hash;
 
@@ -174,7 +168,7 @@ INSERT INTO email_verifications (user_id, email, token_hash, expires_at) VALUES 
 ;
 
 -- name: GetEmailVerificationByHash :one
-SELECT id, user_id, email, token_hash, expires_at, verified_at, created_at
+SELECT id, tenant_id, user_id, email, token_hash, expires_at, verified_at, created_at
 FROM email_verifications
 WHERE token_hash = @token_hash;
 

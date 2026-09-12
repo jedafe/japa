@@ -1,9 +1,3 @@
--- Learning platform queries: tracks, modules, lessons, progress, certificates, enrollments, quizzes.
-
--- =====================
--- Track Operations
--- =====================
-
 -- name: ListPublishedLearningTracks :many
 SELECT id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
@@ -90,25 +84,25 @@ ORDER BY sort_order ASC, created_at DESC;
 -- =====================
 
 -- name: ListLearningModulesByTrack :many
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE track_id = @track_id
 ORDER BY sort_order ASC, created_at DESC;
 
 -- name: GetLearningModuleBySlug :one
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE track_id = @track_id AND slug = @slug;
 
 -- name: GetLearningModuleByID :one
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE id = @id;
 
 -- name: CreateLearningModule :one
 INSERT INTO learning_modules (track_id, title, slug, description, sort_order) VALUES (@track_id, @title, @slug, sqlc.narg(description), @sort_order)
 
-RETURNING id, track_id, title, slug, description, sort_order, created_at, updated_at;
+RETURNING id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at;
 
 -- name: UpdateLearningModule :one
 UPDATE learning_modules
@@ -117,7 +111,7 @@ SET title = COALESCE(@title, title),
  sort_order = COALESCE(@sort_order, sort_order),
  updated_at = now()
 WHERE id = @id
-RETURNING id, track_id, title, slug, description, sort_order, created_at, updated_at;
+RETURNING id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at;
 
 -- name: DeleteLearningModule :exec
 DELETE FROM learning_modules WHERE id = @id;
@@ -205,7 +199,7 @@ DELETE FROM learning_lessons WHERE id = @id;
 -- =====================
 
 -- name: GetLessonProgress :one
-SELECT id, user_id, lesson_id, status, completed_at, created_at
+SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at
 FROM lesson_progress
 WHERE user_id = @user_id AND lesson_id = @lesson_id;
 
@@ -215,7 +209,7 @@ INSERT INTO lesson_progress (user_id, lesson_id, status, completed_at) VALUES (@
 ON CONFLICT (user_id, lesson_id) DO UPDATE
 SET status = EXCLUDED.status,
  completed_at = COALESCE(EXCLUDED.completed_at, lesson_progress.completed_at)
-RETURNING id, user_id, lesson_id, status, completed_at, created_at;
+RETURNING id, tenant_id, user_id, lesson_id, status, completed_at, created_at;
 
 -- name: GetUserTrackProgress :one
 SELECT
@@ -255,7 +249,7 @@ LIMIT 1;
 -- =====================
 
 -- name: GetLearningCertificate :one
-SELECT id, user_id, track_id, certificate_number, media_id, issued_at
+SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 FROM learning_certificates
 WHERE user_id = @user_id AND track_id = @track_id;
 
@@ -263,7 +257,7 @@ WHERE user_id = @user_id AND track_id = @track_id;
 INSERT INTO learning_certificates (user_id, track_id, certificate_number) VALUES (@user_id, @track_id, @certificate_number)
 
 ON CONFLICT DO NOTHING
-RETURNING id, user_id, track_id, certificate_number, media_id, issued_at;
+RETURNING id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at;
 
 -- name: ListLearningCertificatesByUser :many
 SELECT lc.id, lc.user_id, lc.track_id, lc.certificate_number, lc.media_id, lc.issued_at,
@@ -383,7 +377,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================
 
 -- name: GetQuizQuestionsByLesson :many
-SELECT id, lesson_id, question, options, answer, explanation, position, created_at
+SELECT id, tenant_id, lesson_id, question, options, answer, explanation, position, created_at
 FROM lesson_quizzes
 WHERE lesson_id = @lesson_id
 ORDER BY position ASC;
@@ -393,7 +387,7 @@ ORDER BY position ASC;
 -- =====================
 
 -- name: ListAllLearningModules :many
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 
 ORDER BY sort_order ASC, created_at DESC;

@@ -1,9 +1,3 @@
--- Coupons & External Affiliate Providers (Section 55)
-
--- =====================
--- Affiliate Providers CRUD
--- =====================
-
 -- name: CreateAffiliateProvider :one
 INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured) VALUES (@name, @slug, sqlc.narg(description), @provider_type, sqlc.narg(logo_media_id), sqlc.narg(base_url), sqlc.narg(tracking_param), sqlc.narg(tracking_value), sqlc.narg(commission_rate), @is_active, @is_featured)
 RETURNING id, name, slug, description, provider_type, logo_media_id,
@@ -60,10 +54,10 @@ WHERE provider_id = @provider_id;
 
 -- name: CreateCoupon :one
 INSERT INTO coupons (provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES (sqlc.narg(provider_id), @coupon_type, @title, sqlc.narg(description), @code, sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency), sqlc.narg(terms_url), sqlc.narg(referral_url), @is_verified, @status, sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by))
-RETURNING id, provider_id, coupon_type, title, description, code,
- discount_type, discount_value, currency, terms_url, referral_url,
- is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at;
+RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
+    discount_type, discount_value, currency, terms_url, referral_url,
+    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+    created_by, created_at, updated_at;
 
 -- name: GetCouponByID :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
@@ -126,10 +120,10 @@ SET title = @title, description = sqlc.narg(description), code = @code,
  status = @status, valid_from = sqlc.narg(valid_from),
  expires_at = sqlc.narg(expires_at), updated_at = now()
 WHERE id = @id
-RETURNING id, provider_id, coupon_type, title, description, code,
- discount_type, discount_value, currency, terms_url, referral_url,
- is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at;
+RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
+    discount_type, discount_value, currency, terms_url, referral_url,
+    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+    created_by, created_at, updated_at;
 
 -- name: DeleteCoupon :exec
 DELETE FROM coupons

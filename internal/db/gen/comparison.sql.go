@@ -191,8 +191,6 @@ func (q *Queries) CreateComparisonItem(ctx context.Context, arg CreateComparison
 }
 
 const createComparisonType = `-- name: CreateComparisonType :one
-
-
 INSERT INTO comparison_type_definitions (name, slug, description, icon, field_group_id, item_label, is_system, config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 `
@@ -221,12 +219,6 @@ type CreateComparisonTypeRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-// Generic Comparison System — type definitions, items, dimensions, values, metadata.
-// Sub-spec 1 (JCE): extends queries with comparison_content_metadata,
-// comparison_items.item_ref, comparison_type_definitions.config.
-// =====================
-// Comparison Type Definitions CRUD
-// =====================
 func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparisonTypeParams) (CreateComparisonTypeRow, error) {
 	row := q.db.QueryRow(ctx, createComparisonType,
 		arg.Name,
@@ -488,28 +480,17 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 }
 
 const getComparisonContentMetadata = `-- name: GetComparisonContentMetadata :one
-SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, tenant_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
 FROM comparison_content_metadata
 WHERE content_id = $1
 `
 
-type GetComparisonContentMetadataRow struct {
-	ContentID      pgtype.UUID        `json:"content_id"`
-	Depth          string             `json:"depth"`
-	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
-	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode      *string            `json:"smart_mode"`
-	ScoreVersion   int32              `json:"score_version"`
-	Config         []byte             `json:"config"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) (GetComparisonContentMetadataRow, error) {
+func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) (ComparisonContentMetadatum, error) {
 	row := q.db.QueryRow(ctx, getComparisonContentMetadata, contentID)
-	var i GetComparisonContentMetadataRow
+	var i ComparisonContentMetadatum
 	err := row.Scan(
 		&i.ContentID,
+		&i.TenantID,
 		&i.Depth,
 		&i.PromotedFromID,
 		&i.PromotedAt,
@@ -669,7 +650,7 @@ func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, slug string) (Get
 }
 
 const getComparisonValue = `-- name: GetComparisonValue :one
-SELECT dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
 WHERE dimension_id = $1 AND item_id = $2
 `
@@ -679,24 +660,13 @@ type GetComparisonValueParams struct {
 	ItemID      pgtype.UUID `json:"item_id"`
 }
 
-type GetComparisonValueRow struct {
-	DimensionID  pgtype.UUID        `json:"dimension_id"`
-	ItemID       pgtype.UUID        `json:"item_id"`
-	Value        *string            `json:"value"`
-	ValueRating  pgtype.Numeric     `json:"value_rating"`
-	ValueBoolean *bool              `json:"value_boolean"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Metadata     []byte             `json:"metadata"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DataSourceID pgtype.UUID        `json:"data_source_id"`
-}
-
-func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValueParams) (GetComparisonValueRow, error) {
+func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValueParams) (ComparisonValue, error) {
 	row := q.db.QueryRow(ctx, getComparisonValue, arg.DimensionID, arg.ItemID)
-	var i GetComparisonValueRow
+	var i ComparisonValue
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
+		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -709,8 +679,8 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 }
 
 const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
-SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
- cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
+SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
+       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
@@ -718,30 +688,19 @@ WHERE ci.content_id = $1
  AND ci.deleted_at IS NULL AND cd.deleted_at IS NULL
 `
 
-type GetComparisonValuesByContentRow struct {
-	DimensionID  pgtype.UUID        `json:"dimension_id"`
-	ItemID       pgtype.UUID        `json:"item_id"`
-	Value        *string            `json:"value"`
-	ValueRating  pgtype.Numeric     `json:"value_rating"`
-	ValueBoolean *bool              `json:"value_boolean"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Metadata     []byte             `json:"metadata"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DataSourceID pgtype.UUID        `json:"data_source_id"`
-}
-
-func (q *Queries) GetComparisonValuesByContent(ctx context.Context, contentID pgtype.UUID) ([]GetComparisonValuesByContentRow, error) {
+func (q *Queries) GetComparisonValuesByContent(ctx context.Context, contentID pgtype.UUID) ([]ComparisonValue, error) {
 	rows, err := q.db.Query(ctx, getComparisonValuesByContent, contentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetComparisonValuesByContentRow
+	var items []ComparisonValue
 	for rows.Next() {
-		var i GetComparisonValuesByContentRow
+		var i ComparisonValue
 		if err := rows.Scan(
 			&i.DimensionID,
 			&i.ItemID,
+			&i.TenantID,
 			&i.Value,
 			&i.ValueRating,
 			&i.ValueBoolean,
@@ -1842,7 +1801,7 @@ SET value = EXCLUDED.value,
  value_boolean = EXCLUDED.value_boolean,
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueParams struct {
@@ -1854,22 +1813,10 @@ type UpsertComparisonValueParams struct {
 	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
-type UpsertComparisonValueRow struct {
-	DimensionID  pgtype.UUID        `json:"dimension_id"`
-	ItemID       pgtype.UUID        `json:"item_id"`
-	Value        *string            `json:"value"`
-	ValueRating  pgtype.Numeric     `json:"value_rating"`
-	ValueBoolean *bool              `json:"value_boolean"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Metadata     []byte             `json:"metadata"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DataSourceID pgtype.UUID        `json:"data_source_id"`
-}
-
 // =====================
 // Comparison Values CRUD
 // =====================
-func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertComparisonValueParams) (UpsertComparisonValueRow, error) {
+func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertComparisonValueParams) (ComparisonValue, error) {
 	row := q.db.QueryRow(ctx, upsertComparisonValue,
 		arg.DimensionID,
 		arg.ItemID,
@@ -1878,10 +1825,11 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 		arg.ValueBoolean,
 		arg.DataSourceID,
 	)
-	var i UpsertComparisonValueRow
+	var i ComparisonValue
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
+		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -1902,7 +1850,7 @@ SET value = EXCLUDED.value,
  metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueWithMetadataParams struct {
@@ -1915,24 +1863,12 @@ type UpsertComparisonValueWithMetadataParams struct {
 	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
-type UpsertComparisonValueWithMetadataRow struct {
-	DimensionID  pgtype.UUID        `json:"dimension_id"`
-	ItemID       pgtype.UUID        `json:"item_id"`
-	Value        *string            `json:"value"`
-	ValueRating  pgtype.Numeric     `json:"value_rating"`
-	ValueBoolean *bool              `json:"value_boolean"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	Metadata     []byte             `json:"metadata"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	DataSourceID pgtype.UUID        `json:"data_source_id"`
-}
-
 // Upserts a comparison value together with its provenance metadata JSONB
 // (Section 103 — Comparison Engine Provenance). Used by the AI Comparison
 // Engine to record the source (custom_field|rag|external|llm_knowledge),
 // source_ref, confidence, and retrieved_at timestamp for each value it
 // fills. The metadata column was added by migration 000373.
-func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg UpsertComparisonValueWithMetadataParams) (UpsertComparisonValueWithMetadataRow, error) {
+func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg UpsertComparisonValueWithMetadataParams) (ComparisonValue, error) {
 	row := q.db.QueryRow(ctx, upsertComparisonValueWithMetadata,
 		arg.DimensionID,
 		arg.ItemID,
@@ -1942,10 +1878,11 @@ func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg Ups
 		arg.Metadata,
 		arg.DataSourceID,
 	)
-	var i UpsertComparisonValueWithMetadataRow
+	var i ComparisonValue
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
+		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,

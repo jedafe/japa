@@ -1,12 +1,3 @@
--- Platform Analytics & Site Reports (Section 40)
--- Dashboard queries using real database tables (users, contents, spaces, space_members).
--- platform_events and materialized views are kept for the events list and future
--- event-tracking pipeline; dashboard aggregates bypass them so they work immediately.
-
--- =====================
--- Platform Events (write-optimised, future use)
--- =====================
-
 -- name: CreatePlatformEvent :one
 INSERT INTO platform_events (event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
@@ -362,7 +353,7 @@ UNION ALL
 SELECT i.id, i.scan_type, i.severity, i.finding, i.meta, i.resolved_at, i.created_at FROM inserted i;
 
 -- name: ListSecurityScanResults :many
-SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
+SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)

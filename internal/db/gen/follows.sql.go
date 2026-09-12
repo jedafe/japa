@@ -147,7 +147,7 @@ func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowi
 }
 
 const getFollow = `-- name: GetFollow :one
-SELECT id, follower_id, entity_type, entity_id, created_at
+SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
 FROM follows
 WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -158,19 +158,12 @@ type GetFollowParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-type GetFollowRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	FollowerID pgtype.UUID        `json:"follower_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (GetFollowRow, error) {
+func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, error) {
 	row := q.db.QueryRow(ctx, getFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
-	var i GetFollowRow
+	var i Follow
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.FollowerID,
 		&i.EntityType,
 		&i.EntityID,
@@ -406,8 +399,6 @@ func (q *Queries) GetFollowingByUserAndType(ctx context.Context, arg GetFollowin
 }
 
 const insertFollow = `-- name: InsertFollow :exec
-
-
 INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, $2, $3)
 
 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING
@@ -419,11 +410,6 @@ type InsertFollowParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-// Follow system queries (Section 31).
-// Polymorphic follows for users, spaces, tags, and organizations.
-// =====================
-// Follow CRUD
-// =====================
 func (q *Queries) InsertFollow(ctx context.Context, arg InsertFollowParams) error {
 	_, err := q.db.Exec(ctx, insertFollow, arg.FollowerID, arg.EntityType, arg.EntityID)
 	return err

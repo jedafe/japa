@@ -183,7 +183,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 const createCustomFieldGroup = `-- name: CreateCustomFieldGroup :one
 INSERT INTO custom_field_groups (name, slug, description, is_system) VALUES ($1, $2, $3, $4)
 
-RETURNING id, name, slug, description, is_system, created_at
+RETURNING id, tenant_id, name, slug, description, is_system, created_at
 `
 
 type CreateCustomFieldGroupParams struct {
@@ -193,25 +193,17 @@ type CreateCustomFieldGroupParams struct {
 	IsSystem    bool    `json:"is_system"`
 }
 
-type CreateCustomFieldGroupRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) CreateCustomFieldGroup(ctx context.Context, arg CreateCustomFieldGroupParams) (CreateCustomFieldGroupRow, error) {
+func (q *Queries) CreateCustomFieldGroup(ctx context.Context, arg CreateCustomFieldGroupParams) (CustomFieldGroup, error) {
 	row := q.db.QueryRow(ctx, createCustomFieldGroup,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
 		arg.IsSystem,
 	)
-	var i CreateCustomFieldGroupRow
+	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -426,25 +418,17 @@ func (q *Queries) GetCustomFieldByKey(ctx context.Context, key string) (GetCusto
 }
 
 const getCustomFieldGroupByID = `-- name: GetCustomFieldGroupByID :one
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE id = $1
 `
 
-type GetCustomFieldGroupByIDRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetCustomFieldGroupByID(ctx context.Context, id pgtype.UUID) (GetCustomFieldGroupByIDRow, error) {
+func (q *Queries) GetCustomFieldGroupByID(ctx context.Context, id pgtype.UUID) (CustomFieldGroup, error) {
 	row := q.db.QueryRow(ctx, getCustomFieldGroupByID, id)
-	var i GetCustomFieldGroupByIDRow
+	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -455,25 +439,17 @@ func (q *Queries) GetCustomFieldGroupByID(ctx context.Context, id pgtype.UUID) (
 }
 
 const getCustomFieldGroupBySlug = `-- name: GetCustomFieldGroupBySlug :one
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE slug = $1
 `
 
-type GetCustomFieldGroupBySlugRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetCustomFieldGroupBySlug(ctx context.Context, slug string) (GetCustomFieldGroupBySlugRow, error) {
+func (q *Queries) GetCustomFieldGroupBySlug(ctx context.Context, slug string) (CustomFieldGroup, error) {
 	row := q.db.QueryRow(ctx, getCustomFieldGroupBySlug, slug)
-	var i GetCustomFieldGroupBySlugRow
+	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -670,38 +646,24 @@ func (q *Queries) ListAssignmentsByTenantGroups(ctx context.Context) ([]CustomFi
 }
 
 const listCustomFieldGroupsByTenant = `-- name: ListCustomFieldGroupsByTenant :many
-
-
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC
 `
 
-type ListCustomFieldGroupsByTenantRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-// Custom field group, field, assignment, permission, and value queries.
-// =====================
-// Custom Field Groups
-// =====================
-func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]ListCustomFieldGroupsByTenantRow, error) {
+func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFieldGroup, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldGroupsByTenant)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListCustomFieldGroupsByTenantRow
+	var items []CustomFieldGroup
 	for rows.Next() {
-		var i ListCustomFieldGroupsByTenantRow
+		var i CustomFieldGroup
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1174,7 +1136,7 @@ const updateCustomFieldGroup = `-- name: UpdateCustomFieldGroup :one
 UPDATE custom_field_groups
 SET name = $1, description = $2
 WHERE id = $3 AND is_system = false
-RETURNING id, name, slug, description, is_system, created_at
+RETURNING id, tenant_id, name, slug, description, is_system, created_at
 `
 
 type UpdateCustomFieldGroupParams struct {
@@ -1183,20 +1145,12 @@ type UpdateCustomFieldGroupParams struct {
 	ID          pgtype.UUID `json:"id"`
 }
 
-type UpdateCustomFieldGroupRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpdateCustomFieldGroup(ctx context.Context, arg UpdateCustomFieldGroupParams) (UpdateCustomFieldGroupRow, error) {
+func (q *Queries) UpdateCustomFieldGroup(ctx context.Context, arg UpdateCustomFieldGroupParams) (CustomFieldGroup, error) {
 	row := q.db.QueryRow(ctx, updateCustomFieldGroup, arg.Name, arg.Description, arg.ID)
-	var i UpdateCustomFieldGroupRow
+	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

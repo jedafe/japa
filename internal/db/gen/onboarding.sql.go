@@ -39,7 +39,7 @@ func (q *Queries) CompleteOnboarding(ctx context.Context, userID pgtype.UUID) er
 const createOnboardingTemplate = `-- name: CreateOnboardingTemplate :one
 INSERT INTO onboarding_templates (name, description, steps, is_active, is_system) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, name, description, steps, is_active, is_system, created_at, updated_at
+RETURNING id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
 `
 
 type CreateOnboardingTemplateParams struct {
@@ -50,18 +50,7 @@ type CreateOnboardingTemplateParams struct {
 	IsSystem    bool    `json:"is_system"`
 }
 
-type CreateOnboardingTemplateRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description *string            `json:"description"`
-	Steps       []byte             `json:"steps"`
-	IsActive    bool               `json:"is_active"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateOnboardingTemplate(ctx context.Context, arg CreateOnboardingTemplateParams) (CreateOnboardingTemplateRow, error) {
+func (q *Queries) CreateOnboardingTemplate(ctx context.Context, arg CreateOnboardingTemplateParams) (OnboardingTemplate, error) {
 	row := q.db.QueryRow(ctx, createOnboardingTemplate,
 		arg.Name,
 		arg.Description,
@@ -69,9 +58,10 @@ func (q *Queries) CreateOnboardingTemplate(ctx context.Context, arg CreateOnboar
 		arg.IsActive,
 		arg.IsSystem,
 	)
-	var i CreateOnboardingTemplateRow
+	var i OnboardingTemplate
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.Steps,
@@ -105,27 +95,17 @@ func (q *Queries) DismissTour(ctx context.Context, userID pgtype.UUID) error {
 }
 
 const getOnboardingState = `-- name: GetOnboardingState :one
-SELECT id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
+SELECT id, tenant_id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
 FROM onboarding_state
 WHERE user_id = $1
 `
 
-type GetOnboardingStateRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	CurrentStep   int32              `json:"current_step"`
-	Completed     bool               `json:"completed"`
-	StepData      []byte             `json:"step_data"`
-	TourDismissed bool               `json:"tour_dismissed"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (GetOnboardingStateRow, error) {
+func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (OnboardingState, error) {
 	row := q.db.QueryRow(ctx, getOnboardingState, userID)
-	var i GetOnboardingStateRow
+	var i OnboardingState
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.CurrentStep,
 		&i.Completed,
@@ -138,27 +118,17 @@ func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (G
 }
 
 const getOnboardingTemplate = `-- name: GetOnboardingTemplate :one
-SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 WHERE id = $1
 `
 
-type GetOnboardingTemplateRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description *string            `json:"description"`
-	Steps       []byte             `json:"steps"`
-	IsActive    bool               `json:"is_active"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (GetOnboardingTemplateRow, error) {
+func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (OnboardingTemplate, error) {
 	row := q.db.QueryRow(ctx, getOnboardingTemplate, id)
-	var i GetOnboardingTemplateRow
+	var i OnboardingTemplate
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.Steps,
@@ -171,34 +141,24 @@ func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (Ge
 }
 
 const listOnboardingTemplates = `-- name: ListOnboardingTemplates :many
-SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 
 ORDER BY created_at DESC
 `
 
-type ListOnboardingTemplatesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description *string            `json:"description"`
-	Steps       []byte             `json:"steps"`
-	IsActive    bool               `json:"is_active"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]ListOnboardingTemplatesRow, error) {
+func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]OnboardingTemplate, error) {
 	rows, err := q.db.Query(ctx, listOnboardingTemplates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOnboardingTemplatesRow
+	var items []OnboardingTemplate
 	for rows.Next() {
-		var i ListOnboardingTemplatesRow
+		var i OnboardingTemplate
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.Steps,

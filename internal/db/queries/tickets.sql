@@ -1,29 +1,23 @@
--- Ticket System — Section 38
-
--- =====================
--- Ticket Types CRUD
--- =====================
-
 -- name: CreateTicketType :one
 INSERT INTO ticket_types (name, slug, description, field_group_id, default_priority, auto_assign_group_id, sla_hours, is_public, is_system) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(field_group_id), @default_priority, sqlc.narg(auto_assign_group_id), sqlc.narg(sla_hours), @is_public, @is_system)
-RETURNING id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at;
+RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at;
 
 -- name: GetTicketTypeByID :one
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE id = @id;
 
 -- name: GetTicketTypeBySlug :one
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE slug = @slug;
 
 -- name: ListTicketTypesByTenant :many
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE (sqlc.narg(is_public)::bool IS NULL OR is_public = sqlc.narg(is_public))
 ORDER BY created_at DESC
@@ -40,8 +34,8 @@ SET name = @name, description = sqlc.narg(description),
  auto_assign_group_id = sqlc.narg(auto_assign_group_id), sla_hours = sqlc.narg(sla_hours),
  is_public = @is_public, updated_at = now()
 WHERE id = @id
-RETURNING id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at;
+RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at;
 
 -- name: DeleteTicketType :exec
 DELETE FROM ticket_types
@@ -57,10 +51,10 @@ WHERE type_id = @type_id;
 
 -- name: CreateTicket :one
 INSERT INTO tickets (type_id, subject, description, status, priority, submitter_user_id, submitter_email, assigned_to, assigned_group_id, field_values, sla_breach_at) VALUES (@type_id, @subject, @description, @status, @priority, sqlc.narg(submitter_user_id), sqlc.narg(submitter_email), sqlc.narg(assigned_to), sqlc.narg(assigned_group_id), @field_values, sqlc.narg(sla_breach_at))
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: GetTicketByID :one
 SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
@@ -107,38 +101,38 @@ SET status = @status, updated_at = now(),
  resolved_at = CASE WHEN @status = 'resolved' THEN now() ELSE resolved_at END,
  closed_at = CASE WHEN @status = 'closed' THEN now() ELSE closed_at END
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: UpdateTicketPriority :one
 UPDATE tickets
 SET priority = @priority, updated_at = now()
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: AssignTicket :one
 UPDATE tickets
 SET assigned_to = sqlc.narg(assigned_to), assigned_group_id = sqlc.narg(assigned_group_id),
  updated_at = now()
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: UpdateTicketSubject :one
 UPDATE tickets
 SET subject = @subject, updated_at = now()
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: DeleteTicket :exec
 DELETE FROM tickets
@@ -149,19 +143,19 @@ UPDATE tickets
 SET status = 'resolved', resolution_note = sqlc.narg(resolution_note),
  resolved_at = now(), updated_at = now()
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: CloseTicket :one
 UPDATE tickets
 SET status = 'closed', closed_at = now(), updated_at = now()
 WHERE id = @id
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at;
 
 -- name: GetLeastLoadedStaffInGroup :one
 SELECT u.id AS user_id

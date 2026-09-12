@@ -95,11 +95,9 @@ func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesPara
 }
 
 const createComparisonProfile = `-- name: CreateComparisonProfile :one
-
-
 INSERT INTO comparison_profiles (user_id, title, source_space_id, target_space_ids, goals, preferences, demographics, is_default, is_template) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 `
 
 type CreateComparisonProfileParams struct {
@@ -114,27 +112,7 @@ type CreateComparisonProfileParams struct {
 	IsTemplate     bool          `json:"is_template"`
 }
 
-type CreateComparisonProfileRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-// JCE Sub-spec 2/3: profiles, score factors, scores, and recommendations.
-// =====================
-// Comparison profiles
-// =====================
-func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateComparisonProfileParams) (CreateComparisonProfileRow, error) {
+func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateComparisonProfileParams) (ComparisonProfile, error) {
 	row := q.db.QueryRow(ctx, createComparisonProfile,
 		arg.UserID,
 		arg.Title,
@@ -146,9 +124,10 @@ func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateCompari
 		arg.IsDefault,
 		arg.IsTemplate,
 	)
-	var i CreateComparisonProfileRow
+	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -168,7 +147,7 @@ func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateCompari
 const createComparisonRecommendation = `-- name: CreateComparisonRecommendation :one
 
 INSERT INTO comparison_recommendations (content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
+RETURNING id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
 `
 
 type CreateComparisonRecommendationParams struct {
@@ -182,24 +161,10 @@ type CreateComparisonRecommendationParams struct {
 	Priority   int32       `json:"priority"`
 }
 
-type CreateComparisonRecommendationRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ContentID  pgtype.UUID        `json:"content_id"`
-	ItemID     pgtype.UUID        `json:"item_id"`
-	ProfileID  pgtype.UUID        `json:"profile_id"`
-	FactorID   pgtype.UUID        `json:"factor_id"`
-	Text       string             `json:"text"`
-	ActionType *string            `json:"action_type"`
-	ActionUrl  *string            `json:"action_url"`
-	Priority   int32              `json:"priority"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Recommendations
 // =====================
-func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg CreateComparisonRecommendationParams) (CreateComparisonRecommendationRow, error) {
+func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg CreateComparisonRecommendationParams) (ComparisonRecommendation, error) {
 	row := q.db.QueryRow(ctx, createComparisonRecommendation,
 		arg.ContentID,
 		arg.ItemID,
@@ -210,9 +175,10 @@ func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg Create
 		arg.ActionUrl,
 		arg.Priority,
 	)
-	var i CreateComparisonRecommendationRow
+	var i ComparisonRecommendation
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ContentID,
 		&i.ItemID,
 		&i.ProfileID,
@@ -318,8 +284,8 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 const createScoreFactor = `-- name: CreateScoreFactor :one
 
 INSERT INTO comparison_score_factors (comparison_type_id, factor_key, label, description, dimension_slug, data_source, default_weight, config, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, comparison_type_id, factor_key, label, description,
- dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
+    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 `
 
 type CreateScoreFactorParams struct {
@@ -334,26 +300,10 @@ type CreateScoreFactorParams struct {
 	IsSystem         bool           `json:"is_system"`
 }
 
-type CreateScoreFactorRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Score factors
 // =====================
-func (q *Queries) CreateScoreFactor(ctx context.Context, arg CreateScoreFactorParams) (CreateScoreFactorRow, error) {
+func (q *Queries) CreateScoreFactor(ctx context.Context, arg CreateScoreFactorParams) (ComparisonScoreFactor, error) {
 	row := q.db.QueryRow(ctx, createScoreFactor,
 		arg.ComparisonTypeID,
 		arg.FactorKey,
@@ -365,9 +315,10 @@ func (q *Queries) CreateScoreFactor(ctx context.Context, arg CreateScoreFactorPa
 		arg.Config,
 		arg.IsSystem,
 	)
-	var i CreateScoreFactorRow
+	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -505,33 +456,18 @@ func (q *Queries) GetComparisonItemsForScoring(ctx context.Context, contentID pg
 }
 
 const getComparisonProfile = `-- name: GetComparisonProfile :one
-SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetComparisonProfileRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetComparisonProfile(ctx context.Context, id pgtype.UUID) (GetComparisonProfileRow, error) {
+func (q *Queries) GetComparisonProfile(ctx context.Context, id pgtype.UUID) (ComparisonProfile, error) {
 	row := q.db.QueryRow(ctx, getComparisonProfile, id)
-	var i GetComparisonProfileRow
+	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -677,33 +613,18 @@ func (q *Queries) GetLatestCompletedIngestionJob(ctx context.Context, contentID 
 }
 
 const getScoreFactor = `-- name: GetScoreFactor :one
-SELECT id, comparison_type_id, factor_key, label, description,
- dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
+    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE id = $1
 `
 
-type GetScoreFactorRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetScoreFactor(ctx context.Context, id pgtype.UUID) (GetScoreFactorRow, error) {
+func (q *Queries) GetScoreFactor(ctx context.Context, id pgtype.UUID) (ComparisonScoreFactor, error) {
 	row := q.db.QueryRow(ctx, getScoreFactor, id)
-	var i GetScoreFactorRow
+	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -721,8 +642,8 @@ func (q *Queries) GetScoreFactor(ctx context.Context, id pgtype.UUID) (GetScoreF
 }
 
 const getScoreFactorByKey = `-- name: GetScoreFactorByKey :one
-SELECT id, comparison_type_id, factor_key, label, description,
- dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
+    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE comparison_type_id = $1
  AND factor_key = $2
@@ -733,27 +654,12 @@ type GetScoreFactorByKeyParams struct {
 	FactorKey        string      `json:"factor_key"`
 }
 
-type GetScoreFactorByKeyRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetScoreFactorByKey(ctx context.Context, arg GetScoreFactorByKeyParams) (GetScoreFactorByKeyRow, error) {
+func (q *Queries) GetScoreFactorByKey(ctx context.Context, arg GetScoreFactorByKeyParams) (ComparisonScoreFactor, error) {
 	row := q.db.QueryRow(ctx, getScoreFactorByKey, arg.ComparisonTypeID, arg.FactorKey)
-	var i GetScoreFactorByKeyRow
+	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -771,41 +677,26 @@ func (q *Queries) GetScoreFactorByKey(ctx context.Context, arg GetScoreFactorByK
 }
 
 const listComparisonProfileTemplates = `-- name: ListComparisonProfileTemplates :many
-SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE is_template = true
  AND deleted_at IS NULL
 ORDER BY title ASC
 `
 
-type ListComparisonProfileTemplatesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]ListComparisonProfileTemplatesRow, error) {
+func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]ComparisonProfile, error) {
 	rows, err := q.db.Query(ctx, listComparisonProfileTemplates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonProfileTemplatesRow
+	var items []ComparisonProfile
 	for rows.Next() {
-		var i ListComparisonProfileTemplatesRow
+		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -830,40 +721,25 @@ func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]ListCom
 }
 
 const listComparisonProfilesByTenant = `-- name: ListComparisonProfilesByTenant :many
-SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC
 `
 
-type ListComparisonProfilesByTenantRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]ListComparisonProfilesByTenantRow, error) {
+func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]ComparisonProfile, error) {
 	rows, err := q.db.Query(ctx, listComparisonProfilesByTenant)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonProfilesByTenantRow
+	var items []ComparisonProfile
 	for rows.Next() {
-		var i ListComparisonProfilesByTenantRow
+		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -888,41 +764,26 @@ func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]ListCom
 }
 
 const listComparisonProfilesByUser = `-- name: ListComparisonProfilesByUser :many
-SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE user_id = $1
  AND deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC
 `
 
-type ListComparisonProfilesByUserRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) ([]ListComparisonProfilesByUserRow, error) {
+func (q *Queries) ListComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) ([]ComparisonProfile, error) {
 	rows, err := q.db.Query(ctx, listComparisonProfilesByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonProfilesByUserRow
+	var items []ComparisonProfile
 	for rows.Next() {
-		var i ListComparisonProfilesByUserRow
+		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -947,7 +808,7 @@ func (q *Queries) ListComparisonProfilesByUser(ctx context.Context, userID pgtyp
 }
 
 const listComparisonRecommendationsByContent = `-- name: ListComparisonRecommendationsByContent :many
-SELECT id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
+SELECT id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
 FROM comparison_recommendations
 WHERE content_id = $1
  AND (profile_id IS NOT DISTINCT FROM $2)
@@ -959,31 +820,18 @@ type ListComparisonRecommendationsByContentParams struct {
 	ProfileID pgtype.UUID `json:"profile_id"`
 }
 
-type ListComparisonRecommendationsByContentRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ContentID  pgtype.UUID        `json:"content_id"`
-	ItemID     pgtype.UUID        `json:"item_id"`
-	ProfileID  pgtype.UUID        `json:"profile_id"`
-	FactorID   pgtype.UUID        `json:"factor_id"`
-	Text       string             `json:"text"`
-	ActionType *string            `json:"action_type"`
-	ActionUrl  *string            `json:"action_url"`
-	Priority   int32              `json:"priority"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListComparisonRecommendationsByContent(ctx context.Context, arg ListComparisonRecommendationsByContentParams) ([]ListComparisonRecommendationsByContentRow, error) {
+func (q *Queries) ListComparisonRecommendationsByContent(ctx context.Context, arg ListComparisonRecommendationsByContentParams) ([]ComparisonRecommendation, error) {
 	rows, err := q.db.Query(ctx, listComparisonRecommendationsByContent, arg.ContentID, arg.ProfileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonRecommendationsByContentRow
+	var items []ComparisonRecommendation
 	for rows.Next() {
-		var i ListComparisonRecommendationsByContentRow
+		var i ComparisonRecommendation
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ContentID,
 			&i.ItemID,
 			&i.ProfileID,
@@ -1006,8 +854,8 @@ func (q *Queries) ListComparisonRecommendationsByContent(ctx context.Context, ar
 }
 
 const listComparisonScoresByContent = `-- name: ListComparisonScoresByContent :many
-SELECT id, content_id, item_id, factor_id, dimension_id, profile_id,
- score_value, max_value, explanation, eligible_status, calculated_at, version
+SELECT id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
+    score_value, max_value, explanation, eligible_status, calculated_at, version
 FROM comparison_scores
 WHERE content_id = $1
  AND (profile_id IS NOT DISTINCT FROM $2)
@@ -1019,32 +867,18 @@ type ListComparisonScoresByContentParams struct {
 	ProfileID pgtype.UUID `json:"profile_id"`
 }
 
-type ListComparisonScoresByContentRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ContentID      pgtype.UUID        `json:"content_id"`
-	ItemID         pgtype.UUID        `json:"item_id"`
-	FactorID       pgtype.UUID        `json:"factor_id"`
-	DimensionID    pgtype.UUID        `json:"dimension_id"`
-	ProfileID      pgtype.UUID        `json:"profile_id"`
-	ScoreValue     pgtype.Numeric     `json:"score_value"`
-	MaxValue       pgtype.Numeric     `json:"max_value"`
-	Explanation    *string            `json:"explanation"`
-	EligibleStatus *string            `json:"eligible_status"`
-	CalculatedAt   pgtype.Timestamptz `json:"calculated_at"`
-	Version        int32              `json:"version"`
-}
-
-func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListComparisonScoresByContentParams) ([]ListComparisonScoresByContentRow, error) {
+func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListComparisonScoresByContentParams) ([]ComparisonScore, error) {
 	rows, err := q.db.Query(ctx, listComparisonScoresByContent, arg.ContentID, arg.ProfileID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListComparisonScoresByContentRow
+	var items []ComparisonScore
 	for rows.Next() {
-		var i ListComparisonScoresByContentRow
+		var i ComparisonScore
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ContentID,
 			&i.ItemID,
 			&i.FactorID,
@@ -1170,8 +1004,8 @@ func (q *Queries) ListIngestionJobsByContent(ctx context.Context, arg ListIngest
 }
 
 const listScoreFactorsByType = `-- name: ListScoreFactorsByType :many
-SELECT id, comparison_type_id, factor_key, label, description,
- dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
+    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE (
  comparison_type_id = $1
@@ -1187,33 +1021,18 @@ type ListScoreFactorsByTypeParams struct {
 	DataSource       *string     `json:"data_source"`
 }
 
-type ListScoreFactorsByTypeRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFactorsByTypeParams) ([]ListScoreFactorsByTypeRow, error) {
+func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFactorsByTypeParams) ([]ComparisonScoreFactor, error) {
 	rows, err := q.db.Query(ctx, listScoreFactorsByType, arg.ComparisonTypeID, arg.IncludeGlobal, arg.DataSource)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListScoreFactorsByTypeRow
+	var items []ComparisonScoreFactor
 	for rows.Next() {
-		var i ListScoreFactorsByTypeRow
+		var i ComparisonScoreFactor
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ComparisonTypeID,
 			&i.FactorKey,
 			&i.Label,
@@ -1325,8 +1144,8 @@ SET title = $1,
  is_template = $8,
  updated_at = now()
 WHERE id = $9 AND deleted_at IS NULL
-RETURNING id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
+    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 `
 
 type UpdateComparisonProfileParams struct {
@@ -1341,23 +1160,7 @@ type UpdateComparisonProfileParams struct {
 	ID             pgtype.UUID   `json:"id"`
 }
 
-type UpdateComparisonProfileRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateComparisonProfile(ctx context.Context, arg UpdateComparisonProfileParams) (UpdateComparisonProfileRow, error) {
+func (q *Queries) UpdateComparisonProfile(ctx context.Context, arg UpdateComparisonProfileParams) (ComparisonProfile, error) {
 	row := q.db.QueryRow(ctx, updateComparisonProfile,
 		arg.Title,
 		arg.SourceSpaceID,
@@ -1369,9 +1172,10 @@ func (q *Queries) UpdateComparisonProfile(ctx context.Context, arg UpdateCompari
 		arg.IsTemplate,
 		arg.ID,
 	)
-	var i UpdateComparisonProfileRow
+	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -1518,8 +1322,8 @@ SET comparison_type_id = $1,
  is_system = $9,
  updated_at = now()
 WHERE id = $10
-RETURNING id, comparison_type_id, factor_key, label, description,
- dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
+    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 `
 
 type UpdateScoreFactorParams struct {
@@ -1535,23 +1339,7 @@ type UpdateScoreFactorParams struct {
 	ID               pgtype.UUID    `json:"id"`
 }
 
-type UpdateScoreFactorRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateScoreFactor(ctx context.Context, arg UpdateScoreFactorParams) (UpdateScoreFactorRow, error) {
+func (q *Queries) UpdateScoreFactor(ctx context.Context, arg UpdateScoreFactorParams) (ComparisonScoreFactor, error) {
 	row := q.db.QueryRow(ctx, updateScoreFactor,
 		arg.ComparisonTypeID,
 		arg.FactorKey,
@@ -1564,9 +1352,10 @@ func (q *Queries) UpdateScoreFactor(ctx context.Context, arg UpdateScoreFactorPa
 		arg.IsSystem,
 		arg.ID,
 	)
-	var i UpdateScoreFactorRow
+	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -1593,8 +1382,8 @@ SET score_value = EXCLUDED.score_value,
  eligible_status = EXCLUDED.eligible_status,
  version = EXCLUDED.version,
  calculated_at = now()
-RETURNING id, content_id, item_id, factor_id, dimension_id, profile_id,
- score_value, max_value, explanation, eligible_status, calculated_at, version
+RETURNING id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
+    score_value, max_value, explanation, eligible_status, calculated_at, version
 `
 
 type UpsertComparisonScoreParams struct {
@@ -1610,25 +1399,10 @@ type UpsertComparisonScoreParams struct {
 	Version        int32          `json:"version"`
 }
 
-type UpsertComparisonScoreRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ContentID      pgtype.UUID        `json:"content_id"`
-	ItemID         pgtype.UUID        `json:"item_id"`
-	FactorID       pgtype.UUID        `json:"factor_id"`
-	DimensionID    pgtype.UUID        `json:"dimension_id"`
-	ProfileID      pgtype.UUID        `json:"profile_id"`
-	ScoreValue     pgtype.Numeric     `json:"score_value"`
-	MaxValue       pgtype.Numeric     `json:"max_value"`
-	Explanation    *string            `json:"explanation"`
-	EligibleStatus *string            `json:"eligible_status"`
-	CalculatedAt   pgtype.Timestamptz `json:"calculated_at"`
-	Version        int32              `json:"version"`
-}
-
 // =====================
 // Scores
 // =====================
-func (q *Queries) UpsertComparisonScore(ctx context.Context, arg UpsertComparisonScoreParams) (UpsertComparisonScoreRow, error) {
+func (q *Queries) UpsertComparisonScore(ctx context.Context, arg UpsertComparisonScoreParams) (ComparisonScore, error) {
 	row := q.db.QueryRow(ctx, upsertComparisonScore,
 		arg.ContentID,
 		arg.ItemID,
@@ -1641,9 +1415,10 @@ func (q *Queries) UpsertComparisonScore(ctx context.Context, arg UpsertCompariso
 		arg.EligibleStatus,
 		arg.Version,
 	)
-	var i UpsertComparisonScoreRow
+	var i ComparisonScore
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ContentID,
 		&i.ItemID,
 		&i.FactorID,

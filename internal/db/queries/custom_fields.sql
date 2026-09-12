@@ -1,11 +1,5 @@
--- Custom field group, field, assignment, permission, and value queries.
-
--- =====================
--- Custom Field Groups
--- =====================
-
 -- name: ListCustomFieldGroupsByTenant :many
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC;
@@ -19,25 +13,25 @@ WHERE cfga.entity_class = @entity_class
 ORDER BY cfg.created_at DESC, cfg.id DESC;
 
 -- name: GetCustomFieldGroupByID :one
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE id = @id;
 
 -- name: GetCustomFieldGroupBySlug :one
-SELECT id, name, slug, description, is_system, created_at
+SELECT id, tenant_id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE slug = @slug;
 
 -- name: CreateCustomFieldGroup :one
 INSERT INTO custom_field_groups (name, slug, description, is_system) VALUES (@name, @slug, @description, @is_system)
 
-RETURNING id, name, slug, description, is_system, created_at;
+RETURNING id, tenant_id, name, slug, description, is_system, created_at;
 
 -- name: UpdateCustomFieldGroup :one
 UPDATE custom_field_groups
 SET name = @name, description = @description
 WHERE id = @id AND is_system = false
-RETURNING id, name, slug, description, is_system, created_at;
+RETURNING id, tenant_id, name, slug, description, is_system, created_at;
 
 -- name: DeleteCustomFieldGroup :exec
 DELETE FROM custom_field_groups

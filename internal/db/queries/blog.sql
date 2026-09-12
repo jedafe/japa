@@ -1,18 +1,11 @@
--- Blog Extension — series, content reviews, featured posts, RSS feed.
--- Ref: japaconnect-engineering/sections/24-blog-extension.md
-
--- =====================
--- Blog Series
--- =====================
-
 -- name: CreateBlogSeries :one
 INSERT INTO blog_series (title, slug, description, cover_image_id, author_user_id) VALUES (@title, @slug, sqlc.narg(description), sqlc.narg(cover_image_id), @author_user_id)
-RETURNING id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at;
+RETURNING id, tenant_id, title, slug, description, cover_image_id,
+          author_user_id, status, created_at, updated_at, deleted_at;
 
 -- name: GetBlogSeriesByID :one
-SELECT id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at
+SELECT id, tenant_id, title, slug, description, cover_image_id,
+       author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -83,8 +76,8 @@ SET title = @title, slug = sqlc.narg(slug), description = sqlc.narg(description)
  cover_image_id = sqlc.narg(cover_image_id), status = @status,
  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL
-RETURNING id, title, slug, description, cover_image_id,
- author_user_id, status, created_at, updated_at, deleted_at;
+RETURNING id, tenant_id, title, slug, description, cover_image_id,
+          author_user_id, status, created_at, updated_at, deleted_at;
 
 -- name: DeleteBlogSeries :exec
 -- Soft-delete (Rule 11): blog_series is user-authored content.
@@ -231,15 +224,15 @@ INSERT INTO content_featured (content_id, featured_order, featured_until) VALUES
 ON CONFLICT (content_id) DO UPDATE
  SET featured_order = @featured_order,
  featured_until = sqlc.narg(featured_until)
-RETURNING id, content_id, featured_order, featured_until, created_at;
+RETURNING id, tenant_id, content_id, featured_order, featured_until, created_at;
 
 -- name: UnfeatureContent :exec
 DELETE FROM content_featured
 WHERE content_id = @content_id;
 
 -- name: ListFeaturedPosts :many
-SELECT cf.id, cf.content_id, cf.featured_order,
- cf.featured_until, cf.created_at
+SELECT cf.id, cf.tenant_id, cf.content_id, cf.featured_order,
+       cf.featured_until, cf.created_at
 FROM content_featured cf
 WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
 ORDER BY cf.featured_order ASC

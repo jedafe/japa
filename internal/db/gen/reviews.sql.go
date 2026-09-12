@@ -43,11 +43,9 @@ func (q *Queries) CountAdminReviewsFiltered(ctx context.Context, arg CountAdminR
 }
 
 const createReview = `-- name: CreateReview :one
-
-
 INSERT INTO reviews (entity_type, entity_id, reviewer_user_id, rating, title, body) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type CreateReviewParams struct {
@@ -59,25 +57,7 @@ type CreateReviewParams struct {
 	Body           *string     `json:"body"`
 }
 
-type CreateReviewRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-// Universal Ratings & Reviews — polymorphic reviews with aggregate rollup.
-// =====================
-// Reviews CRUD
-// =====================
-func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (CreateReviewRow, error) {
+func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Review, error) {
 	row := q.db.QueryRow(ctx, createReview,
 		arg.EntityType,
 		arg.EntityID,
@@ -86,9 +66,10 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Cre
 		arg.Title,
 		arg.Body,
 	)
-	var i CreateReviewRow
+	var i Review
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -114,8 +95,8 @@ func (q *Queries) DeleteReview(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getReviewAggregate = `-- name: GetReviewAggregate :one
-SELECT entity_type, entity_id, review_count,
- average_rating, updated_at
+SELECT tenant_id, entity_type, entity_id, review_count,
+       average_rating, updated_at
 FROM review_aggregates
 WHERE entity_type = $1
  AND entity_id = $2
@@ -126,18 +107,11 @@ type GetReviewAggregateParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-type GetReviewAggregateRow struct {
-	EntityType    string             `json:"entity_type"`
-	EntityID      pgtype.UUID        `json:"entity_id"`
-	ReviewCount   int32              `json:"review_count"`
-	AverageRating pgtype.Numeric     `json:"average_rating"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregateParams) (GetReviewAggregateRow, error) {
+func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregateParams) (ReviewAggregate, error) {
 	row := q.db.QueryRow(ctx, getReviewAggregate, arg.EntityType, arg.EntityID)
-	var i GetReviewAggregateRow
+	var i ReviewAggregate
 	err := row.Scan(
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewCount,
@@ -148,31 +122,18 @@ func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregate
 }
 
 const getReviewByID = `-- name: GetReviewByID :one
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE id = $1
 `
 
-type GetReviewByIDRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-func (q *Queries) GetReviewByID(ctx context.Context, id pgtype.UUID) (GetReviewByIDRow, error) {
+func (q *Queries) GetReviewByID(ctx context.Context, id pgtype.UUID) (Review, error) {
 	row := q.db.QueryRow(ctx, getReviewByID, id)
-	var i GetReviewByIDRow
+	var i Review
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -361,8 +322,8 @@ func (q *Queries) ListAdminReviewsFiltered(ctx context.Context, arg ListAdminRev
 }
 
 const listReviews = `-- name: ListReviews :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 
 ORDER BY created_at DESC
@@ -374,31 +335,18 @@ type ListReviewsParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListReviewsRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]ListReviewsRow, error) {
+func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Review, error) {
 	rows, err := q.db.Query(ctx, listReviews, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReviewsRow
+	var items []Review
 	for rows.Next() {
-		var i ListReviewsRow
+		var i Review
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -421,8 +369,8 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Lis
 }
 
 const listReviewsByEntity = `-- name: ListReviewsByEntity :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -438,21 +386,7 @@ type ListReviewsByEntityParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListReviewsByEntityRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEntityParams) ([]ListReviewsByEntityRow, error) {
+func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEntityParams) ([]Review, error) {
 	rows, err := q.db.Query(ctx, listReviewsByEntity,
 		arg.EntityType,
 		arg.EntityID,
@@ -463,11 +397,12 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReviewsByEntityRow
+	var items []Review
 	for rows.Next() {
-		var i ListReviewsByEntityRow
+		var i Review
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -490,8 +425,8 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 }
 
 const listReviewsByEntityHighestRating = `-- name: ListReviewsByEntityHighestRating :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -507,22 +442,8 @@ type ListReviewsByEntityHighestRatingParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListReviewsByEntityHighestRatingRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
 // Sort by highest rating first (spec §29: ?sort=highest).
-func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg ListReviewsByEntityHighestRatingParams) ([]ListReviewsByEntityHighestRatingRow, error) {
+func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg ListReviewsByEntityHighestRatingParams) ([]Review, error) {
 	rows, err := q.db.Query(ctx, listReviewsByEntityHighestRating,
 		arg.EntityType,
 		arg.EntityID,
@@ -533,11 +454,12 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReviewsByEntityHighestRatingRow
+	var items []Review
 	for rows.Next() {
-		var i ListReviewsByEntityHighestRatingRow
+		var i Review
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -560,8 +482,8 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 }
 
 const listReviewsByEntityLowestRating = `-- name: ListReviewsByEntityLowestRating :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -577,22 +499,8 @@ type ListReviewsByEntityLowestRatingParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListReviewsByEntityLowestRatingRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
 // Sort by lowest rating first (spec §29: ?sort=lowest).
-func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListReviewsByEntityLowestRatingParams) ([]ListReviewsByEntityLowestRatingRow, error) {
+func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListReviewsByEntityLowestRatingParams) ([]Review, error) {
 	rows, err := q.db.Query(ctx, listReviewsByEntityLowestRating,
 		arg.EntityType,
 		arg.EntityID,
@@ -603,11 +511,12 @@ func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListR
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReviewsByEntityLowestRatingRow
+	var items []Review
 	for rows.Next() {
-		var i ListReviewsByEntityLowestRatingRow
+		var i Review
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -715,8 +624,8 @@ func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListRev
 }
 
 const listReviewsByReviewer = `-- name: ListReviewsByReviewer :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE reviewer_user_id = $1
 ORDER BY created_at DESC
@@ -729,31 +638,18 @@ type ListReviewsByReviewerParams struct {
 	PageLimit      int32       `json:"page_limit"`
 }
 
-type ListReviewsByReviewerRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-func (q *Queries) ListReviewsByReviewer(ctx context.Context, arg ListReviewsByReviewerParams) ([]ListReviewsByReviewerRow, error) {
+func (q *Queries) ListReviewsByReviewer(ctx context.Context, arg ListReviewsByReviewerParams) ([]Review, error) {
 	rows, err := q.db.Query(ctx, listReviewsByReviewer, arg.ReviewerUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReviewsByReviewerRow
+	var items []Review
 	for rows.Next() {
-		var i ListReviewsByReviewerRow
+		var i Review
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -796,8 +692,8 @@ UPDATE reviews
 SET status = 'removed', removed_by = $1, updated_at = now()
 WHERE id = $2
  AND reviewer_user_id = $1
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type SoftDeleteOwnReviewParams struct {
@@ -805,28 +701,15 @@ type SoftDeleteOwnReviewParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-type SoftDeleteOwnReviewRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
 // Owner-scoped soft delete: sets status to 'removed' only if the requesting
 // user is the review's author. Prevents any user with reviews.delete_own
 // from deleting other users' reviews (BUG-001). Records removed_by (spec §29).
-func (q *Queries) SoftDeleteOwnReview(ctx context.Context, arg SoftDeleteOwnReviewParams) (SoftDeleteOwnReviewRow, error) {
+func (q *Queries) SoftDeleteOwnReview(ctx context.Context, arg SoftDeleteOwnReviewParams) (Review, error) {
 	row := q.db.QueryRow(ctx, softDeleteOwnReview, arg.ReviewerUserID, arg.ID)
-	var i SoftDeleteOwnReviewRow
+	var i Review
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -847,8 +730,8 @@ SET rating = $1, title = $2, body = $3,
  updated_at = now()
 WHERE id = $4
  AND reviewer_user_id = $5
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type UpdateReviewParams struct {
@@ -859,21 +742,7 @@ type UpdateReviewParams struct {
 	ReviewerUserID pgtype.UUID `json:"reviewer_user_id"`
 }
 
-type UpdateReviewRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
-func (q *Queries) UpdateReview(ctx context.Context, arg UpdateReviewParams) (UpdateReviewRow, error) {
+func (q *Queries) UpdateReview(ctx context.Context, arg UpdateReviewParams) (Review, error) {
 	row := q.db.QueryRow(ctx, updateReview,
 		arg.Rating,
 		arg.Title,
@@ -881,9 +750,10 @@ func (q *Queries) UpdateReview(ctx context.Context, arg UpdateReviewParams) (Upd
 		arg.ID,
 		arg.ReviewerUserID,
 	)
-	var i UpdateReviewRow
+	var i Review
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -902,8 +772,8 @@ const updateReviewStatus = `-- name: UpdateReviewStatus :one
 UPDATE reviews
 SET status = $1, removed_by = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type UpdateReviewStatusParams struct {
@@ -912,27 +782,14 @@ type UpdateReviewStatusParams struct {
 	ID        pgtype.UUID `json:"id"`
 }
 
-type UpdateReviewStatusRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
-	Rating         int16              `json:"rating"`
-	Title          *string            `json:"title"`
-	Body           *string            `json:"body"`
-	Status         string             `json:"status"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RemovedBy      pgtype.UUID        `json:"removed_by"`
-}
-
 // Sets status and records who removed the review (spec §29 L55: removed_by).
 // Pass removed_by = NULL for non-removal status changes (flag/publish).
-func (q *Queries) UpdateReviewStatus(ctx context.Context, arg UpdateReviewStatusParams) (UpdateReviewStatusRow, error) {
+func (q *Queries) UpdateReviewStatus(ctx context.Context, arg UpdateReviewStatusParams) (Review, error) {
 	row := q.db.QueryRow(ctx, updateReviewStatus, arg.Status, arg.RemovedBy, arg.ID)
-	var i UpdateReviewStatusRow
+	var i Review
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -961,8 +818,8 @@ ON CONFLICT (entity_type, entity_id) DO UPDATE
 SET review_count = EXCLUDED.review_count,
  average_rating = EXCLUDED.average_rating,
  updated_at = now()
-RETURNING entity_type, entity_id, review_count,
- average_rating, updated_at
+RETURNING tenant_id, entity_type, entity_id, review_count,
+          average_rating, updated_at
 `
 
 type UpsertReviewAggregateParams struct {
@@ -970,21 +827,14 @@ type UpsertReviewAggregateParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-type UpsertReviewAggregateRow struct {
-	EntityType    string             `json:"entity_type"`
-	EntityID      pgtype.UUID        `json:"entity_id"`
-	ReviewCount   int32              `json:"review_count"`
-	AverageRating pgtype.Numeric     `json:"average_rating"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Review Aggregates
 // =====================
-func (q *Queries) UpsertReviewAggregate(ctx context.Context, arg UpsertReviewAggregateParams) (UpsertReviewAggregateRow, error) {
+func (q *Queries) UpsertReviewAggregate(ctx context.Context, arg UpsertReviewAggregateParams) (ReviewAggregate, error) {
 	row := q.db.QueryRow(ctx, upsertReviewAggregate, arg.EntityType, arg.EntityID)
-	var i UpsertReviewAggregateRow
+	var i ReviewAggregate
 	err := row.Scan(
+		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewCount,

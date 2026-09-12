@@ -358,7 +358,7 @@ func (q *Queries) ClearInstructorPayoutMethod(ctx context.Context, userID pgtype
 const createAccountDeletionRequest = `-- name: CreateAccountDeletionRequest :one
 
 INSERT INTO account_deletion_requests (user_id, status, reason) VALUES ($1, 'pending', $2)
-RETURNING id, user_id, status, reason, completed_at, created_at, progress_step
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type CreateAccountDeletionRequestParams struct {
@@ -366,24 +366,15 @@ type CreateAccountDeletionRequestParams struct {
 	Reason *string     `json:"reason"`
 }
 
-type CreateAccountDeletionRequestRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	Status       string             `json:"status"`
-	Reason       *string            `json:"reason"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	ProgressStep int32              `json:"progress_step"`
-}
-
 // =====================
 // Account Deletion Requests
 // =====================
-func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAccountDeletionRequestParams) (CreateAccountDeletionRequestRow, error) {
+func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAccountDeletionRequestParams) (AccountDeletionRequest, error) {
 	row := q.db.QueryRow(ctx, createAccountDeletionRequest, arg.UserID, arg.Reason)
-	var i CreateAccountDeletionRequestRow
+	var i AccountDeletionRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -397,8 +388,8 @@ func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAc
 const createAuditLog = `-- name: CreateAuditLog :one
 
 INSERT INTO audit_logs (actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, actor_user_id, impersonated_user_id, action_type,
- target_type, target_id, metadata, ip_address, created_at
+RETURNING id, tenant_id, actor_user_id, impersonated_user_id, action_type,
+    target_type, target_id, metadata, ip_address, created_at
 `
 
 type CreateAuditLogParams struct {
@@ -411,22 +402,10 @@ type CreateAuditLogParams struct {
 	IpAddress          *netip.Prefix `json:"ip_address"`
 }
 
-type CreateAuditLogRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
-	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
-	ActionType         string             `json:"action_type"`
-	TargetType         *string            `json:"target_type"`
-	TargetID           pgtype.UUID        `json:"target_id"`
-	Metadata           []byte             `json:"metadata"`
-	IpAddress          *netip.Prefix      `json:"ip_address"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Audit Logs
 // =====================
-func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (CreateAuditLogRow, error) {
+func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error) {
 	row := q.db.QueryRow(ctx, createAuditLog,
 		arg.ActorUserID,
 		arg.ImpersonatedUserID,
@@ -436,9 +415,10 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 		arg.Metadata,
 		arg.IpAddress,
 	)
-	var i CreateAuditLogRow
+	var i AuditLog
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ActorUserID,
 		&i.ImpersonatedUserID,
 		&i.ActionType,
@@ -454,28 +434,19 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 const createDataExportRequest = `-- name: CreateDataExportRequest :one
 
 INSERT INTO data_export_requests (user_id, status) VALUES ($1, 'pending')
-RETURNING id, user_id, status, download_url, expires_at,
- completed_at, created_at
+RETURNING id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
 `
-
-type CreateDataExportRequestRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	DownloadUrl *string            `json:"download_url"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
 
 // =====================
 // Data Export Requests
 // =====================
-func (q *Queries) CreateDataExportRequest(ctx context.Context, userID pgtype.UUID) (CreateDataExportRequestRow, error) {
+func (q *Queries) CreateDataExportRequest(ctx context.Context, userID pgtype.UUID) (DataExportRequest, error) {
 	row := q.db.QueryRow(ctx, createDataExportRequest, userID)
-	var i CreateDataExportRequestRow
+	var i DataExportRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -558,26 +529,16 @@ func (q *Queries) DeleteComparisonScoresByUser(ctx context.Context, userID pgtyp
 const deleteConsent = `-- name: DeleteConsent :one
 DELETE FROM consent_records
 WHERE id = $1
-RETURNING id, user_id, consent_type, granted, policy_version,
- ip_address, user_agent, created_at
+RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
+    ip_address, user_agent, created_at
 `
 
-type DeleteConsentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	ConsentType   string             `json:"consent_type"`
-	Granted       bool               `json:"granted"`
-	PolicyVersion string             `json:"policy_version"`
-	IpAddress     *netip.Prefix      `json:"ip_address"`
-	UserAgent     *string            `json:"user_agent"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) DeleteConsent(ctx context.Context, id pgtype.UUID) (DeleteConsentRow, error) {
+func (q *Queries) DeleteConsent(ctx context.Context, id pgtype.UUID) (ConsentRecord, error) {
 	row := q.db.QueryRow(ctx, deleteConsent, id)
-	var i DeleteConsentRow
+	var i ConsentRecord
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ConsentType,
 		&i.Granted,
@@ -2500,26 +2461,17 @@ func (q *Queries) GdprReassignCalendarEntriesSubmittedBy(ctx context.Context, ar
 }
 
 const getAccountDeletionRequest = `-- name: GetAccountDeletionRequest :one
-SELECT id, user_id, status, reason, completed_at, created_at, progress_step
+SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE id = $1
 `
 
-type GetAccountDeletionRequestRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	Status       string             `json:"status"`
-	Reason       *string            `json:"reason"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	ProgressStep int32              `json:"progress_step"`
-}
-
-func (q *Queries) GetAccountDeletionRequest(ctx context.Context, id pgtype.UUID) (GetAccountDeletionRequestRow, error) {
+func (q *Queries) GetAccountDeletionRequest(ctx context.Context, id pgtype.UUID) (AccountDeletionRequest, error) {
 	row := q.db.QueryRow(ctx, getAccountDeletionRequest, id)
-	var i GetAccountDeletionRequestRow
+	var i AccountDeletionRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -2531,27 +2483,18 @@ func (q *Queries) GetAccountDeletionRequest(ctx context.Context, id pgtype.UUID)
 }
 
 const getDataExportRequest = `-- name: GetDataExportRequest :one
-SELECT id, user_id, status, download_url, expires_at,
- completed_at, created_at
+SELECT id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
 FROM data_export_requests
 WHERE id = $1
 `
 
-type GetDataExportRequestRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	DownloadUrl *string            `json:"download_url"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetDataExportRequest(ctx context.Context, id pgtype.UUID) (GetDataExportRequestRow, error) {
+func (q *Queries) GetDataExportRequest(ctx context.Context, id pgtype.UUID) (DataExportRequest, error) {
 	row := q.db.QueryRow(ctx, getDataExportRequest, id)
-	var i GetDataExportRequestRow
+	var i DataExportRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -2563,29 +2506,20 @@ func (q *Queries) GetDataExportRequest(ctx context.Context, id pgtype.UUID) (Get
 }
 
 const getLatestDataExportRequestByUser = `-- name: GetLatestDataExportRequestByUser :one
-SELECT id, user_id, status, download_url, expires_at,
- completed_at, created_at
+SELECT id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
 FROM data_export_requests
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-type GetLatestDataExportRequestByUserRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	DownloadUrl *string            `json:"download_url"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, userID pgtype.UUID) (GetLatestDataExportRequestByUserRow, error) {
+func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, userID pgtype.UUID) (DataExportRequest, error) {
 	row := q.db.QueryRow(ctx, getLatestDataExportRequestByUser, userID)
-	var i GetLatestDataExportRequestByUserRow
+	var i DataExportRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -2597,8 +2531,8 @@ func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, userID p
 }
 
 const getUserConsents = `-- name: GetUserConsents :many
-SELECT id, user_id, consent_type, granted, policy_version,
- ip_address, user_agent, created_at
+SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
+    ip_address, user_agent, created_at
 FROM consent_records
 WHERE user_id = $1
  AND ($2 = '' OR consent_type = $2)
@@ -2610,28 +2544,18 @@ type GetUserConsentsParams struct {
 	ConsentType interface{} `json:"consent_type"`
 }
 
-type GetUserConsentsRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	ConsentType   string             `json:"consent_type"`
-	Granted       bool               `json:"granted"`
-	PolicyVersion string             `json:"policy_version"`
-	IpAddress     *netip.Prefix      `json:"ip_address"`
-	UserAgent     *string            `json:"user_agent"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams) ([]GetUserConsentsRow, error) {
+func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams) ([]ConsentRecord, error) {
 	rows, err := q.db.Query(ctx, getUserConsents, arg.UserID, arg.ConsentType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUserConsentsRow
+	var items []ConsentRecord
 	for rows.Next() {
-		var i GetUserConsentsRow
+		var i ConsentRecord
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.ConsentType,
 			&i.Granted,
@@ -2699,8 +2623,8 @@ func (q *Queries) HasConsent(ctx context.Context, arg HasConsentParams) (bool, e
 }
 
 const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, actor_user_id, impersonated_user_id, action_type,
- target_type, target_id, metadata, ip_address, created_at
+SELECT id, tenant_id, actor_user_id, impersonated_user_id, action_type,
+    target_type, target_id, metadata, ip_address, created_at
 FROM audit_logs
 WHERE ($1 = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = $1)
  AND ($2 = '' OR action_type = $2)
@@ -2723,19 +2647,7 @@ type ListAuditLogsParams struct {
 	PageLimit   int32              `json:"page_limit"`
 }
 
-type ListAuditLogsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
-	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
-	ActionType         string             `json:"action_type"`
-	TargetType         *string            `json:"target_type"`
-	TargetID           pgtype.UUID        `json:"target_id"`
-	Metadata           []byte             `json:"metadata"`
-	IpAddress          *netip.Prefix      `json:"ip_address"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]ListAuditLogsRow, error) {
+func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
 	rows, err := q.db.Query(ctx, listAuditLogs,
 		arg.ActorUserID,
 		arg.ActionType,
@@ -2750,11 +2662,12 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAuditLogsRow
+	var items []AuditLog
 	for rows.Next() {
-		var i ListAuditLogsRow
+		var i AuditLog
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ActorUserID,
 			&i.ImpersonatedUserID,
 			&i.ActionType,
@@ -2878,37 +2791,28 @@ func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]pgtype.UUID, er
 }
 
 const listPendingDataExportRequests = `-- name: ListPendingDataExportRequests :many
-SELECT id, user_id, status, download_url, expires_at,
- completed_at, created_at
+SELECT id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
 FROM data_export_requests
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT $1
 `
 
-type ListPendingDataExportRequestsRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	DownloadUrl *string            `json:"download_url"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
 // BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
 // cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
-func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit int32) ([]ListPendingDataExportRequestsRow, error) {
+func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit int32) ([]DataExportRequest, error) {
 	rows, err := q.db.Query(ctx, listPendingDataExportRequests, pageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPendingDataExportRequestsRow
+	var items []DataExportRequest
 	for rows.Next() {
-		var i ListPendingDataExportRequestsRow
+		var i DataExportRequest
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.Status,
 			&i.DownloadUrl,
@@ -3394,11 +3298,9 @@ func (q *Queries) ReassignOrganizationOwner(ctx context.Context, arg ReassignOrg
 }
 
 const recordConsent = `-- name: RecordConsent :one
-
-
 INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, consent_type, granted, policy_version,
- ip_address, user_agent, created_at
+RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
+    ip_address, user_agent, created_at
 `
 
 type RecordConsentParams struct {
@@ -3410,22 +3312,7 @@ type RecordConsentParams struct {
 	UserAgent     *string       `json:"user_agent"`
 }
 
-type RecordConsentRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	ConsentType   string             `json:"consent_type"`
-	Granted       bool               `json:"granted"`
-	PolicyVersion string             `json:"policy_version"`
-	IpAddress     *netip.Prefix      `json:"ip_address"`
-	UserAgent     *string            `json:"user_agent"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-}
-
-// GDPR / NDPR Compliance — Section 19
-// =====================
-// Consent Records
-// =====================
-func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (RecordConsentRow, error) {
+func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (ConsentRecord, error) {
 	row := q.db.QueryRow(ctx, recordConsent,
 		arg.UserID,
 		arg.ConsentType,
@@ -3434,9 +3321,10 @@ func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (R
 		arg.IpAddress,
 		arg.UserAgent,
 	)
-	var i RecordConsentRow
+	var i ConsentRecord
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ConsentType,
 		&i.Granted,
@@ -3522,7 +3410,7 @@ UPDATE account_deletion_requests
 SET status = $1,
  completed_at = $2
 WHERE id = $3
-RETURNING id, user_id, status, reason, completed_at, created_at, progress_step
+RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type UpdateAccountDeletionRequestStatusParams struct {
@@ -3531,21 +3419,12 @@ type UpdateAccountDeletionRequestStatusParams struct {
 	ID          pgtype.UUID        `json:"id"`
 }
 
-type UpdateAccountDeletionRequestStatusRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	Status       string             `json:"status"`
-	Reason       *string            `json:"reason"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	ProgressStep int32              `json:"progress_step"`
-}
-
-func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg UpdateAccountDeletionRequestStatusParams) (UpdateAccountDeletionRequestStatusRow, error) {
+func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg UpdateAccountDeletionRequestStatusParams) (AccountDeletionRequest, error) {
 	row := q.db.QueryRow(ctx, updateAccountDeletionRequestStatus, arg.Status, arg.CompletedAt, arg.ID)
-	var i UpdateAccountDeletionRequestStatusRow
+	var i AccountDeletionRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -3563,8 +3442,8 @@ SET status = $1,
  expires_at = $3,
  completed_at = $4
 WHERE id = $5
-RETURNING id, user_id, status, download_url, expires_at,
- completed_at, created_at
+RETURNING id, tenant_id, user_id, status, download_url, expires_at,
+    completed_at, created_at
 `
 
 type UpdateDataExportRequestStatusParams struct {
@@ -3575,17 +3454,7 @@ type UpdateDataExportRequestStatusParams struct {
 	ID          pgtype.UUID        `json:"id"`
 }
 
-type UpdateDataExportRequestStatusRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	Status      string             `json:"status"`
-	DownloadUrl *string            `json:"download_url"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpdateDataExportRequestStatus(ctx context.Context, arg UpdateDataExportRequestStatusParams) (UpdateDataExportRequestStatusRow, error) {
+func (q *Queries) UpdateDataExportRequestStatus(ctx context.Context, arg UpdateDataExportRequestStatusParams) (DataExportRequest, error) {
 	row := q.db.QueryRow(ctx, updateDataExportRequestStatus,
 		arg.Status,
 		arg.DownloadUrl,
@@ -3593,9 +3462,10 @@ func (q *Queries) UpdateDataExportRequestStatus(ctx context.Context, arg UpdateD
 		arg.CompletedAt,
 		arg.ID,
 	)
-	var i UpdateDataExportRequestStatusRow
+	var i DataExportRequest
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,

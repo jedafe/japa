@@ -1,27 +1,25 @@
--- Mentorship program and match queries (DB-001: migrated from raw SQL to sqlc).
-
 -- name: ListMentorshipPrograms :many
-SELECT id, name, description, is_active, created_at, updated_at
+SELECT id, tenant_id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetMentorshipProgram :one
-SELECT id, name, description, is_active, created_at, updated_at
+SELECT id, tenant_id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 WHERE id = @id;
 
 -- name: CreateMentorshipProgram :one
 INSERT INTO mentorship_programs (name, description, is_active) VALUES (@name, @description, @is_active)
 
-RETURNING id, name, description, is_active, created_at, updated_at;
+RETURNING id, tenant_id, name, description, is_active, created_at, updated_at;
 
 -- name: UpdateMentorshipProgram :one
 UPDATE mentorship_programs
 SET name = @name, description = @description, is_active = @is_active, updated_at = now()
 WHERE id = @id
-RETURNING id, name, description, is_active, created_at, updated_at;
+RETURNING id, tenant_id, name, description, is_active, created_at, updated_at;
 
 -- name: ListMentorshipMatches :many
 SELECT m.id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
@@ -40,7 +38,7 @@ LIMIT @page_limit OFFSET @page_offset;
 UPDATE mentorship_matches
 SET status = @status, updated_at = now()
 WHERE id = @id
-RETURNING id, program_id, mentor_id, mentee_id, status, created_at, updated_at;
+RETURNING id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at;
 
 -- name: DeleteMentorshipProgram :execrows
 DELETE FROM mentorship_programs

@@ -195,8 +195,6 @@ func (q *Queries) CreateTOTPCredentials(ctx context.Context, arg CreateTOTPCrede
 }
 
 const createUser = `-- name: CreateUser :one
-
-
 INSERT INTO users (email, username, password_hash, profile_type) VALUES ($1, $2, $3, 'regular')
 
 RETURNING id
@@ -208,10 +206,6 @@ type CreateUserParams struct {
 	PasswordHash *string `json:"password_hash"`
 }
 
-// Auth queries: refresh tokens, TOTP, OAuth, password reset, email verification, API keys, user management.
-// =====================
-// User Management
-// =====================
 // New users start on the regular tier (BUG-019).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.Username, arg.PasswordHash)
@@ -305,26 +299,17 @@ func (q *Queries) GetAPIKeyByHash(ctx context.Context, keyHash string) (GetAPIKe
 }
 
 const getEmailVerificationByHash = `-- name: GetEmailVerificationByHash :one
-SELECT id, user_id, email, token_hash, expires_at, verified_at, created_at
+SELECT id, tenant_id, user_id, email, token_hash, expires_at, verified_at, created_at
 FROM email_verifications
 WHERE token_hash = $1
 `
 
-type GetEmailVerificationByHashRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	Email      string             `json:"email"`
-	TokenHash  string             `json:"token_hash"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	VerifiedAt pgtype.Timestamptz `json:"verified_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetEmailVerificationByHash(ctx context.Context, tokenHash string) (GetEmailVerificationByHashRow, error) {
+func (q *Queries) GetEmailVerificationByHash(ctx context.Context, tokenHash string) (EmailVerification, error) {
 	row := q.db.QueryRow(ctx, getEmailVerificationByHash, tokenHash)
-	var i GetEmailVerificationByHashRow
+	var i EmailVerification
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Email,
 		&i.TokenHash,
@@ -357,7 +342,7 @@ func (q *Queries) GetEmailVerificationByHashGlobal(ctx context.Context, tokenHas
 
 const getOAuthAccountByProvider = `-- name: GetOAuthAccountByProvider :one
 
-SELECT id, user_id, provider, provider_user_id, created_at
+SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE provider = $1 AND provider_user_id = $2
 `
@@ -367,22 +352,15 @@ type GetOAuthAccountByProviderParams struct {
 	ProviderUserID string `json:"provider_user_id"`
 }
 
-type GetOAuthAccountByProviderRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Provider       string             `json:"provider"`
-	ProviderUserID string             `json:"provider_user_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // OAuth Accounts
 // =====================
-func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAccountByProviderParams) (GetOAuthAccountByProviderRow, error) {
+func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAccountByProviderParams) (OauthAccount, error) {
 	row := q.db.QueryRow(ctx, getOAuthAccountByProvider, arg.Provider, arg.ProviderUserID)
-	var i GetOAuthAccountByProviderRow
+	var i OauthAccount
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.ProviderUserID,
@@ -392,30 +370,23 @@ func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAcc
 }
 
 const getOAuthAccountsByUser = `-- name: GetOAuthAccountsByUser :many
-SELECT id, user_id, provider, provider_user_id, created_at
+SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE user_id = $1
 `
 
-type GetOAuthAccountsByUserRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Provider       string             `json:"provider"`
-	ProviderUserID string             `json:"provider_user_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetOAuthAccountsByUser(ctx context.Context, userID pgtype.UUID) ([]GetOAuthAccountsByUserRow, error) {
+func (q *Queries) GetOAuthAccountsByUser(ctx context.Context, userID pgtype.UUID) ([]OauthAccount, error) {
 	rows, err := q.db.Query(ctx, getOAuthAccountsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetOAuthAccountsByUserRow
+	var items []OauthAccount
 	for rows.Next() {
-		var i GetOAuthAccountsByUserRow
+		var i OauthAccount
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.Provider,
 			&i.ProviderUserID,
@@ -432,25 +403,17 @@ func (q *Queries) GetOAuthAccountsByUser(ctx context.Context, userID pgtype.UUID
 }
 
 const getPasswordResetTokenByHash = `-- name: GetPasswordResetTokenByHash :one
-SELECT id, user_id, token_hash, expires_at, used_at, created_at
+SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
 FROM password_reset_tokens
 WHERE token_hash = $1
 `
 
-type GetPasswordResetTokenByHashRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	TokenHash string             `json:"token_hash"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	UsedAt    pgtype.Timestamptz `json:"used_at"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (GetPasswordResetTokenByHashRow, error) {
+func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (PasswordResetToken, error) {
 	row := q.db.QueryRow(ctx, getPasswordResetTokenByHash, tokenHash)
-	var i GetPasswordResetTokenByHashRow
+	var i PasswordResetToken
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.TokenHash,
 		&i.ExpiresAt,
@@ -691,7 +654,7 @@ INSERT INTO oauth_accounts (user_id, provider, provider_user_id) VALUES ($1, $2,
 
 ON CONFLICT (provider, provider_user_id) DO UPDATE SET
  user_id = EXCLUDED.user_id
-RETURNING id, user_id, provider, provider_user_id, created_at
+RETURNING id, tenant_id, user_id, provider, provider_user_id, created_at
 `
 
 type LinkOAuthAccountParams struct {
@@ -700,19 +663,12 @@ type LinkOAuthAccountParams struct {
 	ProviderUserID string      `json:"provider_user_id"`
 }
 
-type LinkOAuthAccountRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Provider       string             `json:"provider"`
-	ProviderUserID string             `json:"provider_user_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) LinkOAuthAccount(ctx context.Context, arg LinkOAuthAccountParams) (LinkOAuthAccountRow, error) {
+func (q *Queries) LinkOAuthAccount(ctx context.Context, arg LinkOAuthAccountParams) (OauthAccount, error) {
 	row := q.db.QueryRow(ctx, linkOAuthAccount, arg.UserID, arg.Provider, arg.ProviderUserID)
-	var i LinkOAuthAccountRow
+	var i OauthAccount
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.ProviderUserID,

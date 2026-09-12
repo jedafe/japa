@@ -25,8 +25,8 @@ func (q *Queries) CountSpacesByCurrency(ctx context.Context, currencyCode *strin
 const createCreditPack = `-- name: CreateCreditPack :one
 INSERT INTO credit_packs (name, description, credit_amount, bonus_credits, min_user_level, position) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+          is_active, position, created_at, updated_at
 `
 
 type CreateCreditPackParams struct {
@@ -38,20 +38,7 @@ type CreateCreditPackParams struct {
 	Position     int32   `json:"position"`
 }
 
-type CreateCreditPackRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Description  *string            `json:"description"`
-	CreditAmount int32              `json:"credit_amount"`
-	BonusCredits int32              `json:"bonus_credits"`
-	MinUserLevel *string            `json:"min_user_level"`
-	IsActive     bool               `json:"is_active"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateCreditPack(ctx context.Context, arg CreateCreditPackParams) (CreateCreditPackRow, error) {
+func (q *Queries) CreateCreditPack(ctx context.Context, arg CreateCreditPackParams) (CreditPack, error) {
 	row := q.db.QueryRow(ctx, createCreditPack,
 		arg.Name,
 		arg.Description,
@@ -60,9 +47,10 @@ func (q *Queries) CreateCreditPack(ctx context.Context, arg CreateCreditPackPara
 		arg.MinUserLevel,
 		arg.Position,
 	)
-	var i CreateCreditPackRow
+	var i CreditPack
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,
@@ -133,30 +121,18 @@ func (q *Queries) DeactivateCurrency(ctx context.Context, code string) error {
 }
 
 const getCreditPackByID = `-- name: GetCreditPackByID :one
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE id = $1
 `
 
-type GetCreditPackByIDRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Description  *string            `json:"description"`
-	CreditAmount int32              `json:"credit_amount"`
-	BonusCredits int32              `json:"bonus_credits"`
-	MinUserLevel *string            `json:"min_user_level"`
-	IsActive     bool               `json:"is_active"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetCreditPackByID(ctx context.Context, id pgtype.UUID) (GetCreditPackByIDRow, error) {
+func (q *Queries) GetCreditPackByID(ctx context.Context, id pgtype.UUID) (CreditPack, error) {
 	row := q.db.QueryRow(ctx, getCreditPackByID, id)
-	var i GetCreditPackByIDRow
+	var i CreditPack
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,
@@ -237,40 +213,28 @@ func (q *Queries) GetUserPreferredCurrency(ctx context.Context, userID pgtype.UU
 
 const listActiveCreditPacks = `-- name: ListActiveCreditPacks :many
 
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE is_active = true
 ORDER BY position ASC, created_at ASC
 `
 
-type ListActiveCreditPacksRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Description  *string            `json:"description"`
-	CreditAmount int32              `json:"credit_amount"`
-	BonusCredits int32              `json:"bonus_credits"`
-	MinUserLevel *string            `json:"min_user_level"`
-	IsActive     bool               `json:"is_active"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Credit Packs CRUD
 // =====================
-func (q *Queries) ListActiveCreditPacks(ctx context.Context) ([]ListActiveCreditPacksRow, error) {
+func (q *Queries) ListActiveCreditPacks(ctx context.Context) ([]CreditPack, error) {
 	rows, err := q.db.Query(ctx, listActiveCreditPacks)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListActiveCreditPacksRow
+	var items []CreditPack
 	for rows.Next() {
-		var i ListActiveCreditPacksRow
+		var i CreditPack
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.CreditAmount,
@@ -292,19 +256,12 @@ func (q *Queries) ListActiveCreditPacks(ctx context.Context) ([]ListActiveCredit
 }
 
 const listActiveCurrencies = `-- name: ListActiveCurrencies :many
-
-
 SELECT code, name, symbol, credits_per_unit, is_active, position, created_at, updated_at
 FROM currencies
 WHERE is_active = true
 ORDER BY position ASC, code ASC
 `
 
-// Credit Currency System (Section 58, ADR-065)
-// Currencies reference table, credit packs, and user preferred currency.
-// =====================
-// Currencies CRUD
-// =====================
 func (q *Queries) ListActiveCurrencies(ctx context.Context) ([]Currency, error) {
 	rows, err := q.db.Query(ctx, listActiveCurrencies)
 	if err != nil {
@@ -335,37 +292,25 @@ func (q *Queries) ListActiveCurrencies(ctx context.Context) ([]Currency, error) 
 }
 
 const listAllCreditPacks = `-- name: ListAllCreditPacks :many
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 
 ORDER BY position ASC, created_at ASC
 `
 
-type ListAllCreditPacksRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Description  *string            `json:"description"`
-	CreditAmount int32              `json:"credit_amount"`
-	BonusCredits int32              `json:"bonus_credits"`
-	MinUserLevel *string            `json:"min_user_level"`
-	IsActive     bool               `json:"is_active"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListAllCreditPacks(ctx context.Context) ([]ListAllCreditPacksRow, error) {
+func (q *Queries) ListAllCreditPacks(ctx context.Context) ([]CreditPack, error) {
 	rows, err := q.db.Query(ctx, listAllCreditPacks)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAllCreditPacksRow
+	var items []CreditPack
 	for rows.Next() {
-		var i ListAllCreditPacksRow
+		var i CreditPack
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.CreditAmount,
@@ -522,8 +467,8 @@ SET name = $1, description = $2, credit_amount = $3,
  bonus_credits = $4, min_user_level = $5,
  is_active = $6, position = $7, updated_at = now()
 WHERE id = $8
-RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+          is_active, position, created_at, updated_at
 `
 
 type UpdateCreditPackParams struct {
@@ -537,20 +482,7 @@ type UpdateCreditPackParams struct {
 	ID           pgtype.UUID `json:"id"`
 }
 
-type UpdateCreditPackRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Description  *string            `json:"description"`
-	CreditAmount int32              `json:"credit_amount"`
-	BonusCredits int32              `json:"bonus_credits"`
-	MinUserLevel *string            `json:"min_user_level"`
-	IsActive     bool               `json:"is_active"`
-	Position     int32              `json:"position"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateCreditPack(ctx context.Context, arg UpdateCreditPackParams) (UpdateCreditPackRow, error) {
+func (q *Queries) UpdateCreditPack(ctx context.Context, arg UpdateCreditPackParams) (CreditPack, error) {
 	row := q.db.QueryRow(ctx, updateCreditPack,
 		arg.Name,
 		arg.Description,
@@ -561,9 +493,10 @@ func (q *Queries) UpdateCreditPack(ctx context.Context, arg UpdateCreditPackPara
 		arg.Position,
 		arg.ID,
 	)
-	var i UpdateCreditPackRow
+	var i CreditPack
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,

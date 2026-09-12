@@ -1,9 +1,3 @@
--- Content, revision, slug history, pinned posts, JSON-LD templates, and scores.
-
--- =====================
--- Contents
--- =====================
-
 -- name: CreateContent :one
 INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id) VALUES (@author_id, sqlc.narg(organization_id), sqlc.narg(space_id), @content_type, @title, @slug, @body, @body_html, @field_values, sqlc.narg(content_hash), sqlc.narg(geo_space_id), sqlc.narg(header_image_id), sqlc.narg(featured_image_id), sqlc.narg(canonical_url), sqlc.narg(meta_title), sqlc.narg(meta_description), sqlc.narg(og_image_url), @seo_indexable, @status, @visibility, @read_time_minutes, sqlc.narg(publish_at), sqlc.narg(published_at), sqlc.narg(guide_category), COALESCE(sqlc.narg(ai_generated), false), sqlc.narg(ai_model), sqlc.narg(ai_generated_at), sqlc.narg(hitl_reviewed_by), sqlc.narg(hitl_reviewed_at), sqlc.narg(journey_stage), sqlc.narg(visa_route), sqlc.narg(source_country), sqlc.narg(target_country), sqlc.narg(video_source_id), sqlc.narg(intel_source_id), sqlc.narg(intel_record_id))
 RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
@@ -762,12 +756,12 @@ SELECT EXISTS(SELECT 1 FROM space_pinned_posts WHERE space_id = @space_id AND co
 -- =====================
 
 -- name: GetJSONLDTemplate :one
-SELECT id, content_type, template, is_active, created_at, updated_at
+SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE content_type = @content_type AND is_active = true;
 
 -- name: ListJSONLDTemplates :many
-SELECT id, content_type, template, is_active, created_at, updated_at
+SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE (@q::text = '' OR content_type ILIKE '%' || @q || '%' OR template::text ILIKE '%' || @q || '%')
 ORDER BY created_at ASC, id ASC;
@@ -777,7 +771,7 @@ INSERT INTO content_type_jsonld_templates (content_type, template, is_active) VA
 
 ON CONFLICT (content_type) DO UPDATE
 SET template = EXCLUDED.template, is_active = EXCLUDED.is_active, updated_at = now()
-RETURNING id, content_type, template, is_active, created_at, updated_at;
+RETURNING id, tenant_id, content_type, template, is_active, created_at, updated_at;
 
 -- name: DeleteJSONLDTemplate :exec
 DELETE FROM content_type_jsonld_templates WHERE id = @id;
@@ -976,7 +970,7 @@ LIMIT @page_limit;
 -- name: CreateContentShare :one
 INSERT INTO content_shares (content_id, user_id, platform) VALUES (@content_id, @user_id, @platform)
 
-RETURNING id, content_id, user_id, platform, created_at;
+RETURNING id, tenant_id, content_id, user_id, platform, created_at;
 
 -- name: CountContentShares :one
 SELECT COUNT(*)::int AS count
