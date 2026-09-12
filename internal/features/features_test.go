@@ -56,8 +56,8 @@ func TestChecker_ClearCache(t *testing.T) {
 
 	c := &Checker{
 		cache: &flagCache{
-			entries: map[string]map[string]*flagCacheEntry{
-				"tenant1": {"feature.blog": {enabled: true}},
+			entries: map[string]*flagCacheEntry{
+				"feature.blog": {enabled: true},
 			},
 		},
 	}
@@ -73,13 +73,13 @@ func TestChecker_CacheGetSet(t *testing.T) {
 
 	c := &Checker{
 		cache: &flagCache{
-			entries: make(map[string]map[string]*flagCacheEntry),
+			entries: make(map[string]*flagCacheEntry),
 		},
 	}
 
-	c.cacheSet("tenant1", "feature.blog", true)
+	c.cacheSet("feature.blog", true)
 
-	val := c.cacheGet("tenant1", "feature.blog")
+	val := c.cacheGet("feature.blog")
 	if val == nil {
 		t.Fatal("expected cached value, got nil")
 	}
@@ -88,7 +88,7 @@ func TestChecker_CacheGetSet(t *testing.T) {
 		t.Error("expected true, got false")
 	}
 
-	val = c.cacheGet("tenant1", "feature.unknown")
+	val = c.cacheGet("feature.unknown")
 	if val != nil {
 		t.Error("expected nil for uncached key")
 	}
@@ -120,7 +120,7 @@ func TestChecker_CloseIsIdempotent(t *testing.T) {
 
 	c := &Checker{
 		cache: &flagCache{
-			entries: make(map[string]map[string]*flagCacheEntry),
+			entries: make(map[string]*flagCacheEntry),
 			done:    make(chan struct{}),
 		},
 	}

@@ -12,51 +12,36 @@ import (
 )
 
 const deleteFeatureFlag = `-- name: DeleteFeatureFlag :exec
-
 DELETE FROM feature_flags
-WHERE key = $1 AND tenant_id = $2
+WHERE key = $1
 `
 
-type DeleteFeatureFlagParams struct {
-	Key      string      `json:"key"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-// =====================================================================
-// Delete a tenant's feature flag override (reverts to registry default).
-// Used by DeleteFlag (DELETE /admin/feature-flags/{flag_name}).
-// =====================================================================
-func (q *Queries) DeleteFeatureFlag(ctx context.Context, arg DeleteFeatureFlagParams) error {
-	_, err := q.db.Exec(ctx, deleteFeatureFlag, arg.Key, arg.TenantID)
+func (q *Queries) DeleteFeatureFlag(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteFeatureFlag, key)
 	return err
 }
 
 const getFeatureFlag = `-- name: GetFeatureFlag :one
 
-
-SELECT key, tenant_id, enabled, config, updated_at, updated_by
+SELECT key, enabled, config, updated_at, updated_by
 FROM feature_flags
-WHERE key = $1 AND tenant_id = $2
+WHERE key = $1
 `
 
-type GetFeatureFlagParams struct {
-	Key      string      `json:"key"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetFeatureFlagRow struct {
+	Key       string             `json:"key"`
+	Enabled   bool               `json:"enabled"`
+	Config    []byte             `json:"config"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
 }
 
-// features.sql — Feature Flags queries (Section 42, ADR-042).
-// Covers single-flag lookup, batch lookup, upsert (toggle + full config),
-// delete, and list-all for the admin panel.
-// Ref: japaconnect-engineering/sections/42-feature-flags.md
-// =====================================================================
-// Get a single feature flag by key + tenant.
-// =====================================================================
-func (q *Queries) GetFeatureFlag(ctx context.Context, arg GetFeatureFlagParams) (FeatureFlag, error) {
-	row := q.db.QueryRow(ctx, getFeatureFlag, arg.Key, arg.TenantID)
-	var i FeatureFlag
+// features.sql — Feature Flags queries (global scope after multi-tenancy removal).
+func (q *Queries) GetFeatureFlag(ctx context.Context, key string) (GetFeatureFlagRow, error) {
+	row := q.db.QueryRow(ctx, getFeatureFlag, key)
+	var i GetFeatureFlagRow
 	err := row.Scan(
 		&i.Key,
-		&i.TenantID,
 		&i.Enabled,
 		&i.Config,
 		&i.UpdatedAt,
@@ -65,29 +50,31 @@ func (q *Queries) GetFeatureFlag(ctx context.Context, arg GetFeatureFlagParams) 
 	return i, err
 }
 
-const listFeatureFlagsByTenant = `-- name: ListFeatureFlagsByTenant :many
-
-SELECT key, tenant_id, enabled, config, updated_at, updated_by
+const listFeatureFlags = `-- name: ListFeatureFlags :many
+SELECT key, enabled, config, updated_at, updated_by
 FROM feature_flags
-WHERE tenant_id = $1
+ORDER BY key
 `
 
-// =====================================================================
-// Get all feature flags for a tenant in one round-trip (M2: eliminates
-// the N+1 query pattern in GetAllEnabled).
-// =====================================================================
-func (q *Queries) ListFeatureFlagsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]FeatureFlag, error) {
-	rows, err := q.db.Query(ctx, listFeatureFlagsByTenant, tenantID)
+type ListFeatureFlagsRow struct {
+	Key       string             `json:"key"`
+	Enabled   bool               `json:"enabled"`
+	Config    []byte             `json:"config"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
+}
+
+func (q *Queries) ListFeatureFlags(ctx context.Context) ([]ListFeatureFlagsRow, error) {
+	rows, err := q.db.Query(ctx, listFeatureFlags)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []FeatureFlag
+	var items []ListFeatureFlagsRow
 	for rows.Next() {
-		var i FeatureFlag
+		var i ListFeatureFlagsRow
 		if err := rows.Scan(
 			&i.Key,
-			&i.TenantID,
 			&i.Enabled,
 			&i.Config,
 			&i.UpdatedAt,
@@ -104,58 +91,40 @@ func (q *Queries) ListFeatureFlagsByTenant(ctx context.Context, tenantID pgtype.
 }
 
 const upsertFeatureFlagEnabled = `-- name: UpsertFeatureFlagEnabled :exec
-
-INSERT INTO feature_flags (key, tenant_id, enabled, updated_by)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (key, tenant_id)
-DO UPDATE SET enabled = $3, updated_by = $4, updated_at = now()
+INSERT INTO feature_flags (key, enabled, updated_by)
+VALUES ($1, $2, $3)
+ON CONFLICT (key)
+DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()
 `
 
 type UpsertFeatureFlagEnabledParams struct {
 	Key       string      `json:"key"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	Enabled   bool        `json:"enabled"`
 	UpdatedBy pgtype.UUID `json:"updated_by"`
 }
 
-// =====================================================================
-// Upsert a feature flag's enabled state (toggle, no config change).
-// Used by SetEnabled (PATCH /admin/feature-flags/{flag_name}).
-// =====================================================================
 func (q *Queries) UpsertFeatureFlagEnabled(ctx context.Context, arg UpsertFeatureFlagEnabledParams) error {
-	_, err := q.db.Exec(ctx, upsertFeatureFlagEnabled,
-		arg.Key,
-		arg.TenantID,
-		arg.Enabled,
-		arg.UpdatedBy,
-	)
+	_, err := q.db.Exec(ctx, upsertFeatureFlagEnabled, arg.Key, arg.Enabled, arg.UpdatedBy)
 	return err
 }
 
 const upsertFeatureFlagWithConfig = `-- name: UpsertFeatureFlagWithConfig :exec
-
-INSERT INTO feature_flags (key, tenant_id, enabled, config, updated_by)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (key, tenant_id)
-DO UPDATE SET enabled = $3, config = $4, updated_by = $5, updated_at = now()
+INSERT INTO feature_flags (key, enabled, config, updated_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (key)
+DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()
 `
 
 type UpsertFeatureFlagWithConfigParams struct {
 	Key       string      `json:"key"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	Enabled   bool        `json:"enabled"`
 	Config    []byte      `json:"config"`
 	UpdatedBy pgtype.UUID `json:"updated_by"`
 }
 
-// =====================================================================
-// Upsert a feature flag with full config metadata (create + update).
-// Used by UpdateFlag (POST/PUT /admin/feature-flags).
-// =====================================================================
 func (q *Queries) UpsertFeatureFlagWithConfig(ctx context.Context, arg UpsertFeatureFlagWithConfigParams) error {
 	_, err := q.db.Exec(ctx, upsertFeatureFlagWithConfig,
 		arg.Key,
-		arg.TenantID,
 		arg.Enabled,
 		arg.Config,
 		arg.UpdatedBy,
