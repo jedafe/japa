@@ -5,6 +5,8 @@
 	import { t } from '$lib/i18n';
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
@@ -260,18 +262,23 @@
 
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if article.author_name}
-				<svelte:element
-					this={article.author_username ? 'a' : 'span'}
-					href={article.author_username ? `/u/${article.author_username}` : undefined}
-					class="flex items-center gap-2 {article.author_username ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+				{@const authorName = article.author_name}
+				<UserHoverCard
+					id={article.author_id ?? ''}
+					slug={article.author_username}
+					name={authorName}
+					avatar={article.author_avatar_url}
+					variant="row"
 				>
-					{#if article.author_avatar_url}
-						<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
-					{:else}
-						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{article.author_name.charAt(0)}</span>
-					{/if}
-					<span class="font-medium text-[var(--color-text)]">{article.author_name}</span>
-				</svelte:element>
+					{#snippet trigger()}
+						{#if article.author_avatar_url}
+							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+						{:else}
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+						{/if}
+						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
+					{/snippet}
+				</UserHoverCard>
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>
@@ -280,16 +287,23 @@
 			{/if}
 			<span class="flex items-center gap-1"><Eye size={14} /> {article.view_count} {t('content.views', 'views')}</span>
 			{#if article.source}
+				{@const source = article.source}
 				<span class="flex items-center gap-1">
-					<a
-						href="/sources/{article.source.slug}"
+					<EntityHoverChip
+						type="source"
+						id={source.id}
+						slug={source.slug}
+						name={source.name}
+						avatar={source.logo_url}
 						class="inline-flex items-center gap-1 font-medium text-[var(--color-primary)] hover:underline"
 					>
-						{t('content.source', 'Source')}: {article.source.name}
-					</a>
-					{#if article.source.source_url}
+						{#snippet trigger()}
+							{t('content.source', 'Source')}: {source.name}
+						{/snippet}
+					</EntityHoverChip>
+					{#if source.source_url}
 						<a
-							href={article.source.source_url}
+							href={source.source_url}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="inline-flex items-center gap-0.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"

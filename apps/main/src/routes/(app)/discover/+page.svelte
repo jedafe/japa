@@ -2,7 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Compass, Users, Building2, Hash, GraduationCap, FileText } from 'lucide-svelte';
+	import { Compass, Users, Building2, Hash, GraduationCap, FileText, Globe, BadgeCheck } from 'lucide-svelte';
 	import { EmptyState, UrlTabs, FollowButton, SpaceJoinButton, DirectoryCard, type UrlTab, type CardMetaItem } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
@@ -19,13 +19,14 @@
 		{ value: 'people', label: t('discover.tab.people', 'people') },
 		{ value: 'organizations', label: t('discover.tab.organizations', 'organizations') },
 		{ value: 'tags', label: t('discover.tab.tags', 'tags') },
-		{ value: 'content', label: t('discover.tab.content', 'content') },
-		{ value: 'universities', label: t('discover.tab.universities', 'universities') }
+		{ value: 'content', label: t('discover.tab.content', 'Content') },
+		{ value: 'universities', label: t('discover.tab.universities', 'universities') },
+		{ value: 'sources', label: t('discover.tab.sources', 'Sources') }
 	]);
 
 	const title = $derived(t('discover.title', 'Discover — JapaConnect'));
 	const description = $derived(
-		t('discover.description', 'Find spaces, people, organizations, tags, and universities in the Nigerian diaspora community.')
+		t('discover.description', 'Find spaces, people, organizations, tags, sources, and universities in the Nigerian diaspora community.')
 	);
 
 	// ── Load-more state for the server-paginated tabs (organizations,
@@ -46,6 +47,7 @@
 	// "Follow" click on an already-followed entity would unfollow it.
 	const followedSpaceIds = $derived(new Set(data.followedSpaceIds));
 	const followedOrgIds = $derived(new Set(data.followedOrgIds));
+	const followedSourceIds = $derived(new Set(data.followedSourceIds));
 
 	const count = (key: string, fallback: string, n: number) =>
 		t(key, fallback).replace('{n}', String(n));
@@ -121,7 +123,7 @@
 			{#if data.spaces.length === 0}
 				<EmptyState icon={Compass} title={t('discover.spaces_empty', 'No space suggestions yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.spaces as space (space.id)}
 						<DirectoryCard
 							href="/spaces/{space.slug}"
@@ -133,8 +135,10 @@
 								{ icon: FileText, text: count('discover.posts', '{n} posts', space.post_count) },
 								space.shared_members > 0 ? { icon: Users, text: count('discover.mutual_members', '{n} mutual members', space.shared_members) } : null
 							)}
+							viewProfile
+							viewProfileLabel={t('discover.view_space', 'View space')}
 						>
-							{#snippet actions()}
+							{#snippet headerAction()}
 								<SpaceJoinButton entityId={space.id} entitySlug={space.slug} initiallyFollowing={followedSpaceIds.has(space.id)} compact />
 							{/snippet}
 						</DirectoryCard>
@@ -145,7 +149,7 @@
 			{#if data.people.length === 0}
 				<EmptyState icon={Users} title={t('discover.people_empty', 'No people suggestions yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.people as person (person.id)}
 						<DirectoryCard
 							href="/u/{person.username}"
@@ -159,8 +163,10 @@
 							meta={meta(
 								person.shared_spaces > 0 ? { icon: Compass, text: count('discover.shared_spaces', '{n} spaces in common', person.shared_spaces) } : null
 							)}
+							viewProfile
+							viewProfileLabel={t('discover.view_profile', 'View profile')}
 						>
-							{#snippet actions()}
+							{#snippet headerAction()}
 								<FollowButton entityType="user" entityId={person.id} compact />
 							{/snippet}
 						</DirectoryCard>
@@ -171,7 +177,7 @@
 			{#if organizations.length === 0}
 				<EmptyState icon={Building2} title={t('discover.orgs_empty', 'No organizations yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each organizations as org (org.id)}
 						<DirectoryCard
 							href="/org/{org.slug}"
@@ -185,8 +191,10 @@
 								{ icon: Users, text: count('profile.followers', '{n} followers', org.follower_count) },
 								{ icon: Building2, text: count('meta.members', '{n} members', org.member_count) }
 							)}
+							viewProfile
+							viewProfileLabel={t('discover.view_organization', 'View organization')}
 						>
-							{#snippet actions()}
+							{#snippet headerAction()}
 								<FollowButton entityType="organization" entityId={org.id} initiallyFollowing={followedOrgIds.has(org.id)} compact />
 							{/snippet}
 						</DirectoryCard>
@@ -207,7 +215,7 @@
 			{#if data.tags.length === 0}
 				<EmptyState icon={Hash} title={t('discover.tags_empty', 'No tag suggestions yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.tags as tag (tag.id)}
 						<DirectoryCard
 							href="/tags/{tag.slug}"
@@ -216,8 +224,10 @@
 							icon={Hash}
 							hueSeed={tag.id}
 							round
+							viewProfile
+							viewProfileLabel={t('discover.explore_tag', 'Explore')}
 						>
-							{#snippet actions()}
+							{#snippet headerAction()}
 								<FollowButton entityType="tag" entityId={tag.id} entitySlug={tag.slug} compact />
 							{/snippet}
 						</DirectoryCard>
@@ -228,7 +238,7 @@
 			{#if data.content.length === 0}
 				<EmptyState icon={FileText} title={t('discover.content_empty', 'No content suggestions yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each data.content as item (item.id)}
 						<DirectoryCard
 							href="/content/{item.slug}"
@@ -236,6 +246,8 @@
 							subtitle={item.content_type}
 							icon={FileText}
 							hueSeed={item.id}
+							viewProfile
+							viewProfileLabel={t('discover.read', 'Read')}
 						/>
 					{/each}
 				</div>
@@ -244,7 +256,7 @@
 			{#if universities.length === 0}
 				<EmptyState icon={GraduationCap} title={t('discover.universities_empty', 'No universities yet')} />
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					{#each universities as uni (uni.id)}
 						<DirectoryCard
 							href="/universities/{uni.slug}"
@@ -258,8 +270,10 @@
 								{ icon: FileText, text: count('discover.posts', '{n} posts', uni.post_count) },
 								{ icon: Users, text: count('profile.followers', '{n} followers', uni.follower_count) }
 							)}
+							viewProfile
+							viewProfileLabel={t('discover.view_university', 'View university')}
 						>
-							{#snippet actions()}
+							{#snippet headerAction()}
 								<SpaceJoinButton entityId={uni.id} entitySlug={uni.slug} initiallyJoined={uni.is_member ?? false} initiallyPending={uni.is_pending ?? false} initiallyFollowing={uni.is_following ?? false} compact />
 							{/snippet}
 						</DirectoryCard>
@@ -275,6 +289,35 @@
 						{t('discover.load_more', 'Load more')}
 					</button>
 				{/if}
+			{/if}
+		{:else if tab === 'sources'}
+			{#if data.sources.length === 0}
+				<EmptyState icon={Globe} title={t('discover.sources_empty', 'No sources yet')} />
+			{:else}
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					{#each data.sources as source (source.id)}
+						<DirectoryCard
+							href="/sources/{source.slug}"
+							title={source.name}
+							subtitle={source.domain}
+							description={source.description}
+							imageUrl={source.logo_url}
+							fallback={source.name.charAt(0).toUpperCase()}
+							hueSeed={source.id}
+							meta={meta(
+								{ icon: FileText, text: count('discover.posts', '{n} posts', source.post_count) },
+								{ icon: Users, text: count('profile.followers', '{n} followers', source.follower_count) },
+								source.trust_level > 0 ? { icon: BadgeCheck, text: `${t('sources.trust_level', 'Trust')} ${source.trust_level}` } : null
+							)}
+							viewProfile
+							viewProfileLabel={t('discover.view_source', 'View source')}
+						>
+							{#snippet headerAction()}
+								<FollowButton entityType="source" entityId={source.id} entitySlug={source.slug} initiallyFollowing={source.is_following ?? followedSourceIds.has(source.id)} compact />
+							{/snippet}
+						</DirectoryCard>
+					{/each}
+				</div>
 			{/if}
 		{/if}
 	</div>

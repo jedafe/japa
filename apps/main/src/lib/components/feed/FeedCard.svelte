@@ -8,6 +8,8 @@
 	import type { CardStyle } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import DailyFeedCard from './DailyFeedCard.svelte';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 
 	interface Props {
 		item: FeedItem;
@@ -26,11 +28,28 @@
 	// §106 video — thumbnail play overlay + duration badge on video cards.
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
 	const duration = $derived(formatDuration(item.duration_secs));
+
+	const itemHref = $derived(href(item));
+	const authorId = $derived(item.author_id ?? '');
+	const authorSlug = $derived(item.author_username ?? null);
+	const authorName = $derived(item.author_name ?? null);
+	const authorAvatar = $derived(item.author_avatar_url ?? null);
+
+	function navigate() {
+		if (style !== 'daily') goto(itemHref);
+	}
+	function onKeyDown(e: KeyboardEvent) {
+		if (style !== 'daily' && e.key === 'Enter') {
+			e.preventDefault();
+			e.stopPropagation();
+			goto(itemHref);
+		}
+	}
 </script>
 
 {#snippet avatar(size: number)}
-	{#if item.author_avatar_url}
-		<img src={item.author_avatar_url} alt="" loading="lazy" class="shrink-0 rounded-full object-cover" style="width:{size}px;height:{size}px" />
+	{#if authorAvatar}
+		<img src={authorAvatar} alt="" loading="lazy" class="shrink-0 rounded-full object-cover" style="width:{size}px;height:{size}px" />
 	{:else}
 		<span class="grid shrink-0 place-items-center rounded-full bg-[var(--color-primary)] font-semibold text-[var(--color-primary-contrast)]" style="width:{size}px;height:{size}px;font-size:{Math.round(size * 0.4)}px">{initials}</span>
 	{/if}
@@ -89,32 +108,52 @@
 	<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
 		{@render badge()}
 		{#if item.space_name}
-		{#if item.space_slug}
-			<span
-				class="font-semibold text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:underline cursor-pointer"
-				onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); }}
-				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); } }}
-				role="link"
-				tabindex="0"
-			>{item.space_name}</span>
-		{:else}
-			<span class="font-semibold text-[var(--color-text-subtle)]">{item.space_name}</span>
+			{#if item.space_slug}
+				<span
+					class="font-semibold text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:underline cursor-pointer"
+					onclick={(e) => { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); }}
+					onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); goto('/spaces/' + item.space_slug); } }}
+					role="link"
+					tabindex="0"
+				>{item.space_name}</span>
+			{:else}
+				<span class="font-semibold text-[var(--color-text-subtle)]">{item.space_name}</span>
+			{/if}
 		{/if}
-	{/if}
-		{#if item.author_name}<span>·</span><span>{item.author_name}</span>{/if}
+		{#if authorName}
+			<span>·</span>
+			<UserHoverCard
+				id={authorId}
+				slug={authorSlug}
+				name={authorName}
+				avatar={authorAvatar}
+				variant="row"
+				class="inline-flex max-w-full items-center text-left"
+			>
+				{#snippet trigger()}
+					<span>{authorName}</span>
+				{/snippet}
+			</UserHoverCard>
+		{/if}
 		{#if time}<span>·</span><span>{time}</span>{/if}
 		{#if item.source}
+			{@const source = item.source}
 			<span>·</span>
-			<a
-				href="/sources/{item.source.slug}"
+			<EntityHoverChip
+				type="source"
+				id={source.id}
+				slug={source.slug}
+				name={source.name}
+				avatar={source.logo_url}
 				class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
-				onclick={(e) => { e.stopPropagation(); }}
 			>
-				{t('feed.source', 'Source')}: {item.source.name}
-			</a>
-			{#if item.source.source_url}
+				{#snippet trigger()}
+					{t('feed.source', 'Source')}: {source.name}
+				{/snippet}
+			</EntityHoverChip>
+			{#if source.source_url}
 				<a
-					href={item.source.source_url}
+					href={source.source_url}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
@@ -136,7 +175,13 @@
 	<DailyFeedCard {item} />
 {:else if layout === 'grid-cell' || style === 'grid'}
 	<!-- grid card (2-col cell) OR full-width grid item in a stream -->
-	<a href={href(item)} class="flex flex-col overflow-hidden {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
+	<div
+		role="link"
+		tabindex="0"
+		onclick={navigate}
+		onkeydown={onKeyDown}
+		class="flex flex-col overflow-hidden cursor-pointer {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
+	>
 		{#if item.cover_image_url}
 			<span class="relative block">
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
@@ -153,14 +198,35 @@
 			{/if}
 			{@render journeyBadges()}
 			<div class="mt-auto flex items-center gap-2 text-xs text-[var(--color-muted)]">
-				{@render avatar(20)}
-				<span>{item.author_name ?? ''}{#if time} · {time}{/if}</span>
+				{#if authorName}
+					<UserHoverCard
+						id={authorId}
+						slug={authorSlug}
+						name={authorName}
+						avatar={authorAvatar}
+						variant="row"
+						class="inline-flex max-w-full items-center gap-2 text-left"
+					>
+						{#snippet trigger()}
+							{@render avatar(20)}
+							<span>{authorName}{#if time} · {time}{/if}</span>
+						{/snippet}
+					</UserHoverCard>
+				{:else if time}
+					<span>{time}</span>
+				{/if}
 			</div>
 			{@render metrics()}
 		</div>
-	</a>
+	</div>
 {:else if style === 'compact'}
-	<a href={href(item)} class="flex items-center gap-3 px-4 py-2 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
+	<div
+		role="link"
+		tabindex="0"
+		onclick={navigate}
+		onkeydown={onKeyDown}
+		class="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
+	>
 		<span class="flex w-11 shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]"><ArrowUp size={13} class="text-[var(--color-muted)]" /> {item.vote_score ?? 0}</span>
 		<span class="min-w-0 flex-1 flex flex-col justify-center">
 			<span class="truncate text-sm font-medium text-[var(--color-text)]">{item.title}</span>
@@ -171,16 +237,33 @@
 			<span class="flex items-center gap-1"><MessageSquare size={13} /> {item.comment_count ?? 0}</span>
 			<span class="flex items-center gap-1"><Eye size={13} /> {item.view_count ?? 0}</span>
 		</span>
-	</a>
+	</div>
 {:else if style === 'magazine'}
-	<a href={href(item)} class="block px-5 py-5 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_35%,transparent)]">
-		<div class="mb-3.5 flex items-center gap-2.5">
-			{@render avatar(34)}
-			<span class="flex flex-col leading-tight">
-				<span class="text-[13.5px] font-semibold text-[var(--color-text)]">{item.author_name ?? ''}</span>
-				<span class="text-xs text-[var(--color-muted)]">{#if item.space_name}{item.space_name} · {/if}{time}{#if item.reading_time_minutes} · {item.reading_time_minutes} {t('feed.min_read', 'min read')}{/if}</span>
-			</span>
-		</div>
+	<div
+		role="link"
+		tabindex="0"
+		onclick={navigate}
+		onkeydown={onKeyDown}
+		class="block cursor-pointer px-5 py-5 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_35%,transparent)]"
+	>
+		{#if authorName}
+			<UserHoverCard
+				id={authorId}
+				slug={authorSlug}
+				name={authorName}
+				avatar={authorAvatar}
+				variant="row"
+				class="mb-3.5 inline-flex w-full min-w-0 max-w-full items-center gap-2.5 text-left"
+			>
+				{#snippet trigger()}
+					{@render avatar(34)}
+					<span class="flex flex-col leading-tight">
+						<span class="text-[13.5px] font-semibold text-[var(--color-text)]">{authorName}</span>
+						<span class="text-xs text-[var(--color-muted)]">{#if item.space_name}{item.space_name} · {/if}{time}{#if item.reading_time_minutes} · {item.reading_time_minutes} {t('feed.min_read', 'min read')}{/if}</span>
+					</span>
+				{/snippet}
+			</UserHoverCard>
+		{/if}
 		{#if item.cover_image_url}
 			<span class="relative mb-3.5 block">
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
@@ -194,10 +277,16 @@
 		{#if item.excerpt}<p class="mb-3.5 line-clamp-2 text-[15px] leading-relaxed text-[var(--color-text-subtle)]">{item.excerpt}</p>{/if}
 		{@render journeyBadges()}
 		<div class="flex flex-wrap items-center justify-between gap-3.5">{@render tags()}{@render metrics()}</div>
-	</a>
+	</div>
 {:else}
 	<!-- reddit (default): vote rail + body + thumbnail -->
-	<a href={href(item)} class="flex gap-3 px-4 py-3.5 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]">
+	<div
+		role="link"
+		tabindex="0"
+		onclick={navigate}
+		onkeydown={onKeyDown}
+		class="flex cursor-pointer gap-3 px-4 py-3.5 hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
+	>
 		<span class="flex w-7 shrink-0 flex-col items-center gap-0.5 pt-0.5 text-[var(--color-muted)]">
 			<ArrowUp size={18} />
 			<span class="text-xs font-semibold text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{item.vote_score ?? 0}</span>
@@ -219,5 +308,5 @@
 				{/if}
 			</span>
 		{/if}
-	</a>
+	</div>
 {/if}

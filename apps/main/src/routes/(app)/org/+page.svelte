@@ -263,6 +263,10 @@
 								{ icon: Users, text: t('profile.followers', '{n} followers').replace('{n}', String(org.follower_count)) },
 								{ icon: Building2, text: t('meta.members', '{n} members').replace('{n}', String(org.member_count)) }
 							] satisfies CardMetaItem[]}
+							entityType="organization"
+							entityId={org.id}
+							entitySlug={org.slug}
+							entityCount={org.follower_count}
 						>
 							{#snippet leading()}
 								<input

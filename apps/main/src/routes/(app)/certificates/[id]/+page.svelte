@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t, i18n } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import { Award, Download, ExternalLink } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
@@ -54,9 +55,18 @@
 				<h1 class="mt-4 text-xl font-semibold text-[var(--color-text)]">{t('certificates.heading', 'Certificate of completion')}</h1>
 				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('certificates.issued_to', 'Issued to')}</p>
 				{#if recipient}
-					<a href="/u/{recipient.username}" class="mt-2 inline-flex items-center gap-1 text-lg font-medium text-[var(--color-primary)] hover:underline">
-						{recipient.display_name} <ExternalLink size={14} />
-					</a>
+					<UserHoverCard
+						id={recipient.id}
+						slug={recipient.username}
+						name={recipient.display_name}
+						avatar={recipient.avatar_url}
+						class="mt-2 inline-flex items-center gap-1 text-lg font-medium text-[var(--color-primary)] hover:underline"
+						variant="row"
+					>
+						{#snippet trigger()}
+							{recipient.display_name} <ExternalLink size={14} />
+						{/snippet}
+					</UserHoverCard>
 				{:else}
 					<p class="mt-2 text-lg font-medium text-[var(--color-text)]">{t('certificates.recipient', 'Recipient')}</p>
 				{/if}

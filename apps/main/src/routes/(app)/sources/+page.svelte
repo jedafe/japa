@@ -107,6 +107,10 @@
 									icon={sourceIcon(source)}
 									meta={sourceMeta(source)}
 									hueSeed={source.slug}
+									entityType="source"
+									entityId={source.id}
+									entitySlug={source.slug}
+									entityCount={source.follower_count}
 								/>
 							</div>
 						{/each}
@@ -189,6 +193,10 @@
 					icon={sourceIcon(source)}
 					meta={sourceMeta(source)}
 					hueSeed={source.slug}
+					entityType="source"
+					entityId={source.id}
+					entitySlug={source.slug}
+					entityCount={source.follower_count}
 				/>
 			{/each}
 		</div>

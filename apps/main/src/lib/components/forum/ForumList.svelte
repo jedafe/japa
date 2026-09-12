@@ -102,6 +102,7 @@
 			author_name: thread.is_anonymous
 				? t('forum.anonymous', 'Anonymous')
 				: thread.author_display_name || thread.author_username || t('forum.member', 'Member'),
+			author_username: thread.author_username,
 			author_avatar_url: thread.author_avatar_url,
 			space_id: thread.space_id,
 			space_name: thread.space_name,

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { page } from '$app/state';
 	import {
 		Rss, MessageSquare, Users, Info, PenSquare, Search, BarChart3,
@@ -731,22 +732,27 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<ul class="space-y-2">
 					{#each membersItems as member (member.user_id)}
 						<li>
-							<a
-								href="/u/{member.username}"
-								class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
+							<UserHoverCard
+								id={member.user_id}
+								slug={member.username}
+								name={member.display_name ?? member.username}
+								avatar={member.avatar_url}
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
 							>
-								{#if member.avatar_url}
-									<img src={member.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
-								{:else}
-									<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
-										{(member.display_name ?? member.username).charAt(0).toUpperCase()}
+								{#snippet trigger()}
+									{#if member.avatar_url}
+										<img src={member.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+									{:else}
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
+											{(member.display_name ?? member.username).charAt(0).toUpperCase()}
+										</span>
+									{/if}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
+										<span class="block text-xs text-[var(--color-muted)]">@{member.username}</span>
 									</span>
-								{/if}
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{member.display_name ?? member.username}</span>
-									<span class="block text-xs text-[var(--color-muted)]">@{member.username}</span>
-								</span>
-							</a>
+								{/snippet}
+							</UserHoverCard>
 						</li>
 					{/each}
 				</ul>

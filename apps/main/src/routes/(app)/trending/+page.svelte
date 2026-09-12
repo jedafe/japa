@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
@@ -279,43 +280,48 @@
 				<ol class="space-y-2">
 					{#each data.users as item, i (item.id)}
 						<li>
-							<a
-								href="/u/{item.username}"
-								class="group flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+							<UserHoverCard
+								id={item.id}
+								slug={item.username}
+								name={item.display_name ?? item.username}
+								avatar={item.avatar_url}
+								class="group inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 							>
-								<span
-									class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-semibold text-[var(--color-text-subtle)]"
-								>
-									{i + 1}
-								</span>
-								<span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-									{#if item.avatar_url}
-										<img
-											src={item.avatar_url}
-											alt={item.username}
-											class="h-full w-full object-cover"
-											loading="lazy"
-										/>
-									{:else}
-										<Building2 size={16} />
-									{/if}
-								</span>
-								<span class="min-w-0 flex-1">
+								{#snippet trigger()}
 									<span
-										class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-semibold text-[var(--color-text-subtle)]"
 									>
-										{item.display_name ?? item.username}
+										{i + 1}
 									</span>
-									<span class="block truncate text-xs text-[var(--color-muted)]">
-										@{item.username}
+									<span class="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
+										{#if item.avatar_url}
+											<img
+												src={item.avatar_url}
+												alt={item.username}
+												class="h-full w-full object-cover"
+												loading="lazy"
+											/>
+										{:else}
+											<Building2 size={16} />
+										{/if}
 									</span>
-								</span>
-								<span
-									class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
-								>
-									<ArrowUp size={12} /> {score(item.score)}
-								</span>
-							</a>
+									<span class="min-w-0 flex-1">
+										<span
+											class="block truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+										>
+											{item.display_name ?? item.username}
+										</span>
+										<span class="block truncate text-xs text-[var(--color-muted)]">
+											@{item.username}
+										</span>
+									</span>
+									<span
+										class="flex shrink-0 items-center gap-0.5 text-xs font-medium text-[var(--color-primary)]"
+									>
+										<ArrowUp size={12} /> {score(item.score)}
+									</span>
+								{/snippet}
+							</UserHoverCard>
 						</li>
 					{/each}
 				</ol>

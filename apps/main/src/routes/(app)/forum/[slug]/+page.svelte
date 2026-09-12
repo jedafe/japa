@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
@@ -435,7 +436,20 @@ import { contentHref } from '$lib/utils/contentLink';
 				{/if}
 
 				<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
-					<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+					{#if thread.is_anonymous}
+						<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+					{:else}
+						<UserHoverCard
+							id={thread.author_user_id}
+							slug={thread.author_username}
+							name={authorLabel}
+							variant="row"
+						>
+							{#snippet trigger()}
+								<span class="font-medium text-[var(--color-text-subtle)]">{authorLabel}</span>
+							{/snippet}
+						</UserHoverCard>
+					{/if}
 					{#if thread.space_name}
 						<span>·</span>
 						<span class="text-[var(--color-text-subtle)]">

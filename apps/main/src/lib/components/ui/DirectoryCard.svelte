@@ -13,6 +13,8 @@
 	import type { Snippet } from 'svelte';
 	import { BadgeCheck } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import type { IconComponent } from './icons';
 
 	export interface CardMetaItem {
@@ -39,10 +41,23 @@
 		meta?: CardMetaItem[];
 		/** Optional leading content in the header row (e.g. a select checkbox). */
 		leading?: Snippet;
+		/** Optional action rendered in the top-right of the header row. */
+		headerAction?: Snippet;
 		/** Bottom action area — Follow/Join buttons. FollowButton and
 		 * SpaceJoinButton are auto-stretched: the primary button flexes and any
 		 * icon-only toggle keeps its natural width. */
 		actions?: Snippet;
+		/** Show a secondary "View profile" link in the bottom action area. */
+		viewProfile?: boolean;
+		viewProfileLabel?: string;
+		/** Optional entity type for the hover chip. When set, the header is
+		 * wrapped in an EntityHoverChip (user, space, organization, or source).
+		 */
+		entityType?: 'user' | 'space' | 'organization' | 'source';
+		entityId?: string;
+		entitySlug?: string | null;
+		entityCount?: number;
+		entityIsFollowing?: boolean;
 	}
 
 	let {
@@ -58,8 +73,18 @@
 		hueSeed = '',
 		meta = [],
 		leading,
-		actions
+		headerAction,
+		actions,
+		viewProfile = false,
+		viewProfileLabel,
+		entityType,
+		entityId,
+		entitySlug,
+		entityCount,
+		entityIsFollowing
 	}: Props = $props();
+
+	const resolvedViewLabel = $derived(viewProfileLabel ?? t('entity.view_profile', 'View profile'));
 
 	const hue = $derived.by(() => {
 		const seed = hueSeed || href;
@@ -78,45 +103,70 @@
 >
 	<div class="flex items-start gap-3">
 		{@render leading?.()}
-		<a {href} class="flex min-w-0 flex-1 items-center gap-3">
-			{#if imageUrl}
-				<img
-					src={imageUrl}
-					alt=""
-					loading="lazy"
-					decoding="async"
-					class="h-10 w-10 shrink-0 bg-[var(--color-surface)] object-cover {round ? 'rounded-full' : 'rounded-[var(--radius)]'}"
-				/>
-			{:else}
-				<span
-					class="grid h-10 w-10 shrink-0 place-items-center font-semibold leading-none text-[var(--color-text-subtle)] {round ? 'rounded-full' : 'rounded-[var(--radius)]'} {fallback.length > 1 ? 'px-0.5 text-[10px]' : 'text-sm'}"
-					style={tintStyle}
-				>
-					{#if FallbackIcon}
-						<FallbackIcon size={18} />
-					{:else}
-						{fallback}
-					{/if}
-				</span>
-			{/if}
-			<span class="min-w-0 flex-1">
-				<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
-					<span class="truncate">{title}</span>
-					{#if verified}
-						<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" aria-label={t('organizations.verified', 'Verified')} />
-					{/if}
-				</span>
-				{#if subtitle}
-					<span class="block truncate text-xs text-[var(--color-muted)]">{subtitle}</span>
-				{/if}
-			</span>
-		</a>
+		{#if entityType && entityId}
+			<EntityHoverChip
+				type={entityType}
+				id={entityId}
+				slug={entitySlug}
+				name={title}
+				avatar={imageUrl}
+				description={description}
+				count={entityCount}
+				isFollowing={entityIsFollowing}
+				class="flex min-w-0 flex-1 items-center gap-3 text-left"
+			>
+				{#snippet trigger()}
+					{@render headerBody()}
+				{/snippet}
+			</EntityHoverChip>
+		{:else}
+			<a {href} class="flex min-w-0 flex-1 items-center gap-3">
+				{@render headerBody()}
+			</a>
+		{/if}
+		{#if headerAction}
+			<div class="ml-auto flex items-start">
+				{@render headerAction()}
+			</div>
+		{/if}
 	</div>
 
+	{#snippet headerBody()}
+		{#if imageUrl}
+			<img
+				src={imageUrl}
+				alt=""
+				loading="lazy"
+				decoding="async"
+				class="h-10 w-10 shrink-0 bg-[var(--color-surface)] object-cover {round ? 'rounded-full' : 'rounded-[var(--radius)]'}"
+			/>
+		{:else}
+			<span
+				class="grid h-10 w-10 shrink-0 place-items-center font-semibold leading-none text-[var(--color-text-subtle)] {round ? 'rounded-full' : 'rounded-[var(--radius)]'} {fallback.length > 1 ? 'px-0.5 text-[10px]' : 'text-sm'}"
+				style={tintStyle}
+			>
+				{#if FallbackIcon}
+					<FallbackIcon size={18} />
+				{:else}
+					{fallback}
+				{/if}
+			</span>
+		{/if}
+		<span class="min-w-0 flex-1">
+			<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
+				<span class="truncate">{title}</span>
+				{#if verified}
+					<BadgeCheck size={15} class="shrink-0 text-[var(--color-primary)]" aria-label={t('organizations.verified', 'Verified')} />
+				{/if}
+			</span>
+			{#if subtitle}
+				<span class="block truncate text-xs text-[var(--color-muted)]">{subtitle}</span>
+			{/if}
+		</span>
+	{/snippet}
+
 	{#if description}
-		<a {href} class="block" tabindex="-1">
-			<p class="line-clamp-2 text-xs text-[var(--color-text-subtle)]">{description}</p>
-		</a>
+		<p class="line-clamp-3 text-xs text-[var(--color-text-subtle)]">{description}</p>
 	{/if}
 
 	{#if meta.length > 0}
@@ -128,9 +178,22 @@
 		</p>
 	{/if}
 
-	{#if actions}
-		<div class="mt-auto pt-1 [&>button]:w-full [&>div]:w-full [&>div>button:first-child]:flex-1 [&_button]:justify-center">
-			{@render actions()}
+	{#if viewProfile || actions}
+		<div class="mt-auto flex flex-col gap-2 pt-1">
+			{#if actions}
+				<div class="[&>button]:w-full [&>div]:w-full [&>div>button:first-child]:flex-1 [&_button]:justify-center">
+					{@render actions()}
+				</div>
+			{/if}
+			{#if viewProfile}
+				<button
+					type="button"
+					onclick={() => goto(href)}
+					class="w-full rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
+				>
+					{resolvedViewLabel}
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>

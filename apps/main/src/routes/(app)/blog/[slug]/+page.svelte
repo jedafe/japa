@@ -4,6 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { ArrowLeft, Check, Clock, Eye, Loader2, Pencil, Send, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
@@ -208,18 +209,23 @@
 
 		<div class="mt-6 flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] pb-6 text-sm text-[var(--color-text-subtle)]">
 			{#if article.author_name}
-				<svelte:element
-					this={article.author_username ? 'a' : 'span'}
-					href={article.author_username ? `/u/${article.author_username}` : undefined}
-					class="flex items-center gap-2 {article.author_username ? 'transition-colors hover:text-[var(--color-primary)]' : ''}"
+				{@const authorName = article.author_name}
+				<UserHoverCard
+					id={article.author_id ?? ''}
+					slug={article.author_username}
+					name={authorName}
+					avatar={article.author_avatar_url}
+					variant="row"
 				>
-					{#if article.author_avatar_url}
-						<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
-					{:else}
-						<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{article.author_name.charAt(0)}</span>
-					{/if}
-					<span class="font-medium text-[var(--color-text)]">{article.author_name}</span>
-				</svelte:element>
+					{#snippet trigger()}
+						{#if article.author_avatar_url}
+							<img src={article.author_avatar_url} alt="" class="h-9 w-9 rounded-full object-cover" />
+						{:else}
+							<span class="grid h-9 w-9 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-bold text-[var(--color-primary)]">{authorName.charAt(0)}</span>
+						{/if}
+						<span class="font-medium text-[var(--color-text)]">{authorName}</span>
+					{/snippet}
+				</UserHoverCard>
 			{/if}
 			<span>·</span>
 			<span>{publishedDate}</span>

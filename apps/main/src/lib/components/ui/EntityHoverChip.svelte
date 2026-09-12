@@ -20,6 +20,8 @@
 		slug?: string | null;
 		name: string;
 		avatar?: string | null;
+		/** Optional override for the LinkPreview.Trigger class. When set, variant defaults are skipped. */
+		class?: string;
 		/** Initial description/bio from the feed row; may be overwritten by fetched detail. */
 		description?: string | null;
 		/** Initial count from the feed row (followers for users/orgs; members for spaces). */
@@ -40,6 +42,7 @@
 		slug,
 		name,
 		avatar,
+		class: classProp,
 		description,
 		count,
 		isFollowing = false,
@@ -168,14 +171,16 @@
 		const res = await api.get<Record<string, unknown>>(path);
 		if (!res.error && res.data && typeof res.data === 'object') {
 			const d = res.data;
-			// Unwrap nested entity payloads (d.space, d.organization, d.user, d.profile).
-			const entity = (d.space && typeof d.space === 'object'
-				? d.space
-				: d.organization && typeof d.organization === 'object'
-					? d.organization
-					: d.user && typeof d.user === 'object'
-						? d.user
-						: d) as Record<string, unknown>;
+			// Unwrap nested entity payloads (d.space, d.organization, d.user, d.source, d.profile).
+			const entity = (d.source && typeof d.source === 'object'
+				? d.source
+				: d.space && typeof d.space === 'object'
+					? d.space
+					: d.organization && typeof d.organization === 'object'
+						? d.organization
+						: d.user && typeof d.user === 'object'
+							? d.user
+							: d) as Record<string, unknown>;
 			const profile = (entity.profile && typeof entity.profile === 'object'
 				? entity.profile
 				: entity) as Record<string, unknown>;
@@ -236,134 +241,152 @@
 		e.stopPropagation();
 		if (href) goto(href);
 	}
+
+	const triggerClass = $derived(
+		classProp ??
+			(variant === 'row'
+				? 'inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-left'
+				: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]')
+	);
 </script>
 
-<LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
-	<LinkPreview.Trigger
-		class={variant === 'row'
-			? 'inline-flex w-fit min-w-0 max-w-full items-center gap-3 text-left'
-			: 'inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}
-		onclick={onTriggerClick}
-	>
+{#snippet defaultTrigger()}
+	{#if variant === 'row'}
+		{#if avatar}
+			<img src={avatar} alt="" class="h-10 w-10 shrink-0 rounded-full object-cover" />
+		{:else}
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+				{name.slice(0, 2).toUpperCase()}
+			</span>
+		{/if}
+		<div class="min-w-0 w-full">
+			<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
+			{#if secondary}
+				<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
+			{/if}
+		</div>
+	{:else}
+		{#if avatar}
+			<img src={avatar} alt="" class="h-4 w-4 shrink-0 rounded-full object-cover" />
+		{:else}
+			<span class="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
+				{name.slice(0, 1).toUpperCase()}
+			</span>
+		{/if}
+		<span class="truncate">{name}</span>
+	{/if}
+{/snippet}
+
+{#if slug}
+	<LinkPreview.Root {open} onOpenChange={onOpenChange} openDelay={350} closeDelay={200}>
+		<LinkPreview.Trigger class={triggerClass} onclick={onTriggerClick}>
+			{#if trigger}
+				{@render trigger()}
+			{:else}
+				{@render defaultTrigger()}
+			{/if}
+		</LinkPreview.Trigger>
+		<LinkPreview.Portal>
+			<LinkPreview.Content
+				side="bottom"
+				align="start"
+				sideOffset={8}
+				class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+			>
+			<div class="flex items-start gap-3">
+				<div class="flex min-w-0 flex-1 items-center gap-3">
+					{#if avatarSrc}
+						<img src={avatarSrc} alt="" class="h-12 w-12 shrink-0 rounded-full object-cover" />
+					{:else}
+						<span class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
+							{displayName.slice(0, 2).toUpperCase()}
+						</span>
+					{/if}
+					<div class="min-w-0">
+						<div class="flex items-center gap-1">
+							<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
+							{#if detailVerified}
+								<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+							{/if}
+						</div>
+						<p class="truncate text-xs text-[var(--color-muted)]">{handle ? (type === 'user' ? `@${handle}` : handle) : ''}</p>
+					</div>
+				</div>
+				<FollowButton
+					entityType={followType}
+					entityId={id}
+					entitySlug={followType === 'space' || followType === 'source' ? slug : undefined}
+					initiallyFollowing={isFollowing}
+					compact
+				/>
+			</div>
+
+			{#if detailDescription}
+				<p class="mt-3 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
+			{/if}
+
+			{#if visibleStats.length > 0 || detailLocation || websiteHostname || joinedDate}
+				<div class="mt-4 flex flex-col gap-2">
+					{#if visibleStats.length > 0}
+						<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
+							{#each visibleStats as stat (stat.label)}
+								<span class="flex items-baseline gap-1">
+									<span class="font-semibold text-[var(--color-text)]">{stat.value?.toLocaleString()}</span>
+									{stat.label}
+								</span>
+							{/each}
+						</div>
+					{/if}
+					{#if detailLocation || websiteHostname || joinedDate}
+						<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
+							{#if detailLocation}
+								<span class="inline-flex items-center gap-1">
+									<MapPin size={12} />
+									{detailLocation}
+								</span>
+							{/if}
+							{#if websiteHref && websiteHostname}
+								<a
+									href={websiteHref}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
+									onclick={(e) => e.stopPropagation()}
+								>
+									<Globe size={12} />
+									{websiteHostname}
+								</a>
+							{/if}
+							{#if joinedDate}
+								<span class="inline-flex items-center gap-1">
+									<Calendar size={12} />
+									{t('entity.joined', 'Joined {date}', { date: joinedDate })}
+								</span>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			<button
+				type="button"
+				class="mt-4 w-full rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
+				onclick={(e) => {
+					e.stopPropagation();
+					goto(href);
+				}}
+			>
+				{t('entity.view_profile', 'View profile')}
+			</button>
+			</LinkPreview.Content>
+		</LinkPreview.Portal>
+	</LinkPreview.Root>
+{:else}
+	<span class={triggerClass}>
 		{#if trigger}
 			{@render trigger()}
-		{:else if variant === 'row'}
-			{#if avatar}
-				<img src={avatar} alt="" class="h-10 w-10 shrink-0 rounded-full object-cover" />
-			{:else}
-				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
-					{name.slice(0, 2).toUpperCase()}
-				</span>
-			{/if}
-			<div class="min-w-0 w-full">
-				<p class="truncate text-sm font-semibold text-[var(--color-text)]">{name}</p>
-				{#if secondary}
-					<p class="truncate text-xs text-[var(--color-muted)]">{secondary}</p>
-				{/if}
-			</div>
 		{:else}
-			{#if avatar}
-				<img src={avatar} alt="" class="h-4 w-4 shrink-0 rounded-full object-cover" />
-			{:else}
-				<span class="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-[8px] font-semibold text-[var(--color-primary-contrast)]">
-					{name.slice(0, 1).toUpperCase()}
-				</span>
-			{/if}
-			<span class="truncate">{name}</span>
+			{@render defaultTrigger()}
 		{/if}
-	</LinkPreview.Trigger>
-	<LinkPreview.Portal>
-		<LinkPreview.Content
-			side="bottom"
-			align="start"
-			sideOffset={8}
-			class="z-50 w-80 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
-		>
-		<div class="flex items-start gap-3">
-			<div class="flex min-w-0 flex-1 items-center gap-3">
-				{#if avatarSrc}
-					<img src={avatarSrc} alt="" class="h-12 w-12 shrink-0 rounded-full object-cover" />
-				{:else}
-					<span class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[var(--color-primary)] text-sm font-semibold text-[var(--color-primary-contrast)]">
-						{displayName.slice(0, 2).toUpperCase()}
-					</span>
-				{/if}
-				<div class="min-w-0">
-					<div class="flex items-center gap-1">
-						<p class="truncate text-sm font-semibold text-[var(--color-text)]">{displayName}</p>
-						{#if detailVerified}
-							<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
-						{/if}
-					</div>
-					<p class="truncate text-xs text-[var(--color-muted)]">{handle ? (type === 'user' ? `@${handle}` : handle) : ''}</p>
-				</div>
-			</div>
-			<FollowButton
-				entityType={followType}
-				entityId={id}
-				entitySlug={followType === 'space' ? slug : undefined}
-				initiallyFollowing={isFollowing}
-				compact
-			/>
-		</div>
-
-		{#if detailDescription}
-			<p class="mt-3 line-clamp-3 text-xs text-[var(--color-text-subtle)]">{detailDescription}</p>
-		{/if}
-
-		{#if visibleStats.length > 0 || detailLocation || websiteHostname || joinedDate}
-			<div class="mt-4 flex flex-col gap-2">
-				{#if visibleStats.length > 0}
-					<div class="flex items-center gap-4 text-xs text-[var(--color-muted)]">
-						{#each visibleStats as stat (stat.label)}
-							<span class="flex items-baseline gap-1">
-								<span class="font-semibold text-[var(--color-text)]">{stat.value?.toLocaleString()}</span>
-								{stat.label}
-							</span>
-						{/each}
-					</div>
-				{/if}
-				{#if detailLocation || websiteHostname || joinedDate}
-					<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
-						{#if detailLocation}
-							<span class="inline-flex items-center gap-1">
-								<MapPin size={12} />
-								{detailLocation}
-							</span>
-						{/if}
-						{#if websiteHref && websiteHostname}
-							<a
-								href={websiteHref}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex max-w-[10rem] items-center gap-1 truncate hover:text-[var(--color-primary)]"
-								onclick={(e) => e.stopPropagation()}
-							>
-								<Globe size={12} />
-								{websiteHostname}
-							</a>
-						{/if}
-						{#if joinedDate}
-							<span class="inline-flex items-center gap-1">
-								<Calendar size={12} />
-								{t('entity.joined', 'Joined {date}', { date: joinedDate })}
-							</span>
-						{/if}
-					</div>
-				{/if}
-			</div>
-		{/if}
-
-		<button
-			type="button"
-			class="mt-4 w-full rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
-			onclick={(e) => {
-				e.stopPropagation();
-				goto(href);
-			}}
-		>
-			{t('entity.view_profile', 'View profile')}
-		</button>
-		</LinkPreview.Content>
-	</LinkPreview.Portal>
-</LinkPreview.Root>
+	</span>
+{/if}

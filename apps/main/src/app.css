@@ -456,4 +456,26 @@ body {
 	color: var(--color-foreground, currentColor);
 }
 
+/* Pointer cursor for all interactive controls.
+ * Tailwind v4 does not set cursor: pointer on <button> by default, and some
+ * custom widgets (tabs, menu items, role="button") need it as well. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+[role="menuitem"],
+[role="menuitemradio"],
+[role="menuitemcheckbox"],
+[role="link"],
+input[type="submit"]:not(:disabled),
+input[type="button"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="checkbox"],
+input[type="radio"],
+label[for],
+select,
+summary,
+a {
+	cursor: pointer;
+}
+
 

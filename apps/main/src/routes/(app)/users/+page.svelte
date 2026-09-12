@@ -154,6 +154,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						round
 						verified={user.profile_type === 'business' || user.profile_type === 'pro'}
 						meta={[{ icon: Users, text: t('profile.followers', '{n} followers').replace('{n}', String(user.follower_count)) }]}
+						entityType="user"
+						entityId={user.id}
+						entitySlug={user.username}
+						entityCount={user.follower_count}
 					>
 						{#snippet actions()}
 							{#if page.data.user && page.data.user.id !== user.id}

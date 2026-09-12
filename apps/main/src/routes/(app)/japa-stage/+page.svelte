@@ -4,6 +4,7 @@
 	// Japa Stage directory. SSR list of public member profiles from
 	// GET /members/by-stage with ?stage filter and pagination.
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
@@ -193,24 +194,28 @@
 
 {#snippet memberCard(m: MemberStage)}
 	<li>
-		<a
-			href="/u/{m.username}"
-			class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:bg-[var(--color-surface-subtle)]"
+		<UserHoverCard
+			id={m.user_id}
+			slug={m.username}
+			name={m.display_name ?? m.username ?? ''}
+			avatar={m.avatar_url}
+			class="inline-flex w-full min-w-0 max-w-full items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
 		>
-			<span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
-				{#if m.avatar_url}
-					<img
-						src={m.avatar_url}
-						alt={m.username}
-						class="h-full w-full object-cover"
-						loading="lazy"
-					/>
-				{:else}
-					<Users size={20} />
-				{/if}
-			</span>
-			<div class="min-w-0 flex-1">
-				<p class="truncate text-sm font-semibold text-[var(--color-text)]">@{m.username}</p>
+			{#snippet trigger()}
+				<span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]">
+					{#if m.avatar_url}
+						<img
+							src={m.avatar_url}
+							alt={m.username}
+							class="h-full w-full object-cover"
+							loading="lazy"
+						/>
+					{:else}
+						<Users size={20} />
+					{/if}
+				</span>
+				<div class="min-w-0 flex-1">
+					<p class="truncate text-sm font-semibold text-[var(--color-text)]">@{m.username}</p>
 				<span
 					class="mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
 					style={`background-color: ${japaStageColors[m.stage as JapaStage]}1a; color: ${japaStageColors[m.stage as JapaStage]};`}
@@ -230,6 +235,7 @@
 					{/if}
 				</div>
 			</div>
-		</a>
+		{/snippet}
+		</UserHoverCard>
 	</li>
 {/snippet}

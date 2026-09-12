@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
@@ -186,26 +187,33 @@
 						{#if scholarship.institution}
 							<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{scholarship.institution}</p>
 						{/if}
-						{#if scholarship.source?.slug}
-							<div class="mt-1.5 flex items-center gap-1 text-sm">
-								<a
-									href="/sources/{scholarship.source.slug}"
-									class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
-								>
-									{t('scholarships.source', 'Source')}: {scholarship.source.name}
-								</a>
-								{#if scholarship.source.source_url}
-									<a
-										href={scholarship.source.source_url}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
-										aria-label={t('scholarships.original_source', 'View original source')}
+							{#if scholarship.source}
+								{@const source = scholarship.source}
+								<div class="mt-1.5 flex items-center gap-1 text-sm">
+									<EntityHoverChip
+										type="source"
+										id={source.id}
+										slug={source.slug}
+										name={source.name}
+										avatar={source.logo_url}
+										class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
 									>
-										<ExternalLink size={14} />
-									</a>
-								{/if}
-							</div>
+										{#snippet trigger()}
+											{t('scholarships.source', 'Source')}: {source.name}
+										{/snippet}
+									</EntityHoverChip>
+									{#if source.source_url}
+										<a
+											href={source.source_url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+											aria-label={t('scholarships.original_source', 'View original source')}
+										>
+											<ExternalLink size={14} />
+										</a>
+									{/if}
+								</div>
 						{/if}
 						<div class="mt-2 flex flex-wrap gap-2">
 							{#if scholarship.country}

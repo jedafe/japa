@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
@@ -496,17 +497,24 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 											</span>
 										{/if}
 									</div>
-								{#if s.source?.slug}
+								{#if s.source}
+									{@const source = s.source}
 									<div class="mt-1.5 flex items-center gap-1 text-xs">
-										<a
-											href="/sources/{s.source.slug}"
+										<EntityHoverChip
+											type="source"
+											id={source.id}
+											slug={source.slug}
+											name={source.name}
+											avatar={source.logo_url}
 											class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
 										>
-											{t('scholarships.source', 'Source')}: {s.source.name}
-										</a>
-										{#if s.source.source_url}
+											{#snippet trigger()}
+												{t('scholarships.source', 'Source')}: {source.name}
+											{/snippet}
+										</EntityHoverChip>
+										{#if source.source_url}
 											<a
-												href={s.source.source_url}
+												href={source.source_url}
 												target="_blank"
 												rel="noopener noreferrer"
 												class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"

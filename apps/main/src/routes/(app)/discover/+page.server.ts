@@ -9,19 +9,20 @@ import type {
 	PublicOrgListItem,
 	University
 } from '$lib/types';
+import type { Source } from '$lib/types/sources';
 
 /**
  * Discover at /discover — auth-gated frontend route (ADR-058). Consumes the
  * existing /suggestions/* and /organizations + /universities endpoints; no
  * new backend route is added for Discover.
  *
- * Tabs: Spaces · People · Organizations · Tags · Content · Universities. The
+ * Tabs: Spaces · People · Organizations · Tags · Content · Universities · Sources. The
  * active tab is selected via ?tab=; unknown values coerce to "spaces" so the
  * tab bar and the content pane can never disagree. Each tab's data degrades
  * to an empty list on failure (a failing endpoint must never blank Discover).
  */
 const PAGE_SIZE = 24;
-const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'universities']);
+const VALID_TABS = new Set(['spaces', 'people', 'organizations', 'tags', 'content', 'universities', 'sources']);
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -38,10 +39,12 @@ export const load: PageServerLoad = async (event) => {
 	let tags: SuggestedTag[] = [];
 	let content: SuggestedContent[] = [];
 	let universities: University[] = [];
+	let sources: Source[] = [];
 	let orgsTotal = 0;
 	let unisTotal = 0;
 	let followedSpaceIds: string[] = [];
 	let followedOrgIds: string[] = [];
+	let followedSourceIds: string[] = [];
 
 	// Follow endpoints are toggles, so the follow/join buttons need the
 	// caller's current follow state — a wrong initial state would turn a
@@ -88,6 +91,12 @@ export const load: PageServerLoad = async (event) => {
 				unisTotal = res.meta?.total ?? res.items.length;
 				break;
 			}
+			case 'sources': {
+				sources = (await apiList<Source>(ctx, `/sources?sort=popular&page_size=${PAGE_SIZE}&page_offset=0`)).items;
+				const followed = await apiList<{ entity_id: string }>(ctx, '/me/following?type=source&page_size=100');
+				followedSourceIds = followed.items.map((f) => f.entity_id);
+				break;
+			}
 			default: {
 				spaces = (await apiList<SuggestedSpace>(ctx, `/suggestions/spaces?limit=${PAGE_SIZE}`)).items;
 				const followed = await apiList<{ entity_id: string }>(
@@ -110,10 +119,12 @@ export const load: PageServerLoad = async (event) => {
 		tags,
 		content,
 		universities,
+		sources,
 		orgsTotal,
 		unisTotal,
 		followedSpaceIds,
 		followedOrgIds,
+		followedSourceIds,
 		pageSize: PAGE_SIZE
 	};
 };

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2, ExternalLink } from 'lucide-svelte';
@@ -303,17 +304,24 @@
 											{/if}
 										</div>
 									</a>
-								{#if job.source?.slug}
+								{#if job.source}
+									{@const source = job.source}
 									<div class="mt-1.5 flex items-center gap-1 text-xs">
-										<a
-											href="/sources/{job.source.slug}"
+										<EntityHoverChip
+											type="source"
+											id={source.id}
+											slug={source.slug}
+											name={source.name}
+											avatar={source.logo_url}
 											class="inline-flex items-center gap-0.5 font-medium text-[var(--color-primary)] hover:underline"
 										>
-											{t('jobs.source', 'Source')}: {job.source.name}
-										</a>
-										{#if job.source.source_url}
+											{#snippet trigger()}
+												{t('jobs.source', 'Source')}: {source.name}
+											{/snippet}
+										</EntityHoverChip>
+										{#if source.source_url}
 											<a
-												href={job.source.source_url}
+												href={source.source_url}
 												target="_blank"
 												rel="noopener noreferrer"
 												class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"
