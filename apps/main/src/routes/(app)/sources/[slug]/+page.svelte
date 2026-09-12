@@ -5,13 +5,15 @@
 	import { Globe, ExternalLink, Users, FileText, Tag } from 'lucide-svelte';
 	import { FollowButton, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import SourceActions from '$lib/components/source/SourceActions.svelte';
+	import SourceDailyCard from '$lib/components/source/SourceDailyCard.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import type { SourceItemEnvelope } from '$lib/types/sources';
+	import type { Source, SourceItemEnvelope } from '$lib/types/sources';
 
 	let { data }: { data: PageData } = $props();
 
-	const source = $derived(data.source);
+	// svelte-ignore state_referenced_locally
+	let source = $state(data.source);
 	// svelte-ignore state_referenced_locally
 	let followerCount = $state(data.source.follower_count);
 	// svelte-ignore state_referenced_locally
@@ -24,6 +26,7 @@
 	let loadingMore = $state(false);
 
 	$effect(() => {
+		source = data.source;
 		followerCount = data.source.follower_count;
 		isBlocked = data.source.is_blocked ?? false;
 		items = data.feed.items;
@@ -67,6 +70,21 @@
 
 	function entityTypeLabel(type: string) {
 		return data.entityTypes?.find((e) => e.value === type)?.label ?? type.replace(/_/g, ' ');
+	}
+
+	function slugifyTag(value: string): string {
+		return value
+			.toLowerCase()
+			.trim()
+			.replace(/[^\w\s-]+/g, '')
+			.replace(/\s+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
+	const visibleKeywords = $derived((source.keywords ?? []).slice(0, 4));
+
+	function onEdit(updated: Source) {
+		source = updated;
 	}
 </script>
 
@@ -114,6 +132,7 @@
 						source={source}
 						isBlocked={isBlocked}
 						onBlockChange={(v) => { isBlocked = v; }}
+						onEdit={onEdit}
 					/>
 				</div>
 			</div>
@@ -131,13 +150,16 @@
 				<p class="text-sm text-[var(--color-text-secondary)]">{source.description}</p>
 			{/if}
 
-			{#if source.keywords && source.keywords.length > 0}
+			{#if visibleKeywords.length > 0}
 				<div class="mt-1 flex flex-wrap items-center gap-1.5">
 					<Tag class="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
-					{#each source.keywords as kw (kw)}
-						<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs text-[var(--color-text-subtle)]">
+					{#each visibleKeywords as kw (kw)}
+						<a
+							href="/tags/{slugifyTag(kw)}"
+							class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs text-[var(--color-text-subtle)] transition hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
+						>
 							{kw}
-						</span>
+						</a>
 					{/each}
 				</div>
 			{/if}
@@ -178,45 +200,14 @@
 			{t('sources.items.empty', 'No items from this source yet.')}
 		</p>
 	{:else}
-		<div class="flex flex-col gap-3" role="list">
+		<div class="grid grid-cols-1 gap-3 md:grid-cols-2" role="list">
 			{#each items as item (item.id)}
-				<article
-					class="group relative flex flex-col gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-shadow hover:shadow-md"
-				>
-					<a
-						href={item.href}
-						class="absolute inset-0 z-0 rounded-[var(--radius-card)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-						aria-label={item.title}
-					>
-						<span class="sr-only">{item.title}</span>
-					</a>
-					<div class="pointer-events-none relative z-10 flex flex-col gap-1">
-						<div class="flex items-center gap-2">
-							<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
-								{entityTypeLabel(item.entity_type)}
-							</span>
-						</div>
-						<h3 class="font-semibold group-hover:text-[var(--color-primary)]">{item.title}</h3>
-						{#if item.excerpt}
-							<p class="text-sm text-[var(--color-text-secondary)] line-clamp-2">{item.excerpt}</p>
-						{/if}
-						<div class="mt-1 flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
-							<span>{new Date(item.published_at).toLocaleDateString()}</span>
-							{#if item.original_url}
-								<a
-									href={item.original_url}
-									target="_blank"
-									rel="noopener noreferrer"
-									class="pointer-events-auto relative z-20 inline-flex items-center gap-0.5 hover:underline"
-									aria-label={t('sources.original_label', 'Original source')}
-								>
-									{t('sources.original', 'Original')}
-									<ExternalLink class="h-3 w-3" />
-								</a>
-							{/if}
-						</div>
-					</div>
-				</article>
+				<SourceDailyCard
+					{item}
+					sourceName={source.name}
+					sourceLogo={source.logo_url}
+					entityLabel={entityTypeLabel(item.entity_type)}
+				/>
 			{/each}
 		</div>
 		{#if hasMore}

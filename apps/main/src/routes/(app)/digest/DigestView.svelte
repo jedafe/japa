@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	import { t } from '$lib/i18n';
+	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
 		Newspaper,
@@ -224,11 +225,21 @@
 						</h2>
 						<ul class="flex flex-wrap gap-2">
 							{#each newMembers as member (member.id ?? member.username ?? member.name)}
-								<li class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)]">
-									{#if member.avatar_url}
-										<img src={member.avatar_url} alt="" class="h-5 w-5 rounded-full object-cover" />
-									{/if}
-									{memberName(member)}
+								<li>
+									<UserHoverCard
+										id={member.id ?? ''}
+										slug={member.username ?? ''}
+										name={member.name ?? member.username ?? ''}
+										avatar={member.avatar_url}
+										class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)]"
+									>
+										{#snippet trigger()}
+											{#if member.avatar_url}
+												<img src={member.avatar_url} alt="" class="h-5 w-5 rounded-full object-cover" />
+											{/if}
+											{memberName(member)}
+										{/snippet}
+									</UserHoverCard>
 								</li>
 							{/each}
 						</ul>
