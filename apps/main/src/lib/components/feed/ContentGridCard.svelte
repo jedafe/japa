@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Heart, Bookmark, Play } from 'lucide-svelte';
+	import { Bookmark, Play } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
 	import type { FeedItem } from '$lib/types';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import ShareMenu from './ShareMenu.svelte';
+	import ReactionButton from '$lib/components/ui/ReactionButton.svelte';
+	import ShareButton from '$lib/components/ui/ShareButton.svelte';
 
 	interface Props {
 		item: FeedItem;
@@ -21,35 +22,24 @@
 	const isVideo = $derived(item.content_type === 'video' || !!item.video_source_id);
 	const duration = $derived(formatDuration(item.duration_secs));
 
-	let liked = $state(false);
-	let likePending = $state(false);
-	let reactionCount = $state(0);
 	let bookmarked = $state(false);
 	let bookmarkPending = $state(false);
 	let bookmarkCount = $state(0);
-	let engagementInitialized = $state(false);
+	let bookmarkInitialized = $state(false);
 
 	$effect(() => {
-		reactionCount = item.reaction_count ?? 0;
 		bookmarkCount = item.bookmark_count ?? 0;
-		liked = false;
 		bookmarked = false;
-		engagementInitialized = false;
+		bookmarkInitialized = false;
 	});
 
 	$effect(() => {
-		if (engagementInitialized || !authed) return;
-		engagementInitialized = true;
+		if (bookmarkInitialized || !authed) return;
+		bookmarkInitialized = true;
 		(async () => {
-			const [reactionRes, bookmarkRes] = await Promise.all([
-				api.get<{ reaction_key: string }[]>(`/content/${item.id}/reactions/me`),
-				api.get<{ bookmarked: boolean }>(`/content/${item.id}/bookmark`)
-			]);
-			if (reactionRes.data) {
-				liked = reactionRes.data.some((r) => r.reaction_key === 'like');
-			}
-			if (bookmarkRes.data) {
-				bookmarked = bookmarkRes.data.bookmarked;
+			const res = await api.get<{ bookmarked: boolean }>(`/content/${item.id}/bookmark`);
+			if (res.data) {
+				bookmarked = res.data.bookmarked;
 			}
 		})();
 	});
@@ -95,29 +85,6 @@
 			return false;
 		}
 		return true;
-	}
-
-	async function toggleLike(e: Event) {
-		e.stopPropagation();
-		if (!requireAuth(e) || likePending) return;
-		likePending = true;
-		const next = !liked;
-		liked = next;
-		reactionCount += next ? 1 : -1;
-		try {
-			if (next) {
-				const res = await api.post(`/content/${item.id}/react`, { reaction_key: 'like' });
-				if (res.error) throw new Error(res.error.message);
-			} else {
-				const res = await api.delete(`/content/${item.id}/react?key=like`);
-				if (res.error) throw new Error(res.error.message);
-			}
-		} catch {
-			liked = !next;
-			reactionCount += next ? -1 : 1;
-		} finally {
-			likePending = false;
-		}
 	}
 
 	async function toggleBookmark(e: Event) {
@@ -243,35 +210,22 @@
 			/>
 
 			<div class="flex items-center gap-1">
-				<button
-					type="button"
-					class="group/btn flex items-center gap-1.5 transition-colors"
-					class:text-[var(--color-primary)]={liked}
-					class:text-[var(--color-muted)]={!liked}
-					onclick={toggleLike}
-					disabled={likePending}
-					aria-label={t('feed.card.like', 'Like')}
-					aria-pressed={liked}
-				>
-					<span
-						class="rounded-full p-2 transition-colors {liked
-							? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-							: 'group-hover/btn:bg-[var(--color-primary)]/10 group-hover/btn:text-[var(--color-primary)]'}"
-					>
-						<Heart size={18} fill={liked ? 'currentColor' : 'none'} />
-					</span>
-					{#if reactionCount > 0}
-						<span
-							class="transition-colors {liked
-								? 'text-[var(--color-primary)]'
-								: 'group-hover/btn:text-[var(--color-primary)]'}"
-						>
-							{reactionCount}
-						</span>
-					{/if}
-				</button>
+				<ReactionButton
+					contentId={item.id}
+					count={item.reaction_count ?? 0}
+					ariaLabel={t('feed.card.like', 'Like')}
+					class="group/btn flex items-center gap-1.5 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+					side="top"
+					align="center"
+				/>
 
-				<ShareMenu contentId={item.id} url={shareUrl} title={item.title} size={18} />
+				<ShareButton
+					contentId={item.id}
+					url={shareUrl}
+					title={item.title}
+					size={18}
+					class="group/btn flex shrink-0 items-center justify-center rounded-full p-2 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
+				/>
 			</div>
 		</div>
 	</div>
