@@ -8,15 +8,15 @@
 	import { Dialog } from 'bits-ui';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { reportContent, reportComment, reportSpace, reportUser } from '$lib/api/hub';
+	import { reportContent, reportComment, reportSpace, reportUser, reportSource } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Flag, X, Loader2, AlertCircle } from 'lucide-svelte';
 
 	interface Props {
 		open?: boolean;
 		/** Entity type must match the backend report route. */
-		entityType?: 'user' | 'content' | 'comment' | 'space';
-		/** Backend ID for the entity being reported. */
+		entityType?: 'user' | 'content' | 'comment' | 'space' | 'source';
+		/** Backend ID (or slug for sources) for the entity being reported. */
 		entityId: string;
 		/** Human-readable name shown in the dialog title. */
 		entityName?: string;
@@ -80,6 +80,9 @@
 				break;
 			case 'space':
 				res = await reportSpace(entityId, body);
+				break;
+			case 'source':
+				res = await reportSource(entityId, body);
 				break;
 			case 'user':
 				res = await reportUser(entityId, body);

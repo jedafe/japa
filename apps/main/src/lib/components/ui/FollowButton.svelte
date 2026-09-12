@@ -23,6 +23,8 @@
 		compact?: boolean;
 		/** Optional callback invoked with the authoritative following state after a server response. */
 		onChange?: (following: boolean) => void;
+		/** Optional callback invoked with the updated follower count (source follows include this). */
+		onFollowerCountChange?: (count: number) => void;
 	}
 
 	let {
@@ -31,7 +33,8 @@
 		entitySlug,
 		initiallyFollowing = false,
 		compact = false,
-		onChange
+		onChange,
+		onFollowerCountChange
 	}: Props = $props();
 
 	let following = $state(untrack(() => initiallyFollowing));
@@ -51,11 +54,19 @@
 		// On success, trust the server's value (it may differ from the
 		// optimistic toggle — e.g. idempotent unfollow returns false).
 		// On error, roll back to the previous state.
+		// Source follows use `is_following` and also return `follower_count`.
 		if (res.error) {
 			following = wasFollowing;
-		} else if (res.data && typeof res.data.following === 'boolean') {
-			following = res.data.following;
+		} else if (res.data) {
+			if (typeof res.data.is_following === 'boolean') {
+				following = res.data.is_following;
+			} else if (typeof res.data.following === 'boolean') {
+				following = res.data.following;
+			}
 			onChange?.(following);
+			if (typeof res.data.follower_count === 'number') {
+				onFollowerCountChange?.(res.data.follower_count);
+			}
 		}
 		pending = false;
 	}

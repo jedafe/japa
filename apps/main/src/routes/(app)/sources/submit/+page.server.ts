@@ -8,7 +8,7 @@ import type { SourceMeta } from '$lib/types/sources';
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
-	let meta: SourceMeta = { categories: [], source_types: ['rss', 'youtube', 'api', 'static'] };
+	let meta: SourceMeta = { categories: [], source_types: [] };
 	try {
 		meta = await apiGet<SourceMeta>(ctx, '/sources/meta');
 	} catch {

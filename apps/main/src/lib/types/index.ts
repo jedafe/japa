@@ -225,6 +225,7 @@ export interface FeedItem {
 	space_avatar_url?: string | null;
 	excerpt?: string;
 	created_at: string;
+	published_at?: string;
 	view_count?: number;
 	comment_count?: number;
 	vote_score?: number;
@@ -2860,6 +2861,8 @@ export interface Story {
 	author_username?: string;
 	author_display_name?: string;
 	author_avatar?: string;
+	reaction_count?: number;
+	bookmark_count?: number;
 	/** Series membership (shared blog_series model — §14 series nav on the
 	 *  story single mirrors the blog single). */
 	series_id?: string;

@@ -1569,6 +1569,71 @@ func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, arg GetWikiPageB
 	return i, err
 }
 
+const getWikiPageByIntelRecordWithSpace = `-- name: GetWikiPageByIntelRecordWithSpace :one
+SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category, wp.is_active, wp.is_featured, wp.is_locked, wp.created_by, wp.created_at, wp.updated_at, wp.is_japabot_indexed, wp.intel_record_id, wp.guide_id, wp.confidence_overall, wp.verification_status, wp.freshness_score, wp.override_source, wp.editorial_overrides, s.slug AS space_slug
+FROM wiki_pages wp
+JOIN spaces s ON s.id = wp.space_id AND s.tenant_id = wp.tenant_id
+WHERE wp.tenant_id = $1 AND wp.intel_record_id = $2
+`
+
+type GetWikiPageByIntelRecordWithSpaceParams struct {
+	TenantID      pgtype.UUID `json:"tenant_id"`
+	IntelRecordID pgtype.UUID `json:"intel_record_id"`
+}
+
+type GetWikiPageByIntelRecordWithSpaceRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	TenantID           pgtype.UUID        `json:"tenant_id"`
+	SpaceID            pgtype.UUID        `json:"space_id"`
+	Slug               string             `json:"slug"`
+	Title              string             `json:"title"`
+	Category           string             `json:"category"`
+	IsActive           bool               `json:"is_active"`
+	IsFeatured         bool               `json:"is_featured"`
+	IsLocked           bool               `json:"is_locked"`
+	CreatedBy          pgtype.UUID        `json:"created_by"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed   *bool              `json:"is_japabot_indexed"`
+	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
+	GuideID            pgtype.UUID        `json:"guide_id"`
+	ConfidenceOverall  float32            `json:"confidence_overall"`
+	VerificationStatus string             `json:"verification_status"`
+	FreshnessScore     int32              `json:"freshness_score"`
+	OverrideSource     string             `json:"override_source"`
+	EditorialOverrides []byte             `json:"editorial_overrides"`
+	SpaceSlug          string             `json:"space_slug"`
+}
+
+func (q *Queries) GetWikiPageByIntelRecordWithSpace(ctx context.Context, arg GetWikiPageByIntelRecordWithSpaceParams) (GetWikiPageByIntelRecordWithSpaceRow, error) {
+	row := q.db.QueryRow(ctx, getWikiPageByIntelRecordWithSpace, arg.TenantID, arg.IntelRecordID)
+	var i GetWikiPageByIntelRecordWithSpaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SpaceID,
+		&i.Slug,
+		&i.Title,
+		&i.Category,
+		&i.IsActive,
+		&i.IsFeatured,
+		&i.IsLocked,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsJapabotIndexed,
+		&i.IntelRecordID,
+		&i.GuideID,
+		&i.ConfidenceOverall,
+		&i.VerificationStatus,
+		&i.FreshnessScore,
+		&i.OverrideSource,
+		&i.EditorialOverrides,
+		&i.SpaceSlug,
+	)
+	return i, err
+}
+
 const listCommunityOrganisationsIntelKeyset = `-- name: ListCommunityOrganisationsIntelKeyset :many
 SELECT id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations
 WHERE tenant_id = $1

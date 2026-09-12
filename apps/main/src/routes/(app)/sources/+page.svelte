@@ -2,18 +2,18 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Rss, Globe, Users, FileText } from 'lucide-svelte';
+	import { Rss, Users, FileText } from 'lucide-svelte';
 	import { DirectoryCard, UrlTabs, type UrlTab, type CardMetaItem } from '$lib/components/ui';
 	import type { PageData } from './$types';
 	import type { Source, SourceCollection } from '$lib/types/sources';
 
 	let { data }: { data: PageData } = $props();
 
-	const tabs = $derived<UrlTab[]>([
-		{ value: 'popular', label: t('sources.sort.popular', 'Popular') },
-		{ value: 'recent', label: t('sources.sort.recent', 'Recently added') },
-		{ value: 'trending', label: t('sources.sort.trending', 'Trending') }
-	]);
+	const showCollections = $derived(!data.q && !data.category && !data.sourceKind && data.page === 1);
+
+	const tabs = $derived<UrlTab[]>(
+		(data.sourceMeta?.sorts ?? []).map((s) => ({ value: s.value, label: s.label }))
+	);
 
 	const title = $derived(t('sources.title', 'Sources — JapaConnect'));
 	const description = $derived(t('sources.description', 'Browse trusted sources for scholarships, jobs, remittance, universities, and more.'));
@@ -47,6 +47,30 @@
 			{ icon: FileText, text: `${source.post_count} ${t('sources.posts', 'posts')}` }
 		];
 	}
+
+	function filterUrl(category: string, sourceKind: string) {
+		const url = new URL(page.url);
+		if (category) url.searchParams.set('category', category);
+		else url.searchParams.delete('category');
+		if (sourceKind) url.searchParams.set('source_kind', sourceKind);
+		else url.searchParams.delete('source_kind');
+		url.searchParams.delete('page');
+		return url;
+	}
+
+	function pageUrl(pageNumber: number) {
+		const url = new URL(page.url);
+		url.searchParams.set('sort', data.sort);
+		if (data.q) url.searchParams.set('q', data.q);
+		else url.searchParams.delete('q');
+		if (data.category) url.searchParams.set('category', data.category);
+		else url.searchParams.delete('category');
+		if (data.sourceKind) url.searchParams.set('source_kind', data.sourceKind);
+		else url.searchParams.delete('source_kind');
+		if (pageNumber > 1) url.searchParams.set('page', String(pageNumber));
+		else url.searchParams.delete('page');
+		return url;
+	}
 </script>
 
 <svelte:head>
@@ -60,7 +84,7 @@
 		<p class="text-sm text-[var(--color-text-muted)]">{description}</p>
 	</div>
 
-	{#if data.collections && data.collections.length > 0}
+	{#if showCollections && data.collections && data.collections.length > 0}
 		<div class="flex flex-col gap-6">
 			{#each data.collections as collection (collection.slug)}
 				<div class="flex flex-col gap-2">
@@ -121,6 +145,33 @@
 		<UrlTabs {tabs} value={data.sort} onValueChange={changeSort} />
 	</div>
 
+	<div class="flex flex-wrap items-center gap-3 text-sm">
+		{#if data.sourceMeta?.categories?.length}
+			<select
+				value={data.category}
+				onchange={(e) => goto(filterUrl(e.currentTarget.value, data.sourceKind), { keepFocus: true })}
+				class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+			>
+				<option value="">{t('sources.category.all', 'All categories')}</option>
+				{#each data.sourceMeta.categories as cat}
+					<option value={cat}>{cat}</option>
+				{/each}
+			</select>
+		{/if}
+		{#if data.sourceMeta?.source_types?.length}
+			<select
+				value={data.sourceKind}
+				onchange={(e) => goto(filterUrl(data.category, e.currentTarget.value), { keepFocus: true })}
+				class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+			>
+				<option value="">{t('sources.source_kind.all', 'All source types')}</option>
+				{#each data.sourceMeta.source_types as kind}
+					<option value={kind}>{kind}</option>
+				{/each}
+			</select>
+		{/if}
+	</div>
+
 	{#if data.sources.length === 0}
 		<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
 			{t('sources.empty', 'No sources found.')}
@@ -150,7 +201,7 @@
 		<div class="flex items-center justify-between pt-4 text-sm">
 			{#if data.page > 1}
 				<a
-					href="/sources?sort={data.sort}&page={data.page - 1}"
+					href={pageUrl(data.page - 1).toString()}
 					class="rounded-md border border-[var(--color-border)] px-3 py-2"
 				>
 					{t('pagination.previous', 'Previous')}
@@ -165,7 +216,7 @@
 			</span>
 			{#if data.page < lastPage}
 				<a
-					href="/sources?sort={data.sort}&page={data.page + 1}"
+					href={pageUrl(data.page + 1).toString()}
 					class="rounded-md border border-[var(--color-border)] px-3 py-2"
 				>
 					{t('pagination.next', 'Next')}

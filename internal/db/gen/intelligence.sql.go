@@ -701,7 +701,7 @@ const getIntelSourceBySlugWithLinkedEntity = `-- name: GetIntelSourceBySlugWithL
 SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.tenant_id, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind,
        sp.slug AS space_slug, sp.name AS space_name,
        o.slug AS org_slug, o.name AS org_name,
-       u.username AS user_slug, COALESCE(up.display_name, u.username) AS user_name
+       u.username AS user_slug, COALESCE(up.display_name, u.username, '') AS user_name
 FROM intel_sources s
 LEFT JOIN spaces sp ON sp.source_id = s.id
 LEFT JOIN organizations o ON o.source_id = s.id

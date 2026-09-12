@@ -33,12 +33,13 @@ var errRedirectToPrivateIP = errors.New("redirect target resolves to private IP"
 
 // Preview represents the metadata extracted from a URL.
 type Preview struct {
-	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Image       string `json:"image"`
-	SiteName    string `json:"site_name"`
-	Favicon     string `json:"favicon"`
+	URL         string   `json:"url"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Image       string   `json:"image"`
+	SiteName    string   `json:"site_name"`
+	Favicon     string   `json:"favicon"`
+	Keywords    []string `json:"keywords,omitempty"`
 }
 
 // fetcherSettingsReader is the subset of config.Settings the Fetcher needs to
@@ -388,6 +389,16 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 				preview.Image = resolveURL(content)
 			case "og:site_name":
 				preview.SiteName = content
+			case "keywords":
+				if content != "" {
+					parts := strings.Split(content, ",")
+					for _, p := range parts {
+						p = strings.TrimSpace(p)
+						if p != "" {
+							preview.Keywords = append(preview.Keywords, p)
+						}
+					}
+				}
 			}
 		}
 

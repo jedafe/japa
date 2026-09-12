@@ -196,6 +196,12 @@ export const unmuteSpace = (slug: string) => api.delete(`/spaces/${slug}/mute`);
 
 export type FollowableType = 'user' | 'organization' | 'space' | 'tag' | 'source';
 
+export interface FollowToggleResponse {
+	following?: boolean;
+	is_following?: boolean;
+	follower_count?: number;
+}
+
 export const toggleFollow = (
 	type: FollowableType,
 	id: string,
@@ -206,24 +212,24 @@ export const toggleFollow = (
 	switch (type) {
 		case 'user':
 			return currently
-				? api.delete<{ following: boolean }>(`/users/${target}/follow`)
-				: api.post<{ following: boolean }>(`/users/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/users/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/users/${target}/follow`);
 		case 'organization':
 			return currently
-				? api.delete<{ following: boolean }>(`/organizations/${target}/follow`)
-				: api.post<{ following: boolean }>(`/organizations/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/organizations/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/organizations/${target}/follow`);
 		case 'space':
 			return currently
-				? api.delete<{ following: boolean }>(`/spaces/${target}/follow`)
-				: api.post<{ following: boolean }>(`/spaces/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/spaces/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/spaces/${target}/follow`);
 		case 'tag':
 			return currently
-				? api.delete<{ following: boolean }>(`/tags/${target}/follow`)
-				: api.post<{ following: boolean }>(`/tags/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/tags/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/tags/${target}/follow`);
 		case 'source':
 			return currently
-				? api.delete<{ following: boolean }>(`/sources/${target}/follow`)
-				: api.post<{ following: boolean }>(`/sources/${target}/follow`);
+			? api.delete<FollowToggleResponse>(`/sources/${target}/follow`)
+				: api.post<FollowToggleResponse>(`/sources/${target}/follow`);
 	}
 };
 
@@ -236,6 +242,8 @@ export const reportComment = (id: string, body: { reason: string; notes?: string
 	api.post<{ id: string }>(`/comments/${id}/report`, body);
 export const reportSpace = (id: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
 	api.post<{ id: string }>(`/spaces/${id}/report`, body);
+export const reportSource = (slug: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/sources/${slug}/report`, body);
 
 /* ---- newsletter preferences (Section 62, ADR-080) ---- */
 export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>

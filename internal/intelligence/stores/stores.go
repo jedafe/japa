@@ -945,6 +945,17 @@ func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRec
 	return row, nil
 }
 
+// GetWikiPageByIntelRecordWithSpace loads a wiki page by intel record, joining
+// its owning space so the public URL can be built as /wiki/{space}/{page}.
+func (s *Store) GetWikiPageByIntelRecordWithSpace(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.GetWikiPageByIntelRecordWithSpaceRow, error) {
+	row, err := s.queries.GetWikiPageByIntelRecordWithSpace(ctx, gen.GetWikiPageByIntelRecordWithSpaceParams{TenantID: tenantID, IntelRecordID: intelRecordID})
+	if err != nil {
+		return gen.GetWikiPageByIntelRecordWithSpaceRow{}, fmt.Errorf("stores: get wiki page by intel record with space: %w", err)
+	}
+
+	return row, nil
+}
+
 // UpdateWikiPageIntel is an exported method.
 func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error {
 	arg.TenantID = tenantID

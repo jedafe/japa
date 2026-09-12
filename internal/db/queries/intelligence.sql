@@ -239,7 +239,7 @@ WHERE tenant_id = $1 AND id = $2;
 SELECT s.*,
        sp.slug AS space_slug, sp.name AS space_name,
        o.slug AS org_slug, o.name AS org_name,
-       u.username AS user_slug, COALESCE(up.display_name, u.username) AS user_name
+       u.username AS user_slug, COALESCE(up.display_name, u.username, '') AS user_name
 FROM intel_sources s
 LEFT JOIN spaces sp ON sp.source_id = s.id
 LEFT JOIN organizations o ON o.source_id = s.id

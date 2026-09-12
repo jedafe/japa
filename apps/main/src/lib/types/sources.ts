@@ -16,7 +16,9 @@ export interface Source {
 	slug: string;
 	description?: string;
 	logo_url?: string | null;
+	keywords?: string[];
 	domain: string;
+	source_url?: string;
 	category: string;
 	source_type: string;
 	source_kind: string;
@@ -49,9 +51,22 @@ export interface SourceItemEnvelope {
 	entity_type: string;
 }
 
+export interface SourceEntityType {
+	value: string;
+	label: string;
+}
+
+export interface SourceOption {
+	value: string;
+	label: string;
+}
+
 export interface SourceMeta {
 	categories: string[];
 	source_types: string[];
+	entity_types?: SourceEntityType[];
+	sorts?: SourceOption[];
+	item_sorts?: SourceOption[];
 }
 
 export interface SourceCollection {

@@ -47,6 +47,8 @@ export interface ContentArticle {
 	visa_route?: string | null;
 	source_country?: string | null;
 	target_country?: string | null;
+	reaction_count?: number;
+	bookmark_count?: number;
 	header_image_url?: string | null;
 	featured_image_url?: string | null;
 	/** §106 video — linked video_sources row ID (content_type === 'video').
@@ -87,6 +89,7 @@ export interface GuideListItem {
 	author_id?: string | null;
 	author_username?: string | null;
 	author_display_name?: string | null;
+	author_avatar_url?: string | null;
 	space_id?: string | null;
 	space_name?: string | null;
 	guide_category?: string | null;
@@ -100,8 +103,13 @@ export interface GuideListItem {
 	comment_count?: number;
 	share_count?: number;
 	reshare_count?: number;
+	reaction_count?: number;
+	bookmark_count?: number;
 	published_at?: string | null;
 	created_at: string;
+	header_image_url?: string | null;
+	featured_image_url?: string | null;
+	tags?: string[];
 }
 
 /** Lightweight organization badge used by the social post wrapper. */
