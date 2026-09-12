@@ -46,10 +46,9 @@ func (c *DBCheckers) IsMember(ctx context.Context, tenantID, spaceID, userID pgt
 // IsErased checks whether a user's account has been deleted/erased.
 // Tenant-scoped per Section 04 (BUG-009).
 func (c *DBCheckers) IsErased(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
-	status, err := c.read.GetUserStatus(ctx, gen.GetUserStatusParams{
-		ID:       userID,
-		TenantID: tenantID,
-	})
+	status, err := c.read.GetUserStatus(ctx,
+		userID,
+	)
 	if err != nil {
 		return false, err
 	}

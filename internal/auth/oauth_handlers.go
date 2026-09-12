@@ -76,7 +76,6 @@ func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, use
 	if err := h.Queries.UpdateUserSourceID(ctx, gen.UpdateUserSourceIDParams{
 		SourceID: source.ID,
 		ID:       userID,
-		TenantID: tenantID,
 	}); err != nil {
 		slog.Warn("oauth register: failed to link user source_id", "user_id", userID.String(), "source_id", source.ID.String(), "error", err)
 	}
@@ -408,10 +407,10 @@ func randomSuffix(n int) (string, error) {
 // redirectPath by the caller); returning users go to redirectPath.
 func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.Request, userID, tenantID pgtype.UUID, redirectPath string, _ bool) {
 	if h.Queries != nil {
-		if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
-			TenantID: tenantID,
-			ID:       userID,
-		}); err != nil {
+		if err := h.Queries.UpdateLastLoginAt(r.Context(),
+
+			userID,
+		); err != nil {
 			slog.Warn("update last_login_at", "error", err)
 		}
 	}

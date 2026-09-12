@@ -484,10 +484,10 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 	// has opted out of discoverability, remove them from the index so they
 	// don't appear in search results. Best-effort: if the privacy settings
 	// row is missing, default to indexable (COALESCE true in the query).
-	priv, err := ix.read.GetUserPrivacySettings(ctx, gen.GetUserPrivacySettingsParams{
-		TenantID: tID,
-		UserID:   uID,
-	})
+	priv, err := ix.read.GetUserPrivacySettings(ctx,
+
+		uID,
+	)
 	if err == nil && !priv.SearchIndexable {
 		slog.Info("search:index: user opted out of search_indexable, removing from index", "user_id", uID.String())
 		return ix.DeleteDocument(ctx, IndexUsers, userID)
@@ -496,10 +496,10 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 	// COALESCE default in the DB is true, so a missing row means
 	// indexable. A query error is logged but does not block indexing.
 
-	row, err := ix.read.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: tID,
-		UserID:   uID,
-	})
+	row, err := ix.read.GetUserProfile(ctx,
+
+		uID,
+	)
 	if err != nil {
 		return fmt.Errorf("fetching user profile for index: %w", err)
 	}
@@ -521,7 +521,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 
 	doc := userDocument{
 		ID:          row.UserID.String(),
-		TenantID:    row.TenantID.String(),
+		TenantID:    tID.String(),
 		Username:    row.Username,
 		DisplayName: displayName,
 		Bio:         bio,
@@ -1233,7 +1233,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*Reind
 	// Users — offset-paginated with empty filters (all users).
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.ListUsers(ctx, gen.ListUsersParams{
-			TenantID:   tenantID,
+
 			Search:     "",
 			Status:     "",
 			GroupSlug:  "",

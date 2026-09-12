@@ -382,9 +382,9 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		// geo_personalization.city_level_enabled killswitch (ADR-064a §6) —
 		// when false, city-level enrichment is skipped entirely.
 		if res.getBoolSetting(ctx, t.ID, "geo_personalization.city_level_enabled", true) {
-			geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
-				UserID: user.UserID, TenantID: t.ID,
-			})
+			geoSpace, err := res.read.GetUserCurrentGeoSpace(ctx,
+				user.UserID,
+			)
 			if err == nil && geoSpace.CurrentGeoSpaceID.Valid {
 				vc.CurrentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
 				// Override CurrentCountry from the Space hierarchy when available.

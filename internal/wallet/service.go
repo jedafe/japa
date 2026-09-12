@@ -867,10 +867,10 @@ func (s *Service) GetUserBalanceWithInfo(ctx context.Context, tenantID, userID p
 		return "", 0, 0, err
 	}
 
-	user, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	user, err := s.store.read.GetUserByID(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("looking up user: %w", err)
 	}

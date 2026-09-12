@@ -555,10 +555,10 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 			continue
 		}
 
-		user, err := s.store.read.GetUserByID(ctx, gen.GetUserByIDParams{
-			TenantID: tenantID,
-			UserID:   id,
-		})
+		user, err := s.store.read.GetUserByID(ctx,
+
+			id,
+		)
 		if err != nil {
 			continue
 		}
@@ -918,7 +918,6 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 	if err := queries.UpdateUserGeoSpace(ctx, gen.UpdateUserGeoSpaceParams{
 		CurrentGeoSpaceID: geoSpaceID,
 		ID:                userID,
-		TenantID:          tenantID,
 	}); err != nil {
 		return fmt.Errorf("setting user geo space: %w", err)
 	}
@@ -949,9 +948,9 @@ func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pg
 		return fmt.Errorf("looking up destination_country custom field: %w", err)
 	}
 
-	profileID, err := s.store.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	profileID, err := s.store.read.GetUserProfileID(ctx,
+		userID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting user profile id: %w", err)
 	}

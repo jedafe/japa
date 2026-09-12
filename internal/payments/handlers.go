@@ -396,10 +396,9 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 
 	// Look up the payer's email — Paystack /transaction/initialize requires
 	// it (BUG-004). Other providers ignore the field.
-	email, _ := gen.New(h.Service.db.Reader).GetUserEmail(r.Context(), gen.GetUserEmailParams{
-		UserID:   user.UserID,
-		TenantID: tenantID,
-	})
+	email, _ := gen.New(h.Service.db.Reader).GetUserEmail(r.Context(),
+		user.UserID,
+	)
 
 	result, err := h.Service.CreatePayment(r.Context(), tenantID, user.UserID, CreatePaymentInput{
 		Provider:     input.Provider,

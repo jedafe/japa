@@ -1522,7 +1522,7 @@ func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype
 	}
 
 	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
-		TenantID:    tenantID,
+
 		ID:          userID,
 		ProfileType: profileType,
 	})
@@ -1717,10 +1717,10 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID,
 	var userID pgtype.UUID
 
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
-		existing, err := q.GetSyntheticUserByUsername(ctx, gen.GetSyntheticUserByUsernameParams{
-			TenantID: tenantID,
-			Username: input.Username,
-		})
+		existing, err := q.GetSyntheticUserByUsername(ctx,
+
+			input.Username,
+		)
 		if err == nil {
 			userID = existing
 			return nil
@@ -1730,7 +1730,7 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID,
 		}
 
 		newID, err := q.CreateSyntheticUser(ctx, gen.CreateSyntheticUserParams{
-			TenantID:        tenantID,
+
 			Email:           input.Email,
 			Username:        input.Username,
 			SyntheticSource: &input.SourceType,
@@ -1746,7 +1746,7 @@ func (s *Service) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID,
 		location := stringOrNil(input.Location)
 
 		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-			TenantID:      tenantID,
+
 			UserID:        newID,
 			DisplayName:   displayName,
 			Bio:           bio,

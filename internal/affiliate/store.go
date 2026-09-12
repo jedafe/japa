@@ -33,7 +33,7 @@ func (s *Store) getMember(ctx context.Context, userID, tenantID pgtype.UUID) (ge
 // getUserCreatedAt returns the user's created_at timestamp for the enrollment
 // minimum-account-age eligibility check (Section 56).
 func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UUID) (pgtype.Timestamptz, error) {
-	row, err := s.read.GetUserByID(ctx, gen.GetUserByIDParams{UserID: userID, TenantID: tenantID})
+	row, err := s.read.GetUserByID(ctx, userID)
 	if err != nil {
 		return pgtype.Timestamptz{}, err
 	}
@@ -45,7 +45,7 @@ func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UU
 // nil when the user no longer exists (e.g. anonymized) so the admin UI shows
 // the id fallback rather than erroring.
 func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID) (*string, error) {
-	row, err := s.read.GetUserByID(ctx, gen.GetUserByIDParams{UserID: userID, TenantID: tenantID})
+	row, err := s.read.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

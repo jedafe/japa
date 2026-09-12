@@ -118,7 +118,6 @@ func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, user
 	if err := h.Queries.UpdateUserSourceID(ctx, gen.UpdateUserSourceIDParams{
 		SourceID: source.ID,
 		ID:       userID,
-		TenantID: tenantID,
 	}); err != nil {
 		slog.Warn("register: failed to link user source_id", "user_id", userID.String(), "source_id", source.ID.String(), "error", err)
 	}
@@ -540,10 +539,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update last_login_at so analytics active-user counts work (§21).
-	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
-		TenantID: user.TenantID,
-		ID:       user.ID,
-	}); err != nil {
+	if err := h.Queries.UpdateLastLoginAt(r.Context(),
+
+		user.ID,
+	); err != nil {
 		slog.Warn("update last_login_at", "error", err)
 	}
 
@@ -689,10 +688,10 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Re-check the user's status. A suspended/banned user whose refresh
 	// token was issued before the ban must not be able to keep refreshing
 	// access tokens until the refresh token expires. Ref: §02.
-	userRow, err := h.Queries.GetUserByID(r.Context(), gen.GetUserByIDParams{
-		TenantID: stored.TenantID,
-		UserID:   stored.UserID,
-	})
+	userRow, err := h.Queries.GetUserByID(r.Context(),
+
+		stored.UserID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token is invalid or expired")
 		return
@@ -714,10 +713,10 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	// whose email was un-verified (or whose verification was revoked)
 	// cannot keep refreshing. Ref: §02 (auth.email.verify_required).
 	if EmailVerifyRequired(r.Context(), h.Settings, stored.TenantID) {
-		verifiedAt, err := h.Queries.GetUserEmailVerifiedStatus(r.Context(), gen.GetUserEmailVerifiedStatusParams{
-			TenantID: stored.TenantID,
-			UserID:   stored.UserID,
-		})
+		verifiedAt, err := h.Queries.GetUserEmailVerifiedStatus(r.Context(),
+
+			stored.UserID,
+		)
 		if err != nil || !verifiedAt.Valid {
 			_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), gen.RevokeAllUserRefreshTokensParams{
 				UserID:   stored.UserID,
@@ -840,10 +839,10 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Update last_login_at so analytics active-user counts work (§21).
-	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
-		TenantID: tenantID,
-		ID:       userID,
-	}); err != nil {
+	if err := h.Queries.UpdateLastLoginAt(r.Context(),
+
+		userID,
+	); err != nil {
 		slog.Warn("update last_login_at", "error", err)
 	}
 
@@ -962,10 +961,10 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Update last_login_at so analytics active-user counts work (§21).
-	if err := h.Queries.UpdateLastLoginAt(r.Context(), gen.UpdateLastLoginAtParams{
-		TenantID: tenantID,
-		ID:       userID,
-	}); err != nil {
+	if err := h.Queries.UpdateLastLoginAt(r.Context(),
+
+		userID,
+	); err != nil {
 		slog.Warn("update last_login_at", "error", err)
 	}
 

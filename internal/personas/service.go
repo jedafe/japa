@@ -288,7 +288,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 
 		displayName := in.Name
 		if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-			TenantID:    tenantID,
+
 			UserID:      user.ID,
 			DisplayName: &displayName,
 			Bio:         tagline,

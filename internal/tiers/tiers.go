@@ -135,7 +135,7 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	if err := txStore.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
-		TenantID:    tenantID,
+
 		ID:          userID,
 		ProfileType: tier,
 	}); err != nil {

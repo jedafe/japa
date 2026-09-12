@@ -87,7 +87,7 @@ type AgentSessionQueries interface {
 type ContentAuthorQueries interface {
 	GetContentByID(ctx context.Context, arg gen.GetContentByIDParams) (gen.GetContentByIDRow, error)
 	ReassignSingleContentAuthor(ctx context.Context, arg gen.ReassignSingleContentAuthorParams) (gen.ReassignSingleContentAuthorRow, error)
-	GetUserByID(ctx context.Context, arg gen.GetUserByIDParams) (gen.GetUserByIDRow, error)
+	GetUserByID(ctx context.Context, userID pgtype.UUID) (gen.GetUserByIDRow, error)
 }
 
 // AgentHTTPHandlers holds dependencies for the Phase 6 agent HTTP handlers.
@@ -580,10 +580,10 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	// Verify the target author is a valid user in the same tenant (spec:
 	// "Verify tenant ownership and target author validity"). This prevents
 	// orphaned author_id references and cross-tenant assignments.
-	if _, err := h.content.GetUserByID(r.Context(), gen.GetUserByIDParams{
-		TenantID: tenantID,
-		UserID:   newAuthorID,
-	}); err != nil {
+	if _, err := h.content.GetUserByID(r.Context(),
+
+		newAuthorID,
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_author", "Target author not found in this tenant")
 			return

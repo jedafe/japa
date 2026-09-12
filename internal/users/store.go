@@ -25,10 +25,10 @@ func NewStore(read, write *gen.Queries) *Store {
 
 // getProfile returns the user profile joined with users table data.
 func (s *Store) getProfile(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserProfileRow, error) {
-	row, err := s.read.GetUserProfile(ctx, gen.GetUserProfileParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetUserProfile(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.GetUserProfileRow{}, fmt.Errorf("getting user profile: %w", err)
 	}
@@ -75,17 +75,15 @@ func (s *Store) updateGeoSpace(ctx context.Context, tenantID, userID, spaceID pg
 	return s.write.UpdateUserGeoSpace(ctx, gen.UpdateUserGeoSpaceParams{
 		CurrentGeoSpaceID: spaceID,
 		ID:                userID,
-		TenantID:          tenantID,
 	})
 }
 
 // getCurrentGeoSpace resolves the user's current geo space hierarchy
 // (city → country) for the GET /me/location endpoint (ADR-064a).
 func (s *Store) getCurrentGeoSpace(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserCurrentGeoSpaceRow, error) {
-	return s.read.GetUserCurrentGeoSpace(ctx, gen.GetUserCurrentGeoSpaceParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.read.GetUserCurrentGeoSpace(ctx,
+		userID,
+	)
 }
 
 // findCitySpace finds a city-level Space by name (case-insensitive) for
@@ -167,9 +165,9 @@ func (s *Store) setGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
 
-	profileID, err := s.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	profileID, err := s.read.GetUserProfileID(ctx,
+		userID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting user profile id: %w", err)
 	}
@@ -206,9 +204,9 @@ func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 		return "", fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
 
-	profileID, err := s.read.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	profileID, err := s.read.GetUserProfileID(ctx,
+		userID,
+	)
 	if err != nil {
 		return "", fmt.Errorf("getting user profile id: %w", err)
 	}
@@ -236,10 +234,10 @@ func (s *Store) getGeoCustomField(ctx context.Context, tenantID, userID pgtype.U
 
 // getUserByUsername returns the user profile joined with users table data, looked up by username.
 func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetUserByUsernameRow, error) {
-	row, err := s.read.GetUserByUsername(ctx, gen.GetUserByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetUserByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		return gen.GetUserByUsernameRow{}, fmt.Errorf("getting user by username: %w", err)
 	}
@@ -250,10 +248,10 @@ func (s *Store) getUserByUsername(ctx context.Context, tenantID pgtype.UUID, use
 // getPublicProfileByUsername returns the lean, PII-safe public profile row
 // (with following_count) for an active user, looked up by username.
 func (s *Store) getPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (gen.GetPublicProfileByUsernameRow, error) {
-	row, err := s.read.GetPublicProfileByUsername(ctx, gen.GetPublicProfileByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetPublicProfileByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		return gen.GetPublicProfileByUsernameRow{}, fmt.Errorf("getting public profile by username: %w", err)
 	}
@@ -264,7 +262,7 @@ func (s *Store) getPublicProfileByUsername(ctx context.Context, tenantID pgtype.
 // upsertProfile inserts or updates the user profile.
 func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := s.write.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		DisplayName:   displayName,
 		AvatarUrl:     avatarURL,
@@ -284,10 +282,10 @@ func (s *Store) upsertProfile(ctx context.Context, tenantID, userID pgtype.UUID,
 // read-merge-upsert pattern in UpdateProfile (BUG-002). The FOR UPDATE
 // lock is held until the transaction commits or rolls back.
 func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserProfileForUpdateRow, error) {
-	row, err := q.GetUserProfileForUpdate(ctx, gen.GetUserProfileForUpdateParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := q.GetUserProfileForUpdate(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.GetUserProfileForUpdateRow{}, fmt.Errorf("getting user profile for update: %w", err)
 	}
@@ -298,7 +296,7 @@ func (s *Store) getProfileForUpdateTx(ctx context.Context, q *gen.Queries, tenan
 // upsertProfileTx is the transaction-scoped variant of upsertProfile.
 func (s *Store) upsertProfileTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, displayName, avatarURL, coverURL, bio, timezone *string, avatarMediaID, headerMediaID pgtype.UUID) error {
 	if err := q.UpsertUserProfile(ctx, gen.UpsertUserProfileParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		DisplayName:   displayName,
 		AvatarUrl:     avatarURL,
@@ -324,9 +322,9 @@ func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantI
 		return fmt.Errorf("looking up custom field %q: %w", fieldKey, err)
 	}
 
-	profileID, err := q.GetUserProfileID(ctx, gen.GetUserProfileIDParams{
-		TenantID: tenantID, UserID: userID,
-	})
+	profileID, err := q.GetUserProfileID(ctx,
+		userID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting user profile id: %w", err)
 	}
@@ -352,21 +350,26 @@ func (s *Store) setGeoCustomFieldTx(ctx context.Context, q *gen.Queries, tenantI
 
 // getPreferences returns user preferences.
 func (s *Store) getPreferences(ctx context.Context, tenantID, userID pgtype.UUID) (gen.UserPreference, error) {
-	pref, err := s.read.GetUserPreferences(ctx, gen.GetUserPreferencesParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	pref, err := s.read.GetUserPreferences(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.UserPreference{}, fmt.Errorf("getting user preferences: %w", err)
 	}
 
-	return pref, nil
+	return gen.UserPreference{
+		ID:       pref.ID,
+		UserID:   pref.UserID,
+		DarkMode: pref.DarkMode,
+		Language: pref.Language,
+	}, nil
 }
 
 // upsertPreferences inserts or updates user preferences.
 func (s *Store) upsertPreferences(ctx context.Context, tenantID, userID pgtype.UUID, darkMode, language string) error {
 	if err := s.write.UpsertUserPreferences(ctx, gen.UpsertUserPreferencesParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		DarkMode: darkMode,
 		Language: language,
@@ -381,21 +384,26 @@ func (s *Store) upsertPreferences(ctx context.Context, tenantID, userID pgtype.U
 // read-merge-upsert pattern in UpdatePreferences (BUG-003). The FOR UPDATE
 // lock is held until the transaction commits or rolls back.
 func (s *Store) getPreferencesForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.UserPreference, error) {
-	pref, err := q.GetUserPreferencesForUpdate(ctx, gen.GetUserPreferencesForUpdateParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	pref, err := q.GetUserPreferencesForUpdate(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return gen.UserPreference{}, fmt.Errorf("getting user preferences for update: %w", err)
 	}
 
-	return pref, nil
+	return gen.UserPreference{
+		ID:       pref.ID,
+		UserID:   pref.UserID,
+		DarkMode: pref.DarkMode,
+		Language: pref.Language,
+	}, nil
 }
 
 // upsertPreferencesTx is the transaction-scoped variant of upsertPreferences.
 func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, darkMode, language string) error {
 	if err := q.UpsertUserPreferences(ctx, gen.UpsertUserPreferencesParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		DarkMode: darkMode,
 		Language: language,
@@ -409,7 +417,7 @@ func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, tenantI
 // listUsers returns a paginated list of users for a tenant, optionally filtered by search, status, and group.
 func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string, limit, offset int32) ([]gen.ListUsersRow, error) {
 	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
-		TenantID:   tenantID,
+
 		Search:     search,
 		Status:     status,
 		GroupSlug:  groupSlug,
@@ -430,7 +438,7 @@ func (s *Store) listUsers(ctx context.Context, tenantID pgtype.UUID, search, sta
 //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (s *Store) listPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) ([]gen.ListPublicUsersRow, error) {
 	rows, err := s.read.ListPublicUsers(ctx, gen.ListPublicUsersParams{
-		TenantID:    tenantID,
+
 		Search:      search,
 		ProfileType: profileType,
 		PageLimit:   limit,
@@ -448,7 +456,7 @@ func (s *Store) listPublicUsers(ctx context.Context, tenantID pgtype.UUID, searc
 // public directory.
 func (s *Store) countPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string) (int32, error) {
 	count, err := s.read.CountPublicUsers(ctx, gen.CountPublicUsersParams{
-		TenantID:    tenantID,
+
 		Search:      search,
 		ProfileType: profileType,
 	})
@@ -462,7 +470,7 @@ func (s *Store) countPublicUsers(ctx context.Context, tenantID pgtype.UUID, sear
 // countUsers returns the total count of users for a tenant, optionally filtered by search, status, and group.
 func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string) (int32, error) {
 	count, err := s.read.CountUsers(ctx, gen.CountUsersParams{
-		TenantID:  tenantID,
+
 		Search:    search,
 		Status:    status,
 		GroupSlug: groupSlug,
@@ -475,16 +483,15 @@ func (s *Store) countUsers(ctx context.Context, tenantID pgtype.UUID, search, st
 }
 
 func (s *Store) getUserPasswordHash(ctx context.Context, userID, tenantID pgtype.UUID) (gen.GetUserPasswordHashRow, error) {
-	return s.read.GetUserPasswordHash(ctx, gen.GetUserPasswordHashParams{
-		ID:       userID,
-		TenantID: tenantID,
-	})
+	return s.read.GetUserPasswordHash(ctx,
+		userID,
+	)
 }
 
 func (s *Store) updateUserPassword(ctx context.Context, tenantID, userID pgtype.UUID, passwordHash *string) error {
 	return s.write.UpdateUserPassword(ctx, gen.UpdateUserPasswordParams{
-		ID:           userID,
-		TenantID:     tenantID,
+		ID: userID,
+
 		PasswordHash: passwordHash,
 	})
 }
@@ -526,15 +533,15 @@ func (s *Store) revokeAllRefreshTokens(ctx context.Context, tenantID, userID pgt
 }
 
 func (s *Store) getUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsRow, error) {
-	return s.read.GetUserPrivacySettings(ctx, gen.GetUserPrivacySettingsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.read.GetUserPrivacySettings(ctx,
+
+		userID,
+	)
 }
 
 func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return s.write.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		DmPrivacy:          dmPrivacy,
 		ProfileVisibility:  profileVisibility,
@@ -549,17 +556,17 @@ func (s *Store) upsertUserPrivacySettings(ctx context.Context, tenantID, userID 
 // for the read-merge-upsert pattern in UpdatePrivacySettings (BUG-004). The
 // FOR UPDATE lock is held until the transaction commits or rolls back.
 func (s *Store) getUserPrivacySettingsForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserPrivacySettingsForUpdateRow, error) {
-	return q.GetUserPrivacySettingsForUpdate(ctx, gen.GetUserPrivacySettingsForUpdateParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return q.GetUserPrivacySettingsForUpdate(ctx,
+
+		userID,
+	)
 }
 
 // upsertUserPrivacySettingsTx is the transaction-scoped variant of
 // upsertUserPrivacySettings.
 func (s *Store) upsertUserPrivacySettingsTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, dmPrivacy, profileVisibility string, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool) error {
 	return q.UpsertUserPrivacySettings(ctx, gen.UpsertUserPrivacySettingsParams{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		DmPrivacy:          dmPrivacy,
 		ProfileVisibility:  profileVisibility,
@@ -571,10 +578,10 @@ func (s *Store) upsertUserPrivacySettingsTx(ctx context.Context, q *gen.Queries,
 }
 
 func (s *Store) listUserSessions(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListUserSessionsRow, error) {
-	return s.read.ListUserSessions(ctx, gen.ListUserSessionsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.read.ListUserSessions(ctx,
+
+		userID,
+	)
 }
 
 // getSessionIDByHash resolves the refresh_tokens.id for the current session
@@ -582,7 +589,7 @@ func (s *Store) listUserSessions(ctx context.Context, tenantID, userID pgtype.UU
 // token is not found so the caller can degrade gracefully.
 func (s *Store) getSessionIDByHash(ctx context.Context, tenantID, userID pgtype.UUID, tokenHash string) (pgtype.UUID, error) {
 	return s.read.GetSessionIDByHash(ctx, gen.GetSessionIDByHashParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		TokenHash: tokenHash,
 	})
@@ -590,60 +597,59 @@ func (s *Store) getSessionIDByHash(ctx context.Context, tenantID, userID pgtype.
 
 func (s *Store) listUserActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit int32) ([]gen.ListUserActivityRow, error) {
 	return s.read.ListUserActivity(ctx, gen.ListUserActivityParams{
-		TenantID: tenantID,
+
 		AuthorID: userID,
 		Limit:    limit,
 	})
 }
 
 func (s *Store) countUserActivity(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
-	return s.read.CountUserActivity(ctx, gen.CountUserActivityParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-	})
+	return s.read.CountUserActivity(ctx,
+
+		userID,
+	)
 }
 
 func (s *Store) revokeUserSession(ctx context.Context, tenantID, sessionID, userID pgtype.UUID) error {
 	return s.write.RevokeUserSession(ctx, gen.RevokeUserSessionParams{
-		ID:       sessionID,
-		TenantID: tenantID,
-		UserID:   userID,
+		ID: sessionID,
+
+		UserID: userID,
 	})
 }
 
 func (s *Store) revokeAllUserSessions(ctx context.Context, tenantID, userID, keepCurrentID pgtype.UUID) error {
 	return s.write.RevokeAllUserSessions(ctx, gen.RevokeAllUserSessionsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		ID:       keepCurrentID,
+
+		UserID: userID,
+		ID:     keepCurrentID,
 	})
 }
 
 func (s *Store) listOAuthAccounts(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListOAuthAccountsRow, error) {
-	return s.read.ListOAuthAccounts(ctx, gen.ListOAuthAccountsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.read.ListOAuthAccounts(ctx,
+
+		userID,
+	)
 }
 
 func (s *Store) disconnectOAuthAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider string) error {
 	return s.write.DisconnectOAuthAccount(ctx, gen.DisconnectOAuthAccountParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		Provider: provider,
 	})
 }
 
 func (s *Store) userHasPassword(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
-	return s.read.UserHasPassword(ctx, gen.UserHasPasswordParams{
-		ID:       userID,
-		TenantID: tenantID,
-	})
+	return s.read.UserHasPassword(ctx,
+		userID,
+	)
 }
 
 func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]gen.ListUserContentRow, error) {
 	return s.read.ListUserContent(ctx, gen.ListUserContentParams{
-		TenantID:    tenantID,
+
 		AuthorID:    userID,
 		Status:      status,
 		ContentType: contentType,
@@ -660,8 +666,8 @@ func (s *Store) listUserContent(ctx context.Context, tenantID, userID pgtype.UUI
 // user/tenant — the handler maps that to 404.
 func (s *Store) getUserDraft(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (gen.GetUserDraftRow, error) {
 	return s.read.GetUserDraft(ctx, gen.GetUserDraftParams{
-		ID:       contentID,
-		TenantID: tenantID,
+		ID: contentID,
+
 		AuthorID: userID,
 	})
 }
@@ -673,8 +679,8 @@ func (s *Store) getUserDraft(ctx context.Context, tenantID, userID, contentID pg
 // the content is missing or owned by another user/tenant → 404.
 func (s *Store) getUserContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (gen.GetUserContentRow, error) {
 	return s.read.GetUserContent(ctx, gen.GetUserContentParams{
-		ID:       contentID,
-		TenantID: tenantID,
+		ID: contentID,
+
 		AuthorID: userID,
 	})
 }
@@ -685,16 +691,15 @@ func (s *Store) getUserContent(ctx context.Context, tenantID, userID, contentID 
 // the content owner. Returns pgx.ErrNoRows when the content is missing or
 // belongs to a different tenant → 404.
 func (s *Store) getContentByIDForEditor(ctx context.Context, tenantID, contentID pgtype.UUID) (gen.GetContentByIDForEditorRow, error) {
-	return s.read.GetContentByIDForEditor(ctx, gen.GetContentByIDForEditorParams{
-		ID:       contentID,
-		TenantID: tenantID,
-	})
+	return s.read.GetContentByIDForEditor(ctx,
+		contentID,
+	)
 }
 
 func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]gen.ListUserBookmarksRow, error) {
 	return s.read.ListUserBookmarks(ctx, gen.ListUserBookmarksParams{
-		UserID:      userID,
-		TenantID:    tenantID,
+		UserID: userID,
+
 		FolderID:    folderID,
 		EntityTypes: entityTypes,
 		PageLimit:   limit,
@@ -703,33 +708,33 @@ func (s *Store) listUserBookmarks(ctx context.Context, tenantID, userID, folderI
 }
 
 func (s *Store) deactivateUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.write.DeactivateUser(ctx, gen.DeactivateUserParams{
-		TenantID: tenantID,
-		ID:       userID,
-	})
+	return s.write.DeactivateUser(ctx,
+
+		userID,
+	)
 }
 
 // SoftDeleteUser marks a user as deleted (soft delete) without removing the row.
 func (s *Store) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.write.SoftDeleteUser(ctx, gen.SoftDeleteUserParams{
-		TenantID: tenantID,
-		ID:       userID,
-	})
+	return s.write.SoftDeleteUser(ctx,
+
+		userID,
+	)
 }
 
 // activeUserExistsByID reports whether an ACTIVE user with this id exists in
 // the tenant. Used by the public profile gate.
 func (s *Store) activeUserExistsByID(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
-	return s.read.ActiveUserExistsByID(ctx, gen.ActiveUserExistsByIDParams{
-		TenantID: tenantID,
-		ID:       userID,
-	})
+	return s.read.ActiveUserExistsByID(ctx,
+
+		userID,
+	)
 }
 
 // getUserContentAnalytics returns per-content analytics for the user.
 func (s *Store) getUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
 	return s.read.GetUserContentAnalytics(ctx, gen.GetUserContentAnalyticsParams{
-		TenantID: tenantID,
+
 		AuthorID: userID,
 		Limit:    limit,
 		Offset:   offset,
@@ -741,10 +746,8 @@ func (s *Store) getUserContentAnalytics(ctx context.Context, tenantID, userID pg
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) getUserTopContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserTopContentByPeriodRow, error) {
 	return s.read.GetUserTopContentByPeriod(ctx, gen.GetUserTopContentByPeriodParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
 
@@ -752,22 +755,17 @@ func (s *Store) getUserTopContentByPeriod(ctx context.Context, tenantID, userID 
 // content items. NULL date bounds fall back to all-time ranking.
 func (s *Store) getUserContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
 	return s.read.GetUserContentByPeriod(ctx, gen.GetUserContentByPeriodParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
-		Limit:    limit,
-		Offset:   offset,
+
+		AuthorID: userID, Column2: from, Column3: to, Limit: limit,
+		Offset: offset,
 	})
 }
 
 // getUserFollowerGrowth returns daily follower growth for the user.
 func (s *Store) getUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, startDate, endDate *pgtype.Date) ([]gen.GetUserFollowerGrowthRow, error) {
 	return s.read.GetUserFollowerGrowth(ctx, gen.GetUserFollowerGrowthParams{
-		TenantID: tenantID,
-		EntityID: userID,
-		Column3:  derefDate(startDate),
-		Column4:  derefDate(endDate),
+
+		EntityID: userID, Column2: derefDate(startDate), Column3: derefDate(endDate),
 	})
 }
 
@@ -787,10 +785,9 @@ func derefDate(d *pgtype.Date) pgtype.Date {
 // getUserAccountForUpdate row-locks the user and returns the fields needed
 // to validate an account update (username cooldown, email uniqueness).
 func (s *Store) getUserAccountForUpdate(ctx context.Context, tenantID, userID pgtype.UUID) (gen.GetUserAccountForUpdateRow, error) {
-	return s.write.GetUserAccountForUpdate(ctx, gen.GetUserAccountForUpdateParams{
-		ID:       userID,
-		TenantID: tenantID,
-	})
+	return s.write.GetUserAccountForUpdate(ctx,
+		userID,
+	)
 }
 
 // getUserAccountForUpdateTx is the transaction-scoped variant of
@@ -798,17 +795,16 @@ func (s *Store) getUserAccountForUpdate(ctx context.Context, tenantID, userID pg
 // transaction commits or rolls back, preventing concurrent account edits
 // from racing on uniqueness checks (BUG-001).
 func (s *Store) getUserAccountForUpdateTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID) (gen.GetUserAccountForUpdateRow, error) {
-	return q.GetUserAccountForUpdate(ctx, gen.GetUserAccountForUpdateParams{
-		ID:       userID,
-		TenantID: tenantID,
-	})
+	return q.GetUserAccountForUpdate(ctx,
+		userID,
+	)
 }
 
 // updateUsername updates the username and stamps username_changed_at.
 func (s *Store) updateUsername(ctx context.Context, tenantID, userID pgtype.UUID, username string) error {
 	return s.write.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{
-		ID:       userID,
-		TenantID: tenantID,
+		ID: userID,
+
 		Username: username,
 	})
 }
@@ -816,8 +812,8 @@ func (s *Store) updateUsername(ctx context.Context, tenantID, userID pgtype.UUID
 // updateUsernameTx is the transaction-scoped variant of updateUsername.
 func (s *Store) updateUsernameTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, username string) error {
 	return q.UpdateUserUsername(ctx, gen.UpdateUserUsernameParams{
-		ID:       userID,
-		TenantID: tenantID,
+		ID: userID,
+
 		Username: username,
 	})
 }
@@ -825,46 +821,46 @@ func (s *Store) updateUsernameTx(ctx context.Context, q *gen.Queries, tenantID, 
 // updateEmail updates the email and resets email_verified_at to NULL.
 func (s *Store) updateEmail(ctx context.Context, tenantID, userID pgtype.UUID, email string) error {
 	return s.write.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{
-		ID:       userID,
-		TenantID: tenantID,
-		Email:    email,
+		ID: userID,
+
+		Email: email,
 	})
 }
 
 // updateEmailTx is the transaction-scoped variant of updateEmail.
 func (s *Store) updateEmailTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, email string) error {
 	return q.UpdateUserEmail(ctx, gen.UpdateUserEmailParams{
-		ID:       userID,
-		TenantID: tenantID,
-		Email:    email,
+		ID: userID,
+
+		Email: email,
 	})
 }
 
 // emailExistsForTenant returns the count of other users in the tenant with
 // the given email (0 = available).
 func (s *Store) emailExistsForTenant(ctx context.Context, tenantID, userID pgtype.UUID, email string) (int32, error) {
-	return s.write.EmailExistsForTenant(ctx, gen.EmailExistsForTenantParams{
-		TenantID: tenantID,
-		Email:    email,
-		ID:       userID,
+	return s.write.EmailExists(ctx, gen.EmailExistsParams{
+
+		Email: email,
+		ID:    userID,
 	})
 }
 
 // emailExistsForTenantTx is the transaction-scoped variant of
 // emailExistsForTenant.
 func (s *Store) emailExistsForTenantTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, email string) (int32, error) {
-	return q.EmailExistsForTenant(ctx, gen.EmailExistsForTenantParams{
-		TenantID: tenantID,
-		Email:    email,
-		ID:       userID,
+	return q.EmailExists(ctx, gen.EmailExistsParams{
+
+		Email: email,
+		ID:    userID,
 	})
 }
 
 // usernameExistsForTenant returns the count of other users in the tenant with
 // the given username (0 = available).
 func (s *Store) usernameExistsForTenant(ctx context.Context, tenantID, userID pgtype.UUID, username string) (int32, error) {
-	return s.write.UsernameExistsForTenant(ctx, gen.UsernameExistsForTenantParams{
-		TenantID: tenantID,
+	return s.write.UsernameExists(ctx, gen.UsernameExistsParams{
+
 		Username: username,
 		ID:       userID,
 	})
@@ -873,8 +869,8 @@ func (s *Store) usernameExistsForTenant(ctx context.Context, tenantID, userID pg
 // usernameExistsForTenantTx is the transaction-scoped variant of
 // usernameExistsForTenant.
 func (s *Store) usernameExistsForTenantTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, username string) (int32, error) {
-	return q.UsernameExistsForTenant(ctx, gen.UsernameExistsForTenantParams{
-		TenantID: tenantID,
+	return q.UsernameExists(ctx, gen.UsernameExistsParams{
+
 		Username: username,
 		ID:       userID,
 	})
@@ -886,10 +882,10 @@ func (s *Store) usernameExistsForTenantTx(ctx context.Context, q *gen.Queries, t
 
 // countUserContent returns total/draft/published content counts for the user.
 func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UUID) (gen.CountUserContentRow, error) {
-	return s.read.CountUserContent(ctx, gen.CountUserContentParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.read.CountUserContent(ctx,
+
+		userID,
+	)
 }
 
 // countUserContentCreatedInPeriod returns content created by the user within a
@@ -897,38 +893,32 @@ func (s *Store) countUserContent(ctx context.Context, tenantID, userID pgtype.UU
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
 func (s *Store) countUserContentCreatedInPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.CountUserContentCreatedInPeriodRow, error) {
 	return s.read.CountUserContentCreatedInPeriod(ctx, gen.CountUserContentCreatedInPeriodParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
 
 // countUserBookmarks returns the total bookmark count for the user.
 func (s *Store) countUserBookmarks(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
-	return s.read.CountUserBookmarks(ctx, gen.CountUserBookmarksParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.read.CountUserBookmarks(ctx,
+		userID,
+	)
 }
 
 // countUserFollowStats returns the follower and following counts for the user.
 // Ref: japaconnect-engineering/sections/31-follow-system.md (denormalized counts).
 func (s *Store) countUserFollowStats(ctx context.Context, tenantID, userID pgtype.UUID) (gen.CountUserFollowStatsRow, error) {
-	return s.read.CountUserFollowStats(ctx, gen.CountUserFollowStatsParams{
-		UserID:   userID,
-		TenantID: tenantID,
-	})
+	return s.read.CountUserFollowStats(ctx,
+		userID,
+	)
 }
 
 // countUserFollowersGained returns the number of new user-entity follows for
 // the user within the supplied date range.
 func (s *Store) countUserFollowersGained(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (int64, error) {
 	return s.read.CountUserFollowersGained(ctx, gen.CountUserFollowersGainedParams{
-		TenantID: tenantID,
-		EntityID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		EntityID: userID, Column2: from, Column3: to,
 	})
 }
 
@@ -936,20 +926,16 @@ func (s *Store) countUserFollowersGained(ctx context.Context, tenantID, userID p
 // content within the supplied date range.
 func (s *Store) getUserDailyImpressions(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserDailyImpressionsRow, error) {
 	return s.read.GetUserDailyImpressions(ctx, gen.GetUserDailyImpressionsParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
 
 // getUserReadersByCountry returns the top countries reading the user's content.
 func (s *Store) getUserReadersByCountry(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) ([]gen.GetUserReadersByCountryRow, error) {
 	return s.read.GetUserReadersByCountry(ctx, gen.GetUserReadersByCountryParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
 
@@ -957,10 +943,8 @@ func (s *Store) getUserReadersByCountry(ctx context.Context, tenantID, userID pg
 // user's content within the supplied date range.
 func (s *Store) getUserPeriodEngagement(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz) (gen.GetUserPeriodEngagementRow, error) {
 	return s.read.GetUserPeriodEngagement(ctx, gen.GetUserPeriodEngagementParams{
-		TenantID: tenantID,
-		AuthorID: userID,
-		Column3:  from,
-		Column4:  to,
+
+		AuthorID: userID, Column2: from, Column3: to,
 	})
 }
 

@@ -976,7 +976,7 @@ var _ = pgx.ErrNoRows
 var _ = tenant.FromContext
 
 // Ensure gen package is referenced.
-var _ = gen.GetUserProfileParams{}
+var _ = gen.GetUserProfileRow{}
 
 // GetMyContentAnalytics handles GET /api/v1/me/analytics/content.
 // Returns per-content analytics breakdown for the authenticated user.
