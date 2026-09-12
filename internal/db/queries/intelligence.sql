@@ -6,8 +6,8 @@
 -- by tenant_id to guarantee data isolation across tenants.
 
 -- name: CreateIntelSource :one
-INSERT INTO intel_sources (tenant_id, name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
-VALUES ($1, $2, sqlc.narg(slug), $3, $4, sqlc.narg(description), $5, $6, COALESCE(sqlc.narg(source_kind), 'publisher'), $7, $8, $9, $10, $11, $12, $13, $14, $15, sqlc.narg(logo_url), $16,
+INSERT INTO intel_sources (tenant_id, name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id)
+VALUES ($1, $2, sqlc.narg(slug), $3, $4, sqlc.narg(description), $5, $6, COALESCE(sqlc.narg(source_kind), 'publisher'), $7, $8, $9, $10, $11, $12, $13, $14, $15, sqlc.narg(logo_url), sqlc.narg(keywords), $16,
         COALESCE(sqlc.narg(status), 'active'),
         sqlc.narg(proposed_by),
         sqlc.narg(proposed_at),
@@ -80,6 +80,7 @@ SET name = $3,
     attribution_required = $13,
     usage_restriction = $14,
     logo_url = COALESCE(sqlc.narg(logo_url), logo_url),
+    keywords = COALESCE(sqlc.narg(keywords), keywords),
     enabled = $15,
     status = COALESCE(sqlc.narg(status), status),
     proposed_by = COALESCE(sqlc.narg(proposed_by), proposed_by),
@@ -324,3 +325,11 @@ FROM source_collection_items i
 JOIN intel_sources s ON s.id = i.source_id AND s.tenant_id = $1
 WHERE i.collection_id = $2
 ORDER BY i.position, i.source_id;
+
+-- name: UpdateIntelSourceMetadata :exec
+UPDATE intel_sources
+SET description = COALESCE(sqlc.narg(description), description),
+    logo_url = COALESCE(sqlc.narg(logo_url), logo_url),
+    keywords = COALESCE(sqlc.narg(keywords), keywords),
+    updated_at = now()
+WHERE tenant_id = $1 AND id = $2;

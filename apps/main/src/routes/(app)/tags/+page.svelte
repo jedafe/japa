@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Hash, Search, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, FollowButton, SearchInput, DirectoryCard, ListPageBar, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
+	import { Hash, ShieldX, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { EmptyState, FollowButton, SearchInput, DirectoryCard, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -49,7 +49,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'content', label: t('tags.sort_content', 'Most Content') }
 	]);
 
-	// Filter panel (ListPageBar + FilterToggle pattern — same as /blog, /guides).
+	// Filter toggle panel (same as /blog, /guides).
 	const hasActiveFilters = $derived(!!selectedSort);
 	let showFilters = $state(false);
 	$effect(() => {
@@ -113,12 +113,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 <div class="mx-auto w-full max-w-full">
 	<!-- Header + search + filters -->
 	<div class="border-b border-[var(--color-border)] px-4 py-4">
-		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
-			<Hash size={20} /> {t('tags.heading', 'Tags')}
-		</h1>
-		<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-			{t('tags.subtitle', 'Follow tags to shape your feed.')}
-		</p>
+		<div class="flex items-start justify-between gap-4">
+			<div>
+				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
+					<Hash size={20} /> {t('tags.heading', 'Tags')}
+				</h1>
+				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
+					{t('tags.subtitle', 'Follow tags to shape your feed.')}
+				</p>
+			</div>
+			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="tags-filter-panel" />
+		</div>
 
 		<form class="mt-3" action="/tags" method="get" role="search">
 			<SearchInput
@@ -132,16 +137,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			{/if}
 		</form>
 	</div>
-
-	<!-- Filter bar: ListPageBar + FilterToggle, same as /guides -->
-	<ListPageBar>
-		<span class="flex items-center px-4 text-sm text-[var(--color-muted)]" style="min-height: var(--nav-height)">
-			{data.total} {t('tags.results', 'tags')}
-		</span>
-		{#snippet actions()}
-			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="tags-filter-panel" />
-		{/snippet}
-	</ListPageBar>
 
 	{#if showFilters}
 		<!-- Sort filter (moved from always-visible chips to the toggle panel) -->

@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { Source, SourceCollection, SourceMeta } from '$lib/types/sources';
+import type { Source, SourceMeta } from '$lib/types/sources';
 
 const PAGE_SIZE = 24;
 
@@ -34,15 +34,11 @@ export const load: PageServerLoad = async (event) => {
 	params.set('page_size', String(pageSize));
 	params.set('page_offset', String(pageOffset));
 
-	const [{ items: sources, meta }, collections] = await Promise.all([
-		apiList<Source>(ctx, `/sources?${params.toString()}`),
-		apiGet<SourceCollection[]>(ctx, '/sources/collections')
-	]);
+	const { items: sources, meta } = await apiList<Source>(ctx, `/sources?${params.toString()}`);
 
 	return {
 		sources,
 		meta,
-		collections,
 		sourceMeta,
 		q,
 		category,

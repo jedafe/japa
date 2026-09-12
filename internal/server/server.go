@@ -547,6 +547,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Register link preview processor for the worker's link_preview_fetch task.
 	linkPreviewAdapter := linkpreview.NewProcessorAdapter(linkPreviewFetcher)
 	worker.RegisterLinkPreviewProcessor(linkPreviewAdapter)
+	worker.RegisterSourceLinkPreviewer(&sourceLinkPreviewAdapter{fetcher: linkPreviewFetcher})
 
 	// Follow System subsystem (Section 31 — Follow System).
 	followService := follows.NewService(database)
@@ -2008,6 +2009,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// break the import cycle documented in internal/worker/intelligence.go).
 	intelSourcesStore := sources.NewStore(database)
 	intelSourcesService := sources.NewService(intelSourcesStore)
+	intelSourcesService.SetMetadataQueue(func(ctx context.Context, tenantID pgtype.UUID, sourceID sources.SourceID) error {
+		return taskEnqueuer.EnqueueSourceMetadata(sourceID.String(), tenantID.String())
+	})
 	agentDeps.IntelSourceManager = intelSourcesService
 	jceService.SetSourceRegistry(intelSourcesService)
 	orgService.SetSourceManager(intelSourcesService)
@@ -2261,7 +2265,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	videoService.SetDispatcher(aiDispatcher)
 	intelHandlers.SetVideoStore(videoStore)
 	intelHandlers.SetContentStore(contentService)
-	intelHandlers.SetLinkPreviewer(linkPreviewFetcher)
 	intelHandlers.SetReportService(reportsService)
 	intelHandlers.SetTagService(tagsService)
 	worker.RegisterVideoImportProcessor(videoService)

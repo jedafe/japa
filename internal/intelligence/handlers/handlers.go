@@ -28,7 +28,6 @@ import (
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/intelligence/stores"
-	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/tags"
@@ -59,12 +58,6 @@ type videoStore interface {
 	ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error)
 }
 
-// linkPreviewer fetches public-site metadata (Open Graph, favicon, keywords)
-// so the source detail page can display an up-to-date description and logo.
-type linkPreviewer interface {
-	Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID) (*linkpreview.Preview, error)
-}
-
 // contentStore is the small surface of the content service needed for source
 // item feeds that include linked comparison contents.
 type contentStore interface {
@@ -90,14 +83,13 @@ type Handlers struct {
 	intelSources  *sources.Service
 	followsSvc    *follows.Service
 	scholarSvc    *scholarships.Service
-	asynqClient   *asynq.Client   // enqueues intel:promote on review approve (BUG-003)
-	settings      SettingsReader  // system_settings reader (INTEL-016); nil → hardcoded defaults
-	defaultTenant pgtype.UUID     // tenant ID for settings reads
-	videos        videoStore      // optional; enables video source item feeds
-	contents      contentStore    // optional; enables comparison source item feeds
-	linkPreview   linkPreviewer   // optional; enriches source detail with live site metadata
-	reportSvc     reportService   // optional; creates source reports from the detail page
-	tagSvc        tagService      // optional; ensures source keyword tags exist
+	asynqClient   *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
+	settings      SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
+	defaultTenant pgtype.UUID    // tenant ID for settings reads
+	videos        videoStore     // optional; enables video source item feeds
+	contents      contentStore   // optional; enables comparison source item feeds
+	reportSvc     reportService  // optional; creates source reports from the detail page
+	tagSvc        tagService     // optional; ensures source keyword tags exist
 }
 
 // defaultIntelTenantID is the system tenant UUID used as a fallback for
@@ -150,10 +142,6 @@ func (h *Handlers) SetVideoStore(v videoStore) { h.videos = v }
 // SetContentStore links the source directory item feed to the content service
 // so linked comparison contents can be surfaced as source items.
 func (h *Handlers) SetContentStore(c contentStore) { h.contents = c }
-
-// SetLinkPreviewer wires the link preview fetcher so public source detail can
-// surface live site metadata (description, logo, SEO keywords).
-func (h *Handlers) SetLinkPreviewer(lp linkPreviewer) { h.linkPreview = lp }
 
 // SetReportService wires the report service so source detail can accept
 // user reports.
