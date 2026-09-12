@@ -17,6 +17,7 @@ export interface Source {
 	description?: string;
 	logo_url?: string | null;
 	keywords?: string[];
+	tag_slugs?: Record<string, string>;
 	domain: string;
 	source_url?: string;
 	category: string;
