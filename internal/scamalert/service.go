@@ -305,7 +305,6 @@ func (s *Service) Submit(ctx context.Context, tenantID, reporterID pgtype.UUID, 
 		report.ReporterID = reporterID
 	}
 
-	report.TenantID = tenantID
 	report.Status = "under_review"
 
 	id, err := s.store.CreateReport(ctx, report)
@@ -475,7 +474,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, s
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListReports(ctx, ListReportsFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		ScamType:           scamType,
 		Limit:              limit,
@@ -526,7 +525,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminListReports(ctx, AdminListReportsFilter{
-		TenantID:           tenantID,
+
 		Status:             status,
 		DestinationSpaceID: destSpaceID,
 		ScamType:           scamType,
@@ -585,7 +584,6 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 			TenantID string `json:"tenant_id"`
 		}{
 			ReportID: id.String(),
-			TenantID: tenantID.String(),
 		})
 		if err != nil {
 			slog.Error("scamalert: review: marshal notify payload failed", "error", err)
@@ -689,7 +687,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 			Reason      string `json:"reason"`
 			ReferenceID string `json:"reference_id,omitempty"`
 		}{
-			TenantID:    tenantID.String(),
+
 			UserID:      reporterID.String(),
 			Points:      50, // baseline points for a confirmed scam report
 			Reason:      "scam_alert.confirmed",

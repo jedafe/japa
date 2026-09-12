@@ -12,26 +12,20 @@ import (
 )
 
 const getCourseOfferingByID = `-- name: GetCourseOfferingByID :one
-SELECT o.id, o.tenant_id, o.course_id, o.university_id, o.slug,
-       o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
-       o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
-       c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
-       c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
-       s.name AS university_name, s.slug AS university_slug
+SELECT o.id, o.course_id, o.university_id, o.slug,
+ o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
+ o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
+ c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
+ c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
+ s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
 JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.id = $1 AND o.tenant_id = $2 AND o.deleted_at IS NULL
+WHERE o.id = $1 AND o.deleted_at IS NULL
 `
-
-type GetCourseOfferingByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetCourseOfferingByIDRow struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	CourseID             pgtype.UUID        `json:"course_id"`
 	UniversityID         pgtype.UUID        `json:"university_id"`
 	Slug                 string             `json:"slug"`
@@ -57,12 +51,11 @@ type GetCourseOfferingByIDRow struct {
 	UniversitySlug       string             `json:"university_slug"`
 }
 
-func (q *Queries) GetCourseOfferingByID(ctx context.Context, arg GetCourseOfferingByIDParams) (GetCourseOfferingByIDRow, error) {
-	row := q.db.QueryRow(ctx, getCourseOfferingByID, arg.ID, arg.TenantID)
+func (q *Queries) GetCourseOfferingByID(ctx context.Context, id pgtype.UUID) (GetCourseOfferingByIDRow, error) {
+	row := q.db.QueryRow(ctx, getCourseOfferingByID, id)
 	var i GetCourseOfferingByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CourseID,
 		&i.UniversityID,
 		&i.Slug,
@@ -91,29 +84,22 @@ func (q *Queries) GetCourseOfferingByID(ctx context.Context, arg GetCourseOfferi
 }
 
 const getCourseOfferingBySlug = `-- name: GetCourseOfferingBySlug :one
-SELECT o.id, o.tenant_id, o.course_id, o.university_id, o.slug,
-       o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
-       o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
-       c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
-       c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
-       s.name AS university_name, s.slug AS university_slug
+SELECT o.id, o.course_id, o.university_id, o.slug,
+ o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
+ o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
+ c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
+ c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
+ s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
 JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.tenant_id = $1
-  AND o.deleted_at IS NULL
-  AND o.slug = $2
+WHERE o.deleted_at IS NULL
+ AND o.slug = $1
 LIMIT 1
 `
 
-type GetCourseOfferingBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
-
 type GetCourseOfferingBySlugRow struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	CourseID             pgtype.UUID        `json:"course_id"`
 	UniversityID         pgtype.UUID        `json:"university_id"`
 	Slug                 string             `json:"slug"`
@@ -139,12 +125,11 @@ type GetCourseOfferingBySlugRow struct {
 	UniversitySlug       string             `json:"university_slug"`
 }
 
-func (q *Queries) GetCourseOfferingBySlug(ctx context.Context, arg GetCourseOfferingBySlugParams) (GetCourseOfferingBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getCourseOfferingBySlug, arg.TenantID, arg.Slug)
+func (q *Queries) GetCourseOfferingBySlug(ctx context.Context, slug string) (GetCourseOfferingBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getCourseOfferingBySlug, slug)
 	var i GetCourseOfferingBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CourseID,
 		&i.UniversityID,
 		&i.Slug,
@@ -174,25 +159,24 @@ func (q *Queries) GetCourseOfferingBySlug(ctx context.Context, arg GetCourseOffe
 
 const listCourseOfferingsByUniversity = `-- name: ListCourseOfferingsByUniversity :many
 
-SELECT o.id, o.tenant_id, o.course_id, o.university_id, o.slug,
-       o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
-       o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
-       c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
-       c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
-       s.name AS university_name, s.slug AS university_slug
+SELECT o.id, o.course_id, o.university_id, o.slug,
+ o.tuition, o.currency, o.duration_years, o.study_mode, o.intake_months,
+ o.entry_requirements, o.accreditation, o.is_published, o.created_at, o.updated_at,
+ c.title AS course_title, c.slug AS course_slug, c.description AS course_description,
+ c.degree_type, c.department, c.field_of_study, c.language, c.default_duration_years,
+ s.name AS university_name, s.slug AS university_slug
 FROM university_course_offerings o
 JOIN university_course_catalog c ON c.id = o.course_id AND c.deleted_at IS NULL
 JOIN spaces s ON s.id = o.university_id AND s.deleted_at IS NULL
-WHERE o.tenant_id = $1 AND o.deleted_at IS NULL AND o.is_published = true
-  AND c.is_published = true
-  AND ($2::uuid IS NULL OR o.university_id = $2)
-  AND ($3::text = '' OR c.title ILIKE '%' || $3 || '%')
+WHERE o.deleted_at IS NULL AND o.is_published = true
+ AND c.is_published = true
+ AND ($1::uuid IS NULL OR o.university_id = $1)
+ AND ($2::text = '' OR c.title ILIKE '%' || $2 || '%')
 ORDER BY c.title ASC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListCourseOfferingsByUniversityParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	UniversityID pgtype.UUID `json:"university_id"`
 	Search       string      `json:"search"`
 	OffsetVal    int32       `json:"offset_val"`
@@ -201,7 +185,6 @@ type ListCourseOfferingsByUniversityParams struct {
 
 type ListCourseOfferingsByUniversityRow struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	CourseID             pgtype.UUID        `json:"course_id"`
 	UniversityID         pgtype.UUID        `json:"university_id"`
 	Slug                 string             `json:"slug"`
@@ -231,7 +214,6 @@ type ListCourseOfferingsByUniversityRow struct {
 // Ref: japaconnect-engineering/sections/39-space-types-university.md
 func (q *Queries) ListCourseOfferingsByUniversity(ctx context.Context, arg ListCourseOfferingsByUniversityParams) ([]ListCourseOfferingsByUniversityRow, error) {
 	rows, err := q.db.Query(ctx, listCourseOfferingsByUniversity,
-		arg.TenantID,
 		arg.UniversityID,
 		arg.Search,
 		arg.OffsetVal,
@@ -246,7 +228,6 @@ func (q *Queries) ListCourseOfferingsByUniversity(ctx context.Context, arg ListC
 		var i ListCourseOfferingsByUniversityRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.CourseID,
 			&i.UniversityID,
 			&i.Slug,

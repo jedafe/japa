@@ -345,10 +345,9 @@ func (s *Service) SetSearcher(searcher ContentSearcher) { s.searcher = searcher 
 // given space via space_parent_spaces. Used when auto-assigning content to
 // also inherit the geo parents of the space it is posted in.
 func (s *Service) GetSpacePrimaryGeoParents(ctx context.Context, spaceID, tenantID pgtype.UUID) ([]pgtype.UUID, error) {
-	ids, err := s.read.GetSpacePrimaryGeoParents(ctx, gen.GetSpacePrimaryGeoParentsParams{
-		SpaceID:  spaceID,
-		TenantID: tenantID,
-	})
+	ids, err := s.read.GetSpacePrimaryGeoParents(ctx,
+		spaceID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting space primary geo parents: %w", err)
 	}
@@ -374,19 +373,19 @@ func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventTy
 // Ref: v2 source directory item feed for comparison sources.
 func (s *Service) ListComparisonContentsBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error) {
 	rows, err := s.read.ListComparisonContentsBySourceID(ctx, gen.ListComparisonContentsBySourceIDParams{
-		TenantID:   tenantID,
+
 		IntelSourceID: sourceID,
-		PageLimit:  limit,
-		PageOffset: offset,
+		PageLimit:     limit,
+		PageOffset:    offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing comparison contents by source: %w", err)
 	}
 
-	total, err := s.read.CountComparisonContentsBySourceID(ctx, gen.CountComparisonContentsBySourceIDParams{
-		TenantID:      tenantID,
-		IntelSourceID: sourceID,
-	})
+	total, err := s.read.CountComparisonContentsBySourceID(ctx,
+
+		sourceID,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting comparison contents by source: %w", err)
 	}

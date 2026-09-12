@@ -86,8 +86,8 @@ type WebhookEndpointCreateResponse struct {
 // without the secret.
 func (e WebhookEndpointWithSecret) ToResponse() WebhookEndpointResponse {
 	r := WebhookEndpointResponse{
-		ID:         e.ID.String(),
-		TenantID:   e.TenantID.String(),
+		ID: e.ID.String(),
+
 		Name:       e.Name,
 		URL:        e.URL,
 		EventTypes: e.EventTypes,

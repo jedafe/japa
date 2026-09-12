@@ -43,7 +43,7 @@ func (s *Store) UpsertTrendingSnapshot(
 	expiresAt time.Time,
 ) error {
 	return s.queries.UpsertTrendingSnapshot(ctx, gen.UpsertTrendingSnapshotParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		Score:      score,
@@ -63,11 +63,9 @@ func (s *Store) GetTrendingByType(
 	limit int32,
 ) ([]gen.GetTrendingByTypeRow, error) {
 	return s.queries.GetTrendingByType(ctx, gen.GetTrendingByTypeParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
-		Window:     window,
-		Column4:    geoCode,
-		Limit:      limit,
+		Window:     window, Column3: geoCode, Limit: limit,
 	})
 }
 
@@ -80,10 +78,8 @@ func (s *Store) GetTrendingContent(
 	limit int32,
 ) ([]gen.GetTrendingContentRow, error) {
 	return s.queries.GetTrendingContent(ctx, gen.GetTrendingContentParams{
-		TenantID: tenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
 
@@ -96,10 +92,8 @@ func (s *Store) GetTrendingTags(
 	limit int32,
 ) ([]gen.GetTrendingTagsRow, error) {
 	return s.queries.GetTrendingTags(ctx, gen.GetTrendingTagsParams{
-		TenantID: tenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
 
@@ -112,10 +106,8 @@ func (s *Store) GetTrendingSpaces(
 	limit int32,
 ) ([]gen.GetTrendingSpacesRow, error) {
 	return s.queries.GetTrendingSpaces(ctx, gen.GetTrendingSpacesParams{
-		TenantID: tenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
 
@@ -128,16 +120,14 @@ func (s *Store) GetTrendingUsers(
 	limit int32,
 ) ([]gen.GetTrendingUsersRow, error) {
 	return s.queries.GetTrendingUsers(ctx, gen.GetTrendingUsersParams{
-		TenantID: tenantID,
-		Window:   window,
-		Column3:  geoCode,
-		Limit:    limit,
+
+		Window: window, Column2: geoCode, Limit: limit,
 	})
 }
 
 // DeleteExpiredTrendingSnapshots removes all expired trending snapshots.
 func (s *Store) DeleteExpiredTrendingSnapshots(ctx context.Context, tenantID pgtype.UUID) error {
-	return s.queries.DeleteExpiredTrendingSnapshots(ctx, tenantID)
+	return s.queries.DeleteExpiredTrendingSnapshots(ctx)
 }
 
 // DeleteTrendingSnapshotsByType removes trending snapshots for a specific type/window/geo combination.
@@ -149,10 +139,9 @@ func (s *Store) DeleteTrendingSnapshotsByType(
 	geoCode string,
 ) error {
 	return s.queries.DeleteTrendingSnapshotsByType(ctx, gen.DeleteTrendingSnapshotsByTypeParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
-		Window:     window,
-		Column4:    geoCode,
+		Window:     window, Column3: geoCode,
 	})
 }
 
@@ -162,10 +151,10 @@ func (s *Store) GetTrendingSearchQueries(
 	tenantID pgtype.UUID,
 	limit int32,
 ) ([]gen.GetTrendingSearchQueriesRow, error) {
-	return s.queries.GetTrendingSearchQueries(ctx, gen.GetTrendingSearchQueriesParams{
-		TenantID: tenantID,
-		Limit:    limit,
-	})
+	return s.queries.GetTrendingSearchQueries(ctx,
+
+		limit,
+	)
 }
 
 // GetSuggestedUsers returns users the authenticated user might want to follow.
@@ -179,10 +168,10 @@ func (s *Store) GetSuggestedUsers(
 	geoCode *string,
 ) ([]gen.GetSuggestedUsersRow, error) {
 	return s.queries.GetSuggestedUsers(ctx, gen.GetSuggestedUsersParams{
-		UserID:   userID,
-		TenantID: tenantID,
-		Limit:    limit,
-		GeoCode:  geoCode,
+		UserID: userID,
+
+		Limit:   limit,
+		GeoCode: geoCode,
 	})
 }
 
@@ -197,10 +186,10 @@ func (s *Store) GetSuggestedSpaces(
 	geoCode *string,
 ) ([]gen.GetSuggestedSpacesRow, error) {
 	return s.queries.GetSuggestedSpaces(ctx, gen.GetSuggestedSpacesParams{
-		UserID:   userID,
-		TenantID: tenantID,
-		Limit:    limit,
-		GeoCode:  geoCode,
+		UserID: userID,
+
+		Limit:   limit,
+		GeoCode: geoCode,
 	})
 }
 
@@ -216,9 +205,9 @@ func (s *Store) GetSuggestedTags(
 ) ([]gen.GetSuggestedTagsRow, error) {
 	return s.queries.GetSuggestedTags(ctx, gen.GetSuggestedTagsParams{
 		AuthorID: userID,
-		TenantID: tenantID,
-		Limit:    limit,
-		GeoCode:  geoCode,
+
+		Limit:   limit,
+		GeoCode: geoCode,
 	})
 }
 
@@ -239,11 +228,8 @@ func (s *Store) GetSuggestedContent(
 	}
 
 	return s.queries.GetSuggestedContent(ctx, gen.GetSuggestedContentParams{
-		TenantID: tenantID,
-		Window:   window,
-		Column3:  gc,
-		Column4:  seedContentID,
-		Limit:    limit,
+
+		Window: window, Column2: gc, Column3: seedContentID, Limit: limit,
 	})
 }
 

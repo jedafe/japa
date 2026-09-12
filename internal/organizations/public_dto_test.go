@@ -25,8 +25,8 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 func TestToPublicOrg_LeanAndCorrect(t *testing.T) {
 	tagline := "we help"
 	row := gen.Organization{
-		ID:            mustUUID(t, "11111111-1111-1111-1111-111111111111"),
-		TenantID:      mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		ID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
+
 		OwnerUserID:   mustUUID(t, "33333333-3333-3333-3333-333333333333"),
 		Name:          "Acme Corp",
 		Slug:          "acme",

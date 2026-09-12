@@ -156,7 +156,7 @@ func (s *Service) CreateRedirect(ctx context.Context, tenantID pgtype.UUID, sour
 	}
 
 	r, err := s.store.createRedirect(ctx, gen.CreateRedirectParams{
-		TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
+		SourcePath: sourcePath, TargetUrl: targetURL,
 		HttpStatus: httpStatus, Notes: notes,
 	})
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 
 	r, err := s.store.updateRedirect(ctx, gen.UpdateRedirectParams{
-		ID: id, TenantID: tenantID, SourcePath: sourcePath, TargetUrl: targetURL,
+		ID: id, SourcePath: sourcePath, TargetUrl: targetURL,
 		HttpStatus: httpStatus, IsActive: resolvedIsActive, Notes: notes,
 	})
 	if err != nil {

@@ -15,76 +15,75 @@ const bulkUpdateMenuItemSortOrder = `-- name: BulkUpdateMenuItemSortOrder :exec
 UPDATE menu_items
 SET sort_order = u.sort_order, updated_at = now()
 FROM (
-    SELECT unnest($2::uuid[]) AS id, unnest($3::int[]) AS sort_order
+ SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS sort_order
 ) AS u
-WHERE menu_items.id = u.id AND menu_items.tenant_id = $1
+WHERE menu_items.id = u.id
 `
 
 type BulkUpdateMenuItemSortOrderParams struct {
-	TenantID   pgtype.UUID   `json:"tenant_id"`
 	Ids        []pgtype.UUID `json:"ids"`
 	SortOrders []int32       `json:"sort_orders"`
 }
 
 func (q *Queries) BulkUpdateMenuItemSortOrder(ctx context.Context, arg BulkUpdateMenuItemSortOrderParams) error {
-	_, err := q.db.Exec(ctx, bulkUpdateMenuItemSortOrder, arg.TenantID, arg.Ids, arg.SortOrders)
+	_, err := q.db.Exec(ctx, bulkUpdateMenuItemSortOrder, arg.Ids, arg.SortOrders)
 	return err
 }
 
 const countMenus = `-- name: CountMenus :one
 SELECT COUNT(*)::int AS count
 FROM menus
-WHERE tenant_id = $1
-  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR placement = $3)
-  AND ($4::text = '' OR status = $4)
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR placement = $2)
+ AND ($3::text = '' OR status = $3)
 `
 
 type CountMenusParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Q         string      `json:"q"`
-	Placement string      `json:"placement"`
-	Status    string      `json:"status"`
+	Q         string `json:"q"`
+	Placement string `json:"placement"`
+	Status    string `json:"status"`
 }
 
 func (q *Queries) CountMenus(ctx context.Context, arg CountMenusParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMenus,
-		arg.TenantID,
-		arg.Q,
-		arg.Placement,
-		arg.Status,
-	)
+	row := q.db.QueryRow(ctx, countMenus, arg.Q, arg.Placement, arg.Status)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const createMenu = `-- name: CreateMenu :one
-INSERT INTO menus (tenant_id, slug, name, placement, status)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at
+INSERT INTO menus (slug, name, placement, status) VALUES ($1, $2, $3, $4)
+
+RETURNING id, slug, name, placement, status, created_at, updated_at
 `
 
 type CreateMenuParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Slug      string      `json:"slug"`
-	Name      string      `json:"name"`
-	Placement string      `json:"placement"`
-	Status    string      `json:"status"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	Placement string `json:"placement"`
+	Status    string `json:"status"`
 }
 
-func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, error) {
+type CreateMenuRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (CreateMenuRow, error) {
 	row := q.db.QueryRow(ctx, createMenu,
-		arg.TenantID,
 		arg.Slug,
 		arg.Name,
 		arg.Placement,
 		arg.Status,
 	)
-	var i Menu
+	var i CreateMenuRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -96,19 +95,14 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 }
 
 const createMenuItem = `-- name: CreateMenuItem :one
-INSERT INTO menu_items (tenant_id, menu_id, parent_id, label, url, icon,
-    sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    required_group_ids, feature_flag, status)
-VALUES ($1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11,
-    $12, $13, $14, $15)
-RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
-    permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, feature_flag, created_at, updated_at
+INSERT INTO menu_items (menu_id, parent_id, label, url, icon, sort_order, permission_node, visibility, target, is_ad_slot, ad_slot_config, required_group_ids, feature_flag, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+
+RETURNING id, menu_id, parent_id, label, url, icon, sort_order,
+ permission_node, visibility, target, is_ad_slot, ad_slot_config,
+ status, required_group_ids, feature_flag, created_at, updated_at
 `
 
 type CreateMenuItemParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	MenuID           pgtype.UUID `json:"menu_id"`
 	ParentID         pgtype.UUID `json:"parent_id"`
 	Label            string      `json:"label"`
@@ -127,7 +121,6 @@ type CreateMenuItemParams struct {
 
 type CreateMenuItemRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	MenuID           pgtype.UUID        `json:"menu_id"`
 	ParentID         pgtype.UUID        `json:"parent_id"`
 	Label            string             `json:"label"`
@@ -148,7 +141,6 @@ type CreateMenuItemRow struct {
 
 func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) (CreateMenuItemRow, error) {
 	row := q.db.QueryRow(ctx, createMenuItem,
-		arg.TenantID,
 		arg.MenuID,
 		arg.ParentID,
 		arg.Label,
@@ -167,7 +159,6 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 	var i CreateMenuItemRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MenuID,
 		&i.ParentID,
 		&i.Label,
@@ -190,51 +181,45 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 
 const deleteMenu = `-- name: DeleteMenu :exec
 DELETE FROM menus
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteMenuParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteMenu(ctx context.Context, arg DeleteMenuParams) error {
-	_, err := q.db.Exec(ctx, deleteMenu, arg.ID, arg.TenantID)
+func (q *Queries) DeleteMenu(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMenu, id)
 	return err
 }
 
 const deleteMenuItem = `-- name: DeleteMenuItem :exec
 DELETE FROM menu_items
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteMenuItemParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteMenuItem(ctx context.Context, arg DeleteMenuItemParams) error {
-	_, err := q.db.Exec(ctx, deleteMenuItem, arg.ID, arg.TenantID)
+func (q *Queries) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMenuItem, id)
 	return err
 }
 
 const getMenuByID = `-- name: GetMenuByID :one
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetMenuByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetMenuByIDRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetMenuByID(ctx context.Context, arg GetMenuByIDParams) (Menu, error) {
-	row := q.db.QueryRow(ctx, getMenuByID, arg.ID, arg.TenantID)
-	var i Menu
+func (q *Queries) GetMenuByID(ctx context.Context, id pgtype.UUID) (GetMenuByIDRow, error) {
+	row := q.db.QueryRow(ctx, getMenuByID, id)
+	var i GetMenuByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -246,22 +231,26 @@ func (q *Queries) GetMenuByID(ctx context.Context, arg GetMenuByIDParams) (Menu,
 }
 
 const getMenuBySlug = `-- name: GetMenuBySlug :one
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
-WHERE tenant_id = $1 AND slug = $2
+WHERE slug = $1
 `
 
-type GetMenuBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
+type GetMenuBySlugRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetMenuBySlug(ctx context.Context, arg GetMenuBySlugParams) (Menu, error) {
-	row := q.db.QueryRow(ctx, getMenuBySlug, arg.TenantID, arg.Slug)
-	var i Menu
+func (q *Queries) GetMenuBySlug(ctx context.Context, slug string) (GetMenuBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getMenuBySlug, slug)
+	var i GetMenuBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -274,25 +263,29 @@ func (q *Queries) GetMenuBySlug(ctx context.Context, arg GetMenuBySlugParams) (M
 
 const getMenuBySlugForTenant = `-- name: GetMenuBySlugForTenant :one
 
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
-WHERE tenant_id = $1 AND slug = $2 AND status = 'active'
+WHERE slug = $1 AND status = 'active'
 `
 
-type GetMenuBySlugForTenantParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
+type GetMenuBySlugForTenantRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // =====================
 // Public resolution (no tenant filter — called from public endpoint)
 // =====================
-func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, arg GetMenuBySlugForTenantParams) (Menu, error) {
-	row := q.db.QueryRow(ctx, getMenuBySlugForTenant, arg.TenantID, arg.Slug)
-	var i Menu
+func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, slug string) (GetMenuBySlugForTenantRow, error) {
+	row := q.db.QueryRow(ctx, getMenuBySlugForTenant, slug)
+	var i GetMenuBySlugForTenantRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -304,21 +297,15 @@ func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, arg GetMenuBySlugF
 }
 
 const getMenuItem = `-- name: GetMenuItem :one
-SELECT id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
-       permission_node, visibility, target, is_ad_slot, ad_slot_config,
-       status, required_group_ids, feature_flag, created_at, updated_at
+SELECT id, menu_id, parent_id, label, url, icon, sort_order,
+ permission_node, visibility, target, is_ad_slot, ad_slot_config,
+ status, required_group_ids, feature_flag, created_at, updated_at
 FROM menu_items
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetMenuItemParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetMenuItemRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	MenuID           pgtype.UUID        `json:"menu_id"`
 	ParentID         pgtype.UUID        `json:"parent_id"`
 	Label            string             `json:"label"`
@@ -337,12 +324,11 @@ type GetMenuItemRow struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (GetMenuItemRow, error) {
-	row := q.db.QueryRow(ctx, getMenuItem, arg.ID, arg.TenantID)
+func (q *Queries) GetMenuItem(ctx context.Context, id pgtype.UUID) (GetMenuItemRow, error) {
+	row := q.db.QueryRow(ctx, getMenuItem, id)
 	var i GetMenuItemRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MenuID,
 		&i.ParentID,
 		&i.Label,
@@ -366,16 +352,11 @@ func (q *Queries) GetMenuItem(ctx context.Context, arg GetMenuItemParams) (GetMe
 const getUserGroupIDs = `-- name: GetUserGroupIDs :many
 SELECT group_id::text AS group_id
 FROM user_group_memberships
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type GetUserGroupIDsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetUserGroupIDs(ctx context.Context, arg GetUserGroupIDsParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, getUserGroupIDs, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserGroupIDs(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUserGroupIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -396,23 +377,17 @@ func (q *Queries) GetUserGroupIDs(ctx context.Context, arg GetUserGroupIDsParams
 
 const listMenuItems = `-- name: ListMenuItems :many
 
-SELECT mi.id, mi.tenant_id, mi.menu_id, mi.parent_id, mi.label, mi.url,
-       mi.icon, mi.sort_order, mi.permission_node, mi.visibility, mi.target,
-       mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.required_group_ids,
-       mi.feature_flag, mi.created_at, mi.updated_at
+SELECT mi.id, mi.menu_id, mi.parent_id, mi.label, mi.url,
+ mi.icon, mi.sort_order, mi.permission_node, mi.visibility, mi.target,
+ mi.is_ad_slot, mi.ad_slot_config, mi.status, mi.required_group_ids,
+ mi.feature_flag, mi.created_at, mi.updated_at
 FROM menu_items mi
-WHERE mi.tenant_id = $1 AND mi.menu_id = $2
+WHERE mi.menu_id = $1
 ORDER BY mi.sort_order ASC, mi.created_at ASC
 `
 
-type ListMenuItemsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	MenuID   pgtype.UUID `json:"menu_id"`
-}
-
 type ListMenuItemsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	MenuID           pgtype.UUID        `json:"menu_id"`
 	ParentID         pgtype.UUID        `json:"parent_id"`
 	Label            string             `json:"label"`
@@ -434,8 +409,8 @@ type ListMenuItemsRow struct {
 // =====================
 // Menu Items CRUD
 // =====================
-func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([]ListMenuItemsRow, error) {
-	rows, err := q.db.Query(ctx, listMenuItems, arg.TenantID, arg.MenuID)
+func (q *Queries) ListMenuItems(ctx context.Context, menuID pgtype.UUID) ([]ListMenuItemsRow, error) {
+	rows, err := q.db.Query(ctx, listMenuItems, menuID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +420,6 @@ func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([
 		var i ListMenuItemsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.MenuID,
 			&i.ParentID,
 			&i.Label,
@@ -476,42 +450,39 @@ func (q *Queries) ListMenuItems(ctx context.Context, arg ListMenuItemsParams) ([
 const listMenus = `-- name: ListMenus :many
 
 
-SELECT m.id, m.tenant_id, m.slug, m.name, m.placement, m.status, m.created_at, m.updated_at,
-       (SELECT COUNT(*)::int FROM menu_items mi WHERE mi.menu_id = m.id AND mi.tenant_id = m.tenant_id) AS item_count
+SELECT m.id, m.slug, m.name, m.placement, m.status, m.created_at, m.updated_at,
+ (SELECT COUNT(*)::int FROM menu_items mi WHERE mi.menu_id = m.id) AS item_count
 FROM menus m
-WHERE m.tenant_id = $1
-  AND ($2::text = '' OR m.name ILIKE '%' || $2 || '%' OR m.slug ILIKE '%' || $2 || '%')
-  AND ($3::text = '' OR m.placement = $3)
-  AND ($4::text = '' OR m.status = $4)
+WHERE ($1::text = '' OR m.name ILIKE '%' || $1 || '%' OR m.slug ILIKE '%' || $1 || '%')
+ AND ($2::text = '' OR m.placement = $2)
+ AND ($3::text = '' OR m.status = $3)
 ORDER BY
-    CASE WHEN $5::text = 'asc' AND $6::text = 'name' THEN m.name END ASC,
-    CASE WHEN $5::text = 'asc' AND $6::text = 'slug' THEN m.slug END ASC,
-    CASE WHEN $5::text = 'asc' AND $6::text = 'placement' THEN m.placement END ASC,
-    CASE WHEN $5::text = 'asc' AND $6::text = 'status' THEN m.status END ASC,
-    CASE WHEN $5::text = 'asc' AND $6::text = 'updated_at' THEN m.updated_at END ASC,
-    CASE WHEN $5::text = 'desc' AND $6::text = 'name' THEN m.name END DESC,
-    CASE WHEN $5::text = 'desc' AND $6::text = 'slug' THEN m.slug END DESC,
-    CASE WHEN $5::text = 'desc' AND $6::text = 'placement' THEN m.placement END DESC,
-    CASE WHEN $5::text = 'desc' AND $6::text = 'status' THEN m.status END DESC,
-    CASE WHEN $5::text = 'desc' AND $6::text = 'updated_at' THEN m.updated_at END DESC,
-    m.created_at ASC
-LIMIT $8 OFFSET $7
+ CASE WHEN $4::text = 'asc' AND $5::text = 'name' THEN m.name END ASC,
+ CASE WHEN $4::text = 'asc' AND $5::text = 'slug' THEN m.slug END ASC,
+ CASE WHEN $4::text = 'asc' AND $5::text = 'placement' THEN m.placement END ASC,
+ CASE WHEN $4::text = 'asc' AND $5::text = 'status' THEN m.status END ASC,
+ CASE WHEN $4::text = 'asc' AND $5::text = 'updated_at' THEN m.updated_at END ASC,
+ CASE WHEN $4::text = 'desc' AND $5::text = 'name' THEN m.name END DESC,
+ CASE WHEN $4::text = 'desc' AND $5::text = 'slug' THEN m.slug END DESC,
+ CASE WHEN $4::text = 'desc' AND $5::text = 'placement' THEN m.placement END DESC,
+ CASE WHEN $4::text = 'desc' AND $5::text = 'status' THEN m.status END DESC,
+ CASE WHEN $4::text = 'desc' AND $5::text = 'updated_at' THEN m.updated_at END DESC,
+ m.created_at ASC
+LIMIT $7 OFFSET $6
 `
 
 type ListMenusParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Q          string      `json:"q"`
-	Placement  string      `json:"placement"`
-	Status     string      `json:"status"`
-	SortDir    string      `json:"sort_dir"`
-	Sort       string      `json:"sort"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Q          string `json:"q"`
+	Placement  string `json:"placement"`
+	Status     string `json:"status"`
+	SortDir    string `json:"sort_dir"`
+	Sort       string `json:"sort"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListMenusRow struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Slug      string             `json:"slug"`
 	Name      string             `json:"name"`
 	Placement string             `json:"placement"`
@@ -533,7 +504,6 @@ type ListMenusRow struct {
 // an N+1 fetch.
 func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]ListMenusRow, error) {
 	rows, err := q.db.Query(ctx, listMenus,
-		arg.TenantID,
 		arg.Q,
 		arg.Placement,
 		arg.Status,
@@ -551,7 +521,6 @@ func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]ListMen
 		var i ListMenusRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Slug,
 			&i.Name,
 			&i.Placement,
@@ -573,8 +542,8 @@ func (q *Queries) ListMenus(ctx context.Context, arg ListMenusParams) ([]ListMen
 const updateMenu = `-- name: UpdateMenu :one
 UPDATE menus
 SET name = $1, placement = $2, status = $3, updated_at = now()
-WHERE id = $4 AND tenant_id = $5
-RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at
+WHERE id = $4
+RETURNING id, slug, name, placement, status, created_at, updated_at
 `
 
 type UpdateMenuParams struct {
@@ -582,21 +551,28 @@ type UpdateMenuParams struct {
 	Placement string      `json:"placement"`
 	Status    string      `json:"status"`
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, error) {
+type UpdateMenuRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Placement string             `json:"placement"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (UpdateMenuRow, error) {
 	row := q.db.QueryRow(ctx, updateMenu,
 		arg.Name,
 		arg.Placement,
 		arg.Status,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i Menu
+	var i UpdateMenuRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -610,17 +586,17 @@ func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, e
 const updateMenuItem = `-- name: UpdateMenuItem :one
 UPDATE menu_items
 SET label = $1, url = $2, icon = $3,
-    parent_id = $4, sort_order = $5,
-    permission_node = $6, visibility = $7,
-    target = $8, is_ad_slot = $9,
-    ad_slot_config = $10, status = $11,
-    required_group_ids = $12,
-    feature_flag = $13,
-    updated_at = now()
-WHERE id = $14 AND tenant_id = $15
-RETURNING id, tenant_id, menu_id, parent_id, label, url, icon, sort_order,
-    permission_node, visibility, target, is_ad_slot, ad_slot_config,
-    status, required_group_ids, feature_flag, created_at, updated_at
+ parent_id = $4, sort_order = $5,
+ permission_node = $6, visibility = $7,
+ target = $8, is_ad_slot = $9,
+ ad_slot_config = $10, status = $11,
+ required_group_ids = $12,
+ feature_flag = $13,
+ updated_at = now()
+WHERE id = $14
+RETURNING id, menu_id, parent_id, label, url, icon, sort_order,
+ permission_node, visibility, target, is_ad_slot, ad_slot_config,
+ status, required_group_ids, feature_flag, created_at, updated_at
 `
 
 type UpdateMenuItemParams struct {
@@ -638,12 +614,10 @@ type UpdateMenuItemParams struct {
 	RequiredGroupIds []byte      `json:"required_group_ids"`
 	FeatureFlag      *string     `json:"feature_flag"`
 	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateMenuItemRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	MenuID           pgtype.UUID        `json:"menu_id"`
 	ParentID         pgtype.UUID        `json:"parent_id"`
 	Label            string             `json:"label"`
@@ -678,12 +652,10 @@ func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) 
 		arg.RequiredGroupIds,
 		arg.FeatureFlag,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateMenuItemRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MenuID,
 		&i.ParentID,
 		&i.Label,

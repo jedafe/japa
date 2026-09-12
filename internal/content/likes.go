@@ -18,7 +18,7 @@ import (
 // public profile Likes tab — draft/private content is excluded by the query.
 func (s *Service) ListContentLikedByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListContentLikedByUserRow, error) {
 	rows, err := s.read.ListContentLikedByUser(ctx, gen.ListContentLikedByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,

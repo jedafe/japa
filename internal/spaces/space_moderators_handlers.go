@@ -112,7 +112,7 @@ func (h *Handlers) AssignModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
-		TenantID:         tenantID,
+
 		SpaceID:          space.ID,
 		UserID:           targetUserID,
 		AssignedBy:       assignedBy,
@@ -276,7 +276,7 @@ func (h *Handlers) AdminAssignModerator(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Service.AssignModerator(r.Context(), gen.AssignSpaceModeratorParams{
-		TenantID:         tenantID,
+
 		SpaceID:          space.ID,
 		UserID:           targetUserID,
 		AssignedBy:       "site_admin",

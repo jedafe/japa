@@ -14,21 +14,19 @@ import (
 const adminChecklistCompletionStats = `-- name: AdminChecklistCompletionStats :many
 
 SELECT
-    cp.guide_id,
-    COUNT(DISTINCT cp.user_id) AS total_users,
-    COUNT(DISTINCT CASE WHEN cp.completed = true THEN cp.user_id END) AS users_with_any_completion
+ cp.guide_id,
+ COUNT(DISTINCT cp.user_id) AS total_users,
+ COUNT(DISTINCT CASE WHEN cp.completed = true THEN cp.user_id END) AS users_with_any_completion
 FROM checklist_progress cp
-WHERE cp.tenant_id = $1
-  AND cp.list_type = 'visa'
+WHERE cp.list_type = 'visa'
 GROUP BY cp.guide_id
 ORDER BY total_users DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type AdminChecklistCompletionStatsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type AdminChecklistCompletionStatsRow struct {
@@ -43,7 +41,7 @@ type AdminChecklistCompletionStatsRow struct {
 // completion percentage.
 // =====================================================================
 func (q *Queries) AdminChecklistCompletionStats(ctx context.Context, arg AdminChecklistCompletionStatsParams) ([]AdminChecklistCompletionStatsRow, error) {
-	rows, err := q.db.Query(ctx, adminChecklistCompletionStats, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminChecklistCompletionStats, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -65,20 +63,18 @@ func (q *Queries) AdminChecklistCompletionStats(ctx context.Context, arg AdminCh
 const adminCountChecklistProgress = `-- name: AdminCountChecklistProgress :one
 SELECT COUNT(*) AS count
 FROM checklist_progress
-WHERE tenant_id = $1
-  AND list_type = 'visa'
-  AND ($2::uuid IS NULL OR guide_id = $2)
-  AND ($3::uuid IS NULL OR user_id = $3)
+WHERE list_type = 'visa'
+ AND ($1::uuid IS NULL OR guide_id = $1)
+ AND ($2::uuid IS NULL OR user_id = $2)
 `
 
 type AdminCountChecklistProgressParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) AdminCountChecklistProgress(ctx context.Context, arg AdminCountChecklistProgressParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountChecklistProgress, arg.TenantID, arg.GuideID, arg.UserID)
+	row := q.db.QueryRow(ctx, adminCountChecklistProgress, arg.GuideID, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -87,20 +83,18 @@ func (q *Queries) AdminCountChecklistProgress(ctx context.Context, arg AdminCoun
 const adminListChecklistProgress = `-- name: AdminListChecklistProgress :many
 
 SELECT
-    cp.id, cp.tenant_id, cp.user_id, cp.guide_id, cp.item_key, cp.completed, cp.completed_at, cp.notes, cp.created_at, cp.updated_at, cp.list_type,
-    u.username AS username
+ cp.id, cp.user_id, cp.guide_id, cp.item_key, cp.completed, cp.completed_at, cp.notes, cp.created_at, cp.updated_at, cp.list_type,
+ u.username AS username
 FROM checklist_progress cp
 JOIN users u ON u.id = cp.user_id
-WHERE cp.tenant_id = $1
-  AND cp.list_type = 'visa'
-  AND ($2::uuid IS NULL OR cp.guide_id = $2)
-  AND ($3::uuid IS NULL OR cp.user_id = $3)
+WHERE cp.list_type = 'visa'
+ AND ($1::uuid IS NULL OR cp.guide_id = $1)
+ AND ($2::uuid IS NULL OR cp.user_id = $2)
 ORDER BY cp.updated_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type AdminListChecklistProgressParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	GuideID    pgtype.UUID `json:"guide_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -109,7 +103,6 @@ type AdminListChecklistProgressParams struct {
 
 type AdminListChecklistProgressRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	GuideID     pgtype.UUID        `json:"guide_id"`
 	ItemKey     string             `json:"item_key"`
@@ -127,7 +120,6 @@ type AdminListChecklistProgressRow struct {
 // =====================================================================
 func (q *Queries) AdminListChecklistProgress(ctx context.Context, arg AdminListChecklistProgressParams) ([]AdminListChecklistProgressRow, error) {
 	rows, err := q.db.Query(ctx, adminListChecklistProgress,
-		arg.TenantID,
 		arg.GuideID,
 		arg.UserID,
 		arg.PageOffset,
@@ -142,7 +134,6 @@ func (q *Queries) AdminListChecklistProgress(ctx context.Context, arg AdminListC
 		var i AdminListChecklistProgressRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.GuideID,
 			&i.ItemKey,
@@ -168,21 +159,20 @@ const countCompletedChecklistItems = `-- name: CountCompletedChecklistItems :one
 
 SELECT COUNT(*) AS count
 FROM checklist_progress
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
-  AND completed = true AND list_type = 'visa'
+WHERE user_id = $1 AND guide_id = $2
+ AND completed = true AND list_type = 'visa'
 `
 
 type CountCompletedChecklistItemsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
 }
 
 // =====================================================================
 // Count completed items for a user + guide (for completion check).
 // =====================================================================
 func (q *Queries) CountCompletedChecklistItems(ctx context.Context, arg CountCompletedChecklistItemsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompletedChecklistItems, arg.TenantID, arg.UserID, arg.GuideID)
+	row := q.db.QueryRow(ctx, countCompletedChecklistItems, arg.UserID, arg.GuideID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -191,54 +181,59 @@ func (q *Queries) CountCompletedChecklistItems(ctx context.Context, arg CountCom
 const deleteChecklistProgressByUserGuide = `-- name: DeleteChecklistProgressByUserGuide :exec
 
 DELETE FROM checklist_progress
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
-  AND list_type = 'visa'
+WHERE user_id = $1 AND guide_id = $2
+ AND list_type = 'visa'
 `
 
 type DeleteChecklistProgressByUserGuideParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
 }
 
 // =====================================================================
 // Reset all progress for a user + guide (delete all items).
 // =====================================================================
 func (q *Queries) DeleteChecklistProgressByUserGuide(ctx context.Context, arg DeleteChecklistProgressByUserGuideParams) error {
-	_, err := q.db.Exec(ctx, deleteChecklistProgressByUserGuide, arg.TenantID, arg.UserID, arg.GuideID)
+	_, err := q.db.Exec(ctx, deleteChecklistProgressByUserGuide, arg.UserID, arg.GuideID)
 	return err
 }
 
 const getSingleChecklistProgress = `-- name: GetSingleChecklistProgress :one
 
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
-  AND item_key = $4 AND list_type = 'visa'
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+WHERE user_id = $1 AND guide_id = $2
+ AND item_key = $3 AND list_type = 'visa'
 LIMIT 1
 `
 
 type GetSingleChecklistProgressParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
-	ItemKey  string      `json:"item_key"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
+	ItemKey string      `json:"item_key"`
+}
+
+type GetSingleChecklistProgressRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	GuideID     pgtype.UUID        `json:"guide_id"`
+	ItemKey     string             `json:"item_key"`
+	Completed   bool               `json:"completed"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	Notes       *string            `json:"notes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ListType    string             `json:"list_type"`
 }
 
 // =====================================================================
 // Get a single progress item for a user + guide + item_key. Used by the
 // service to resolve the existing completed state for a note-only PATCH.
 // =====================================================================
-func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleChecklistProgressParams) (ChecklistProgress, error) {
-	row := q.db.QueryRow(ctx, getSingleChecklistProgress,
-		arg.TenantID,
-		arg.UserID,
-		arg.GuideID,
-		arg.ItemKey,
-	)
-	var i ChecklistProgress
+func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleChecklistProgressParams) (GetSingleChecklistProgressRow, error) {
+	row := q.db.QueryRow(ctx, getSingleChecklistProgress, arg.UserID, arg.GuideID, arg.ItemKey)
+	var i GetSingleChecklistProgressRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.ItemKey,
@@ -254,33 +249,44 @@ func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleC
 
 const listChecklistProgressByUserGuide = `-- name: ListChecklistProgressByUserGuide :many
 
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
-  AND list_type = 'visa'
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+WHERE user_id = $1 AND guide_id = $2
+ AND list_type = 'visa'
 ORDER BY item_key
 `
 
 type ListChecklistProgressByUserGuideParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
+}
+
+type ListChecklistProgressByUserGuideRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	GuideID     pgtype.UUID        `json:"guide_id"`
+	ItemKey     string             `json:"item_key"`
+	Completed   bool               `json:"completed"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	Notes       *string            `json:"notes"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ListType    string             `json:"list_type"`
 }
 
 // =====================================================================
 // Get all progress items for a user + guide.
 // =====================================================================
-func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg ListChecklistProgressByUserGuideParams) ([]ChecklistProgress, error) {
-	rows, err := q.db.Query(ctx, listChecklistProgressByUserGuide, arg.TenantID, arg.UserID, arg.GuideID)
+func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg ListChecklistProgressByUserGuideParams) ([]ListChecklistProgressByUserGuideRow, error) {
+	rows, err := q.db.Query(ctx, listChecklistProgressByUserGuide, arg.UserID, arg.GuideID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ChecklistProgress
+	var items []ListChecklistProgressByUserGuideRow
 	for rows.Next() {
-		var i ChecklistProgress
+		var i ListChecklistProgressByUserGuideRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.GuideID,
 			&i.ItemKey,
@@ -304,21 +310,18 @@ func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg List
 const upsertChecklistProgress = `-- name: UpsertChecklistProgress :one
 
 
-INSERT INTO checklist_progress (
-    tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, list_type
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 'visa')
-ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type)
+INSERT INTO checklist_progress (user_id, guide_id, item_key, completed, completed_at, notes, list_type) VALUES ($1, $2, $3, $4, $5, $6, 'visa')
+
+ON CONFLICT (user_id, guide_id, item_key, list_type)
 DO UPDATE SET
-    completed    = EXCLUDED.completed,
-    completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
-    notes        = COALESCE(EXCLUDED.notes, checklist_progress.notes),
-    updated_at   = now()
+ completed = EXCLUDED.completed,
+ completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
+ notes = COALESCE(EXCLUDED.notes, checklist_progress.notes),
+ updated_at = now()
 RETURNING id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type
 `
 
 type UpsertChecklistProgressParams struct {
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	GuideID     pgtype.UUID        `json:"guide_id"`
 	ItemKey     string             `json:"item_key"`
@@ -349,7 +352,6 @@ type UpsertChecklistProgressParams struct {
 // constraint added in migration 000381.
 func (q *Queries) UpsertChecklistProgress(ctx context.Context, arg UpsertChecklistProgressParams) (ChecklistProgress, error) {
 	row := q.db.QueryRow(ctx, upsertChecklistProgress,
-		arg.TenantID,
 		arg.UserID,
 		arg.GuideID,
 		arg.ItemKey,

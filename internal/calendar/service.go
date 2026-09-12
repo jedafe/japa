@@ -255,7 +255,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.ListEntries(ctx, ListEntriesFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
 		Category:           category,
@@ -402,7 +402,7 @@ func (s *Service) buildEntry(ctx context.Context, tenantID pgtype.UUID, input Su
 	}
 
 	entry := CalendarEntry{
-		TenantID:           tenantID,
+
 		Title:              input.Title,
 		Category:           input.Category,
 		DestinationSpaceID: destSpaceID,
@@ -531,7 +531,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID, originSp
 	offset := (page - 1) * limit
 
 	entries, total, err := s.store.AdminListEntries(ctx, AdminListEntriesFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		OriginSpaceID:      originSpaceID,
 		Category:           category,
@@ -866,7 +866,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// The AdminUpdate HITL gate (BUG-003/BUG-005) blocks publishing AI
 	// entries with an empty or placeholder source_url.
 	entryID, err := s.store.CreateEntry(ctx, CalendarEntry{
-		TenantID:           tenantID,
+
 		Title:              title,
 		Description:        descPtr,
 		Category:           category,

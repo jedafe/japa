@@ -118,7 +118,7 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try DB-managed plans first.
-	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context(), tenantID)
+	dbPlans, err := gen.New(h.Service.db.Reader).ListActiveSubscriptionPlans(r.Context())
 	if err == nil && len(dbPlans) > 0 {
 		plans := make([]PricingPlan, 0, len(dbPlans))
 
@@ -900,9 +900,9 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 
 	refund, err := h.Service.CreateRefund(r.Context(), CreateRefundInput{
 		PaymentID: id.String(),
-		TenantID:  tenantID,
-		Amount:    input.Amount,
-		Reason:    input.Reason,
+
+		Amount: input.Amount,
+		Reason: input.Reason,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1400,8 +1400,8 @@ func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	queries := gen.New(h.Service.db.Writer)
 
 	updated, err := queries.UpdateDiscountCode(r.Context(), gen.UpdateDiscountCodeParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		NewCode:       input.Code,
 		DiscountType:  input.DiscountType,
 		DiscountValue: discountValue,
@@ -1508,10 +1508,9 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 
 	queries := gen.New(h.Service.db.Writer)
 
-	err = queries.SoftDeleteSubscription(r.Context(), gen.SoftDeleteSubscriptionParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	err = queries.SoftDeleteSubscription(r.Context(),
+		id,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete subscription")
 		return
@@ -1614,7 +1613,7 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 	}
 
 	if p.TenantID.Valid {
-		resp.TenantID = p.TenantID.String()
+
 	}
 
 	if p.CreatedAt.Valid {
@@ -1635,7 +1634,7 @@ func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context(), tenantID)
+	plans, err := gen.New(h.Service.db.Reader).ListSubscriptionPlans(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plans")
 		return
@@ -1678,7 +1677,7 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 	featuresJSON, _ := json.Marshal(input.Features)
 
 	plan, err := gen.New(h.Service.db.Writer).CreateSubscriptionPlan(r.Context(), gen.CreateSubscriptionPlanParams{
-		TenantID:      tenantID,
+
 		Slug:          input.Slug,
 		Name:          input.Name,
 		Description:   input.Description,
@@ -1727,8 +1726,8 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 	featuresJSON, _ := json.Marshal(input.Features)
 
 	plan, err := gen.New(h.Service.db.Writer).UpdateSubscriptionPlan(r.Context(), gen.UpdateSubscriptionPlanParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		Slug:          input.Slug,
 		Name:          input.Name,
 		Description:   input.Description,
@@ -1768,10 +1767,9 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = gen.New(h.Service.db.Writer).DeleteSubscriptionPlan(r.Context(), gen.DeleteSubscriptionPlanParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	err = gen.New(h.Service.db.Writer).DeleteSubscriptionPlan(r.Context(),
+		id,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete plan")
 		return
@@ -1794,7 +1792,7 @@ func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
 
 	// Parse optional filters from query params.
 	var params gen.ListAdminPaymentsParams
-	params.TenantID = tenantID
+
 	params.PageLimit = limit
 	params.PageOffset = offset
 
@@ -1883,10 +1881,9 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
-		PlanID:   planID,
-		TenantID: tenantID,
-	})
+	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(),
+		planID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
 		return
@@ -1939,8 +1936,7 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 
 	qtx := gen.New(tx)
 	if err := qtx.RemoveAllTracksFromPlan(ctx, gen.RemoveAllTracksFromPlanParams{
-		PlanID:   planID,
-		TenantID: tenantID,
+		PlanID: planID,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to clear plan tracks")
 		return
@@ -1955,9 +1951,8 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := qtx.AddTrackToPlan(ctx, gen.AddTrackToPlanParams{
-			PlanID:   planID,
-			TrackID:  tid,
-			TenantID: tenantID,
+			PlanID:  planID,
+			TrackID: tid,
 		}); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
 			return
@@ -1994,9 +1989,8 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := gen.New(h.Service.db.Writer).AddTrackToPlan(r.Context(), gen.AddTrackToPlanParams{
-		PlanID:   planID,
-		TrackID:  trackID,
-		TenantID: tenantID,
+		PlanID:  planID,
+		TrackID: trackID,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add track to plan")
 		return
@@ -2025,9 +2019,8 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := gen.New(h.Service.db.Writer).RemoveTrackFromPlan(r.Context(), gen.RemoveTrackFromPlanParams{
-		PlanID:   planID,
-		TrackID:  trackID,
-		TenantID: tenantID,
+		PlanID:  planID,
+		TrackID: trackID,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove track from plan")
 		return
@@ -2050,19 +2043,18 @@ func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	plan, err := gen.New(h.Service.db.Reader).GetSubscriptionPlanBySlug(r.Context(), gen.GetSubscriptionPlanBySlugParams{
-		TenantID: tenantID,
-		Slug:     slug,
-	})
+	plan, err := gen.New(h.Service.db.Reader).GetSubscriptionPlanBySlug(r.Context(),
+
+		slug,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "plan_not_found", "Plan not found")
 		return
 	}
 
-	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(), gen.ListTrackIDsForPlanParams{
-		PlanID:   plan.ID,
-		TenantID: tenantID,
-	})
+	trackIDs, err := gen.New(h.Service.db.Reader).ListTrackIDsForPlan(r.Context(),
+		plan.ID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list plan tracks")
 		return

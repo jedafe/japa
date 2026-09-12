@@ -41,7 +41,7 @@ func NewService(database *db.DB) *Service {
 // this user (UNIQUE(user_id, name) violation — BE-01).
 func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.CreateBookmarkFolder(ctx, gen.CreateBookmarkFolderParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		Name:     name,
 		Position: 0,
@@ -102,10 +102,10 @@ func folderResponseFromModel(f gen.BookmarkFolder) FolderResponse {
 // ListFolders returns every bookmark folder for the user, ordered by position
 // then name, with a bookmark_count per folder (BL-011).
 func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID) ([]FolderResponse, error) {
-	rows, err := s.read.ListBookmarkFoldersByUser(ctx, gen.ListBookmarkFoldersByUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	rows, err := s.read.ListBookmarkFoldersByUser(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing bookmark folders: %w", err)
 	}
@@ -122,9 +122,9 @@ func (s *Service) ListFolders(ctx context.Context, tenantID, userID pgtype.UUID)
 // Returns ErrNotFound if the folder doesn't exist or belongs to another user.
 func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUID) (gen.BookmarkFolder, error) {
 	folder, err := s.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
+		ID: id,
+
+		UserID: userID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -142,10 +142,10 @@ func (s *Service) GetFolder(ctx context.Context, id, tenantID, userID pgtype.UUI
 // already used by another folder owned by this user (BE-02).
 func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.UUID, name string) (gen.BookmarkFolder, error) {
 	folder, err := s.write.UpdateBookmarkFolder(ctx, gen.UpdateBookmarkFolderParams{
-		Name:     name,
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
+		Name: name,
+		ID:   id,
+
+		UserID: userID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -167,9 +167,9 @@ func (s *Service) UpdateFolder(ctx context.Context, id, tenantID, userID pgtype.
 // exist or doesn't belong to the caller.
 func (s *Service) DeleteFolder(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	affected, err := s.write.DeleteBookmarkFolder(ctx, gen.DeleteBookmarkFolderParams{
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
+		ID: id,
+
+		UserID: userID,
 	})
 	if err != nil {
 		return fmt.Errorf("deleting bookmark folder: %w", err)
@@ -192,8 +192,8 @@ func (s *Service) ReorderFolders(ctx context.Context, tenantID, userID pgtype.UU
 		if err := s.write.UpdateBookmarkFolderPosition(ctx, gen.UpdateBookmarkFolderPositionParams{
 			Position: int32(i), // #nosec
 			ID:       fid,
-			TenantID: tenantID,
-			UserID:   userID,
+
+			UserID: userID,
 		}); err != nil {
 			return fmt.Errorf("reordering bookmark folders at index %d: %w", i, err)
 		}

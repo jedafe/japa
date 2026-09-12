@@ -23,8 +23,7 @@ func withAuthUser(r *http.Request) *http.Request {
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   uid,
-		TenantID: tid,
+		UserID: uid,
 	})
 
 	return r.WithContext(ctx)

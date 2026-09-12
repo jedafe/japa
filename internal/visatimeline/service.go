@@ -159,7 +159,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	}
 
 	t := Timeline{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -473,7 +473,6 @@ func (s *Service) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUI
 
 // AdminList returns all timelines (any share state) for the moderation queue.
 func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, filter AdminListFilter) ([]TimelineDTO, int64, error) {
-	filter.TenantID = tenantID
 
 	timelines, total, err := s.store.AdminList(ctx, filter)
 	if err != nil {
@@ -759,7 +758,7 @@ func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	row, err := s.store.CreateProcessingTime(ctx, CreateProcessingTimeInput{
-		TenantID:           tenantID,
+
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       input.VisaCategory,

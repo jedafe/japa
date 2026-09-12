@@ -192,7 +192,7 @@ func (s *Service) Enroll(ctx context.Context, input EnrollInput) (gen.AffiliateP
 	}
 
 	return s.store.createMember(ctx, gen.CreateAffiliateMemberParams{
-		UserID: input.UserID, TenantID: input.TenantID, Status: string(MemberStatusActive),
+		UserID: input.UserID, Status: string(MemberStatusActive),
 	})
 }
 
@@ -299,7 +299,7 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	}
 
 	return s.store.createLink(ctx, gen.CreateAffiliateLinkParams{
-		TenantID: tenantID, UserID: userID, ProductType: input.ProductType,
+		UserID: userID, ProductType: input.ProductType,
 		ProductID: toNullableUUID(input.ProductID), Code: code,
 		Description: input.Description, DestinationUrl: input.DestinationURL,
 	})
@@ -408,7 +408,7 @@ func (s *Service) RecordClick(ctx context.Context, input RecordClickInput) error
 	uaHash := input.UAHash
 
 	_, err := s.store.createEvent(ctx, gen.CreateAffiliateLinkEventParams{
-		TenantID: input.TenantID, LinkID: input.LinkID, EventType: string(EventTypeClick),
+		LinkID: input.LinkID, EventType: string(EventTypeClick),
 		IpHash: &ipHash, UserAgentHash: &uaHash, ReferrerUrl: input.ReferrerURL,
 	})
 	if err != nil {

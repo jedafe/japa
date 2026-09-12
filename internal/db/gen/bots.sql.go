@@ -13,17 +13,11 @@ import (
 
 const countKnownBots = `-- name: CountKnownBots :one
 SELECT count(*) FROM known_bots
-WHERE tenant_id = $1
-  AND ($2 = '' OR bot_type = $2)
+WHERE ($1 = '' OR bot_type = $1)
 `
 
-type CountKnownBotsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	BotType  interface{} `json:"bot_type"`
-}
-
-func (q *Queries) CountKnownBots(ctx context.Context, arg CountKnownBotsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countKnownBots, arg.TenantID, arg.BotType)
+func (q *Queries) CountKnownBots(ctx context.Context, botType interface{}) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnownBots, botType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -32,19 +26,18 @@ func (q *Queries) CountKnownBots(ctx context.Context, arg CountKnownBotsParams) 
 const createKnownBot = `-- name: CreateKnownBot :one
 
 
-INSERT INTO known_bots (tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO known_bots (name, user_agent_pattern, bot_type, policy, is_system, crawl_delay) VALUES ($1, $2, $3, $4, $5, $6)
+
 RETURNING id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
 `
 
 type CreateKnownBotParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
-	Name             string      `json:"name"`
-	UserAgentPattern string      `json:"user_agent_pattern"`
-	BotType          string      `json:"bot_type"`
-	Policy           string      `json:"policy"`
-	IsSystem         bool        `json:"is_system"`
-	CrawlDelay       int32       `json:"crawl_delay"`
+	Name             string `json:"name"`
+	UserAgentPattern string `json:"user_agent_pattern"`
+	BotType          string `json:"bot_type"`
+	Policy           string `json:"policy"`
+	IsSystem         bool   `json:"is_system"`
+	CrawlDelay       int32  `json:"crawl_delay"`
 }
 
 // Bot & Crawler Management (Section 43)
@@ -54,7 +47,6 @@ type CreateKnownBotParams struct {
 // =====================
 func (q *Queries) CreateKnownBot(ctx context.Context, arg CreateKnownBotParams) (KnownBot, error) {
 	row := q.db.QueryRow(ctx, createKnownBot,
-		arg.TenantID,
 		arg.Name,
 		arg.UserAgentPattern,
 		arg.BotType,
@@ -80,33 +72,21 @@ func (q *Queries) CreateKnownBot(ctx context.Context, arg CreateKnownBotParams) 
 
 const deleteKnownBot = `-- name: DeleteKnownBot :exec
 DELETE FROM known_bots
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteKnownBotParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteKnownBot(ctx context.Context, arg DeleteKnownBotParams) error {
-	_, err := q.db.Exec(ctx, deleteKnownBot, arg.ID, arg.TenantID)
+func (q *Queries) DeleteKnownBot(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteKnownBot, id)
 	return err
 }
 
 const getBotsByUserAgent = `-- name: GetBotsByUserAgent :many
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
-FROM known_bots
-WHERE tenant_id = $1
-  AND $2 ILIKE '%' || user_agent_pattern || '%'
+SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
+WHERE $1 ILIKE '%' || user_agent_pattern || '%'
 `
 
-type GetBotsByUserAgentParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
-	UserAgentPattern string      `json:"user_agent_pattern"`
-}
-
-func (q *Queries) GetBotsByUserAgent(ctx context.Context, arg GetBotsByUserAgentParams) ([]KnownBot, error) {
-	rows, err := q.db.Query(ctx, getBotsByUserAgent, arg.TenantID, arg.UserAgentPattern)
+func (q *Queries) GetBotsByUserAgent(ctx context.Context, userAgentPattern string) ([]KnownBot, error) {
+	rows, err := q.db.Query(ctx, getBotsByUserAgent, userAgentPattern)
 	if err != nil {
 		return nil, err
 	}
@@ -137,18 +117,11 @@ func (q *Queries) GetBotsByUserAgent(ctx context.Context, arg GetBotsByUserAgent
 }
 
 const getKnownBotByID = `-- name: GetKnownBotByID :one
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
-FROM known_bots
-WHERE id = $1 AND tenant_id = $2
+SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots WHERE id = $1
 `
 
-type GetKnownBotByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetKnownBotByID(ctx context.Context, arg GetKnownBotByIDParams) (KnownBot, error) {
-	row := q.db.QueryRow(ctx, getKnownBotByID, arg.ID, arg.TenantID)
+func (q *Queries) GetKnownBotByID(ctx context.Context, id pgtype.UUID) (KnownBot, error) {
+	row := q.db.QueryRow(ctx, getKnownBotByID, id)
 	var i KnownBot
 	err := row.Scan(
 		&i.ID,
@@ -166,29 +139,21 @@ func (q *Queries) GetKnownBotByID(ctx context.Context, arg GetKnownBotByIDParams
 }
 
 const listKnownBots = `-- name: ListKnownBots :many
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
-FROM known_bots
-WHERE tenant_id = $1
-  AND ($2 = '' OR bot_type = $2)
+SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
+WHERE ($1 = '' OR bot_type = $1)
 ORDER BY name ASC
-LIMIT $4
-OFFSET $3
+LIMIT $3
+OFFSET $2
 `
 
 type ListKnownBotsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	BotType    interface{} `json:"bot_type"`
 	PageOffset int32       `json:"page_offset"`
 	PageSize   int32       `json:"page_size"`
 }
 
 func (q *Queries) ListKnownBots(ctx context.Context, arg ListKnownBotsParams) ([]KnownBot, error) {
-	rows, err := q.db.Query(ctx, listKnownBots,
-		arg.TenantID,
-		arg.BotType,
-		arg.PageOffset,
-		arg.PageSize,
-	)
+	rows, err := q.db.Query(ctx, listKnownBots, arg.BotType, arg.PageOffset, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -220,19 +185,18 @@ func (q *Queries) ListKnownBots(ctx context.Context, arg ListKnownBotsParams) ([
 
 const updateKnownBot = `-- name: UpdateKnownBot :one
 UPDATE known_bots
-SET name = $3,
-    user_agent_pattern = $4,
-    bot_type = $5,
-    policy = $6,
-    crawl_delay = $7,
-    updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+SET name = $2,
+ user_agent_pattern = $3,
+ bot_type = $4,
+ policy = $5,
+ crawl_delay = $6,
+ updated_at = now()
+WHERE id = $1
 RETURNING id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
 `
 
 type UpdateKnownBotParams struct {
 	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	Name             string      `json:"name"`
 	UserAgentPattern string      `json:"user_agent_pattern"`
 	BotType          string      `json:"bot_type"`
@@ -243,7 +207,6 @@ type UpdateKnownBotParams struct {
 func (q *Queries) UpdateKnownBot(ctx context.Context, arg UpdateKnownBotParams) (KnownBot, error) {
 	row := q.db.QueryRow(ctx, updateKnownBot,
 		arg.ID,
-		arg.TenantID,
 		arg.Name,
 		arg.UserAgentPattern,
 		arg.BotType,

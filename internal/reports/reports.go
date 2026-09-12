@@ -99,7 +99,7 @@ func NewService(database *db.DB, settings *config.Settings, vk valkeycompat.Cmda
 // delete from content_reports because reports are audit-adjacent queue items,
 // not user content, so Rule 11 (soft-delete user content) does not apply.
 func (s *Service) DeleteReport(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteReport(ctx, gen.DeleteReportParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteReport(ctx, id); err != nil {
 		return fmt.Errorf("delete report: %w", err)
 	}
 
@@ -120,7 +120,7 @@ func (s *Service) CreateReport(ctx context.Context, tenantID, reporterUserID pgt
 	}
 
 	report, err := s.write.CreateReport(ctx, gen.CreateReportParams{
-		TenantID:       tenantID,
+
 		ReporterUserID: reporterUserID,
 		EntityType:     input.EntityType,
 		EntityID:       input.EntityID,
@@ -148,7 +148,7 @@ func (s *Service) CreateReport(ctx context.Context, tenantID, reporterUserID pgt
 // ListMyReports returns the caller's own submitted reports, newest first.
 func (s *Service) ListMyReports(ctx context.Context, tenantID, reporterUserID pgtype.UUID, limit, offset int32) ([]gen.ContentReport, error) {
 	reports, err := s.read.ListReportsByReporter(ctx, gen.ListReportsByReporterParams{
-		TenantID:       tenantID,
+
 		ReporterUserID: reporterUserID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -197,7 +197,7 @@ func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status
 // filtered by status and/or entity_type.
 func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string, limit, offset int32) ([]gen.ListReportsRow, error) {
 	reports, err := s.read.ListReports(ctx, gen.ListReportsParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		EntityType: entityType,
 		Q:          q,
@@ -213,7 +213,7 @@ func (s *Service) ListReports(ctx context.Context, tenantID pgtype.UUID, status,
 
 // GetReport returns a single report by ID (admin detail view).
 func (s *Service) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (gen.ContentReport, error) {
-	report, err := s.read.GetReport(ctx, gen.GetReportParams{ID: id, TenantID: tenantID})
+	report, err := s.read.GetReport(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return gen.ContentReport{}, errpkg.ErrNotFound
 	}
@@ -236,7 +236,6 @@ func (s *Service) UpdateReportStatus(ctx context.Context, id, tenantID, reviewed
 		ReviewedBy:     reviewedBy,
 		ResolutionNote: resolutionNote,
 		ID:             id,
-		TenantID:       tenantID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return gen.ContentReport{}, errpkg.ErrNotFound
@@ -300,9 +299,8 @@ func (s *Service) WarnUser(ctx context.Context, userID pgtype.UUID, reason strin
 // updates users.status to 'banned' so the ban is reflected in list queries.
 func (s *Service) BanUser(ctx context.Context, userID pgtype.UUID, reason string) error {
 	if err := s.write.CreateUserBan(ctx, gen.CreateUserBanParams{
-		UserID:  userID,
-		Reason:  &reason,
-		Column3: 0,
+		UserID: userID,
+		Reason: &reason, Column3: 0,
 	}); err != nil {
 		return err
 	}

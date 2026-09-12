@@ -213,7 +213,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	// Use admin-listing query when filter or sort is specified, otherwise
 	// the admin route also benefits from pagination.
 	tags, err := h.service.AdminListTags(r.Context(), gen.AdminListTagsParams{
-		TenantID:        tenantID,
+
 		Q:               q,
 		MinContentCount: minContentCount,
 		Sort:            sortParam,
@@ -226,7 +226,7 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	count, err := h.service.AdminCountTags(r.Context(), gen.AdminCountTagsParams{
-		TenantID:        tenantID,
+
 		Q:               q,
 		MinContentCount: minContentCount,
 	})
@@ -1011,9 +1011,9 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 	}
 
 	row, err := h.service.AddTagModerator(r.Context(), AddTagModeratorInput{
-		TagID:            tagID,
-		UserID:           userID,
-		TenantID:         tenantID,
+		TagID:  tagID,
+		UserID: userID,
+
 		AssignedBy:       "site_admin",
 		AssignedByUserID: user.UserID,
 	})

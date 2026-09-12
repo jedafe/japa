@@ -359,7 +359,7 @@ func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUI
 	promptHash := hex.EncodeToString(hash[:])
 
 	row, err := s.store.CreateSession(ctx, SessionInput{
-		TenantID:           tenantID,
+
 		UserID:             userID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -609,8 +609,8 @@ func standardRowToDTO(r StandardRow) StandardDTO {
 // sessionRowToDTO converts a SessionRow to a SessionDTO.
 func sessionRowToDTO(r SessionRow) SessionDTO {
 	dto := SessionDTO{
-		ID:                 r.ID.String(),
-		TenantID:           r.TenantID.String(),
+		ID: r.ID.String(),
+
 		UserID:             r.UserID.String(),
 		DestinationSpaceID: r.DestinationSpaceID.String(),
 		InputText:          r.InputText,

@@ -22,7 +22,7 @@ func ctxWithUser(r *http.Request, userID, tenantID string) *http.Request {
 	var uid, tid pgtype.UUID
 	_ = uid.Scan(userID)
 	_ = tid.Scan(tenantID)
-	user := &auth.AuthenticatedUser{UserID: uid, TenantID: tid}
+	user := &auth.AuthenticatedUser{UserID: uid}
 
 	return r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, user))
 }

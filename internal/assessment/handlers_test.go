@@ -464,7 +464,6 @@ func withTenant(ctx context.Context) context.Context {
 // passes in handler tests.
 func withUser(ctx context.Context) context.Context {
 	return context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		TenantID: pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		UserID: pgtype.UUID{Bytes: uuid.New(), Valid: true},
 	})
 }

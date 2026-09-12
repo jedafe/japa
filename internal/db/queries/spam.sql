@@ -6,70 +6,64 @@
 -- =====================
 
 -- name: CreateIPBlock :one
-INSERT INTO ip_blocks (tenant_id, cidr, block_type, reason, blocked_by, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at;
+INSERT INTO ip_blocks (cidr, block_type, reason, blocked_by, expires_at) VALUES ($1, $2, $3, $4, $5)
+
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at;
 
 -- name: GetIPBlockByCIDR :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
-WHERE tenant_id = $1
-  AND cidr = $2
-  AND (expires_at IS NULL OR expires_at > now());
+WHERE cidr = $1
+ AND (expires_at IS NULL OR expires_at > now());
 
 -- name: ListIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
-WHERE tenant_id = $1
-  AND (created_at < $3 OR ($3 IS NULL))
+WHERE (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
-LIMIT $2;
+LIMIT $1;
 
 -- name: ListIPBlocksPaginated :many
 -- Offset-based paginated list for admin DataTable server-side pagination
 -- (BUG-010). Supports optional block_type filter.
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
-WHERE tenant_id = $1
-  AND (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type))
+WHERE (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type))
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $3;
+LIMIT $1 OFFSET $2;
 
 -- name: CountIPBlocks :one
 -- Total count for admin DataTable pagination (BUG-010).
 SELECT COUNT(*)::int AS count
 FROM ip_blocks
-WHERE tenant_id = $1
-  AND (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type));
+WHERE (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type));
 
 -- name: DeleteIPBlock :exec
 DELETE FROM ip_blocks
-WHERE id = $1 AND tenant_id = $2;
+WHERE id = $1;
 
 -- name: GetIPBlockByID :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
-WHERE id = $1 AND tenant_id = $2;
+WHERE id = $1;
 
 -- name: UpdateIPBlock :one
 UPDATE ip_blocks
 SET cidr = @cidr, block_type = @block_type, reason = sqlc.narg(reason),
-    expires_at = sqlc.narg(expires_at), blocked_by = @blocked_by
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at;
+ expires_at = sqlc.narg(expires_at), blocked_by = @blocked_by
+WHERE id = @id
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at;
 
 -- name: GetActiveIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
-WHERE tenant_id = $1
-  AND (expires_at IS NULL OR expires_at > now());
+WHERE (expires_at IS NULL OR expires_at > now());
 
 -- name: IsIPBlocked :one
 SELECT EXISTS(
-    SELECT 1 FROM ip_blocks
-    WHERE tenant_id = @tenant_id
-      AND @ip::inet <<= cidr
-      AND (expires_at IS NULL OR expires_at > now())
+ SELECT 1 FROM ip_blocks
+ WHERE @ip::inet <<= cidr
+ AND (expires_at IS NULL OR expires_at > now())
 ) AS blocked;
 
 -- name: GetIPBlockTypeForIP :one
@@ -78,19 +72,18 @@ SELECT EXISTS(
 -- narrower block also matches. Per §41 IP Block Middleware, non-full block
 -- types are scoped to specific route groups rather than blocking all requests.
 SELECT COALESCE(
-    (SELECT block_type::text FROM ip_blocks
-     WHERE tenant_id = @tenant_id
-       AND @ip::inet <<= cidr
-       AND (expires_at IS NULL OR expires_at > now())
-     ORDER BY CASE block_type
-       WHEN 'full' THEN 0
-       WHEN 'registration' THEN 1
-       WHEN 'posting' THEN 2
-       WHEN 'api' THEN 3
-       ELSE 4
-     END
-     LIMIT 1),
-    ''
+ (SELECT block_type::text FROM ip_blocks
+ WHERE @ip::inet <<= cidr
+ AND (expires_at IS NULL OR expires_at > now())
+ ORDER BY CASE block_type
+ WHEN 'full' THEN 0
+ WHEN 'registration' THEN 1
+ WHEN 'posting' THEN 2
+ WHEN 'api' THEN 3
+ ELSE 4
+ END
+ LIMIT 1),
+ ''
 )::text AS block_type;
 
 -- =====================
@@ -99,14 +92,14 @@ SELECT COALESCE(
 
 -- name: CreateUserBlock :exec
 -- Tenant-scoped per JEOS §9 (BUG-006).
-INSERT INTO user_blocks (tenant_id, blocker_id, blocked_id)
-VALUES ($3, $1, $2)
+INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)
+
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
 
 -- name: DeleteUserBlock :exec
 -- Tenant-scoped per JEOS §9 (BUG-006).
 DELETE FROM user_blocks
-WHERE tenant_id = $3 AND blocker_id = $1 AND blocked_id = $2;
+WHERE blocker_id = $1 AND blocked_id = $2;
 
 -- name: GetUserBlocks :many
 SELECT blocker_id, blocked_id, created_at
@@ -118,58 +111,57 @@ ORDER BY created_at DESC;
 -- Tenant-scoped blocked-users list with profile enrichment (BUG-003, BUG-004).
 -- Ref: japaconnect-engineering/sections/41-spam-content-safety.md
 SELECT ub.blocked_id, ub.created_at,
-       u.username,
-       COALESCE(up.display_name, '') AS display_name,
-       COALESCE(up.avatar_url, '') AS avatar_url
+ u.username,
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url
 FROM user_blocks ub
 JOIN users u ON u.id = ub.blocked_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = ub.tenant_id
-WHERE ub.blocker_id = $1 AND ub.tenant_id = $2
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE ub.blocker_id = $1
 ORDER BY ub.created_at DESC
-LIMIT $3 OFFSET $4;
+LIMIT $2 OFFSET $3;
 
 -- name: ListAllUserBlocks :many
 -- Tenant-scoped per JEOS §9 (BUG-001). Admin list must not cross tenants.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
-       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
-       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+ bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+ buu.username AS blocked_username, bpp.display_name AS blocked_display_name
 FROM user_blocks ub
 LEFT JOIN users bu ON bu.id = ub.blocker_id
-LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id
 LEFT JOIN users buu ON buu.id = ub.blocked_id
-LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
-WHERE ub.tenant_id = $1
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id
+
 ORDER BY ub.created_at DESC
-LIMIT $2;
+LIMIT $1;
 
 -- name: ListAllUserBlocksPaginated :many
 -- Offset-based paginated admin list for DataTable server-side pagination
 -- (BUG-010). Tenant-scoped per JEOS §9.
 SELECT ub.blocker_id, ub.blocked_id, ub.created_at,
-       bu.username AS blocker_username, bp.display_name AS blocker_display_name,
-       buu.username AS blocked_username, bpp.display_name AS blocked_display_name
+ bu.username AS blocker_username, bp.display_name AS blocker_display_name,
+ buu.username AS blocked_username, bpp.display_name AS blocked_display_name
 FROM user_blocks ub
 LEFT JOIN users bu ON bu.id = ub.blocker_id
-LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id AND bp.tenant_id = bu.tenant_id
+LEFT JOIN user_profiles bp ON bp.user_id = ub.blocker_id
 LEFT JOIN users buu ON buu.id = ub.blocked_id
-LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id AND bpp.tenant_id = buu.tenant_id
-WHERE ub.tenant_id = $1
+LEFT JOIN user_profiles bpp ON bpp.user_id = ub.blocked_id
+
 ORDER BY ub.created_at DESC, ub.blocker_id DESC
-LIMIT $2 OFFSET $3;
+LIMIT $1 OFFSET $2;
 
 -- name: CountAllUserBlocks :one
 -- Total count for admin DataTable pagination (BUG-010). Tenant-scoped.
 SELECT COUNT(*)::int AS count
 FROM user_blocks
-WHERE tenant_id = $1;
+;
 
 -- name: IsBlocked :one
 -- Tenant-scoped per JEOS §9 (BUG-006). Checks both directions in one query.
 SELECT EXISTS(
-    SELECT 1 FROM user_blocks
-    WHERE tenant_id = $3
-      AND ((blocker_id = $1 AND blocked_id = $2)
-           OR (blocker_id = $2 AND blocked_id = $1))
+ SELECT 1 FROM user_blocks
+ WHERE ((blocker_id = $1 AND blocked_id = $2)
+ OR (blocker_id = $2 AND blocked_id = $1))
 ) AS blocked;
 
 -- =====================
@@ -183,10 +175,9 @@ SELECT EXISTS(
 -- Removes follow rows in both directions between two users
 -- (entity_type='user'). Tenant-scoped per JEOS §9.
 DELETE FROM follows
-WHERE tenant_id = $3
-  AND entity_type = 'user'
-  AND ((follower_id = $1 AND entity_id = $2)
-       OR (follower_id = $2 AND entity_id = $1));
+WHERE entity_type = 'user'
+ AND ((follower_id = $1 AND entity_id = $2)
+ OR (follower_id = $2 AND entity_id = $1));
 
 -- name: DeclinePendingDMRequestsBetweenUsers :exec
 -- Marks pending DM requests between the two users as declined. Soft-updates
@@ -194,62 +185,59 @@ WHERE tenant_id = $3
 -- needed for audit). Tenant-scoped per JEOS §9.
 UPDATE dm_requests
 SET status = 'declined', resolved_at = now()
-WHERE tenant_id = $3
-  AND status = 'pending'
-  AND ((requester_id = $1 AND recipient_id = $2)
-       OR (requester_id = $2 AND recipient_id = $1));
+WHERE status = 'pending'
+ AND ((requester_id = $1 AND recipient_id = $2)
+ OR (requester_id = $2 AND recipient_id = $1));
 
 -- =====================
 -- Censored Words
 -- =====================
 
 -- name: CreateCensoredWord :one
-INSERT INTO censored_words (tenant_id, pattern, action, replacement)
-VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, pattern, action, replacement, created_at;
+INSERT INTO censored_words (pattern, action, replacement) VALUES ($1, $2, $3)
+
+RETURNING id, pattern, action, replacement, created_at;
 
 -- name: ListCensoredWords :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
-WHERE tenant_id = $1
+
 ORDER BY created_at DESC;
 
 -- name: ListCensoredWordsPaginated :many
 -- Offset-based paginated list for admin DataTable server-side pagination
 -- (BUG-010). Supports optional action filter.
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
-WHERE tenant_id = $1
-  AND (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action))
+WHERE (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action))
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $3;
+LIMIT $1 OFFSET $2;
 
 -- name: CountCensoredWords :one
 -- Total count for admin DataTable pagination (BUG-010).
 SELECT COUNT(*)::int AS count
 FROM censored_words
-WHERE tenant_id = $1
-  AND (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action));
+WHERE (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action));
 
 -- name: DeleteCensoredWord :exec
 DELETE FROM censored_words
-WHERE id = $1 AND tenant_id = $2;
+WHERE id = $1;
 
 -- name: GetCensoredWordByID :one
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
-WHERE id = $1 AND tenant_id = $2;
+WHERE id = $1;
 
 -- name: UpdateCensoredWord :one
 UPDATE censored_words
 SET pattern = @pattern, action = @action, replacement = sqlc.narg(replacement)
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, pattern, action, replacement, created_at;
+WHERE id = @id
+RETURNING id, pattern, action, replacement, created_at;
 
 -- name: GetCensoredWordsByTenant :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
-WHERE tenant_id = $1;
+;
 
 -- =====================
 -- Content Hash Deduplication
@@ -258,12 +246,11 @@ WHERE tenant_id = $1;
 -- name: UpdateContentHash :exec
 UPDATE contents
 SET content_hash = $2
-WHERE id = $1 AND tenant_id = $3;
+WHERE id = $1;
 
 -- name: CheckDuplicateHash :one
 SELECT EXISTS(
-    SELECT 1 FROM contents
-    WHERE tenant_id = $1
-      AND content_hash = $2
-      AND content_hash IS NOT NULL
+ SELECT 1 FROM contents
+ WHERE content_hash = $1
+ AND content_hash IS NOT NULL
 ) AS duplicate;

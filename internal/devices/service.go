@@ -135,7 +135,7 @@ func (s *Service) RegisterDevice(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	row, err := s.store.UpsertToken(ctx, gen.UpsertDeviceTokenParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		DeviceID:   input.DeviceID,
 		Token:      input.Token,
@@ -156,7 +156,7 @@ func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	if err := s.store.DeregisterToken(ctx, gen.DeregisterDeviceTokenParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		DeviceID: deviceID,
 	}); err != nil {
@@ -169,7 +169,7 @@ func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.
 // ListDevices returns the user's registered devices as DeviceInfo (no token).
 func (s *Service) ListDevices(ctx context.Context, tenantID, userID pgtype.UUID) ([]DeviceInfo, error) {
 	rows, err := s.store.ListUserTokens(ctx, gen.ListUserDeviceTokensParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		ActiveOnly: true,
 	})
@@ -204,8 +204,8 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 	}
 
 	tokens, err := s.store.GetActiveTokensForUser(ctx, gen.GetActiveDeviceTokensForUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
+
+		UserID: userID,
 	})
 	if err != nil {
 		return fmt.Errorf("devices: get active tokens: %w", err)
@@ -257,7 +257,7 @@ func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, device
 	}
 
 	token, err := s.store.GetTokenByDeviceID(ctx, gen.GetDeviceTokenByDeviceIDParams{
-		TenantID: tenantID,
+
 		DeviceID: deviceID,
 	})
 	if err != nil {

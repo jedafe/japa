@@ -224,7 +224,7 @@ func (s *Service) ListEmbassies(ctx context.Context, tenantID, destSpaceID pgtyp
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListEmbassies(ctx, ListEmbassiesFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		ActiveOnly:         activeOnly,
 		Limit:              limit,
@@ -279,7 +279,7 @@ func (s *Service) CreateEmbassy(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	row, err := s.store.CreateEmbassy(ctx, EmbassyRow{
-		TenantID:            tenantID,
+
 		DestinationSpaceID:  destSpaceID,
 		Slug:                input.Slug,
 		Name:                input.Name,
@@ -657,11 +657,11 @@ func (s *Service) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UU
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListUserAlerts(ctx, ListUserAlertsFilter{
-		TenantID: tenantID,
-		UserID:   userID,
-		Status:   status,
-		Limit:    limit,
-		Offset:   offset,
+
+		UserID: userID,
+		Status: status,
+		Limit:  limit,
+		Offset: offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("appointmentalert: list user alerts: %w", err)
@@ -756,7 +756,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 	}
 
 	row, err := s.store.CreateAlert(ctx, AlertRow{
-		TenantID:             tenantID,
+
 		UserID:               userID,
 		DestinationSpaceID:   destSpaceID,
 		EmbassySlug:          input.EmbassySlug,

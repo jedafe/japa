@@ -111,8 +111,8 @@ func (s *stubComparisonService) UpsertComparisonValueWithMetadata(_ context.Cont
 	return gen.ComparisonValue{
 		DimensionID: input.DimensionID,
 		ItemID:      input.ItemID,
-		TenantID:    tenantID,
-		Metadata:    metadata,
+
+		Metadata: metadata,
 	}, nil
 }
 

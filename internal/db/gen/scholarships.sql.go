@@ -14,26 +14,24 @@ import (
 const adminScholarshipReminderLog = `-- name: AdminScholarshipReminderLog :many
 
 SELECT
-    ss.id,
-    ss.user_id,
-    ss.guide_id,
-    ss.last_reminded_at,
-    ss.status,
-    c.title AS guide_title,
-    u.username AS username
+ ss.id,
+ ss.user_id,
+ ss.guide_id,
+ ss.last_reminded_at,
+ ss.status,
+ c.title AS guide_title,
+ u.username AS username
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 JOIN users u ON u.id = ss.user_id
-WHERE ss.tenant_id = $1
-  AND ss.last_reminded_at IS NOT NULL
+WHERE ss.last_reminded_at IS NOT NULL
 ORDER BY ss.last_reminded_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type AdminScholarshipReminderLogParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type AdminScholarshipReminderLogRow struct {
@@ -50,7 +48,7 @@ type AdminScholarshipReminderLogRow struct {
 // Admin: reminder delivery history.
 // =====================================================================
 func (q *Queries) AdminScholarshipReminderLog(ctx context.Context, arg AdminScholarshipReminderLogParams) ([]AdminScholarshipReminderLogRow, error) {
-	rows, err := q.db.Query(ctx, adminScholarshipReminderLog, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminScholarshipReminderLog, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -80,10 +78,10 @@ func (q *Queries) AdminScholarshipReminderLog(ctx context.Context, arg AdminScho
 const adminScholarshipStatusDistribution = `-- name: AdminScholarshipStatusDistribution :many
 
 SELECT
-    status,
-    COUNT(*) AS count
+ status,
+ COUNT(*) AS count
 FROM saved_scholarships
-WHERE tenant_id = $1
+
 GROUP BY status
 ORDER BY count DESC
 `
@@ -96,8 +94,8 @@ type AdminScholarshipStatusDistributionRow struct {
 // =====================================================================
 // Admin: save counts + status distribution.
 // =====================================================================
-func (q *Queries) AdminScholarshipStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminScholarshipStatusDistributionRow, error) {
-	rows, err := q.db.Query(ctx, adminScholarshipStatusDistribution, tenantID)
+func (q *Queries) AdminScholarshipStatusDistribution(ctx context.Context) ([]AdminScholarshipStatusDistributionRow, error) {
+	rows, err := q.db.Query(ctx, adminScholarshipStatusDistribution)
 	if err != nil {
 		return nil, err
 	}
@@ -118,21 +116,20 @@ func (q *Queries) AdminScholarshipStatusDistribution(ctx context.Context, tenant
 
 const adminScholarshipTopSaved = `-- name: AdminScholarshipTopSaved :many
 SELECT
-    ss.guide_id,
-    c.title AS guide_title,
-    COUNT(*) AS save_count
+ ss.guide_id,
+ c.title AS guide_title,
+ COUNT(*) AS save_count
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
-WHERE ss.tenant_id = $1
+
 GROUP BY ss.guide_id, c.title
 ORDER BY save_count DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type AdminScholarshipTopSavedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type AdminScholarshipTopSavedRow struct {
@@ -142,7 +139,7 @@ type AdminScholarshipTopSavedRow struct {
 }
 
 func (q *Queries) AdminScholarshipTopSaved(ctx context.Context, arg AdminScholarshipTopSavedParams) ([]AdminScholarshipTopSavedRow, error) {
-	rows, err := q.db.Query(ctx, adminScholarshipTopSaved, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminScholarshipTopSaved, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -164,32 +161,30 @@ func (q *Queries) AdminScholarshipTopSaved(ctx context.Context, arg AdminScholar
 const adminScholarshipUpcomingDeadlines = `-- name: AdminScholarshipUpcomingDeadlines :many
 
 SELECT
-    ss.id,
-    ss.user_id,
-    ss.guide_id,
-    ss.status,
-    ss.remind_before_days,
-    ss.last_reminded_at,
-    c.title AS guide_title,
-    u.username AS username,
-    cfv.value_text AS deadline_value
+ ss.id,
+ ss.user_id,
+ ss.guide_id,
+ ss.status,
+ ss.remind_before_days,
+ ss.last_reminded_at,
+ c.title AS guide_title,
+ u.username AS username,
+ cfv.value_text AS deadline_value
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 JOIN users u ON u.id = ss.user_id
 JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
-    AND cfv.entity_type = 'content'
+ AND cfv.entity_type = 'content'
 JOIN custom_fields cf ON cf.id = cfv.field_id
-    AND cf.key = 'application_deadline'
-WHERE ss.tenant_id = $1
-  AND cfv.value_text IS NOT NULL
+ AND cf.key = 'application_deadline'
+WHERE cfv.value_text IS NOT NULL
 ORDER BY cfv.value_text ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type AdminScholarshipUpcomingDeadlinesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type AdminScholarshipUpcomingDeadlinesRow struct {
@@ -210,7 +205,7 @@ type AdminScholarshipUpcomingDeadlinesRow struct {
 // application_deadline field.
 // =====================================================================
 func (q *Queries) AdminScholarshipUpcomingDeadlines(ctx context.Context, arg AdminScholarshipUpcomingDeadlinesParams) ([]AdminScholarshipUpcomingDeadlinesRow, error) {
-	rows, err := q.db.Query(ctx, adminScholarshipUpcomingDeadlines, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, adminScholarshipUpcomingDeadlines, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -242,18 +237,17 @@ func (q *Queries) AdminScholarshipUpcomingDeadlines(ctx context.Context, arg Adm
 const countSavedScholarships = `-- name: CountSavedScholarships :one
 SELECT COUNT(*) AS count
 FROM saved_scholarships
-WHERE tenant_id = $1 AND user_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE user_id = $1
+ AND ($2::text = '' OR status = $2)
 `
 
 type CountSavedScholarshipsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	Status   string      `json:"status"`
+	UserID pgtype.UUID `json:"user_id"`
+	Status string      `json:"status"`
 }
 
 func (q *Queries) CountSavedScholarships(ctx context.Context, arg CountSavedScholarshipsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSavedScholarships, arg.TenantID, arg.UserID, arg.Status)
+	row := q.db.QueryRow(ctx, countSavedScholarships, arg.UserID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -262,54 +256,45 @@ func (q *Queries) CountSavedScholarships(ctx context.Context, arg CountSavedScho
 const deleteSavedScholarship = `-- name: DeleteSavedScholarship :exec
 
 DELETE FROM saved_scholarships
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
+WHERE user_id = $1 AND guide_id = $2
 `
 
 type DeleteSavedScholarshipParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
 }
 
 // =====================================================================
 // Unsave (delete) a scholarship from the tracker.
 // =====================================================================
 func (q *Queries) DeleteSavedScholarship(ctx context.Context, arg DeleteSavedScholarshipParams) error {
-	_, err := q.db.Exec(ctx, deleteSavedScholarship, arg.TenantID, arg.UserID, arg.GuideID)
+	_, err := q.db.Exec(ctx, deleteSavedScholarship, arg.UserID, arg.GuideID)
 	return err
 }
 
 const findScholarshipsNeedingReminders = `-- name: FindScholarshipsNeedingReminders :many
 
 SELECT
-    ss.id,
-    ss.user_id,
-    ss.guide_id,
-    ss.tenant_id,
-    ss.remind_before_days,
-    ss.last_reminded_at,
-    s.deadline::text AS deadline_value,
-    c.title AS guide_title,
-    c.slug  AS guide_slug
+ ss.id,
+ ss.user_id,
+ ss.guide_id,
+ ss.remind_before_days,
+ ss.last_reminded_at,
+ s.deadline::text AS deadline_value,
+ c.title AS guide_title,
+ c.slug AS guide_slug
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
 JOIN scholarships s ON s.guide_id = ss.guide_id
-WHERE ss.tenant_id = $1
-  AND s.deadline IS NOT NULL
-  AND (ss.last_reminded_at IS NULL OR ss.last_reminded_at < now() - interval '1 day')
-LIMIT $2
+WHERE s.deadline IS NOT NULL
+ AND (ss.last_reminded_at IS NULL OR ss.last_reminded_at < now() - interval '1 day')
+LIMIT $1
 `
-
-type FindScholarshipsNeedingRemindersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	BatchLimit int32       `json:"batch_limit"`
-}
 
 type FindScholarshipsNeedingRemindersRow struct {
 	ID               pgtype.UUID        `json:"id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	GuideID          pgtype.UUID        `json:"guide_id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	RemindBeforeDays int32              `json:"remind_before_days"`
 	LastRemindedAt   pgtype.Timestamptz `json:"last_reminded_at"`
 	DeadlineValue    string             `json:"deadline_value"`
@@ -328,8 +313,8 @@ type FindScholarshipsNeedingRemindersRow struct {
 // text (YYYY-MM-DD) so the existing parseDeadlineValue/withinReminderWindow
 // logic in service.go continues to work unchanged.
 // =====================================================================
-func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, arg FindScholarshipsNeedingRemindersParams) ([]FindScholarshipsNeedingRemindersRow, error) {
-	rows, err := q.db.Query(ctx, findScholarshipsNeedingReminders, arg.TenantID, arg.BatchLimit)
+func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, batchLimit int32) ([]FindScholarshipsNeedingRemindersRow, error) {
+	rows, err := q.db.Query(ctx, findScholarshipsNeedingReminders, batchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +326,6 @@ func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, arg Find
 			&i.ID,
 			&i.UserID,
 			&i.GuideID,
-			&i.TenantID,
 			&i.RemindBeforeDays,
 			&i.LastRemindedAt,
 			&i.DeadlineValue,
@@ -361,20 +345,19 @@ func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, arg Find
 const getSavedScholarship = `-- name: GetSavedScholarship :one
 
 SELECT id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at FROM saved_scholarships
-WHERE tenant_id = $1 AND user_id = $2 AND guide_id = $3
+WHERE user_id = $1 AND guide_id = $2
 `
 
 type GetSavedScholarshipParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	GuideID  pgtype.UUID `json:"guide_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	GuideID pgtype.UUID `json:"guide_id"`
 }
 
 // =====================================================================
 // Get a single saved scholarship record.
 // =====================================================================
 func (q *Queries) GetSavedScholarship(ctx context.Context, arg GetSavedScholarshipParams) (SavedScholarship, error) {
-	row := q.db.QueryRow(ctx, getSavedScholarship, arg.TenantID, arg.UserID, arg.GuideID)
+	row := q.db.QueryRow(ctx, getSavedScholarship, arg.UserID, arg.GuideID)
 	var i SavedScholarship
 	err := row.Scan(
 		&i.ID,
@@ -394,19 +377,18 @@ func (q *Queries) GetSavedScholarship(ctx context.Context, arg GetSavedScholarsh
 const listSavedScholarships = `-- name: ListSavedScholarships :many
 
 SELECT
-    ss.id, ss.tenant_id, ss.user_id, ss.guide_id, ss.status, ss.notes, ss.remind_before_days, ss.last_reminded_at, ss.created_at, ss.updated_at,
-    c.title AS guide_title,
-    c.slug  AS guide_slug
+ ss.id, ss.tenant_id, ss.user_id, ss.guide_id, ss.status, ss.notes, ss.remind_before_days, ss.last_reminded_at, ss.created_at, ss.updated_at,
+ c.title AS guide_title,
+ c.slug AS guide_slug
 FROM saved_scholarships ss
 JOIN contents c ON c.id = ss.guide_id
-WHERE ss.tenant_id = $1 AND ss.user_id = $2
-  AND ($3::text = '' OR ss.status = $3)
+WHERE ss.user_id = $1
+ AND ($2::text = '' OR ss.status = $2)
 ORDER BY ss.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListSavedScholarshipsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
@@ -433,7 +415,6 @@ type ListSavedScholarshipsRow struct {
 // =====================================================================
 func (q *Queries) ListSavedScholarships(ctx context.Context, arg ListSavedScholarshipsParams) ([]ListSavedScholarshipsRow, error) {
 	rows, err := q.db.Query(ctx, listSavedScholarships,
-		arg.TenantID,
 		arg.UserID,
 		arg.Status,
 		arg.PageOffset,
@@ -474,7 +455,7 @@ const markScholarshipReminderSent = `-- name: MarkScholarshipReminderSent :exec
 
 UPDATE saved_scholarships
 SET last_reminded_at = now(),
-    updated_at = now()
+ updated_at = now()
 WHERE id = $1
 `
 
@@ -489,14 +470,13 @@ func (q *Queries) MarkScholarshipReminderSent(ctx context.Context, id pgtype.UUI
 const saveScholarship = `-- name: SaveScholarship :one
 
 
-INSERT INTO saved_scholarships (tenant_id, user_id, guide_id, status, remind_before_days)
-VALUES ($1, $2, $3, 'saved', $4)
-ON CONFLICT (tenant_id, user_id, guide_id) DO NOTHING
+INSERT INTO saved_scholarships (user_id, guide_id, status, remind_before_days) VALUES ($1, $2, 'saved', $3)
+
+ON CONFLICT (user_id, guide_id) DO NOTHING
 RETURNING id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
 `
 
 type SaveScholarshipParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	UserID           pgtype.UUID `json:"user_id"`
 	GuideID          pgtype.UUID `json:"guide_id"`
 	RemindBeforeDays int32       `json:"remind_before_days"`
@@ -513,12 +493,7 @@ type SaveScholarshipParams struct {
 // Save a scholarship (insert into tracker).
 // =====================================================================
 func (q *Queries) SaveScholarship(ctx context.Context, arg SaveScholarshipParams) (SavedScholarship, error) {
-	row := q.db.QueryRow(ctx, saveScholarship,
-		arg.TenantID,
-		arg.UserID,
-		arg.GuideID,
-		arg.RemindBeforeDays,
-	)
+	row := q.db.QueryRow(ctx, saveScholarship, arg.UserID, arg.GuideID, arg.RemindBeforeDays)
 	var i SavedScholarship
 	err := row.Scan(
 		&i.ID,
@@ -539,11 +514,11 @@ const updateSavedScholarship = `-- name: UpdateSavedScholarship :one
 
 UPDATE saved_scholarships
 SET
-    status             = COALESCE($1, status),
-    notes              = COALESCE($2, notes),
-    remind_before_days = COALESCE($3, remind_before_days),
-    updated_at         = now()
-WHERE tenant_id = $4 AND user_id = $5 AND guide_id = $6
+ status = COALESCE($1, status),
+ notes = COALESCE($2, notes),
+ remind_before_days = COALESCE($3, remind_before_days),
+ updated_at = now()
+WHERE user_id = $4 AND guide_id = $5
 RETURNING id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
 `
 
@@ -551,7 +526,6 @@ type UpdateSavedScholarshipParams struct {
 	Status           *string     `json:"status"`
 	Notes            *string     `json:"notes"`
 	RemindBeforeDays *int32      `json:"remind_before_days"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	UserID           pgtype.UUID `json:"user_id"`
 	GuideID          pgtype.UUID `json:"guide_id"`
 }
@@ -564,7 +538,6 @@ func (q *Queries) UpdateSavedScholarship(ctx context.Context, arg UpdateSavedSch
 		arg.Status,
 		arg.Notes,
 		arg.RemindBeforeDays,
-		arg.TenantID,
 		arg.UserID,
 		arg.GuideID,
 	)

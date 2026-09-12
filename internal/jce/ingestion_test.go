@@ -124,8 +124,7 @@ func grantPermission(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, permK
 func authContext(t *testing.T, d *db.DB, ctx context.Context, userID, tenantID pgtype.UUID) context.Context {
 	t.Helper()
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	})
 	r := rbac.New(d, nil)
 	return context.WithValue(ctx, rbac.ResolverKey, r)
@@ -270,7 +269,6 @@ func TestIngestion_RefreshComparison_Lifecycle(t *testing.T) {
 	cv, err := gen.New(d.Reader).GetComparisonValue(ctx, gen.GetComparisonValueParams{
 		DimensionID: matrix[0].Dimensions[0].DimensionID,
 		ItemID:      matrix[0].Item.ID,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		t.Fatalf("GetComparisonValue: %v", err)

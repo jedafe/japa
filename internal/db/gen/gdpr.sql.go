@@ -16,57 +16,46 @@ const anonymizeAffiliateLinkEvents = `-- name: AnonymizeAffiliateLinkEvents :exe
 UPDATE affiliate_link_events
 SET ip_hash = NULL, user_agent_hash = NULL
 WHERE link_id IN (
-    SELECT ual.id FROM user_affiliate_links ual
-    WHERE ual.user_id = $1 AND ual.tenant_id = $2
+ SELECT ual.id FROM user_affiliate_links ual
+ WHERE ual.user_id = $1
 )
 `
-
-type AnonymizeAffiliateLinkEventsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
 // the deleted user's affiliate links during the GDPR retention window
 // (Section 56, ADR-014). The events themselves are retained for commission
 // audit; only the tracking hashes are cleared. Best-effort: a failure logs a
 // warning but does not abort the erasure.
-func (q *Queries) AnonymizeAffiliateLinkEvents(ctx context.Context, arg AnonymizeAffiliateLinkEventsParams) error {
-	_, err := q.db.Exec(ctx, anonymizeAffiliateLinkEvents, arg.UserID, arg.TenantID)
+func (q *Queries) AnonymizeAffiliateLinkEvents(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeAffiliateLinkEvents, userID)
 	return err
 }
 
 const anonymizeAuditLogActor = `-- name: AnonymizeAuditLogActor :exec
 UPDATE audit_logs
 SET actor_user_id = $1,
-    impersonated_user_id = CASE WHEN impersonated_user_id = $2 THEN $1 ELSE impersonated_user_id END
-WHERE (actor_user_id = $2 OR impersonated_user_id = $2) AND tenant_id = $3
+ impersonated_user_id = CASE WHEN impersonated_user_id = $2 THEN $1 ELSE impersonated_user_id END
+WHERE (actor_user_id = $2 OR impersonated_user_id = $2)
 `
 
 type AnonymizeAuditLogActorParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User" label.
 func (q *Queries) AnonymizeAuditLogActor(ctx context.Context, arg AnonymizeAuditLogActorParams) error {
-	_, err := q.db.Exec(ctx, anonymizeAuditLogActor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, anonymizeAuditLogActor, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const anonymizeCommentsByAuthor = `-- name: AnonymizeCommentsByAuthor :exec
 UPDATE comments
 SET body = '"[deleted]"'::jsonb,
-    deleted_at = now(),
-    updated_at = now()
-WHERE author_user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+ deleted_at = now(),
+ updated_at = now()
+WHERE author_user_id = $1 AND deleted_at IS NULL
 `
-
-type AnonymizeCommentsByAuthorParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // GDPR-001: anonymize comments authored by the erased user. The
 // comments.author_user_id FK has ON DELETE SET NULL, so HardDeleteUser
@@ -74,8 +63,8 @@ type AnonymizeCommentsByAuthorParams struct {
 // PII and @mentions) must be cleared before the user is hard-deleted.
 // Sets body to a '[deleted]' JSON string and marks the comment as
 // soft-deleted so it is excluded from public queries. Ref: Section 15, ADR-014.
-func (q *Queries) AnonymizeCommentsByAuthor(ctx context.Context, arg AnonymizeCommentsByAuthorParams) error {
-	_, err := q.db.Exec(ctx, anonymizeCommentsByAuthor, arg.UserID, arg.TenantID)
+func (q *Queries) AnonymizeCommentsByAuthor(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeCommentsByAuthor, userID)
 	return err
 }
 
@@ -84,21 +73,15 @@ UPDATE comparison_dimensions cd
 SET label = '[anonymized]'
 FROM contents c
 WHERE cd.content_id = c.id
-  AND c.tenant_id = $1
-  AND c.author_id = $2
-  AND cd.deleted_at IS NULL
+ AND c.author_id = $1
+ AND cd.deleted_at IS NULL
 `
-
-type AnonymizeComparisonDimensionsByAuthorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-003: anonymize comparison_dimensions.label for content authored by the
 // deleted user. The label is user-authored free text and can re-identify a
 // deleted user via their comparison content. Runs before HardDeleteUser.
-func (q *Queries) AnonymizeComparisonDimensionsByAuthor(ctx context.Context, arg AnonymizeComparisonDimensionsByAuthorParams) (int64, error) {
-	result, err := q.db.Exec(ctx, anonymizeComparisonDimensionsByAuthor, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeComparisonDimensionsByAuthor(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonDimensionsByAuthor, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -108,25 +91,19 @@ func (q *Queries) AnonymizeComparisonDimensionsByAuthor(ctx context.Context, arg
 const anonymizeComparisonItemsByAuthor = `-- name: AnonymizeComparisonItemsByAuthor :execrows
 UPDATE comparison_items ci
 SET title = '[anonymized]',
-    description = NULL,
-    image_id = NULL
+ description = NULL,
+ image_id = NULL
 FROM contents c
 WHERE ci.content_id = c.id
-  AND c.tenant_id = $1
-  AND c.author_id = $2
-  AND ci.deleted_at IS NULL
+ AND c.author_id = $1
+ AND ci.deleted_at IS NULL
 `
-
-type AnonymizeComparisonItemsByAuthorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-029: anonymize comparison_items.title/description for content authored by
 // the deleted user, so soft-deleted contents don't re-identify the user via
 // comparison item text. Runs before HardDeleteUser.
-func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg AnonymizeComparisonItemsByAuthorParams) (int64, error) {
-	result, err := q.db.Exec(ctx, anonymizeComparisonItemsByAuthor, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonItemsByAuthor, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -136,26 +113,20 @@ func (q *Queries) AnonymizeComparisonItemsByAuthor(ctx context.Context, arg Anon
 const anonymizeComparisonValuesByAuthor = `-- name: AnonymizeComparisonValuesByAuthor :execrows
 UPDATE comparison_values cv
 SET value = '[anonymized]',
-    value_rating = NULL,
-    value_boolean = NULL
+ value_rating = NULL,
+ value_boolean = NULL
 FROM contents c
 JOIN comparison_items ci ON ci.id = cv.item_id
 WHERE ci.content_id = c.id
-  AND cv.tenant_id = $1
-  AND c.author_id = $2
+ AND c.author_id = $1
 `
-
-type AnonymizeComparisonValuesByAuthorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-003: anonymize comparison_values.value for content authored by the
 // deleted user. The value column is user-authored free text and can
 // re-identify a deleted user via their comparison content. Runs before
 // HardDeleteUser.
-func (q *Queries) AnonymizeComparisonValuesByAuthor(ctx context.Context, arg AnonymizeComparisonValuesByAuthorParams) (int64, error) {
-	result, err := q.db.Exec(ctx, anonymizeComparisonValuesByAuthor, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeComparisonValuesByAuthor(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeComparisonValuesByAuthor, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -180,13 +151,12 @@ func (q *Queries) AnonymizeCouponEvents(ctx context.Context, userID pgtype.UUID)
 const anonymizeDMMessagesBySender = `-- name: AnonymizeDMMessagesBySender :exec
 UPDATE dm_messages
 SET body = '', sender_id = $1
-WHERE sender_id = $2 AND tenant_id = $3
+WHERE sender_id = $2
 `
 
 type AnonymizeDMMessagesBySenderParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // BUG-024: anonymize dm_messages authored by the user during GDPR erasure.
@@ -194,38 +164,36 @@ type AnonymizeDMMessagesBySenderParams struct {
 // placeholder so the row survives HardDeleteUser for the other participant.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, ADR-014
 func (q *Queries) AnonymizeDMMessagesBySender(ctx context.Context, arg AnonymizeDMMessagesBySenderParams) error {
-	_, err := q.db.Exec(ctx, anonymizeDMMessagesBySender, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, anonymizeDMMessagesBySender, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const anonymizeDMRequestsByUser = `-- name: AnonymizeDMRequestsByUser :exec
 UPDATE dm_requests
 SET preview_message = '',
-    requester_id = CASE WHEN requester_id = $1 THEN $2 ELSE requester_id END,
-    recipient_id = CASE WHEN recipient_id = $1 THEN $2 ELSE recipient_id END
-WHERE tenant_id = $3
-  AND (requester_id = $1 OR recipient_id = $1)
+ requester_id = CASE WHEN requester_id = $1 THEN $2 ELSE requester_id END,
+ recipient_id = CASE WHEN recipient_id = $1 THEN $2 ELSE recipient_id END
+WHERE (requester_id = $1 OR recipient_id = $1)
 `
 
 type AnonymizeDMRequestsByUserParams struct {
 	UserID       pgtype.UUID `json:"user_id"`
 	TargetUserID pgtype.UUID `json:"target_user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // BUG-024: anonymize dm_requests where the user is requester or recipient
 // during GDPR erasure. The preview_message is cleared and the user_id
 // fields are reassigned to the placeholder.
 func (q *Queries) AnonymizeDMRequestsByUser(ctx context.Context, arg AnonymizeDMRequestsByUserParams) error {
-	_, err := q.db.Exec(ctx, anonymizeDMRequestsByUser, arg.UserID, arg.TargetUserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, anonymizeDMRequestsByUser, arg.UserID, arg.TargetUserID)
 	return err
 }
 
 const anonymizeFormSubmissionsByUser = `-- name: AnonymizeFormSubmissionsByUser :execrows
 UPDATE form_submissions
 SET user_id = NULL,
-    ip_address = NULL,
-    field_values = '{}'::jsonb
+ ip_address = NULL,
+ field_values = '{}'::jsonb
 WHERE user_id = $1
 `
 
@@ -244,23 +212,17 @@ func (q *Queries) AnonymizeFormSubmissionsByUser(ctx context.Context, userID pgt
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL
-WHERE ipo.tenant_id = $1
-  AND ipo.instructor_id IN (
-      SELECT ip.id FROM instructor_profiles ip
-      WHERE ip.tenant_id = $1 AND ip.user_id = $2
-  )
+WHERE ipo.instructor_id IN (
+ SELECT ip.id FROM instructor_profiles ip
+ WHERE ip.user_id = $1
+ )
 `
-
-type AnonymizeInstructorPayoutsForInstructorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // Severs the instructor reference on all instructor_payout rows owned by
 // this user's instructor profile(s). The payout rows survive for
 // regulatory retention; only the instructor link is anonymized.
-func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, arg AnonymizeInstructorPayoutsForInstructorParams) (int64, error) {
-	result, err := q.db.Exec(ctx, anonymizeInstructorPayoutsForInstructor, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeInstructorPayoutsForInstructor, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -270,13 +232,8 @@ func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, a
 const anonymizeMentorshipConnections = `-- name: AnonymizeMentorshipConnections :exec
 UPDATE mentorship_connections
 SET goals = NULL, updated_at = now()
-WHERE tenant_id = $1 AND (mentor_id = $2 OR mentee_id = $2)
+WHERE (mentor_id = $1 OR mentee_id = $1)
 `
-
-type AnonymizeMentorshipConnectionsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // Scrubs PII (goals — the mentee's free-text stated goals) from
 // mentorship_connections where the user is mentor or mentee during the GDPR
@@ -284,31 +241,25 @@ type AnonymizeMentorshipConnectionsParams struct {
 // retained for audit until HardDeleteUser cascades via ON DELETE CASCADE;
 // only the goals text is cleared so it is not recoverable during the
 // retention window. Best-effort: a failure logs a warning but does not abort.
-func (q *Queries) AnonymizeMentorshipConnections(ctx context.Context, arg AnonymizeMentorshipConnectionsParams) error {
-	_, err := q.db.Exec(ctx, anonymizeMentorshipConnections, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeMentorshipConnections(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeMentorshipConnections, userID)
 	return err
 }
 
 const anonymizeRevenueSplitsForInstructor = `-- name: AnonymizeRevenueSplitsForInstructor :execrows
 UPDATE revenue_splits rs
 SET instructor_id = NULL
-WHERE rs.tenant_id = $1
-  AND rs.instructor_id IN (
-      SELECT ip.id FROM instructor_profiles ip
-      WHERE ip.tenant_id = $1 AND ip.user_id = $2
-  )
+WHERE rs.instructor_id IN (
+ SELECT ip.id FROM instructor_profiles ip
+ WHERE ip.user_id = $1
+ )
 `
-
-type AnonymizeRevenueSplitsForInstructorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // Severs the instructor reference on all revenue_split rows owned by
 // this user's instructor profile(s). The split rows survive for
 // regulatory retention; only the instructor link is anonymized.
-func (q *Queries) AnonymizeRevenueSplitsForInstructor(ctx context.Context, arg AnonymizeRevenueSplitsForInstructorParams) (int64, error) {
-	result, err := q.db.Exec(ctx, anonymizeRevenueSplitsForInstructor, arg.TenantID, arg.UserID)
+func (q *Queries) AnonymizeRevenueSplitsForInstructor(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, anonymizeRevenueSplitsForInstructor, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -318,59 +269,49 @@ func (q *Queries) AnonymizeRevenueSplitsForInstructor(ctx context.Context, arg A
 const anonymizeUser = `-- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
-    email = 'deleted-' || id::text,
-    password_hash = '',
-    profile_type = NULL,
-    status = 'deleted',
-    updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+ email = 'deleted-' || id::text,
+ password_hash = '',
+ profile_type = NULL,
+ status = 'deleted',
+ updated_at = now()
+WHERE id = $1
 `
 
-type AnonymizeUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) AnonymizeUser(ctx context.Context, arg AnonymizeUserParams) error {
-	_, err := q.db.Exec(ctx, anonymizeUser, arg.UserID, arg.TenantID)
+func (q *Queries) AnonymizeUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeUser, userID)
 	return err
 }
 
 const anonymizeUserProfile = `-- name: AnonymizeUserProfile :exec
 UPDATE user_profiles
 SET display_name = 'Deleted User',
-    avatar_url = NULL,
-    cover_url = NULL,
-    bio = NULL,
-    timezone = NULL,
-    business_name = NULL,
-    registration_number = NULL,
-    operating_hours = NULL,
-    content_country_preference = NULL,
-    preferred_currency = NULL,
-    japa_stage = NULL,
-    japa_stage_dest_space_id = NULL,
-    japa_stage_history = '[]'::jsonb,
-    japa_stage_is_public = false,
-    japa_stage_updated_at = NULL,
-    -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
-    -- personal text, mentor_embedding is derived PII, mentor_areas reveals
-    -- expertise/destination knowledge, is_mentor reveals opt-in status.
-    is_mentor = false,
-    mentor_capacity = NULL,
-    active_mentee_count = NULL,
-    mentor_areas = NULL,
-    mentor_bio = NULL,
-    mentor_since = NULL,
-    mentor_embedding = NULL,
-    updated_at = now()
-WHERE user_id = $1 AND tenant_id = $2
+ avatar_url = NULL,
+ cover_url = NULL,
+ bio = NULL,
+ timezone = NULL,
+ business_name = NULL,
+ registration_number = NULL,
+ operating_hours = NULL,
+ content_country_preference = NULL,
+ preferred_currency = NULL,
+ japa_stage = NULL,
+ japa_stage_dest_space_id = NULL,
+ japa_stage_history = '[]'::jsonb,
+ japa_stage_is_public = false,
+ japa_stage_updated_at = NULL,
+ -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
+ -- personal text, mentor_embedding is derived PII, mentor_areas reveals
+ -- expertise/destination knowledge, is_mentor reveals opt-in status.
+ is_mentor = false,
+ mentor_capacity = NULL,
+ active_mentee_count = NULL,
+ mentor_areas = NULL,
+ mentor_bio = NULL,
+ mentor_since = NULL,
+ mentor_embedding = NULL,
+ updated_at = now()
+WHERE user_id = $1
 `
-
-type AnonymizeUserProfileParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Clears PII columns in user_profiles during the GDPR retention window
 // (ADR-014 / ADR-057). Runs immediately after AnonymizeUser so the profile
@@ -383,8 +324,8 @@ type AnonymizeUserProfileParams struct {
 // japa_stage_dest_space_id, japa_stage_history (an append-only log of the
 // member's relocation stage + destination over time — PII), and
 // japa_stage_is_public (revoked so no public directory leak survives).
-func (q *Queries) AnonymizeUserProfile(ctx context.Context, arg AnonymizeUserProfileParams) error {
-	_, err := q.db.Exec(ctx, anonymizeUserProfile, arg.UserID, arg.TenantID)
+func (q *Queries) AnonymizeUserProfile(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeUserProfile, userID)
 	return err
 }
 
@@ -392,14 +333,9 @@ const clearInstructorPayoutMethod = `-- name: ClearInstructorPayoutMethod :execr
 
 UPDATE instructor_profiles
 SET payout_method = NULL,
-    updated_at    = now()
-WHERE tenant_id = $1 AND user_id = $2
+ updated_at = now()
+WHERE user_id = $1
 `
-
-type ClearInstructorPayoutMethodParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // =====================================================================
 // Japa University GDPR cascade (ADR-063 / audit C2)
@@ -411,8 +347,8 @@ type ClearInstructorPayoutMethodParams struct {
 // Clears the sensitive payout_method jsonb on the user's instructor
 // profile(s) before the user row is physically deleted. The profile row
 // itself is removed by the users(id) ON DELETE CASCADE FK.
-func (q *Queries) ClearInstructorPayoutMethod(ctx context.Context, arg ClearInstructorPayoutMethodParams) (int64, error) {
-	result, err := q.db.Exec(ctx, clearInstructorPayoutMethod, arg.TenantID, arg.UserID)
+func (q *Queries) ClearInstructorPayoutMethod(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, clearInstructorPayoutMethod, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -421,29 +357,33 @@ func (q *Queries) ClearInstructorPayoutMethod(ctx context.Context, arg ClearInst
 
 const createAccountDeletionRequest = `-- name: CreateAccountDeletionRequest :one
 
-INSERT INTO account_deletion_requests (
-    tenant_id, user_id, status, reason
-) VALUES (
-    $1, $2, 'pending', $3
-)
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
+INSERT INTO account_deletion_requests (user_id, status, reason) VALUES ($1, 'pending', $2)
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type CreateAccountDeletionRequestParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	Reason   *string     `json:"reason"`
+	UserID pgtype.UUID `json:"user_id"`
+	Reason *string     `json:"reason"`
+}
+
+type CreateAccountDeletionRequestRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Status       string             `json:"status"`
+	Reason       *string            `json:"reason"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ProgressStep int32              `json:"progress_step"`
 }
 
 // =====================
 // Account Deletion Requests
 // =====================
-func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAccountDeletionRequestParams) (AccountDeletionRequest, error) {
-	row := q.db.QueryRow(ctx, createAccountDeletionRequest, arg.TenantID, arg.UserID, arg.Reason)
-	var i AccountDeletionRequest
+func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAccountDeletionRequestParams) (CreateAccountDeletionRequestRow, error) {
+	row := q.db.QueryRow(ctx, createAccountDeletionRequest, arg.UserID, arg.Reason)
+	var i CreateAccountDeletionRequestRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -456,20 +396,12 @@ func (q *Queries) CreateAccountDeletionRequest(ctx context.Context, arg CreateAc
 
 const createAuditLog = `-- name: CreateAuditLog :one
 
-INSERT INTO audit_logs (
-    tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address
-) VALUES (
-    $1, $2, $3,
-    $4, $5, $6,
-    $7, $8
-)
-RETURNING id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at
+INSERT INTO audit_logs (actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at
 `
 
 type CreateAuditLogParams struct {
-	TenantID           pgtype.UUID   `json:"tenant_id"`
 	ActorUserID        pgtype.UUID   `json:"actor_user_id"`
 	ImpersonatedUserID pgtype.UUID   `json:"impersonated_user_id"`
 	ActionType         string        `json:"action_type"`
@@ -479,12 +411,23 @@ type CreateAuditLogParams struct {
 	IpAddress          *netip.Prefix `json:"ip_address"`
 }
 
+type CreateAuditLogRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
+	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
+	ActionType         string             `json:"action_type"`
+	TargetType         *string            `json:"target_type"`
+	TargetID           pgtype.UUID        `json:"target_id"`
+	Metadata           []byte             `json:"metadata"`
+	IpAddress          *netip.Prefix      `json:"ip_address"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Audit Logs
 // =====================
-func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error) {
+func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (CreateAuditLogRow, error) {
 	row := q.db.QueryRow(ctx, createAuditLog,
-		arg.TenantID,
 		arg.ActorUserID,
 		arg.ImpersonatedUserID,
 		arg.ActionType,
@@ -493,10 +436,9 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 		arg.Metadata,
 		arg.IpAddress,
 	)
-	var i AuditLog
+	var i CreateAuditLogRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActorUserID,
 		&i.ImpersonatedUserID,
 		&i.ActionType,
@@ -511,29 +453,29 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 
 const createDataExportRequest = `-- name: CreateDataExportRequest :one
 
-INSERT INTO data_export_requests (
-    tenant_id, user_id, status
-) VALUES (
-    $1, $2, 'pending'
-)
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+INSERT INTO data_export_requests (user_id, status) VALUES ($1, 'pending')
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 `
 
-type CreateDataExportRequestParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+type CreateDataExportRequestRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 // =====================
 // Data Export Requests
 // =====================
-func (q *Queries) CreateDataExportRequest(ctx context.Context, arg CreateDataExportRequestParams) (DataExportRequest, error) {
-	row := q.db.QueryRow(ctx, createDataExportRequest, arg.TenantID, arg.UserID)
-	var i DataExportRequest
+func (q *Queries) CreateDataExportRequest(ctx context.Context, userID pgtype.UUID) (CreateDataExportRequestRow, error) {
+	row := q.db.QueryRow(ctx, createDataExportRequest, userID)
+	var i CreateDataExportRequestRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -548,58 +490,42 @@ const deleteComparisonDataIngestionJobsByUser = `-- name: DeleteComparisonDataIn
 DELETE FROM comparison_data_ingestion_jobs j
 USING contents c
 WHERE j.content_id = c.id
-  AND j.tenant_id = $1
-  AND c.author_id = $2
+ AND c.author_id = $1
 `
-
-type DeleteComparisonDataIngestionJobsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // JCE Sub-spec 4: delete ingestion jobs tied to user-authored content during
 // GDPR erasure. comparison_data_ingestion_jobs.content_id is FK to contents
 // with ON DELETE CASCADE; we delete explicitly so the erasure path is
 // documented and survives future schema changes.
-func (q *Queries) DeleteComparisonDataIngestionJobsByUser(ctx context.Context, arg DeleteComparisonDataIngestionJobsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonDataIngestionJobsByUser, arg.TenantID, arg.UserID)
+func (q *Queries) DeleteComparisonDataIngestionJobsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonDataIngestionJobsByUser, userID)
 	return err
 }
 
 const deleteComparisonDataSourcesByUser = `-- name: DeleteComparisonDataSourcesByUser :exec
 DELETE FROM comparison_data_sources
-WHERE created_by_user_id = $1 AND tenant_id = $2
+WHERE created_by_user_id = $1
 `
-
-type DeleteComparisonDataSourcesByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // JCE Sub-spec 4: delete user-owned data sources when the column is populated
 // (future non-admin data-source creation). Admin-created sources leave
 // created_by_user_id NULL and are therefore not removed on a member erasure.
-func (q *Queries) DeleteComparisonDataSourcesByUser(ctx context.Context, arg DeleteComparisonDataSourcesByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonDataSourcesByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteComparisonDataSourcesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonDataSourcesByUser, userID)
 	return err
 }
 
 const deleteComparisonProfilesByUser = `-- name: DeleteComparisonProfilesByUser :exec
 DELETE FROM comparison_profiles
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
-
-type DeleteComparisonProfilesByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // JCE Sub-spec 2/3: delete user-owned comparison profiles during GDPR erasure.
 // comparison_profiles.user_id has ON DELETE CASCADE, but we delete explicitly
 // to document the erasure path and ensure PII (goals, preferences, demographics)
 // is removed during the anonymization phase, before the final HardDeleteUser.
-func (q *Queries) DeleteComparisonProfilesByUser(ctx context.Context, arg DeleteComparisonProfilesByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonProfilesByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonProfilesByUser, userID)
 	return err
 }
 
@@ -607,18 +533,12 @@ const deleteComparisonRecommendationsByUser = `-- name: DeleteComparisonRecommen
 DELETE FROM comparison_recommendations cr
 USING contents c
 WHERE cr.content_id = c.id
-  AND cr.tenant_id = $1
-  AND c.author_id = $2
+ AND c.author_id = $1
 `
 
-type DeleteComparisonRecommendationsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 // JCE Sub-spec 2/3: delete generated recommendations for content authored by the user.
-func (q *Queries) DeleteComparisonRecommendationsByUser(ctx context.Context, arg DeleteComparisonRecommendationsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonRecommendationsByUser, arg.TenantID, arg.UserID)
+func (q *Queries) DeleteComparisonRecommendationsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonRecommendationsByUser, userID)
 	return err
 }
 
@@ -626,39 +546,38 @@ const deleteComparisonScoresByUser = `-- name: DeleteComparisonScoresByUser :exe
 DELETE FROM comparison_scores cs
 USING contents c
 WHERE cs.content_id = c.id
-  AND cs.tenant_id = $1
-  AND c.author_id = $2
+ AND c.author_id = $1
 `
 
-type DeleteComparisonScoresByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
 // JCE Sub-spec 2/3: delete computed scores for content authored by the user.
-func (q *Queries) DeleteComparisonScoresByUser(ctx context.Context, arg DeleteComparisonScoresByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonScoresByUser, arg.TenantID, arg.UserID)
+func (q *Queries) DeleteComparisonScoresByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonScoresByUser, userID)
 	return err
 }
 
 const deleteConsent = `-- name: DeleteConsent :one
 DELETE FROM consent_records
-WHERE id = $1 AND tenant_id = $2
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
+WHERE id = $1
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at
 `
 
-type DeleteConsentParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type DeleteConsentRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ConsentType   string             `json:"consent_type"`
+	Granted       bool               `json:"granted"`
+	PolicyVersion string             `json:"policy_version"`
+	IpAddress     *netip.Prefix      `json:"ip_address"`
+	UserAgent     *string            `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) DeleteConsent(ctx context.Context, arg DeleteConsentParams) (ConsentRecord, error) {
-	row := q.db.QueryRow(ctx, deleteConsent, arg.ID, arg.TenantID)
-	var i ConsentRecord
+func (q *Queries) DeleteConsent(ctx context.Context, id pgtype.UUID) (DeleteConsentRow, error) {
+	row := q.db.QueryRow(ctx, deleteConsent, id)
+	var i DeleteConsentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ConsentType,
 		&i.Granted,
@@ -707,18 +626,13 @@ func (q *Queries) DeleteCustomFieldValuesByEntity(ctx context.Context, userID pg
 
 const deleteForumThreadTagsByAuthor = `-- name: DeleteForumThreadTagsByAuthor :exec
 DELETE FROM forum_thread_tags
-WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2)
+WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = $1)
 `
-
-type DeleteForumThreadTagsByAuthorParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-022: delete junction rows for threads authored by the user during
 // GDPR erasure, so the final hard-delete doesn't leave orphaned rows.
-func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, arg DeleteForumThreadTagsByAuthorParams) error {
-	_, err := q.db.Exec(ctx, deleteForumThreadTagsByAuthor, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteForumThreadTagsByAuthor(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteForumThreadTagsByAuthor, userID)
 	return err
 }
 
@@ -748,21 +662,16 @@ func (q *Queries) DeleteNotificationPreferencesByUser(ctx context.Context, userI
 
 const deleteNotificationsByUser = `-- name: DeleteNotificationsByUser :exec
 DELETE FROM notifications
-WHERE recipient_id = $1 AND tenant_id = $2
+WHERE recipient_id = $1
 `
-
-type DeleteNotificationsByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-M006: delete notifications addressed to the erased user during GDPR
 // erasure (Section 19). Notification rows contain recipient_id and may
 // reference actor_user_id; the recipient's notifications are user-owned
 // data and must be removed. Actor references in other users' notifications
 // are anonymized separately if needed.
-func (q *Queries) DeleteNotificationsByUser(ctx context.Context, arg DeleteNotificationsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteNotificationsByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteNotificationsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteNotificationsByUser, userID)
 	return err
 }
 
@@ -779,17 +688,12 @@ func (q *Queries) DeleteOrganizationMembersByUser(ctx context.Context, userID pg
 }
 
 const deleteOwnershipClaimsByClaimant = `-- name: DeleteOwnershipClaimsByClaimant :exec
-DELETE FROM ownership_claims WHERE claimant_user_id = $1 AND tenant_id = $2
+DELETE FROM ownership_claims WHERE claimant_user_id = $1
 `
 
-type DeleteOwnershipClaimsByClaimantParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
-func (q *Queries) DeleteOwnershipClaimsByClaimant(ctx context.Context, arg DeleteOwnershipClaimsByClaimantParams) error {
-	_, err := q.db.Exec(ctx, deleteOwnershipClaimsByClaimant, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteOwnershipClaimsByClaimant(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOwnershipClaimsByClaimant, userID)
 	return err
 }
 
@@ -828,19 +732,14 @@ func (q *Queries) DeleteSpacePinnedPostsByUser(ctx context.Context, userID pgtyp
 }
 
 const deleteTagModeratorsByUser = `-- name: DeleteTagModeratorsByUser :exec
-DELETE FROM tag_moderators WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM tag_moderators WHERE user_id = $1
 `
-
-type DeleteTagModeratorsByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // tag_moderators.user_id has ON DELETE CASCADE but we delete explicitly to document
 // the erasure path and ensure the user's moderation history is cleared before the
 // final HardDeleteUser. Ref: Section 08/49, GDPR erasure coverage.
-func (q *Queries) DeleteTagModeratorsByUser(ctx context.Context, arg DeleteTagModeratorsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteTagModeratorsByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteTagModeratorsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTagModeratorsByUser, userID)
 	return err
 }
 
@@ -867,35 +766,25 @@ func (q *Queries) DeleteUserBlocksByUser(ctx context.Context, userID pgtype.UUID
 }
 
 const deleteUserDMSettingsByUser = `-- name: DeleteUserDMSettingsByUser :exec
-DELETE FROM user_dm_settings WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM user_dm_settings WHERE user_id = $1
 `
-
-type DeleteUserDMSettingsByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-024: delete user_dm_settings for the user during GDPR erasure.
 // dm_privacy is user-owned config with no PII in the row itself.
-func (q *Queries) DeleteUserDMSettingsByUser(ctx context.Context, arg DeleteUserDMSettingsByUserParams) error {
-	_, err := q.db.Exec(ctx, deleteUserDMSettingsByUser, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserDMSettingsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserDMSettingsByUser, userID)
 	return err
 }
 
 const deleteUserEmailVerifications = `-- name: DeleteUserEmailVerifications :exec
-DELETE FROM email_verifications WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM email_verifications WHERE user_id = $1
 `
-
-type DeleteUserEmailVerificationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // email_verifications.email and token_hash are PII and security credentials.
 // Delete the rows during anonymization so the user's email and verification
 // tokens are not recoverable during the retention window.
-func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, arg DeleteUserEmailVerificationsParams) error {
-	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, userID)
 	return err
 }
 
@@ -914,79 +803,54 @@ func (q *Queries) DeleteUserMutesByUser(ctx context.Context, userID pgtype.UUID)
 }
 
 const deleteUserOAuthAccounts = `-- name: DeleteUserOAuthAccounts :exec
-DELETE FROM oauth_accounts WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM oauth_accounts WHERE user_id = $1
 `
-
-type DeleteUserOAuthAccountsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // oauth_accounts.provider_user_id is PII (the user's identity at the OAuth
 // provider). Delete the rows during anonymization so the user's social
 // identities are not recoverable during the retention window.
-func (q *Queries) DeleteUserOAuthAccounts(ctx context.Context, arg DeleteUserOAuthAccountsParams) error {
-	_, err := q.db.Exec(ctx, deleteUserOAuthAccounts, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserOAuthAccounts(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserOAuthAccounts, userID)
 	return err
 }
 
 const deleteUserPasswordHistory = `-- name: DeleteUserPasswordHistory :exec
-DELETE FROM password_history WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM password_history WHERE user_id = $1
 `
-
-type DeleteUserPasswordHistoryParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // password_history.password_hash is PII (bcrypt hashes of previous
 // passwords). Delete the rows during anonymization so old password hashes
 // are not recoverable during the retention window.
-func (q *Queries) DeleteUserPasswordHistory(ctx context.Context, arg DeleteUserPasswordHistoryParams) error {
-	_, err := q.db.Exec(ctx, deleteUserPasswordHistory, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserPasswordHistory(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserPasswordHistory, userID)
 	return err
 }
 
 const deleteUserPasswordResetTokens = `-- name: DeleteUserPasswordResetTokens :exec
-DELETE FROM password_reset_tokens WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM password_reset_tokens WHERE user_id = $1
 `
-
-type DeleteUserPasswordResetTokensParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // password_reset_tokens.token_hash is a security credential. Delete the
 // rows during anonymization so no reset tokens remain usable.
-func (q *Queries) DeleteUserPasswordResetTokens(ctx context.Context, arg DeleteUserPasswordResetTokensParams) error {
-	_, err := q.db.Exec(ctx, deleteUserPasswordResetTokens, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserPasswordResetTokens(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserPasswordResetTokens, userID)
 	return err
 }
 
 const deleteUserPreferences = `-- name: DeleteUserPreferences :exec
-DELETE FROM user_preferences WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM user_preferences WHERE user_id = $1
 `
 
-type DeleteUserPreferencesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // user_preferences is user-owned config; remove it explicitly (CASCADE is redundant but explicit).
-func (q *Queries) DeleteUserPreferences(ctx context.Context, arg DeleteUserPreferencesParams) error {
-	_, err := q.db.Exec(ctx, deleteUserPreferences, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserPreferences(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserPreferences, userID)
 	return err
 }
 
 const deleteUserTOTPCredentials = `-- name: DeleteUserTOTPCredentials :exec
 
-DELETE FROM totp_credentials WHERE user_id = $1 AND tenant_id = $2
+DELETE FROM totp_credentials WHERE user_id = $1
 `
-
-type DeleteUserTOTPCredentialsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Auth PII Scrub (AUDIT-AUTH-008)
@@ -1002,43 +866,33 @@ type DeleteUserTOTPCredentialsParams struct {
 // rows during anonymization so 2FA secrets are not recoverable during the
 // retention window. The table has ON DELETE CASCADE from users(id), so this
 // is redundant at hard-delete but necessary for the anonymization phase.
-func (q *Queries) DeleteUserTOTPCredentials(ctx context.Context, arg DeleteUserTOTPCredentialsParams) error {
-	_, err := q.db.Exec(ctx, deleteUserTOTPCredentials, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserTOTPCredentials(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserTOTPCredentials, userID)
 	return err
 }
 
 const deleteUserTokens = `-- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
-WHERE user_id = $1 AND tenant_id = $2 AND revoked_at IS NULL
+WHERE user_id = $1 AND revoked_at IS NULL
 `
 
-type DeleteUserTokensParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteUserTokens(ctx context.Context, arg DeleteUserTokensParams) error {
-	_, err := q.db.Exec(ctx, deleteUserTokens, arg.UserID, arg.TenantID)
+func (q *Queries) DeleteUserTokens(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserTokens, userID)
 	return err
 }
 
 const expireDataExport = `-- name: ExpireDataExport :exec
 UPDATE data_export_requests
 SET download_url = NULL,
-    status = 'expired'
-WHERE id = $1 AND tenant_id = $2
+ status = 'expired'
+WHERE id = $1
 `
-
-type ExpireDataExportParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-GDPR-005: null out the download URL and set status to 'expired' so
 // the download handler returns 404 and the file is not re-cleaned.
-func (q *Queries) ExpireDataExport(ctx context.Context, arg ExpireDataExportParams) error {
-	_, err := q.db.Exec(ctx, expireDataExport, arg.ID, arg.TenantID)
+func (q *Queries) ExpireDataExport(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, expireDataExport, id)
 	return err
 }
 
@@ -1081,33 +935,23 @@ func (q *Queries) GdprDeleteBookmarksByUser(ctx context.Context, userID pgtype.U
 
 const gdprDeleteCalendarSavesByUser = `-- name: GdprDeleteCalendarSavesByUser :exec
 DELETE FROM calendar_saves
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
 
-type GdprDeleteCalendarSavesByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // §86: delete calendar_saves for the user during GDPR erasure (BUG-025).
-func (q *Queries) GdprDeleteCalendarSavesByUser(ctx context.Context, arg GdprDeleteCalendarSavesByUserParams) error {
-	_, err := q.db.Exec(ctx, gdprDeleteCalendarSavesByUser, arg.UserID, arg.TenantID)
+func (q *Queries) GdprDeleteCalendarSavesByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCalendarSavesByUser, userID)
 	return err
 }
 
 const gdprDeleteCalendarSubscriptionsByUser = `-- name: GdprDeleteCalendarSubscriptionsByUser :exec
 DELETE FROM calendar_subscriptions
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
 
-type GdprDeleteCalendarSubscriptionsByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
-func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, arg GdprDeleteCalendarSubscriptionsByUserParams) error {
-	_, err := q.db.Exec(ctx, gdprDeleteCalendarSubscriptionsByUser, arg.UserID, arg.TenantID)
+func (q *Queries) GdprDeleteCalendarSubscriptionsByUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, gdprDeleteCalendarSubscriptionsByUser, userID)
 	return err
 }
 
@@ -1174,22 +1018,17 @@ func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.
 const gdprExportAIAgentSessions = `-- name: GdprExportAIAgentSessions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
-    FROM ai_agent_sessions
-    WHERE user_id = $1 AND tenant_id = $2
-    ORDER BY created_at DESC
+ SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+ FROM ai_agent_sessions
+ WHERE user_id = $1
+ ORDER BY created_at DESC
 ) t
 `
 
-type GdprExportAIAgentSessionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // BUG-012: export the user's AI agent sessions for GDPR data export.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
-func (q *Queries) GdprExportAIAgentSessions(ctx context.Context, arg GdprExportAIAgentSessionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportAIAgentSessions, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportAIAgentSessions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIAgentSessions, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1198,23 +1037,18 @@ func (q *Queries) GdprExportAIAgentSessions(ctx context.Context, arg GdprExportA
 const gdprExportAIAgentToolCalls = `-- name: GdprExportAIAgentToolCalls :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
-    FROM ai_agent_tool_calls atc
-    JOIN ai_agent_sessions s ON s.id = atc.session_id
-    WHERE s.user_id = $1 AND s.tenant_id = $2
-    ORDER BY atc.created_at DESC
+ SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
+ FROM ai_agent_tool_calls atc
+ JOIN ai_agent_sessions s ON s.id = atc.session_id
+ WHERE s.user_id = $1
+ ORDER BY atc.created_at DESC
 ) t
 `
 
-type GdprExportAIAgentToolCallsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // BUG-012: export AI agent tool calls for sessions owned by the user.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
-func (q *Queries) GdprExportAIAgentToolCalls(ctx context.Context, arg GdprExportAIAgentToolCallsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportAIAgentToolCalls, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportAIAgentToolCalls(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIAgentToolCalls, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1223,23 +1057,18 @@ func (q *Queries) GdprExportAIAgentToolCalls(ctx context.Context, arg GdprExport
 const gdprExportAIHITLReviews = `-- name: GdprExportAIHITLReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
-    FROM ai_hitl_reviews
-    WHERE reviewer_id = $1 AND tenant_id = $2
-    ORDER BY created_at DESC
+ SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
+ FROM ai_hitl_reviews
+ WHERE reviewer_id = $1
+ ORDER BY created_at DESC
 ) t
 `
-
-type GdprExportAIHITLReviewsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-012: export HITL reviews where the user is the reviewer or the review
 // targets content authored by the user. This first cut uses reviewer_id.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
-func (q *Queries) GdprExportAIHITLReviews(ctx context.Context, arg GdprExportAIHITLReviewsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportAIHITLReviews, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportAIHITLReviews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIHITLReviews, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1248,22 +1077,17 @@ func (q *Queries) GdprExportAIHITLReviews(ctx context.Context, arg GdprExportAIH
 const gdprExportAIUsageLog = `-- name: GdprExportAIUsageLog :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
-    FROM ai_usage_log
-    WHERE user_id = $1 AND tenant_id = $2
-    ORDER BY created_at DESC
+ SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
+ FROM ai_usage_log
+ WHERE user_id = $1
+ ORDER BY created_at DESC
 ) t
 `
 
-type GdprExportAIUsageLogParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // BUG-012: export the user's AI usage log entries for GDPR data export.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
-func (q *Queries) GdprExportAIUsageLog(ctx context.Context, arg GdprExportAIUsageLogParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportAIUsageLog, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportAIUsageLog(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAIUsageLog, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1272,24 +1096,19 @@ func (q *Queries) GdprExportAIUsageLog(ctx context.Context, arg GdprExportAIUsag
 const gdprExportAttestationCommunityUpdates = `-- name: GdprExportAttestationCommunityUpdates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
-           u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
-    FROM attestation_community_updates u
-    JOIN attestation_pathways p ON p.id = u.pathway_id
-    WHERE u.user_id = $1 AND p.tenant_id = $2 AND u.deleted_at IS NULL
+ SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
+ u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+ FROM attestation_community_updates u
+ JOIN attestation_pathways p ON p.id = u.pathway_id
+ WHERE u.user_id = $1 AND u.deleted_at IS NULL
 ) t
 `
-
-type GdprExportAttestationCommunityUpdatesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // §97: export attestation_community_updates authored by the user.
 // The table has no tenant_id column; tenant scoping is via the parent
 // pathway's tenant_id.
-func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, arg GdprExportAttestationCommunityUpdatesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportAttestationCommunityUpdates, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportAttestationCommunityUpdates, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1298,14 +1117,14 @@ func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, arg
 const gdprExportCustomFieldValues = `-- name: GdprExportCustomFieldValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
-           cfv.value_text, cfv.value_number, cfv.value_bool,
-           cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
-           cf.key AS field_key, cf.label AS field_label
-    FROM custom_field_values cfv
-    LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
-    WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = $1
-    ORDER BY cfv.created_at
+ SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
+ cfv.value_text, cfv.value_number, cfv.value_bool,
+ cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
+ cf.key AS field_key, cf.label AS field_label
+ FROM custom_field_values cfv
+ LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
+ WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = $1
+ ORDER BY cfv.created_at
 ) t
 `
 
@@ -1324,23 +1143,18 @@ func (q *Queries) GdprExportCustomFieldValues(ctx context.Context, userID pgtype
 const gdprExportInstructorPayouts = `-- name: GdprExportInstructorPayouts :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ipo.id, ipo.tenant_id, ipo.period_start, ipo.period_end,
-           ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
-           ipo.currency, ipo.status, ipo.payout_reference,
-           ipo.processed_at, ipo.created_at
-    FROM instructor_payouts ipo
-    JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
-    WHERE ipo.tenant_id = $1 AND ip.user_id = $2
+ SELECT ipo.id, ipo.period_start, ipo.period_end,
+ ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
+ ipo.currency, ipo.status, ipo.payout_reference,
+ ipo.processed_at, ipo.created_at
+ FROM instructor_payouts ipo
+ JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+ WHERE ip.user_id = $1
 ) t
 `
 
-type GdprExportInstructorPayoutsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GdprExportInstructorPayouts(ctx context.Context, arg GdprExportInstructorPayoutsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportInstructorPayouts, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportInstructorPayouts(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportInstructorPayouts, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1350,23 +1164,18 @@ const gdprExportInstructorProfiles = `-- name: GdprExportInstructorProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, display_name, headline, bio, social_links,
-           tier, status, kyc_status, application_note, created_at, updated_at
-    FROM instructor_profiles
-    WHERE tenant_id = $1 AND user_id = $2
+ SELECT id, display_name, headline, bio, social_links,
+ tier, status, kyc_status, application_note, created_at, updated_at
+ FROM instructor_profiles
+ WHERE user_id = $1
 ) t
 `
-
-type GdprExportInstructorProfilesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // =====================================================================
 // Japa University GDPR data export (ADR-063 / audit C2)
 // =====================================================================
-func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, arg GdprExportInstructorProfilesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportInstructorProfiles, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportInstructorProfiles, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1376,13 +1185,8 @@ const gdprExportOwnedSpaceParents = `-- name: GdprExportOwnedSpaceParents :many
 SELECT sps.space_id, sps.parent_space_id
 FROM space_parent_spaces sps
 JOIN space_members sm ON sm.space_id = sps.space_id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+WHERE sm.user_id = $1 AND sm.role = 'owner'
 `
-
-type GdprExportOwnedSpaceParentsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportOwnedSpaceParentsRow struct {
 	SpaceID       pgtype.UUID `json:"space_id"`
@@ -1391,8 +1195,8 @@ type GdprExportOwnedSpaceParentsRow struct {
 
 // Returns parent space IDs for spaces owned by the user (BUG-004: GDPR
 // export completeness for space_parent_spaces).
-func (q *Queries) GdprExportOwnedSpaceParents(ctx context.Context, arg GdprExportOwnedSpaceParentsParams) ([]GdprExportOwnedSpaceParentsRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceParents, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportOwnedSpaceParents(ctx context.Context, userID pgtype.UUID) ([]GdprExportOwnedSpaceParentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceParents, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1415,14 +1219,9 @@ const gdprExportOwnedSpaceRules = `-- name: GdprExportOwnedSpaceRules :many
 SELECT sr.id, sr.space_id, sr.title, sr.body, sr.position
 FROM space_rules sr
 JOIN space_members sm ON sm.space_id = sr.space_id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2 AND sm.role = 'owner'
+WHERE sm.user_id = $1 AND sm.role = 'owner'
 ORDER BY sr.space_id, sr.position
 `
-
-type GdprExportOwnedSpaceRulesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportOwnedSpaceRulesRow struct {
 	ID       pgtype.UUID `json:"id"`
@@ -1434,8 +1233,8 @@ type GdprExportOwnedSpaceRulesRow struct {
 
 // Returns rules for spaces owned by the user (BUG-004: GDPR export
 // completeness for space_rules).
-func (q *Queries) GdprExportOwnedSpaceRules(ctx context.Context, arg GdprExportOwnedSpaceRulesParams) ([]GdprExportOwnedSpaceRulesRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceRules, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportOwnedSpaceRules(ctx context.Context, userID pgtype.UUID) ([]GdprExportOwnedSpaceRulesRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportOwnedSpaceRules, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1463,23 +1262,18 @@ func (q *Queries) GdprExportOwnedSpaceRules(ctx context.Context, arg GdprExportO
 const gdprExportPushTokens = `-- name: GdprExportPushTokens :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, platform, token, device_name, created_at, last_used_at
-    FROM push_tokens
-    WHERE user_id = $1 AND tenant_id = $2
-    ORDER BY created_at
+ SELECT id, platform, token, device_name, created_at, last_used_at
+ FROM push_tokens
+ WHERE user_id = $1
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportPushTokensParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-014: export push_tokens for the user so the GDPR data export includes
 // device push notification tokens (PII-adjacent device identifiers).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportPushTokens(ctx context.Context, arg GdprExportPushTokensParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportPushTokens, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportPushTokens(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportPushTokens, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1488,23 +1282,18 @@ func (q *Queries) GdprExportPushTokens(ctx context.Context, arg GdprExportPushTo
 const gdprExportReferralCodes = `-- name: GdprExportReferralCodes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, code, click_count, created_at
-    FROM referral_codes
-    WHERE user_id = $1 AND tenant_id = $2
-    ORDER BY created_at
+ SELECT id, code, click_count, created_at
+ FROM referral_codes
+ WHERE user_id = $1
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportReferralCodesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-013: export referral_codes owned by the user so the GDPR data export
 // includes the user's referral code and click count.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
-func (q *Queries) GdprExportReferralCodes(ctx context.Context, arg GdprExportReferralCodesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportReferralCodes, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportReferralCodes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportReferralCodes, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1513,25 +1302,20 @@ func (q *Queries) GdprExportReferralCodes(ctx context.Context, arg GdprExportRef
 const gdprExportReferralsAsReferee = `-- name: GdprExportReferralsAsReferee :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, referral_code, status, reward_amount, qualified_at, credited_at, created_at
-    FROM referrals
-    WHERE referee_id = $1 AND tenant_id = $2
-    ORDER BY created_at
+ SELECT id, referral_code, status, reward_amount, qualified_at, credited_at, created_at
+ FROM referrals
+ WHERE referee_id = $1
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportReferralsAsRefereeParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-013: export the referral row where the user is the referee (the user
 // was referred). Includes the referral_code and status only — referrer PII
 // is excluded per §60 "Referral history exposes status/count, not referee PII"
 // (symmetric: referee export excludes referrer PII).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
-func (q *Queries) GdprExportReferralsAsReferee(ctx context.Context, arg GdprExportReferralsAsRefereeParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportReferralsAsReferee, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportReferralsAsReferee(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportReferralsAsReferee, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1540,25 +1324,20 @@ func (q *Queries) GdprExportReferralsAsReferee(ctx context.Context, arg GdprExpo
 const gdprExportReferralsAsReferrer = `-- name: GdprExportReferralsAsReferrer :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, referral_code, status, reward_amount, flagged_reason,
-           qualified_at, credited_at, created_at
-    FROM referrals
-    WHERE referrer_id = $1 AND tenant_id = $2
-    ORDER BY created_at
+ SELECT id, referral_code, status, reward_amount, flagged_reason,
+ qualified_at, credited_at, created_at
+ FROM referrals
+ WHERE referrer_id = $1
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportReferralsAsReferrerParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-013: export referrals where the user is the referrer so the GDPR data
 // export includes referral history (status, reward, dates). Referee PII is
 // NOT included — only the referral_code, status, and timestamps.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
-func (q *Queries) GdprExportReferralsAsReferrer(ctx context.Context, arg GdprExportReferralsAsReferrerParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportReferralsAsReferrer, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportReferralsAsReferrer(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportReferralsAsReferrer, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1567,23 +1346,18 @@ func (q *Queries) GdprExportReferralsAsReferrer(ctx context.Context, arg GdprExp
 const gdprExportRevenueSplits = `-- name: GdprExportRevenueSplits :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT rs.id, rs.tenant_id, rs.track_id, rs.enrollment_id, rs.payment_id,
-           rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
-           rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
-           rs.currency, rs.created_at
-    FROM revenue_splits rs
-    JOIN instructor_profiles ip ON ip.id = rs.instructor_id
-    WHERE rs.tenant_id = $1 AND ip.user_id = $2
+ SELECT rs.id, rs.track_id, rs.enrollment_id, rs.payment_id,
+ rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
+ rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
+ rs.currency, rs.created_at
+ FROM revenue_splits rs
+ JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+ WHERE ip.user_id = $1
 ) t
 `
 
-type GdprExportRevenueSplitsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GdprExportRevenueSplits(ctx context.Context, arg GdprExportRevenueSplitsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportRevenueSplits, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportRevenueSplits, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1591,16 +1365,11 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, arg GdprExportRev
 
 const gdprExportUserActivityEvents = `-- name: GdprExportUserActivityEvents :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events WHERE user_id = $1) t
 `
 
-type GdprExportUserActivityEventsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserActivityEvents(ctx context.Context, arg GdprExportUserActivityEventsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserActivityEvents, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserActivityEvents(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserActivityEvents, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1608,16 +1377,11 @@ func (q *Queries) GdprExportUserActivityEvents(ctx context.Context, arg GdprExpo
 
 const gdprExportUserApiKeys = `-- name: GdprExportUserApiKeys :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at, environment, revoked_at, revoked_by, notes FROM api_keys WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at, environment, revoked_at, revoked_by, notes FROM api_keys WHERE user_id = $1) t
 `
 
-type GdprExportUserApiKeysParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserApiKeys(ctx context.Context, arg GdprExportUserApiKeysParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserApiKeys, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserApiKeys(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserApiKeys, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1626,10 +1390,10 @@ func (q *Queries) GdprExportUserApiKeys(ctx context.Context, arg GdprExportUserA
 const gdprExportUserBlocks = `-- name: GdprExportUserBlocks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT blocker_id, blocked_id, created_at
-    FROM user_blocks
-    WHERE blocker_id = $1 OR blocked_id = $1
-    ORDER BY created_at
+ SELECT blocker_id, blocked_id, created_at
+ FROM user_blocks
+ WHERE blocker_id = $1 OR blocked_id = $1
+ ORDER BY created_at
 ) t
 `
 
@@ -1645,17 +1409,12 @@ func (q *Queries) GdprExportUserBlocks(ctx context.Context, userID pgtype.UUID) 
 
 const gdprExportUserBookmarkFolders = `-- name: GdprExportUserBookmarkFolders :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, name, created_at, updated_at, position FROM bookmark_folders WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, name, created_at, updated_at, position FROM bookmark_folders WHERE user_id = $1) t
 `
 
-type GdprExportUserBookmarkFoldersParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Exports bookmark_folders for GDPR data export (BL-005).
-func (q *Queries) GdprExportUserBookmarkFolders(ctx context.Context, arg GdprExportUserBookmarkFoldersParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserBookmarkFolders, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserBookmarkFolders(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBookmarkFolders, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1663,16 +1422,11 @@ func (q *Queries) GdprExportUserBookmarkFolders(ctx context.Context, arg GdprExp
 
 const gdprExportUserBookmarks = `-- name: GdprExportUserBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at, folder_id FROM bookmarks WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, folder, created_at, folder_id FROM bookmarks WHERE user_id = $1) t
 `
 
-type GdprExportUserBookmarksParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserBookmarks(ctx context.Context, arg GdprExportUserBookmarksParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserBookmarks, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserBookmarks(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserBookmarks, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1681,23 +1435,18 @@ func (q *Queries) GdprExportUserBookmarks(ctx context.Context, arg GdprExportUse
 const gdprExportUserCalendarEntries = `-- name: GdprExportUserCalendarEntries :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT e.id, e.title, e.description, e.category,
-           e.destination_space_id, e.origin_space_id,
-           e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
-           e.source_url, e.status, e.created_at
-    FROM calendar_entries e
-    WHERE e.submitted_by = $1 AND e.tenant_id = $2 AND e.deleted_at IS NULL
+ SELECT e.id, e.title, e.description, e.category,
+ e.destination_space_id, e.origin_space_id,
+ e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+ e.source_url, e.status, e.created_at
+ FROM calendar_entries e
+ WHERE e.submitted_by = $1 AND e.deleted_at IS NULL
 ) t
 `
 
-type GdprExportUserCalendarEntriesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // §86: export calendar_entries submitted by the user (BUG-025).
-func (q *Queries) GdprExportUserCalendarEntries(ctx context.Context, arg GdprExportUserCalendarEntriesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserCalendarEntries, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserCalendarEntries(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarEntries, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1706,20 +1455,15 @@ func (q *Queries) GdprExportUserCalendarEntries(ctx context.Context, arg GdprExp
 const gdprExportUserCalendarSaves = `-- name: GdprExportUserCalendarSaves :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT s.entry_id, s.saved_at
-    FROM calendar_saves s
-    WHERE s.user_id = $1 AND s.tenant_id = $2
+ SELECT s.entry_id, s.saved_at
+ FROM calendar_saves s
+ WHERE s.user_id = $1
 ) t
 `
 
-type GdprExportUserCalendarSavesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // §86: export calendar_saves for the user (BUG-025).
-func (q *Queries) GdprExportUserCalendarSaves(ctx context.Context, arg GdprExportUserCalendarSavesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserCalendarSaves, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserCalendarSaves(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarSaves, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1728,20 +1472,15 @@ func (q *Queries) GdprExportUserCalendarSaves(ctx context.Context, arg GdprExpor
 const gdprExportUserCalendarSubscriptions = `-- name: GdprExportUserCalendarSubscriptions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT sub.destination_space_id, sub.category, sub.created_at
-    FROM calendar_subscriptions sub
-    WHERE sub.user_id = $1 AND sub.tenant_id = $2
+ SELECT sub.destination_space_id, sub.category, sub.created_at
+ FROM calendar_subscriptions sub
+ WHERE sub.user_id = $1
 ) t
 `
 
-type GdprExportUserCalendarSubscriptionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // §86: export calendar_subscriptions for the user (BUG-025).
-func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, arg GdprExportUserCalendarSubscriptionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserCalendarSubscriptions, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1750,14 +1489,9 @@ func (q *Queries) GdprExportUserCalendarSubscriptions(ctx context.Context, arg G
 const gdprExportUserComments = `-- name: GdprExportUserComments :many
 SELECT id, content_id, body, parent_id, created_at
 FROM comments
-WHERE author_user_id = $1 AND tenant_id = $2
+WHERE author_user_id = $1
 ORDER BY created_at DESC
 `
-
-type GdprExportUserCommentsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserCommentsRow struct {
 	ID        pgtype.UUID        `json:"id"`
@@ -1767,8 +1501,8 @@ type GdprExportUserCommentsRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GdprExportUserComments(ctx context.Context, arg GdprExportUserCommentsParams) ([]GdprExportUserCommentsRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserComments, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComments(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserCommentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserComments, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1796,24 +1530,19 @@ func (q *Queries) GdprExportUserComments(ctx context.Context, arg GdprExportUser
 const gdprExportUserComparisonDataIngestionJobs = `-- name: GdprExportUserComparisonDataIngestionJobs :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT j.id, j.tenant_id, j.content_id, j.status, j.source_kind,
-           j.refreshed_count, j.error, j.started_at, j.completed_at,
-           j.created_at, j.updated_at
-    FROM comparison_data_ingestion_jobs j
-    JOIN contents c ON c.id = j.content_id
-    WHERE c.author_id = $1 AND j.tenant_id = $2
-    ORDER BY j.created_at
+ SELECT j.id, j.content_id, j.status, j.source_kind,
+ j.refreshed_count, j.error, j.started_at, j.completed_at,
+ j.created_at, j.updated_at
+ FROM comparison_data_ingestion_jobs j
+ JOIN contents c ON c.id = j.content_id
+ WHERE c.author_id = $1
+ ORDER BY j.created_at
 ) t
 `
 
-type GdprExportUserComparisonDataIngestionJobsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // JCE Sub-spec 4: export ingestion jobs for user-authored comparison content.
-func (q *Queries) GdprExportUserComparisonDataIngestionJobs(ctx context.Context, arg GdprExportUserComparisonDataIngestionJobsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataIngestionJobs, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonDataIngestionJobs(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataIngestionJobs, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1822,26 +1551,21 @@ func (q *Queries) GdprExportUserComparisonDataIngestionJobs(ctx context.Context,
 const gdprExportUserComparisonDataSources = `-- name: GdprExportUserComparisonDataSources :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ds.id, ds.tenant_id, ds.entity_type, ds.entity_id, ds.dimension_slug,
-           ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
-           ds.freshness_score, ds.last_verified_at, ds.config,
-           ds.created_at, ds.updated_at
-    FROM comparison_data_sources ds
-    WHERE ds.created_by_user_id = $1 AND ds.tenant_id = $2
-    ORDER BY ds.created_at
+ SELECT ds.id, ds.entity_type, ds.entity_id, ds.dimension_slug,
+ ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
+ ds.freshness_score, ds.last_verified_at, ds.config,
+ ds.created_at, ds.updated_at
+ FROM comparison_data_sources ds
+ WHERE ds.created_by_user_id = $1
+ ORDER BY ds.created_at
 ) t
 `
-
-type GdprExportUserComparisonDataSourcesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // JCE Sub-spec 4: export user-owned data sources. This is empty until the
 // platform allows non-admin users to create data sources and populate
 // created_by_user_id.
-func (q *Queries) GdprExportUserComparisonDataSources(ctx context.Context, arg GdprExportUserComparisonDataSourcesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataSources, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonDataSources(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDataSources, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1850,21 +1574,16 @@ func (q *Queries) GdprExportUserComparisonDataSources(ctx context.Context, arg G
 const gdprExportUserComparisonDimensions = `-- name: GdprExportUserComparisonDimensions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
-    FROM comparison_dimensions cd
-    JOIN contents c ON c.id = cd.content_id
-    WHERE c.author_id = $1 AND cd.tenant_id = $2
-    ORDER BY cd.created_at DESC
+ SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
+ FROM comparison_dimensions cd
+ JOIN contents c ON c.id = cd.content_id
+ WHERE c.author_id = $1
+ ORDER BY cd.created_at DESC
 ) t
 `
 
-type GdprExportUserComparisonDimensionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserComparisonDimensions(ctx context.Context, arg GdprExportUserComparisonDimensionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonDimensions, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonDimensions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonDimensions, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1874,18 +1593,13 @@ const gdprExportUserComparisonItems = `-- name: GdprExportUserComparisonItems :o
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
-    FROM comparison_items ci
-    JOIN contents c ON c.id = ci.content_id
-    WHERE c.author_id = $1 AND ci.tenant_id = $2
-    ORDER BY ci.created_at DESC
+ SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
+ FROM comparison_items ci
+ JOIN contents c ON c.id = ci.content_id
+ WHERE c.author_id = $1
+ ORDER BY ci.created_at DESC
 ) t
 `
-
-type GdprExportUserComparisonItemsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================================================================
 // Comparison GDPR export (BUG-004)
@@ -1894,8 +1608,8 @@ type GdprExportUserComparisonItemsParams struct {
 // queries export the linked comparison data so the user receives the full
 // data set they authored, per GDPR right to data portability.
 // =====================================================================
-func (q *Queries) GdprExportUserComparisonItems(ctx context.Context, arg GdprExportUserComparisonItemsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonItems, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonItems(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonItems, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1904,23 +1618,18 @@ func (q *Queries) GdprExportUserComparisonItems(ctx context.Context, arg GdprExp
 const gdprExportUserComparisonProfiles = `-- name: GdprExportUserComparisonProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-           goals, preferences, demographics, is_default, is_template,
-           created_at, updated_at
-    FROM comparison_profiles
-    WHERE user_id = $1 AND tenant_id = $2
-    ORDER BY created_at
+ SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template,
+ created_at, updated_at
+ FROM comparison_profiles
+ WHERE user_id = $1
+ ORDER BY created_at
 ) t
 `
 
-type GdprExportUserComparisonProfilesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // JCE Sub-spec 2/3: export comparison profiles for GDPR data portability.
-func (q *Queries) GdprExportUserComparisonProfiles(ctx context.Context, arg GdprExportUserComparisonProfilesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonProfiles, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonProfiles, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1929,24 +1638,19 @@ func (q *Queries) GdprExportUserComparisonProfiles(ctx context.Context, arg Gdpr
 const gdprExportUserComparisonRecommendations = `-- name: GdprExportUserComparisonRecommendations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cr.id, cr.tenant_id, cr.content_id, cr.item_id, cr.profile_id,
-           cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
-           cr.created_at, cr.updated_at
-    FROM comparison_recommendations cr
-    JOIN contents c ON c.id = cr.content_id
-    WHERE c.author_id = $1 AND cr.tenant_id = $2
-    ORDER BY cr.created_at
+ SELECT cr.id, cr.content_id, cr.item_id, cr.profile_id,
+ cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
+ cr.created_at, cr.updated_at
+ FROM comparison_recommendations cr
+ JOIN contents c ON c.id = cr.content_id
+ WHERE c.author_id = $1
+ ORDER BY cr.created_at
 ) t
 `
 
-type GdprExportUserComparisonRecommendationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // JCE Sub-spec 2/3: export comparison recommendations for content authored by the user.
-func (q *Queries) GdprExportUserComparisonRecommendations(ctx context.Context, arg GdprExportUserComparisonRecommendationsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonRecommendations, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonRecommendations(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonRecommendations, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1955,24 +1659,19 @@ func (q *Queries) GdprExportUserComparisonRecommendations(ctx context.Context, a
 const gdprExportUserComparisonScores = `-- name: GdprExportUserComparisonScores :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cs.id, cs.tenant_id, cs.content_id, cs.item_id, cs.factor_id,
-           cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
-           cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
-    FROM comparison_scores cs
-    JOIN contents c ON c.id = cs.content_id
-    WHERE c.author_id = $1 AND cs.tenant_id = $2
-    ORDER BY cs.calculated_at
+ SELECT cs.id, cs.content_id, cs.item_id, cs.factor_id,
+ cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
+ cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
+ FROM comparison_scores cs
+ JOIN contents c ON c.id = cs.content_id
+ WHERE c.author_id = $1
+ ORDER BY cs.calculated_at
 ) t
 `
 
-type GdprExportUserComparisonScoresParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // JCE Sub-spec 2/3: export comparison scores for content authored by the user.
-func (q *Queries) GdprExportUserComparisonScores(ctx context.Context, arg GdprExportUserComparisonScoresParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonScores, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonScores(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonScores, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -1981,22 +1680,17 @@ func (q *Queries) GdprExportUserComparisonScores(ctx context.Context, arg GdprEx
 const gdprExportUserComparisonValues = `-- name: GdprExportUserComparisonValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
-    FROM comparison_values cv
-    JOIN comparison_items ci ON ci.id = cv.item_id
-    JOIN contents c ON c.id = ci.content_id
-    WHERE c.author_id = $1 AND cv.tenant_id = $2
-    ORDER BY cv.created_at DESC
+ SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
+ FROM comparison_values cv
+ JOIN comparison_items ci ON ci.id = cv.item_id
+ JOIN contents c ON c.id = ci.content_id
+ WHERE c.author_id = $1
+ ORDER BY cv.created_at DESC
 ) t
 `
 
-type GdprExportUserComparisonValuesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserComparisonValues(ctx context.Context, arg GdprExportUserComparisonValuesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonValues, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserComparisonValues(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserComparisonValues, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2004,16 +1698,11 @@ func (q *Queries) GdprExportUserComparisonValues(ctx context.Context, arg GdprEx
 
 const gdprExportUserConsentRecords = `-- name: GdprExportUserConsentRecords :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent, created_at FROM consent_records WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent, created_at FROM consent_records WHERE user_id = $1) t
 `
 
-type GdprExportUserConsentRecordsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserConsentRecords(ctx context.Context, arg GdprExportUserConsentRecordsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserConsentRecords, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserConsentRecords(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserConsentRecords, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2023,14 +1712,9 @@ const gdprExportUserContent = `-- name: GdprExportUserContent :many
 
 SELECT id, title, slug, content_type, status, created_at
 FROM contents
-WHERE author_id = $1 AND tenant_id = $2
+WHERE author_id = $1
 ORDER BY created_at DESC
 `
-
-type GdprExportUserContentParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserContentRow struct {
 	ID          pgtype.UUID        `json:"id"`
@@ -2044,8 +1728,8 @@ type GdprExportUserContentRow struct {
 // =====================
 // GDPR Data Export Queries
 // =====================
-func (q *Queries) GdprExportUserContent(ctx context.Context, arg GdprExportUserContentParams) ([]GdprExportUserContentRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserContent, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserContent(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserContentRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserContent, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2073,16 +1757,11 @@ func (q *Queries) GdprExportUserContent(ctx context.Context, arg GdprExportUserC
 
 const gdprExportUserContentShares = `-- name: GdprExportUserContentShares :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, content_id, user_id, platform, created_at FROM content_shares WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, content_id, user_id, platform, created_at FROM content_shares WHERE user_id = $1) t
 `
 
-type GdprExportUserContentSharesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserContentShares(ctx context.Context, arg GdprExportUserContentSharesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserContentShares, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserContentShares(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserContentShares, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2091,7 +1770,7 @@ func (q *Queries) GdprExportUserContentShares(ctx context.Context, arg GdprExpor
 const gdprExportUserContentViews = `-- name: GdprExportUserContentViews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT content_id, session_id, country_code, viewed_at
-      FROM user_content_views WHERE user_id = $1) t
+ FROM user_content_views WHERE user_id = $1) t
 `
 
 // Exports user_content_views rows for GDPR data export (Section 14).
@@ -2107,26 +1786,20 @@ func (q *Queries) GdprExportUserContentViews(ctx context.Context, userID pgtype.
 const gdprExportUserDMConversations = `-- name: GdprExportUserDMConversations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, participant_1_id, participant_2_id,
-           last_message_at, last_message_preview,
-           p1_unread_count, p2_unread_count, created_at, updated_at
-    FROM dm_conversations
-    WHERE tenant_id = $1
-      AND (participant_1_id = $2 OR participant_2_id = $2)
-    ORDER BY created_at
+ SELECT id, participant_1_id, participant_2_id,
+ last_message_at, last_message_preview,
+ p1_unread_count, p2_unread_count, created_at, updated_at
+ FROM dm_conversations
+ WHERE (participant_1_id = $1 OR participant_2_id = $1)
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportUserDMConversationsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-022: export dm_conversations where the user is a participant so the
 // GDPR data export includes DM conversation metadata.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportUserDMConversations(ctx context.Context, arg GdprExportUserDMConversationsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserDMConversations, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportUserDMConversations(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMConversations, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2135,24 +1808,18 @@ func (q *Queries) GdprExportUserDMConversations(ctx context.Context, arg GdprExp
 const gdprExportUserDMMessages = `-- name: GdprExportUserDMMessages :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT dm.id, dm.conversation_id, dm.sender_id, dm.tenant_id,
-           dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
-    FROM dm_messages dm
-    WHERE dm.tenant_id = $1 AND dm.sender_id = $2
-    ORDER BY dm.created_at
+ SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
+ FROM dm_messages dm
+ WHERE dm.sender_id = $1
+ ORDER BY dm.created_at
 ) t
 `
-
-type GdprExportUserDMMessagesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-022: export dm_messages authored by the user so the GDPR data export
 // includes DM message content (PII: message bodies).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportUserDMMessages(ctx context.Context, arg GdprExportUserDMMessagesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserDMMessages, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportUserDMMessages(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMMessages, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2161,25 +1828,19 @@ func (q *Queries) GdprExportUserDMMessages(ctx context.Context, arg GdprExportUs
 const gdprExportUserDMRequests = `-- name: GdprExportUserDMRequests :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, requester_id, recipient_id, conversation_id,
-           preview_message, status, created_at, updated_at, resolved_at
-    FROM dm_requests
-    WHERE tenant_id = $1
-      AND (requester_id = $2 OR recipient_id = $2)
-    ORDER BY created_at
+ SELECT id, requester_id, recipient_id, conversation_id,
+ preview_message, status, created_at, updated_at, resolved_at
+ FROM dm_requests
+ WHERE (requester_id = $1 OR recipient_id = $1)
+ ORDER BY created_at
 ) t
 `
-
-type GdprExportUserDMRequestsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-022: export dm_requests where the user is requester or recipient so
 // the GDPR data export includes DM request metadata and preview messages.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportUserDMRequests(ctx context.Context, arg GdprExportUserDMRequestsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserDMRequests, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportUserDMRequests(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMRequests, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2188,22 +1849,17 @@ func (q *Queries) GdprExportUserDMRequests(ctx context.Context, arg GdprExportUs
 const gdprExportUserDMSettings = `-- name: GdprExportUserDMSettings :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT user_id, tenant_id, dm_privacy, updated_at
-    FROM user_dm_settings
-    WHERE tenant_id = $1 AND user_id = $2
+ SELECT user_id, dm_privacy, updated_at
+ FROM user_dm_settings
+ WHERE user_id = $1
 ) t
 `
-
-type GdprExportUserDMSettingsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // BUG-022: export user_dm_settings for the user so the GDPR data export
 // includes DM privacy preferences.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportUserDMSettings(ctx context.Context, arg GdprExportUserDMSettingsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserDMSettings, arg.TenantID, arg.UserID)
+func (q *Queries) GdprExportUserDMSettings(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserDMSettings, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2211,16 +1867,11 @@ func (q *Queries) GdprExportUserDMSettings(ctx context.Context, arg GdprExportUs
 
 const gdprExportUserFollows = `-- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at FROM follows WHERE follower_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at FROM follows WHERE follower_id = $1) t
 `
 
-type GdprExportUserFollowsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserFollows(ctx context.Context, arg GdprExportUserFollowsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserFollows, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserFollows(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserFollows, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2229,20 +1880,15 @@ func (q *Queries) GdprExportUserFollows(ctx context.Context, arg GdprExportUserF
 const gdprExportUserForumBookmarks = `-- name: GdprExportUserForumBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
-    FROM bookmarks
-    WHERE user_id = $1 AND tenant_id = $2
-      AND entity_type IN ('forum_thread', 'forum_reply')
+ SELECT user_id, entity_type, entity_id, folder, folder_id, created_at
+ FROM bookmarks
+ WHERE user_id = $1
+ AND entity_type IN ('forum_thread', 'forum_reply')
 ) t
 `
 
-type GdprExportUserForumBookmarksParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserForumBookmarks(ctx context.Context, arg GdprExportUserForumBookmarksParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserForumBookmarks, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserForumBookmarks(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumBookmarks, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2263,16 +1909,11 @@ func (q *Queries) GdprExportUserForumPollVotes(ctx context.Context, userID pgtyp
 
 const gdprExportUserForumReplies = `-- name: GdprExportUserForumReplies :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at, ama_pending, ama_approved_at FROM forum_replies WHERE author_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id, body, vote_score, view_count, is_anonymous, is_edited, created_at, updated_at, deleted_at, ama_pending, ama_approved_at FROM forum_replies WHERE author_user_id = $1) t
 `
 
-type GdprExportUserForumRepliesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserForumReplies(ctx context.Context, arg GdprExportUserForumRepliesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserForumReplies, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserForumReplies(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumReplies, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2280,17 +1921,12 @@ func (q *Queries) GdprExportUserForumReplies(ctx context.Context, arg GdprExport
 
 const gdprExportUserForumThreadTags = `-- name: GdprExportUserForumThreadTags :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ftt.thread_id, ftt.tag_id FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = $1 AND ft.tenant_id = $2) t
+FROM (SELECT ftt.thread_id, ftt.tag_id FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = $1) t
 `
 
-type GdprExportUserForumThreadTagsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // BUG-022: junction rows for threads authored by the user.
-func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, arg GdprExportUserForumThreadTagsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserForumThreadTags, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumThreadTags, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2298,16 +1934,11 @@ func (q *Queries) GdprExportUserForumThreadTags(ctx context.Context, arg GdprExp
 
 const gdprExportUserForumThreads = `-- name: GdprExportUserForumThreads :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id, ama_config FROM forum_threads WHERE author_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, content_id, space_id, author_user_id, title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id, vote_score, reply_count, view_count, bookmark_count, edit_window_minutes, is_edited, created_at, updated_at, deleted_at, parent_reply_id, ama_config FROM forum_threads WHERE author_user_id = $1) t
 `
 
-type GdprExportUserForumThreadsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserForumThreads(ctx context.Context, arg GdprExportUserForumThreadsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserForumThreads, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserForumThreads(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumThreads, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2315,16 +1946,11 @@ func (q *Queries) GdprExportUserForumThreads(ctx context.Context, arg GdprExport
 
 const gdprExportUserForumVotes = `-- name: GdprExportUserForumVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at FROM forum_votes WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at FROM forum_votes WHERE user_id = $1) t
 `
 
-type GdprExportUserForumVotesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserForumVotes(ctx context.Context, arg GdprExportUserForumVotesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserForumVotes, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserForumVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserForumVotes, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2332,16 +1958,11 @@ func (q *Queries) GdprExportUserForumVotes(ctx context.Context, arg GdprExportUs
 
 const gdprExportUserLearningCertificates = `-- name: GdprExportUserLearningCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at FROM learning_certificates WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at FROM learning_certificates WHERE user_id = $1) t
 `
 
-type GdprExportUserLearningCertificatesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, arg GdprExportUserLearningCertificatesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserLearningCertificates, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserLearningCertificates, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2349,16 +1970,11 @@ func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, arg Gd
 
 const gdprExportUserLessonProgress = `-- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at FROM lesson_progress WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at FROM lesson_progress WHERE user_id = $1) t
 `
 
-type GdprExportUserLessonProgressParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, arg GdprExportUserLessonProgressParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserLessonProgress, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserLessonProgress, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2366,16 +1982,11 @@ func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, arg GdprExpo
 
 const gdprExportUserMedia = `-- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE uploader_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE uploader_user_id = $1) t
 `
 
-type GdprExportUserMediaParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserMedia(ctx context.Context, arg GdprExportUserMediaParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMedia, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMedia(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMedia, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2383,16 +1994,11 @@ func (q *Queries) GdprExportUserMedia(ctx context.Context, arg GdprExportUserMed
 
 const gdprExportUserMentorProfiles = `-- name: GdprExportUserMentorProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, bio, skills, goals, is_mentor, is_available, rating_avg, session_count, created_at, updated_at FROM mentorship_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, bio, skills, goals, is_mentor, is_available, rating_avg, session_count, created_at, updated_at FROM mentorship_profiles WHERE user_id = $1) t
 `
 
-type GdprExportUserMentorProfilesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserMentorProfiles(ctx context.Context, arg GdprExportUserMentorProfilesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMentorProfiles, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMentorProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorProfiles, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2412,16 +2018,11 @@ func (q *Queries) GdprExportUserMentorReviews(ctx context.Context, userID pgtype
 
 const gdprExportUserMentorSessions = `-- name: GdprExportUserMentorSessions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, scheduled_at, started_at, completed_at, notes, created_at FROM mentor_sessions WHERE mentee_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, scheduled_at, started_at, completed_at, notes, created_at FROM mentor_sessions WHERE mentee_id = $1) t
 `
 
-type GdprExportUserMentorSessionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, arg GdprExportUserMentorSessionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMentorSessions, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorSessions, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2429,16 +2030,11 @@ func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, arg GdprExpo
 
 const gdprExportUserMentorshipConnections = `-- name: GdprExportUserMentorshipConnections :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections WHERE (mentor_id = $1 OR mentee_id = $1) AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections WHERE (mentor_id = $1 OR mentee_id = $1)) t
 `
 
-type GdprExportUserMentorshipConnectionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserMentorshipConnections(ctx context.Context, arg GdprExportUserMentorshipConnectionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMentorshipConnections, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMentorshipConnections(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorshipConnections, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2446,16 +2042,11 @@ func (q *Queries) GdprExportUserMentorshipConnections(ctx context.Context, arg G
 
 const gdprExportUserMentorshipMatches = `-- name: GdprExportUserMentorshipMatches :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at FROM mentorship_matches WHERE (mentor_id = $1 OR mentee_id = $1) AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at FROM mentorship_matches WHERE (mentor_id = $1 OR mentee_id = $1)) t
 `
 
-type GdprExportUserMentorshipMatchesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserMentorshipMatches(ctx context.Context, arg GdprExportUserMentorshipMatchesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMentorshipMatches, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMentorshipMatches(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMentorshipMatches, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2463,18 +2054,13 @@ func (q *Queries) GdprExportUserMentorshipMatches(ctx context.Context, arg GdprE
 
 const gdprExportUserMutes = `-- name: GdprExportUserMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, muted_user_id, created_at FROM user_mutes WHERE (user_id = $1 OR muted_user_id = $1) AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, muted_user_id, created_at FROM user_mutes WHERE (user_id = $1 OR muted_user_id = $1)) t
 `
-
-type GdprExportUserMutesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-008: export both muter and muted directions for GDPR portability.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-func (q *Queries) GdprExportUserMutes(ctx context.Context, arg GdprExportUserMutesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserMutes, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserMutes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserMutes, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2483,14 +2069,9 @@ func (q *Queries) GdprExportUserMutes(ctx context.Context, arg GdprExportUserMut
 const gdprExportUserNotifications = `-- name: GdprExportUserNotifications :many
 SELECT id, notification_type, title, body, read_at, created_at
 FROM notifications
-WHERE recipient_id = $1 AND tenant_id = $2
+WHERE recipient_id = $1
 ORDER BY created_at DESC
 `
-
-type GdprExportUserNotificationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserNotificationsRow struct {
 	ID               pgtype.UUID        `json:"id"`
@@ -2501,8 +2082,8 @@ type GdprExportUserNotificationsRow struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GdprExportUserNotifications(ctx context.Context, arg GdprExportUserNotificationsParams) ([]GdprExportUserNotificationsRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserNotifications, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserNotifications(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserNotificationsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserNotifications, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2530,16 +2111,11 @@ func (q *Queries) GdprExportUserNotifications(ctx context.Context, arg GdprExpor
 
 const gdprExportUserOrganizations = `-- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations WHERE owner_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations WHERE owner_user_id = $1) t
 `
 
-type GdprExportUserOrganizationsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserOrganizations(ctx context.Context, arg GdprExportUserOrganizationsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserOrganizations, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserOrganizations(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserOrganizations, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2548,14 +2124,9 @@ func (q *Queries) GdprExportUserOrganizations(ctx context.Context, arg GdprExpor
 const gdprExportUserPayments = `-- name: GdprExportUserPayments :many
 SELECT id, provider, amount, currency, status, purpose_type, created_at
 FROM payments
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
 `
-
-type GdprExportUserPaymentsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserPaymentsRow struct {
 	ID          pgtype.UUID        `json:"id"`
@@ -2567,8 +2138,8 @@ type GdprExportUserPaymentsRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GdprExportUserPayments(ctx context.Context, arg GdprExportUserPaymentsParams) ([]GdprExportUserPaymentsRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserPayments, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserPayments(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserPaymentsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserPayments, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2597,16 +2168,11 @@ func (q *Queries) GdprExportUserPayments(ctx context.Context, arg GdprExportUser
 
 const gdprExportUserPreferences = `-- name: GdprExportUserPreferences :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at FROM user_preferences WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, dark_mode, language, created_at, updated_at FROM user_preferences WHERE user_id = $1) t
 `
 
-type GdprExportUserPreferencesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserPreferences(ctx context.Context, arg GdprExportUserPreferencesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserPreferences, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserPreferences(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserPreferences, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2615,21 +2181,16 @@ func (q *Queries) GdprExportUserPreferences(ctx context.Context, arg GdprExportU
 const gdprExportUserProfiles = `-- name: GdprExportUserProfiles :one
 
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history, is_mentor, mentor_capacity, active_mentee_count, mentor_areas, mentor_bio, mentor_since, mentor_embedding, location, banner_media_id FROM user_profiles WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, display_name, avatar_url, bio, timezone, business_name, registration_number, operating_hours, created_at, updated_at, content_country_preference, cover_url, preferred_currency, avatar_media_id, header_media_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history, is_mentor, mentor_capacity, active_mentee_count, mentor_areas, mentor_bio, mentor_since, mentor_embedding, location, banner_media_id FROM user_profiles WHERE user_id = $1) t
 `
-
-type GdprExportUserProfilesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // GDPR Data Export — Additional User-Owned Tables (AUDIT-FRESH-GDPR-002)
 // Each query returns the user's rows as a JSON array so the service can attach
 // them to the export without per-table column mapping.
 // =====================
-func (q *Queries) GdprExportUserProfiles(ctx context.Context, arg GdprExportUserProfilesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserProfiles, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserProfiles, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2637,16 +2198,11 @@ func (q *Queries) GdprExportUserProfiles(ctx context.Context, arg GdprExportUser
 
 const gdprExportUserReactions = `-- name: GdprExportUserReactions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at FROM reactions WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at FROM reactions WHERE user_id = $1) t
 `
 
-type GdprExportUserReactionsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserReactions(ctx context.Context, arg GdprExportUserReactionsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserReactions, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserReactions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserReactions, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2667,16 +2223,11 @@ func (q *Queries) GdprExportUserReplyViews(ctx context.Context, userID pgtype.UU
 
 const gdprExportUserReviews = `-- name: GdprExportUserReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id, rating, title, body, status, created_at, updated_at, removed_by FROM reviews WHERE reviewer_user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id, rating, title, body, status, created_at, updated_at, removed_by FROM reviews WHERE reviewer_user_id = $1) t
 `
 
-type GdprExportUserReviewsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserReviews(ctx context.Context, arg GdprExportUserReviewsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserReviews, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserReviews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserReviews, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2684,30 +2235,25 @@ func (q *Queries) GdprExportUserReviews(ctx context.Context, arg GdprExportUserR
 
 const gdprExportUserServiceListings = `-- name: GdprExportUserServiceListings :many
 SELECT c.id AS content_id,
-       c.title,
-       c.slug,
-       c.created_at,
-       sm.service_category,
-       sm.is_verified,
-       sm.verification_type,
-       sm.claim_status,
-       sm.origin_communities,
-       sm.is_remote,
-       sm.website_url,
-       sm.booking_url,
-       sm.price_range
+ c.title,
+ c.slug,
+ c.created_at,
+ sm.service_category,
+ sm.is_verified,
+ sm.verification_type,
+ sm.claim_status,
+ sm.origin_communities,
+ sm.is_remote,
+ sm.website_url,
+ sm.booking_url,
+ sm.price_range
 FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
-WHERE c.author_id = $1 AND c.tenant_id = $2
-  AND c.content_type = 'service_listing'
-  AND c.deleted_at IS NULL
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.author_id = $1
+ AND c.content_type = 'service_listing'
+ AND c.deleted_at IS NULL
 ORDER BY c.created_at DESC
 `
-
-type GdprExportUserServiceListingsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserServiceListingsRow struct {
 	ContentID         pgtype.UUID        `json:"content_id"`
@@ -2728,8 +2274,8 @@ type GdprExportUserServiceListingsRow struct {
 // §98 BUG-008: export the user's service_listing_meta rows joined to
 // their content rows. The base content row is already exported by
 // GdprExportUserContent; this adds the structured service fields.
-func (q *Queries) GdprExportUserServiceListings(ctx context.Context, arg GdprExportUserServiceListingsParams) ([]GdprExportUserServiceListingsRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserServiceListings, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserServiceListings(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserServiceListingsRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserServiceListings, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2764,16 +2310,11 @@ func (q *Queries) GdprExportUserServiceListings(ctx context.Context, arg GdprExp
 
 const gdprExportUserSpaceMembers = `-- name: GdprExportUserSpaceMembers :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, space_id, user_id, tenant_id, role, joined_at, status FROM space_members WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, space_id, user_id, tenant_id, role, joined_at, status FROM space_members WHERE user_id = $1) t
 `
 
-type GdprExportUserSpaceMembersParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserSpaceMembers(ctx context.Context, arg GdprExportUserSpaceMembersParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserSpaceMembers, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserSpaceMembers(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserSpaceMembers, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2781,16 +2322,11 @@ func (q *Queries) GdprExportUserSpaceMembers(ctx context.Context, arg GdprExport
 
 const gdprExportUserSpaceModerators = `-- name: GdprExportUserSpaceModerators :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at FROM space_moderators WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at FROM space_moderators WHERE user_id = $1) t
 `
 
-type GdprExportUserSpaceModeratorsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserSpaceModerators(ctx context.Context, arg GdprExportUserSpaceModeratorsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserSpaceModerators, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserSpaceModerators(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserSpaceModerators, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2798,16 +2334,11 @@ func (q *Queries) GdprExportUserSpaceModerators(ctx context.Context, arg GdprExp
 
 const gdprExportUserSpaceMutes = `-- name: GdprExportUserSpaceMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, space_id, created_at FROM space_mutes WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, space_id, created_at FROM space_mutes WHERE user_id = $1) t
 `
 
-type GdprExportUserSpaceMutesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserSpaceMutes(ctx context.Context, arg GdprExportUserSpaceMutesParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserSpaceMutes, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserSpaceMutes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserSpaceMutes, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2817,14 +2348,9 @@ const gdprExportUserSpaces = `-- name: GdprExportUserSpaces :many
 SELECT s.id, s.name, s.slug, s.status, sm.role, sm.joined_at
 FROM space_members sm
 JOIN spaces s ON s.id = sm.space_id
-WHERE sm.user_id = $1 AND sm.tenant_id = $2
+WHERE sm.user_id = $1
 ORDER BY sm.joined_at DESC
 `
-
-type GdprExportUserSpacesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GdprExportUserSpacesRow struct {
 	ID       pgtype.UUID        `json:"id"`
@@ -2835,8 +2361,8 @@ type GdprExportUserSpacesRow struct {
 	JoinedAt pgtype.Timestamptz `json:"joined_at"`
 }
 
-func (q *Queries) GdprExportUserSpaces(ctx context.Context, arg GdprExportUserSpacesParams) ([]GdprExportUserSpacesRow, error) {
-	rows, err := q.db.Query(ctx, gdprExportUserSpaces, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserSpaces(ctx context.Context, userID pgtype.UUID) ([]GdprExportUserSpacesRow, error) {
+	rows, err := q.db.Query(ctx, gdprExportUserSpaces, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -2864,18 +2390,13 @@ func (q *Queries) GdprExportUserSpaces(ctx context.Context, arg GdprExportUserSp
 
 const gdprExportUserTagModerators = `-- name: GdprExportUserTagModerators :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at FROM tag_moderators WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at FROM tag_moderators WHERE user_id = $1) t
 `
-
-type GdprExportUserTagModeratorsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Tag moderation history (Section 08/49). tag_moderators.user_id has ON DELETE CASCADE
 // so the final HardDeleteUser will remove these rows; this export captures them first.
-func (q *Queries) GdprExportUserTagModerators(ctx context.Context, arg GdprExportUserTagModeratorsParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserTagModerators, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserTagModerators(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserTagModerators, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2895,16 +2416,11 @@ func (q *Queries) GdprExportUserTicketComments(ctx context.Context, userID pgtyp
 
 const gdprExportUserWalletLedger = `-- name: GdprExportUserWalletLedger :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger WHERE user_id = $1 AND tenant_id = $2) t
+FROM (SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger WHERE user_id = $1) t
 `
 
-type GdprExportUserWalletLedgerParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, arg GdprExportUserWalletLedgerParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserWalletLedger, arg.UserID, arg.TenantID)
+func (q *Queries) GdprExportUserWalletLedger(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserWalletLedger, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err
@@ -2950,58 +2466,60 @@ func (q *Queries) GdprNullifyStudioJobCreator(ctx context.Context, userID pgtype
 const gdprReassignCalendarEntriesReviewedBy = `-- name: GdprReassignCalendarEntriesReviewedBy :exec
 UPDATE calendar_entries
 SET reviewed_by = $1
-WHERE reviewed_by = $2 AND tenant_id = $3
+WHERE reviewed_by = $2
 `
 
 type GdprReassignCalendarEntriesReviewedByParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // §86: reassign calendar_entries.reviewed_by to placeholder during GDPR
 // erasure (BUG-025).
 func (q *Queries) GdprReassignCalendarEntriesReviewedBy(ctx context.Context, arg GdprReassignCalendarEntriesReviewedByParams) error {
-	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesReviewedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesReviewedBy, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const gdprReassignCalendarEntriesSubmittedBy = `-- name: GdprReassignCalendarEntriesSubmittedBy :exec
 UPDATE calendar_entries
 SET submitted_by = $1
-WHERE submitted_by = $2 AND tenant_id = $3
+WHERE submitted_by = $2
 `
 
 type GdprReassignCalendarEntriesSubmittedByParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // §86: reassign calendar_entries.submitted_by to placeholder during GDPR
 // erasure (BUG-025). The entries are community content, not user PII.
 func (q *Queries) GdprReassignCalendarEntriesSubmittedBy(ctx context.Context, arg GdprReassignCalendarEntriesSubmittedByParams) error {
-	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesSubmittedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, gdprReassignCalendarEntriesSubmittedBy, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const getAccountDeletionRequest = `-- name: GetAccountDeletionRequest :one
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
+SELECT id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetAccountDeletionRequestParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetAccountDeletionRequestRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Status       string             `json:"status"`
+	Reason       *string            `json:"reason"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ProgressStep int32              `json:"progress_step"`
 }
 
-func (q *Queries) GetAccountDeletionRequest(ctx context.Context, arg GetAccountDeletionRequestParams) (AccountDeletionRequest, error) {
-	row := q.db.QueryRow(ctx, getAccountDeletionRequest, arg.ID, arg.TenantID)
-	var i AccountDeletionRequest
+func (q *Queries) GetAccountDeletionRequest(ctx context.Context, id pgtype.UUID) (GetAccountDeletionRequestRow, error) {
+	row := q.db.QueryRow(ctx, getAccountDeletionRequest, id)
+	var i GetAccountDeletionRequestRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -3013,23 +2531,27 @@ func (q *Queries) GetAccountDeletionRequest(ctx context.Context, arg GetAccountD
 }
 
 const getDataExportRequest = `-- name: GetDataExportRequest :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetDataExportRequestParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetDataExportRequestRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetDataExportRequest(ctx context.Context, arg GetDataExportRequestParams) (DataExportRequest, error) {
-	row := q.db.QueryRow(ctx, getDataExportRequest, arg.ID, arg.TenantID)
-	var i DataExportRequest
+func (q *Queries) GetDataExportRequest(ctx context.Context, id pgtype.UUID) (GetDataExportRequestRow, error) {
+	row := q.db.QueryRow(ctx, getDataExportRequest, id)
+	var i GetDataExportRequestRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -3041,25 +2563,29 @@ func (q *Queries) GetDataExportRequest(ctx context.Context, arg GetDataExportReq
 }
 
 const getLatestDataExportRequestByUser = `-- name: GetLatestDataExportRequestByUser :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-type GetLatestDataExportRequestByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+type GetLatestDataExportRequestByUserRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, arg GetLatestDataExportRequestByUserParams) (DataExportRequest, error) {
-	row := q.db.QueryRow(ctx, getLatestDataExportRequestByUser, arg.UserID, arg.TenantID)
-	var i DataExportRequest
+func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, userID pgtype.UUID) (GetLatestDataExportRequestByUserRow, error) {
+	row := q.db.QueryRow(ctx, getLatestDataExportRequestByUser, userID)
+	var i GetLatestDataExportRequestByUserRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,
@@ -3071,11 +2597,11 @@ func (q *Queries) GetLatestDataExportRequestByUser(ctx context.Context, arg GetL
 }
 
 const getUserConsents = `-- name: GetUserConsents :many
-SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
+SELECT id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at
 FROM consent_records
 WHERE user_id = $1
-  AND ($2 = '' OR consent_type = $2)
+ AND ($2 = '' OR consent_type = $2)
 ORDER BY created_at DESC
 `
 
@@ -3084,18 +2610,28 @@ type GetUserConsentsParams struct {
 	ConsentType interface{} `json:"consent_type"`
 }
 
-func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams) ([]ConsentRecord, error) {
+type GetUserConsentsRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ConsentType   string             `json:"consent_type"`
+	Granted       bool               `json:"granted"`
+	PolicyVersion string             `json:"policy_version"`
+	IpAddress     *netip.Prefix      `json:"ip_address"`
+	UserAgent     *string            `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams) ([]GetUserConsentsRow, error) {
 	rows, err := q.db.Query(ctx, getUserConsents, arg.UserID, arg.ConsentType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ConsentRecord
+	var items []GetUserConsentsRow
 	for rows.Next() {
-		var i ConsentRecord
+		var i GetUserConsentsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ConsentType,
 			&i.Granted,
@@ -3115,20 +2651,15 @@ func (q *Queries) GetUserConsents(ctx context.Context, arg GetUserConsentsParams
 }
 
 const getUserIsBot = `-- name: GetUserIsBot :one
-SELECT is_bot FROM users WHERE id = $1 AND tenant_id = $2
+SELECT is_bot FROM users WHERE id = $1
 `
-
-type GetUserIsBotParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Returns the is_bot flag for a user. Used by RequestAccountDeletion to
 // reject erasure of AI persona backing accounts (ADR-068 compliance:
 // "Persona backing accounts are system accounts, not data subjects, so
 // user-erasure/export flows do not apply to them").
-func (q *Queries) GetUserIsBot(ctx context.Context, arg GetUserIsBotParams) (bool, error) {
-	row := q.db.QueryRow(ctx, getUserIsBot, arg.UserID, arg.TenantID)
+func (q *Queries) GetUserIsBot(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserIsBot, userID)
 	var is_bot bool
 	err := row.Scan(&is_bot)
 	return is_bot, err
@@ -3136,19 +2667,14 @@ func (q *Queries) GetUserIsBot(ctx context.Context, arg GetUserIsBotParams) (boo
 
 const hardDeleteUser = `-- name: HardDeleteUser :exec
 DELETE FROM users
-WHERE id = $1 AND tenant_id = $2 AND status = 'deleted'
+WHERE id = $1 AND status = 'deleted'
 `
-
-type HardDeleteUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Physically deletes the anonymized user row. ON DELETE CASCADE handles most
 // child tables; callers must SET NULL or reassign non-CASCADE FK references
 // before calling this.
-func (q *Queries) HardDeleteUser(ctx context.Context, arg HardDeleteUserParams) error {
-	_, err := q.db.Exec(ctx, hardDeleteUser, arg.UserID, arg.TenantID)
+func (q *Queries) HardDeleteUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteUser, userID)
 	return err
 }
 
@@ -3173,22 +2699,20 @@ func (q *Queries) HasConsent(ctx context.Context, arg HasConsentParams) (bool, e
 }
 
 const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at
+SELECT id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at
 FROM audit_logs
-WHERE tenant_id = $1
-  AND ($2 = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = $2)
-  AND ($3 = '' OR action_type = $3)
-  AND ($4::text IS NULL OR target_type = $4::text)
-  AND ($5::timestamptz IS NULL OR created_at >= $5::timestamptz)
-  AND ($6::timestamptz IS NULL OR created_at <= $6::timestamptz)
-  AND ($7::text = '' OR action_type ILIKE '%' || $7 || '%' OR target_type ILIKE '%' || $7 || '%' OR target_id::text ILIKE '%' || $7 || '%' OR actor_user_id::text ILIKE '%' || $7 || '%')
+WHERE ($1 = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = $1)
+ AND ($2 = '' OR action_type = $2)
+ AND ($3::text IS NULL OR target_type = $3::text)
+ AND ($4::timestamptz IS NULL OR created_at >= $4::timestamptz)
+ AND ($5::timestamptz IS NULL OR created_at <= $5::timestamptz)
+ AND ($6::text = '' OR action_type ILIKE '%' || $6 || '%' OR target_type ILIKE '%' || $6 || '%' OR target_id::text ILIKE '%' || $6 || '%' OR actor_user_id::text ILIKE '%' || $6 || '%')
 ORDER BY created_at DESC
-LIMIT $9 OFFSET $8
+LIMIT $8 OFFSET $7
 `
 
 type ListAuditLogsParams struct {
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	ActorUserID interface{}        `json:"actor_user_id"`
 	ActionType  interface{}        `json:"action_type"`
 	TargetType  *string            `json:"target_type"`
@@ -3199,9 +2723,20 @@ type ListAuditLogsParams struct {
 	PageLimit   int32              `json:"page_limit"`
 }
 
-func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
+type ListAuditLogsRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
+	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
+	ActionType         string             `json:"action_type"`
+	TargetType         *string            `json:"target_type"`
+	TargetID           pgtype.UUID        `json:"target_id"`
+	Metadata           []byte             `json:"metadata"`
+	IpAddress          *netip.Prefix      `json:"ip_address"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]ListAuditLogsRow, error) {
 	rows, err := q.db.Query(ctx, listAuditLogs,
-		arg.TenantID,
 		arg.ActorUserID,
 		arg.ActionType,
 		arg.TargetType,
@@ -3215,12 +2750,11 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AuditLog
+	var items []ListAuditLogsRow
 	for rows.Next() {
-		var i AuditLog
+		var i ListAuditLogsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ActorUserID,
 			&i.ImpersonatedUserID,
 			&i.ActionType,
@@ -3241,30 +2775,27 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 }
 
 const listConsentsByTenant = `-- name: ListConsentsByTenant :many
-SELECT cr.id, cr.tenant_id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
-    cr.ip_address, cr.user_agent, cr.created_at,
-    u.username, up.display_name
+SELECT cr.id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
+ cr.ip_address, cr.user_agent, cr.created_at,
+ u.username, up.display_name
 FROM consent_records cr
 LEFT JOIN users u ON u.id = cr.user_id
 LEFT JOIN user_profiles up ON up.user_id = cr.user_id
-WHERE cr.tenant_id = $1
-  AND ($2::text = '' OR cr.consent_type = $2::text)
-  AND ($3::text = '' OR cr.consent_type ILIKE '%' || $3 || '%' OR cr.ip_address::text ILIKE '%' || $3 || '%')
+WHERE ($1::text = '' OR cr.consent_type = $1::text)
+ AND ($2::text = '' OR cr.consent_type ILIKE '%' || $2 || '%' OR cr.ip_address::text ILIKE '%' || $2 || '%')
 ORDER BY cr.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListConsentsByTenantParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ConsentType string      `json:"consent_type"`
-	Q           string      `json:"q"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	ConsentType string `json:"consent_type"`
+	Q           string `json:"q"`
+	PageOffset  int32  `json:"page_offset"`
+	PageLimit   int32  `json:"page_limit"`
 }
 
 type ListConsentsByTenantRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	ConsentType   string             `json:"consent_type"`
 	Granted       bool               `json:"granted"`
@@ -3278,7 +2809,6 @@ type ListConsentsByTenantRow struct {
 
 func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTenantParams) ([]ListConsentsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listConsentsByTenant,
-		arg.TenantID,
 		arg.ConsentType,
 		arg.Q,
 		arg.PageOffset,
@@ -3293,7 +2823,6 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 		var i ListConsentsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ConsentType,
 			&i.Granted,
@@ -3315,37 +2844,32 @@ func (q *Queries) ListConsentsByTenant(ctx context.Context, arg ListConsentsByTe
 }
 
 const listExpiredDataExports = `-- name: ListExpiredDataExports :many
-SELECT id, tenant_id
+SELECT id
 FROM data_export_requests
 WHERE status = 'completed'
-  AND expires_at IS NOT NULL
-  AND expires_at < now()
-  AND download_url IS NOT NULL
+ AND expires_at IS NOT NULL
+ AND expires_at < now()
+ AND download_url IS NOT NULL
 ORDER BY expires_at ASC
 LIMIT 100
 `
 
-type ListExpiredDataExportsRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // BUG-GDPR-005: find completed data export requests whose ExpiresAt has
 // passed so the sweep can delete the file from storage and null out the
 // download URL. Section 19 requires time-limited download links.
-func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]ListExpiredDataExportsRow, error) {
+func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listExpiredDataExports)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListExpiredDataExportsRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListExpiredDataExportsRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -3354,33 +2878,37 @@ func (q *Queries) ListExpiredDataExports(ctx context.Context) ([]ListExpiredData
 }
 
 const listPendingDataExportRequests = `-- name: ListPendingDataExportRequests :many
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE status = 'pending' AND tenant_id = $1
+WHERE status = 'pending'
 ORDER BY created_at ASC
-LIMIT $2
+LIMIT $1
 `
 
-type ListPendingDataExportRequestsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	PageLimit int32       `json:"page_limit"`
+type ListPendingDataExportRequestsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 // BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
 // cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
-func (q *Queries) ListPendingDataExportRequests(ctx context.Context, arg ListPendingDataExportRequestsParams) ([]DataExportRequest, error) {
-	rows, err := q.db.Query(ctx, listPendingDataExportRequests, arg.TenantID, arg.PageLimit)
+func (q *Queries) ListPendingDataExportRequests(ctx context.Context, pageLimit int32) ([]ListPendingDataExportRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listPendingDataExportRequests, pageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []DataExportRequest
+	var items []ListPendingDataExportRequestsRow
 	for rows.Next() {
-		var i DataExportRequest
+		var i ListPendingDataExportRequestsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Status,
 			&i.DownloadUrl,
@@ -3399,24 +2927,18 @@ func (q *Queries) ListPendingDataExportRequests(ctx context.Context, arg ListPen
 }
 
 const listPendingDeletionRequests = `-- name: ListPendingDeletionRequests :many
-SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
-       u.username, up.display_name
+SELECT adr.id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
+ u.username, up.display_name
 FROM account_deletion_requests adr
 LEFT JOIN users u ON u.id = adr.user_id
 LEFT JOIN user_profiles up ON up.user_id = adr.user_id
-WHERE adr.status = 'pending' AND adr.tenant_id = $1
+WHERE adr.status = 'pending'
 ORDER BY adr.created_at ASC
-LIMIT $2
+LIMIT $1
 `
-
-type ListPendingDeletionRequestsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	PageLimit int32       `json:"page_limit"`
-}
 
 type ListPendingDeletionRequestsRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	Status       string             `json:"status"`
 	Reason       *string            `json:"reason"`
@@ -3429,8 +2951,8 @@ type ListPendingDeletionRequestsRow struct {
 
 // BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
 // cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
-func (q *Queries) ListPendingDeletionRequests(ctx context.Context, arg ListPendingDeletionRequestsParams) ([]ListPendingDeletionRequestsRow, error) {
-	rows, err := q.db.Query(ctx, listPendingDeletionRequests, arg.TenantID, arg.PageLimit)
+func (q *Queries) ListPendingDeletionRequests(ctx context.Context, pageLimit int32) ([]ListPendingDeletionRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listPendingDeletionRequests, pageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -3440,7 +2962,6 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, arg ListPendi
 		var i ListPendingDeletionRequestsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Status,
 			&i.Reason,
@@ -3461,37 +2982,32 @@ func (q *Queries) ListPendingDeletionRequests(ctx context.Context, arg ListPendi
 }
 
 const listRetentionWaitElapsed = `-- name: ListRetentionWaitElapsed :many
-SELECT r.id, r.tenant_id
+SELECT r.id
 FROM account_deletion_requests r
-LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+LEFT JOIN system_settings s ON s.key = 'gdpr.retention_days'
 WHERE r.status = 'retention_wait'
-  AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
+ AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
 ORDER BY r.created_at ASC
 LIMIT 100
 `
-
-type ListRetentionWaitElapsedRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // BUG-GDPR-002 fix: COALESCE default must be '0' (immediate), not '30'.
 // ADR-057 and system-settings-catalog specify gdpr.retention_days
 // defaults to 0 (no waiting period). The previous '30' fallback caused
 // tenants without the explicit setting to wait 30 days instead of 0.
-func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]ListRetentionWaitElapsedRow, error) {
+func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listRetentionWaitElapsed)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListRetentionWaitElapsedRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListRetentionWaitElapsedRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -3500,18 +3016,17 @@ func (q *Queries) ListRetentionWaitElapsed(ctx context.Context) ([]ListRetention
 }
 
 const listStalePendingDataExportRequests = `-- name: ListStalePendingDataExportRequests :many
-SELECT id, tenant_id, user_id
+SELECT id, user_id
 FROM data_export_requests
 WHERE status = 'pending'
-  AND created_at < now() - interval '30 minutes'
+ AND created_at < now() - interval '30 minutes'
 ORDER BY created_at ASC
 LIMIT 50
 `
 
 type ListStalePendingDataExportRequestsRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 // GAP-GDPR-B: re-enqueue stale pending data export requests whose original
@@ -3527,7 +3042,7 @@ func (q *Queries) ListStalePendingDataExportRequests(ctx context.Context) ([]Lis
 	var items []ListStalePendingDataExportRequestsRow
 	for rows.Next() {
 		var i ListStalePendingDataExportRequestsRow
-		if err := rows.Scan(&i.ID, &i.TenantID, &i.UserID); err != nil {
+		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3539,18 +3054,17 @@ func (q *Queries) ListStalePendingDataExportRequests(ctx context.Context) ([]Lis
 }
 
 const listStalePendingDeletionRequests = `-- name: ListStalePendingDeletionRequests :many
-SELECT id, tenant_id, user_id
+SELECT id, user_id
 FROM account_deletion_requests
 WHERE status = 'pending'
-  AND created_at < now() - interval '30 minutes'
+ AND created_at < now() - interval '30 minutes'
 ORDER BY created_at ASC
 LIMIT 50
 `
 
 type ListStalePendingDeletionRequestsRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) ListStalePendingDeletionRequests(ctx context.Context) ([]ListStalePendingDeletionRequestsRow, error) {
@@ -3562,7 +3076,7 @@ func (q *Queries) ListStalePendingDeletionRequests(ctx context.Context) ([]ListS
 	var items []ListStalePendingDeletionRequestsRow
 	for rows.Next() {
 		var i ListStalePendingDeletionRequestsRow
-		if err := rows.Scan(&i.ID, &i.TenantID, &i.UserID); err != nil {
+		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -3574,33 +3088,23 @@ func (q *Queries) ListStalePendingDeletionRequests(ctx context.Context) ([]ListS
 }
 
 const nullifyConsentRecordUser = `-- name: NullifyConsentRecordUser :exec
-UPDATE consent_records SET user_id = NULL WHERE user_id = $1 AND tenant_id = $2
+UPDATE consent_records SET user_id = NULL WHERE user_id = $1
 `
 
-type NullifyConsentRecordUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // consent_records.user_id is nullable; preserve the compliance record, detach the user reference.
-func (q *Queries) NullifyConsentRecordUser(ctx context.Context, arg NullifyConsentRecordUserParams) error {
-	_, err := q.db.Exec(ctx, nullifyConsentRecordUser, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyConsentRecordUser(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyConsentRecordUser, userID)
 	return err
 }
 
 const nullifyDiscountCodeCreatorRefs = `-- name: NullifyDiscountCodeCreatorRefs :exec
 UPDATE discount_codes SET created_by = NULL
-WHERE created_by = $1 AND tenant_id = $2
+WHERE created_by = $1
 `
 
-type NullifyDiscountCodeCreatorRefsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Nulls discount code created_by references for GDPR erasure (BUG-020).
-func (q *Queries) NullifyDiscountCodeCreatorRefs(ctx context.Context, arg NullifyDiscountCodeCreatorRefsParams) error {
-	_, err := q.db.Exec(ctx, nullifyDiscountCodeCreatorRefs, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyDiscountCodeCreatorRefs(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyDiscountCodeCreatorRefs, userID)
 	return err
 }
 
@@ -3619,17 +3123,12 @@ func (q *Queries) NullifyDiscountCodeUseUserRefs(ctx context.Context, userID pgt
 
 const nullifyForumTagModerator = `-- name: NullifyForumTagModerator :exec
 UPDATE forum_tags SET moderator_user_id = NULL
-WHERE moderator_user_id = $1 AND tenant_id = $2
+WHERE moderator_user_id = $1
 `
 
-type NullifyForumTagModeratorParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // forum_tags.moderator_user_id is nullable; clear it so the tag survives without the user.
-func (q *Queries) NullifyForumTagModerator(ctx context.Context, arg NullifyForumTagModeratorParams) error {
-	_, err := q.db.Exec(ctx, nullifyForumTagModerator, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyForumTagModerator(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyForumTagModerator, userID)
 	return err
 }
 
@@ -3644,50 +3143,35 @@ func (q *Queries) NullifyOrganizationInvitationInviter(ctx context.Context, user
 }
 
 const nullifyOwnershipClaimReviewer = `-- name: NullifyOwnershipClaimReviewer :exec
-UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = $1 AND tenant_id = $2
+UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = $1
 `
 
-type NullifyOwnershipClaimReviewerParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
-func (q *Queries) NullifyOwnershipClaimReviewer(ctx context.Context, arg NullifyOwnershipClaimReviewerParams) error {
-	_, err := q.db.Exec(ctx, nullifyOwnershipClaimReviewer, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyOwnershipClaimReviewer(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyOwnershipClaimReviewer, userID)
 	return err
 }
 
 const nullifyPaymentUserRefs = `-- name: NullifyPaymentUserRefs :exec
 UPDATE payments SET user_id = NULL
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
 
-type NullifyPaymentUserRefsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Nulls payment-related user references for financial audit trail preservation.
-func (q *Queries) NullifyPaymentUserRefs(ctx context.Context, arg NullifyPaymentUserRefsParams) error {
-	_, err := q.db.Exec(ctx, nullifyPaymentUserRefs, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyPaymentUserRefs(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyPaymentUserRefs, userID)
 	return err
 }
 
 const nullifySubscriptionUserRefs = `-- name: NullifySubscriptionUserRefs :exec
 UPDATE subscriptions SET user_id = NULL
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
-
-type NullifySubscriptionUserRefsParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Nulls subscription user references for GDPR erasure (BUG-020).
 // Preserves subscription history for financial audit while removing PII.
-func (q *Queries) NullifySubscriptionUserRefs(ctx context.Context, arg NullifySubscriptionUserRefsParams) error {
-	_, err := q.db.Exec(ctx, nullifySubscriptionUserRefs, arg.UserID, arg.TenantID)
+func (q *Queries) NullifySubscriptionUserRefs(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifySubscriptionUserRefs, userID)
 	return err
 }
 
@@ -3703,32 +3187,25 @@ func (q *Queries) NullifyTicketEventsUser(ctx context.Context, userID pgtype.UUI
 
 const nullifyTicketSubmitter = `-- name: NullifyTicketSubmitter :exec
 UPDATE tickets SET submitter_user_id = NULL
-WHERE submitter_user_id = $1 AND tenant_id = $2
+WHERE submitter_user_id = $1
 `
 
-type NullifyTicketSubmitterParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Nulls ticket submitter reference.
-func (q *Queries) NullifyTicketSubmitter(ctx context.Context, arg NullifyTicketSubmitterParams) error {
-	_, err := q.db.Exec(ctx, nullifyTicketSubmitter, arg.UserID, arg.TenantID)
+func (q *Queries) NullifyTicketSubmitter(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, nullifyTicketSubmitter, userID)
 	return err
 }
 
 const pruneAuditLogs = `-- name: PruneAuditLogs :exec
 DELETE FROM audit_logs a
 USING (
-  SELECT a2.tenant_id,
-         (COALESCE((SELECT s.value->>0
-                    FROM system_settings s
-                    WHERE s.tenant_id = a2.tenant_id AND s.key = 'audit.log_retention_days'),
-                   '365')::int || ' days')::interval AS retention
-  FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'audit.log_retention_days'),
+ '365')::int || ' days')::interval AS retention
+ FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
 ) cfg
-WHERE a.tenant_id = cfg.tenant_id
-  AND a.created_at < now() - cfg.retention
+WHERE a.created_at < now() - cfg.retention
 `
 
 // Per-tenant retention via system_settings 'audit.log_retention_days'
@@ -3740,49 +3217,46 @@ func (q *Queries) PruneAuditLogs(ctx context.Context) error {
 
 const reassignAIPersonaCreatedBy = `-- name: ReassignAIPersonaCreatedBy :exec
 UPDATE ai_personas SET created_by = $1
-WHERE created_by = $2 AND tenant_id = $3
+WHERE created_by = $2
 `
 
 type ReassignAIPersonaCreatedByParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // ai_personas.created_by is NOT NULL and references users(id). When an admin
 // who created personas is GDPR-erased, reassign created_by to the placeholder
 // so the persona config rows survive (BUG-016, ADR-068 compliance).
 func (q *Queries) ReassignAIPersonaCreatedBy(ctx context.Context, arg ReassignAIPersonaCreatedByParams) error {
-	_, err := q.db.Exec(ctx, reassignAIPersonaCreatedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignAIPersonaCreatedBy, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignAccountDeletionRequestUser = `-- name: ReassignAccountDeletionRequestUser :exec
 UPDATE account_deletion_requests SET user_id = $1
-WHERE user_id = $2 AND tenant_id = $3
+WHERE user_id = $2
 `
 
 type ReassignAccountDeletionRequestUserParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // account_deletion_requests.user_id is NOT NULL; reassign to placeholder so the in-flight request row survives the delete.
 func (q *Queries) ReassignAccountDeletionRequestUser(ctx context.Context, arg ReassignAccountDeletionRequestUserParams) error {
-	_, err := q.db.Exec(ctx, reassignAccountDeletionRequestUser, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignAccountDeletionRequestUser, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignBlogSeriesAuthor = `-- name: ReassignBlogSeriesAuthor :exec
 UPDATE blog_series SET author_user_id = $1
-WHERE author_user_id = $2 AND tenant_id = $3
+WHERE author_user_id = $2
 `
 
 type ReassignBlogSeriesAuthorParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // C7: reassign blog_series authorship before user deletion to preserve
@@ -3790,110 +3264,104 @@ type ReassignBlogSeriesAuthorParams struct {
 // this, ON DELETE CASCADE on blog_series.author_user_id destroys all
 // user-authored series and cascades to blog_series_posts.
 func (q *Queries) ReassignBlogSeriesAuthor(ctx context.Context, arg ReassignBlogSeriesAuthorParams) error {
-	_, err := q.db.Exec(ctx, reassignBlogSeriesAuthor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignBlogSeriesAuthor, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignContentAuthor = `-- name: ReassignContentAuthor :exec
 UPDATE contents SET author_id = $1
-WHERE author_id = $2 AND tenant_id = $3
+WHERE author_id = $2
 `
 
 type ReassignContentAuthorParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // Reassigns content authorship before user deletion to preserve thread continuity.
 func (q *Queries) ReassignContentAuthor(ctx context.Context, arg ReassignContentAuthorParams) error {
-	_, err := q.db.Exec(ctx, reassignContentAuthor, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignContentAuthor, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignContentReviewReviewer = `-- name: ReassignContentReviewReviewer :exec
 UPDATE content_reviews SET reviewer_user_id = $1
-WHERE reviewer_user_id = $2 AND tenant_id = $3
+WHERE reviewer_user_id = $2
 `
 
 type ReassignContentReviewReviewerParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // C7: reassign content_reviews reviewer before user deletion to preserve
 // editorial audit history (ADR-014). Without this, ON DELETE CASCADE on
 // content_reviews.reviewer_user_id destroys all review records.
 func (q *Queries) ReassignContentReviewReviewer(ctx context.Context, arg ReassignContentReviewReviewerParams) error {
-	_, err := q.db.Exec(ctx, reassignContentReviewReviewer, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignContentReviewReviewer, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignDMConversationParticipant1 = `-- name: ReassignDMConversationParticipant1 :exec
 UPDATE dm_conversations
 SET participant_1_id = $1
-WHERE participant_1_id = $2 AND tenant_id = $3
+WHERE participant_1_id = $2
 `
 
 type ReassignDMConversationParticipant1Params struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // BUG-024: reassign dm_conversations.participant_1_id to the placeholder
 // during GDPR erasure so the conversation survives for the other participant.
 func (q *Queries) ReassignDMConversationParticipant1(ctx context.Context, arg ReassignDMConversationParticipant1Params) error {
-	_, err := q.db.Exec(ctx, reassignDMConversationParticipant1, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignDMConversationParticipant1, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignDMConversationParticipant2 = `-- name: ReassignDMConversationParticipant2 :exec
 UPDATE dm_conversations
 SET participant_2_id = $1
-WHERE participant_2_id = $2 AND tenant_id = $3
+WHERE participant_2_id = $2
 `
 
 type ReassignDMConversationParticipant2Params struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // BUG-024: reassign dm_conversations.participant_2_id to the placeholder
 // during GDPR erasure so the conversation survives for the other participant.
 func (q *Queries) ReassignDMConversationParticipant2(ctx context.Context, arg ReassignDMConversationParticipant2Params) error {
-	_, err := q.db.Exec(ctx, reassignDMConversationParticipant2, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignDMConversationParticipant2, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignDataExportRequestUser = `-- name: ReassignDataExportRequestUser :exec
 UPDATE data_export_requests SET user_id = $1
-WHERE user_id = $2 AND tenant_id = $3
+WHERE user_id = $2
 `
 
 type ReassignDataExportRequestUserParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve the export audit trail.
 func (q *Queries) ReassignDataExportRequestUser(ctx context.Context, arg ReassignDataExportRequestUserParams) error {
-	_, err := q.db.Exec(ctx, reassignDataExportRequestUser, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignDataExportRequestUser, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignMediaUploader = `-- name: ReassignMediaUploader :exec
 UPDATE media SET uploader_user_id = $1
-WHERE uploader_user_id = $2 AND tenant_id = $3
+WHERE uploader_user_id = $2
 `
 
 type ReassignMediaUploaderParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // BUG-009: reassign media uploader before user deletion so the user's
@@ -3905,42 +3373,35 @@ type ReassignMediaUploaderParams struct {
 // resolved by hardDeleteUser (gdpr.deleted_user_placeholder_uuid setting).
 // Ref: japaconnect-engineering/sections/34-media-system.md, ADR-014.
 func (q *Queries) ReassignMediaUploader(ctx context.Context, arg ReassignMediaUploaderParams) error {
-	_, err := q.db.Exec(ctx, reassignMediaUploader, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignMediaUploader, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const reassignOrganizationOwner = `-- name: ReassignOrganizationOwner :exec
 UPDATE organizations SET owner_user_id = $1
-WHERE owner_user_id = $2 AND tenant_id = $3
+WHERE owner_user_id = $2
 `
 
 type ReassignOrganizationOwnerParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // organizations.owner_user_id is NOT NULL; reassign to the deleted-user placeholder to preserve the org for remaining members.
 func (q *Queries) ReassignOrganizationOwner(ctx context.Context, arg ReassignOrganizationOwnerParams) error {
-	_, err := q.db.Exec(ctx, reassignOrganizationOwner, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignOrganizationOwner, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const recordConsent = `-- name: RecordConsent :one
 
 
-INSERT INTO consent_records (
-    tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7
-)
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
+INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at
 `
 
 type RecordConsentParams struct {
-	TenantID      pgtype.UUID   `json:"tenant_id"`
 	UserID        pgtype.UUID   `json:"user_id"`
 	ConsentType   string        `json:"consent_type"`
 	Granted       bool          `json:"granted"`
@@ -3949,13 +3410,23 @@ type RecordConsentParams struct {
 	UserAgent     *string       `json:"user_agent"`
 }
 
+type RecordConsentRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	ConsentType   string             `json:"consent_type"`
+	Granted       bool               `json:"granted"`
+	PolicyVersion string             `json:"policy_version"`
+	IpAddress     *netip.Prefix      `json:"ip_address"`
+	UserAgent     *string            `json:"user_agent"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 // GDPR / NDPR Compliance — Section 19
 // =====================
 // Consent Records
 // =====================
-func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (ConsentRecord, error) {
+func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (RecordConsentRow, error) {
 	row := q.db.QueryRow(ctx, recordConsent,
-		arg.TenantID,
 		arg.UserID,
 		arg.ConsentType,
 		arg.Granted,
@@ -3963,10 +3434,9 @@ func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (C
 		arg.IpAddress,
 		arg.UserAgent,
 	)
-	var i ConsentRecord
+	var i RecordConsentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ConsentType,
 		&i.Granted,
@@ -3979,16 +3449,10 @@ func (q *Queries) RecordConsent(ctx context.Context, arg RecordConsentParams) (C
 }
 
 const revokeConsent = `-- name: RevokeConsent :exec
-INSERT INTO consent_records (
-    tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent
-) VALUES (
-    $1, $2, $3, false, $4,
-    $5, $6
-)
+INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES ($1, $2, false, $3, $4, $5)
 `
 
 type RevokeConsentParams struct {
-	TenantID      pgtype.UUID   `json:"tenant_id"`
 	UserID        pgtype.UUID   `json:"user_id"`
 	ConsentType   string        `json:"consent_type"`
 	PolicyVersion string        `json:"policy_version"`
@@ -3998,7 +3462,6 @@ type RevokeConsentParams struct {
 
 func (q *Queries) RevokeConsent(ctx context.Context, arg RevokeConsentParams) error {
 	_, err := q.db.Exec(ctx, revokeConsent,
-		arg.TenantID,
 		arg.UserID,
 		arg.ConsentType,
 		arg.PolicyVersion,
@@ -4039,48 +3502,50 @@ func (q *Queries) SoftDeleteCredentialCommunityNotesByUser(ctx context.Context, 
 const updateAccountDeletionRequestProgress = `-- name: UpdateAccountDeletionRequestProgress :exec
 UPDATE account_deletion_requests
 SET progress_step = $1
-WHERE id = $2 AND tenant_id = $3
+WHERE id = $2
 `
 
 type UpdateAccountDeletionRequestProgressParams struct {
 	ProgressStep int32       `json:"progress_step"`
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // AUDIT-FRESH-GDPR-003: checkpoints the erasure flow so a retried job resumes
 // from the last completed step instead of re-running from the top.
 func (q *Queries) UpdateAccountDeletionRequestProgress(ctx context.Context, arg UpdateAccountDeletionRequestProgressParams) error {
-	_, err := q.db.Exec(ctx, updateAccountDeletionRequestProgress, arg.ProgressStep, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateAccountDeletionRequestProgress, arg.ProgressStep, arg.ID)
 	return err
 }
 
 const updateAccountDeletionRequestStatus = `-- name: UpdateAccountDeletionRequestStatus :one
 UPDATE account_deletion_requests
 SET status = $1,
-    completed_at = $2
-WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
+ completed_at = $2
+WHERE id = $3
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step
 `
 
 type UpdateAccountDeletionRequestStatusParams struct {
 	Status      string             `json:"status"`
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg UpdateAccountDeletionRequestStatusParams) (AccountDeletionRequest, error) {
-	row := q.db.QueryRow(ctx, updateAccountDeletionRequestStatus,
-		arg.Status,
-		arg.CompletedAt,
-		arg.ID,
-		arg.TenantID,
-	)
-	var i AccountDeletionRequest
+type UpdateAccountDeletionRequestStatusRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Status       string             `json:"status"`
+	Reason       *string            `json:"reason"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ProgressStep int32              `json:"progress_step"`
+}
+
+func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg UpdateAccountDeletionRequestStatusParams) (UpdateAccountDeletionRequestStatusRow, error) {
+	row := q.db.QueryRow(ctx, updateAccountDeletionRequestStatus, arg.Status, arg.CompletedAt, arg.ID)
+	var i UpdateAccountDeletionRequestStatusRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.Reason,
@@ -4094,12 +3559,12 @@ func (q *Queries) UpdateAccountDeletionRequestStatus(ctx context.Context, arg Up
 const updateDataExportRequestStatus = `-- name: UpdateDataExportRequestStatus :one
 UPDATE data_export_requests
 SET status = $1,
-    download_url = $2,
-    expires_at = $3,
-    completed_at = $4
-WHERE id = $5 AND tenant_id = $6
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+ download_url = $2,
+ expires_at = $3,
+ completed_at = $4
+WHERE id = $5
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 `
 
 type UpdateDataExportRequestStatusParams struct {
@@ -4108,22 +3573,29 @@ type UpdateDataExportRequestStatusParams struct {
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateDataExportRequestStatus(ctx context.Context, arg UpdateDataExportRequestStatusParams) (DataExportRequest, error) {
+type UpdateDataExportRequestStatusRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Status      string             `json:"status"`
+	DownloadUrl *string            `json:"download_url"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpdateDataExportRequestStatus(ctx context.Context, arg UpdateDataExportRequestStatusParams) (UpdateDataExportRequestStatusRow, error) {
 	row := q.db.QueryRow(ctx, updateDataExportRequestStatus,
 		arg.Status,
 		arg.DownloadUrl,
 		arg.ExpiresAt,
 		arg.CompletedAt,
 		arg.ID,
-		arg.TenantID,
 	)
-	var i DataExportRequest
+	var i UpdateDataExportRequestStatusRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Status,
 		&i.DownloadUrl,

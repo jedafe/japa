@@ -31,7 +31,6 @@ func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID 
 	if err := q.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
-		TenantID:  tenantID,
 	}); err != nil {
 		return fmt.Errorf("creating user block: %w", err)
 	}
@@ -40,7 +39,6 @@ func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID 
 	if err := q.DeleteFollowsBetweenUsers(ctx, gen.DeleteFollowsBetweenUsersParams{
 		FollowerID: blockerID,
 		EntityID:   blockedID,
-		TenantID:   tenantID,
 	}); err != nil {
 		return fmt.Errorf("deleting follows between users: %w", err)
 	}
@@ -49,7 +47,6 @@ func (s *Service) BlockUser(ctx context.Context, tenantID, blockerID, blockedID 
 	if err := q.DeclinePendingDMRequestsBetweenUsers(ctx, gen.DeclinePendingDMRequestsBetweenUsersParams{
 		RequesterID: blockerID,
 		RecipientID: blockedID,
-		TenantID:    tenantID,
 	}); err != nil {
 		return fmt.Errorf("declining pending DM requests: %w", err)
 	}
@@ -71,7 +68,6 @@ func (s *Service) UnblockUser(ctx context.Context, tenantID, blockerID, blockedI
 	return s.write.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
-		TenantID:  tenantID,
 	})
 }
 
@@ -90,9 +86,9 @@ type BlockedUserInfo struct {
 func (s *Service) ListBlockedUsers(ctx context.Context, tenantID, blockerID pgtype.UUID, limit, offset int32) ([]BlockedUserInfo, error) {
 	rows, err := s.read.ListBlockedUsers(ctx, gen.ListBlockedUsersParams{
 		BlockerID: blockerID,
-		TenantID:  tenantID,
-		Limit:     limit,
-		Offset:    offset,
+
+		Limit:  limit,
+		Offset: offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing blocked users: %w", err)
@@ -118,7 +114,6 @@ func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 	return s.read.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
-		TenantID:  tenantID,
 	})
 }
 
@@ -131,7 +126,7 @@ func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	}); err != nil {
@@ -148,7 +143,7 @@ func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pg
 // / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	}); err != nil {
@@ -163,7 +158,7 @@ func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID 
 // IsUserMuted checks if a user is muted.
 func (s *Service) IsUserMuted(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) (bool, error) {
 	return s.read.IsUserMuted(ctx, gen.IsUserMutedParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		MutedUserID: mutedUserID,
 	})
@@ -182,7 +177,7 @@ type MutedUserInfo struct {
 // ListMutedUsers returns paginated muted users for the caller.
 func (s *Service) ListMutedUsers(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]MutedUserInfo, error) {
 	rows, err := s.read.ListMutedUsers(ctx, gen.ListMutedUsersParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -227,7 +222,7 @@ type MutedSpaceInfo struct {
 // ListMutedSpaces returns paginated muted spaces for the caller.
 func (s *Service) ListMutedSpaces(ctx context.Context, tenantID, userID pgtype.UUID, search, level string, spaceTypeID pgtype.UUID, limit, offset int32) ([]MutedSpaceInfo, error) {
 	rows, err := s.read.ListMutedSpaces(ctx, gen.ListMutedSpacesParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		Search:      search,
 		Level:       level,

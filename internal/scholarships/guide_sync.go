@@ -66,10 +66,9 @@ type fieldMap map[string]string
 // scholarship guide. It is idempotent by guide_id: it creates a row when one
 // does not exist and updates the existing row otherwise.
 func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pgtype.UUID) error {
-	content, err := s.queries.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       contentID,
-		TenantID: tenantID,
-	})
+	content, err := s.queries.GetContentByID(ctx,
+		contentID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The guide was deleted before the sync task ran; remove any
@@ -80,18 +79,18 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	}
 
 	if !isSyncEligible(content) {
-		existing, err := s.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-			TenantID: tenantID,
-			GuideID:  content.ID,
-		})
+		existing, err := s.queries.GetScholarshipByGuide(ctx,
+
+			content.ID,
+		)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("scholarships: sync from guide: check existing: %w", err)
 		}
 		if existing.GuideID.Valid {
-			if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
-				TenantID: tenantID,
-				ID:       existing.ID,
-			}); err != nil {
+			if err := s.queries.DeleteScholarship(ctx,
+
+				existing.ID,
+			); err != nil {
 				return fmt.Errorf("scholarships: sync from guide: delete stale projection: %w", err)
 			}
 			slog.Info("scholarships: deleted stale projection",
@@ -106,10 +105,10 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 		return fmt.Errorf("scholarships: sync from guide: load fields: %w", err)
 	}
 
-	existing, err := s.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  content.ID,
-	})
+	existing, err := s.queries.GetScholarshipByGuide(ctx,
+
+		content.ID,
+	)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("scholarships: sync from guide: get existing: %w", err)
 	}
@@ -132,7 +131,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	}
 
 	create := buildCreateParams(params)
-	create.TenantID = tenantID
+
 	_, err = s.AdminCreateScholarship(ctx, tenantID, create)
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: create: %w", err)
@@ -147,10 +146,10 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 // longer exists. It is safe to call when the content row was deleted before the
 // sync task processed.
 func (s *Store) deleteProjectionIfExists(ctx context.Context, tenantID, guideID pgtype.UUID) error {
-	existing, err := s.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  guideID,
-	})
+	existing, err := s.queries.GetScholarshipByGuide(ctx,
+
+		guideID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -162,10 +161,10 @@ func (s *Store) deleteProjectionIfExists(ctx context.Context, tenantID, guideID 
 		return nil
 	}
 
-	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
-		TenantID: tenantID,
-		ID:       existing.ID,
-	}); err != nil {
+	if err := s.queries.DeleteScholarship(ctx,
+
+		existing.ID,
+	); err != nil {
 		return fmt.Errorf("scholarships: sync from guide: delete projection for deleted guide: %w", err)
 	}
 	slog.Info("scholarships: deleted projection for deleted guide",
@@ -198,7 +197,6 @@ func (s *Store) loadGuideFields(ctx context.Context, tenantID, contentID pgtype.
 	customRows, err := s.queries.ListCustomFieldValuesWithDefsByEntity(ctx, gen.ListCustomFieldValuesWithDefsByEntityParams{
 		EntityType: "content",
 		EntityID:   contentID,
-		TenantID:   tenantID,
 	})
 	if err != nil {
 		return nil, err
@@ -426,10 +424,9 @@ func (s *Store) resolveCountrySpaceID(ctx context.Context, tenantID pgtype.UUID,
 		return pgtype.UUID{}, nil
 	}
 
-	row, err := s.queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-		GeoCode:  &code,
-		TenantID: tenantID,
-	})
+	row, err := s.queries.GetSpaceByGeoCode(ctx,
+		&code,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, nil

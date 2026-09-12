@@ -15,21 +15,19 @@ const countAIPersonas = `-- name: CountAIPersonas :one
 SELECT COUNT(*) AS count
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
-WHERE ap.tenant_id = $1
-  AND ($2::text = '' OR ap.status = $2)
-  AND ($3::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
+WHERE ($1::text = '' OR ap.status = $1)
+ AND ($2::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $2 || '%' OR u.username ILIKE '%' || $2 || '%')
 `
 
 type CountAIPersonasParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-	Q        string      `json:"q"`
+	Status string `json:"status"`
+	Q      string `json:"q"`
 }
 
 func (q *Queries) CountAIPersonas(ctx context.Context, arg CountAIPersonasParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAIPersonas, arg.TenantID, arg.Status, arg.Q)
+	row := q.db.QueryRow(ctx, countAIPersonas, arg.Status, arg.Q)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -38,18 +36,12 @@ func (q *Queries) CountAIPersonas(ctx context.Context, arg CountAIPersonasParams
 const countPersonaActivity = `-- name: CountPersonaActivity :one
 SELECT COUNT(*) AS count
 FROM platform_events
-WHERE tenant_id = $1
-  AND user_id = $2
-  AND is_synthetic = true
+WHERE user_id = $1
+ AND is_synthetic = true
 `
 
-type CountPersonaActivityParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountPersonaActivity(ctx context.Context, arg CountPersonaActivityParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPersonaActivity, arg.TenantID, arg.UserID)
+func (q *Queries) CountPersonaActivity(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPersonaActivity, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -58,11 +50,10 @@ func (q *Queries) CountPersonaActivity(ctx context.Context, arg CountPersonaActi
 const countPersonaVoices = `-- name: CountPersonaVoices :one
 SELECT COUNT(*) AS count
 FROM persona_voices
-WHERE tenant_id = $1
 `
 
-func (q *Queries) CountPersonaVoices(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countPersonaVoices, tenantID)
+func (q *Queries) CountPersonaVoices(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countPersonaVoices)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -70,19 +61,12 @@ func (q *Queries) CountPersonaVoices(ctx context.Context, tenantID pgtype.UUID) 
 
 const createAIPersona = `-- name: CreateAIPersona :one
 
-INSERT INTO ai_personas (
-    tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode,
-    voice_id, voice_prompt, activity_policy, status, created_by
-)
-VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9, $10
-)
+INSERT INTO ai_personas (user_id, profile_id, disclosure_mode, autonomy_mode, voice_id, voice_prompt, activity_policy, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+
 RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
 type CreateAIPersonaParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 	ProfileID      pgtype.UUID `json:"profile_id"`
 	DisclosureMode string      `json:"disclosure_mode"`
@@ -101,7 +85,6 @@ type CreateAIPersonaParams struct {
 // =====================================================================
 func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams) (AiPersona, error) {
 	row := q.db.QueryRow(ctx, createAIPersona,
-		arg.TenantID,
 		arg.UserID,
 		arg.ProfileID,
 		arg.DisclosureMode,
@@ -134,15 +117,14 @@ func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams
 const createPersonaUser = `-- name: CreatePersonaUser :one
 
 
-INSERT INTO users (tenant_id, email, username, profile_type, status, is_bot)
-VALUES ($1, $2, $3, 'regular', 'active', true)
+INSERT INTO users (email, username, profile_type, status, is_bot) VALUES ($1, $2, 'regular', 'active', true)
+
 RETURNING id, tenant_id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, username_changed_at, is_bot, password_changed_at, ai_exempt, current_geo_space_id, is_synthetic, synthetic_source, source_id
 `
 
 type CreatePersonaUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Email    string      `json:"email"`
-	Username string      `json:"username"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
 }
 
 // personas.sql — AI Persona System queries (Section 68, ADR-068, ADR-114).
@@ -160,7 +142,7 @@ type CreatePersonaUserParams struct {
 // and config creation in a single tx.
 // =====================================================================
 func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createPersonaUser, arg.TenantID, arg.Email, arg.Username)
+	row := q.db.QueryRow(ctx, createPersonaUser, arg.Email, arg.Username)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -190,17 +172,12 @@ func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserPa
 
 const createPersonaVoice = `-- name: CreatePersonaVoice :one
 
-INSERT INTO persona_voices (
-    tenant_id, name, slug, description, voice_prompt, is_system, created_by
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-)
+INSERT INTO persona_voices (name, slug, description, voice_prompt, is_system, created_by) VALUES ($1, $2, $3, $4, $5, $6)
+
 RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
 `
 
 type CreatePersonaVoiceParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
 	Description *string     `json:"description"`
@@ -214,7 +191,6 @@ type CreatePersonaVoiceParams struct {
 // =====================================================================
 func (q *Queries) CreatePersonaVoice(ctx context.Context, arg CreatePersonaVoiceParams) (PersonaVoice, error) {
 	row := q.db.QueryRow(ctx, createPersonaVoice,
-		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -240,58 +216,46 @@ func (q *Queries) CreatePersonaVoice(ctx context.Context, arg CreatePersonaVoice
 
 const deletePersonaVoice = `-- name: DeletePersonaVoice :exec
 DELETE FROM persona_voices
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type DeletePersonaVoiceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) DeletePersonaVoice(ctx context.Context, arg DeletePersonaVoiceParams) error {
-	_, err := q.db.Exec(ctx, deletePersonaVoice, arg.TenantID, arg.ID)
+func (q *Queries) DeletePersonaVoice(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePersonaVoice, id)
 	return err
 }
 
 const getAIPersonaByID = `-- name: GetAIPersonaByID :one
 
 SELECT
-    ap.id,
-    ap.tenant_id,
-    ap.user_id,
-    ap.profile_id,
-    ap.disclosure_mode,
-    ap.autonomy_mode,
-    ap.voice_id,
-    ap.voice_prompt AS voice_prompt_override,
-    COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
-    ap.activity_policy,
-    ap.status,
-    ap.created_by,
-    ap.created_at,
-    ap.updated_at,
-    u.username  AS backing_username,
-    u.email     AS backing_email,
-    COALESCE(up.display_name, u.username) AS profile_name,
-    u.username AS profile_slug,
-    up.bio    AS profile_tagline,
-    pv.name     AS voice_name,
-    pv.slug     AS voice_slug
+ ap.id,
+ ap.user_id,
+ ap.profile_id,
+ ap.disclosure_mode,
+ ap.autonomy_mode,
+ ap.voice_id,
+ ap.voice_prompt AS voice_prompt_override,
+ COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
+ ap.activity_policy,
+ ap.status,
+ ap.created_by,
+ ap.created_at,
+ ap.updated_at,
+ u.username AS backing_username,
+ u.email AS backing_email,
+ COALESCE(up.display_name, u.username) AS profile_name,
+ u.username AS profile_slug,
+ up.bio AS profile_tagline,
+ pv.name AS voice_name,
+ pv.slug AS voice_slug
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
-WHERE ap.tenant_id = $1 AND ap.id = $2
+WHERE ap.id = $1
 `
-
-type GetAIPersonaByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 type GetAIPersonaByIDRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	UserID              pgtype.UUID        `json:"user_id"`
 	ProfileID           pgtype.UUID        `json:"profile_id"`
 	DisclosureMode      string             `json:"disclosure_mode"`
@@ -318,12 +282,11 @@ type GetAIPersonaByIDRow struct {
 // Returns the resolved voice prompt (override wins) plus voice metadata.
 // =====================================================================
 // Returns the persona with its bot user byline (from users + user_profiles).
-func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDParams) (GetAIPersonaByIDRow, error) {
-	row := q.db.QueryRow(ctx, getAIPersonaByID, arg.TenantID, arg.ID)
+func (q *Queries) GetAIPersonaByID(ctx context.Context, id pgtype.UUID) (GetAIPersonaByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAIPersonaByID, id)
 	var i GetAIPersonaByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProfileID,
 		&i.DisclosureMode,
@@ -350,33 +313,26 @@ func (q *Queries) GetAIPersonaByID(ctx context.Context, arg GetAIPersonaByIDPara
 const getAIPersonaByUserID = `-- name: GetAIPersonaByUserID :one
 
 SELECT
-    ap.id,
-    ap.tenant_id,
-    ap.user_id,
-    ap.profile_id,
-    ap.disclosure_mode,
-    ap.autonomy_mode,
-    ap.voice_id,
-    ap.voice_prompt AS voice_prompt_override,
-    COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
-    ap.activity_policy,
-    ap.status,
-    ap.created_by,
-    ap.created_at,
-    ap.updated_at
+ ap.id,
+ ap.user_id,
+ ap.profile_id,
+ ap.disclosure_mode,
+ ap.autonomy_mode,
+ ap.voice_id,
+ ap.voice_prompt AS voice_prompt_override,
+ COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
+ ap.activity_policy,
+ ap.status,
+ ap.created_by,
+ ap.created_at,
+ ap.updated_at
 FROM ai_personas ap
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
-WHERE ap.tenant_id = $1 AND ap.user_id = $2
+WHERE ap.user_id = $1
 `
-
-type GetAIPersonaByUserIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetAIPersonaByUserIDRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	UserID              pgtype.UUID        `json:"user_id"`
 	ProfileID           pgtype.UUID        `json:"profile_id"`
 	DisclosureMode      string             `json:"disclosure_mode"`
@@ -396,12 +352,11 @@ type GetAIPersonaByUserIDRow struct {
 // to resolve the persona config from the actor identity).
 // Returns the resolved voice prompt.
 // =====================================================================
-func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUserIDParams) (GetAIPersonaByUserIDRow, error) {
-	row := q.db.QueryRow(ctx, getAIPersonaByUserID, arg.TenantID, arg.UserID)
+func (q *Queries) GetAIPersonaByUserID(ctx context.Context, userID pgtype.UUID) (GetAIPersonaByUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getAIPersonaByUserID, userID)
 	var i GetAIPersonaByUserIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProfileID,
 		&i.DisclosureMode,
@@ -420,16 +375,11 @@ func (q *Queries) GetAIPersonaByUserID(ctx context.Context, arg GetAIPersonaByUs
 
 const getPersonaVoiceByID = `-- name: GetPersonaVoiceByID :one
 SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetPersonaVoiceByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetPersonaVoiceByID(ctx context.Context, arg GetPersonaVoiceByIDParams) (PersonaVoice, error) {
-	row := q.db.QueryRow(ctx, getPersonaVoiceByID, arg.TenantID, arg.ID)
+func (q *Queries) GetPersonaVoiceByID(ctx context.Context, id pgtype.UUID) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, getPersonaVoiceByID, id)
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
@@ -448,16 +398,11 @@ func (q *Queries) GetPersonaVoiceByID(ctx context.Context, arg GetPersonaVoiceBy
 
 const getPersonaVoiceBySlug = `-- name: GetPersonaVoiceBySlug :one
 SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
-WHERE tenant_id = $1 AND slug = $2
+WHERE slug = $1
 `
 
-type GetPersonaVoiceBySlugParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
-
-func (q *Queries) GetPersonaVoiceBySlug(ctx context.Context, arg GetPersonaVoiceBySlugParams) (PersonaVoice, error) {
-	row := q.db.QueryRow(ctx, getPersonaVoiceBySlug, arg.TenantID, arg.Slug)
+func (q *Queries) GetPersonaVoiceBySlug(ctx context.Context, slug string) (PersonaVoice, error) {
+	row := q.db.QueryRow(ctx, getPersonaVoiceBySlug, slug)
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
@@ -477,63 +422,58 @@ func (q *Queries) GetPersonaVoiceBySlug(ctx context.Context, arg GetPersonaVoice
 const listAIPersonas = `-- name: ListAIPersonas :many
 
 SELECT
-    ap.id,
-    ap.tenant_id,
-    ap.user_id,
-    ap.profile_id,
-    ap.disclosure_mode,
-    ap.autonomy_mode,
-    ap.voice_id,
-    ap.voice_prompt AS voice_prompt_override,
-    COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
-    ap.activity_policy,
-    ap.status,
-    ap.created_by,
-    ap.created_at,
-    ap.updated_at,
-    u.username  AS backing_username,
-    COALESCE(up.display_name, u.username) AS profile_name,
-    pv.name     AS voice_name,
-    stats.total_actions AS total_actions,
-    stats.last_action_at AS last_action_at
+ ap.id,
+ ap.user_id,
+ ap.profile_id,
+ ap.disclosure_mode,
+ ap.autonomy_mode,
+ ap.voice_id,
+ ap.voice_prompt AS voice_prompt_override,
+ COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt,
+ ap.activity_policy,
+ ap.status,
+ ap.created_by,
+ ap.created_at,
+ ap.updated_at,
+ u.username AS backing_username,
+ COALESCE(up.display_name, u.username) AS profile_name,
+ pv.name AS voice_name,
+ stats.total_actions AS total_actions,
+ stats.last_action_at AS last_action_at
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
 LEFT JOIN LATERAL (
-    SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
-    FROM platform_events pe
-    WHERE pe.tenant_id = ap.tenant_id
-      AND pe.user_id = ap.user_id
-      AND pe.is_synthetic = true
+ SELECT COUNT(*) AS total_actions, MAX(pe.created_at) AS last_action_at
+ FROM platform_events pe
+ WHERE pe.user_id = ap.user_id
+ AND pe.is_synthetic = true
 ) stats ON true
-WHERE ap.tenant_id = $1
-  AND ($2::text = '' OR ap.status = $2)
-  AND ($3::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $3 || '%' OR u.username ILIKE '%' || $3 || '%')
+WHERE ($1::text = '' OR ap.status = $1)
+ AND ($2::text = '' OR COALESCE(up.display_name, u.username) ILIKE '%' || $2 || '%' OR u.username ILIKE '%' || $2 || '%')
 ORDER BY
-    CASE WHEN $4::text = 'name' AND $5::text = 'asc' THEN COALESCE(up.display_name, u.username) END ASC,
-    CASE WHEN $4::text = 'name' AND $5::text = 'desc' THEN COALESCE(up.display_name, u.username) END DESC,
-    CASE WHEN $4::text = 'created_at' AND $5::text = 'asc' THEN ap.created_at END ASC,
-    CASE WHEN $4::text = 'created_at' AND $5::text = 'desc' THEN ap.created_at END DESC,
-    CASE WHEN $4::text = 'total_actions' AND $5::text = 'asc' THEN stats.total_actions END ASC,
-    CASE WHEN $4::text = 'total_actions' AND $5::text = 'desc' THEN stats.total_actions END DESC,
-    ap.created_at DESC
-LIMIT $7 OFFSET $6
+ CASE WHEN $3::text = 'name' AND $4::text = 'asc' THEN COALESCE(up.display_name, u.username) END ASC,
+ CASE WHEN $3::text = 'name' AND $4::text = 'desc' THEN COALESCE(up.display_name, u.username) END DESC,
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'asc' THEN ap.created_at END ASC,
+ CASE WHEN $3::text = 'created_at' AND $4::text = 'desc' THEN ap.created_at END DESC,
+ CASE WHEN $3::text = 'total_actions' AND $4::text = 'asc' THEN stats.total_actions END ASC,
+ CASE WHEN $3::text = 'total_actions' AND $4::text = 'desc' THEN stats.total_actions END DESC,
+ ap.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListAIPersonasParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	Q          string      `json:"q"`
-	Sort       string      `json:"sort"`
-	Dir        string      `json:"dir"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	Q          string `json:"q"`
+	Sort       string `json:"sort"`
+	Dir        string `json:"dir"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListAIPersonasRow struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	UserID              pgtype.UUID        `json:"user_id"`
 	ProfileID           pgtype.UUID        `json:"profile_id"`
 	DisclosureMode      string             `json:"disclosure_mode"`
@@ -558,7 +498,6 @@ type ListAIPersonasRow struct {
 // =====================================================================
 func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) ([]ListAIPersonasRow, error) {
 	rows, err := q.db.Query(ctx, listAIPersonas,
-		arg.TenantID,
 		arg.Status,
 		arg.Q,
 		arg.Sort,
@@ -575,7 +514,6 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 		var i ListAIPersonasRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ProfileID,
 			&i.DisclosureMode,
@@ -607,23 +545,21 @@ func (q *Queries) ListAIPersonas(ctx context.Context, arg ListAIPersonasParams) 
 const listPersonaActivity = `-- name: ListPersonaActivity :many
 
 SELECT
-    id,
-    event_type,
-    entity_type,
-    entity_id,
-    meta,
-    is_synthetic,
-    created_at
+ id,
+ event_type,
+ entity_type,
+ entity_id,
+ meta,
+ is_synthetic,
+ created_at
 FROM platform_events
-WHERE tenant_id = $1
-  AND user_id = $2
-  AND is_synthetic = true
+WHERE user_id = $1
+ AND is_synthetic = true
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPersonaActivityParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -643,12 +579,7 @@ type ListPersonaActivityRow struct {
 // Activity log — recent platform_events for a persona's backing user.
 // =====================================================================
 func (q *Queries) ListPersonaActivity(ctx context.Context, arg ListPersonaActivityParams) ([]ListPersonaActivityRow, error) {
-	rows, err := q.db.Query(ctx, listPersonaActivity,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPersonaActivity, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -677,19 +608,18 @@ func (q *Queries) ListPersonaActivity(ctx context.Context, arg ListPersonaActivi
 
 const listPersonaVoices = `-- name: ListPersonaVoices :many
 SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
-WHERE tenant_id = $1
+
 ORDER BY name ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListPersonaVoicesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListPersonaVoices(ctx context.Context, arg ListPersonaVoicesParams) ([]PersonaVoice, error) {
-	rows, err := q.db.Query(ctx, listPersonaVoices, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listPersonaVoices, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -723,18 +653,18 @@ const updateAIPersona = `-- name: UpdateAIPersona :one
 
 UPDATE ai_personas
 SET
-    disclosure_mode = COALESCE($1, disclosure_mode),
-    autonomy_mode   = COALESCE($2, autonomy_mode),
-    voice_id        = CASE
-                        WHEN $3 IS NULL THEN voice_id
-                        WHEN $3 = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
-                        ELSE $3
-                      END,
-    voice_prompt    = COALESCE($4, voice_prompt),
-    activity_policy = COALESCE($5, activity_policy),
-    status          = COALESCE($6, status),
-    updated_at      = now()
-WHERE tenant_id = $7 AND id = $8
+ disclosure_mode = COALESCE($1, disclosure_mode),
+ autonomy_mode = COALESCE($2, autonomy_mode),
+ voice_id = CASE
+ WHEN $3 IS NULL THEN voice_id
+ WHEN $3 = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+ ELSE $3
+ END,
+ voice_prompt = COALESCE($4, voice_prompt),
+ activity_policy = COALESCE($5, activity_policy),
+ status = COALESCE($6, status),
+ updated_at = now()
+WHERE id = $7
 RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
@@ -745,7 +675,6 @@ type UpdateAIPersonaParams struct {
 	VoicePrompt    *string     `json:"voice_prompt"`
 	ActivityPolicy []byte      `json:"activity_policy"`
 	Status         *string     `json:"status"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 }
 
@@ -760,7 +689,6 @@ func (q *Queries) UpdateAIPersona(ctx context.Context, arg UpdateAIPersonaParams
 		arg.VoicePrompt,
 		arg.ActivityPolicy,
 		arg.Status,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i AiPersona
@@ -785,13 +713,13 @@ func (q *Queries) UpdateAIPersona(ctx context.Context, arg UpdateAIPersonaParams
 const updatePersonaVoice = `-- name: UpdatePersonaVoice :one
 UPDATE persona_voices
 SET
-    name         = COALESCE($1, name),
-    slug         = COALESCE($2, slug),
-    description  = COALESCE($3, description),
-    voice_prompt = COALESCE($4, voice_prompt),
-    is_system    = COALESCE($5, is_system),
-    updated_at   = now()
-WHERE tenant_id = $6 AND id = $7
+ name = COALESCE($1, name),
+ slug = COALESCE($2, slug),
+ description = COALESCE($3, description),
+ voice_prompt = COALESCE($4, voice_prompt),
+ is_system = COALESCE($5, is_system),
+ updated_at = now()
+WHERE id = $6
 RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
 `
 
@@ -801,7 +729,6 @@ type UpdatePersonaVoiceParams struct {
 	Description *string     `json:"description"`
 	VoicePrompt *string     `json:"voice_prompt"`
 	IsSystem    *bool       `json:"is_system"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	ID          pgtype.UUID `json:"id"`
 }
 
@@ -812,7 +739,6 @@ func (q *Queries) UpdatePersonaVoice(ctx context.Context, arg UpdatePersonaVoice
 		arg.Description,
 		arg.VoicePrompt,
 		arg.IsSystem,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i PersonaVoice

@@ -306,7 +306,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 				return results, fmt.Errorf("personas: input %d: invalid voice_id", i)
 			}
 
-			if _, err := q.GetPersonaVoiceByID(ctx, gen.GetPersonaVoiceByIDParams{TenantID: tenantID, ID: voiceID}); err != nil {
+			if _, err := q.GetPersonaVoiceByID(ctx, voiceID); err != nil {
 				results[i] = ProvisionResult{Input: in, Error: "voice not found"}
 				return results, fmt.Errorf("personas: input %d: voice not found: %w", i, err)
 			}
@@ -319,7 +319,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 					voiceSlug = fmt.Sprintf("%s-voice-%d", in.Slug, attempt)
 				}
 
-				voice, err := q.GetPersonaVoiceBySlug(ctx, gen.GetPersonaVoiceBySlugParams{TenantID: tenantID, Slug: voiceSlug})
+				voice, err := q.GetPersonaVoiceBySlug(ctx, voiceSlug)
 				if err != nil {
 					if !errors.Is(err, pgx.ErrNoRows) {
 						results[i] = ProvisionResult{Input: in, Error: err.Error()}
@@ -329,7 +329,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 					voiceName := in.Name + " Voice"
 
 					newVoice, err := q.CreatePersonaVoice(ctx, gen.CreatePersonaVoiceParams{
-						TenantID:    tenantID,
+
 						Name:        voiceName,
 						Slug:        voiceSlug,
 						Description: nil,
@@ -371,7 +371,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 		}
 
 		persona, err := s.store.CreateAIPersona(ctx, q, gen.CreateAIPersonaParams{
-			TenantID:       tenantID,
+
 			UserID:         user.ID,
 			ProfileID:      pgtype.UUID{},
 			DisclosureMode: disclosure,
@@ -601,8 +601,8 @@ func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, i
 		VoiceID:        voiceID,
 		VoicePrompt:    in.VoicePrompt,
 		Status:         in.Status,
-		TenantID:       tenantID,
-		ID:             id,
+
+		ID: id,
 	}
 
 	if in.ActivityPolicy != nil {
@@ -755,7 +755,7 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pg
 	}
 
 	row, err := s.store.CreatePersonaVoice(ctx, nil, gen.CreatePersonaVoiceParams{
-		TenantID:    tenantID,
+
 		Name:        in.Name,
 		Slug:        in.Slug,
 		Description: desc,
@@ -772,8 +772,8 @@ func (s *Service) CreatePersonaVoice(ctx context.Context, tenantID, createdBy pg
 
 func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 	d := PersonaDetail{
-		ID:                  r.ID.String(),
-		TenantID:            r.TenantID.String(),
+		ID: r.ID.String(),
+
 		UserID:              r.UserID.String(),
 		ProfileID:           r.ProfileID.String(),
 		DisclosureMode:      r.DisclosureMode,
@@ -799,8 +799,8 @@ func personaDetailFromRow(r gen.GetAIPersonaByIDRow) PersonaDetail {
 
 func personaListItemFromRow(r gen.ListAIPersonasRow) PersonaListItem {
 	item := PersonaListItem{
-		ID:                  r.ID.String(),
-		TenantID:            r.TenantID.String(),
+		ID: r.ID.String(),
+
 		UserID:              r.UserID.String(),
 		ProfileID:           r.ProfileID.String(),
 		DisclosureMode:      r.DisclosureMode,
@@ -878,8 +878,8 @@ func uuidOrEmpty(u pgtype.UUID) string {
 // personaVoiceFromRow maps a generated persona_voices row to the API DTO.
 func personaVoiceFromRow(r gen.PersonaVoice) PersonaVoice {
 	return PersonaVoice{
-		ID:          r.ID.String(),
-		TenantID:    r.TenantID.String(),
+		ID: r.ID.String(),
+
 		Name:        r.Name,
 		Slug:        r.Slug,
 		Description: derefOrEmpty(r.Description),
@@ -968,7 +968,7 @@ func (s *Service) UpdatePersonaVoice(ctx context.Context, tenantID, id pgtype.UU
 	}
 
 	params := gen.UpdatePersonaVoiceParams{
-		TenantID:    tenantID,
+
 		ID:          id,
 		Name:        in.Name,
 		Slug:        in.Slug,

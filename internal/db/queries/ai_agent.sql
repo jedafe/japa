@@ -13,80 +13,74 @@
 -- =====================================================================
 
 -- name: CreateAgentSession :one
-INSERT INTO ai_agent_sessions (
-    tenant_id, user_id, prompt, geo_space_id, presearch_level, status, started_at
-) VALUES (
-    @tenant_id, @user_id, @prompt, sqlc.narg(geo_space_id), @presearch_level, @status, now()
-)
+INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at) VALUES (@user_id, @prompt, sqlc.narg(geo_space_id), @presearch_level, @status, now())
 RETURNING *;
 
 -- name: GetAgentSession :one
 SELECT * FROM ai_agent_sessions
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- Get a session scoped to the owning user (user-facing detail route
 -- enforces ownership at the DB layer rather than only in handler logic).
 -- name: GetAgentSessionForUser :one
 SELECT * FROM ai_agent_sessions
-WHERE id = @id AND tenant_id = @tenant_id AND user_id = @user_id;
+WHERE id = @id AND user_id = @user_id;
 
 -- Mark a session completed. tool_call_count, total_tokens, and
 -- estimated_cost are written here (the agent accumulates them in memory
 -- during the loop and flushes once at the end).
 -- name: CompleteAgentSession :one
 UPDATE ai_agent_sessions SET
-    status          = 'completed',
-    result_summary  = sqlc.narg(result_summary),
-    tool_call_count = @tool_call_count,
-    total_tokens    = @total_tokens,
-    estimated_cost  = @estimated_cost,
-    completed_at    = now()
-WHERE id = @id AND tenant_id = @tenant_id
+ status = 'completed',
+ result_summary = sqlc.narg(result_summary),
+ tool_call_count = @tool_call_count,
+ total_tokens = @total_tokens,
+ estimated_cost = @estimated_cost,
+ completed_at = now()
+WHERE id = @id
 RETURNING *;
 
 -- name: FailAgentSession :one
 UPDATE ai_agent_sessions SET
-    status          = 'failed',
-    error_message   = sqlc.narg(error_message),
-    tool_call_count = @tool_call_count,
-    total_tokens    = @total_tokens,
-    estimated_cost  = @estimated_cost,
-    completed_at    = now()
-WHERE id = @id AND tenant_id = @tenant_id
+ status = 'failed',
+ error_message = sqlc.narg(error_message),
+ tool_call_count = @tool_call_count,
+ total_tokens = @total_tokens,
+ estimated_cost = @estimated_cost,
+ completed_at = now()
+WHERE id = @id
 RETURNING *;
 
 -- name: CancelAgentSession :one
 UPDATE ai_agent_sessions SET
-    status       = 'cancelled',
-    completed_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
-  AND status = 'running'
+ status = 'cancelled',
+ completed_at = now()
+WHERE id = @id
+ AND status = 'running'
 RETURNING *;
 
 -- User-facing history (newest first), offset-paginated.
 -- name: ListAgentSessionsByUser :many
 SELECT * FROM ai_agent_sessions
-WHERE tenant_id = @tenant_id AND user_id = @user_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountAgentSessionsByUser :one
 SELECT COUNT(*) FROM ai_agent_sessions
-WHERE tenant_id = @tenant_id AND user_id = @user_id;
+WHERE user_id = @user_id;
 
 -- Admin list (newest first), offset-paginated, optional status filter.
 -- The optional-filter pattern mirrors SearchContentEmbeddings in rag.sql.
 -- name: ListAgentSessionsForAdmin :many
 SELECT * FROM ai_agent_sessions
-WHERE tenant_id = @tenant_id
-  AND (@status_filter::text = '' OR status = @status_filter)
+WHERE (@status_filter::text = '' OR status = @status_filter)
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountAgentSessionsForAdmin :one
 SELECT COUNT(*) FROM ai_agent_sessions
-WHERE tenant_id = @tenant_id
-  AND (@status_filter::text = '' OR status = @status_filter);
+WHERE (@status_filter::text = '' OR status = @status_filter);
 
 -- =====================================================================
 -- Agent tool calls — audit log.
@@ -96,23 +90,17 @@ WHERE tenant_id = @tenant_id
 -- =====================================================================
 
 -- name: CreateAgentToolCall :one
-INSERT INTO ai_agent_tool_calls (
-    tenant_id, session_id, tool_name, arguments, status,
-    rbac_checked, privacy_checked
-) VALUES (
-    @tenant_id, @session_id, @tool_name, @arguments, @status,
-    @rbac_checked, @privacy_checked
-)
+INSERT INTO ai_agent_tool_calls (session_id, tool_name, arguments, status, rbac_checked, privacy_checked) VALUES (@session_id, @tool_name, @arguments, @status, @rbac_checked, @privacy_checked)
 RETURNING *;
 
 -- name: GetAgentToolCall :one
 SELECT * FROM ai_agent_tool_calls
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- All tool calls for a session, oldest first (audit trail order).
 -- name: ListAgentToolCallsBySession :many
 SELECT * FROM ai_agent_tool_calls
-WHERE session_id = @session_id AND tenant_id = @tenant_id
+WHERE session_id = @session_id
 ORDER BY created_at ASC;
 
 -- Record the outcome of a tool call. result is nullable jsonb (an error
@@ -120,12 +108,12 @@ ORDER BY created_at ASC;
 -- call was queued for HITL (status = 'hitl_queued').
 -- name: UpdateAgentToolCallResult :one
 UPDATE ai_agent_tool_calls SET
-    result         = sqlc.narg(result),
-    status         = @status,
-    error_message  = sqlc.narg(error_message),
-    latency_ms     = sqlc.narg(latency_ms),
-    hitl_review_id = sqlc.narg(hitl_review_id)
-WHERE id = @id AND tenant_id = @tenant_id
+ result = sqlc.narg(result),
+ status = @status,
+ error_message = sqlc.narg(error_message),
+ latency_ms = sqlc.narg(latency_ms),
+ hitl_review_id = sqlc.narg(hitl_review_id)
+WHERE id = @id
 RETURNING *;
 
 -- =====================================================================
@@ -140,13 +128,13 @@ RETURNING *;
 
 -- name: GetContentAIExempt :one
 SELECT ai_exempt FROM contents
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetCustomFieldValueAIExempt :one
 SELECT cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
-WHERE cfv.id = @id AND cf.tenant_id = @tenant_id;
+WHERE cfv.id = @id;
 
 -- name: GetCustomFieldValueEntity :one
 -- Returns the entity_type and entity_id for a custom_field_values row,
@@ -157,11 +145,11 @@ WHERE cfv.id = @id AND cf.tenant_id = @tenant_id;
 SELECT cfv.entity_type, cfv.entity_id
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
-WHERE cfv.id = @id AND cf.tenant_id = @tenant_id;
+WHERE cfv.id = @id;
 
 -- name: GetUserAIExempt :one
 SELECT ai_exempt FROM users
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- =====================================================================
 -- Privacy exemption writes (§103 Privacy Exemption Columns).
@@ -174,8 +162,8 @@ WHERE id = @id AND tenant_id = @tenant_id;
 
 -- name: SetContentAIExempt :one
 UPDATE contents SET ai_exempt = @ai_exempt, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, ai_exempt;
+WHERE id = @id AND deleted_at IS NULL
+RETURNING id, author_id, ai_exempt;
 
 -- name: SetCustomFieldValueAIExempt :one
 -- custom_field_values has no tenant_id column; JOIN custom_fields to
@@ -184,14 +172,13 @@ UPDATE custom_field_values cfv
 SET ai_exempt = @ai_exempt
 FROM custom_fields cf
 WHERE cfv.field_id = cf.id
-  AND cfv.id = @id
-  AND cf.tenant_id = @tenant_id
+ AND cfv.id = @id
 RETURNING cfv.id, cfv.field_id, cfv.ai_exempt;
 
 -- name: SetUserAIExempt :one
 UPDATE users SET ai_exempt = @ai_exempt
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, ai_exempt;
+WHERE id = @id
+RETURNING id, ai_exempt;
 
 -- =====================================================================
 -- Admin aggregates (Phase 6 — GET /admin/agent/tool-stats, cost-report).
@@ -202,18 +189,17 @@ RETURNING id, tenant_id, ai_exempt;
 -- nullable). Success rate is the fraction of calls with status = 'success'.
 -- name: GetAgentToolStats :many
 SELECT tool_name,
-       COUNT(*)                                          AS total_calls,
-       COUNT(*) FILTER (WHERE status = 'success')        AS success_count,
-       COUNT(*) FILTER (WHERE status = 'error')          AS error_count,
-       COUNT(*) FILTER (WHERE status = 'unauthorized')   AS unauthorized_count,
-       COUNT(*) FILTER (WHERE status = 'privacy_blocked') AS privacy_blocked_count,
-       COUNT(*) FILTER (WHERE status = 'hitl_queued')    AS hitl_queued_count,
-       COALESCE(AVG(latency_ms), 0)                      AS avg_latency_ms,
-       COALESCE(MAX(latency_ms), 0)                      AS max_latency_ms
+ COUNT(*) AS total_calls,
+ COUNT(*) FILTER (WHERE status = 'success') AS success_count,
+ COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+ COUNT(*) FILTER (WHERE status = 'unauthorized') AS unauthorized_count,
+ COUNT(*) FILTER (WHERE status = 'privacy_blocked') AS privacy_blocked_count,
+ COUNT(*) FILTER (WHERE status = 'hitl_queued') AS hitl_queued_count,
+ COALESCE(AVG(latency_ms), 0) AS avg_latency_ms,
+ COALESCE(MAX(latency_ms), 0) AS max_latency_ms
 FROM ai_agent_tool_calls
-WHERE tenant_id = @tenant_id
-  AND (@from_date::timestamptz IS NULL OR created_at >= @from_date)
-  AND (@to_date::timestamptz   IS NULL OR created_at <  @to_date)
+WHERE (@from_date::timestamptz IS NULL OR created_at >= @from_date)
+ AND (@to_date::timestamptz IS NULL OR created_at < @to_date)
 GROUP BY tool_name
 ORDER BY total_calls DESC;
 
@@ -223,15 +209,14 @@ ORDER BY total_calls DESC;
 -- double precision for JSON-friendly aggregation.
 -- name: GetAgentCostReport :many
 SELECT s.user_id,
-       u.username,
-       COUNT(*)                                          AS session_count,
-       COALESCE(SUM(s.total_tokens), 0)                  AS total_tokens,
-       COALESCE(SUM(s.tool_call_count), 0)               AS total_tool_calls,
-       COALESCE(SUM(CAST(s.estimated_cost AS double precision)), 0) AS total_cost_usd
+ u.username,
+ COUNT(*) AS session_count,
+ COALESCE(SUM(s.total_tokens), 0) AS total_tokens,
+ COALESCE(SUM(s.tool_call_count), 0) AS total_tool_calls,
+ COALESCE(SUM(CAST(s.estimated_cost AS double precision)), 0) AS total_cost_usd
 FROM ai_agent_sessions s
-LEFT JOIN users u ON u.id = s.user_id AND u.tenant_id = s.tenant_id
-WHERE s.tenant_id = @tenant_id
-  AND (@from_date::timestamptz IS NULL OR s.created_at >= @from_date)
-  AND (@to_date::timestamptz   IS NULL OR s.created_at <  @to_date)
+LEFT JOIN users u ON u.id = s.user_id
+WHERE (@from_date::timestamptz IS NULL OR s.created_at >= @from_date)
+ AND (@to_date::timestamptz IS NULL OR s.created_at < @to_date)
 GROUP BY s.user_id, u.username
 ORDER BY total_cost_usd DESC;

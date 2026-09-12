@@ -11,7 +11,7 @@ import (
 // ToggleFollowSpace is an exported method.
 func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
 	isFollowing, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
-		TenantID:   tenantID,
+
 		FollowerID: userID,
 		EntityType: "space",
 		EntityID:   spaceID,
@@ -22,7 +22,7 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 
 	if isFollowing {
 		err = s.write.DeleteFollowByFollowerEntity(ctx, gen.DeleteFollowByFollowerEntityParams{
-			TenantID:   tenantID,
+
 			FollowerID: userID,
 			EntityType: "space",
 			EntityID:   spaceID,
@@ -31,10 +31,9 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 			return false, fmt.Errorf("unfollowing space: %w", err)
 		}
 
-		if err := s.write.DecrementSpaceFollowerCount(ctx, gen.DecrementSpaceFollowerCountParams{
-			ID:       spaceID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := s.write.DecrementSpaceFollowerCount(ctx,
+			spaceID,
+		); err != nil {
 			return false, fmt.Errorf("decrementing follower count: %w", err)
 		}
 
@@ -42,7 +41,7 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 	}
 
 	err = s.write.InsertFollow(ctx, gen.InsertFollowParams{
-		TenantID:   tenantID,
+
 		FollowerID: userID,
 		EntityType: "space",
 		EntityID:   spaceID,
@@ -51,10 +50,9 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 		return false, fmt.Errorf("following space: %w", err)
 	}
 
-	if err := s.write.IncrementSpaceFollowerCount(ctx, gen.IncrementSpaceFollowerCountParams{
-		ID:       spaceID,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.IncrementSpaceFollowerCount(ctx,
+		spaceID,
+	); err != nil {
 		return false, fmt.Errorf("incrementing follower count: %w", err)
 	}
 
@@ -66,9 +64,9 @@ func (s *Service) ToggleFollowSpace(ctx context.Context, tenantID, userID, space
 // VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.MuteSpace(ctx, gen.MuteSpaceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
+
+		UserID:  userID,
+		SpaceID: spaceID,
 	}); err != nil {
 		return err
 	}
@@ -83,9 +81,9 @@ func (s *Service) MuteSpace(ctx context.Context, tenantID, userID, spaceID pgtyp
 // VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
 	if err := s.write.UnmuteSpace(ctx, gen.UnmuteSpaceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
+
+		UserID:  userID,
+		SpaceID: spaceID,
 	}); err != nil {
 		return err
 	}
@@ -98,8 +96,8 @@ func (s *Service) UnmuteSpace(ctx context.Context, tenantID, userID, spaceID pgt
 // IsSpaceMuted is an exported method.
 func (s *Service) IsSpaceMuted(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (bool, error) {
 	return s.read.IsSpaceMuted(ctx, gen.IsSpaceMutedParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		SpaceID:  spaceID,
+
+		UserID:  userID,
+		SpaceID: spaceID,
 	})
 }

@@ -73,7 +73,7 @@ func (s *Store) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID
 	}
 
 	return s.write.CreateContentCampaign(ctx, gen.CreateContentCampaignParams{
-		TenantID:              tenantID,
+
 		Name:                  name,
 		Prompt:                in.Prompt,
 		Status:                CampaignStatusPlanning,
@@ -114,8 +114,8 @@ func (s *Store) CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen
 		}
 
 		_, perr := q.UpdateContentCampaignStatus(ctx, gen.UpdateContentCampaignStatusParams{
-			ID:       campaign.ID,
-			TenantID: campaign.TenantID,
+			ID: campaign.ID,
+
 			Status:   CampaignStatusPlanned,
 			PlanJson: planJSON,
 		})
@@ -130,8 +130,8 @@ func (s *Store) CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen
 // UpdateCampaignStatus updates a campaign's status and optional plan_json.
 func (s *Store) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
 	return s.write.UpdateContentCampaignStatus(ctx, gen.UpdateContentCampaignStatusParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
+
 		Status:   status,
 		PlanJson: planJSON,
 	})
@@ -139,7 +139,7 @@ func (s *Store) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UU
 
 // GetCampaign returns a single campaign by ID.
 func (s *Store) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error) {
-	return s.read.GetContentCampaign(ctx, gen.GetContentCampaignParams{ID: id, TenantID: tenantID})
+	return s.read.GetContentCampaign(ctx, id)
 }
 
 // ListCampaigns returns a paginated list of campaigns for a tenant.
@@ -157,7 +157,7 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Campa
 	}
 
 	items, err := s.read.ListContentCampaigns(ctx, gen.ListContentCampaignsParams{
-		TenantID:   tenantID,
+
 		Status:     f.Status,
 		PageLimit:  f.Limit,
 		PageOffset: f.Offset,
@@ -166,10 +166,10 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Campa
 		return nil, 0, err
 	}
 
-	total, err := s.read.CountContentCampaigns(ctx, gen.CountContentCampaignsParams{
-		TenantID: tenantID,
-		Status:   f.Status,
-	})
+	total, err := s.read.CountContentCampaigns(ctx,
+
+		f.Status,
+	)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -179,25 +179,24 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Campa
 
 // ListCampaignItemsByCampaign returns all items for a campaign.
 func (s *Store) ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
-	return s.read.ListContentCampaignItemsByCampaign(ctx, gen.ListContentCampaignItemsByCampaignParams{
-		CampaignID: campaignID,
-		TenantID:   tenantID,
-	})
+	return s.read.ListContentCampaignItemsByCampaign(ctx,
+		campaignID,
+	)
 }
 
 // GetCampaignItem returns a single campaign item by ID.
 func (s *Store) GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaignItem, error) {
-	return s.read.GetContentCampaignItem(ctx, gen.GetContentCampaignItemParams{ID: id, TenantID: tenantID})
+	return s.read.GetContentCampaignItem(ctx, id)
 }
 
 // GetCampaignItemByStudioJob returns the campaign item linked to a Studio job.
 func (s *Store) GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error) {
-	return s.read.GetContentCampaignItemByStudioJob(ctx, gen.GetContentCampaignItemByStudioJobParams{StudioJobID: studioJobID, TenantID: tenantID})
+	return s.read.GetContentCampaignItemByStudioJob(ctx, studioJobID)
 }
 
 // GetCampaignItemByReviewID returns the campaign item linked to a HITL review.
 func (s *Store) GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
-	return s.read.GetContentCampaignItemByReviewID(ctx, gen.GetContentCampaignItemByReviewIDParams{ReviewID: reviewID, TenantID: tenantID})
+	return s.read.GetContentCampaignItemByReviewID(ctx, reviewID)
 }
 
 // UpdateCampaignItem updates an item's status and optional related IDs.
@@ -208,20 +207,20 @@ func (s *Store) UpdateCampaignItem(ctx context.Context, params gen.UpdateContent
 // ListActivePersonas returns all active personas for a tenant with the
 // information needed by the content planner.
 func (s *Store) ListActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListContentCampaignActivePersonasRow, error) {
-	return s.read.ListContentCampaignActivePersonas(ctx, tenantID)
+	return s.read.ListContentCampaignActivePersonas(ctx)
 }
 
 // ListActivePersonasByIDs returns the active personas from a provided pool.
 func (s *Store) ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error) {
-	return s.read.ListContentCampaignActivePersonasByIDs(ctx, gen.ListContentCampaignActivePersonasByIDsParams{
-		TenantID: tenantID,
-		Ids:      ids,
-	})
+	return s.read.ListContentCampaignActivePersonasByIDs(ctx,
+
+		ids,
+	)
 }
 
 // SpaceExists checks whether a space exists and belongs to the given tenant.
 func (s *Store) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
-	_, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{ID: id, TenantID: tenantID})
+	_, err := s.read.GetSpaceByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -257,7 +256,7 @@ func campaignItemParams(campaign gen.ContentCampaign, it CampaignItemPlan, sortO
 	}
 
 	return gen.CreateContentCampaignItemParams{
-		TenantID:      campaign.TenantID,
+
 		CampaignID:    campaign.ID,
 		SortOrder:     int32(sortOrder), // #nosec
 		PersonaID:     personaID,

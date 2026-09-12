@@ -406,8 +406,8 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	var scoreResult ScoreResult
 
 	scoreResult, err = s.engine.GetScore(ctx, GetScoreInput{
-		ContentID:         cid,
-		TenantID:          input.TenantID.String(),
+		ContentID: cid,
+
 		UserID:            &uid,
 		ProfileID:         pid,
 		PublicPerm:        advisorUsePerm,
@@ -416,8 +416,8 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 	if err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) {
 			scoreResult, err = s.engine.Score(ctx, ScoreInput{
-				ContentID:         cid,
-				TenantID:          input.TenantID.String(),
+				ContentID: cid,
+
 				UserID:            &uid,
 				ProfileID:         pid,
 				PublicPerm:        advisorUsePerm,
@@ -520,9 +520,9 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 func (s *Service) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
-		TenantID:  tenantID,
-		UserID:    userID,
-		Question:  question,
+
+		UserID:   userID,
+		Question: question,
 	}
 	if profileID.Valid {
 		input.ProfileID = &profileID
@@ -535,8 +535,8 @@ func (s *Service) Analyze(ctx context.Context, contentID, tenantID, userID, prof
 func (s *Service) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
-		TenantID:  tenantID,
-		UserID:    userID,
+
+		UserID: userID,
 	}
 	if profileID.Valid {
 		input.ProfileID = &profileID
@@ -549,7 +549,7 @@ func (s *Service) Rank(ctx context.Context, contentID, tenantID, userID, profile
 func (s *Service) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		ItemID:    &itemID,
 		FactorKey: factorKey,
@@ -566,8 +566,8 @@ func (s *Service) Explain(ctx context.Context, contentID, itemID, tenantID, user
 func (s *Service) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (AdvisorResult, error) {
 	input := AdvisorInput{
 		ContentID: contentID,
-		TenantID:  tenantID,
-		UserID:    userID,
+
+		UserID: userID,
 	}
 	if profileID.Valid {
 		input.ProfileID = &profileID

@@ -207,7 +207,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 
 	// Re-read balance inside the lock.
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -228,7 +228,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	reason := "credit withdrawal"
 
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationWithdraw,
@@ -244,7 +244,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	}
 
 	withdrawal, err := qtx.InsertWithdrawal(ctx, gen.InsertWithdrawalParams{
-		TenantID:       tenantID,
+
 		UserID:         userID,
 		CreditAmount:   input.CreditAmount,
 		CurrencyCode:   calc.CurrencyCode,
@@ -279,9 +279,9 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 				slog.Error("payout initiation failed; marking withdrawal failed and refunding credits", "withdrawal_id", withdrawal.ID, "error", perr)
 
 				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-					ID:       withdrawal.ID,
-					TenantID: tenantID,
-					Status:   WithdrawalStatusFailed,
+					ID: withdrawal.ID,
+
+					Status: WithdrawalStatusFailed,
 				})
 				if uerr != nil {
 					slog.Error("failed to update withdrawal status to failed", "withdrawal_id", withdrawal.ID, "error", uerr)
@@ -291,7 +291,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 				reason := "payout initiation failed - refund"
 
 				_, lerr := qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-					TenantID:         tenantID,
+
 					UserID:           userID,
 					LedgerType:       LedgerTypeCredits,
 					Operation:        OperationRefund,
@@ -315,8 +315,8 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 				}
 
 				_, uerr := qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-					ID:          withdrawal.ID,
-					TenantID:    tenantID,
+					ID: withdrawal.ID,
+
 					Status:      status,
 					ProviderRef: &providerRef,
 				})
@@ -402,7 +402,7 @@ func (s *Service) resolveWithdrawalCurrency(ctx context.Context, tenantID, userI
 // calculateWithdrawalFee resolves the first matching active fee tier and
 // returns the fee amount, basis, and rate.
 func (s *Service) calculateWithdrawalFee(ctx context.Context, tenantID pgtype.UUID, creditAmount, fiatAmount int64) (int64, string, float64, error) {
-	tiers, err := s.store.read.ListWithdrawalFeeTiersByTenant(ctx, tenantID)
+	tiers, err := s.store.read.ListWithdrawalFeeTiersByTenant(ctx)
 	if err != nil {
 		return 0, "", 0, fmt.Errorf("loading fee tiers: %w", err)
 	}
@@ -447,10 +447,10 @@ func (s *Service) calculateWithdrawalFee(ctx context.Context, tenantID pgtype.UU
 // is provided.
 func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgtype.UUID, methodID string) (gen.WalletWithdrawalMethod, error) {
 	if methodID == "" {
-		methods, err := s.store.read.ListWithdrawalMethodsByUser(ctx, gen.ListWithdrawalMethodsByUserParams{
-			TenantID: tenantID,
-			UserID:   userID,
-		})
+		methods, err := s.store.read.ListWithdrawalMethodsByUser(ctx,
+
+			userID,
+		)
 		if err != nil {
 			return gen.WalletWithdrawalMethod{}, fmt.Errorf("loading payout methods: %w", err)
 		}
@@ -474,9 +474,9 @@ func (s *Service) resolvePayoutMethod(ctx context.Context, tenantID, userID pgty
 	}
 
 	method, err := s.store.read.GetWithdrawalMethodByID(ctx, gen.GetWithdrawalMethodByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
+		ID: id,
+
+		UserID: userID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -512,10 +512,10 @@ func (s *Service) resolvePayoutProvider(ctx context.Context, tenantID pgtype.UUI
 // resolveWithdrawalStatus checks the user's group policy to decide whether the
 // withdrawal requires admin approval.
 func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID pgtype.UUID, creditAmount int64) (string, bool, error) {
-	group, err := s.store.read.GetUserGroupByUserID(ctx, gen.GetUserGroupByUserIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	group, err := s.store.read.GetUserGroupByUserID(ctx,
+
+		userID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalStatusPendingApproval, true, nil
@@ -545,10 +545,9 @@ func (s *Service) resolveWithdrawalStatus(ctx context.Context, tenantID, userID 
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, withdrawalID pgtype.UUID) (WithdrawalResult, error) {
-	withdrawal, err := s.store.read.GetWithdrawalByID(ctx, gen.GetWithdrawalByIDParams{
-		ID:       withdrawalID,
-		TenantID: tenantID,
-	})
+	withdrawal, err := s.store.read.GetWithdrawalByID(ctx,
+		withdrawalID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalResult{}, errpkg.ErrNotFound
@@ -562,9 +561,9 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 	}
 
 	method, err := s.store.read.GetWithdrawalMethodByID(ctx, gen.GetWithdrawalMethodByIDParams{
-		ID:       withdrawal.PayoutMethodID,
-		TenantID: tenantID,
-		UserID:   withdrawal.UserID,
+		ID: withdrawal.PayoutMethodID,
+
+		UserID: withdrawal.UserID,
 	})
 	if err != nil {
 		return WithdrawalResult{}, fmt.Errorf("loading payout method: %w", err)
@@ -605,8 +604,8 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 	}
 
 	updated, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-		ID:          withdrawalID,
-		TenantID:    tenantID,
+		ID: withdrawalID,
+
 		Status:      status,
 		ProviderRef: &providerRef,
 		ReviewedBy:  adminUserID,
@@ -641,10 +640,9 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, tenantID, adminUserID, 
 // RejectWithdrawal rejects a pending or pending_approval withdrawal and
 // refunds the user's credits.
 func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, withdrawalID pgtype.UUID, note string) (WithdrawalResult, error) {
-	withdrawal, err := s.store.read.GetWithdrawalByID(ctx, gen.GetWithdrawalByIDParams{
-		ID:       withdrawalID,
-		TenantID: tenantID,
-	})
+	withdrawal, err := s.store.read.GetWithdrawalByID(ctx,
+		withdrawalID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WithdrawalResult{}, errpkg.ErrNotFound
@@ -663,8 +661,8 @@ func (s *Service) RejectWithdrawal(ctx context.Context, tenantID, adminUserID, w
 	}
 
 	updated, err := s.store.write.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
-		ID:         withdrawalID,
-		TenantID:   tenantID,
+		ID: withdrawalID,
+
 		Status:     WithdrawalStatusRejected,
 		AdminNote:  noteRef,
 		ReviewedBy: adminUserID,
@@ -704,7 +702,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID 
 	qtx := s.store.write.WithTx(tx)
 
 	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
@@ -721,7 +719,7 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, tenantID, userID 
 	reason := "withdrawal payout failed - refund"
 
 	_, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
-		TenantID:         tenantID,
+
 		UserID:           userID,
 		LedgerType:       LedgerTypeCredits,
 		Operation:        OperationRefund,
@@ -744,7 +742,7 @@ func (s *Service) ListWithdrawals(ctx context.Context, tenantID, userID pgtype.U
 	}
 
 	return s.store.read.ListWithdrawalsByUser(ctx, gen.ListWithdrawalsByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -829,15 +827,15 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 	// If this is the new default, clear any existing default.
 	if input.IsDefault {
 		if err := qtx.UpdateWithdrawalMethodDefault(ctx, gen.UpdateWithdrawalMethodDefaultParams{
-			TenantID: tenantID,
-			UserID:   userID,
+
+			UserID: userID,
 		}); err != nil {
 			return gen.WalletWithdrawalMethod{}, fmt.Errorf("clearing default method: %w", err)
 		}
 	}
 
 	method, err := qtx.InsertWithdrawalMethod(ctx, gen.InsertWithdrawalMethodParams{
-		TenantID:     tenantID,
+
 		UserID:       userID,
 		Provider:     input.Provider,
 		Label:        label,
@@ -861,10 +859,10 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 
 // ListWithdrawalMethods returns the user's saved payout methods.
 func (s *Service) ListWithdrawalMethods(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.WalletWithdrawalMethod, error) {
-	return s.store.read.ListWithdrawalMethodsByUser(ctx, gen.ListWithdrawalMethodsByUserParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	return s.store.read.ListWithdrawalMethodsByUser(ctx,
+
+		userID,
+	)
 }
 
 // AdminListWithdrawals returns a paginated list of withdrawals for a tenant.
@@ -889,7 +887,7 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	withdrawals, err := s.store.read.ListWithdrawalsByTenant(ctx, gen.ListWithdrawalsByTenantParams{
-		TenantID:   tenantID,
+
 		Status:     statusArg,
 		UserID:     userIDArg,
 		PageLimit:  limit,
@@ -900,9 +898,9 @@ func (s *Service) AdminListWithdrawals(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	count, err := s.store.read.CountWithdrawalsByTenant(ctx, gen.CountWithdrawalsByTenantParams{
-		TenantID: tenantID,
-		Status:   statusArg,
-		UserID:   userIDArg,
+
+		Status: statusArg,
+		UserID: userIDArg,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting withdrawals: %w", err)

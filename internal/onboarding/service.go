@@ -196,10 +196,10 @@ func (s *Service) persistFollows(ctx context.Context, tenantID, userID pgtype.UU
 	// Step 3: follow selected tags by slug.
 	tagIDs := make([]pgtype.UUID, 0, len(fields.Tags))
 	for _, slug := range fields.Tags {
-		tag, err := s.store.write.GetTagBySlug(ctx, gen.GetTagBySlugParams{
-			TenantID: tenantID,
-			Slug:     slug,
-		})
+		tag, err := s.store.write.GetTagBySlug(ctx,
+
+			slug,
+		)
 		if err != nil {
 			slog.Warn("onboarding: failed to resolve tag slug", "slug", slug, "error", err)
 			continue
@@ -530,10 +530,9 @@ func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtyp
 			continue
 		}
 
-		space, err := s.store.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-			ID:       id,
-			TenantID: tenantID,
-		})
+		space, err := s.store.read.GetSpaceByID(ctx,
+			id,
+		)
 		if err != nil {
 			continue
 		}
@@ -716,10 +715,9 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, f
 
 	// Country space (resolved by geo_code).
 	if fields.CountryCode != "" {
-		countrySpace, err := queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-			GeoCode:  &fields.CountryCode,
-			TenantID: tenantID,
-		})
+		countrySpace, err := queries.GetSpaceByGeoCode(ctx,
+			&fields.CountryCode,
+		)
 		if err == nil {
 			recs = append(recs, OnboardingRecommendation{
 				Type:   "space",
@@ -736,10 +734,9 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, f
 	if fields.StateID != "" {
 		var stateID pgtype.UUID
 		if err := stateID.Scan(fields.StateID); err == nil {
-			stateSpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       stateID,
-				TenantID: tenantID,
-			})
+			stateSpace, err := queries.GetSpaceByID(ctx,
+				stateID,
+			)
 			if err == nil {
 				recs = append(recs, OnboardingRecommendation{
 					Type:   "space",
@@ -757,10 +754,9 @@ func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, f
 	if fields.CityID != "" {
 		var cityID pgtype.UUID
 		if err := cityID.Scan(fields.CityID); err == nil {
-			citySpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       cityID,
-				TenantID: tenantID,
-			})
+			citySpace, err := queries.GetSpaceByID(ctx,
+				cityID,
+			)
 			if err == nil {
 				recs = append(recs, OnboardingRecommendation{
 					Type:   "space",
@@ -851,19 +847,17 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 	queries := gen.New(tx)
 
 	// Find country space by geo_code.
-	countrySpace, err := queries.GetSpaceByGeoCode(ctx, gen.GetSpaceByGeoCodeParams{
-		GeoCode:  &fields.CountryCode,
-		TenantID: tenantID,
-	})
+	countrySpace, err := queries.GetSpaceByGeoCode(ctx,
+		&fields.CountryCode,
+	)
 	if err != nil {
 		return fmt.Errorf("finding country space for %s: %w", fields.CountryCode, err)
 	}
 
 	// Join country space (idempotent via ON CONFLICT DO NOTHING).
 	if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
-		SpaceID:  countrySpace.ID,
-		UserID:   userID,
-		TenantID: tenantID,
+		SpaceID: countrySpace.ID,
+		UserID:  userID,
 	}); err != nil {
 		slog.Warn("failed to join country space", "space_id", countrySpace.ID, "error", err)
 	}
@@ -874,15 +868,13 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 	if fields.StateID != "" {
 		var stateID pgtype.UUID
 		if err := stateID.Scan(fields.StateID); err == nil {
-			stateSpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       stateID,
-				TenantID: tenantID,
-			})
+			stateSpace, err := queries.GetSpaceByID(ctx,
+				stateID,
+			)
 			if err == nil {
 				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
-					SpaceID:  stateSpace.ID,
-					UserID:   userID,
-					TenantID: tenantID,
+					SpaceID: stateSpace.ID,
+					UserID:  userID,
 				}); err != nil {
 					slog.Warn("failed to join state space", "space_id", stateSpace.ID, "error", err)
 				}
@@ -896,15 +888,13 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 	if fields.CityID != "" {
 		var cityID pgtype.UUID
 		if err := cityID.Scan(fields.CityID); err == nil {
-			citySpace, err := queries.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-				ID:       cityID,
-				TenantID: tenantID,
-			})
+			citySpace, err := queries.GetSpaceByID(ctx,
+				cityID,
+			)
 			if err == nil {
 				if err := queries.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
-					SpaceID:  citySpace.ID,
-					UserID:   userID,
-					TenantID: tenantID,
+					SpaceID: citySpace.ID,
+					UserID:  userID,
 				}); err != nil {
 					slog.Warn("failed to join city space", "space_id", citySpace.ID, "error", err)
 				}
@@ -940,10 +930,9 @@ func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pg
 		return nil
 	}
 
-	field, err := s.store.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      "destination_country",
-		TenantID: tenantID,
-	})
+	field, err := s.store.read.GetCustomFieldByKey(ctx,
+		"destination_country",
+	)
 	if err != nil {
 		return fmt.Errorf("looking up destination_country custom field: %w", err)
 	}

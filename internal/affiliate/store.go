@@ -27,7 +27,7 @@ func (s *Store) createMember(ctx context.Context, m gen.CreateAffiliateMemberPar
 }
 
 func (s *Store) getMember(ctx context.Context, userID, tenantID pgtype.UUID) (gen.AffiliateProgramMember, error) {
-	return s.read.GetAffiliateMember(ctx, gen.GetAffiliateMemberParams{UserID: userID, TenantID: tenantID})
+	return s.read.GetAffiliateMember(ctx, userID)
 }
 
 // getUserCreatedAt returns the user's created_at timestamp for the enrollment
@@ -55,7 +55,7 @@ func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID
 
 func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembers(ctx, gen.ListAffiliateMembersParams{
-		TenantID:   tenantID,
+
 		PageOffset: offset,
 		PageLimit:  limit,
 	})
@@ -63,7 +63,7 @@ func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status st
 
 func (s *Store) updateMemberStatus(ctx context.Context, userID, tenantID pgtype.UUID, status string, notes *string) (gen.AffiliateProgramMember, error) {
 	return s.write.UpdateAffiliateMemberStatus(ctx, gen.UpdateAffiliateMemberStatusParams{
-		UserID: userID, TenantID: tenantID, Status: status, Notes: notes,
+		UserID: userID, Status: status, Notes: notes,
 	})
 }
 
@@ -84,7 +84,7 @@ func (s *Store) createLink(ctx context.Context, l gen.CreateAffiliateLinkParams)
 }
 
 func (s *Store) getLinkByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.UserAffiliateLink, error) {
-	return s.read.GetAffiliateLinkByID(ctx, gen.GetAffiliateLinkByIDParams{ID: id, TenantID: tenantID})
+	return s.read.GetAffiliateLinkByID(ctx, id)
 }
 
 func (s *Store) getLinkByCode(ctx context.Context, code string) (gen.UserAffiliateLink, error) {
@@ -93,13 +93,13 @@ func (s *Store) getLinkByCode(ctx context.Context, code string) (gen.UserAffilia
 
 func (s *Store) listLinksByUser(ctx context.Context, userID, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAffiliateLinksByUser(ctx, gen.ListAffiliateLinksByUserParams{
-		UserID: userID, TenantID: tenantID, IsActive: isActive, PageLimit: limit, PageOffset: offset,
+		UserID: userID, IsActive: isActive, PageLimit: limit, PageOffset: offset,
 	})
 }
 
 func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAllAffiliateLinks(ctx, gen.ListAllAffiliateLinksParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -109,7 +109,7 @@ func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, o
 // (Section 56 / catalog ?status). Tenant-scoped, paginated.
 func (s *Store) listMembersFiltered(ctx context.Context, tenantID pgtype.UUID, status *string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembersFiltered(ctx, gen.ListAffiliateMembersFilteredParams{
-		TenantID: tenantID, Status: status, PageLimit: limit, PageOffset: offset,
+		Status: status, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -123,20 +123,20 @@ func (s *Store) listAllLinksFiltered(ctx context.Context, params gen.ListAllAffi
 // deactivateLinkAdmin deactivates a link by id + tenant (admin scope, no
 // ownership check). Soft-delete only — retained for audit (Section 56).
 func (s *Store) deactivateLinkAdmin(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.DeactivateAffiliateLinkAdmin(ctx, gen.DeactivateAffiliateLinkAdminParams{
-		ID: id, TenantID: tenantID,
-	})
+	return s.write.DeactivateAffiliateLinkAdmin(ctx,
+		id,
+	)
 }
 
 func (s *Store) updateLink(ctx context.Context, id, userID, tenantID pgtype.UUID, description *string, isActive bool) (gen.UserAffiliateLink, error) {
 	return s.write.UpdateAffiliateLink(ctx, gen.UpdateAffiliateLinkParams{
-		ID: id, UserID: userID, TenantID: tenantID, Description: description, IsActive: isActive,
+		ID: id, UserID: userID, Description: description, IsActive: isActive,
 	})
 }
 
 func (s *Store) deactivateLink(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
 	return s.write.DeactivateAffiliateLink(ctx, gen.DeactivateAffiliateLinkParams{
-		ID: id, UserID: userID, TenantID: tenantID,
+		ID: id, UserID: userID,
 	})
 }
 
@@ -167,22 +167,22 @@ func (s *Store) incrementLinkConversions(ctx context.Context, linkID pgtype.UUID
 // ── Earnings ────────────────────────────────────────────────────────
 
 func (s *Store) getUserEarnings(ctx context.Context, userID, tenantID pgtype.UUID) (gen.GetUserAffiliateEarningsRow, error) {
-	return s.read.GetUserAffiliateEarnings(ctx, gen.GetUserAffiliateEarningsParams{UserID: userID, TenantID: tenantID})
+	return s.read.GetUserAffiliateEarnings(ctx, userID)
 }
 
 func (s *Store) getUserEarningsByProduct(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GetUserAffiliateEarningsByProductRow, error) {
-	return s.read.GetUserAffiliateEarningsByProduct(ctx, gen.GetUserAffiliateEarningsByProductParams{UserID: userID, TenantID: tenantID})
+	return s.read.GetUserAffiliateEarningsByProduct(ctx, userID)
 }
 
 func (s *Store) getRecentEvents(ctx context.Context, userID, tenantID pgtype.UUID, limit int32) ([]gen.GetRecentAffiliateEventsRow, error) {
-	return s.read.GetRecentAffiliateEvents(ctx, gen.GetRecentAffiliateEventsParams{UserID: userID, TenantID: tenantID, PageLimit: limit})
+	return s.read.GetRecentAffiliateEvents(ctx, gen.GetRecentAffiliateEventsParams{UserID: userID, PageLimit: limit})
 }
 
 // getProgramStats returns program-wide totals for the admin overview
 // endpoint GET /admin/affiliate-program (Section 56 Admin management).
 // Tenant-scoped.
 func (s *Store) getProgramStats(ctx context.Context, tenantID pgtype.UUID) (gen.GetAffiliateProgramStatsRow, error) {
-	return s.read.GetAffiliateProgramStats(ctx, tenantID)
+	return s.read.GetAffiliateProgramStats(ctx)
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

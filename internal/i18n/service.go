@@ -176,11 +176,11 @@ func (s *Service) TranslateMany(ctx context.Context, tenantID pgtype.UUID, local
 // Upsert inserts or updates a single translation and invalidates the cache.
 func (s *Service) Upsert(ctx context.Context, tenantID pgtype.UUID, locale, key, value string, ctxPtr *string) error {
 	if err := s.store.Upsert(ctx, gen.UpsertTranslationParams{
-		TenantID: tenantID,
-		Locale:   locale,
-		Key:      key,
-		Value:    value,
-		Context:  ctxPtr,
+
+		Locale:  locale,
+		Key:     key,
+		Value:   value,
+		Context: ctxPtr,
 	}); err != nil {
 		return err
 	}
@@ -196,11 +196,11 @@ func (s *Service) UpsertBatch(ctx context.Context, tenantID pgtype.UUID, transla
 
 	for _, t := range translations {
 		if err := s.store.Upsert(ctx, gen.UpsertTranslationParams{
-			TenantID: tenantID,
-			Locale:   t.Locale,
-			Key:      t.Key,
-			Value:    t.Value,
-			Context:  t.Context,
+
+			Locale:  t.Locale,
+			Key:     t.Key,
+			Value:   t.Value,
+			Context: t.Context,
 		}); err != nil {
 			return fmt.Errorf("batch upsert (key=%s): %w", t.Key, err)
 		}

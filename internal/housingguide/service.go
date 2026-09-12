@@ -338,7 +338,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	active := true
 
 	rows, total, err := s.store.ListGuides(ctx, ListGuidesFilter{
-		TenantID:          tenantID,
+
 		DestSpaceID:       destSpaceID,
 		CitySpaceID:       citySpaceID,
 		AccommodationType: accommodationType,
@@ -402,7 +402,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	storeInput := CreateGuideInput{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		SearchPlatforms:    searchPlatforms,
@@ -569,7 +569,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID:          tenantID,
+
 		Status:            status,
 		AccommodationType: accommodationType,
 		DestSpaceID:       destSpaceID,
@@ -701,7 +701,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	tipsPtr := &tips
 
 	id, err := s.store.CreateGuide(ctx, CreateGuideInput{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		AccommodationType:  accomTypePtr,

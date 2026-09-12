@@ -186,10 +186,10 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 
 	// Parse filter/sort params.
 	f := AdminListFilter{
-		TenantID: tenantID,
-		Status:   r.URL.Query().Get("status"),
-		Sort:     r.URL.Query().Get("sort"),
-		Order:    r.URL.Query().Get("order"),
+
+		Status: r.URL.Query().Get("status"),
+		Sort:   r.URL.Query().Get("sort"),
+		Order:  r.URL.Query().Get("order"),
 	}
 	if spaceParam := r.URL.Query().Get("space_id"); spaceParam != "" {
 		if err := f.SpaceID.Scan(spaceParam); err != nil {

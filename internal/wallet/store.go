@@ -43,7 +43,7 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, tenantID, userID pg
 	}
 
 	rows, err := s.read.ListLedgerEntriesByUser(ctx, gen.ListLedgerEntriesByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: derefString(ledgerType),
 		PageLimit:  limit,
@@ -58,7 +58,7 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, tenantID, userID pg
 
 func (s *Store) getLatestBalance(ctx context.Context, tenantID, userID pgtype.UUID, ledgerType string) (int64, error) {
 	balance, err := s.read.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		LedgerType: ledgerType,
 	})
@@ -80,10 +80,9 @@ func (s *Store) checkIdempotencyKey(ctx context.Context, idempotencyKey *string)
 }
 
 func (s *Store) getLedgerEntryByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.WalletLedger, error) {
-	row, err := s.read.GetLedgerEntryByID(ctx, gen.GetLedgerEntryByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetLedgerEntryByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.WalletLedger{}, fmt.Errorf("getting ledger entry by ID: %w", err)
 	}
@@ -105,10 +104,10 @@ func (s *Store) upsertActivityRule(ctx context.Context, p gen.UpsertActivityRule
 }
 
 func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, activityKey string) (gen.ActivityPointRule, error) {
-	row, err := s.read.GetActivityRuleByKey(ctx, gen.GetActivityRuleByKeyParams{
-		TenantID:    tenantID,
-		ActivityKey: activityKey,
-	})
+	row, err := s.read.GetActivityRuleByKey(ctx,
+
+		activityKey,
+	)
 	if err != nil {
 		return gen.ActivityPointRule{}, fmt.Errorf("getting activity rule by key: %w", err)
 	}
@@ -120,9 +119,9 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, 
 // with a given source. Used to enforce one-time activity point rules.
 func (s *Store) countUserLedgerBySource(ctx context.Context, tenantID, userID pgtype.UUID, source string) (int64, error) {
 	count, err := s.read.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		Source:   &source,
+
+		UserID: userID,
+		Source: &source,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("counting user ledger by source: %w", err)
@@ -133,10 +132,9 @@ func (s *Store) countUserLedgerBySource(ctx context.Context, tenantID, userID pg
 
 // getActivityRuleByID returns a single activity rule by its primary key.
 func (s *Store) getActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
-	row, err := s.read.GetActivityRuleByID(ctx, gen.GetActivityRuleByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetActivityRuleByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.ActivityPointRule{}, fmt.Errorf("getting activity rule by ID: %w", err)
 	}
@@ -160,7 +158,7 @@ func (s *Store) listActivityRulesByTenant(ctx context.Context, tenantID pgtype.U
 	}
 
 	rows, err := s.read.ListActivityRulesByTenant(ctx, gen.ListActivityRulesByTenantParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -172,10 +170,9 @@ func (s *Store) listActivityRulesByTenant(ctx context.Context, tenantID pgtype.U
 }
 
 func (s *Store) toggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
-	row, err := s.write.ToggleActivityRule(ctx, gen.ToggleActivityRuleParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.write.ToggleActivityRule(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.ActivityPointRule{}, fmt.Errorf("toggling activity rule: %w", err)
 	}
@@ -184,10 +181,9 @@ func (s *Store) toggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID
 }
 
 func (s *Store) deleteActivityRule(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteActivityRule(ctx, gen.DeleteActivityRuleParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteActivityRule(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting activity rule: %w", err)
 	}
 
@@ -208,10 +204,9 @@ func (s *Store) insertActivityEvent(ctx context.Context, p gen.InsertActivityEve
 }
 
 func (s *Store) getActivityEventByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityEvent, error) {
-	row, err := s.read.GetActivityEventByID(ctx, gen.GetActivityEventByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetActivityEventByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.ActivityEvent{}, fmt.Errorf("getting activity event by ID: %w", err)
 	}
@@ -220,10 +215,9 @@ func (s *Store) getActivityEventByID(ctx context.Context, id, tenantID pgtype.UU
 }
 
 func (s *Store) markEventProcessed(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.MarkEventProcessed(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}
 
@@ -246,7 +240,7 @@ func (s *Store) listUnprocessedEvents(ctx context.Context, limit int32) ([]gen.A
 
 func (s *Store) countUserActivityToday(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityToday(ctx, gen.CountUserActivityTodayParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		ActivityKey: activityKey,
 	})
@@ -259,7 +253,7 @@ func (s *Store) countUserActivityToday(ctx context.Context, tenantID, userID pgt
 
 func (s *Store) countUserActivityThisWeek(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityThisWeek(ctx, gen.CountUserActivityThisWeekParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		ActivityKey: activityKey,
 	})
@@ -275,7 +269,7 @@ func (s *Store) countUserActivityThisWeek(ctx context.Context, tenantID, userID 
 // ---------------------------------------------------------------------------
 
 func (s *Store) getWalletSettings(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, error) {
-	row, err := s.read.GetWalletSettings(ctx, tenantID)
+	row, err := s.read.GetWalletSettings(ctx)
 	if err != nil {
 		return gen.WalletSetting{}, fmt.Errorf("getting wallet settings: %w", err)
 	}
@@ -285,7 +279,7 @@ func (s *Store) getWalletSettings(ctx context.Context, tenantID pgtype.UUID) (ge
 
 func (s *Store) upsertWalletSettings(ctx context.Context, tenantID pgtype.UUID, pointsToCreditsRate, dailyEarningCap int32, enableEarning bool) (gen.WalletSetting, error) {
 	row, err := s.write.UpsertWalletSettings(ctx, gen.UpsertWalletSettingsParams{
-		TenantID:            tenantID,
+
 		PointsToCreditsRate: &pointsToCreditsRate,
 		DailyEarningCap:     dailyEarningCap,
 		EnableEarning:       enableEarning,
@@ -387,10 +381,9 @@ func (s *Store) countSpacesByCurrency(ctx context.Context, code string) (int32, 
 // getCurrencyByCountryCode resolves a currency from a country's ISO code
 // via the spaces.currency_code linkage.
 func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string, tenantID pgtype.UUID) (string, error) {
-	row, err := s.read.GetCurrencyByCountryCode(ctx, gen.GetCurrencyByCountryCodeParams{
-		GeoCode:  &geoCode,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetCurrencyByCountryCode(ctx,
+		&geoCode,
+	)
 	if err != nil {
 		return "", fmt.Errorf("resolving currency for country %s: %w", geoCode, err)
 	}
@@ -404,7 +397,7 @@ func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string, te
 
 // listActiveCreditPacks returns all active credit packs for a tenant.
 func (s *Store) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
-	rows, err := s.read.ListActiveCreditPacks(ctx, tenantID)
+	rows, err := s.read.ListActiveCreditPacks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing active credit packs: %w", err)
 	}
@@ -414,7 +407,7 @@ func (s *Store) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID)
 
 // listAllCreditPacks returns all credit packs (including inactive) for a tenant.
 func (s *Store) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
-	rows, err := s.read.ListAllCreditPacks(ctx, tenantID)
+	rows, err := s.read.ListAllCreditPacks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing all credit packs: %w", err)
 	}
@@ -424,10 +417,9 @@ func (s *Store) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([
 
 // getCreditPackByID returns a single credit pack by ID.
 func (s *Store) getCreditPackByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.CreditPack, error) {
-	row, err := s.read.GetCreditPackByID(ctx, gen.GetCreditPackByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetCreditPackByID(ctx,
+		id,
+	)
 	if err != nil {
 		return gen.CreditPack{}, fmt.Errorf("getting credit pack: %w", err)
 	}
@@ -462,10 +454,9 @@ func (s *Store) updateCreditPack(ctx context.Context, p gen.UpdateCreditPackPara
 
 // deactivateCreditPack sets is_active=false on a credit pack (soft delete).
 func (s *Store) deactivateCreditPack(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeactivateCreditPack(ctx, gen.DeactivateCreditPackParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeactivateCreditPack(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deactivating credit pack: %w", err)
 	}
 

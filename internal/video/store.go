@@ -34,9 +34,9 @@ func NewStore(writer, reader *pgxpool.Pool) *Store {
 // UpdateVideoSourceStatus sets a video source status by id.
 func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) (gen.VideoSource, error) {
 	row, err := s.write.UpdateVideoSourceStatus(ctx, gen.UpdateVideoSourceStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
+		ID: id,
+
+		Status: status,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -47,8 +47,8 @@ func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype
 	}
 
 	return gen.VideoSource{
-		ID:               row.ID,
-		TenantID:         row.TenantID,
+		ID: row.ID,
+
 		AuthorUserID:     row.AuthorUserID,
 		SourceType:       row.SourceType,
 		SourceUrl:        row.SourceUrl,
@@ -75,8 +75,8 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 	}
 
 	return gen.VideoSource{
-		ID:               row.ID,
-		TenantID:         row.TenantID,
+		ID: row.ID,
+
 		AuthorUserID:     row.AuthorUserID,
 		SourceType:       row.SourceType,
 		SourceUrl:        row.SourceUrl,
@@ -97,17 +97,17 @@ func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdate
 
 // GetSourceByURL returns a source by tenant and canonical URL.
 func (s *Store) GetSourceByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.VideoSource, error) {
-	row, err := s.read.GetVideoSourceByURL(ctx, gen.GetVideoSourceByURLParams{
-		TenantID:  tenantID,
-		SourceUrl: sourceURL,
-	})
+	row, err := s.read.GetVideoSourceByURL(ctx,
+
+		sourceURL,
+	)
 	if err != nil {
 		return gen.VideoSource{}, fmt.Errorf("getting video source by URL: %w", err)
 	}
 
 	return gen.VideoSource{
-		ID:               row.ID,
-		TenantID:         row.TenantID,
+		ID: row.ID,
+
 		AuthorUserID:     row.AuthorUserID,
 		SourceType:       row.SourceType,
 		SourceUrl:        row.SourceUrl,
@@ -128,10 +128,9 @@ func (s *Store) GetSourceByURL(ctx context.Context, tenantID pgtype.UUID, source
 
 // GetSourceByID returns a single video source.
 func (s *Store) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
-	row, err := s.read.GetVideoSourceByID(ctx, gen.GetVideoSourceByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetVideoSourceByID(ctx,
+		id,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoSource{}, errpkg.ErrNotFound
@@ -146,7 +145,7 @@ func (s *Store) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (ge
 // ListSourcesForAdmin lists video sources for the admin queue.
 func (s *Store) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoSourcesForAdminRow, error) {
 	rows, err := s.read.ListVideoSourcesForAdmin(ctx, gen.ListVideoSourcesForAdminParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		SourceType: sourceType,
 		Q:          q,
@@ -165,7 +164,7 @@ func (s *Store) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, s
 // CountSourcesForAdmin returns the total filtered video source count for the admin queue.
 func (s *Store) CountSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q string) (int32, error) {
 	total, err := s.read.CountVideoSourcesForAdmin(ctx, gen.CountVideoSourcesForAdminParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		SourceType: sourceType,
 		Q:          q,
@@ -180,7 +179,7 @@ func (s *Store) CountSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID, 
 // GetSourceByExternalID returns a source by (source_type, external_id).
 func (s *Store) GetSourceByExternalID(ctx context.Context, tenantID pgtype.UUID, sourceType, externalID string) (gen.VideoSource, error) {
 	row, err := s.read.GetVideoSourceByExternalID(ctx, gen.GetVideoSourceByExternalIDParams{
-		TenantID:   tenantID,
+
 		SourceType: sourceType,
 		ExternalID: &externalID,
 	})
@@ -199,7 +198,7 @@ func (s *Store) GetSourceByExternalID(ctx context.Context, tenantID pgtype.UUID,
 // username.
 func (s *Store) ListSourcesByUsername(ctx context.Context, tenantID pgtype.UUID, username string, limit, offset int32) ([]gen.VideoSource, error) {
 	rows, err := s.read.ListVideoSourcesByAuthor(ctx, gen.ListVideoSourcesByAuthorParams{
-		TenantID:   tenantID,
+
 		Username:   username,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -214,7 +213,7 @@ func (s *Store) ListSourcesByUsername(ctx context.Context, tenantID pgtype.UUID,
 // ListSourcesByAuthorUserID lists sources for a specific user ID.
 func (s *Store) ListSourcesByAuthorUserID(ctx context.Context, tenantID, authorUserID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, error) {
 	rows, err := s.read.ListVideoSourcesByAuthorUserID(ctx, gen.ListVideoSourcesByAuthorUserIDParams{
-		TenantID:     tenantID,
+
 		AuthorUserID: authorUserID,
 		PageLimit:    limit,
 		PageOffset:   offset,
@@ -230,7 +229,7 @@ func (s *Store) ListSourcesByAuthorUserID(ctx context.Context, tenantID, authorU
 // intel_sources row, plus the total count.
 func (s *Store) ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error) {
 	rows, err := s.read.ListVideoSourcesBySourceID(ctx, gen.ListVideoSourcesBySourceIDParams{
-		TenantID:   tenantID,
+
 		SourceID:   sourceID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -239,10 +238,10 @@ func (s *Store) ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UU
 		return nil, 0, fmt.Errorf("listing video sources by source id: %w", err)
 	}
 
-	total, err := s.read.CountVideoSourcesBySourceID(ctx, gen.CountVideoSourcesBySourceIDParams{
-		TenantID: tenantID,
-		SourceID: sourceID,
-	})
+	total, err := s.read.CountVideoSourcesBySourceID(ctx,
+
+		sourceID,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting video sources by source id: %w", err)
 	}
@@ -263,7 +262,7 @@ func (s *Store) CreateImportJob(ctx context.Context, arg gen.CreateVideoImportJo
 // ListImportJobsByUser lists import jobs for a user.
 func (s *Store) ListImportJobsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.VideoImportJob, error) {
 	rows, err := s.read.ListVideoImportJobsByUser(ctx, gen.ListVideoImportJobsByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -288,7 +287,7 @@ func (s *Store) CreateChannelClaim(ctx context.Context, arg gen.CreateVideoChann
 // ListChannelClaimsByAuthor lists claims against a channel.
 func (s *Store) ListChannelClaimsByAuthor(ctx context.Context, tenantID, videoAuthorUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
 	rows, err := s.read.ListVideoChannelClaimsByAuthor(ctx, gen.ListVideoChannelClaimsByAuthorParams{
-		TenantID:          tenantID,
+
 		VideoAuthorUserID: videoAuthorUserID,
 		PageLimit:         limit,
 		PageOffset:        offset,
@@ -337,10 +336,10 @@ func (s *Store) GetUserSyntheticStatusByID(ctx context.Context, tenantID, userID
 
 // CountOpenClaimsByAuthor counts pending or approved ownership claims for an author.
 func (s *Store) CountOpenClaimsByAuthor(ctx context.Context, tenantID, videoAuthorUserID pgtype.UUID) (int32, error) {
-	count, err := s.read.CountOpenVideoChannelClaimsByAuthor(ctx, gen.CountOpenVideoChannelClaimsByAuthorParams{
-		TenantID:          tenantID,
-		VideoAuthorUserID: videoAuthorUserID,
-	})
+	count, err := s.read.CountOpenVideoChannelClaimsByAuthor(ctx,
+
+		videoAuthorUserID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting open channel claims: %w", err)
 	}
@@ -351,7 +350,7 @@ func (s *Store) CountOpenClaimsByAuthor(ctx context.Context, tenantID, videoAuth
 // ListClaimsByClaimant lists claims filed by a user.
 func (s *Store) ListClaimsByClaimant(ctx context.Context, tenantID, claimantUserID pgtype.UUID, limit, offset int32) ([]gen.VideoChannelClaim, error) {
 	rows, err := s.read.ListVideoChannelClaimsByClaimant(ctx, gen.ListVideoChannelClaimsByClaimantParams{
-		TenantID:       tenantID,
+
 		ClaimantUserID: claimantUserID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -366,7 +365,7 @@ func (s *Store) ListClaimsByClaimant(ctx context.Context, tenantID, claimantUser
 // ListClaimsForAdmin returns the admin review queue with optional status/claim_type filters, search, and sorting.
 func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoChannelClaimsByTenantRow, error) {
 	rows, err := s.read.ListVideoChannelClaimsByTenant(ctx, gen.ListVideoChannelClaimsByTenantParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		ClaimType:  claimType,
 		Q:          q,
@@ -385,7 +384,7 @@ func (s *Store) ListClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, st
 // CountClaimsForAdmin returns the total number of claims for the admin queue filter.
 func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, claimType, q string) (int32, error) {
 	total, err := s.read.CountVideoChannelClaimsByTenant(ctx, gen.CountVideoChannelClaimsByTenantParams{
-		TenantID:  tenantID,
+
 		Status:    status,
 		ClaimType: claimType,
 		Q:         q,
@@ -400,7 +399,7 @@ func (s *Store) CountClaimsForAdmin(ctx context.Context, tenantID pgtype.UUID, s
 // ListImportJobsForAdmin lists video import jobs for the admin queue.
 func (s *Store) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q, sort, dir string, limit, offset int32) ([]gen.ListVideoImportJobsForAdminRow, error) {
 	rows, err := s.read.ListVideoImportJobsForAdmin(ctx, gen.ListVideoImportJobsForAdminParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		SourceType: sourceType,
 		Q:          q,
@@ -419,7 +418,7 @@ func (s *Store) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID
 // CountImportJobsForAdmin returns the total filtered video import job count for the admin queue.
 func (s *Store) CountImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUID, status, sourceType, q string) (int32, error) {
 	total, err := s.read.CountVideoImportJobsForAdmin(ctx, gen.CountVideoImportJobsForAdminParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		SourceType: sourceType,
 		Q:          q,
@@ -433,10 +432,10 @@ func (s *Store) CountImportJobsForAdmin(ctx context.Context, tenantID pgtype.UUI
 
 // GetChannelClaimByID returns a single claim row.
 func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoChannelClaim, error) {
-	row, err := s.read.GetVideoChannelClaimByID(ctx, gen.GetVideoChannelClaimByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	row, err := s.read.GetVideoChannelClaimByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoChannelClaim{}, errpkg.ErrNotFound
@@ -450,10 +449,10 @@ func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUI
 
 // GetImportJobByID returns a single import job.
 func (s *Store) GetImportJobByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	row, err := s.read.GetVideoImportJobByID(ctx, gen.GetVideoImportJobByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	row, err := s.read.GetVideoImportJobByID(ctx,
+
+		id,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return gen.VideoImportJob{}, errpkg.ErrNotFound
@@ -495,10 +494,10 @@ func (s *Store) GetUserByUsername(ctx context.Context, tenantID pgtype.UUID, use
 // GetDefaultSpaceForUser returns the first public or member space the user
 // can access, for attributing auto-published video content.
 func (s *Store) GetDefaultSpaceForUser(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.UUID, error) {
-	rows, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
-		TenantID:     tenantID,
-		ViewerUserID: userID,
-	})
+	rows, err := s.read.ListSpacesByTenant(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("listing spaces for user: %w", err)
 	}

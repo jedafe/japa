@@ -1020,7 +1020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// dispatcher can log it.
 		queries := gen.New(database.Reader)
 
-		adminIDs, err := queries.ListTenantAdminIDs(ctx, tenantID)
+		adminIDs, err := queries.ListTenantAdminIDs(ctx)
 		if err != nil {
 			slog.Error("customfields: notify_admin form trigger, listing tenant admins",
 				"tenant_id", tenantID.String(), "error", err)
@@ -7666,8 +7666,8 @@ func (d *personaActionDispatcher) SubmitForm(ctx context.Context, tenantID, pers
 	}
 
 	sub, err := d.cf.CreateFormSubmission(ctx, gen.CreateFormSubmissionParams{
-		FormID:      formID,
-		TenantID:    tenantID,
+		FormID: formID,
+
 		UserID:      personaUserID,
 		FieldValues: valuesJSON,
 		Status:      "submitted",
@@ -7695,9 +7695,9 @@ type intelRecordStatusStore interface {
 
 func (a *studioIntelStatusAdapter) UpdateIntelRecordStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) error {
 	return a.store.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
-		TenantID: tenantID,
-		ID:       id,
-		Status:   status,
+
+		ID:     id,
+		Status: status,
 	})
 }
 

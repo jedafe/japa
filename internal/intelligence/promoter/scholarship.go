@@ -317,7 +317,7 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 	}
 
 	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
+
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
 		ContentType:     "guide",
 		Title:           title,
@@ -524,7 +524,7 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 	}
 
 	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
+
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
 		ContentType:     "guide",
 		Title:           params.Title,
@@ -1141,8 +1141,8 @@ func bodyFundingValue(existing gen.Scholarship, ext extractor.Extraction, overri
 // existing metadata and only replaces title, slug, body, body_html and hash.
 func buildContentUpdateParams(contentRow gen.GetContentByIDRow, title, slug, body, hash string) gen.UpdateContentParams {
 	return gen.UpdateContentParams{
-		ID:              contentRow.ID,
-		TenantID:        contentRow.TenantID,
+		ID: contentRow.ID,
+
 		Title:           title,
 		Slug:            slug,
 		Body:            body,
@@ -1679,7 +1679,7 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 			candidate = fmt.Sprintf("%s-%d", base, i-1)
 		}
 
-		exists, err := tx.ContentSlugExists(ctx, p.tenantID, candidate)
+		exists, err := tx.ContentSlugExists(ctx, candidate)
 		if err != nil {
 			return "", fmt.Errorf("promoter: checking slug %q: %w", candidate, err)
 		}
@@ -1691,7 +1691,7 @@ func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, 
 		// title changed back to the same slug). Soft-deleted rows are not
 		// returned by GetContentBySlug, and their slugs cannot be reused.
 		if excludeID.Valid {
-			row, err := tx.GetContentBySlug(ctx, p.tenantID, candidate)
+			row, err := tx.GetContentBySlug(ctx, candidate)
 			if err == nil && row.ID == excludeID {
 				return candidate, nil
 			}

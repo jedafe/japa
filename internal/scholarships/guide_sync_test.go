@@ -64,10 +64,10 @@ func TestSyncFromContentGuide_CreatesAndUpdates(t *testing.T) {
 		t.Fatalf("sync from guide: %v", err)
 	}
 
-	created, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  row.ID,
-	})
+	created, err := store.queries.GetScholarshipByGuide(ctx,
+
+		row.ID,
+	)
 	if err != nil {
 		t.Fatalf("get scholarship by guide: %v", err)
 	}
@@ -110,10 +110,10 @@ func TestSyncFromContentGuide_CreatesAndUpdates(t *testing.T) {
 		t.Fatalf("sync from guide after update: %v", err)
 	}
 
-	updated, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  row.ID,
-	})
+	updated, err := store.queries.GetScholarshipByGuide(ctx,
+
+		row.ID,
+	)
 	if err != nil {
 		t.Fatalf("get updated scholarship: %v", err)
 	}
@@ -176,10 +176,10 @@ func TestSyncFromContentGuide_DraftDoesNotCreate(t *testing.T) {
 		t.Fatalf("sync from draft: %v", err)
 	}
 
-	if _, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  row.ID,
-	}); err == nil {
+	if _, err := store.queries.GetScholarshipByGuide(ctx,
+
+		row.ID,
+	); err == nil {
 		t.Fatalf("expected no scholarship for draft guide")
 	}
 }
@@ -220,10 +220,10 @@ func TestSyncFromContentGuide_DeletedGuideCleansProjection(t *testing.T) {
 		t.Fatalf("sync from guide: %v", err)
 	}
 
-	if _, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  row.ID,
-	}); err != nil {
+	if _, err := store.queries.GetScholarshipByGuide(ctx,
+
+		row.ID,
+	); err != nil {
 		t.Fatalf("expected scholarship before delete: %v", err)
 	}
 
@@ -235,10 +235,10 @@ func TestSyncFromContentGuide_DeletedGuideCleansProjection(t *testing.T) {
 		t.Fatalf("sync after delete: %v", err)
 	}
 
-	if _, err := store.queries.GetScholarshipByGuide(ctx, gen.GetScholarshipByGuideParams{
-		TenantID: tenantID,
-		GuideID:  row.ID,
-	}); err == nil {
+	if _, err := store.queries.GetScholarshipByGuide(ctx,
+
+		row.ID,
+	); err == nil {
 		t.Fatalf("expected scholarship to be removed after delete")
 	}
 }

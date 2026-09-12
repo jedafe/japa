@@ -13,47 +13,43 @@ import (
 
 const approveAMAQuestion = `-- name: ApproveAMAQuestion :exec
 UPDATE forum_replies
-SET ama_pending     = false,
-    ama_approved_at = now()
+SET ama_pending = false,
+ ama_approved_at = now()
 WHERE id = $1
-  AND thread_id = $2
-  AND tenant_id = $3
-  AND ama_pending = true
-  AND deleted_at IS NULL
+ AND thread_id = $2
+ AND ama_pending = true
+ AND deleted_at IS NULL
 `
 
 type ApproveAMAQuestionParams struct {
 	ReplyID  pgtype.UUID `json:"reply_id"`
 	ThreadID pgtype.UUID `json:"thread_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 // Approves a pending AMA question (host or forum.ama.moderate only).
 // Sets ama_pending = false and records the approval timestamp.
 func (q *Queries) ApproveAMAQuestion(ctx context.Context, arg ApproveAMAQuestionParams) error {
-	_, err := q.db.Exec(ctx, approveAMAQuestion, arg.ReplyID, arg.ThreadID, arg.TenantID)
+	_, err := q.db.Exec(ctx, approveAMAQuestion, arg.ReplyID, arg.ThreadID)
 	return err
 }
 
 const checkAMACooldown = `-- name: CheckAMACooldown :one
 SELECT EXISTS(
-    SELECT 1 FROM forum_threads
-    WHERE author_user_id = $1
-      AND tenant_id = $2
-      AND ama_config IS NOT NULL
-      AND deleted_at IS NULL
-      AND created_at > now() - make_interval(days => $3)
+ SELECT 1 FROM forum_threads
+ WHERE author_user_id = $1
+ AND ama_config IS NOT NULL
+ AND deleted_at IS NULL
+ AND created_at > now() - make_interval(days => $2)
 ) AS in_cooldown
 `
 
 type CheckAMACooldownParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	CooldownDays int32       `json:"cooldown_days"`
 }
 
 func (q *Queries) CheckAMACooldown(ctx context.Context, arg CheckAMACooldownParams) (bool, error) {
-	row := q.db.QueryRow(ctx, checkAMACooldown, arg.AuthorUserID, arg.TenantID, arg.CooldownDays)
+	row := q.db.QueryRow(ctx, checkAMACooldown, arg.AuthorUserID, arg.CooldownDays)
 	var in_cooldown bool
 	err := row.Scan(&in_cooldown)
 	return in_cooldown, err
@@ -62,39 +58,27 @@ func (q *Queries) CheckAMACooldown(ctx context.Context, arg CheckAMACooldownPara
 const closeAMA = `-- name: CloseAMA :exec
 UPDATE forum_threads
 SET ama_config = jsonb_set(ama_config, '{closes_at}', to_jsonb(now()::timestamptz), true),
-    updated_at = now()
-WHERE id = $1 AND tenant_id = $2
-  AND ama_config IS NOT NULL AND deleted_at IS NULL
+ updated_at = now()
+WHERE id = $1
+ AND ama_config IS NOT NULL AND deleted_at IS NULL
 `
 
-type CloseAMAParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CloseAMA(ctx context.Context, arg CloseAMAParams) error {
-	_, err := q.db.Exec(ctx, closeAMA, arg.ID, arg.TenantID)
+func (q *Queries) CloseAMA(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, closeAMA, id)
 	return err
 }
 
 const createAMA = `-- name: CreateAMA :one
 
 
-INSERT INTO forum_threads (
-    tenant_id, space_id, author_user_id, title, slug, body,
-    is_anonymous, edit_window_minutes, ama_config
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9
-)
-RETURNING id, tenant_id, content_id, space_id, author_user_id, parent_reply_id,
-          title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
-          vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
-          is_edited, created_at, updated_at, deleted_at, ama_config
+INSERT INTO forum_threads (space_id, author_user_id, title, slug, body, is_anonymous, edit_window_minutes, ama_config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
+ title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
+ vote_score, reply_count, view_count, bookmark_count, edit_window_minutes,
+ is_edited, created_at, updated_at, deleted_at, ama_config
 `
 
 type CreateAMAParams struct {
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	SpaceID           pgtype.UUID `json:"space_id"`
 	AuthorUserID      pgtype.UUID `json:"author_user_id"`
 	Title             string      `json:"title"`
@@ -107,7 +91,6 @@ type CreateAMAParams struct {
 
 type CreateAMARow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -139,7 +122,6 @@ type CreateAMARow struct {
 // =====================
 func (q *Queries) CreateAMA(ctx context.Context, arg CreateAMAParams) (CreateAMARow, error) {
 	row := q.db.QueryRow(ctx, createAMA,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.AuthorUserID,
 		arg.Title,
@@ -152,7 +134,6 @@ func (q *Queries) CreateAMA(ctx context.Context, arg CreateAMAParams) (CreateAMA
 	var i CreateAMARow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -181,20 +162,15 @@ func (q *Queries) CreateAMA(ctx context.Context, arg CreateAMAParams) (CreateAMA
 const getAMAAuthorID = `-- name: GetAMAAuthorID :one
 
 SELECT author_user_id FROM forum_threads
-WHERE id = $1 AND tenant_id = $2
-  AND ama_config IS NOT NULL AND deleted_at IS NULL
+WHERE id = $1
+ AND ama_config IS NOT NULL AND deleted_at IS NULL
 `
-
-type GetAMAAuthorIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Authorization helpers
 // =====================
-func (q *Queries) GetAMAAuthorID(ctx context.Context, arg GetAMAAuthorIDParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getAMAAuthorID, arg.ID, arg.TenantID)
+func (q *Queries) GetAMAAuthorID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAMAAuthorID, id)
 	var author_user_id pgtype.UUID
 	err := row.Scan(&author_user_id)
 	return author_user_id, err
@@ -202,28 +178,22 @@ func (q *Queries) GetAMAAuthorID(ctx context.Context, arg GetAMAAuthorIDParams) 
 
 const getAMAByID = `-- name: GetAMAByID :one
 
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
-WHERE ft.id = $1 AND ft.tenant_id = $2
-  AND ft.ama_config IS NOT NULL AND ft.deleted_at IS NULL
+WHERE ft.id = $1
+ AND ft.ama_config IS NOT NULL AND ft.deleted_at IS NULL
 `
-
-type GetAMAByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetAMAByIDRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -252,12 +222,11 @@ type GetAMAByIDRow struct {
 // =====================
 // Retrieval
 // =====================
-func (q *Queries) GetAMAByID(ctx context.Context, arg GetAMAByIDParams) (GetAMAByIDRow, error) {
-	row := q.db.QueryRow(ctx, getAMAByID, arg.ID, arg.TenantID)
+func (q *Queries) GetAMAByID(ctx context.Context, id pgtype.UUID) (GetAMAByIDRow, error) {
+	row := q.db.QueryRow(ctx, getAMAByID, id)
 	var i GetAMAByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,
@@ -288,59 +257,51 @@ func (q *Queries) GetAMAByID(ctx context.Context, arg GetAMAByIDParams) (GetAMAB
 const hasActiveAMA = `-- name: HasActiveAMA :one
 
 SELECT EXISTS(
-    SELECT 1 FROM forum_threads
-    WHERE author_user_id = $1
-      AND tenant_id = $2
-      AND ama_config IS NOT NULL
-      AND deleted_at IS NULL
-      AND (ama_config->>'closes_at' IS NULL
-           OR (ama_config->>'closes_at')::timestamptz > now())
+ SELECT 1 FROM forum_threads
+ WHERE author_user_id = $1
+ AND ama_config IS NOT NULL
+ AND deleted_at IS NULL
+ AND (ama_config->>'closes_at' IS NULL
+ OR (ama_config->>'closes_at')::timestamptz > now())
 ) AS has_active
 `
-
-type HasActiveAMAParams struct {
-	AuthorUserID pgtype.UUID `json:"author_user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Rate limiting
 // =====================
-func (q *Queries) HasActiveAMA(ctx context.Context, arg HasActiveAMAParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasActiveAMA, arg.AuthorUserID, arg.TenantID)
+func (q *Queries) HasActiveAMA(ctx context.Context, authorUserID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasActiveAMA, authorUserID)
 	var has_active bool
 	err := row.Scan(&has_active)
 	return has_active, err
 }
 
 const listActiveAMAs = `-- name: ListActiveAMAs :many
-SELECT ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-       ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-       ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-       ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-       ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-       CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 FROM forum_threads ft
 LEFT JOIN users u ON u.id = ft.author_user_id
 LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
-WHERE ft.tenant_id = $1
-  AND ft.ama_config IS NOT NULL
-  AND ft.deleted_at IS NULL
-  AND (ft.ama_config->>'closes_at' IS NULL
-       OR (ft.ama_config->>'closes_at')::timestamptz > now())
-  AND ($2::text IS NULL
-       OR ft.ama_config->>'host_dest_country_id' = $2)
-  AND ($3::text IS NULL
-       OR ft.ama_config->>'host_profession' ILIKE '%' || $3 || '%')
-  AND ($4::timestamptz IS NULL
-       OR ft.created_at < $4)
+WHERE ft.ama_config IS NOT NULL
+ AND ft.deleted_at IS NULL
+ AND (ft.ama_config->>'closes_at' IS NULL
+ OR (ft.ama_config->>'closes_at')::timestamptz > now())
+ AND ($1::text IS NULL
+ OR ft.ama_config->>'host_dest_country_id' = $1)
+ AND ($2::text IS NULL
+ OR ft.ama_config->>'host_profession' ILIKE '%' || $2 || '%')
+ AND ($3::timestamptz IS NULL
+ OR ft.created_at < $3)
 ORDER BY ft.created_at DESC, ft.id DESC
-LIMIT $5
+LIMIT $4
 `
 
 type ListActiveAMAsParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Dest            *string            `json:"dest"`
 	Profession      *string            `json:"profession"`
 	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
@@ -349,7 +310,6 @@ type ListActiveAMAsParams struct {
 
 type ListActiveAMAsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -377,7 +337,6 @@ type ListActiveAMAsRow struct {
 
 func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) ([]ListActiveAMAsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveAMAs,
-		arg.TenantID,
 		arg.Dest,
 		arg.Profession,
 		arg.CursorCreatedAt,
@@ -392,7 +351,6 @@ func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) 
 		var i ListActiveAMAsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.SpaceID,
 			&i.AuthorUserID,
@@ -431,13 +389,8 @@ const setReplyAMAPending = `-- name: SetReplyAMAPending :exec
 
 UPDATE forum_replies
 SET ama_pending = true
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type SetReplyAMAPendingParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Question approval (§88 question_approval_required)
@@ -445,8 +398,8 @@ type SetReplyAMAPendingParams struct {
 // Marks a forum reply as pending AMA host approval. Called by the forum
 // service after CreateReply when the parent thread is an AMA with
 // question_approval_required = true and the reply author is not the host.
-func (q *Queries) SetReplyAMAPending(ctx context.Context, arg SetReplyAMAPendingParams) error {
-	_, err := q.db.Exec(ctx, setReplyAMAPending, arg.ID, arg.TenantID)
+func (q *Queries) SetReplyAMAPending(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, setReplyAMAPending, id)
 	return err
 }
 
@@ -454,22 +407,22 @@ const updateAMA = `-- name: UpdateAMA :one
 
 UPDATE forum_threads AS ft
 SET title = $1,
-    body = $2,
-    is_anonymous = $3,
-    is_edited = true,
-    updated_at = now()
+ body = $2,
+ is_anonymous = $3,
+ is_edited = true,
+ updated_at = now()
 FROM users AS u
 LEFT JOIN user_profiles AS up ON up.user_id = u.id
-WHERE ft.id = $4 AND ft.tenant_id = $5
-  AND ft.ama_config IS NOT NULL AND ft.deleted_at IS NULL
-  AND u.id = ft.author_user_id
-RETURNING ft.id, ft.tenant_id, ft.content_id, ft.space_id, ft.author_user_id,
-          ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
-          ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
-          ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
-          ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
-          CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
-          CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+WHERE ft.id = $4
+ AND ft.ama_config IS NOT NULL AND ft.deleted_at IS NULL
+ AND u.id = ft.author_user_id
+RETURNING ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
 `
 
 type UpdateAMAParams struct {
@@ -477,12 +430,10 @@ type UpdateAMAParams struct {
 	Body        []byte      `json:"body"`
 	IsAnonymous bool        `json:"is_anonymous"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateAMARow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -519,12 +470,10 @@ func (q *Queries) UpdateAMA(ctx context.Context, arg UpdateAMAParams) (UpdateAMA
 		arg.Body,
 		arg.IsAnonymous,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateAMARow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.SpaceID,
 		&i.AuthorUserID,

@@ -143,7 +143,7 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	canonicalURL := source.SourceUrl
 
 	contentParams := gen.CreateContentParams{
-		TenantID:        p.tenantID,
+
 		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
 		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",

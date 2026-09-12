@@ -101,8 +101,8 @@ func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedSc
 // GetSourceByRecordID returns source attribution for a single intel record.
 func (s *Store) GetSourceByRecordID(ctx context.Context, tenantID, recordID pgtype.UUID) (gen.ListSourcesByRecordIDsRow, error) {
 	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-		TenantID: tenantID,
-		Column2:  []pgtype.UUID{recordID},
+
+		Column2: []pgtype.UUID{recordID},
 	})
 	if err != nil {
 		return gen.ListSourcesByRecordIDsRow{}, fmt.Errorf("scholarships: get source by record id: %w", err)
@@ -118,8 +118,8 @@ func (s *Store) GetSourceByRecordID(ctx context.Context, tenantID, recordID pgty
 // MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
 func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
 	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-		TenantID: tenantID,
-		Column2:  recordIDs,
+
+		Column2: recordIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: map sources by record ids: %w", err)
@@ -135,7 +135,7 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID,
 
 // AdminStatusDistribution returns per-status scholarship counts for the admin dashboard.
 func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminScholarshipStatusDistributionRow, error) {
-	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx, tenantID)
+	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin status distribution: %w", err)
 	}
@@ -199,7 +199,6 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 // title/university/country; status is an optional verification_status filter.
 // The tenantID is stamped into the query params.
 func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
-	arg.TenantID = tenantID
 
 	rows, err := s.queries.AdminListScholarships(ctx, arg)
 	if err != nil {
@@ -213,7 +212,6 @@ func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID,
 // list with the same q + status filter as AdminListScholarships, so the admin
 // panel can compute total pages.
 func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminCountScholarshipsParams) (int64, error) {
-	arg.TenantID = tenantID
 
 	count, err := s.queries.AdminCountScholarships(ctx, arg)
 	if err != nil {
@@ -226,10 +224,10 @@ func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID
 // AdminGetScholarship returns a single scholarship by ID for the admin
 // management page.
 func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
-	row, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	row, err := s.queries.GetScholarship(ctx,
+
+		id,
+	)
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: admin get: %w", err)
 	}
@@ -240,7 +238,6 @@ func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUI
 // AdminCreateScholarship creates a new scholarship record. The tenantID is
 // stamped into the query params.
 func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
-	arg.TenantID = tenantID
 
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
@@ -253,7 +250,7 @@ func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID
 // AdminUpdateScholarship updates an existing scholarship record. The
 // tenantID is stamped into the query params.
 func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
-	arg.TenantID = tenantID
+
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: admin update: %w", err)
 	}
@@ -267,27 +264,26 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID
 // isolation. The guide content row is soft-deleted so it stops appearing in the
 // finder and content listings without losing audit history.
 func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.UUID) error {
-	sch, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	sch, err := s.queries.GetScholarship(ctx,
+
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("scholarships: admin delete (get): %w", err)
 	}
 
 	if sch.GuideID.Valid {
-		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
-			ID:       sch.GuideID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := s.queries.DeleteContent(ctx,
+			sch.GuideID,
+		); err != nil {
 			return fmt.Errorf("scholarships: admin delete (soft-delete guide): %w", err)
 		}
 	}
 
-	if err := s.queries.DeleteScholarship(ctx, gen.DeleteScholarshipParams{
-		TenantID: tenantID,
-		ID:       id,
-	}); err != nil {
+	if err := s.queries.DeleteScholarship(ctx,
+
+		id,
+	); err != nil {
 		return fmt.Errorf("scholarships: admin delete: %w", err)
 	}
 
@@ -540,19 +536,18 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 // DeleteScholarship removes a scholarship projection row and soft-deletes the
 // linked guide content row for tenant isolation.
 func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID) error {
-	sch, err := s.queries.GetScholarship(ctx, gen.GetScholarshipParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	sch, err := s.queries.GetScholarship(ctx,
+
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("scholarships: delete (get): %w", err)
 	}
 
 	if sch.GuideID.Valid {
-		if err := s.queries.DeleteContent(ctx, gen.DeleteContentParams{
-			ID:       sch.GuideID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := s.queries.DeleteContent(ctx,
+			sch.GuideID,
+		); err != nil {
 			return fmt.Errorf("scholarships: delete (soft-delete guide): %w", err)
 		}
 	}

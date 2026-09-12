@@ -202,7 +202,7 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, ten
 	}
 
 	return gen.CreateWikiPageIntelParams{
-		TenantID:           tenantID,
+
 		SpaceID:            extractSpaceID(ext),
 		Slug:               slug,
 		Title:              title,
@@ -228,7 +228,7 @@ func buildWikiCreateParams(record gen.IntelRecord, ext extractor.Extraction, ten
 // existing value (human edit wins).
 func buildWikiUpdateParams(existing gen.WikiPage, ext extractor.Extraction, overrides map[string]struct{}) (gen.UpdateWikiPageIntelParams, []string) {
 	params := gen.UpdateWikiPageIntelParams{
-		TenantID:           existing.TenantID,
+
 		ID:                 existing.ID,
 		Title:              existing.Title,
 		Category:           existing.Category,

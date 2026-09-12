@@ -2,16 +2,12 @@
 -- Admin-initiated imports of platform data from CSV/JSON files.
 
 -- name: CreatePlatformDataImport :one
-INSERT INTO platform_data_imports (
-    tenant_id, name, import_type, format, file_url, mode, created_by
-) VALUES (
-    @tenant_id, @name, @import_type, @format, @file_url, @mode, @created_by
-)
+INSERT INTO platform_data_imports (name, import_type, format, file_url, mode, created_by) VALUES (@name, @import_type, @format, @file_url, @mode, @created_by)
 RETURNING *;
 
 -- name: GetPlatformDataImport :one
 SELECT * FROM platform_data_imports
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetPlatformDataImportByID :one
 -- Used by the Asynq worker, which does not have tenant context.
@@ -20,30 +16,28 @@ WHERE id = @id;
 
 -- name: ListPlatformDataImports :many
 SELECT * FROM platform_data_imports
-WHERE tenant_id = @tenant_id
-  AND (@status = '' OR status = @status)
+WHERE (@status = '' OR status = @status)
 ORDER BY created_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: CountPlatformDataImports :one
 SELECT count(*) FROM platform_data_imports
-WHERE tenant_id = @tenant_id
-  AND (@status = '' OR status = @status);
+WHERE (@status = '' OR status = @status);
 
 -- name: UpdatePlatformDataImportStatus :one
 UPDATE platform_data_imports
 SET status = @status,
-    total_rows = @total_rows,
-    imported_rows = @imported_rows,
-    failed_rows = @failed_rows,
-    error_log = @error_log,
-    completed_at = @completed_at
+ total_rows = @total_rows,
+ imported_rows = @imported_rows,
+ failed_rows = @failed_rows,
+ error_log = @error_log,
+ completed_at = @completed_at
 WHERE id = @id
 RETURNING *;
 
 -- name: DeletePlatformDataImport :exec
 DELETE FROM platform_data_imports
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: ListPendingPlatformDataImports :many
 SELECT * FROM platform_data_imports
@@ -57,4 +51,4 @@ LIMIT @limit_val;
 -- erased (BUG-013, Section 67 / Section 15 compliance).
 UPDATE platform_data_imports
 SET created_by = @target_user_id
-WHERE created_by = @user_id AND tenant_id = @tenant_id;
+WHERE created_by = @user_id;

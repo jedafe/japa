@@ -82,7 +82,7 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	return s.store.createComparisonType(ctx, gen.CreateComparisonTypeParams{
-		TenantID:     tenantID,
+
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  description,
@@ -537,10 +537,10 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 
 			_, err := q.CreateComparisonItem(ctx, gen.CreateComparisonItemParams{
 				ContentID: contentRow.ID,
-				TenantID:  tenantID,
-				TypeID:    input.TypeID,
-				Title:     item.Name,
-				Position:  toInt32(i),
+
+				TypeID:   input.TypeID,
+				Title:    item.Name,
+				Position: toInt32(i),
 			})
 			if err != nil {
 				return CreateComparisonResult{}, fmt.Errorf("creating comparison item %d: %w", i, err)
@@ -551,8 +551,8 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		if autoFields != nil {
 			for i, f := range autoFields {
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-					ContentID:     contentRow.ID,
-					TenantID:      tenantID,
+					ContentID: contentRow.ID,
+
 					TypeID:        input.TypeID,
 					Label:         f.Label,
 					DimensionType: fieldTypeToDimensionType(f.FieldType),
@@ -570,8 +570,8 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 				}
 
 				_, err := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-					ContentID:     contentRow.ID,
-					TenantID:      tenantID,
+					ContentID: contentRow.ID,
+
 					TypeID:        input.TypeID,
 					Label:         label,
 					DimensionType: DimensionTypeText,
@@ -584,8 +584,8 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 		}
 
 		return CreateComparisonResult{
-			ID:         contentRow.ID,
-			TenantID:   contentRow.TenantID,
+			ID: contentRow.ID,
+
 			AuthorID:   contentRow.AuthorID,
 			Title:      contentRow.Title,
 			Slug:       contentRow.Slug,
@@ -721,8 +721,8 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 	}
 
 	return ComparisonDetail{
-		ID:         contentRow.ID,
-		TenantID:   contentRow.TenantID,
+		ID: contentRow.ID,
+
 		AuthorID:   contentRow.AuthorID,
 		Title:      contentRow.Title,
 		Slug:       contentRow.Slug,
@@ -836,8 +836,8 @@ func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.
 	}
 
 	return s.store.updateComparisonType(ctx, gen.UpdateComparisonTypeParams{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Name:         input.Name,
 		Slug:         slug,
 		Description:  description,
@@ -1027,8 +1027,8 @@ func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	return s.store.createComparisonItem(ctx, gen.CreateComparisonItemParams{
-		ContentID:   input.ContentID,
-		TenantID:    tenantID,
+		ContentID: input.ContentID,
+
 		Title:       input.Title,
 		Description: description,
 		ImageID:     input.ImageID,
@@ -1065,8 +1065,8 @@ func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.
 	}
 
 	return s.store.updateComparisonItem(ctx, gen.UpdateComparisonItemParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		Title:       input.Title,
 		Description: description,
 		ImageID:     input.ImageID,
@@ -1155,8 +1155,8 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype
 	}
 
 	return s.store.createComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
-		ContentID:     input.ContentID,
-		TenantID:      tenantID,
+		ContentID: input.ContentID,
+
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
@@ -1186,8 +1186,8 @@ func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pg
 	}
 
 	return s.store.updateComparisonDimension(ctx, gen.UpdateComparisonDimensionParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
 		Position:      input.Position,
@@ -1247,9 +1247,9 @@ func (s *Service) UpsertComparisonValue(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	return s.store.upsertComparisonValue(ctx, gen.UpsertComparisonValueParams{
-		DimensionID:  input.DimensionID,
-		ItemID:       input.ItemID,
-		TenantID:     tenantID,
+		DimensionID: input.DimensionID,
+		ItemID:      input.ItemID,
+
 		Value:        value,
 		ValueRating:  valueRating,
 		ValueBoolean: input.ValueBoolean,
@@ -1369,9 +1369,9 @@ func (s *Service) UpsertComparisonValueWithMetadata(ctx context.Context, tenantI
 	}
 
 	return s.store.upsertComparisonValueWithMetadata(ctx, gen.UpsertComparisonValueWithMetadataParams{
-		DimensionID:  input.DimensionID,
-		ItemID:       input.ItemID,
-		TenantID:     tenantID,
+		DimensionID: input.DimensionID,
+		ItemID:      input.ItemID,
+
 		Value:        value,
 		ValueRating:  valueRating,
 		ValueBoolean: input.ValueBoolean,
@@ -1515,7 +1515,7 @@ func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f L
 	}
 
 	return s.store.listComparisonsFiltered(ctx, gen.ListComparisonsFilteredParams{
-		TenantID:   tenantID,
+
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		PageOffset: f.Offset,

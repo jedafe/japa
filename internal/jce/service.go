@@ -1147,8 +1147,8 @@ func (s *Service) ScoreComparison(ctx context.Context, contentID, tenantID, user
 	}
 
 	result, err := s.engine.Score(ctx, ScoreInput{
-		ContentID:         cid,
-		TenantID:          tenantID.String(),
+		ContentID: cid,
+
 		UserID:            &uid,
 		ProfileID:         pid,
 		SmartMode:         smartMode,
@@ -1189,8 +1189,8 @@ func (s *Service) GetComparisonScore(ctx context.Context, contentID, tenantID, u
 	}
 
 	return s.engine.GetScore(ctx, GetScoreInput{
-		ContentID:         cid,
-		TenantID:          tenantID.String(),
+		ContentID: cid,
+
 		UserID:            &uid,
 		ProfileID:         pid,
 		PermissionChecker: s.permissionChecker(ctx, userID, tenantID),
@@ -1220,7 +1220,7 @@ func (s *Service) PreviewScoreForItems(ctx context.Context, tenantID, userID pgt
 	}
 
 	uid := userID.String()
-	in.TenantID = tenantID.String()
+
 	in.UserID = &uid
 	in.PermissionChecker = s.permissionChecker(ctx, userID, tenantID)
 
@@ -1289,8 +1289,8 @@ func (s *Service) ListRecommendations(ctx context.Context, contentID, tenantID, 
 	}
 
 	result, err := s.engine.Score(ctx, ScoreInput{
-		ContentID:         cid,
-		TenantID:          tenantID.String(),
+		ContentID: cid,
+
 		UserID:            &uid,
 		ProfileID:         pidStr,
 		PublicPerm:        "jce.recommendation.view",

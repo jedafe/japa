@@ -13,11 +13,11 @@ import (
 
 const countGenerationsToday = `-- name: CountGenerationsToday :one
 SELECT COUNT(*)::int FROM studio_jobs
-WHERE tenant_id = $1 AND created_at >= date_trunc('day', NOW())
+WHERE created_at >= date_trunc('day', NOW())
 `
 
-func (q *Queries) CountGenerationsToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countGenerationsToday, tenantID)
+func (q *Queries) CountGenerationsToday(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countGenerationsToday)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -25,11 +25,11 @@ func (q *Queries) CountGenerationsToday(ctx context.Context, tenantID pgtype.UUI
 
 const countOpenTickets = `-- name: CountOpenTickets :one
 SELECT COUNT(*)::int FROM tickets
-WHERE tenant_id = $1 AND status NOT IN ('resolved', 'closed', 'spam')
+WHERE status NOT IN ('resolved', 'closed', 'spam')
 `
 
-func (q *Queries) CountOpenTickets(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countOpenTickets, tenantID)
+func (q *Queries) CountOpenTickets(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countOpenTickets)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -38,14 +38,14 @@ func (q *Queries) CountOpenTickets(ctx context.Context, tenantID pgtype.UUID) (i
 const countPendingReports = `-- name: CountPendingReports :one
 
 SELECT COUNT(*)::int FROM content_reports
-WHERE tenant_id = $1 AND status = 'pending'
+WHERE status = 'pending'
 `
 
 // =====================
 // Dashboard Moderation / AI Overview Counts
 // =====================
-func (q *Queries) CountPendingReports(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countPendingReports, tenantID)
+func (q *Queries) CountPendingReports(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countPendingReports)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -53,11 +53,11 @@ func (q *Queries) CountPendingReports(ctx context.Context, tenantID pgtype.UUID)
 
 const countPendingReviews = `-- name: CountPendingReviews :one
 SELECT COUNT(*)::int FROM content_reviews
-WHERE tenant_id = $1 AND status = 'pending' AND deleted_at IS NULL
+WHERE status = 'pending' AND deleted_at IS NULL
 `
 
-func (q *Queries) CountPendingReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countPendingReviews, tenantID)
+func (q *Queries) CountPendingReviews(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countPendingReviews)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -65,17 +65,17 @@ func (q *Queries) CountPendingReviews(ctx context.Context, tenantID pgtype.UUID)
 
 const countSpamQueue = `-- name: CountSpamQueue :one
 SELECT
-  (SELECT COUNT(*)::int FROM media m
-   WHERE m.tenant_id = $1 AND m.deleted_at IS NULL
-     AND (m.flagged = true OR m.quarantine_reason IS NOT NULL))
-  +
-  (SELECT COUNT(*)::int FROM contents c
-   WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
-     AND c.auto_hidden = true) AS count
+ (SELECT COUNT(*)::int FROM media m
+ WHERE m.deleted_at IS NULL
+ AND (m.flagged = true OR m.quarantine_reason IS NOT NULL))
+ +
+ (SELECT COUNT(*)::int FROM contents c
+ WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = true) AS count
 `
 
-func (q *Queries) CountSpamQueue(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countSpamQueue, tenantID)
+func (q *Queries) CountSpamQueue(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countSpamQueue)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -84,13 +84,12 @@ func (q *Queries) CountSpamQueue(ctx context.Context, tenantID pgtype.UUID) (int
 const createPlatformEvent = `-- name: CreatePlatformEvent :one
 
 
-INSERT INTO platform_events (tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
+INSERT INTO platform_events (event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+
+RETURNING id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
 `
 
 type CreatePlatformEventParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	EventType   string      `json:"event_type"`
 	UserID      pgtype.UUID `json:"user_id"`
 	EntityType  *string     `json:"entity_type"`
@@ -103,7 +102,6 @@ type CreatePlatformEventParams struct {
 
 type CreatePlatformEventRow struct {
 	ID          int64              `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EventType   string             `json:"event_type"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	EntityType  *string            `json:"entity_type"`
@@ -124,7 +122,6 @@ type CreatePlatformEventRow struct {
 // =====================
 func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEventParams) (CreatePlatformEventRow, error) {
 	row := q.db.QueryRow(ctx, createPlatformEvent,
-		arg.TenantID,
 		arg.EventType,
 		arg.UserID,
 		arg.EntityType,
@@ -137,7 +134,6 @@ func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEve
 	var i CreatePlatformEventRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EventType,
 		&i.UserID,
 		&i.EntityType,
@@ -154,45 +150,42 @@ func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEve
 const createSecurityScanResult = `-- name: CreateSecurityScanResult :one
 
 WITH target AS (
-    SELECT s0.id, (s0.resolved_at IS NOT NULL) AS is_resolved
-    FROM security_scan_results s0
-    WHERE s0.tenant_id = $1
-      AND s0.scan_type = $2
-    ORDER BY s0.created_at DESC, s0.id DESC
-    LIMIT 1
+ SELECT s0.id, (s0.resolved_at IS NOT NULL) AS is_resolved
+ FROM security_scan_results s0
+ WHERE s0.scan_type = $1
+ ORDER BY s0.created_at DESC, s0.id DESC
+ LIMIT 1
 ),
 updated AS (
-    UPDATE security_scan_results AS s
-    SET severity   = $3,
-        finding    = $4,
-        meta       = $5,
-        created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END
-    FROM target
-    WHERE s.id = target.id
-    RETURNING s.id, s.tenant_id, s.scan_type, s.severity, s.finding, s.meta, s.resolved_at, s.created_at
+ UPDATE security_scan_results AS s
+ SET severity = $2,
+ finding = $3,
+ meta = $4,
+ created_at = CASE WHEN target.is_resolved THEN s.created_at ELSE now() END
+ FROM target
+ WHERE s.id = target.id
+ RETURNING s.id, s.scan_type, s.severity, s.finding, s.meta, s.resolved_at, s.created_at
 ),
 inserted AS (
-    INSERT INTO security_scan_results (tenant_id, scan_type, severity, finding, meta)
-    SELECT $1, $2, $3, $4, $5
-    WHERE NOT EXISTS (SELECT 1 FROM updated)
-    RETURNING id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
+ INSERT INTO security_scan_results (scan_type, severity, finding, meta)
+ SELECT $1, $2, $3, $4
+ WHERE NOT EXISTS (SELECT 1 FROM updated)
+ RETURNING id, scan_type, severity, finding, meta, resolved_at, created_at
 )
-SELECT u.id, u.tenant_id, u.scan_type, u.severity, u.finding, u.meta, u.resolved_at, u.created_at FROM updated u
+SELECT u.id, u.scan_type, u.severity, u.finding, u.meta, u.resolved_at, u.created_at FROM updated u
 UNION ALL
-SELECT i.id, i.tenant_id, i.scan_type, i.severity, i.finding, i.meta, i.resolved_at, i.created_at FROM inserted i
+SELECT i.id, i.scan_type, i.severity, i.finding, i.meta, i.resolved_at, i.created_at FROM inserted i
 `
 
 type CreateSecurityScanResultParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ScanType string      `json:"scan_type"`
-	Severity string      `json:"severity"`
-	Finding  string      `json:"finding"`
-	Meta     []byte      `json:"meta"`
+	ScanType string `json:"scan_type"`
+	Severity string `json:"severity"`
+	Finding  string `json:"finding"`
+	Meta     []byte `json:"meta"`
 }
 
 type CreateSecurityScanResultRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	ScanType   string             `json:"scan_type"`
 	Severity   string             `json:"severity"`
 	Finding    string             `json:"finding"`
@@ -204,25 +197,24 @@ type CreateSecurityScanResultRow struct {
 // =====================
 // Security Scan Results
 // =====================
-// Upsert by (tenant_id, scan_type) on the MOST RECENT row regardless of
+// Upsert by (scan_type) on the MOST RECENT row regardless of
 // resolved state. This prevents the control panel security page from
 // showing the same finding repeated on every scan run, AND prevents a
 // resolved finding from reappearing as a new row when the condition is
 // re-detected by a later scan.
 //
 // Behavior:
-//   - No existing row of this scan_type  -> INSERT a new finding.
-//   - Existing UNRESOLVED row            -> refresh severity/finding/meta
-//     and bump created_at (so the
-//     "last checked" time is current).
-//   - Existing RESOLVED row              -> refresh severity/finding/meta
-//     in place but KEEP resolved_at
-//     set and do NOT bump created_at,
-//     so the resolved finding does not
-//     reappear as a new active warning.
+// * No existing row of this scan_type -> INSERT a new finding.
+// * Existing UNRESOLVED row -> refresh severity/finding/meta
+// and bump created_at (so the
+// "last checked" time is current).
+// * Existing RESOLVED row -> refresh severity/finding/meta
+// in place but KEEP resolved_at
+// set and do NOT bump created_at,
+// so the resolved finding does not
+// reappear as a new active warning.
 func (q *Queries) CreateSecurityScanResult(ctx context.Context, arg CreateSecurityScanResultParams) (CreateSecurityScanResultRow, error) {
 	row := q.db.QueryRow(ctx, createSecurityScanResult,
-		arg.TenantID,
 		arg.ScanType,
 		arg.Severity,
 		arg.Finding,
@@ -231,7 +223,6 @@ func (q *Queries) CreateSecurityScanResult(ctx context.Context, arg CreateSecuri
 	var i CreateSecurityScanResultRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ScanType,
 		&i.Severity,
 		&i.Finding,
@@ -244,27 +235,22 @@ func (q *Queries) CreateSecurityScanResult(ctx context.Context, arg CreateSecuri
 
 const deleteSecurityScanResult = `-- name: DeleteSecurityScanResult :exec
 DELETE FROM security_scan_results
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type DeleteSecurityScanResultParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Deletes a single scan finding. Used by the control panel to clear
 // resolved findings from the audit view. Tenant-scoped for safety.
-func (q *Queries) DeleteSecurityScanResult(ctx context.Context, arg DeleteSecurityScanResultParams) error {
-	_, err := q.db.Exec(ctx, deleteSecurityScanResult, arg.ID, arg.TenantID)
+func (q *Queries) DeleteSecurityScanResult(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSecurityScanResult, id)
 	return err
 }
 
 const getActiveUsers = `-- name: GetActiveUsers :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false AND last_login_at IS NOT NULL AND last_login_at >= NOW() - INTERVAL '30 days'
+SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false AND last_login_at IS NOT NULL AND last_login_at >= NOW() - INTERVAL '30 days'
 `
 
-func (q *Queries) GetActiveUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, getActiveUsers, tenantID)
+func (q *Queries) GetActiveUsers(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, getActiveUsers)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -273,21 +259,16 @@ func (q *Queries) GetActiveUsers(ctx context.Context, tenantID pgtype.UUID) (int
 const getContentAuthorID = `-- name: GetContentAuthorID :one
 
 SELECT author_id FROM contents
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetContentAuthorIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Content Ownership (for analytics access control)
 // =====================
 // Ref: api-routes-catalog.md — GET /content/{id}/analytics is owner+admin only.
 // Returns the author_id so the handler can verify the caller is the owner.
-func (q *Queries) GetContentAuthorID(ctx context.Context, arg GetContentAuthorIDParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getContentAuthorID, arg.ID, arg.TenantID)
+func (q *Queries) GetContentAuthorID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getContentAuthorID, id)
 	var author_id pgtype.UUID
 	err := row.Scan(&author_id)
 	return author_id, err
@@ -296,18 +277,16 @@ func (q *Queries) GetContentAuthorID(ctx context.Context, arg GetContentAuthorID
 const getContentVolumeOverTime = `-- name: GetContentVolumeOverTime :many
 SELECT date_trunc('day', created_at)::date AS day, COUNT(*) AS content_count
 FROM contents
-WHERE tenant_id = $1
-  AND status != 'draft'
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+WHERE status != 'draft'
+ AND ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)
 GROUP BY 1
 ORDER BY 1 DESC
 `
 
 type GetContentVolumeOverTimeParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetContentVolumeOverTimeRow struct {
@@ -316,7 +295,7 @@ type GetContentVolumeOverTimeRow struct {
 }
 
 func (q *Queries) GetContentVolumeOverTime(ctx context.Context, arg GetContentVolumeOverTimeParams) ([]GetContentVolumeOverTimeRow, error) {
-	rows, err := q.db.Query(ctx, getContentVolumeOverTime, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getContentVolumeOverTime, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -338,19 +317,17 @@ func (q *Queries) GetContentVolumeOverTime(ctx context.Context, arg GetContentVo
 const getDailyActiveUsers = `-- name: GetDailyActiveUsers :many
 SELECT date_trunc('day', last_login_at)::date AS day, COUNT(*) AS dau
 FROM users
-WHERE tenant_id = $1
-  AND is_synthetic = false
-  AND last_login_at IS NOT NULL
-  AND ($2::timestamptz IS NULL OR last_login_at >= $2)
-  AND ($3::timestamptz IS NULL OR last_login_at <= $3)
+WHERE is_synthetic = false
+ AND last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR last_login_at <= $2)
 GROUP BY 1
 ORDER BY 1 DESC
 `
 
 type GetDailyActiveUsersParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetDailyActiveUsersRow struct {
@@ -359,7 +336,7 @@ type GetDailyActiveUsersRow struct {
 }
 
 func (q *Queries) GetDailyActiveUsers(ctx context.Context, arg GetDailyActiveUsersParams) ([]GetDailyActiveUsersRow, error) {
-	rows, err := q.db.Query(ctx, getDailyActiveUsers, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getDailyActiveUsers, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -380,31 +357,28 @@ func (q *Queries) GetDailyActiveUsers(ctx context.Context, arg GetDailyActiveUse
 
 const getDailyContentStats = `-- name: GetDailyContentStats :many
 
-SELECT date_trunc('day', c.created_at)::date AS day, c.tenant_id, c.id AS content_id, c.title AS content_title,
-       c.view_count AS views,
-       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
-       c.comment_count AS comments,
-       (c.share_count + c.reshare_count) AS shares,
-       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
+SELECT date_trunc('day', c.created_at)::date AS day, c.id AS content_id, c.title AS content_title,
+ c.view_count AS views,
+ (SELECT COUNT(*)::int FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id) AS reactions,
+ c.comment_count AS comments,
+ (c.share_count + c.reshare_count) AS shares,
+ (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS unique_viewers
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.status != 'draft'
-  AND ($2::date IS NULL OR c.created_at::date >= $2)
-  AND ($3::date IS NULL OR c.created_at::date <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $4)
+WHERE c.status != 'draft'
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2)
+ AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR c.id = $3)
 ORDER BY day DESC, views DESC
 `
 
 type GetDailyContentStatsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  pgtype.Date `json:"column_2"`
-	Column3  pgtype.Date `json:"column_3"`
-	Column4  pgtype.UUID `json:"column_4"`
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+	Column3 pgtype.UUID `json:"column_3"`
 }
 
 type GetDailyContentStatsRow struct {
 	Day           pgtype.Date `json:"day"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ContentID     pgtype.UUID `json:"content_id"`
 	ContentTitle  string      `json:"content_title"`
 	Views         int32       `json:"views"`
@@ -422,12 +396,7 @@ type GetDailyContentStatsRow struct {
 // table, comments from comment_count, shares from share_count+reshare_count,
 // unique_viewers from user_content_views distinct count).
 func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentStatsParams) ([]GetDailyContentStatsRow, error) {
-	rows, err := q.db.Query(ctx, getDailyContentStats,
-		arg.TenantID,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getDailyContentStats, arg.Column1, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +406,6 @@ func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentS
 		var i GetDailyContentStatsRow
 		if err := rows.Scan(
 			&i.Day,
-			&i.TenantID,
 			&i.ContentID,
 			&i.ContentTitle,
 			&i.Views,
@@ -457,29 +425,26 @@ func (q *Queries) GetDailyContentStats(ctx context.Context, arg GetDailyContentS
 }
 
 const getDailySpaceStats = `-- name: GetDailySpaceStats :many
-SELECT date_trunc('day', s.created_at)::date AS day, s.tenant_id, s.id AS space_id, s.name AS space_name,
-       (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
-       (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
-       (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
+SELECT date_trunc('day', s.created_at)::date AS day, s.id AS space_id, s.name AS space_name,
+ (SELECT COUNT(*)::bigint FROM space_members sm WHERE sm.space_id = s.id) AS joins,
+ (SELECT COUNT(*)::bigint FROM contents c WHERE c.space_id = s.id AND c.status != 'draft') AS posts,
+ (SELECT COUNT(DISTINCT sm2.user_id)::bigint FROM space_members sm2 WHERE sm2.space_id = s.id) AS active_users
 FROM spaces s
-WHERE s.tenant_id = $1
-  AND s.deleted_at IS NULL
-  AND ($2::date IS NULL OR s.created_at::date >= $2)
-  AND ($3::date IS NULL OR s.created_at::date <= $3)
-  AND ($4::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $4)
+WHERE s.deleted_at IS NULL
+ AND ($1::date IS NULL OR s.created_at::date >= $1)
+ AND ($2::date IS NULL OR s.created_at::date <= $2)
+ AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR s.id = $3)
 ORDER BY day DESC
 `
 
 type GetDailySpaceStatsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  pgtype.Date `json:"column_2"`
-	Column3  pgtype.Date `json:"column_3"`
-	Column4  pgtype.UUID `json:"column_4"`
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+	Column3 pgtype.UUID `json:"column_3"`
 }
 
 type GetDailySpaceStatsRow struct {
 	Day         pgtype.Date `json:"day"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	SpaceID     pgtype.UUID `json:"space_id"`
 	SpaceName   string      `json:"space_name"`
 	Joins       int64       `json:"joins"`
@@ -488,12 +453,7 @@ type GetDailySpaceStatsRow struct {
 }
 
 func (q *Queries) GetDailySpaceStats(ctx context.Context, arg GetDailySpaceStatsParams) ([]GetDailySpaceStatsRow, error) {
-	rows, err := q.db.Query(ctx, getDailySpaceStats,
-		arg.TenantID,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getDailySpaceStats, arg.Column1, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +463,6 @@ func (q *Queries) GetDailySpaceStats(ctx context.Context, arg GetDailySpaceStats
 		var i GetDailySpaceStatsRow
 		if err := rows.Scan(
 			&i.Day,
-			&i.TenantID,
 			&i.SpaceID,
 			&i.SpaceName,
 			&i.Joins,
@@ -523,18 +482,16 @@ func (q *Queries) GetDailySpaceStats(ctx context.Context, arg GetDailySpaceStats
 const getEventCountsByType = `-- name: GetEventCountsByType :many
 SELECT event_type, COUNT(*) AS count
 FROM platform_events
-WHERE tenant_id = $1
-  AND is_synthetic = false
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz IS NULL OR created_at <= $3)
+WHERE is_synthetic = false
+ AND ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at <= $2)
 GROUP BY event_type
 ORDER BY count DESC
 `
 
 type GetEventCountsByTypeParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetEventCountsByTypeRow struct {
@@ -545,7 +502,7 @@ type GetEventCountsByTypeRow struct {
 // Ref: ADR-068 §4 (P10) — real-metric reporting excludes synthetic events
 // (persona-originated activity) so admin dashboards reflect real user engagement.
 func (q *Queries) GetEventCountsByType(ctx context.Context, arg GetEventCountsByTypeParams) ([]GetEventCountsByTypeRow, error) {
-	rows, err := q.db.Query(ctx, getEventCountsByType, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getEventCountsByType, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -567,19 +524,17 @@ func (q *Queries) GetEventCountsByType(ctx context.Context, arg GetEventCountsBy
 const getMonthlyActiveUsers = `-- name: GetMonthlyActiveUsers :many
 SELECT date_trunc('month', last_login_at)::date AS month, COUNT(*) AS mau
 FROM users
-WHERE tenant_id = $1
-  AND is_synthetic = false
-  AND last_login_at IS NOT NULL
-  AND ($2::timestamptz IS NULL OR last_login_at >= $2)
-  AND ($3::timestamptz IS NULL OR last_login_at <= $3)
+WHERE is_synthetic = false
+ AND last_login_at IS NOT NULL
+ AND ($1::timestamptz IS NULL OR last_login_at >= $1)
+ AND ($2::timestamptz IS NULL OR last_login_at <= $2)
 GROUP BY 1
 ORDER BY 1 DESC
 `
 
 type GetMonthlyActiveUsersParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetMonthlyActiveUsersRow struct {
@@ -588,7 +543,7 @@ type GetMonthlyActiveUsersRow struct {
 }
 
 func (q *Queries) GetMonthlyActiveUsers(ctx context.Context, arg GetMonthlyActiveUsersParams) ([]GetMonthlyActiveUsersRow, error) {
-	rows, err := q.db.Query(ctx, getMonthlyActiveUsers, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getMonthlyActiveUsers, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -608,11 +563,11 @@ func (q *Queries) GetMonthlyActiveUsers(ctx context.Context, arg GetMonthlyActiv
 }
 
 const getNewUsersToday = `-- name: GetNewUsersToday :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false AND created_at::date = CURRENT_DATE
+SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false AND created_at::date = CURRENT_DATE
 `
 
-func (q *Queries) GetNewUsersToday(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, getNewUsersToday, tenantID)
+func (q *Queries) GetNewUsersToday(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, getNewUsersToday)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -620,22 +575,20 @@ func (q *Queries) GetNewUsersToday(ctx context.Context, tenantID pgtype.UUID) (i
 
 const getRevenueByPeriod = `-- name: GetRevenueByPeriod :many
 SELECT
-  to_char(date_trunc('month', p.created_at), 'YYYY-MM') AS period,
-  COALESCE(SUM(p.amount), 0)::bigint AS revenue,
-  COUNT(*)::integer AS transactions
+ to_char(date_trunc('month', p.created_at), 'YYYY-MM') AS period,
+ COALESCE(SUM(p.amount), 0)::bigint AS revenue,
+ COUNT(*)::integer AS transactions
 FROM payments p
-WHERE p.tenant_id = $1
-  AND p.status = 'succeeded'
-  AND ($2::timestamptz IS NULL OR p.created_at >= $2)
-  AND ($3::timestamptz IS NULL OR p.created_at <= $3)
+WHERE p.status = 'succeeded'
+ AND ($1::timestamptz IS NULL OR p.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR p.created_at <= $2)
 GROUP BY 1
 ORDER BY 1 DESC
 `
 
 type GetRevenueByPeriodParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
 }
 
 type GetRevenueByPeriodRow struct {
@@ -645,7 +598,7 @@ type GetRevenueByPeriodRow struct {
 }
 
 func (q *Queries) GetRevenueByPeriod(ctx context.Context, arg GetRevenueByPeriodParams) ([]GetRevenueByPeriodRow, error) {
-	rows, err := q.db.Query(ctx, getRevenueByPeriod, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getRevenueByPeriod, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -667,12 +620,11 @@ func (q *Queries) GetRevenueByPeriod(ctx context.Context, arg GetRevenueByPeriod
 const getRevenueSummary = `-- name: GetRevenueSummary :one
 
 SELECT
-  COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
-  COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', NOW()) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
-  (SELECT COUNT(*)::integer FROM subscriptions s WHERE s.tenant_id = $1 AND s.status = 'active') AS active_subscriptions
+ COALESCE(SUM(p.amount), 0)::bigint AS total_revenue,
+ COALESCE(SUM(CASE WHEN p.created_at >= date_trunc('month', NOW()) THEN p.amount ELSE 0 END), 0)::bigint AS monthly_revenue,
+ (SELECT COUNT(*)::integer FROM subscriptions s WHERE s.status = 'active') AS active_subscriptions
 FROM payments p
-WHERE p.tenant_id = $1
-  AND p.status = 'succeeded'
+WHERE p.status = 'succeeded'
 `
 
 type GetRevenueSummaryRow struct {
@@ -684,8 +636,8 @@ type GetRevenueSummaryRow struct {
 // =====================
 // Revenue Analytics (P5.6)
 // =====================
-func (q *Queries) GetRevenueSummary(ctx context.Context, tenantID pgtype.UUID) (GetRevenueSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getRevenueSummary, tenantID)
+func (q *Queries) GetRevenueSummary(ctx context.Context) (GetRevenueSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getRevenueSummary)
 	var i GetRevenueSummaryRow
 	err := row.Scan(&i.TotalRevenue, &i.MonthlyRevenue, &i.ActiveSubscriptions)
 	return i, err
@@ -694,18 +646,13 @@ func (q *Queries) GetRevenueSummary(ctx context.Context, tenantID pgtype.UUID) (
 const getSpaceAnalyticsSummary = `-- name: GetSpaceAnalyticsSummary :one
 
 SELECT
-  (SELECT COUNT(*) FROM space_members
-     WHERE space_members.space_id = $1 AND space_members.tenant_id = $2)::int AS member_count,
-  (SELECT COUNT(*) FROM contents
-     WHERE contents.space_id = $1 AND contents.tenant_id = $2 AND contents.status = 'published')::int AS content_count,
-  (SELECT COUNT(*) FROM content_views
-     WHERE content_views.space_id = $1 AND content_views.tenant_id = $2)::int AS view_count
+ (SELECT COUNT(*) FROM space_members
+ WHERE space_members.space_id = $1)::int AS member_count,
+ (SELECT COUNT(*) FROM contents
+ WHERE contents.space_id = $1 AND contents.status = 'published')::int AS content_count,
+ (SELECT COUNT(*) FROM content_views
+ WHERE content_views.space_id = $1)::int AS view_count
 `
-
-type GetSpaceAnalyticsSummaryParams struct {
-	SpaceID  pgtype.UUID `json:"space_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetSpaceAnalyticsSummaryRow struct {
 	MemberCount  int32 `json:"member_count"`
@@ -719,8 +666,8 @@ type GetSpaceAnalyticsSummaryRow struct {
 // Returns member_count, content_count, and view_count in a single round
 // trip instead of three sequential queries (BUG-020). Each subquery is
 // independent so the planner can parallelise them.
-func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, arg GetSpaceAnalyticsSummaryParams) (GetSpaceAnalyticsSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getSpaceAnalyticsSummary, arg.SpaceID, arg.TenantID)
+func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, spaceID pgtype.UUID) (GetSpaceAnalyticsSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getSpaceAnalyticsSummary, spaceID)
 	var i GetSpaceAnalyticsSummaryRow
 	err := row.Scan(&i.MemberCount, &i.ContentCount, &i.ViewCount)
 	return i, err
@@ -728,24 +675,22 @@ func (q *Queries) GetSpaceAnalyticsSummary(ctx context.Context, arg GetSpaceAnal
 
 const getTopContentByViews = `-- name: GetTopContentByViews :many
 SELECT c.id AS content_id, c.title AS content_title, c.view_count AS total_views, c.comment_count AS total_comments,
-       (SELECT COUNT(*)::int FROM reactions r WHERE r.tenant_id = c.tenant_id AND r.entity_type = 'content' AND r.entity_id = c.id) AS total_reactions,
-       (c.share_count + c.reshare_count) AS total_shares,
-       (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS total_unique_viewers
+ (SELECT COUNT(*)::int FROM reactions r WHERE r.entity_type = 'content' AND r.entity_id = c.id) AS total_reactions,
+ (c.share_count + c.reshare_count) AS total_shares,
+ (SELECT COUNT(DISTINCT user_id)::int FROM user_content_views ucv WHERE ucv.content_id = c.id AND ucv.user_id IS NOT NULL) AS total_unique_viewers
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.status != 'draft'
-  AND c.view_count > 0
-  AND ($2::date IS NULL OR c.created_at::date >= $2)
-  AND ($3::date IS NULL OR c.created_at::date <= $3)
+WHERE c.status != 'draft'
+ AND c.view_count > 0
+ AND ($1::date IS NULL OR c.created_at::date >= $1)
+ AND ($2::date IS NULL OR c.created_at::date <= $2)
 ORDER BY total_views DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTopContentByViewsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  pgtype.Date `json:"column_2"`
-	Column3  pgtype.Date `json:"column_3"`
-	Limit    int32       `json:"limit"`
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
+	Limit   int32       `json:"limit"`
 }
 
 type GetTopContentByViewsRow struct {
@@ -762,12 +707,7 @@ type GetTopContentByViewsRow struct {
 // reactions table, total_shares from share_count+reshare_count,
 // total_unique_viewers from user_content_views distinct count).
 func (q *Queries) GetTopContentByViews(ctx context.Context, arg GetTopContentByViewsParams) ([]GetTopContentByViewsRow, error) {
-	rows, err := q.db.Query(ctx, getTopContentByViews,
-		arg.TenantID,
-		arg.Column2,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTopContentByViews, arg.Column1, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -795,13 +735,13 @@ func (q *Queries) GetTopContentByViews(ctx context.Context, arg GetTopContentByV
 }
 
 const getTotalUsers = `-- name: GetTotalUsers :one
-SELECT COUNT(*)::integer FROM users WHERE tenant_id = $1 AND is_synthetic = false
+SELECT COUNT(*)::integer FROM users WHERE is_synthetic = false
 `
 
 // Real user accounts only — synthetic video channels (users.is_synthetic,
 // migration 000633) are excluded so dashboard totals reflect real signups.
-func (q *Queries) GetTotalUsers(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, getTotalUsers, tenantID)
+func (q *Queries) GetTotalUsers(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, getTotalUsers)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -810,22 +750,20 @@ func (q *Queries) GetTotalUsers(ctx context.Context, tenantID pgtype.UUID) (int3
 const getTrafficSources = `-- name: GetTrafficSources :many
 SELECT COALESCE(s.name, 'Direct') AS referrer, COALESCE(SUM(c.view_count), 0)::bigint AS visits
 FROM contents c
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.status != 'draft'
-  AND c.view_count > 0
-  AND ($2::timestamptz IS NULL OR c.created_at >= $2)
-  AND ($3::timestamptz IS NULL OR c.created_at <= $3)
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.status != 'draft'
+ AND c.view_count > 0
+ AND ($1::timestamptz IS NULL OR c.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR c.created_at <= $2)
 GROUP BY 1
 ORDER BY visits DESC
-LIMIT $4
+LIMIT $3
 `
 
 type GetTrafficSourcesParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  pgtype.Timestamptz `json:"column_2"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
-	Limit    int32              `json:"limit"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Limit   int32              `json:"limit"`
 }
 
 type GetTrafficSourcesRow struct {
@@ -836,12 +774,7 @@ type GetTrafficSourcesRow struct {
 // Traffic sources are derived from content view_count aggregated by the
 // space that owns the content. Content without a space is labelled "Direct".
 func (q *Queries) GetTrafficSources(ctx context.Context, arg GetTrafficSourcesParams) ([]GetTrafficSourcesRow, error) {
-	rows, err := q.db.Query(ctx, getTrafficSources,
-		arg.TenantID,
-		arg.Column2,
-		arg.Column3,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getTrafficSources, arg.Column1, arg.Column2, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -861,17 +794,15 @@ func (q *Queries) GetTrafficSources(ctx context.Context, arg GetTrafficSourcesPa
 }
 
 const getUnresolvedCriticalFindings = `-- name: GetUnresolvedCriticalFindings :many
-SELECT id, tenant_id, scan_type, severity, finding, meta, created_at
+SELECT id, scan_type, severity, finding, meta, created_at
 FROM security_scan_results
-WHERE tenant_id = $1
-  AND resolved_at IS NULL
-  AND severity = 'critical'
+WHERE resolved_at IS NULL
+ AND severity = 'critical'
 ORDER BY created_at DESC
 `
 
 type GetUnresolvedCriticalFindingsRow struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	ScanType  string             `json:"scan_type"`
 	Severity  string             `json:"severity"`
 	Finding   string             `json:"finding"`
@@ -879,8 +810,8 @@ type GetUnresolvedCriticalFindingsRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pgtype.UUID) ([]GetUnresolvedCriticalFindingsRow, error) {
-	rows, err := q.db.Query(ctx, getUnresolvedCriticalFindings, tenantID)
+func (q *Queries) GetUnresolvedCriticalFindings(ctx context.Context) ([]GetUnresolvedCriticalFindingsRow, error) {
+	rows, err := q.db.Query(ctx, getUnresolvedCriticalFindings)
 	if err != nil {
 		return nil, err
 	}
@@ -890,7 +821,6 @@ func (q *Queries) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pg
 		var i GetUnresolvedCriticalFindingsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ScanType,
 			&i.Severity,
 			&i.Finding,
@@ -909,33 +839,31 @@ func (q *Queries) GetUnresolvedCriticalFindings(ctx context.Context, tenantID pg
 
 const getUserAdPerformance = `-- name: GetUserAdPerformance :many
 SELECT
-    ac.id AS campaign_id,
-    ac.name AS campaign_name,
-    ac.status,
-    COALESCE(SUM(aad.impressions), 0)::bigint AS impressions,
-    COALESCE(SUM(aad.clicks), 0)::bigint AS clicks,
-    COALESCE(SUM(aad.spent), 0)::bigint AS spent,
-    CASE
-        WHEN COALESCE(SUM(aad.impressions), 0) > 0
-        THEN ROUND(100.0 * COALESCE(SUM(aad.clicks), 0) / SUM(aad.impressions), 2)
-        ELSE 0
-    END::float AS ctr
+ ac.id AS campaign_id,
+ ac.name AS campaign_name,
+ ac.status,
+ COALESCE(SUM(aad.impressions), 0)::bigint AS impressions,
+ COALESCE(SUM(aad.clicks), 0)::bigint AS clicks,
+ COALESCE(SUM(aad.spent), 0)::bigint AS spent,
+ CASE
+ WHEN COALESCE(SUM(aad.impressions), 0) > 0
+ THEN ROUND(100.0 * COALESCE(SUM(aad.clicks), 0) / SUM(aad.impressions), 2)
+ ELSE 0
+ END::float AS ctr
 FROM ad_campaigns ac
-LEFT JOIN ad_analytics_daily aad ON aad.campaign_id = ac.id AND aad.tenant_id = ac.tenant_id
-  AND ($3::date IS NULL OR aad.date >= $3)
-  AND ($4::date IS NULL OR aad.date <= $4)
-WHERE ac.tenant_id = $1
-  AND ac.created_by = $2
+LEFT JOIN ad_analytics_daily aad ON aad.campaign_id = ac.id
+ AND ($2::date IS NULL OR aad.date >= $2)
+ AND ($3::date IS NULL OR aad.date <= $3)
+WHERE ac.created_by = $1
 GROUP BY ac.id, ac.name, ac.status
 ORDER BY impressions DESC
-LIMIT $5
+LIMIT $4
 `
 
 type GetUserAdPerformanceParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	CreatedBy pgtype.UUID `json:"created_by"`
+	Column2   pgtype.Date `json:"column_2"`
 	Column3   pgtype.Date `json:"column_3"`
-	Column4   pgtype.Date `json:"column_4"`
 	Limit     int32       `json:"limit"`
 }
 
@@ -954,10 +882,9 @@ type GetUserAdPerformanceRow struct {
 // no daily analytics rows in the selected range.
 func (q *Queries) GetUserAdPerformance(ctx context.Context, arg GetUserAdPerformanceParams) ([]GetUserAdPerformanceRow, error) {
 	rows, err := q.db.Query(ctx, getUserAdPerformance,
-		arg.TenantID,
 		arg.CreatedBy,
+		arg.Column2,
 		arg.Column3,
-		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -988,62 +915,58 @@ func (q *Queries) GetUserAdPerformance(ctx context.Context, arg GetUserAdPerform
 
 const getUserEngagementStats = `-- name: GetUserEngagementStats :many
 WITH posts AS (
-    SELECT date_trunc('day', c.created_at)::date AS day,
-           COUNT(*)::bigint AS posts_created
-    FROM contents c
-    WHERE c.tenant_id = $1
-      AND c.author_id = $4
-      AND c.status != 'draft'
-      AND ($2::timestamptz IS NULL OR c.created_at >= $2)
-      AND ($3::timestamptz IS NULL OR c.created_at <= $3)
-    GROUP BY 1
+ SELECT date_trunc('day', c.created_at)::date AS day,
+ COUNT(*)::bigint AS posts_created
+ FROM contents c
+ WHERE c.author_id = $3
+ AND c.status != 'draft'
+ AND ($1::timestamptz IS NULL OR c.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR c.created_at <= $2)
+ GROUP BY 1
 ),
 reactions AS (
-    SELECT date_trunc('day', r.created_at)::date AS day,
-           COUNT(*)::bigint AS reactions_given
-    FROM reactions r
-    WHERE r.tenant_id = $1
-      AND r.user_id = $4
-      AND ($2::timestamptz IS NULL OR r.created_at >= $2)
-      AND ($3::timestamptz IS NULL OR r.created_at <= $3)
-    GROUP BY 1
+ SELECT date_trunc('day', r.created_at)::date AS day,
+ COUNT(*)::bigint AS reactions_given
+ FROM reactions r
+ WHERE r.user_id = $3
+ AND ($1::timestamptz IS NULL OR r.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR r.created_at <= $2)
+ GROUP BY 1
 ),
 comments_made AS (
-    SELECT date_trunc('day', cm.created_at)::date AS day,
-           COUNT(*)::bigint AS comments_made
-    FROM comments cm
-    WHERE cm.tenant_id = $1
-      AND cm.author_user_id = $4
-      AND cm.deleted_at IS NULL
-      AND ($2::timestamptz IS NULL OR cm.created_at >= $2)
-      AND ($3::timestamptz IS NULL OR cm.created_at <= $3)
-    GROUP BY 1
+ SELECT date_trunc('day', cm.created_at)::date AS day,
+ COUNT(*)::bigint AS comments_made
+ FROM comments cm
+ WHERE cm.author_user_id = $3
+ AND cm.deleted_at IS NULL
+ AND ($1::timestamptz IS NULL OR cm.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR cm.created_at <= $2)
+ GROUP BY 1
 ),
 views AS (
-    SELECT date_trunc('day', ucv.viewed_at AT TIME ZONE 'UTC')::date AS day,
-           COUNT(*)::bigint AS views
-    FROM user_content_views ucv
-    JOIN contents c ON c.id = ucv.content_id
-    WHERE c.tenant_id = $1
-      AND c.author_id = $4
-      AND ($2::timestamptz IS NULL OR ucv.viewed_at >= $2)
-      AND ($3::timestamptz IS NULL OR ucv.viewed_at <= $3)
-    GROUP BY 1
+ SELECT date_trunc('day', ucv.viewed_at AT TIME ZONE 'UTC')::date AS day,
+ COUNT(*)::bigint AS views
+ FROM user_content_views ucv
+ JOIN contents c ON c.id = ucv.content_id
+ WHERE c.author_id = $3
+ AND ($1::timestamptz IS NULL OR ucv.viewed_at >= $1)
+ AND ($2::timestamptz IS NULL OR ucv.viewed_at <= $2)
+ GROUP BY 1
 ),
 days AS (
-    SELECT day FROM posts
-    UNION
-    SELECT day FROM reactions
-    UNION
-    SELECT day FROM comments_made
-    UNION
-    SELECT day FROM views
+ SELECT day FROM posts
+ UNION
+ SELECT day FROM reactions
+ UNION
+ SELECT day FROM comments_made
+ UNION
+ SELECT day FROM views
 )
-SELECT d.day, $1::uuid AS tenant_id, $4::uuid AS user_id,
-       COALESCE(p.posts_created, 0) AS posts_created,
-       COALESCE(r.reactions_given, 0) AS reactions_given,
-       COALESCE(cm.comments_made, 0) AS comments_made,
-       COALESCE(v.views, 0) AS views
+SELECT d.day, $3::uuid AS user_id,
+ COALESCE(p.posts_created, 0) AS posts_created,
+ COALESCE(r.reactions_given, 0) AS reactions_given,
+ COALESCE(cm.comments_made, 0) AS comments_made,
+ COALESCE(v.views, 0) AS views
 FROM days d
 LEFT JOIN posts p ON p.day = d.day
 LEFT JOIN reactions r ON r.day = d.day
@@ -1053,15 +976,13 @@ ORDER BY d.day DESC
 `
 
 type GetUserEngagementStatsParams struct {
-	Column1 pgtype.UUID        `json:"column_1"`
+	Column1 pgtype.Timestamptz `json:"column_1"`
 	Column2 pgtype.Timestamptz `json:"column_2"`
-	Column3 pgtype.Timestamptz `json:"column_3"`
-	Column4 pgtype.UUID        `json:"column_4"`
+	Column3 pgtype.UUID        `json:"column_3"`
 }
 
 type GetUserEngagementStatsRow struct {
 	Day            pgtype.Date `json:"day"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 	PostsCreated   int64       `json:"posts_created"`
 	ReactionsGiven int64       `json:"reactions_given"`
@@ -1073,12 +994,7 @@ type GetUserEngagementStatsRow struct {
 // operational tables so it works regardless of platform_events population
 // or materialized-view refresh lag. posts_created excludes drafts.
 func (q *Queries) GetUserEngagementStats(ctx context.Context, arg GetUserEngagementStatsParams) ([]GetUserEngagementStatsRow, error) {
-	rows, err := q.db.Query(ctx, getUserEngagementStats,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-	)
+	rows, err := q.db.Query(ctx, getUserEngagementStats, arg.Column1, arg.Column2, arg.Column3)
 	if err != nil {
 		return nil, err
 	}
@@ -1088,7 +1004,6 @@ func (q *Queries) GetUserEngagementStats(ctx context.Context, arg GetUserEngagem
 		var i GetUserEngagementStatsRow
 		if err := rows.Scan(
 			&i.Day,
-			&i.TenantID,
 			&i.UserID,
 			&i.PostsCreated,
 			&i.ReactionsGiven,
@@ -1109,26 +1024,24 @@ const getUserGrowthOverTime = `-- name: GetUserGrowthOverTime :many
 
 SELECT gs.day::date AS day, COALESCE(u.new_users, 0)::bigint AS new_users
 FROM generate_series(
-  $2::date,
-  COALESCE($3::date, NOW()::date),
-  INTERVAL '1 day'
+ $1::date,
+ COALESCE($2::date, NOW()::date),
+ INTERVAL '1 day'
 ) AS gs(day)
 LEFT JOIN (
-  SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS new_users
-  FROM users
-  WHERE tenant_id = $1
-    AND is_synthetic = false
-    AND ($2::date IS NULL OR created_at::date >= $2)
-    AND ($3::date IS NULL OR created_at::date <= $3)
-  GROUP BY 1
+ SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS new_users
+ FROM users
+ WHERE is_synthetic = false
+ AND ($1::date IS NULL OR created_at::date >= $1)
+ AND ($2::date IS NULL OR created_at::date <= $2)
+ GROUP BY 1
 ) u ON u.day = gs.day::date
 ORDER BY gs.day
 `
 
 type GetUserGrowthOverTimeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  pgtype.Date `json:"column_2"`
-	Column3  pgtype.Date `json:"column_3"`
+	Column1 pgtype.Date `json:"column_1"`
+	Column2 pgtype.Date `json:"column_2"`
 }
 
 type GetUserGrowthOverTimeRow struct {
@@ -1142,7 +1055,7 @@ type GetUserGrowthOverTimeRow struct {
 // Fills the full date range with 0-value days so the chart always shows
 // a complete line instead of "No data available" on periods with no signups.
 func (q *Queries) GetUserGrowthOverTime(ctx context.Context, arg GetUserGrowthOverTimeParams) ([]GetUserGrowthOverTimeRow, error) {
-	rows, err := q.db.Query(ctx, getUserGrowthOverTime, arg.TenantID, arg.Column2, arg.Column3)
+	rows, err := q.db.Query(ctx, getUserGrowthOverTime, arg.Column1, arg.Column2)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,27 +1076,25 @@ func (q *Queries) GetUserGrowthOverTime(ctx context.Context, arg GetUserGrowthOv
 
 const getUserTrafficSources = `-- name: GetUserTrafficSources :many
 SELECT
-    COALESCE(NULLIF(pe.meta->>'referrer', ''), 'Direct')::text AS referrer,
-    COUNT(*)::bigint AS visits
+ COALESCE(NULLIF(pe.meta->>'referrer', ''), 'Direct')::text AS referrer,
+ COUNT(*)::bigint AS visits
 FROM platform_events pe
-JOIN contents c ON c.id = pe.entity_id AND c.tenant_id = pe.tenant_id
-WHERE pe.tenant_id = $1
-  AND c.author_id = $2
-  AND pe.event_type = 'content.viewed'
-  AND pe.entity_type = 'content'
-  AND pe.is_synthetic = false
-  AND ($3::timestamptz IS NULL OR pe.created_at >= $3)
-  AND ($4::timestamptz IS NULL OR pe.created_at <= $4)
+JOIN contents c ON c.id = pe.entity_id
+WHERE c.author_id = $1
+ AND pe.event_type = 'content.viewed'
+ AND pe.entity_type = 'content'
+ AND pe.is_synthetic = false
+ AND ($2::timestamptz IS NULL OR pe.created_at >= $2)
+ AND ($3::timestamptz IS NULL OR pe.created_at <= $3)
 GROUP BY referrer
 ORDER BY visits DESC
-LIMIT $5
+LIMIT $4
 `
 
 type GetUserTrafficSourcesParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	AuthorID pgtype.UUID        `json:"author_id"`
+	Column2  pgtype.Timestamptz `json:"column_2"`
 	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
 	Limit    int32              `json:"limit"`
 }
 
@@ -1197,10 +1108,9 @@ type GetUserTrafficSourcesRow struct {
 // Excludes synthetic persona activity per ADR-068 §4 (P10).
 func (q *Queries) GetUserTrafficSources(ctx context.Context, arg GetUserTrafficSourcesParams) ([]GetUserTrafficSourcesRow, error) {
 	rows, err := q.db.Query(ctx, getUserTrafficSources,
-		arg.TenantID,
 		arg.AuthorID,
+		arg.Column2,
 		arg.Column3,
-		arg.Column4,
 		arg.Limit,
 	)
 	if err != nil {
@@ -1222,32 +1132,29 @@ func (q *Queries) GetUserTrafficSources(ctx context.Context, arg GetUserTrafficS
 }
 
 const listPlatformEvents = `-- name: ListPlatformEvents :many
-SELECT id, tenant_id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
+SELECT id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
 FROM platform_events
-WHERE tenant_id = $1
-  AND ($2::text = '' OR event_type = $2)
-  AND ($3::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $3)
-  AND ($4::text = '' OR entity_type = $4)
-  AND ($5::timestamptz IS NULL OR created_at >= $5)
-  AND ($6::timestamptz IS NULL OR created_at <= $6)
+WHERE ($1::text = '' OR event_type = $1)
+ AND ($2::uuid = '00000000-0000-0000-0000-000000000000'::uuid OR user_id = $2)
+ AND ($3::text = '' OR entity_type = $3)
+ AND ($4::timestamptz IS NULL OR created_at >= $4)
+ AND ($5::timestamptz IS NULL OR created_at <= $5)
 ORDER BY created_at DESC, id DESC
-LIMIT $7 OFFSET $8
+LIMIT $6 OFFSET $7
 `
 
 type ListPlatformEventsParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	Column2  string             `json:"column_2"`
-	Column3  pgtype.UUID        `json:"column_3"`
-	Column4  string             `json:"column_4"`
-	Column5  pgtype.Timestamptz `json:"column_5"`
-	Column6  pgtype.Timestamptz `json:"column_6"`
-	Limit    int32              `json:"limit"`
-	Offset   int32              `json:"offset"`
+	Column1 string             `json:"column_1"`
+	Column2 pgtype.UUID        `json:"column_2"`
+	Column3 string             `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
+	Limit   int32              `json:"limit"`
+	Offset  int32              `json:"offset"`
 }
 
 type ListPlatformEventsRow struct {
 	ID          int64              `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EventType   string             `json:"event_type"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	EntityType  *string            `json:"entity_type"`
@@ -1264,12 +1171,11 @@ type ListPlatformEventsRow struct {
 // persona-originated events from real user activity.
 func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEventsParams) ([]ListPlatformEventsRow, error) {
 	rows, err := q.db.Query(ctx, listPlatformEvents,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
 		arg.Column3,
 		arg.Column4,
 		arg.Column5,
-		arg.Column6,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -1282,7 +1188,6 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 		var i ListPlatformEventsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EventType,
 			&i.UserID,
 			&i.EntityType,
@@ -1304,28 +1209,35 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 }
 
 const listSecurityScanResults = `-- name: ListSecurityScanResults :many
-SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
+SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
-WHERE tenant_id = $1
-  AND ($2::text = '' OR severity = $2)
-  AND ($3::bool = false OR resolved_at IS NULL)
+WHERE ($1::text = '' OR severity = $1)
+ AND ($2::bool = false OR resolved_at IS NULL)
 ORDER BY created_at DESC, id DESC
-LIMIT $4 OFFSET $5
+LIMIT $3 OFFSET $4
 `
 
 type ListSecurityScanResultsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Column2  string      `json:"column_2"`
-	Column3  bool        `json:"column_3"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	Column1 string `json:"column_1"`
+	Column2 bool   `json:"column_2"`
+	Limit   int32  `json:"limit"`
+	Offset  int32  `json:"offset"`
 }
 
-func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]SecurityScanResult, error) {
+type ListSecurityScanResultsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ScanType   string             `json:"scan_type"`
+	Severity   string             `json:"severity"`
+	Finding    string             `json:"finding"`
+	Meta       []byte             `json:"meta"`
+	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]ListSecurityScanResultsRow, error) {
 	rows, err := q.db.Query(ctx, listSecurityScanResults,
-		arg.TenantID,
+		arg.Column1,
 		arg.Column2,
-		arg.Column3,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -1333,12 +1245,11 @@ func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityS
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SecurityScanResult
+	var items []ListSecurityScanResultsRow
 	for rows.Next() {
-		var i SecurityScanResult
+		var i ListSecurityScanResultsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ScanType,
 			&i.Severity,
 			&i.Finding,
@@ -1426,15 +1337,10 @@ func (q *Queries) RefreshUserEngagementStatsView(ctx context.Context) error {
 const resolveSecurityScanResult = `-- name: ResolveSecurityScanResult :exec
 UPDATE security_scan_results
 SET resolved_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type ResolveSecurityScanResultParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ResolveSecurityScanResult(ctx context.Context, arg ResolveSecurityScanResultParams) error {
-	_, err := q.db.Exec(ctx, resolveSecurityScanResult, arg.ID, arg.TenantID)
+func (q *Queries) ResolveSecurityScanResult(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, resolveSecurityScanResult, id)
 	return err
 }

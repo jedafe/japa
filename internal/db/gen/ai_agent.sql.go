@@ -13,20 +13,15 @@ import (
 
 const cancelAgentSession = `-- name: CancelAgentSession :one
 UPDATE ai_agent_sessions SET
-    status       = 'cancelled',
-    completed_at = now()
-WHERE id = $1 AND tenant_id = $2
-  AND status = 'running'
+ status = 'cancelled',
+ completed_at = now()
+WHERE id = $1
+ AND status = 'running'
 RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
-type CancelAgentSessionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CancelAgentSession(ctx context.Context, arg CancelAgentSessionParams) (AiAgentSession, error) {
-	row := q.db.QueryRow(ctx, cancelAgentSession, arg.ID, arg.TenantID)
+func (q *Queries) CancelAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentSession, error) {
+	row := q.db.QueryRow(ctx, cancelAgentSession, id)
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
@@ -50,13 +45,13 @@ func (q *Queries) CancelAgentSession(ctx context.Context, arg CancelAgentSession
 
 const completeAgentSession = `-- name: CompleteAgentSession :one
 UPDATE ai_agent_sessions SET
-    status          = 'completed',
-    result_summary  = $1,
-    tool_call_count = $2,
-    total_tokens    = $3,
-    estimated_cost  = $4,
-    completed_at    = now()
-WHERE id = $5 AND tenant_id = $6
+ status = 'completed',
+ result_summary = $1,
+ tool_call_count = $2,
+ total_tokens = $3,
+ estimated_cost = $4,
+ completed_at = now()
+WHERE id = $5
 RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
@@ -66,7 +61,6 @@ type CompleteAgentSessionParams struct {
 	TotalTokens   int32          `json:"total_tokens"`
 	EstimatedCost pgtype.Numeric `json:"estimated_cost"`
 	ID            pgtype.UUID    `json:"id"`
-	TenantID      pgtype.UUID    `json:"tenant_id"`
 }
 
 // Mark a session completed. tool_call_count, total_tokens, and
@@ -79,7 +73,6 @@ func (q *Queries) CompleteAgentSession(ctx context.Context, arg CompleteAgentSes
 		arg.TotalTokens,
 		arg.EstimatedCost,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i AiAgentSession
 	err := row.Scan(
@@ -104,16 +97,11 @@ func (q *Queries) CompleteAgentSession(ctx context.Context, arg CompleteAgentSes
 
 const countAgentSessionsByUser = `-- name: CountAgentSessionsByUser :one
 SELECT COUNT(*) FROM ai_agent_sessions
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountAgentSessionsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountAgentSessionsByUser(ctx context.Context, arg CountAgentSessionsByUserParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAgentSessionsByUser, arg.TenantID, arg.UserID)
+func (q *Queries) CountAgentSessionsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentSessionsByUser, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -121,17 +109,11 @@ func (q *Queries) CountAgentSessionsByUser(ctx context.Context, arg CountAgentSe
 
 const countAgentSessionsForAdmin = `-- name: CountAgentSessionsForAdmin :one
 SELECT COUNT(*) FROM ai_agent_sessions
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 `
 
-type CountAgentSessionsForAdminParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	StatusFilter string      `json:"status_filter"`
-}
-
-func (q *Queries) CountAgentSessionsForAdmin(ctx context.Context, arg CountAgentSessionsForAdminParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAgentSessionsForAdmin, arg.TenantID, arg.StatusFilter)
+func (q *Queries) CountAgentSessionsForAdmin(ctx context.Context, statusFilter string) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentSessionsForAdmin, statusFilter)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -140,16 +122,11 @@ func (q *Queries) CountAgentSessionsForAdmin(ctx context.Context, arg CountAgent
 const createAgentSession = `-- name: CreateAgentSession :one
 
 
-INSERT INTO ai_agent_sessions (
-    tenant_id, user_id, prompt, geo_space_id, presearch_level, status, started_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, now()
-)
+INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at) VALUES ($1, $2, $3, $4, $5, now())
 RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
 type CreateAgentSessionParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 	Prompt         string      `json:"prompt"`
 	GeoSpaceID     pgtype.UUID `json:"geo_space_id"`
@@ -173,7 +150,6 @@ type CreateAgentSessionParams struct {
 // =====================================================================
 func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSessionParams) (AiAgentSession, error) {
 	row := q.db.QueryRow(ctx, createAgentSession,
-		arg.TenantID,
 		arg.UserID,
 		arg.Prompt,
 		arg.GeoSpaceID,
@@ -203,18 +179,11 @@ func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSession
 
 const createAgentToolCall = `-- name: CreateAgentToolCall :one
 
-INSERT INTO ai_agent_tool_calls (
-    tenant_id, session_id, tool_name, arguments, status,
-    rbac_checked, privacy_checked
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7
-)
+INSERT INTO ai_agent_tool_calls (session_id, tool_name, arguments, status, rbac_checked, privacy_checked) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
 `
 
 type CreateAgentToolCallParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	SessionID      pgtype.UUID `json:"session_id"`
 	ToolName       string      `json:"tool_name"`
 	Arguments      []byte      `json:"arguments"`
@@ -231,7 +200,6 @@ type CreateAgentToolCallParams struct {
 // =====================================================================
 func (q *Queries) CreateAgentToolCall(ctx context.Context, arg CreateAgentToolCallParams) (AiAgentToolCall, error) {
 	row := q.db.QueryRow(ctx, createAgentToolCall,
-		arg.TenantID,
 		arg.SessionID,
 		arg.ToolName,
 		arg.Arguments,
@@ -260,13 +228,13 @@ func (q *Queries) CreateAgentToolCall(ctx context.Context, arg CreateAgentToolCa
 
 const failAgentSession = `-- name: FailAgentSession :one
 UPDATE ai_agent_sessions SET
-    status          = 'failed',
-    error_message   = $1,
-    tool_call_count = $2,
-    total_tokens    = $3,
-    estimated_cost  = $4,
-    completed_at    = now()
-WHERE id = $5 AND tenant_id = $6
+ status = 'failed',
+ error_message = $1,
+ tool_call_count = $2,
+ total_tokens = $3,
+ estimated_cost = $4,
+ completed_at = now()
+WHERE id = $5
 RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
@@ -276,7 +244,6 @@ type FailAgentSessionParams struct {
 	TotalTokens   int32          `json:"total_tokens"`
 	EstimatedCost pgtype.Numeric `json:"estimated_cost"`
 	ID            pgtype.UUID    `json:"id"`
-	TenantID      pgtype.UUID    `json:"tenant_id"`
 }
 
 func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionParams) (AiAgentSession, error) {
@@ -286,7 +253,6 @@ func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionPara
 		arg.TotalTokens,
 		arg.EstimatedCost,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i AiAgentSession
 	err := row.Scan(
@@ -311,22 +277,20 @@ func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionPara
 
 const getAgentCostReport = `-- name: GetAgentCostReport :many
 SELECT s.user_id,
-       u.username,
-       COUNT(*)                                          AS session_count,
-       COALESCE(SUM(s.total_tokens), 0)                  AS total_tokens,
-       COALESCE(SUM(s.tool_call_count), 0)               AS total_tool_calls,
-       COALESCE(SUM(CAST(s.estimated_cost AS double precision)), 0) AS total_cost_usd
+ u.username,
+ COUNT(*) AS session_count,
+ COALESCE(SUM(s.total_tokens), 0) AS total_tokens,
+ COALESCE(SUM(s.tool_call_count), 0) AS total_tool_calls,
+ COALESCE(SUM(CAST(s.estimated_cost AS double precision)), 0) AS total_cost_usd
 FROM ai_agent_sessions s
-LEFT JOIN users u ON u.id = s.user_id AND u.tenant_id = s.tenant_id
-WHERE s.tenant_id = $1
-  AND ($2::timestamptz IS NULL OR s.created_at >= $2)
-  AND ($3::timestamptz   IS NULL OR s.created_at <  $3)
+LEFT JOIN users u ON u.id = s.user_id
+WHERE ($1::timestamptz IS NULL OR s.created_at >= $1)
+ AND ($2::timestamptz IS NULL OR s.created_at < $2)
 GROUP BY s.user_id, u.username
 ORDER BY total_cost_usd DESC
 `
 
 type GetAgentCostReportParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	FromDate pgtype.Timestamptz `json:"from_date"`
 	ToDate   pgtype.Timestamptz `json:"to_date"`
 }
@@ -345,7 +309,7 @@ type GetAgentCostReportRow struct {
 // and an optional date range. estimated_cost is numeric(10,4); we cast to
 // double precision for JSON-friendly aggregation.
 func (q *Queries) GetAgentCostReport(ctx context.Context, arg GetAgentCostReportParams) ([]GetAgentCostReportRow, error) {
-	rows, err := q.db.Query(ctx, getAgentCostReport, arg.TenantID, arg.FromDate, arg.ToDate)
+	rows, err := q.db.Query(ctx, getAgentCostReport, arg.FromDate, arg.ToDate)
 	if err != nil {
 		return nil, err
 	}
@@ -373,16 +337,11 @@ func (q *Queries) GetAgentCostReport(ctx context.Context, arg GetAgentCostReport
 
 const getAgentSession = `-- name: GetAgentSession :one
 SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetAgentSessionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetAgentSession(ctx context.Context, arg GetAgentSessionParams) (AiAgentSession, error) {
-	row := q.db.QueryRow(ctx, getAgentSession, arg.ID, arg.TenantID)
+func (q *Queries) GetAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentSession, error) {
+	row := q.db.QueryRow(ctx, getAgentSession, id)
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
@@ -406,19 +365,18 @@ func (q *Queries) GetAgentSession(ctx context.Context, arg GetAgentSessionParams
 
 const getAgentSessionForUser = `-- name: GetAgentSessionForUser :one
 SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
-WHERE id = $1 AND tenant_id = $2 AND user_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type GetAgentSessionForUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 // Get a session scoped to the owning user (user-facing detail route
 // enforces ownership at the DB layer rather than only in handler logic).
 func (q *Queries) GetAgentSessionForUser(ctx context.Context, arg GetAgentSessionForUserParams) (AiAgentSession, error) {
-	row := q.db.QueryRow(ctx, getAgentSessionForUser, arg.ID, arg.TenantID, arg.UserID)
+	row := q.db.QueryRow(ctx, getAgentSessionForUser, arg.ID, arg.UserID)
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
@@ -442,16 +400,11 @@ func (q *Queries) GetAgentSessionForUser(ctx context.Context, arg GetAgentSessio
 
 const getAgentToolCall = `-- name: GetAgentToolCall :one
 SELECT id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetAgentToolCallParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetAgentToolCall(ctx context.Context, arg GetAgentToolCallParams) (AiAgentToolCall, error) {
-	row := q.db.QueryRow(ctx, getAgentToolCall, arg.ID, arg.TenantID)
+func (q *Queries) GetAgentToolCall(ctx context.Context, id pgtype.UUID) (AiAgentToolCall, error) {
+	row := q.db.QueryRow(ctx, getAgentToolCall, id)
 	var i AiAgentToolCall
 	err := row.Scan(
 		&i.ID,
@@ -474,24 +427,22 @@ func (q *Queries) GetAgentToolCall(ctx context.Context, arg GetAgentToolCallPara
 const getAgentToolStats = `-- name: GetAgentToolStats :many
 
 SELECT tool_name,
-       COUNT(*)                                          AS total_calls,
-       COUNT(*) FILTER (WHERE status = 'success')        AS success_count,
-       COUNT(*) FILTER (WHERE status = 'error')          AS error_count,
-       COUNT(*) FILTER (WHERE status = 'unauthorized')   AS unauthorized_count,
-       COUNT(*) FILTER (WHERE status = 'privacy_blocked') AS privacy_blocked_count,
-       COUNT(*) FILTER (WHERE status = 'hitl_queued')    AS hitl_queued_count,
-       COALESCE(AVG(latency_ms), 0)                      AS avg_latency_ms,
-       COALESCE(MAX(latency_ms), 0)                      AS max_latency_ms
+ COUNT(*) AS total_calls,
+ COUNT(*) FILTER (WHERE status = 'success') AS success_count,
+ COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+ COUNT(*) FILTER (WHERE status = 'unauthorized') AS unauthorized_count,
+ COUNT(*) FILTER (WHERE status = 'privacy_blocked') AS privacy_blocked_count,
+ COUNT(*) FILTER (WHERE status = 'hitl_queued') AS hitl_queued_count,
+ COALESCE(AVG(latency_ms), 0) AS avg_latency_ms,
+ COALESCE(MAX(latency_ms), 0) AS max_latency_ms
 FROM ai_agent_tool_calls
-WHERE tenant_id = $1
-  AND ($2::timestamptz IS NULL OR created_at >= $2)
-  AND ($3::timestamptz   IS NULL OR created_at <  $3)
+WHERE ($1::timestamptz IS NULL OR created_at >= $1)
+ AND ($2::timestamptz IS NULL OR created_at < $2)
 GROUP BY tool_name
 ORDER BY total_calls DESC
 `
 
 type GetAgentToolStatsParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	FromDate pgtype.Timestamptz `json:"from_date"`
 	ToDate   pgtype.Timestamptz `json:"to_date"`
 }
@@ -515,7 +466,7 @@ type GetAgentToolStatsRow struct {
 // Filters by tenant and an optional date range (from_date / to_date, both
 // nullable). Success rate is the fraction of calls with status = 'success'.
 func (q *Queries) GetAgentToolStats(ctx context.Context, arg GetAgentToolStatsParams) ([]GetAgentToolStatsRow, error) {
-	rows, err := q.db.Query(ctx, getAgentToolStats, arg.TenantID, arg.FromDate, arg.ToDate)
+	rows, err := q.db.Query(ctx, getAgentToolStats, arg.FromDate, arg.ToDate)
 	if err != nil {
 		return nil, err
 	}
@@ -547,13 +498,8 @@ func (q *Queries) GetAgentToolStats(ctx context.Context, arg GetAgentToolStatsPa
 const getContentAIExempt = `-- name: GetContentAIExempt :one
 
 SELECT ai_exempt FROM contents
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetContentAIExemptParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================================================================
 // Privacy exemption lookups (§103 Privacy Exemption Columns).
@@ -564,8 +510,8 @@ type GetContentAIExemptParams struct {
 // JOINs custom_fields to enforce tenancy transitively (same pattern as
 // GetCustomFieldValue above).
 // =====================================================================
-func (q *Queries) GetContentAIExempt(ctx context.Context, arg GetContentAIExemptParams) (bool, error) {
-	row := q.db.QueryRow(ctx, getContentAIExempt, arg.ID, arg.TenantID)
+func (q *Queries) GetContentAIExempt(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getContentAIExempt, id)
 	var ai_exempt bool
 	err := row.Scan(&ai_exempt)
 	return ai_exempt, err
@@ -575,16 +521,11 @@ const getCustomFieldValueAIExempt = `-- name: GetCustomFieldValueAIExempt :one
 SELECT cfv.ai_exempt
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
-WHERE cfv.id = $1 AND cf.tenant_id = $2
+WHERE cfv.id = $1
 `
 
-type GetCustomFieldValueAIExemptParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetCustomFieldValueAIExempt(ctx context.Context, arg GetCustomFieldValueAIExemptParams) (bool, error) {
-	row := q.db.QueryRow(ctx, getCustomFieldValueAIExempt, arg.ID, arg.TenantID)
+func (q *Queries) GetCustomFieldValueAIExempt(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getCustomFieldValueAIExempt, id)
 	var ai_exempt bool
 	err := row.Scan(&ai_exempt)
 	return ai_exempt, err
@@ -594,13 +535,8 @@ const getCustomFieldValueEntity = `-- name: GetCustomFieldValueEntity :one
 SELECT cfv.entity_type, cfv.entity_id
 FROM custom_field_values cfv
 JOIN custom_fields cf ON cfv.field_id = cf.id
-WHERE cfv.id = $1 AND cf.tenant_id = $2
+WHERE cfv.id = $1
 `
-
-type GetCustomFieldValueEntityParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetCustomFieldValueEntityRow struct {
 	EntityType string      `json:"entity_type"`
@@ -612,8 +548,8 @@ type GetCustomFieldValueEntityRow struct {
 // handler to verify that the calling user owns the entity the field value
 // is attached to before allowing them to set ai_exempt.
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Privacy Exemption)
-func (q *Queries) GetCustomFieldValueEntity(ctx context.Context, arg GetCustomFieldValueEntityParams) (GetCustomFieldValueEntityRow, error) {
-	row := q.db.QueryRow(ctx, getCustomFieldValueEntity, arg.ID, arg.TenantID)
+func (q *Queries) GetCustomFieldValueEntity(ctx context.Context, id pgtype.UUID) (GetCustomFieldValueEntityRow, error) {
+	row := q.db.QueryRow(ctx, getCustomFieldValueEntity, id)
 	var i GetCustomFieldValueEntityRow
 	err := row.Scan(&i.EntityType, &i.EntityID)
 	return i, err
@@ -621,16 +557,11 @@ func (q *Queries) GetCustomFieldValueEntity(ctx context.Context, arg GetCustomFi
 
 const getUserAIExempt = `-- name: GetUserAIExempt :one
 SELECT ai_exempt FROM users
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetUserAIExemptParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetUserAIExempt(ctx context.Context, arg GetUserAIExemptParams) (bool, error) {
-	row := q.db.QueryRow(ctx, getUserAIExempt, arg.ID, arg.TenantID)
+func (q *Queries) GetUserAIExempt(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getUserAIExempt, id)
 	var ai_exempt bool
 	err := row.Scan(&ai_exempt)
 	return ai_exempt, err
@@ -638,13 +569,12 @@ func (q *Queries) GetUserAIExempt(ctx context.Context, arg GetUserAIExemptParams
 
 const listAgentSessionsByUser = `-- name: ListAgentSessionsByUser :many
 SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListAgentSessionsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -652,12 +582,7 @@ type ListAgentSessionsByUserParams struct {
 
 // User-facing history (newest first), offset-paginated.
 func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSessionsByUserParams) ([]AiAgentSession, error) {
-	rows, err := q.db.Query(ctx, listAgentSessionsByUser,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listAgentSessionsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -694,28 +619,21 @@ func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSess
 
 const listAgentSessionsForAdmin = `-- name: ListAgentSessionsForAdmin :many
 SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListAgentSessionsForAdminParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	StatusFilter string      `json:"status_filter"`
-	PageOffset   int32       `json:"page_offset"`
-	PageLimit    int32       `json:"page_limit"`
+	StatusFilter string `json:"status_filter"`
+	PageOffset   int32  `json:"page_offset"`
+	PageLimit    int32  `json:"page_limit"`
 }
 
 // Admin list (newest first), offset-paginated, optional status filter.
 // The optional-filter pattern mirrors SearchContentEmbeddings in rag.sql.
 func (q *Queries) ListAgentSessionsForAdmin(ctx context.Context, arg ListAgentSessionsForAdminParams) ([]AiAgentSession, error) {
-	rows, err := q.db.Query(ctx, listAgentSessionsForAdmin,
-		arg.TenantID,
-		arg.StatusFilter,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listAgentSessionsForAdmin, arg.StatusFilter, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -752,18 +670,13 @@ func (q *Queries) ListAgentSessionsForAdmin(ctx context.Context, arg ListAgentSe
 
 const listAgentToolCallsBySession = `-- name: ListAgentToolCallsBySession :many
 SELECT id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
-WHERE session_id = $1 AND tenant_id = $2
+WHERE session_id = $1
 ORDER BY created_at ASC
 `
 
-type ListAgentToolCallsBySessionParams struct {
-	SessionID pgtype.UUID `json:"session_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
 // All tool calls for a session, oldest first (audit trail order).
-func (q *Queries) ListAgentToolCallsBySession(ctx context.Context, arg ListAgentToolCallsBySessionParams) ([]AiAgentToolCall, error) {
-	rows, err := q.db.Query(ctx, listAgentToolCallsBySession, arg.SessionID, arg.TenantID)
+func (q *Queries) ListAgentToolCallsBySession(ctx context.Context, sessionID pgtype.UUID) ([]AiAgentToolCall, error) {
+	rows, err := q.db.Query(ctx, listAgentToolCallsBySession, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -799,19 +712,17 @@ func (q *Queries) ListAgentToolCallsBySession(ctx context.Context, arg ListAgent
 const setContentAIExempt = `-- name: SetContentAIExempt :one
 
 UPDATE contents SET ai_exempt = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, ai_exempt
+WHERE id = $2 AND deleted_at IS NULL
+RETURNING id, author_id, ai_exempt
 `
 
 type SetContentAIExemptParams struct {
 	AiExempt bool        `json:"ai_exempt"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type SetContentAIExemptRow struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AuthorID pgtype.UUID `json:"author_id"`
 	AiExempt bool        `json:"ai_exempt"`
 }
@@ -825,14 +736,9 @@ type SetContentAIExemptRow struct {
 // are tenant-scoped at the SQL layer for defense-in-depth (BUG-014).
 // =====================================================================
 func (q *Queries) SetContentAIExempt(ctx context.Context, arg SetContentAIExemptParams) (SetContentAIExemptRow, error) {
-	row := q.db.QueryRow(ctx, setContentAIExempt, arg.AiExempt, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, setContentAIExempt, arg.AiExempt, arg.ID)
 	var i SetContentAIExemptRow
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.AuthorID,
-		&i.AiExempt,
-	)
+	err := row.Scan(&i.ID, &i.AuthorID, &i.AiExempt)
 	return i, err
 }
 
@@ -841,15 +747,13 @@ UPDATE custom_field_values cfv
 SET ai_exempt = $1
 FROM custom_fields cf
 WHERE cfv.field_id = cf.id
-  AND cfv.id = $2
-  AND cf.tenant_id = $3
+ AND cfv.id = $2
 RETURNING cfv.id, cfv.field_id, cfv.ai_exempt
 `
 
 type SetCustomFieldValueAIExemptParams struct {
 	AiExempt bool        `json:"ai_exempt"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type SetCustomFieldValueAIExemptRow struct {
@@ -861,7 +765,7 @@ type SetCustomFieldValueAIExemptRow struct {
 // custom_field_values has no tenant_id column; JOIN custom_fields to
 // enforce tenancy transitively (same pattern as GetCustomFieldValueAIExempt).
 func (q *Queries) SetCustomFieldValueAIExempt(ctx context.Context, arg SetCustomFieldValueAIExemptParams) (SetCustomFieldValueAIExemptRow, error) {
-	row := q.db.QueryRow(ctx, setCustomFieldValueAIExempt, arg.AiExempt, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, setCustomFieldValueAIExempt, arg.AiExempt, arg.ID)
 	var i SetCustomFieldValueAIExemptRow
 	err := row.Scan(&i.ID, &i.FieldID, &i.AiExempt)
 	return i, err
@@ -869,37 +773,35 @@ func (q *Queries) SetCustomFieldValueAIExempt(ctx context.Context, arg SetCustom
 
 const setUserAIExempt = `-- name: SetUserAIExempt :one
 UPDATE users SET ai_exempt = $1
-WHERE id = $2 AND tenant_id = $3
-RETURNING id, tenant_id, ai_exempt
+WHERE id = $2
+RETURNING id, ai_exempt
 `
 
 type SetUserAIExemptParams struct {
 	AiExempt bool        `json:"ai_exempt"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 type SetUserAIExemptRow struct {
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 	AiExempt bool        `json:"ai_exempt"`
 }
 
 func (q *Queries) SetUserAIExempt(ctx context.Context, arg SetUserAIExemptParams) (SetUserAIExemptRow, error) {
-	row := q.db.QueryRow(ctx, setUserAIExempt, arg.AiExempt, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, setUserAIExempt, arg.AiExempt, arg.ID)
 	var i SetUserAIExemptRow
-	err := row.Scan(&i.ID, &i.TenantID, &i.AiExempt)
+	err := row.Scan(&i.ID, &i.AiExempt)
 	return i, err
 }
 
 const updateAgentToolCallResult = `-- name: UpdateAgentToolCallResult :one
 UPDATE ai_agent_tool_calls SET
-    result         = $1,
-    status         = $2,
-    error_message  = $3,
-    latency_ms     = $4,
-    hitl_review_id = $5
-WHERE id = $6 AND tenant_id = $7
+ result = $1,
+ status = $2,
+ error_message = $3,
+ latency_ms = $4,
+ hitl_review_id = $5
+WHERE id = $6
 RETURNING id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
 `
 
@@ -910,7 +812,6 @@ type UpdateAgentToolCallResultParams struct {
 	LatencyMs    *int32      `json:"latency_ms"`
 	HitlReviewID pgtype.UUID `json:"hitl_review_id"`
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // Record the outcome of a tool call. result is nullable jsonb (an error
@@ -924,7 +825,6 @@ func (q *Queries) UpdateAgentToolCallResult(ctx context.Context, arg UpdateAgent
 		arg.LatencyMs,
 		arg.HitlReviewID,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i AiAgentToolCall
 	err := row.Scan(

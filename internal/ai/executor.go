@@ -653,7 +653,7 @@ func (e *Executor) createHITL(ctx context.Context, p ExecuteParams, call ToolCal
 	}
 
 	review := HITLReview{
-		TenantID:    p.TenantID,
+
 		ContentType: contentType,
 		AIOutput:    aiOutput,
 		Source:      HITLSourceAgentTool,
@@ -764,7 +764,7 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 	}
 
 	row, err := e.write.CreateAgentToolCall(logCtx, gen.CreateAgentToolCallParams{
-		TenantID:       p.TenantID,
+
 		SessionID:      p.SessionID,
 		ToolName:       call.Name,
 		Arguments:      args,
@@ -795,7 +795,6 @@ func (e *Executor) finalizeToolCall(ctx context.Context, p ExecuteParams, call T
 		ErrorMessage: errMsg,
 		LatencyMs:    &latency,
 		ID:           row.ID,
-		TenantID:     p.TenantID,
 	}
 	if hitlReviewID != (pgtype.UUID{}) {
 		updateParams.HitlReviewID = hitlReviewID

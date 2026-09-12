@@ -118,8 +118,8 @@ func (m *mockPromoterStore) CreateContent(_ context.Context, _ pgtype.UUID, arg 
 
 func (m *mockPromoterStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	return gen.GetContentByIDRow{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Title:        m.existing.Title,
 		Body:         "stale body",
 		Status:       "published",
@@ -138,7 +138,7 @@ func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ pgtype.UUID, 
 
 func (m *mockPromoterStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
-	return gen.UpdateContentRow{ID: arg.ID, TenantID: tenantID}, nil
+	return gen.UpdateContentRow{ID: arg.ID}, nil
 }
 
 func (m *mockPromoterStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {

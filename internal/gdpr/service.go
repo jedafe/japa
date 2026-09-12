@@ -152,7 +152,7 @@ func (s *Service) RecordConsent(ctx context.Context, tenantID, userID pgtype.UUI
 	}
 
 	return s.store.recordConsent(ctx, gen.RecordConsentParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		ConsentType:   input.ConsentType,
 		Granted:       input.Granted,
@@ -225,7 +225,7 @@ func (s *Service) RevokeConsent(ctx context.Context, tenantID, userID pgtype.UUI
 	}
 
 	return s.store.revokeConsent(ctx, gen.RevokeConsentParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		ConsentType:   consentType,
 		PolicyVersion: policyVersion,
@@ -244,8 +244,8 @@ func (s *Service) ListConsentsByTenant(ctx context.Context, tenantID pgtype.UUID
 // RequestDataExport creates a data export request and enqueues a background job.
 func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype.UUID) (gen.DataExportRequest, error) {
 	request, err := s.store.createDataExportRequest(ctx, gen.CreateDataExportRequestParams{
-		TenantID: tenantID,
-		UserID:   userID,
+
+		UserID: userID,
 	})
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("creating data export request: %w", err)
@@ -302,7 +302,6 @@ func (s *Service) CancelDataExportRequest(ctx context.Context, userID, tenantID 
 		ExpiresAt:   pgtype.Timestamptz{},
 		CompletedAt: pgtype.Timestamptz{},
 		ID:          request.ID,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("cancelling data export request: %w", err)
@@ -463,9 +462,9 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID p
 	// accounts, not data subjects — user-erasure/export flows do not apply to
 	// them. Erasing a persona backing account would cascade-delete the
 	// ai_personas row and destroy the persona. Reject the request up front.
-	isBot, err := s.store.read.GetUserIsBot(ctx, gen.GetUserIsBotParams{
-		UserID: userID, TenantID: tenantID,
-	})
+	isBot, err := s.store.read.GetUserIsBot(ctx,
+		userID,
+	)
 	if err == nil && isBot {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("%w: cannot erase AI persona backing account (system account, not a data subject)", errpkg.ErrForbidden)
 	}
@@ -478,9 +477,9 @@ func (s *Service) RequestAccountDeletion(ctx context.Context, tenantID, userID p
 	}
 
 	request, err := s.store.createAccountDeletionRequest(ctx, gen.CreateAccountDeletionRequestParams{
-		TenantID: tenantID,
-		UserID:   userID,
-		Reason:   reasonPtr,
+
+		UserID: userID,
+		Reason: reasonPtr,
 	})
 	if err != nil {
 		return gen.AccountDeletionRequest{}, fmt.Errorf("creating account deletion request: %w", err)
@@ -534,9 +533,9 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	// backing account (is_bot = true), abort processing. The guard in
 	// RequestAccountDeletion prevents creating such requests, but a stale
 	// request created before the guard was added must not be executed.
-	isBot, botErr := s.store.read.GetUserIsBot(ctx, gen.GetUserIsBotParams{
-		UserID: request.UserID, TenantID: request.TenantID,
-	})
+	isBot, botErr := s.store.read.GetUserIsBot(ctx,
+		request.UserID,
+	)
 	if botErr == nil && isBot {
 		// Mark the request as failed so it is not retried.
 		s.markDeletionFailed(ctx, requestID)
@@ -559,8 +558,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	// 1. Anonymize user row + user_profile PII.
 	if step < deletionStepAnonymized {
 		if err := s.store.anonymizeUser(ctx, gen.AnonymizeUserParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
+			UserID: request.UserID,
 		}); err != nil {
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing user: %w", err)
@@ -571,8 +569,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// delete (ADR-014 / ADR-057). Best-effort: a failure logs a warning
 		// but does not abort — the user row is already anonymized.
 		if err := s.store.anonymizeUserProfile(ctx, gen.AnonymizeUserProfileParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
+			UserID: request.UserID,
 		}); err != nil {
 			slog.Warn("failed to anonymize user profile during deletion",
 				"user_id", request.UserID.String(), "error", err)
@@ -583,8 +580,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// cleared so it is not recoverable during the retention window.
 		// Best-effort: a failure logs a warning but does not abort.
 		if err := s.store.anonymizeMentorshipConnections(ctx, gen.AnonymizeMentorshipConnectionsParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
+			UserID: request.UserID,
 		}); err != nil {
 			slog.Warn("failed to anonymize mentorship connections during deletion",
 				"user_id", request.UserID.String(), "error", err)
@@ -594,8 +590,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// events are retained for commission audit; only tracking hashes are
 		// cleared. Best-effort: a failure logs a warning but does not abort.
 		if err := s.store.anonymizeAffiliateLinkEvents(ctx, gen.AnonymizeAffiliateLinkEventsParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
+			UserID: request.UserID,
 		}); err != nil {
 			slog.Warn("failed to anonymize affiliate link events during deletion",
 				"user_id", request.UserID.String(), "error", err)
@@ -613,10 +608,9 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// The row has ON DELETE CASCADE from users(id) so it is removed at
 		// hard-delete, but step_data PII must be cleared now so it is not
 		// recoverable during the retention window. Best-effort.
-		if err := s.store.write.AnonymizeOnboardingState(ctx, gen.AnonymizeOnboardingStateParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
-		}); err != nil {
+		if err := s.store.write.AnonymizeOnboardingState(ctx,
+			request.UserID,
+		); err != nil {
 			slog.Warn("failed to anonymize onboarding state during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -634,27 +628,27 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}{
 			{"totp_credentials", func() error {
 				return s.store.deleteUserTOTPCredentials(ctx, gen.DeleteUserTOTPCredentialsParams{
-					UserID: request.UserID, TenantID: request.TenantID,
+					UserID: request.UserID,
 				})
 			}},
 			{"oauth_accounts", func() error {
 				return s.store.deleteUserOAuthAccounts(ctx, gen.DeleteUserOAuthAccountsParams{
-					UserID: request.UserID, TenantID: request.TenantID,
+					UserID: request.UserID,
 				})
 			}},
 			{"password_reset_tokens", func() error {
 				return s.store.deleteUserPasswordResetTokens(ctx, gen.DeleteUserPasswordResetTokensParams{
-					UserID: request.UserID, TenantID: request.TenantID,
+					UserID: request.UserID,
 				})
 			}},
 			{"email_verifications", func() error {
 				return s.store.deleteUserEmailVerifications(ctx, gen.DeleteUserEmailVerificationsParams{
-					UserID: request.UserID, TenantID: request.TenantID,
+					UserID: request.UserID,
 				})
 			}},
 			{"password_history", func() error {
 				return s.store.deleteUserPasswordHistory(ctx, gen.DeleteUserPasswordHistoryParams{
-					UserID: request.UserID, TenantID: request.TenantID,
+					UserID: request.UserID,
 				})
 			}},
 		}
@@ -776,8 +770,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
-			UserID:   request.UserID,
-			TenantID: request.TenantID,
+			UserID: request.UserID,
 		}); err != nil {
 			slog.Warn("failed to revoke user tokens during deletion",
 				"user_id", request.UserID.String(), "error", err)
@@ -995,8 +988,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// 1. Reassign content authorship to preserve thread continuity.
 		if err := q.ReassignContentAuthor(ctx, gen.ReassignContentAuthorParams{
-			UserID:       userID,
-			TenantID:     tenantID,
+			UserID: userID,
+
 			TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning content authorship: %w", err)
@@ -1006,8 +999,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// series. Without this, ON DELETE CASCADE on blog_series.author_user_id
 		// destroys all user-authored series and cascades to blog_series_posts.
 		if err := q.ReassignBlogSeriesAuthor(ctx, gen.ReassignBlogSeriesAuthorParams{
-			UserID:       userID,
-			TenantID:     tenantID,
+			UserID: userID,
+
 			TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning blog series authorship: %w", err)
@@ -1017,8 +1010,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// history. Without this, ON DELETE CASCADE on
 		// content_reviews.reviewer_user_id destroys all review records.
 		if err := q.ReassignContentReviewReviewer(ctx, gen.ReassignContentReviewReviewerParams{
-			UserID:       userID,
-			TenantID:     tenantID,
+			UserID: userID,
+
 			TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning content review reviewer: %w", err)
@@ -1031,8 +1024,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// media rows, breaking featured/header images on posts whose
 		// authorship was reassigned to the placeholder. Ref: §34, ADR-014.
 		if err := q.ReassignMediaUploader(ctx, gen.ReassignMediaUploaderParams{
-			UserID:       userID,
-			TenantID:     tenantID,
+			UserID: userID,
+
 			TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning media uploader: %w", err)
@@ -1041,23 +1034,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// 2. Nullify payment user references (financial audit trail survives).
 		//    Errors are fatal inside the tx — a leftover reference would block
 		//    the final DELETE on its foreign key anyway.
-		if err := q.NullifyPaymentUserRefs(ctx, gen.NullifyPaymentUserRefsParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyPaymentUserRefs(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying payment user refs: %w", err)
 		}
 
 		// 2a. Nullify subscription user references (BUG-020).
-		if err := q.NullifySubscriptionUserRefs(ctx, gen.NullifySubscriptionUserRefsParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifySubscriptionUserRefs(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying subscription user refs: %w", err)
 		}
 
 		// 2b. Nullify discount code creator references (BUG-020).
-		if err := q.NullifyDiscountCodeCreatorRefs(ctx, gen.NullifyDiscountCodeCreatorRefsParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyDiscountCodeCreatorRefs(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying discount code creator refs: %w", err)
 		}
 
@@ -1069,18 +1062,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// 3. Nullify ticket submitter references.
-		if err := q.NullifyTicketSubmitter(ctx, gen.NullifyTicketSubmitterParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyTicketSubmitter(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying ticket submitter: %w", err)
 		}
 
 		// 3b. Anonymize comparison_items authored by the user (BUG-029).
 		// comparison_items carry title/description/image_id that can re-identify
 		// a user even after their content is soft-deleted.
-		if _, err := q.AnonymizeComparisonItemsByAuthor(ctx, gen.AnonymizeComparisonItemsByAuthorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.AnonymizeComparisonItemsByAuthor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing comparison items: %w", err)
 		}
 
@@ -1088,49 +1081,49 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// authored by the user. The label and value columns are user-authored
 		// free text that can re-identify a deleted user via their comparison
 		// content, just like comparison_items.title.
-		if _, err := q.AnonymizeComparisonDimensionsByAuthor(ctx, gen.AnonymizeComparisonDimensionsByAuthorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.AnonymizeComparisonDimensionsByAuthor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing comparison dimensions: %w", err)
 		}
-		if _, err := q.AnonymizeComparisonValuesByAuthor(ctx, gen.AnonymizeComparisonValuesByAuthorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.AnonymizeComparisonValuesByAuthor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing comparison values: %w", err)
 		}
 
 		// JCE Sub-spec 2/3: delete user-owned comparison profiles. They contain
 		// PII (goals, preferences, demographics) and are not needed for audit.
-		if err := q.DeleteComparisonProfilesByUser(ctx, gen.DeleteComparisonProfilesByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteComparisonProfilesByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting comparison profiles: %w", err)
 		}
 
 		// JCE Sub-spec 2/3: delete computed scores and recommendations for
 		// content authored by the user. These are derived PII tied to content.
-		if err := q.DeleteComparisonScoresByUser(ctx, gen.DeleteComparisonScoresByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteComparisonScoresByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting comparison scores: %w", err)
 		}
-		if err := q.DeleteComparisonRecommendationsByUser(ctx, gen.DeleteComparisonRecommendationsByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteComparisonRecommendationsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting comparison recommendations: %w", err)
 		}
 
 		// JCE Sub-spec 4: delete ingestion jobs tied to user-authored comparison
 		// content and any user-owned data sources (created_by_user_id is populated
 		// for future non-admin source creation; admin sources remain NULL).
-		if err := q.DeleteComparisonDataIngestionJobsByUser(ctx, gen.DeleteComparisonDataIngestionJobsByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteComparisonDataIngestionJobsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting comparison data ingestion jobs: %w", err)
 		}
-		if err := q.DeleteComparisonDataSourcesByUser(ctx, gen.DeleteComparisonDataSourcesByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteComparisonDataSourcesByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting comparison data sources: %w", err)
 		}
 
@@ -1234,18 +1227,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// forum_tags.moderator_user_id is nullable; clear it so the tag survives.
-		if err := q.NullifyForumTagModerator(ctx, gen.NullifyForumTagModeratorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyForumTagModerator(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying forum tag moderator: %w", err)
 		}
 
 		// tag_moderators.user_id links the user to tags they moderate (Section 08/49).
 		// The FK has ON DELETE CASCADE, but we delete explicitly to document the
 		// erasure path and clear the moderation history before the final HardDeleteUser.
-		if err := q.DeleteTagModeratorsByUser(ctx, gen.DeleteTagModeratorsByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteTagModeratorsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting tag moderators: %w", err)
 		}
 
@@ -1254,9 +1247,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// final HardDeleteUser (which cascades to forum_threads →
 		// forum_thread_tags) doesn't leave orphaned junction rows if the
 		// thread is retained for soft-delete. Ref: Section 08 + GDPR.
-		if err := q.DeleteForumThreadTagsByAuthor(ctx, gen.DeleteForumThreadTagsByAuthorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteForumThreadTagsByAuthor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting forum thread tags by author: %w", err)
 		}
 
@@ -1270,10 +1263,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// will null it, but the comment body (TipTap JSON, potentially
 		// containing PII and @mentions) must be cleared before the user is
 		// hard-deleted. Ref: Section 15, ADR-014.
-		if err := q.AnonymizeCommentsByAuthor(ctx, gen.AnonymizeCommentsByAuthorParams{
-			UserID:   userID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := q.AnonymizeCommentsByAuthor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing comments: %w", err)
 		}
 
@@ -1287,35 +1279,35 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 
 		// Anonymize dm_messages authored by the user (clear body, reassign sender).
 		if err := q.AnonymizeDMMessagesBySender(ctx, gen.AnonymizeDMMessagesBySenderParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("anonymizing dm messages: %w", err)
 		}
 
 		// Reassign dm_conversations participant references to placeholder.
 		if err := q.ReassignDMConversationParticipant1(ctx, gen.ReassignDMConversationParticipant1Params{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning dm conversation participant 1: %w", err)
 		}
 
 		if err := q.ReassignDMConversationParticipant2(ctx, gen.ReassignDMConversationParticipant2Params{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning dm conversation participant 2: %w", err)
 		}
 
 		// Anonymize dm_requests (clear preview, reassign requester/recipient).
 		if err := q.AnonymizeDMRequestsByUser(ctx, gen.AnonymizeDMRequestsByUserParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("anonymizing dm requests: %w", err)
 		}
 
 		// Delete user_dm_settings (user-owned config, no PII in the row).
-		if err := q.DeleteUserDMSettingsByUser(ctx, gen.DeleteUserDMSettingsByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteUserDMSettingsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting user dm settings: %w", err)
 		}
 
@@ -1339,10 +1331,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// BUG-M006: delete notifications addressed to the erased user.
 		// Notification rows are user-owned data (the recipient's inbox) and
 		// must be removed during GDPR erasure (Section 19).
-		if err := q.DeleteNotificationsByUser(ctx, gen.DeleteNotificationsByUserParams{
-			UserID:   userID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteNotificationsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting user notifications: %w", err)
 		}
 
@@ -1388,15 +1379,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// user_preferences is user-owned config; remove it explicitly.
-		if err := q.DeleteUserPreferences(ctx, gen.DeleteUserPreferencesParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteUserPreferences(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting user preferences: %w", err)
 		}
 
 		// organizations.owner_user_id is NOT NULL; reassign to placeholder to preserve the org for remaining members.
 		if err := q.ReassignOrganizationOwner(ctx, gen.ReassignOrganizationOwnerParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning organization owner: %w", err)
 		}
@@ -1407,16 +1398,16 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
-		if err := q.DeleteOwnershipClaimsByClaimant(ctx, gen.DeleteOwnershipClaimsByClaimantParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.DeleteOwnershipClaimsByClaimant(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting ownership claims: %w", err)
 		}
 
 		// ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
-		if err := q.NullifyOwnershipClaimReviewer(ctx, gen.NullifyOwnershipClaimReviewerParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyOwnershipClaimReviewer(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying ownership claim reviewer: %w", err)
 		}
 
@@ -1427,22 +1418,22 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// consent_records.user_id is nullable; preserve the compliance record, detach the user.
-		if err := q.NullifyConsentRecordUser(ctx, gen.NullifyConsentRecordUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.NullifyConsentRecordUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("nullifying consent record user: %w", err)
 		}
 
 		// data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve export audit trail.
 		if err := q.ReassignDataExportRequestUser(ctx, gen.ReassignDataExportRequestUserParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning data export request user: %w", err)
 		}
 
 		// account_deletion_requests.user_id is NOT NULL; reassign to placeholder so the in-flight request row survives.
 		if err := q.ReassignAccountDeletionRequestUser(ctx, gen.ReassignAccountDeletionRequestUserParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning account deletion request user: %w", err)
 		}
@@ -1451,14 +1442,14 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// config rows survive when the admin who created them is erased (BUG-016,
 		// ADR-068 compliance).
 		if err := q.ReassignAIPersonaCreatedBy(ctx, gen.ReassignAIPersonaCreatedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning ai_personas created_by: %w", err)
 		}
 
 		// audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User".
 		if err := q.AnonymizeAuditLogActor(ctx, gen.AnonymizeAuditLogActorParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("anonymizing audit log actor: %w", err)
 		}
@@ -1467,7 +1458,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// the import audit trail survives when the admin who created the import is
 		// erased (BUG-013, Section 67 / Section 15 compliance).
 		if err := q.ReassignPlatformDataImportCreatedBy(ctx, gen.ReassignPlatformDataImportCreatedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
 		}
@@ -1480,19 +1471,19 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//     records survive for regulatory retention. The FKs were changed
 		//     from ON DELETE CASCADE to ON DELETE SET NULL in migration
 		//     000181 to enforce this at the schema level.
-		if _, err := q.ClearInstructorPayoutMethod(ctx, gen.ClearInstructorPayoutMethodParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.ClearInstructorPayoutMethod(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("clearing instructor payout method: %w", err)
 		}
-		if _, err := q.AnonymizeRevenueSplitsForInstructor(ctx, gen.AnonymizeRevenueSplitsForInstructorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.AnonymizeRevenueSplitsForInstructor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing revenue splits: %w", err)
 		}
-		if _, err := q.AnonymizeInstructorPayoutsForInstructor(ctx, gen.AnonymizeInstructorPayoutsForInstructorParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if _, err := q.AnonymizeInstructorPayoutsForInstructor(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("anonymizing instructor payouts: %w", err)
 		}
 
@@ -1594,23 +1585,23 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// Ref: japaconnect-engineering/sections/86-community-calendar.md
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.GdprReassignCalendarEntriesSubmittedBy(ctx, gen.GdprReassignCalendarEntriesSubmittedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning calendar_entries submitted_by: %w", err)
 		}
 		if err := q.GdprReassignCalendarEntriesReviewedBy(ctx, gen.GdprReassignCalendarEntriesReviewedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning calendar_entries reviewed_by: %w", err)
 		}
-		if err := q.GdprDeleteCalendarSavesByUser(ctx, gen.GdprDeleteCalendarSavesByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.GdprDeleteCalendarSavesByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting calendar_saves: %w", err)
 		}
-		if err := q.GdprDeleteCalendarSubscriptionsByUser(ctx, gen.GdprDeleteCalendarSubscriptionsByUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.GdprDeleteCalendarSubscriptionsByUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting calendar_subscriptions: %w", err)
 		}
 		// BUG-005: Mutual Aid Board GDPR erasure (§85, ADR-093).
@@ -1794,12 +1785,12 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// Ref: japaconnect-engineering/sections/67-platform-data-portability.md
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.ReassignPlatformDataExportCreatedBy(ctx, gen.ReassignPlatformDataExportCreatedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning platform_data_exports created_by: %w", err)
 		}
 		if err := q.ReassignPlatformDataImportCreatedBy(ctx, gen.ReassignPlatformDataImportCreatedByParams{
-			UserID: userID, TenantID: tenantID, TargetUserID: deletedUserPlaceholder,
+			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
 			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
 		}
@@ -1946,10 +1937,10 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// reference in the intelligence tables; the spec §8 requires it be
 		// included in the erasure job. BUG-015 fix.
 		// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md §8
-		if err := q.DeleteIntelReviewLogByActor(ctx, gen.DeleteIntelReviewLogByActorParams{
-			TenantID:    tenantID,
-			ActorUserID: userID,
-		}); err != nil {
+		if err := q.DeleteIntelReviewLogByActor(ctx,
+
+			userID,
+		); err != nil {
 			return fmt.Errorf("deleting intel review log by actor: %w", err)
 		}
 
@@ -1994,9 +1985,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			return fmt.Errorf("reassigning wiki_revisions hitl_reviewed_by: %w", err)
 		}
 
-		if err := q.HardDeleteUser(ctx, gen.HardDeleteUserParams{
-			UserID: userID, TenantID: tenantID,
-		}); err != nil {
+		if err := q.HardDeleteUser(ctx,
+			userID,
+		); err != nil {
 			return fmt.Errorf("physically deleting user row: %w", err)
 		}
 
@@ -2097,7 +2088,7 @@ func (s *Service) LogAuditEvent(ctx context.Context, tenantID pgtype.UUID, param
 	ipAddress := parseIPAddress(params.IPAddress)
 
 	_, err := s.store.createAuditLog(ctx, gen.CreateAuditLogParams{
-		TenantID:           tenantID,
+
 		ActorUserID:        params.ActorUserID,
 		ImpersonatedUserID: params.ImpersonatedUserID,
 		ActionType:         params.ActionType,
@@ -2140,7 +2131,7 @@ func (s *Service) ListAuditLogs(ctx context.Context, tenantID, actorUserID pgtyp
 	}
 
 	return s.store.listAuditLogs(ctx, gen.ListAuditLogsParams{
-		TenantID:    tenantID,
+
 		ActorUserID: actorFilter,
 		ActionType:  actionType,
 		TargetType:  targetTypePtr,

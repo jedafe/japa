@@ -344,7 +344,7 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 	}
 
 	pack, err := h.Service.createCreditPack(r.Context(), gen.CreateCreditPackParams{
-		TenantID:     tenantID,
+
 		Name:         input.Name,
 		Description:  description,
 		CreditAmount: int32(input.CreditAmount), // #nosec
@@ -404,8 +404,8 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 	}
 
 	pack, err := h.Service.updateCreditPack(r.Context(), gen.UpdateCreditPackParams{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Name:         input.Name,
 		Description:  description,
 		CreditAmount: int32(input.CreditAmount), // #nosec
@@ -458,7 +458,7 @@ func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Reque
 	q := r.URL.Query()
 
 	var params gen.ListCreditPurchasesParams
-	params.TenantID = tenantID
+
 	params.PageLimit = parsePageSize(r)
 
 	if v := q.Get("page"); v != "" {

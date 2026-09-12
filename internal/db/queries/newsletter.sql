@@ -2,13 +2,13 @@
 
 -- name: GetNewsletterCampaign :one
 SELECT subject, html FROM newsletter_campaigns
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: UpsertNewsletterSendState :exec
 INSERT INTO newsletter_send_state (campaign_id, recipient, status)
 SELECT @campaign_id, ns.email, 'pending'
 FROM newsletter_subscribers ns
-WHERE ns.tenant_id = @tenant_id AND ns.status = 'subscribed' AND ns.campaign_enabled = true
+WHERE ns.status = 'subscribed' AND ns.campaign_enabled = true
 ON CONFLICT (campaign_id, recipient) DO NOTHING;
 
 -- name: ListPendingNewsletterRecipients :many

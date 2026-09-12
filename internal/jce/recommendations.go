@@ -31,7 +31,7 @@ func newRecommendationStore(database *db.DB) *recommendationStore {
 // ordered by priority desc then created_at asc, and truncated to the requested limit.
 func (s *recommendationStore) listByContent(ctx context.Context, tenantID, contentID, profileID pgtype.UUID, limit int32) ([]ComparisonRecommendation, error) {
 	rows, err := s.read.ListComparisonRecommendationsByContent(ctx, gen.ListComparisonRecommendationsByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		ProfileID: profileID,
 	})
@@ -56,7 +56,7 @@ func (s *recommendationStore) listByContent(ctx context.Context, tenantID, conte
 // create inserts a comparison recommendation.
 func (s *recommendationStore) create(ctx context.Context, tenantID, contentID, itemID, profileID, factorID pgtype.UUID, text, actionType, actionURL string, priority int32) (ComparisonRecommendation, error) {
 	row, err := s.write.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
-		TenantID:   tenantID,
+
 		ContentID:  contentID,
 		ItemID:     itemID,
 		ProfileID:  profileID,
@@ -76,7 +76,7 @@ func (s *recommendationStore) create(ctx context.Context, tenantID, contentID, i
 // deleteByContent removes recommendations for a comparison and optional profile.
 func (s *recommendationStore) deleteByContent(ctx context.Context, tenantID, contentID, profileID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonRecommendationsByContent(ctx, gen.DeleteComparisonRecommendationsByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		ProfileID: profileID,
 	}); err != nil {

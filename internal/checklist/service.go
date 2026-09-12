@@ -438,7 +438,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	}
 
 	row, err := s.store.UpsertChecklistProgress(ctx, gen.UpsertChecklistProgressParams{
-		TenantID:    tenantID,
+
 		UserID:      userID,
 		GuideID:     guideID,
 		ItemKey:     itemKey,
@@ -530,7 +530,7 @@ func (s *Service) AdminListProgress(ctx context.Context, tenantID, guideID, user
 	offset := (page - 1) * limit
 
 	rows, err := s.store.AdminListChecklistProgress(ctx, gen.AdminListChecklistProgressParams{
-		TenantID:   tenantID,
+
 		GuideID:    guideID,
 		UserID:     userID,
 		PageOffset: offset,

@@ -10,95 +10,84 @@
 
 -- name: ListBadgeDefinitions :many
 SELECT * FROM badge_definitions
-WHERE tenant_id = @tenant_id
-  AND (@active_only::boolean = false OR is_active = true)
+WHERE (@active_only::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC;
 
 -- name: ListBadgeDefinitionsPaginated :many
 SELECT * FROM badge_definitions
-WHERE tenant_id = @tenant_id
-  AND (@active_only::boolean = false OR is_active = true)
+WHERE (@active_only::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountBadgeDefinitions :one
 SELECT COUNT(*) AS count
 FROM badge_definitions
-WHERE tenant_id = @tenant_id
-  AND (@active_only::boolean = false OR is_active = true);
+WHERE (@active_only::boolean = false OR is_active = true);
 
 -- name: GetBadgeDefinitionByID :one
 SELECT * FROM badge_definitions
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- name: CreateBadgeDefinition :one
-INSERT INTO badge_definitions (
-    tenant_id, slug, name, description, icon_media_id,
-    trigger_type, trigger_value, trigger_activity_key,
-    is_active, is_system, display_order
-)
-VALUES (
-    @tenant_id, @slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id),
-    @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key),
-    @is_active, @is_system, @display_order
-)
+INSERT INTO badge_definitions (slug, name, description, icon_media_id, trigger_type, trigger_value, trigger_activity_key, is_active, is_system, display_order) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(icon_media_id), @trigger_type, sqlc.narg(trigger_value), sqlc.narg(trigger_activity_key), @is_active, @is_system, @display_order)
+
 RETURNING *;
 
 -- name: UpdateBadgeDefinition :one
 UPDATE badge_definitions
 SET
-    name                  = COALESCE(sqlc.narg(name), name),
-    description           = COALESCE(sqlc.narg(description), description),
-    icon_media_id         = COALESCE(sqlc.narg(icon_media_id), icon_media_id),
-    trigger_type          = COALESCE(sqlc.narg(trigger_type), trigger_type),
-    trigger_value         = COALESCE(sqlc.narg(trigger_value), trigger_value),
-    trigger_activity_key  = COALESCE(sqlc.narg(trigger_activity_key), trigger_activity_key),
-    is_active             = COALESCE(sqlc.narg(is_active), is_active),
-    display_order         = COALESCE(sqlc.narg(display_order), display_order)
-WHERE tenant_id = @tenant_id AND id = @id
+ name = COALESCE(sqlc.narg(name), name),
+ description = COALESCE(sqlc.narg(description), description),
+ icon_media_id = COALESCE(sqlc.narg(icon_media_id), icon_media_id),
+ trigger_type = COALESCE(sqlc.narg(trigger_type), trigger_type),
+ trigger_value = COALESCE(sqlc.narg(trigger_value), trigger_value),
+ trigger_activity_key = COALESCE(sqlc.narg(trigger_activity_key), trigger_activity_key),
+ is_active = COALESCE(sqlc.narg(is_active), is_active),
+ display_order = COALESCE(sqlc.narg(display_order), display_order)
+WHERE id = @id
 RETURNING *;
 
 -- name: DeleteBadgeDefinition :execrows
 DELETE FROM badge_definitions
-WHERE tenant_id = @tenant_id AND id = @id AND is_system = false;
+WHERE id = @id AND is_system = false;
 
 -- =====================================================================
 -- User Badges
 -- =====================================================================
 
 -- name: AwardBadge :one
-INSERT INTO user_badges (tenant_id, user_id, badge_id, awarded_by)
-VALUES (@tenant_id, @user_id, @badge_id, sqlc.narg(awarded_by))
-ON CONFLICT (tenant_id, user_id, badge_id) DO NOTHING
+INSERT INTO user_badges (user_id, badge_id, awarded_by) VALUES (@user_id, @badge_id, sqlc.narg(awarded_by))
+
+ON CONFLICT (user_id, badge_id) DO NOTHING
 RETURNING *;
 
 -- name: ListUserBadges :many
 SELECT
-    ub.*,
-    bd.name  AS badge_name,
-    bd.slug  AS badge_slug,
-    bd.description AS badge_description,
-    bd.icon_media_id AS badge_icon_media_id
+ ub.*,
+ bd.name AS badge_name,
+ bd.slug AS badge_slug,
+ bd.description AS badge_description,
+ bd.icon_media_id AS badge_icon_media_id
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
-WHERE ub.tenant_id = @tenant_id AND ub.user_id = @user_id
+WHERE ub.user_id = @user_id
 ORDER BY ub.awarded_at DESC;
 
 -- name: ListUserBadgesByUsername :many
 SELECT
-    ub.*,
-    bd.name  AS badge_name,
-    bd.slug  AS badge_slug,
-    bd.description AS badge_description
+ ub.*,
+ bd.name AS badge_name,
+ bd.slug AS badge_slug,
+ bd.description AS badge_description
 FROM user_badges ub
 JOIN badge_definitions bd ON bd.id = ub.badge_id
 JOIN users u ON u.id = ub.user_id
-WHERE ub.tenant_id = @tenant_id AND u.username = @username
+WHERE u.username = @username
 ORDER BY ub.awarded_at DESC;
 
 -- name: GetUserBadge :one
 SELECT * FROM user_badges
-WHERE tenant_id = @tenant_id AND user_id = @user_id AND badge_id = @badge_id;
+WHERE user_id = @user_id AND badge_id = @badge_id;
 
 -- =====================================================================
 -- Challenge Definitions
@@ -106,67 +95,57 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id AND badge_id = @badge_id;
 
 -- name: ListActiveChallenges :many
 SELECT * FROM challenge_definitions
-WHERE tenant_id = @tenant_id
-  AND is_active = true
-  AND starts_at <= now()
-  AND (ends_at IS NULL OR ends_at > now())
+WHERE is_active = true
+ AND starts_at <= now()
+ AND (ends_at IS NULL OR ends_at > now())
 ORDER BY created_at DESC;
 
 -- name: ListAllChallenges :many
 SELECT * FROM challenge_definitions
-WHERE tenant_id = @tenant_id
+
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountAllChallenges :one
 SELECT COUNT(*) AS count
 FROM challenge_definitions
-WHERE tenant_id = @tenant_id;
+;
 
 -- name: GetChallengeByID :one
 SELECT * FROM challenge_definitions
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- name: CreateChallenge :one
-INSERT INTO challenge_definitions (
-    tenant_id, slug, name, description, image_media_id,
-    activity_key, target_count, reward_points, reward_badge_id,
-    starts_at, ends_at, is_active
-)
-VALUES (
-    @tenant_id, @slug, @name, sqlc.narg(description), sqlc.narg(image_media_id),
-    @activity_key, @target_count, @reward_points, sqlc.narg(reward_badge_id),
-    @starts_at, sqlc.narg(ends_at), @is_active
-)
+INSERT INTO challenge_definitions (slug, name, description, image_media_id, activity_key, target_count, reward_points, reward_badge_id, starts_at, ends_at, is_active) VALUES (@slug, @name, sqlc.narg(description), sqlc.narg(image_media_id), @activity_key, @target_count, @reward_points, sqlc.narg(reward_badge_id), @starts_at, sqlc.narg(ends_at), @is_active)
+
 RETURNING *;
 
 -- name: UpdateChallenge :one
 UPDATE challenge_definitions
 SET
-    name           = COALESCE(sqlc.narg(name), name),
-    description    = COALESCE(sqlc.narg(description), description),
-    image_media_id = COALESCE(sqlc.narg(image_media_id), image_media_id),
-    activity_key   = COALESCE(sqlc.narg(activity_key), activity_key),
-    target_count   = COALESCE(sqlc.narg(target_count), target_count),
-    reward_points  = COALESCE(sqlc.narg(reward_points), reward_points),
-    reward_badge_id = COALESCE(sqlc.narg(reward_badge_id), reward_badge_id),
-    starts_at      = COALESCE(sqlc.narg(starts_at), starts_at),
-    ends_at        = COALESCE(sqlc.narg(ends_at), ends_at),
-    is_active      = COALESCE(sqlc.narg(is_active), is_active)
-WHERE tenant_id = @tenant_id AND id = @id
+ name = COALESCE(sqlc.narg(name), name),
+ description = COALESCE(sqlc.narg(description), description),
+ image_media_id = COALESCE(sqlc.narg(image_media_id), image_media_id),
+ activity_key = COALESCE(sqlc.narg(activity_key), activity_key),
+ target_count = COALESCE(sqlc.narg(target_count), target_count),
+ reward_points = COALESCE(sqlc.narg(reward_points), reward_points),
+ reward_badge_id = COALESCE(sqlc.narg(reward_badge_id), reward_badge_id),
+ starts_at = COALESCE(sqlc.narg(starts_at), starts_at),
+ ends_at = COALESCE(sqlc.narg(ends_at), ends_at),
+ is_active = COALESCE(sqlc.narg(is_active), is_active)
+WHERE id = @id
 RETURNING *;
 
 -- name: DeleteChallenge :execrows
 DELETE FROM challenge_definitions
-WHERE tenant_id = @tenant_id AND id = @id;
+WHERE id = @id;
 
 -- name: ExpireChallengesPastEndDate :execrows
 UPDATE challenge_definitions
 SET is_active = false
-WHERE tenant_id = @tenant_id
-  AND is_active = true
-  AND ends_at IS NOT NULL
-  AND ends_at < now();
+WHERE is_active = true
+ AND ends_at IS NOT NULL
+ AND ends_at < now();
 
 -- =====================================================================
 -- User Challenge Progress
@@ -177,48 +156,44 @@ WHERE tenant_id = @tenant_id
 -- the first event (off-by-one). completed_at is set once, on the first
 -- transition to completed — later increments must not drift the timestamp.
 -- name: UpsertChallengeProgress :one
-INSERT INTO user_challenge_progress (tenant_id, user_id, challenge_id, current_count, completed, completed_at)
-VALUES (
-    @tenant_id, @user_id, @challenge_id, @current_count,
-    @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id),
-    CASE WHEN @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id)
-        THEN now() ELSE NULL END
-)
-ON CONFLICT (tenant_id, user_id, challenge_id)
+INSERT INTO user_challenge_progress (user_id, challenge_id, current_count, completed, completed_at) VALUES (@user_id, @challenge_id, @current_count, @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id), CASE WHEN @current_count >= (SELECT target_count FROM challenge_definitions WHERE id = @challenge_id)
+ THEN now() ELSE NULL END)
+
+ON CONFLICT (user_id, challenge_id)
 DO UPDATE SET
-    current_count = user_challenge_progress.current_count + EXCLUDED.current_count,
-    completed = CASE
-        WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
-            SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
-        ) THEN true
-        ELSE false
-    END,
-    completed_at = CASE
-        WHEN user_challenge_progress.completed THEN user_challenge_progress.completed_at
-        WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
-            SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
-        ) THEN now()
-        ELSE user_challenge_progress.completed_at
-    END
+ current_count = user_challenge_progress.current_count + EXCLUDED.current_count,
+ completed = CASE
+ WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
+ SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
+ ) THEN true
+ ELSE false
+ END,
+ completed_at = CASE
+ WHEN user_challenge_progress.completed THEN user_challenge_progress.completed_at
+ WHEN user_challenge_progress.current_count + EXCLUDED.current_count >= (
+ SELECT target_count FROM challenge_definitions WHERE id = @challenge_id
+ ) THEN now()
+ ELSE user_challenge_progress.completed_at
+ END
 RETURNING *;
 
 -- name: ListUserChallengeProgress :many
 SELECT
-    ucp.*,
-    cd.name  AS challenge_name,
-    cd.slug  AS challenge_slug,
-    cd.description AS challenge_description,
-    cd.target_count,
-    cd.reward_points,
-    cd.ends_at
+ ucp.*,
+ cd.name AS challenge_name,
+ cd.slug AS challenge_slug,
+ cd.description AS challenge_description,
+ cd.target_count,
+ cd.reward_points,
+ cd.ends_at
 FROM user_challenge_progress ucp
 JOIN challenge_definitions cd ON cd.id = ucp.challenge_id
-WHERE ucp.tenant_id = @tenant_id AND ucp.user_id = @user_id
+WHERE ucp.user_id = @user_id
 ORDER BY ucp.completed ASC, cd.ends_at ASC NULLS FIRST;
 
 -- name: GetChallengeProgress :one
 SELECT * FROM user_challenge_progress
-WHERE tenant_id = @tenant_id AND user_id = @user_id AND challenge_id = @challenge_id;
+WHERE user_id = @user_id AND challenge_id = @challenge_id;
 
 -- name: MarkChallengeRewardClaimed :exec
 UPDATE user_challenge_progress
@@ -239,51 +214,47 @@ WHERE id = @id;
 
 -- name: LeaderboardAllTime :many
 SELECT
-    wl.user_id,
-    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
-    u.username,
-    up.display_name,
-    up.avatar_url,
-    u.profile_type
+ wl.user_id,
+ COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS lifetime_points,
+ u.username,
+ up.display_name,
+ up.avatar_url,
+ u.profile_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-WHERE wl.tenant_id = @tenant_id
-  AND wl.ledger_type = 'points'
-  AND u.is_bot = false
-  AND u.is_synthetic = false
-  AND u.status = 'active'
-  AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
-      SELECT 1 FROM space_members sm
-      WHERE sm.tenant_id = wl.tenant_id
-        AND sm.space_id = sqlc.narg(space_id)::uuid
-        AND sm.user_id = wl.user_id))
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE wl.ledger_type = 'points'
+ AND u.is_bot = false
+ AND u.is_synthetic = false
+ AND u.status = 'active'
+ AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM space_members sm
+ WHERE sm.space_id = sqlc.narg(space_id)::uuid
+ AND sm.user_id = wl.user_id))
 GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY lifetime_points DESC
 LIMIT @top_n;
 
 -- name: LeaderboardByPeriod :many
 SELECT
-    wl.user_id,
-    COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
-    u.username,
-    up.display_name,
-    up.avatar_url,
-    u.profile_type
+ wl.user_id,
+ COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS period_points,
+ u.username,
+ up.display_name,
+ up.avatar_url,
+ u.profile_type
 FROM wallet_ledger wl
 JOIN users u ON u.id = wl.user_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
-WHERE wl.tenant_id = @tenant_id
-  AND wl.ledger_type = 'points'
-  AND wl.created_at >= @from_date
-  AND u.is_bot = false
-  AND u.is_synthetic = false
-  AND u.status = 'active'
-  AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
-      SELECT 1 FROM space_members sm
-      WHERE sm.tenant_id = wl.tenant_id
-        AND sm.space_id = sqlc.narg(space_id)::uuid
-        AND sm.user_id = wl.user_id))
+LEFT JOIN user_profiles up ON up.user_id = u.id
+WHERE wl.ledger_type = 'points'
+ AND wl.created_at >= @from_date
+ AND u.is_bot = false
+ AND u.is_synthetic = false
+ AND u.status = 'active'
+ AND (sqlc.narg(space_id)::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM space_members sm
+ WHERE sm.space_id = sqlc.narg(space_id)::uuid
+ AND sm.user_id = wl.user_id))
 GROUP BY wl.user_id, u.username, up.display_name, up.avatar_url, u.profile_type
 ORDER BY period_points DESC
 LIMIT @top_n;
@@ -294,32 +265,28 @@ LIMIT @top_n;
 
 -- name: GetBadgesByActivityTrigger :many
 SELECT * FROM badge_definitions
-WHERE tenant_id = @tenant_id
-  AND is_active = true
-  AND trigger_type = 'activity_count'
-  AND trigger_activity_key = @activity_key;
+WHERE is_active = true
+ AND trigger_type = 'activity_count'
+ AND trigger_activity_key = @activity_key;
 
 -- name: GetBadgesByPointsTrigger :many
 SELECT * FROM badge_definitions
-WHERE tenant_id = @tenant_id
-  AND is_active = true
-  AND trigger_type = 'lifetime_points';
+WHERE is_active = true
+ AND trigger_type = 'lifetime_points';
 
 -- name: CountUserActivityByKey :one
 -- activity_events is the canonical record of "user did activity X" — the
--- wallet activity queue, deduped by UNIQUE(tenant_id, activity_key,
+-- wallet activity queue, deduped by UNIQUE(activity_key,
 -- reference). platform_events is the analytics event stream (page_view etc.)
 -- and never receives activity keys, so counting it always returned 0.
 SELECT COUNT(*) AS count
 FROM activity_events
-WHERE tenant_id = @tenant_id
-  AND user_id = @user_id
-  AND activity_key = @activity_key;
+WHERE user_id = @user_id
+ AND activity_key = @activity_key;
 
 -- name: GetChallengesByActivityKey :many
 SELECT * FROM challenge_definitions
-WHERE tenant_id = @tenant_id
-  AND is_active = true
-  AND activity_key = @activity_key
-  AND starts_at <= now()
-  AND (ends_at IS NULL OR ends_at > now());
+WHERE is_active = true
+ AND activity_key = @activity_key
+ AND starts_at <= now()
+ AND (ends_at IS NULL OR ends_at > now());

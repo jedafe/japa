@@ -5,21 +5,16 @@
 -- =====================
 
 -- name: RecordConsent :one
-INSERT INTO consent_records (
-    tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent
-) VALUES (
-    @tenant_id, sqlc.narg(user_id), @consent_type, @granted, @policy_version,
-    sqlc.narg(ip_address), sqlc.narg(user_agent)
-)
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at;
+INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES (sqlc.narg(user_id), @consent_type, @granted, @policy_version, sqlc.narg(ip_address), sqlc.narg(user_agent))
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at;
 
 -- name: GetUserConsents :many
-SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
+SELECT id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at
 FROM consent_records
 WHERE user_id = @user_id
-  AND (@consent_type = '' OR consent_type = @consent_type)
+ AND (@consent_type = '' OR consent_type = @consent_type)
 ORDER BY created_at DESC;
 
 -- name: HasConsent :one
@@ -30,32 +25,25 @@ ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: RevokeConsent :exec
-INSERT INTO consent_records (
-    tenant_id, user_id, consent_type, granted, policy_version, ip_address, user_agent
-) VALUES (
-    @tenant_id, @user_id, @consent_type, false, @policy_version,
-    sqlc.narg(ip_address), sqlc.narg(user_agent)
-);
+INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES (@user_id, @consent_type, false, @policy_version, sqlc.narg(ip_address), sqlc.narg(user_agent)) ;
 
 -- name: ListConsentsByTenant :many
-SELECT cr.id, cr.tenant_id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
-    cr.ip_address, cr.user_agent, cr.created_at,
-    u.username, up.display_name
+SELECT cr.id, cr.user_id, cr.consent_type, cr.granted, cr.policy_version,
+ cr.ip_address, cr.user_agent, cr.created_at,
+ u.username, up.display_name
 FROM consent_records cr
 LEFT JOIN users u ON u.id = cr.user_id
 LEFT JOIN user_profiles up ON up.user_id = cr.user_id
-WHERE cr.tenant_id = @tenant_id
-  AND (@consent_type::text = '' OR cr.consent_type = @consent_type::text)
-  AND (@q::text = '' OR cr.consent_type ILIKE '%' || @q || '%' OR cr.ip_address::text ILIKE '%' || @q || '%')
+WHERE (@consent_type::text = '' OR cr.consent_type = @consent_type::text)
+ AND (@q::text = '' OR cr.consent_type ILIKE '%' || @q || '%' OR cr.ip_address::text ILIKE '%' || @q || '%')
 ORDER BY cr.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
-
 -- name: DeleteConsent :one
 DELETE FROM consent_records
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at;
+WHERE id = @id
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at;
 
 -- =====================
 -- GDPR Data Export Queries
@@ -64,7 +52,7 @@ RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
 -- name: GdprExportUserContent :many
 SELECT id, title, slug, content_type, status, created_at
 FROM contents
-WHERE author_id = @user_id AND tenant_id = @tenant_id
+WHERE author_id = @user_id
 ORDER BY created_at DESC;
 
 -- name: GdprExportUserServiceListings :many
@@ -72,36 +60,36 @@ ORDER BY created_at DESC;
 -- their content rows. The base content row is already exported by
 -- GdprExportUserContent; this adds the structured service fields.
 SELECT c.id AS content_id,
-       c.title,
-       c.slug,
-       c.created_at,
-       sm.service_category,
-       sm.is_verified,
-       sm.verification_type,
-       sm.claim_status,
-       sm.origin_communities,
-       sm.is_remote,
-       sm.website_url,
-       sm.booking_url,
-       sm.price_range
+ c.title,
+ c.slug,
+ c.created_at,
+ sm.service_category,
+ sm.is_verified,
+ sm.verification_type,
+ sm.claim_status,
+ sm.origin_communities,
+ sm.is_remote,
+ sm.website_url,
+ sm.booking_url,
+ sm.price_range
 FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
-WHERE c.author_id = @user_id AND c.tenant_id = @tenant_id
-  AND c.content_type = 'service_listing'
-  AND c.deleted_at IS NULL
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.author_id = @user_id
+ AND c.content_type = 'service_listing'
+ AND c.deleted_at IS NULL
 ORDER BY c.created_at DESC;
 
 -- name: GdprExportUserComments :many
 SELECT id, content_id, body, parent_id, created_at
 FROM comments
-WHERE author_user_id = @user_id AND tenant_id = @tenant_id
+WHERE author_user_id = @user_id
 ORDER BY created_at DESC;
 
 -- name: GdprExportUserSpaces :many
 SELECT s.id, s.name, s.slug, s.status, sm.role, sm.joined_at
 FROM space_members sm
 JOIN spaces s ON s.id = sm.space_id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id
+WHERE sm.user_id = @user_id
 ORDER BY sm.joined_at DESC;
 
 -- name: GdprExportOwnedSpaceParents :many
@@ -110,7 +98,7 @@ ORDER BY sm.joined_at DESC;
 SELECT sps.space_id, sps.parent_space_id
 FROM space_parent_spaces sps
 JOIN space_members sm ON sm.space_id = sps.space_id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner';
+WHERE sm.user_id = @user_id AND sm.role = 'owner';
 
 -- name: GdprExportOwnedSpaceRules :many
 -- Returns rules for spaces owned by the user (BUG-004: GDPR export
@@ -118,19 +106,19 @@ WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner';
 SELECT sr.id, sr.space_id, sr.title, sr.body, sr.position
 FROM space_rules sr
 JOIN space_members sm ON sm.space_id = sr.space_id
-WHERE sm.user_id = @user_id AND sm.tenant_id = @tenant_id AND sm.role = 'owner'
+WHERE sm.user_id = @user_id AND sm.role = 'owner'
 ORDER BY sr.space_id, sr.position;
 
 -- name: GdprExportUserPayments :many
 SELECT id, provider, amount, currency, status, purpose_type, created_at
 FROM payments
-WHERE user_id = @user_id AND tenant_id = @tenant_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC;
 
 -- name: GdprExportUserNotifications :many
 SELECT id, notification_type, title, body, read_at, created_at
 FROM notifications
-WHERE recipient_id = @user_id AND tenant_id = @tenant_id
+WHERE recipient_id = @user_id
 ORDER BY created_at DESC;
 
 -- =====================
@@ -138,45 +126,41 @@ ORDER BY created_at DESC;
 -- =====================
 
 -- name: CreateDataExportRequest :one
-INSERT INTO data_export_requests (
-    tenant_id, user_id, status
-) VALUES (
-    @tenant_id, @user_id, 'pending'
-)
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at;
+INSERT INTO data_export_requests (user_id, status) VALUES (@user_id, 'pending')
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at;
 
 -- name: GetDataExportRequest :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetLatestDataExportRequestByUser :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE user_id = @user_id AND tenant_id = @tenant_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: UpdateDataExportRequestStatus :one
 UPDATE data_export_requests
 SET status = @status,
-    download_url = sqlc.narg(download_url),
-    expires_at = sqlc.narg(expires_at),
-    completed_at = sqlc.narg(completed_at)
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at;
+ download_url = sqlc.narg(download_url),
+ expires_at = sqlc.narg(expires_at),
+ completed_at = sqlc.narg(completed_at)
+WHERE id = @id
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at;
 
 -- name: ListPendingDataExportRequests :many
 -- BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
 -- cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
-WHERE status = 'pending' AND tenant_id = @tenant_id
+WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT @page_limit;
 
@@ -185,53 +169,49 @@ LIMIT @page_limit;
 -- =====================
 
 -- name: CreateAccountDeletionRequest :one
-INSERT INTO account_deletion_requests (
-    tenant_id, user_id, status, reason
-) VALUES (
-    @tenant_id, @user_id, 'pending', sqlc.narg(reason)
-)
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
+INSERT INTO account_deletion_requests (user_id, status, reason) VALUES (@user_id, 'pending', sqlc.narg(reason))
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step;
 
 -- name: GetAccountDeletionRequest :one
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
+SELECT id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: UpdateAccountDeletionRequestStatus :one
 UPDATE account_deletion_requests
 SET status = @status,
-    completed_at = sqlc.narg(completed_at)
-WHERE id = @id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
+ completed_at = sqlc.narg(completed_at)
+WHERE id = @id
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step;
 
 -- name: UpdateAccountDeletionRequestProgress :exec
 -- AUDIT-FRESH-GDPR-003: checkpoints the erasure flow so a retried job resumes
 -- from the last completed step instead of re-running from the top.
 UPDATE account_deletion_requests
 SET progress_step = @progress_step
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: ListPendingDeletionRequests :many
 -- BUG-GDPR-001: scoped to the caller's tenant so an admin in tenant A
 -- cannot see tenant B's pending deletion requests (§5.3 cross-tenant bleed).
-SELECT adr.id, adr.tenant_id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
-       u.username, up.display_name
+SELECT adr.id, adr.user_id, adr.status, adr.reason, adr.completed_at, adr.created_at, adr.progress_step,
+ u.username, up.display_name
 FROM account_deletion_requests adr
 LEFT JOIN users u ON u.id = adr.user_id
 LEFT JOIN user_profiles up ON up.user_id = adr.user_id
-WHERE adr.status = 'pending' AND adr.tenant_id = @tenant_id
+WHERE adr.status = 'pending'
 ORDER BY adr.created_at ASC
 LIMIT @page_limit;
 
 -- name: AnonymizeUser :exec
 UPDATE users
 SET username = 'Deleted User',
-    email = 'deleted-' || id::text,
-    password_hash = '',
-    profile_type = NULL,
-    status = 'deleted',
-    updated_at = now()
-WHERE id = @user_id AND tenant_id = @tenant_id;
+ email = 'deleted-' || id::text,
+ password_hash = '',
+ profile_type = NULL,
+ status = 'deleted',
+ updated_at = now()
+WHERE id = @user_id;
 
 -- name: AnonymizeUserProfile :exec
 -- Clears PII columns in user_profiles during the GDPR retention window
@@ -247,32 +227,32 @@ WHERE id = @user_id AND tenant_id = @tenant_id;
 -- japa_stage_is_public (revoked so no public directory leak survives).
 UPDATE user_profiles
 SET display_name = 'Deleted User',
-    avatar_url = NULL,
-    cover_url = NULL,
-    bio = NULL,
-    timezone = NULL,
-    business_name = NULL,
-    registration_number = NULL,
-    operating_hours = NULL,
-    content_country_preference = NULL,
-    preferred_currency = NULL,
-    japa_stage = NULL,
-    japa_stage_dest_space_id = NULL,
-    japa_stage_history = '[]'::jsonb,
-    japa_stage_is_public = false,
-    japa_stage_updated_at = NULL,
-    -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
-    -- personal text, mentor_embedding is derived PII, mentor_areas reveals
-    -- expertise/destination knowledge, is_mentor reveals opt-in status.
-    is_mentor = false,
-    mentor_capacity = NULL,
-    active_mentee_count = NULL,
-    mentor_areas = NULL,
-    mentor_bio = NULL,
-    mentor_since = NULL,
-    mentor_embedding = NULL,
-    updated_at = now()
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+ avatar_url = NULL,
+ cover_url = NULL,
+ bio = NULL,
+ timezone = NULL,
+ business_name = NULL,
+ registration_number = NULL,
+ operating_hours = NULL,
+ content_country_preference = NULL,
+ preferred_currency = NULL,
+ japa_stage = NULL,
+ japa_stage_dest_space_id = NULL,
+ japa_stage_history = '[]'::jsonb,
+ japa_stage_is_public = false,
+ japa_stage_updated_at = NULL,
+ -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
+ -- personal text, mentor_embedding is derived PII, mentor_areas reveals
+ -- expertise/destination knowledge, is_mentor reveals opt-in status.
+ is_mentor = false,
+ mentor_capacity = NULL,
+ active_mentee_count = NULL,
+ mentor_areas = NULL,
+ mentor_bio = NULL,
+ mentor_since = NULL,
+ mentor_embedding = NULL,
+ updated_at = now()
+WHERE user_id = @user_id;
 
 -- name: AnonymizeMentorshipConnections :exec
 -- Scrubs PII (goals — the mentee's free-text stated goals) from
@@ -283,7 +263,7 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 -- retention window. Best-effort: a failure logs a warning but does not abort.
 UPDATE mentorship_connections
 SET goals = NULL, updated_at = now()
-WHERE tenant_id = @tenant_id AND (mentor_id = @user_id OR mentee_id = @user_id);
+WHERE (mentor_id = @user_id OR mentee_id = @user_id);
 
 -- name: AnonymizeAffiliateLinkEvents :exec
 -- Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
@@ -294,8 +274,8 @@ WHERE tenant_id = @tenant_id AND (mentor_id = @user_id OR mentee_id = @user_id);
 UPDATE affiliate_link_events
 SET ip_hash = NULL, user_agent_hash = NULL
 WHERE link_id IN (
-    SELECT ual.id FROM user_affiliate_links ual
-    WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id
+ SELECT ual.id FROM user_affiliate_links ual
+ WHERE ual.user_id = @user_id
 );
 
 -- name: AnonymizeCouponEvents :exec
@@ -310,7 +290,7 @@ WHERE user_id = @user_id;
 -- name: DeleteUserTokens :exec
 UPDATE refresh_tokens
 SET revoked_at = now(), updated_at = now()
-WHERE user_id = @user_id AND tenant_id = @tenant_id AND revoked_at IS NULL;
+WHERE user_id = @user_id AND revoked_at IS NULL;
 
 -- =====================
 -- Auth PII Scrub (AUDIT-AUTH-008)
@@ -328,42 +308,42 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id AND revoked_at IS NULL;
 -- rows during anonymization so 2FA secrets are not recoverable during the
 -- retention window. The table has ON DELETE CASCADE from users(id), so this
 -- is redundant at hard-delete but necessary for the anonymization phase.
-DELETE FROM totp_credentials WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM totp_credentials WHERE user_id = @user_id;
 
 -- name: DeleteUserOAuthAccounts :exec
 -- oauth_accounts.provider_user_id is PII (the user's identity at the OAuth
 -- provider). Delete the rows during anonymization so the user's social
 -- identities are not recoverable during the retention window.
-DELETE FROM oauth_accounts WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM oauth_accounts WHERE user_id = @user_id;
 
 -- name: DeleteUserPasswordResetTokens :exec
 -- password_reset_tokens.token_hash is a security credential. Delete the
 -- rows during anonymization so no reset tokens remain usable.
-DELETE FROM password_reset_tokens WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM password_reset_tokens WHERE user_id = @user_id;
 
 -- name: DeleteUserEmailVerifications :exec
 -- email_verifications.email and token_hash are PII and security credentials.
 -- Delete the rows during anonymization so the user's email and verification
 -- tokens are not recoverable during the retention window.
-DELETE FROM email_verifications WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM email_verifications WHERE user_id = @user_id;
 
 -- name: DeleteUserPasswordHistory :exec
 -- password_history.password_hash is PII (bcrypt hashes of previous
 -- passwords). Delete the rows during anonymization so old password hashes
 -- are not recoverable during the retention window.
-DELETE FROM password_history WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM password_history WHERE user_id = @user_id;
 
 -- name: HardDeleteUser :exec
 -- Physically deletes the anonymized user row. ON DELETE CASCADE handles most
 -- child tables; callers must SET NULL or reassign non-CASCADE FK references
 -- before calling this.
 DELETE FROM users
-WHERE id = @user_id AND tenant_id = @tenant_id AND status = 'deleted';
+WHERE id = @user_id AND status = 'deleted';
 
 -- name: ReassignContentAuthor :exec
 -- Reassigns content authorship before user deletion to preserve thread continuity.
 UPDATE contents SET author_id = @target_user_id
-WHERE author_id = @user_id AND tenant_id = @tenant_id;
+WHERE author_id = @user_id;
 
 -- name: ReassignBlogSeriesAuthor :exec
 -- C7: reassign blog_series authorship before user deletion to preserve
@@ -371,14 +351,14 @@ WHERE author_id = @user_id AND tenant_id = @tenant_id;
 -- this, ON DELETE CASCADE on blog_series.author_user_id destroys all
 -- user-authored series and cascades to blog_series_posts.
 UPDATE blog_series SET author_user_id = @target_user_id
-WHERE author_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE author_user_id = @user_id;
 
 -- name: ReassignContentReviewReviewer :exec
 -- C7: reassign content_reviews reviewer before user deletion to preserve
 -- editorial audit history (ADR-014). Without this, ON DELETE CASCADE on
 -- content_reviews.reviewer_user_id destroys all review records.
 UPDATE content_reviews SET reviewer_user_id = @target_user_id
-WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE reviewer_user_id = @user_id;
 
 -- name: ReassignMediaUploader :exec
 -- BUG-009: reassign media uploader before user deletion so the user's
@@ -390,23 +370,23 @@ WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id;
 -- resolved by hardDeleteUser (gdpr.deleted_user_placeholder_uuid setting).
 -- Ref: japaconnect-engineering/sections/34-media-system.md, ADR-014.
 UPDATE media SET uploader_user_id = @target_user_id
-WHERE uploader_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE uploader_user_id = @user_id;
 
 -- name: NullifyPaymentUserRefs :exec
 -- Nulls payment-related user references for financial audit trail preservation.
 UPDATE payments SET user_id = NULL
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: NullifySubscriptionUserRefs :exec
 -- Nulls subscription user references for GDPR erasure (BUG-020).
 -- Preserves subscription history for financial audit while removing PII.
 UPDATE subscriptions SET user_id = NULL
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: NullifyDiscountCodeCreatorRefs :exec
 -- Nulls discount code created_by references for GDPR erasure (BUG-020).
 UPDATE discount_codes SET created_by = NULL
-WHERE created_by = @user_id AND tenant_id = @tenant_id;
+WHERE created_by = @user_id;
 
 -- name: NullifyDiscountCodeUseUserRefs :exec
 -- Nulls discount code use user_id references for GDPR erasure (BUG-020).
@@ -418,43 +398,35 @@ WHERE user_id = @user_id;
 -- name: NullifyTicketSubmitter :exec
 -- Nulls ticket submitter reference.
 UPDATE tickets SET submitter_user_id = NULL
-WHERE submitter_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE submitter_user_id = @user_id;
 
 -- =====================
 -- Audit Logs
 -- =====================
 
 -- name: CreateAuditLog :one
-INSERT INTO audit_logs (
-    tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address
-) VALUES (
-    @tenant_id, sqlc.narg(actor_user_id), sqlc.narg(impersonated_user_id),
-    @action_type, sqlc.narg(target_type), sqlc.narg(target_id),
-    @metadata, sqlc.narg(ip_address)
-)
-RETURNING id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at;
+INSERT INTO audit_logs (actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address) VALUES (sqlc.narg(actor_user_id), sqlc.narg(impersonated_user_id), @action_type, sqlc.narg(target_type), sqlc.narg(target_id), @metadata, sqlc.narg(ip_address))
+RETURNING id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at;
 
 -- name: ListAuditLogs :many
-SELECT id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at
+SELECT id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at
 FROM audit_logs
-WHERE tenant_id = @tenant_id
-  AND (@actor_user_id = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = @actor_user_id)
-  AND (@action_type = '' OR action_type = @action_type)
-  AND (sqlc.narg('target_type')::text IS NULL OR target_type = sqlc.narg('target_type')::text)
-  AND (sqlc.narg('start_date')::timestamptz IS NULL OR created_at >= sqlc.narg('start_date')::timestamptz)
-  AND (sqlc.narg('end_date')::timestamptz IS NULL OR created_at <= sqlc.narg('end_date')::timestamptz)
-  AND (sqlc.narg('q')::text = '' OR action_type ILIKE '%' || sqlc.narg('q') || '%' OR target_type ILIKE '%' || sqlc.narg('q') || '%' OR target_id::text ILIKE '%' || sqlc.narg('q') || '%' OR actor_user_id::text ILIKE '%' || sqlc.narg('q') || '%')
+WHERE (@actor_user_id = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = @actor_user_id)
+ AND (@action_type = '' OR action_type = @action_type)
+ AND (sqlc.narg('target_type')::text IS NULL OR target_type = sqlc.narg('target_type')::text)
+ AND (sqlc.narg('start_date')::timestamptz IS NULL OR created_at >= sqlc.narg('start_date')::timestamptz)
+ AND (sqlc.narg('end_date')::timestamptz IS NULL OR created_at <= sqlc.narg('end_date')::timestamptz)
+ AND (sqlc.narg('q')::text = '' OR action_type ILIKE '%' || sqlc.narg('q') || '%' OR target_type ILIKE '%' || sqlc.narg('q') || '%' OR target_id::text ILIKE '%' || sqlc.narg('q') || '%' OR actor_user_id::text ILIKE '%' || sqlc.narg('q') || '%')
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListStalePendingDeletionRequests :many
-SELECT id, tenant_id, user_id
+SELECT id, user_id
 FROM account_deletion_requests
 WHERE status = 'pending'
-  AND created_at < now() - interval '30 minutes'
+ AND created_at < now() - interval '30 minutes'
 ORDER BY created_at ASC
 LIMIT 50;
 
@@ -463,10 +435,10 @@ LIMIT 50;
 -- enqueue may have been lost (e.g. RequestDataExport's enqueuer.Enqueue
 -- failed and only logged). Mirrors ListStalePendingDeletionRequests.
 -- Tenant-scoped at the call site; the sweep iterates all tenants.
-SELECT id, tenant_id, user_id
+SELECT id, user_id
 FROM data_export_requests
 WHERE status = 'pending'
-  AND created_at < now() - interval '30 minutes'
+ AND created_at < now() - interval '30 minutes'
 ORDER BY created_at ASC
 LIMIT 50;
 
@@ -475,11 +447,11 @@ LIMIT 50;
 -- ADR-057 and system-settings-catalog specify gdpr.retention_days
 -- defaults to 0 (no waiting period). The previous '30' fallback caused
 -- tenants without the explicit setting to wait 30 days instead of 0.
-SELECT r.id, r.tenant_id
+SELECT r.id
 FROM account_deletion_requests r
-LEFT JOIN system_settings s ON s.tenant_id = r.tenant_id AND s.key = 'gdpr.retention_days'
+LEFT JOIN system_settings s ON s.key = 'gdpr.retention_days'
 WHERE r.status = 'retention_wait'
-  AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
+ AND r.created_at + ((COALESCE(s.value->>0, '0'))::int || ' days')::interval <= now()
 ORDER BY r.created_at ASC
 LIMIT 100;
 
@@ -487,12 +459,12 @@ LIMIT 100;
 -- BUG-GDPR-005: find completed data export requests whose ExpiresAt has
 -- passed so the sweep can delete the file from storage and null out the
 -- download URL. Section 19 requires time-limited download links.
-SELECT id, tenant_id
+SELECT id
 FROM data_export_requests
 WHERE status = 'completed'
-  AND expires_at IS NOT NULL
-  AND expires_at < now()
-  AND download_url IS NOT NULL
+ AND expires_at IS NOT NULL
+ AND expires_at < now()
+ AND download_url IS NOT NULL
 ORDER BY expires_at ASC
 LIMIT 100;
 
@@ -501,23 +473,21 @@ LIMIT 100;
 -- the download handler returns 404 and the file is not re-cleaned.
 UPDATE data_export_requests
 SET download_url = NULL,
-    status = 'expired'
-WHERE id = $1 AND tenant_id = $2;
+ status = 'expired'
+WHERE id = $1;
 
 -- name: PruneAuditLogs :exec
 -- Per-tenant retention via system_settings 'audit.log_retention_days'
 -- (default 365 days). Tenants without the setting keep the catalog default.
 DELETE FROM audit_logs a
 USING (
-  SELECT a2.tenant_id,
-         (COALESCE((SELECT s.value->>0
-                    FROM system_settings s
-                    WHERE s.tenant_id = a2.tenant_id AND s.key = 'audit.log_retention_days'),
-                   '365')::int || ' days')::interval AS retention
-  FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'audit.log_retention_days'),
+ '365')::int || ' days')::interval AS retention
+ FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
 ) cfg
-WHERE a.tenant_id = cfg.tenant_id
-  AND a.created_at < now() - cfg.retention;
+WHERE a.created_at < now() - cfg.retention;
 
 -- =====================
 -- Hard-Delete Erasure — Non-CASCADE FK Cleanup (AUDIT-FRESH-GDPR-001)
@@ -537,13 +507,13 @@ DELETE FROM space_pinned_posts WHERE pinned_by = @user_id;
 -- name: NullifyForumTagModerator :exec
 -- forum_tags.moderator_user_id is nullable; clear it so the tag survives without the user.
 UPDATE forum_tags SET moderator_user_id = NULL
-WHERE moderator_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE moderator_user_id = @user_id;
 
 -- name: DeleteTagModeratorsByUser :exec
 -- tag_moderators.user_id has ON DELETE CASCADE but we delete explicitly to document
 -- the erasure path and ensure the user's moderation history is cleared before the
 -- final HardDeleteUser. Ref: Section 08/49, GDPR erasure coverage.
-DELETE FROM tag_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM tag_moderators WHERE user_id = @user_id;
 
 -- name: DeleteTicketCommentsByUser :exec
 -- ticket_comments.user_id has no CASCADE; delete the user's ticket comments.
@@ -558,9 +528,9 @@ DELETE FROM ticket_comments WHERE user_id = @user_id;
 -- soft-deleted so it is excluded from public queries. Ref: Section 15, ADR-014.
 UPDATE comments
 SET body = '"[deleted]"'::jsonb,
-    deleted_at = now(),
-    updated_at = now()
-WHERE author_user_id = @user_id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+ deleted_at = now(),
+ updated_at = now()
+WHERE author_user_id = @user_id AND deleted_at IS NULL;
 
 -- name: NullifyTicketEventsUser :exec
 -- ticket_events.user_id is nullable and is an audit trail; nullify the actor, keep the event.
@@ -568,12 +538,12 @@ UPDATE ticket_events SET user_id = NULL WHERE user_id = @user_id;
 
 -- name: DeleteUserPreferences :exec
 -- user_preferences is user-owned config; remove it explicitly (CASCADE is redundant but explicit).
-DELETE FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM user_preferences WHERE user_id = @user_id;
 
 -- name: ReassignOrganizationOwner :exec
 -- organizations.owner_user_id is NOT NULL; reassign to the deleted-user placeholder to preserve the org for remaining members.
 UPDATE organizations SET owner_user_id = @target_user_id
-WHERE owner_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE owner_user_id = @user_id;
 
 -- name: NullifyOrganizationInvitationInviter :exec
 -- organization_invitations.invited_by is nullable; clear inviter reference.
@@ -581,11 +551,11 @@ UPDATE organization_invitations SET invited_by = NULL WHERE invited_by = @user_i
 
 -- name: DeleteOwnershipClaimsByClaimant :exec
 -- ownership_claims.claimant_user_id is NOT NULL; delete the user's submitted claims.
-DELETE FROM ownership_claims WHERE claimant_user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM ownership_claims WHERE claimant_user_id = @user_id;
 
 -- name: NullifyOwnershipClaimReviewer :exec
 -- ownership_claims.reviewed_by is nullable; clear reviewer reference when an admin is erased.
-UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = @user_id AND tenant_id = @tenant_id;
+UPDATE ownership_claims SET reviewed_by = NULL WHERE reviewed_by = @user_id;
 
 -- name: DeleteOrganizationMembersByUser :exec
 -- organization_members.user_id is NOT NULL; remove the erased user's memberships to
@@ -595,38 +565,38 @@ DELETE FROM organization_members WHERE user_id = @user_id;
 
 -- name: NullifyConsentRecordUser :exec
 -- consent_records.user_id is nullable; preserve the compliance record, detach the user reference.
-UPDATE consent_records SET user_id = NULL WHERE user_id = @user_id AND tenant_id = @tenant_id;
+UPDATE consent_records SET user_id = NULL WHERE user_id = @user_id;
 
 -- name: ReassignDataExportRequestUser :exec
 -- data_export_requests.user_id is NOT NULL; reassign to placeholder to preserve the export audit trail.
 UPDATE data_export_requests SET user_id = @target_user_id
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: ReassignAccountDeletionRequestUser :exec
 -- account_deletion_requests.user_id is NOT NULL; reassign to placeholder so the in-flight request row survives the delete.
 UPDATE account_deletion_requests SET user_id = @target_user_id
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: GetUserIsBot :one
 -- Returns the is_bot flag for a user. Used by RequestAccountDeletion to
 -- reject erasure of AI persona backing accounts (ADR-068 compliance:
 -- "Persona backing accounts are system accounts, not data subjects, so
 -- user-erasure/export flows do not apply to them").
-SELECT is_bot FROM users WHERE id = @user_id AND tenant_id = @tenant_id;
+SELECT is_bot FROM users WHERE id = @user_id;
 
 -- name: ReassignAIPersonaCreatedBy :exec
 -- ai_personas.created_by is NOT NULL and references users(id). When an admin
 -- who created personas is GDPR-erased, reassign created_by to the placeholder
 -- so the persona config rows survive (BUG-016, ADR-068 compliance).
 UPDATE ai_personas SET created_by = @target_user_id
-WHERE created_by = @user_id AND tenant_id = @tenant_id;
+WHERE created_by = @user_id;
 
 -- name: AnonymizeAuditLogActor :exec
 -- audit_logs must be preserved for compliance; repoint actor/impersonated refs to the placeholder "Deleted User" label.
 UPDATE audit_logs
 SET actor_user_id = @target_user_id,
-    impersonated_user_id = CASE WHEN impersonated_user_id = @user_id THEN @target_user_id ELSE impersonated_user_id END
-WHERE (actor_user_id = @user_id OR impersonated_user_id = @user_id) AND tenant_id = @tenant_id;
+ impersonated_user_id = CASE WHEN impersonated_user_id = @user_id THEN @target_user_id ELSE impersonated_user_id END
+WHERE (actor_user_id = @user_id OR impersonated_user_id = @user_id);
 
 -- =====================
 -- GDPR Data Export — Additional User-Owned Tables (AUDIT-FRESH-GDPR-002)
@@ -636,24 +606,24 @@ WHERE (actor_user_id = @user_id OR impersonated_user_id = @user_id) AND tenant_i
 
 -- name: GdprExportUserProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM user_profiles WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM user_profiles WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserReactions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM reactions WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM reactions WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM bookmarks WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM bookmarks WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserBookmarkFolders :one
 -- Exports bookmark_folders for GDPR data export (BL-005).
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM bookmark_folders WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM bookmark_folders WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserContentShares :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM content_shares WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM content_shares WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserContentViews :one
 -- Exports user_content_views rows for GDPR data export (Section 14).
@@ -661,7 +631,7 @@ FROM (SELECT * FROM content_shares WHERE user_id = @user_id AND tenant_id = @ten
 -- right-to-access response and anonymized on erasure.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT content_id, session_id, country_code, viewed_at
-      FROM user_content_views WHERE user_id = @user_id) t;
+ FROM user_content_views WHERE user_id = @user_id) t;
 
 -- name: GdprDeleteUserContentViews :exec
 -- Deletes user_content_views rows for the user being erased (Section 14,
@@ -733,27 +703,27 @@ UPDATE studio_batches SET created_by = NULL WHERE created_by = @user_id;
 
 -- name: GdprExportUserFollows :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM follows WHERE follower_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM follows WHERE follower_id = @user_id) t;
 
 -- name: GdprExportUserForumThreads :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM forum_threads WHERE author_user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM forum_threads WHERE author_user_id = @user_id) t;
 
 -- name: GdprExportUserForumReplies :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM forum_replies WHERE author_user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM forum_replies WHERE author_user_id = @user_id) t;
 
 -- name: GdprExportUserForumVotes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM forum_votes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM forum_votes WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserForumBookmarks :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
-    FROM bookmarks
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-      AND entity_type IN ('forum_thread', 'forum_reply')
+ SELECT user_id, entity_type, entity_id, folder, folder_id, created_at
+ FROM bookmarks
+ WHERE user_id = @user_id
+ AND entity_type IN ('forum_thread', 'forum_reply')
 ) t;
 
 -- name: GdprExportUserForumPollVotes :one
@@ -769,71 +739,71 @@ FROM (SELECT * FROM reply_views WHERE user_id = @user_id) t;
 -- name: GdprExportUserForumThreadTags :one
 -- BUG-022: junction rows for threads authored by the user.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT ftt.* FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = @user_id AND ft.tenant_id = @tenant_id) t;
+FROM (SELECT ftt.* FROM forum_thread_tags ftt JOIN forum_threads ft ON ft.id = ftt.thread_id WHERE ft.author_user_id = @user_id) t;
 
 -- name: DeleteForumThreadTagsByAuthor :exec
 -- BUG-022: delete junction rows for threads authored by the user during
 -- GDPR erasure, so the final hard-delete doesn't leave orphaned rows.
 DELETE FROM forum_thread_tags
-WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = @user_id AND tenant_id = @tenant_id);
+WHERE thread_id IN (SELECT id FROM forum_threads WHERE author_user_id = @user_id);
 
 -- name: GdprExportUserMedia :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM media WHERE uploader_user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM media WHERE uploader_user_id = @user_id) t;
 
 -- name: GdprExportUserReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM reviews WHERE reviewer_user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM reviews WHERE reviewer_user_id = @user_id) t;
 
 -- name: GdprExportUserSpaceMembers :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM space_members WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM space_members WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserSpaceModerators :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM space_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM space_moderators WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserTagModerators :one
 -- Tag moderation history (Section 08/49). tag_moderators.user_id has ON DELETE CASCADE
 -- so the final HardDeleteUser will remove these rows; this export captures them first.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM tag_moderators WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM tag_moderators WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserConsentRecords :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM consent_records WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM consent_records WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserWalletLedger :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM wallet_ledger WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM wallet_ledger WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserActivityEvents :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM activity_events WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM activity_events WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM lesson_progress WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM lesson_progress WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserLearningCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM learning_certificates WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM learning_certificates WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserMentorshipMatches :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id) AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id)) t;
 
 -- name: GdprExportUserMentorshipConnections :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentorship_connections WHERE (mentor_id = @user_id OR mentee_id = @user_id) AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM mentorship_connections WHERE (mentor_id = @user_id OR mentee_id = @user_id)) t;
 
 -- name: GdprExportUserMentorProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentorship_profiles WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM mentorship_profiles WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserMentorSessions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentor_sessions WHERE mentee_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM mentor_sessions WHERE mentee_id = @user_id) t;
 
 -- name: GdprExportUserMentorReviews :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -841,25 +811,25 @@ FROM (SELECT * FROM mentor_reviews WHERE reviewer_id = @user_id) t;
 
 -- name: GdprExportUserOrganizations :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM organizations WHERE owner_user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM organizations WHERE owner_user_id = @user_id) t;
 
 -- name: GdprExportUserApiKeys :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM api_keys WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM api_keys WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserPreferences :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM user_preferences WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM user_preferences WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserMutes :one
 -- BUG-008: export both muter and muted directions for GDPR portability.
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM user_mutes WHERE (user_id = @user_id OR muted_user_id = @user_id) AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM user_mutes WHERE (user_id = @user_id OR muted_user_id = @user_id)) t;
 
 -- name: GdprExportUserSpaceMutes :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM space_mutes WHERE user_id = @user_id AND tenant_id = @tenant_id) t;
+FROM (SELECT * FROM space_mutes WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserTicketComments :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -876,32 +846,32 @@ FROM (SELECT * FROM ticket_comments WHERE user_id = @user_id) t;
 -- name: GdprExportUserComparisonItems :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
-    FROM comparison_items ci
-    JOIN contents c ON c.id = ci.content_id
-    WHERE c.author_id = @user_id AND ci.tenant_id = @tenant_id
-    ORDER BY ci.created_at DESC
+ SELECT ci.id, ci.content_id, ci.title, ci.description, ci.position, ci.created_at
+ FROM comparison_items ci
+ JOIN contents c ON c.id = ci.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY ci.created_at DESC
 ) t;
 
 -- name: GdprExportUserComparisonDimensions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
-    FROM comparison_dimensions cd
-    JOIN contents c ON c.id = cd.content_id
-    WHERE c.author_id = @user_id AND cd.tenant_id = @tenant_id
-    ORDER BY cd.created_at DESC
+ SELECT cd.id, cd.content_id, cd.label, cd.dimension_type, cd.position, cd.created_at
+ FROM comparison_dimensions cd
+ JOIN contents c ON c.id = cd.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY cd.created_at DESC
 ) t;
 
 -- name: GdprExportUserComparisonValues :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
-    FROM comparison_values cv
-    JOIN comparison_items ci ON ci.id = cv.item_id
-    JOIN contents c ON c.id = ci.content_id
-    WHERE c.author_id = @user_id AND cv.tenant_id = @tenant_id
-    ORDER BY cv.created_at DESC
+ SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating, cv.value_boolean, cv.created_at
+ FROM comparison_values cv
+ JOIN comparison_items ci ON ci.id = cv.item_id
+ JOIN contents c ON c.id = ci.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY cv.created_at DESC
 ) t;
 
 -- =====================================================================
@@ -918,8 +888,8 @@ FROM (
 -- itself is removed by the users(id) ON DELETE CASCADE FK.
 UPDATE instructor_profiles
 SET payout_method = NULL,
-    updated_at    = now()
-WHERE tenant_id = @tenant_id AND user_id = @user_id;
+ updated_at = now()
+WHERE user_id = @user_id;
 
 -- name: AnonymizeRevenueSplitsForInstructor :execrows
 -- Severs the instructor reference on all revenue_split rows owned by
@@ -927,11 +897,10 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id;
 -- regulatory retention; only the instructor link is anonymized.
 UPDATE revenue_splits rs
 SET instructor_id = NULL
-WHERE rs.tenant_id = @tenant_id
-  AND rs.instructor_id IN (
-      SELECT ip.id FROM instructor_profiles ip
-      WHERE ip.tenant_id = @tenant_id AND ip.user_id = @user_id
-  );
+WHERE rs.instructor_id IN (
+ SELECT ip.id FROM instructor_profiles ip
+ WHERE ip.user_id = @user_id
+ );
 
 -- name: AnonymizeInstructorPayoutsForInstructor :execrows
 -- Severs the instructor reference on all instructor_payout rows owned by
@@ -939,11 +908,10 @@ WHERE rs.tenant_id = @tenant_id
 -- regulatory retention; only the instructor link is anonymized.
 UPDATE instructor_payouts ipo
 SET instructor_id = NULL
-WHERE ipo.tenant_id = @tenant_id
-  AND ipo.instructor_id IN (
-      SELECT ip.id FROM instructor_profiles ip
-      WHERE ip.tenant_id = @tenant_id AND ip.user_id = @user_id
-  );
+WHERE ipo.instructor_id IN (
+ SELECT ip.id FROM instructor_profiles ip
+ WHERE ip.user_id = @user_id
+ );
 
 -- =====================================================================
 -- Japa University GDPR data export (ADR-063 / audit C2)
@@ -952,34 +920,34 @@ WHERE ipo.tenant_id = @tenant_id
 -- name: GdprExportInstructorProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, display_name, headline, bio, social_links,
-           tier, status, kyc_status, application_note, created_at, updated_at
-    FROM instructor_profiles
-    WHERE tenant_id = @tenant_id AND user_id = @user_id
+ SELECT id, display_name, headline, bio, social_links,
+ tier, status, kyc_status, application_note, created_at, updated_at
+ FROM instructor_profiles
+ WHERE user_id = @user_id
 ) t;
 
 -- name: GdprExportRevenueSplits :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT rs.id, rs.tenant_id, rs.track_id, rs.enrollment_id, rs.payment_id,
-           rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
-           rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
-           rs.currency, rs.created_at
-    FROM revenue_splits rs
-    JOIN instructor_profiles ip ON ip.id = rs.instructor_id
-    WHERE rs.tenant_id = @tenant_id AND ip.user_id = @user_id
+ SELECT rs.id, rs.track_id, rs.enrollment_id, rs.payment_id,
+ rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct,
+ rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
+ rs.currency, rs.created_at
+ FROM revenue_splits rs
+ JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+ WHERE ip.user_id = @user_id
 ) t;
 
 -- name: GdprExportInstructorPayouts :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ipo.id, ipo.tenant_id, ipo.period_start, ipo.period_end,
-           ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
-           ipo.currency, ipo.status, ipo.payout_reference,
-           ipo.processed_at, ipo.created_at
-    FROM instructor_payouts ipo
-    JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
-    WHERE ipo.tenant_id = @tenant_id AND ip.user_id = @user_id
+ SELECT ipo.id, ipo.period_start, ipo.period_end,
+ ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
+ ipo.currency, ipo.status, ipo.payout_reference,
+ ipo.processed_at, ipo.created_at
+ FROM instructor_payouts ipo
+ JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+ WHERE ip.user_id = @user_id
 ) t;
 
 -- name: AnonymizeComparisonItemsByAuthor :execrows
@@ -988,13 +956,12 @@ FROM (
 -- comparison item text. Runs before HardDeleteUser.
 UPDATE comparison_items ci
 SET title = '[anonymized]',
-    description = NULL,
-    image_id = NULL
+ description = NULL,
+ image_id = NULL
 FROM contents c
 WHERE ci.content_id = c.id
-  AND c.tenant_id = @tenant_id
-  AND c.author_id = @user_id
-  AND ci.deleted_at IS NULL;
+ AND c.author_id = @user_id
+ AND ci.deleted_at IS NULL;
 
 -- name: AnonymizeComparisonDimensionsByAuthor :execrows
 -- BUG-003: anonymize comparison_dimensions.label for content authored by the
@@ -1004,9 +971,8 @@ UPDATE comparison_dimensions cd
 SET label = '[anonymized]'
 FROM contents c
 WHERE cd.content_id = c.id
-  AND c.tenant_id = @tenant_id
-  AND c.author_id = @user_id
-  AND cd.deleted_at IS NULL;
+ AND c.author_id = @user_id
+ AND cd.deleted_at IS NULL;
 
 -- name: AnonymizeComparisonValuesByAuthor :execrows
 -- BUG-003: anonymize comparison_values.value for content authored by the
@@ -1015,13 +981,12 @@ WHERE cd.content_id = c.id
 -- HardDeleteUser.
 UPDATE comparison_values cv
 SET value = '[anonymized]',
-    value_rating = NULL,
-    value_boolean = NULL
+ value_rating = NULL,
+ value_boolean = NULL
 FROM contents c
 JOIN comparison_items ci ON ci.id = cv.item_id
 WHERE ci.content_id = c.id
-  AND cv.tenant_id = @tenant_id
-  AND c.author_id = @user_id;
+ AND c.author_id = @user_id;
 
 -- name: DeleteComparisonProfilesByUser :exec
 -- JCE Sub-spec 2/3: delete user-owned comparison profiles during GDPR erasure.
@@ -1029,57 +994,57 @@ WHERE ci.content_id = c.id
 -- to document the erasure path and ensure PII (goals, preferences, demographics)
 -- is removed during the anonymization phase, before the final HardDeleteUser.
 DELETE FROM comparison_profiles
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: GdprExportUserComparisonProfiles :one
 -- JCE Sub-spec 2/3: export comparison profiles for GDPR data portability.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-           goals, preferences, demographics, is_default, is_template,
-           created_at, updated_at
-    FROM comparison_profiles
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at
+ SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template,
+ created_at, updated_at
+ FROM comparison_profiles
+ WHERE user_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportUserComparisonScores :one
 -- JCE Sub-spec 2/3: export comparison scores for content authored by the user.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cs.id, cs.tenant_id, cs.content_id, cs.item_id, cs.factor_id,
-           cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
-           cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
-    FROM comparison_scores cs
-    JOIN contents c ON c.id = cs.content_id
-    WHERE c.author_id = @user_id AND cs.tenant_id = @tenant_id
-    ORDER BY cs.calculated_at
+ SELECT cs.id, cs.content_id, cs.item_id, cs.factor_id,
+ cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
+ cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
+ FROM comparison_scores cs
+ JOIN contents c ON c.id = cs.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY cs.calculated_at
 ) t;
 
 -- name: GdprExportUserComparisonRecommendations :one
 -- JCE Sub-spec 2/3: export comparison recommendations for content authored by the user.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cr.id, cr.tenant_id, cr.content_id, cr.item_id, cr.profile_id,
-           cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
-           cr.created_at, cr.updated_at
-    FROM comparison_recommendations cr
-    JOIN contents c ON c.id = cr.content_id
-    WHERE c.author_id = @user_id AND cr.tenant_id = @tenant_id
-    ORDER BY cr.created_at
+ SELECT cr.id, cr.content_id, cr.item_id, cr.profile_id,
+ cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
+ cr.created_at, cr.updated_at
+ FROM comparison_recommendations cr
+ JOIN contents c ON c.id = cr.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY cr.created_at
 ) t;
 
 -- name: GdprExportUserComparisonDataIngestionJobs :one
 -- JCE Sub-spec 4: export ingestion jobs for user-authored comparison content.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT j.id, j.tenant_id, j.content_id, j.status, j.source_kind,
-           j.refreshed_count, j.error, j.started_at, j.completed_at,
-           j.created_at, j.updated_at
-    FROM comparison_data_ingestion_jobs j
-    JOIN contents c ON c.id = j.content_id
-    WHERE c.author_id = @user_id AND j.tenant_id = @tenant_id
-    ORDER BY j.created_at
+ SELECT j.id, j.content_id, j.status, j.source_kind,
+ j.refreshed_count, j.error, j.started_at, j.completed_at,
+ j.created_at, j.updated_at
+ FROM comparison_data_ingestion_jobs j
+ JOIN contents c ON c.id = j.content_id
+ WHERE c.author_id = @user_id
+ ORDER BY j.created_at
 ) t;
 
 -- name: GdprExportUserComparisonDataSources :one
@@ -1088,13 +1053,13 @@ FROM (
 -- created_by_user_id.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT ds.id, ds.tenant_id, ds.entity_type, ds.entity_id, ds.dimension_slug,
-           ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
-           ds.freshness_score, ds.last_verified_at, ds.config,
-           ds.created_at, ds.updated_at
-    FROM comparison_data_sources ds
-    WHERE ds.created_by_user_id = @user_id AND ds.tenant_id = @tenant_id
-    ORDER BY ds.created_at
+ SELECT ds.id, ds.entity_type, ds.entity_id, ds.dimension_slug,
+ ds.source_name, ds.source_url, ds.source_kind, ds.trust_level,
+ ds.freshness_score, ds.last_verified_at, ds.config,
+ ds.created_at, ds.updated_at
+ FROM comparison_data_sources ds
+ WHERE ds.created_by_user_id = @user_id
+ ORDER BY ds.created_at
 ) t;
 
 -- name: DeleteComparisonScoresByUser :exec
@@ -1102,16 +1067,14 @@ FROM (
 DELETE FROM comparison_scores cs
 USING contents c
 WHERE cs.content_id = c.id
-  AND cs.tenant_id = @tenant_id
-  AND c.author_id = @user_id;
+ AND c.author_id = @user_id;
 
 -- name: DeleteComparisonRecommendationsByUser :exec
 -- JCE Sub-spec 2/3: delete generated recommendations for content authored by the user.
 DELETE FROM comparison_recommendations cr
 USING contents c
 WHERE cr.content_id = c.id
-  AND cr.tenant_id = @tenant_id
-  AND c.author_id = @user_id;
+ AND c.author_id = @user_id;
 
 -- name: DeleteComparisonDataIngestionJobsByUser :exec
 -- JCE Sub-spec 4: delete ingestion jobs tied to user-authored content during
@@ -1121,15 +1084,14 @@ WHERE cr.content_id = c.id
 DELETE FROM comparison_data_ingestion_jobs j
 USING contents c
 WHERE j.content_id = c.id
-  AND j.tenant_id = @tenant_id
-  AND c.author_id = @user_id;
+ AND c.author_id = @user_id;
 
 -- name: DeleteComparisonDataSourcesByUser :exec
 -- JCE Sub-spec 4: delete user-owned data sources when the column is populated
 -- (future non-admin data-source creation). Admin-created sources leave
 -- created_by_user_id NULL and are therefore not removed on a member erasure.
 DELETE FROM comparison_data_sources
-WHERE created_by_user_id = @user_id AND tenant_id = @tenant_id;
+WHERE created_by_user_id = @user_id;
 
 -- name: DeleteCustomFieldValuesByEntity :execrows
 -- BUG-018: delete custom_field_values for the user's profile entity so PII
@@ -1147,8 +1109,8 @@ WHERE entity_type IN ('user_profile', 'user') AND entity_id = @user_id;
 -- fields (ip_address, field_values jsonb) are scrubbed.
 UPDATE form_submissions
 SET user_id = NULL,
-    ip_address = NULL,
-    field_values = '{}'::jsonb
+ ip_address = NULL,
+ field_values = '{}'::jsonb
 WHERE user_id = @user_id;
 
 -- name: GdprExportCustomFieldValues :one
@@ -1159,14 +1121,14 @@ WHERE user_id = @user_id;
 -- 'user_profile' or 'user' and entity_id is the user's ID.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
-           cfv.value_text, cfv.value_number, cfv.value_bool,
-           cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
-           cf.key AS field_key, cf.label AS field_label
-    FROM custom_field_values cfv
-    LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
-    WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = @user_id
-    ORDER BY cfv.created_at
+ SELECT cfv.field_id, cfv.entity_type, cfv.entity_id,
+ cfv.value_text, cfv.value_number, cfv.value_bool,
+ cfv.value_date, cfv.value_json, cfv.created_at, cfv.updated_at,
+ cf.key AS field_key, cf.label AS field_label
+ FROM custom_field_values cfv
+ LEFT JOIN custom_fields cf ON cfv.field_id = cf.id
+ WHERE cfv.entity_type IN ('user_profile', 'user') AND cfv.entity_id = @user_id
+ ORDER BY cfv.created_at
 ) t;
 
 -- name: GdprExportPushTokens :one
@@ -1175,10 +1137,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, platform, token, device_name, created_at, last_used_at
-    FROM push_tokens
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at
+ SELECT id, platform, token, device_name, created_at, last_used_at
+ FROM push_tokens
+ WHERE user_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportUserDMConversations :one
@@ -1187,13 +1149,12 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, participant_1_id, participant_2_id,
-           last_message_at, last_message_preview,
-           p1_unread_count, p2_unread_count, created_at, updated_at
-    FROM dm_conversations
-    WHERE tenant_id = @tenant_id
-      AND (participant_1_id = @user_id OR participant_2_id = @user_id)
-    ORDER BY created_at
+ SELECT id, participant_1_id, participant_2_id,
+ last_message_at, last_message_preview,
+ p1_unread_count, p2_unread_count, created_at, updated_at
+ FROM dm_conversations
+ WHERE (participant_1_id = @user_id OR participant_2_id = @user_id)
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportUserDMMessages :one
@@ -1202,11 +1163,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT dm.id, dm.conversation_id, dm.sender_id, dm.tenant_id,
-           dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
-    FROM dm_messages dm
-    WHERE dm.tenant_id = @tenant_id AND dm.sender_id = @user_id
-    ORDER BY dm.created_at
+ SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.edited_at, dm.deleted_at
+ FROM dm_messages dm
+ WHERE dm.sender_id = @user_id
+ ORDER BY dm.created_at
 ) t;
 
 -- name: GdprExportUserDMRequests :one
@@ -1215,12 +1175,11 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, tenant_id, requester_id, recipient_id, conversation_id,
-           preview_message, status, created_at, updated_at, resolved_at
-    FROM dm_requests
-    WHERE tenant_id = @tenant_id
-      AND (requester_id = @user_id OR recipient_id = @user_id)
-    ORDER BY created_at
+ SELECT id, requester_id, recipient_id, conversation_id,
+ preview_message, status, created_at, updated_at, resolved_at
+ FROM dm_requests
+ WHERE (requester_id = @user_id OR recipient_id = @user_id)
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportUserDMSettings :one
@@ -1229,9 +1188,9 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT user_id, tenant_id, dm_privacy, updated_at
-    FROM user_dm_settings
-    WHERE tenant_id = @tenant_id AND user_id = @user_id
+ SELECT user_id, dm_privacy, updated_at
+ FROM user_dm_settings
+ WHERE user_id = @user_id
 ) t;
 
 -- name: GdprExportUserBlocks :one
@@ -1240,10 +1199,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT blocker_id, blocked_id, created_at
-    FROM user_blocks
-    WHERE blocker_id = @user_id OR blocked_id = @user_id
-    ORDER BY created_at
+ SELECT blocker_id, blocked_id, created_at
+ FROM user_blocks
+ WHERE blocker_id = @user_id OR blocked_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: AnonymizeDMMessagesBySender :exec
@@ -1253,21 +1212,21 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, ADR-014
 UPDATE dm_messages
 SET body = '', sender_id = @target_user_id
-WHERE sender_id = @user_id AND tenant_id = @tenant_id;
+WHERE sender_id = @user_id;
 
 -- name: ReassignDMConversationParticipant1 :exec
 -- BUG-024: reassign dm_conversations.participant_1_id to the placeholder
 -- during GDPR erasure so the conversation survives for the other participant.
 UPDATE dm_conversations
 SET participant_1_id = @target_user_id
-WHERE participant_1_id = @user_id AND tenant_id = @tenant_id;
+WHERE participant_1_id = @user_id;
 
 -- name: ReassignDMConversationParticipant2 :exec
 -- BUG-024: reassign dm_conversations.participant_2_id to the placeholder
 -- during GDPR erasure so the conversation survives for the other participant.
 UPDATE dm_conversations
 SET participant_2_id = @target_user_id
-WHERE participant_2_id = @user_id AND tenant_id = @tenant_id;
+WHERE participant_2_id = @user_id;
 
 -- name: AnonymizeDMRequestsByUser :exec
 -- BUG-024: anonymize dm_requests where the user is requester or recipient
@@ -1275,15 +1234,14 @@ WHERE participant_2_id = @user_id AND tenant_id = @tenant_id;
 -- fields are reassigned to the placeholder.
 UPDATE dm_requests
 SET preview_message = '',
-    requester_id = CASE WHEN requester_id = @user_id THEN @target_user_id ELSE requester_id END,
-    recipient_id = CASE WHEN recipient_id = @user_id THEN @target_user_id ELSE recipient_id END
-WHERE tenant_id = @tenant_id
-  AND (requester_id = @user_id OR recipient_id = @user_id);
+ requester_id = CASE WHEN requester_id = @user_id THEN @target_user_id ELSE requester_id END,
+ recipient_id = CASE WHEN recipient_id = @user_id THEN @target_user_id ELSE recipient_id END
+WHERE (requester_id = @user_id OR recipient_id = @user_id);
 
 -- name: DeleteUserDMSettingsByUser :exec
 -- BUG-024: delete user_dm_settings for the user during GDPR erasure.
 -- dm_privacy is user-owned config with no PII in the row itself.
-DELETE FROM user_dm_settings WHERE user_id = @user_id AND tenant_id = @tenant_id;
+DELETE FROM user_dm_settings WHERE user_id = @user_id;
 
 -- name: DeleteUserBlocksByUser :exec
 -- BUG-024: delete user_blocks where the user is blocker or blocked during
@@ -1312,7 +1270,7 @@ WHERE user_id = @user_id;
 -- data and must be removed. Actor references in other users' notifications
 -- are anonymized separately if needed.
 DELETE FROM notifications
-WHERE recipient_id = @user_id AND tenant_id = @tenant_id;
+WHERE recipient_id = @user_id;
 
 -- name: DeleteNotificationPreferencesByUser :exec
 -- BUG-011: delete notification_preferences for the erased user during GDPR
@@ -1338,11 +1296,11 @@ DELETE FROM push_subscriptions WHERE user_id = @user_id;
 -- pathway's tenant_id.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
-           u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
-    FROM attestation_community_updates u
-    JOIN attestation_pathways p ON p.id = u.pathway_id
-    WHERE u.user_id = @user_id AND p.tenant_id = @tenant_id AND u.deleted_at IS NULL
+ SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,
+ u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
+ FROM attestation_community_updates u
+ JOIN attestation_pathways p ON p.id = u.pathway_id
+ WHERE u.user_id = @user_id AND u.deleted_at IS NULL
 ) t;
 
 -- name: SoftDeleteAttestationCommunityUpdatesByUser :exec
@@ -1365,30 +1323,30 @@ WHERE user_id = @user_id AND deleted_at IS NULL;
 -- §86: export calendar_entries submitted by the user (BUG-025).
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT e.id, e.title, e.description, e.category,
-           e.destination_space_id, e.origin_space_id,
-           e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
-           e.source_url, e.status, e.created_at
-    FROM calendar_entries e
-    WHERE e.submitted_by = @user_id AND e.tenant_id = @tenant_id AND e.deleted_at IS NULL
+ SELECT e.id, e.title, e.description, e.category,
+ e.destination_space_id, e.origin_space_id,
+ e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+ e.source_url, e.status, e.created_at
+ FROM calendar_entries e
+ WHERE e.submitted_by = @user_id AND e.deleted_at IS NULL
 ) t;
 
 -- name: GdprExportUserCalendarSaves :one
 -- §86: export calendar_saves for the user (BUG-025).
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT s.entry_id, s.saved_at
-    FROM calendar_saves s
-    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
+ SELECT s.entry_id, s.saved_at
+ FROM calendar_saves s
+ WHERE s.user_id = @user_id
 ) t;
 
 -- name: GdprExportUserCalendarSubscriptions :one
 -- §86: export calendar_subscriptions for the user (BUG-025).
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT sub.destination_space_id, sub.category, sub.created_at
-    FROM calendar_subscriptions sub
-    WHERE sub.user_id = @user_id AND sub.tenant_id = @tenant_id
+ SELECT sub.destination_space_id, sub.category, sub.created_at
+ FROM calendar_subscriptions sub
+ WHERE sub.user_id = @user_id
 ) t;
 
 -- name: GdprReassignCalendarEntriesSubmittedBy :exec
@@ -1396,24 +1354,24 @@ FROM (
 -- erasure (BUG-025). The entries are community content, not user PII.
 UPDATE calendar_entries
 SET submitted_by = @target_user_id
-WHERE submitted_by = @user_id AND tenant_id = @tenant_id;
+WHERE submitted_by = @user_id;
 
 -- name: GdprReassignCalendarEntriesReviewedBy :exec
 -- §86: reassign calendar_entries.reviewed_by to placeholder during GDPR
 -- erasure (BUG-025).
 UPDATE calendar_entries
 SET reviewed_by = @target_user_id
-WHERE reviewed_by = @user_id AND tenant_id = @tenant_id;
+WHERE reviewed_by = @user_id;
 
 -- name: GdprDeleteCalendarSavesByUser :exec
 -- §86: delete calendar_saves for the user during GDPR erasure (BUG-025).
 DELETE FROM calendar_saves
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: GdprDeleteCalendarSubscriptionsByUser :exec
 -- §86: delete calendar_subscriptions for the user during GDPR erasure (BUG-025).
 DELETE FROM calendar_subscriptions
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: GdprExportReferralCodes :one
 -- BUG-013: export referral_codes owned by the user so the GDPR data export
@@ -1421,10 +1379,10 @@ WHERE user_id = @user_id AND tenant_id = @tenant_id;
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, code, click_count, created_at
-    FROM referral_codes
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at
+ SELECT id, code, click_count, created_at
+ FROM referral_codes
+ WHERE user_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportReferralsAsReferrer :one
@@ -1434,11 +1392,11 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, referral_code, status, reward_amount, flagged_reason,
-           qualified_at, credited_at, created_at
-    FROM referrals
-    WHERE referrer_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at
+ SELECT id, referral_code, status, reward_amount, flagged_reason,
+ qualified_at, credited_at, created_at
+ FROM referrals
+ WHERE referrer_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportReferralsAsReferee :one
@@ -1449,10 +1407,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §60
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, referral_code, status, reward_amount, qualified_at, credited_at, created_at
-    FROM referrals
-    WHERE referee_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at
+ SELECT id, referral_code, status, reward_amount, qualified_at, credited_at, created_at
+ FROM referrals
+ WHERE referee_id = @user_id
+ ORDER BY created_at
 ) t;
 
 -- name: GdprExportAIUsageLog :one
@@ -1460,10 +1418,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
-    FROM ai_usage_log
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at DESC
+ SELECT id, provider, model, task_type, prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref, created_at
+ FROM ai_usage_log
+ WHERE user_id = @user_id
+ ORDER BY created_at DESC
 ) t;
 
 -- name: GdprExportAIAgentSessions :one
@@ -1471,10 +1429,10 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
-    FROM ai_agent_sessions
-    WHERE user_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at DESC
+ SELECT id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+ FROM ai_agent_sessions
+ WHERE user_id = @user_id
+ ORDER BY created_at DESC
 ) t;
 
 -- name: GdprExportAIAgentToolCalls :one
@@ -1482,11 +1440,11 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §103
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
-    FROM ai_agent_tool_calls atc
-    JOIN ai_agent_sessions s ON s.id = atc.session_id
-    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
-    ORDER BY atc.created_at DESC
+ SELECT atc.id, atc.session_id, atc.tool_name, atc.arguments, atc.result, atc.status, atc.error_message, atc.latency_ms, atc.rbac_checked, atc.privacy_checked, atc.hitl_review_id, atc.created_at
+ FROM ai_agent_tool_calls atc
+ JOIN ai_agent_sessions s ON s.id = atc.session_id
+ WHERE s.user_id = @user_id
+ ORDER BY atc.created_at DESC
 ) t;
 
 -- name: GdprExportAIHITLReviews :one
@@ -1495,8 +1453,8 @@ FROM (
 -- Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md, §20
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
-    SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
-    FROM ai_hitl_reviews
-    WHERE reviewer_id = @user_id AND tenant_id = @tenant_id
-    ORDER BY created_at DESC
+ SELECT id, content_id, content_type, ai_output, human_feedback, status, reason, reviewed_at, created_at, source, target_table
+ FROM ai_hitl_reviews
+ WHERE reviewer_id = @user_id
+ ORDER BY created_at DESC
 ) t;

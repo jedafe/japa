@@ -8,16 +8,16 @@
 -- =====================================================================
 
 -- name: UpsertDeviceToken :one
-INSERT INTO device_tokens (tenant_id, user_id, device_id, token, platform, app_version, is_active)
-VALUES (@tenant_id, @user_id, @device_id, @token, @platform, sqlc.narg(app_version), true)
-ON CONFLICT (tenant_id, user_id, device_id)
+INSERT INTO device_tokens (user_id, device_id, token, platform, app_version, is_active) VALUES (@user_id, @device_id, @token, @platform, sqlc.narg(app_version), true)
+
+ON CONFLICT (user_id, device_id)
 DO UPDATE SET
-    token        = EXCLUDED.token,
-    platform     = EXCLUDED.platform,
-    app_version  = EXCLUDED.app_version,
-    is_active    = true,
-    last_used_at = now(),
-    updated_at   = now()
+ token = EXCLUDED.token,
+ platform = EXCLUDED.platform,
+ app_version = EXCLUDED.app_version,
+ is_active = true,
+ last_used_at = now(),
+ updated_at = now()
 RETURNING *;
 
 -- =====================================================================
@@ -27,7 +27,7 @@ RETURNING *;
 -- name: DeregisterDeviceToken :exec
 UPDATE device_tokens
 SET is_active = false, updated_at = now()
-WHERE tenant_id = @tenant_id AND user_id = @user_id AND device_id = @device_id;
+WHERE user_id = @user_id AND device_id = @device_id;
 
 -- =====================================================================
 -- List a user's active device tokens.
@@ -35,8 +35,8 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id AND device_id = @device_id;
 
 -- name: ListUserDeviceTokens :many
 SELECT * FROM device_tokens
-WHERE tenant_id = @tenant_id AND user_id = @user_id
-  AND (@active_only::boolean = false OR is_active = true)
+WHERE user_id = @user_id
+ AND (@active_only::boolean = false OR is_active = true)
 ORDER BY created_at DESC;
 
 -- =====================================================================
@@ -45,7 +45,7 @@ ORDER BY created_at DESC;
 
 -- name: GetActiveDeviceTokensForUser :many
 SELECT * FROM device_tokens
-WHERE tenant_id = @tenant_id AND user_id = @user_id AND is_active = true
+WHERE user_id = @user_id AND is_active = true
 ORDER BY last_used_at DESC;
 
 -- =====================================================================
@@ -64,7 +64,7 @@ WHERE token = @token;
 -- name: TouchDeviceToken :exec
 UPDATE device_tokens
 SET last_used_at = now(), updated_at = now()
-WHERE tenant_id = @tenant_id AND user_id = @user_id AND device_id = @device_id AND is_active = true;
+WHERE user_id = @user_id AND device_id = @device_id AND is_active = true;
 
 -- =====================================================================
 -- Get a device token by ID (for admin test push).
@@ -72,4 +72,4 @@ WHERE tenant_id = @tenant_id AND user_id = @user_id AND device_id = @device_id A
 
 -- name: GetDeviceTokenByDeviceID :one
 SELECT * FROM device_tokens
-WHERE tenant_id = @tenant_id AND device_id = @device_id AND is_active = true;
+WHERE device_id = @device_id AND is_active = true;

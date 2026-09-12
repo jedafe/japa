@@ -24,7 +24,7 @@ var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
 // paginated. Powers the public profile Posts tab (GET /users/{id}/content).
 func (s *Service) ListPublishedByAuthor(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByAuthorRow, error) {
 	rows, err := s.read.ListPublishedContentByAuthor(ctx, gen.ListPublishedContentByAuthorParams{
-		TenantID:   tenantID,
+
 		AuthorID:   authorID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -277,7 +277,7 @@ func toPostCards(items []gen.ListPublishedContentByAuthorRow) []PostCard {
 // first, paginated. Powers the org profile Posts tab (GET /organizations/{id}/content).
 func (s *Service) ListPublishedByOrganization(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.ListPublishedContentByOrganizationRow, error) {
 	rows, err := s.read.ListPublishedContentByOrganization(ctx, gen.ListPublishedContentByOrganizationParams{
-		TenantID:       tenantID,
+
 		OrganizationID: orgID,
 		PageLimit:      limit,
 		PageOffset:     offset,

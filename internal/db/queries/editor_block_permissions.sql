@@ -5,12 +5,12 @@
 SELECT DISTINCT block_type
 FROM editor_block_permissions
 WHERE user_group_id = ANY(@group_ids::uuid[])
-  AND enabled = true;
+ AND enabled = true;
 
 -- name: UpsertEditorBlockPermission :exec
-INSERT INTO editor_block_permissions (tenant_id, block_type, user_group_id, enabled)
-VALUES (@tenant_id, @block_type, @user_group_id, @enabled)
-ON CONFLICT (tenant_id, block_type, user_group_id) DO UPDATE
+INSERT INTO editor_block_permissions (block_type, user_group_id, enabled) VALUES (@block_type, @user_group_id, @enabled)
+
+ON CONFLICT (block_type, user_group_id) DO UPDATE
 SET enabled = @enabled;
 
 -- name: DeleteEditorBlockPermission :exec

@@ -62,7 +62,7 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 			t.Fatalf("scan user id: %v", err)
 		}
 
-		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID, TenantID: tenantID})
+		ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{UserID: userID})
 	}
 
 	rctx := chi.NewRouteContext()

@@ -556,7 +556,7 @@ func (s *Service) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req C
 	}
 
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
-		TenantID:     tenantID,
+
 		Title:        req.Title,
 		Slug:         req.Slug,
 		Audience:     req.Audience,
@@ -611,8 +611,8 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 	}
 
 	if err := s.store.update(ctx, gen.UpdateDocPageParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		Title:          title,
 		Content:        contentBytes,
 		ReviewStatus:   status,
@@ -630,8 +630,8 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 // ApproveDocPage sets review_status to 'approved' and records the reviewer (§44).
 func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID pgtype.UUID) error {
 	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ReviewStatus:   "approved",
 		LastReviewedBy: reviewerID,
 	}); err != nil {
@@ -653,8 +653,7 @@ func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID p
 func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID pgtype.UUID) error {
 	// Validate status transition: must be 'approved' before publishing.
 	currentStatus, err := s.store.getStatus(ctx, gen.GetDocPageStatusParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 	if err != nil {
 		return fmt.Errorf("fetching current status: %w", err)
@@ -665,8 +664,8 @@ func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID p
 	}
 
 	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ReviewStatus:   "published",
 		LastReviewedBy: reviewerID,
 	}); err != nil {
@@ -823,7 +822,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 
 	// Create the doc page with ai_generated=true, review_status='draft'.
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
-		TenantID:     tenantID,
+
 		Title:        input.Title,
 		Slug:         slug,
 		Audience:     audience,

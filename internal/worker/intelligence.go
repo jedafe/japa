@@ -392,7 +392,6 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 		payload := marshalPayload(intelSourcePayload{
 			Version:  intelPayloadVersion,
 			SourceID: src.ID.String(),
-			TenantID: defaultIntelTenantID.String(),
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelFetchSource, payload)
@@ -494,7 +493,6 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		SourceID:  p.SourceID,
 		RawDocID:  rawDoc.ID.String(),
 		PriorHash: priorHash,
-		TenantID:  p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelDetectChanges, payload)
@@ -686,7 +684,6 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	payload := marshalPayload(intelExtractPayload{
 		Version:  intelPayloadVersion,
 		RawDocID: p.RawDocID,
-		TenantID: p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelExtract, payload)
@@ -795,7 +792,6 @@ func intelPersistExtractedRecords(ctx context.Context, tenantID, sourceID, rawDo
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
 			RecordID: record.ID.String(),
-			TenantID: tenantStr,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelDedup, payload)
@@ -894,7 +890,6 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	payload := marshalPayload(intelRecordPayload{
 		Version:  intelPayloadVersion,
 		RecordID: p.RecordID,
-		TenantID: p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPublishGate, payload)
@@ -1011,7 +1006,6 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
 			RecordID: p.RecordID,
-			TenantID: p.TenantID,
 		})
 		if payload != nil {
 			enqueueIntel(TypeIntelPromote, payload)
@@ -1122,7 +1116,6 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		RecordID:   p.RecordID,
 		DomainID:   result.DomainID.String(),
 		EntityType: record.EntityType,
-		TenantID:   p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelPostPublish, payload)
@@ -1251,7 +1244,6 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 		Version:    intelPayloadVersion,
 		DomainID:   p.DomainID,
 		EntityType: p.EntityType,
-		TenantID:   p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelNotifyDiscoveries, payload)
@@ -1419,7 +1411,6 @@ func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 			payload := marshalPayload(intelSourcePayload{
 				Version:  intelPayloadVersion,
 				SourceID: sourceKey,
-				TenantID: defaultIntelTenantID.String(),
 			})
 			if payload != nil {
 				enqueueIntel(TypeIntelFetchSource, payload)
@@ -1465,7 +1456,6 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	payload := marshalPayload(intelSourcePayload{
 		Version:  intelPayloadVersion,
 		SourceID: p.SourceID,
-		TenantID: p.TenantID,
 	})
 	if payload != nil {
 		enqueueIntel(TypeIntelFetchSource, payload)

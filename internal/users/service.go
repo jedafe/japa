@@ -140,10 +140,10 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	}
 
 	// Fetch all groups for this user.
-	groupRows, err := s.store.read.ResolveUserGroups(ctx, gen.ResolveUserGroupsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	groupRows, err := s.store.read.ResolveUserGroups(ctx,
+
+		userID,
+	)
 	groups := make([]string, 0, len(groupRows))
 
 	if err == nil {
@@ -1220,9 +1220,9 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 	if folder == "" {
 		if folderID.Valid && folderID.Bytes != [16]byte{} {
 			f, err := s.store.read.GetBookmarkFolder(ctx, gen.GetBookmarkFolderParams{
-				ID:       folderID,
-				TenantID: tenantID,
-				UserID:   userID,
+				ID: folderID,
+
+				UserID: userID,
 			})
 
 			switch {
@@ -1237,10 +1237,9 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 			contentType := ""
 
 			if entityType == "content" || entityType == "blog_post" {
-				c, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{
-					ID:       entityID,
-					TenantID: tenantID,
-				})
+				c, err := s.store.read.GetContentByID(ctx,
+					entityID,
+				)
 				if err == nil {
 					contentType = c.ContentType
 				} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -1267,7 +1266,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 	}
 
 	bm, err := s.store.write.CreateBookmark(ctx, gen.CreateBookmarkParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -1287,9 +1286,9 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 // unified bookmarks table (§08/§50).
 func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
 	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
-		ID:       id,
-		TenantID: tenantID,
-		UserID:   userID,
+		ID: id,
+
+		UserID: userID,
 	})
 	if err != nil {
 		return fmt.Errorf("deleting bookmark by id: %w", err)

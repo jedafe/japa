@@ -29,8 +29,8 @@ func NewStore(read, write *gen.Queries, database *db.DB) *Store {
 
 func forumThreadFromCreateRow(r gen.CreateForumThreadRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -56,8 +56,8 @@ func forumThreadFromCreateRow(r gen.CreateForumThreadRow) gen.ForumThread {
 
 func forumThreadFromByIDRow(r gen.GetForumThreadByIDRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -83,8 +83,8 @@ func forumThreadFromByIDRow(r gen.GetForumThreadByIDRow) gen.ForumThread {
 
 func forumThreadFromBySlugRow(r gen.GetForumThreadBySlugRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -110,8 +110,8 @@ func forumThreadFromBySlugRow(r gen.GetForumThreadBySlugRow) gen.ForumThread {
 
 func forumThreadFromListSpaceRow(r gen.ListForumThreadsBySpaceRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -137,8 +137,8 @@ func forumThreadFromListSpaceRow(r gen.ListForumThreadsBySpaceRow) gen.ForumThre
 
 func forumThreadFromListAuthorRow(r gen.ListForumThreadsByAuthorRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -164,8 +164,8 @@ func forumThreadFromListAuthorRow(r gen.ListForumThreadsByAuthorRow) gen.ForumTh
 
 func forumThreadFromListTagRow(r gen.ListForumThreadsByTagRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -191,8 +191,8 @@ func forumThreadFromListTagRow(r gen.ListForumThreadsByTagRow) gen.ForumThread {
 
 func forumThreadFromListTenantRow(r gen.ListForumThreadsByTenantRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -218,8 +218,8 @@ func forumThreadFromListTenantRow(r gen.ListForumThreadsByTenantRow) gen.ForumTh
 
 func forumThreadFromUpdateRow(r gen.UpdateForumThreadRow) gen.ForumThread {
 	return gen.ForumThread{
-		ID:                r.ID,
-		TenantID:          r.TenantID,
+		ID: r.ID,
+
 		ContentID:         r.ContentID,
 		SpaceID:           r.SpaceID,
 		AuthorUserID:      r.AuthorUserID,
@@ -259,7 +259,7 @@ func (s *Store) createThread(ctx context.Context, p gen.CreateForumThreadParams)
 
 // getThreadByID returns a thread by ID and tenant.
 func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumThread, error) {
-	t, err := s.read.GetForumThreadByID(ctx, gen.GetForumThreadByIDParams{ID: id, TenantID: tenantID})
+	t, err := s.read.GetForumThreadByID(ctx, id)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by ID: %w", err)
 	}
@@ -269,7 +269,7 @@ func (s *Store) getThreadByID(ctx context.Context, id, tenantID pgtype.UUID) (ge
 
 // getThreadBySlug returns a thread by slug and tenant.
 func (s *Store) getThreadBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumThread, error) {
-	t, err := s.read.GetForumThreadBySlug(ctx, gen.GetForumThreadBySlugParams{Slug: slug, TenantID: tenantID})
+	t, err := s.read.GetForumThreadBySlug(ctx, slug)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting forum thread by slug: %w", err)
 	}
@@ -284,7 +284,7 @@ func (s *Store) listThreadsBySpace(ctx context.Context, tenantID, spaceID pgtype
 	}
 
 	rows, err := s.read.ListForumThreadsBySpace(ctx, gen.ListForumThreadsBySpaceParams{
-		TenantID:        tenantID,
+
 		SpaceID:         spaceID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -308,7 +308,7 @@ func (s *Store) listThreadsByAuthor(ctx context.Context, tenantID, authorUserID 
 	}
 
 	rows, err := s.read.ListForumThreadsByAuthor(ctx, gen.ListForumThreadsByAuthorParams{
-		TenantID:        tenantID,
+
 		AuthorUserID:    authorUserID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -332,7 +332,7 @@ func (s *Store) listThreadsByTenant(ctx context.Context, tenantID pgtype.UUID, c
 	}
 
 	rows, err := s.read.ListForumThreadsByTenant(ctx, gen.ListForumThreadsByTenantParams{
-		TenantID:        tenantID,
+
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
 	})
@@ -355,7 +355,7 @@ func (s *Store) listThreadsByTag(ctx context.Context, tenantID, tagID pgtype.UUI
 	}
 
 	rows, err := s.read.ListForumThreadsByTag(ctx, gen.ListForumThreadsByTagParams{
-		TenantID:        tenantID,
+
 		TagID:           tagID,
 		CursorCreatedAt: cursorCreatedAt,
 		PageLimit:       limit,
@@ -384,7 +384,7 @@ func (s *Store) updateThread(ctx context.Context, p gen.UpdateForumThreadParams)
 
 // softDeleteThread marks a thread as deleted.
 func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.SoftDeleteForumThread(ctx, gen.SoftDeleteForumThreadParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.SoftDeleteForumThread(ctx, id); err != nil {
 		return fmt.Errorf("soft-deleting forum thread: %w", err)
 	}
 
@@ -394,8 +394,8 @@ func (s *Store) softDeleteThread(ctx context.Context, id, tenantID pgtype.UUID) 
 // solveThread marks a thread as solved and records the accepted reply.
 func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
 	if err := s.write.SolveForumThread(ctx, gen.SolveForumThreadParams{
-		ID:            id,
-		TenantID:      tenantID,
+		ID: id,
+
 		SolverUserID:  solverUserID,
 		ParentReplyID: parentReplyID,
 	}); err != nil {
@@ -408,10 +408,9 @@ func (s *Store) solveThread(ctx context.Context, id, tenantID, solverUserID, par
 // unsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
 // Ref: japaconnect-engineering/sections/08-forum-qa-solved.md (Solved flag).
 func (s *Store) unsolveThread(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.UnsolveForumThread(ctx, gen.UnsolveForumThreadParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.UnsolveForumThread(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("unsolving forum thread: %w", err)
 	}
 
@@ -440,9 +439,9 @@ func (s *Store) isSpaceModerator(ctx context.Context, userID, spaceID pgtype.UUI
 // incrementReplyCount adjusts the reply_count on a thread.
 func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementThreadReplyCount(ctx, gen.IncrementThreadReplyCountParams{
-		ID:       id,
-		TenantID: tenantID,
-		Delta:    delta,
+		ID: id,
+
+		Delta: delta,
 	}); err != nil {
 		return fmt.Errorf("incrementing thread reply count: %w", err)
 	}
@@ -455,9 +454,8 @@ func (s *Store) incrementReplyCount(ctx context.Context, id, tenantID pgtype.UUI
 // from the Valkey view-count flush worker.
 func (s *Store) incrementThreadViewCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.IncrementForumThreadViewCount(ctx, gen.IncrementForumThreadViewCountParams{
-		Delta:    delta,
-		ID:       id,
-		TenantID: tenantID,
+		Delta: delta,
+		ID:    id,
 	}); err != nil {
 		return fmt.Errorf("incrementing thread view count: %w", err)
 	}
@@ -481,7 +479,7 @@ func (s *Store) createReply(ctx context.Context, p gen.CreateForumReplyParams) (
 
 // getReplyByID returns a reply by ID and tenant.
 func (s *Store) getReplyByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumReply, error) {
-	r, err := s.read.GetForumReplyByID(ctx, gen.GetForumReplyByIDParams{ID: id, TenantID: tenantID})
+	r, err := s.read.GetForumReplyByID(ctx, id)
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting forum reply by ID: %w", err)
 	}
@@ -491,10 +489,9 @@ func (s *Store) getReplyByID(ctx context.Context, id, tenantID pgtype.UUID) (gen
 
 // listRepliesByThread returns all replies for a thread.
 func (s *Store) listRepliesByThread(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ForumReply, error) {
-	rows, err := s.read.ListForumRepliesByThread(ctx, gen.ListForumRepliesByThreadParams{
-		ThreadID: threadID,
-		TenantID: tenantID,
-	})
+	rows, err := s.read.ListForumRepliesByThread(ctx,
+		threadID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing forum replies by thread: %w", err)
 	}
@@ -514,7 +511,7 @@ func (s *Store) updateReply(ctx context.Context, p gen.UpdateForumReplyParams) (
 
 // softDeleteReply marks a reply as deleted.
 func (s *Store) softDeleteReply(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.SoftDeleteForumReply(ctx, gen.SoftDeleteForumReplyParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.SoftDeleteForumReply(ctx, id); err != nil {
 		return fmt.Errorf("soft-deleting forum reply: %w", err)
 	}
 
@@ -552,7 +549,7 @@ func (s *Store) deleteVote(ctx context.Context, tenantID, userID pgtype.UUID, en
 // and all of its replies.
 func (s *Store) getUserVotesForThread(ctx context.Context, tenantID, threadID, userID pgtype.UUID) ([]gen.ListUserVotesForThreadRow, error) {
 	rows, err := s.read.ListUserVotesForThread(ctx, gen.ListUserVotesForThreadParams{
-		TenantID: tenantID,
+
 		UserID:   userID,
 		ThreadID: threadID,
 	})
@@ -604,8 +601,8 @@ func (s *Store) updateReplyVoteScore(ctx context.Context, entityID pgtype.UUID) 
 
 func bookmarkFromAddForumBookmarkRow(r gen.AddForumBookmarkRow) gen.Bookmark {
 	return gen.Bookmark{
-		ID:         r.ID,
-		TenantID:   r.TenantID,
+		ID: r.ID,
+
 		UserID:     r.UserID,
 		EntityType: r.EntityType,
 		EntityID:   r.EntityID,
@@ -617,8 +614,8 @@ func bookmarkFromAddForumBookmarkRow(r gen.AddForumBookmarkRow) gen.Bookmark {
 
 func bookmarkFromGetForumBookmarkByIDRow(r gen.GetForumBookmarkByIDRow) gen.Bookmark {
 	return gen.Bookmark{
-		ID:         r.ID,
-		TenantID:   r.TenantID,
+		ID: r.ID,
+
 		UserID:     r.UserID,
 		EntityType: r.EntityType,
 		EntityID:   r.EntityID,
@@ -630,8 +627,8 @@ func bookmarkFromGetForumBookmarkByIDRow(r gen.GetForumBookmarkByIDRow) gen.Book
 
 func bookmarkFromGetForumBookmarkByEntityRow(r gen.GetForumBookmarkByEntityRow) gen.Bookmark {
 	return gen.Bookmark{
-		ID:         r.ID,
-		TenantID:   r.TenantID,
+		ID: r.ID,
+
 		UserID:     r.UserID,
 		EntityType: r.EntityType,
 		EntityID:   r.EntityID,
@@ -645,8 +642,8 @@ func bookmarksFromListForumBookmarksByUserRow(rows []gen.ListForumBookmarksByUse
 	out := make([]gen.Bookmark, len(rows))
 	for i, r := range rows {
 		out[i] = gen.Bookmark{
-			ID:         r.ID,
-			TenantID:   r.TenantID,
+			ID: r.ID,
+
 			UserID:     r.UserID,
 			EntityType: r.EntityType,
 			EntityID:   r.EntityID,
@@ -672,7 +669,7 @@ func (s *Store) addBookmark(ctx context.Context, p gen.AddForumBookmarkParams) (
 // removeBookmark deletes a bookmark from the unified bookmarks table.
 func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RemoveForumBookmark(ctx, gen.RemoveForumBookmarkParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -688,9 +685,8 @@ func (s *Store) removeBookmark(ctx context.Context, tenantID, userID pgtype.UUID
 // decrementing the denormalized bookmark_count.
 func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.Bookmark, error) {
 	bm, err := s.read.GetForumBookmarkByID(ctx, gen.GetForumBookmarkByIDParams{
-		ID:       id,
-		UserID:   userID,
-		TenantID: tenantID,
+		ID:     id,
+		UserID: userID,
 	})
 	if err != nil {
 		return gen.Bookmark{}, fmt.Errorf("getting forum bookmark by id: %w", err)
@@ -702,9 +698,8 @@ func (s *Store) getBookmarkByID(ctx context.Context, id, userID, tenantID pgtype
 // deleteBookmarkByID deletes a bookmark by its primary key (and owner).
 func (s *Store) deleteBookmarkByID(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
 	if err := s.write.DeleteForumBookmarkByID(ctx, gen.DeleteForumBookmarkByIDParams{
-		ID:       id,
-		UserID:   userID,
-		TenantID: tenantID,
+		ID:     id,
+		UserID: userID,
 	}); err != nil {
 		return fmt.Errorf("deleting forum bookmark by id: %w", err)
 	}
@@ -719,7 +714,7 @@ func (s *Store) listBookmarksByUser(ctx context.Context, tenantID, userID pgtype
 	}
 
 	rows, err := s.read.ListForumBookmarksByUser(ctx, gen.ListForumBookmarksByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -790,7 +785,7 @@ func (s *Store) createTag(ctx context.Context, p gen.CreateForumTagParams) (gen.
 
 // getTagByID returns a tag by ID and tenant.
 func (s *Store) getTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumTag, error) {
-	t, err := s.read.GetForumTagByID(ctx, gen.GetForumTagByIDParams{ID: id, TenantID: tenantID})
+	t, err := s.read.GetForumTagByID(ctx, id)
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by ID: %w", err)
 	}
@@ -800,7 +795,7 @@ func (s *Store) getTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.F
 
 // getTagBySlug returns a tag by slug and tenant.
 func (s *Store) getTagBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumTag, error) {
-	t, err := s.read.GetForumTagBySlug(ctx, gen.GetForumTagBySlugParams{Slug: slug, TenantID: tenantID})
+	t, err := s.read.GetForumTagBySlug(ctx, slug)
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting forum tag by slug: %w", err)
 	}
@@ -815,7 +810,7 @@ func (s *Store) listTags(ctx context.Context, tenantID pgtype.UUID, limit, offse
 	}
 
 	rows, err := s.read.ListForumTags(ctx, gen.ListForumTagsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -876,9 +871,9 @@ func (s *Store) removeThreadTag(ctx context.Context, threadID, tagID pgtype.UUID
 // updateTagFollowerCount adjusts a tag's follower_count.
 func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.UUID, delta int32) error {
 	if err := s.write.UpdateForumTagFollowerCount(ctx, gen.UpdateForumTagFollowerCountParams{
-		ID:       id,
-		TenantID: tenantID,
-		Delta:    delta,
+		ID: id,
+
+		Delta: delta,
 	}); err != nil {
 		return fmt.Errorf("updating forum tag follower count: %w", err)
 	}
@@ -889,8 +884,8 @@ func (s *Store) updateTagFollowerCount(ctx context.Context, id, tenantID pgtype.
 // updateTag updates a forum tag's mutable fields.
 func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, slug, description, rules string, coverImageID, moderatorUserID pgtype.UUID) (gen.ForumTag, error) {
 	tag, err := s.write.UpdateForumTag(ctx, gen.UpdateForumTagParams{
-		ID:              id,
-		TenantID:        tenantID,
+		ID: id,
+
 		Name:            name,
 		Slug:            slug,
 		Description:     strPtr(description),
@@ -907,10 +902,9 @@ func (s *Store) updateTag(ctx context.Context, id, tenantID pgtype.UUID, name, s
 
 // softDeleteTag marks a forum tag as deleted.
 func (s *Store) softDeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.SoftDeleteForumTag(ctx, gen.SoftDeleteForumTagParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.SoftDeleteForumTag(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("soft-deleting forum tag: %w", err)
 	}
 
@@ -1071,10 +1065,9 @@ func (s *Store) getReplyViewCount(ctx context.Context, replyID pgtype.UUID) (int
 
 // getThreadBySlugWithDetails returns a thread plus joined author + space data.
 func (s *Store) getThreadBySlugWithDetails(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetForumThreadBySlugWithDetailsRow, error) {
-	row, err := s.read.GetForumThreadBySlugWithDetails(ctx, gen.GetForumThreadBySlugWithDetailsParams{
-		Slug:     slug,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetForumThreadBySlugWithDetails(ctx,
+		slug,
+	)
 	if err != nil {
 		return gen.GetForumThreadBySlugWithDetailsRow{}, fmt.Errorf("getting forum thread by slug with details: %w", err)
 	}
@@ -1089,7 +1082,7 @@ func (s *Store) listThreadsByTenantWithDetails(ctx context.Context, tenantID pgt
 	}
 
 	rows, err := s.read.ListForumThreadsByTenantWithDetails(ctx, gen.ListForumThreadsByTenantWithDetailsParams{
-		TenantID:        tenantID,
+
 		Solved:          solved,
 		SortBy:          sortBy,
 		CursorVoteScore: cursorVoteScore,
@@ -1111,7 +1104,7 @@ func (s *Store) listThreadsBySpaceWithDetails(ctx context.Context, tenantID, spa
 	}
 
 	rows, err := s.read.ListForumThreadsBySpaceWithDetails(ctx, gen.ListForumThreadsBySpaceWithDetailsParams{
-		TenantID:        tenantID,
+
 		SpaceID:         spaceID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1134,7 +1127,7 @@ func (s *Store) listThreadsByAuthorWithDetails(ctx context.Context, tenantID, au
 	}
 
 	rows, err := s.read.ListForumThreadsByAuthorWithDetails(ctx, gen.ListForumThreadsByAuthorWithDetailsParams{
-		TenantID:        tenantID,
+
 		AuthorUserID:    authorUserID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1157,7 +1150,7 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID
 	}
 
 	rows, err := s.read.ListForumThreadsByTagWithDetails(ctx, gen.ListForumThreadsByTagWithDetailsParams{
-		TenantID:        tenantID,
+
 		TagID:           tagID,
 		Solved:          solved,
 		SortBy:          sortBy,
@@ -1175,10 +1168,9 @@ func (s *Store) listThreadsByTagWithDetails(ctx context.Context, tenantID, tagID
 
 // listRepliesByThreadWithAuthor returns all replies for a thread with author data.
 func (s *Store) listRepliesByThreadWithAuthor(ctx context.Context, threadID, tenantID pgtype.UUID) ([]gen.ListForumRepliesByThreadWithAuthorRow, error) {
-	rows, err := s.read.ListForumRepliesByThreadWithAuthor(ctx, gen.ListForumRepliesByThreadWithAuthorParams{
-		ThreadID: threadID,
-		TenantID: tenantID,
-	})
+	rows, err := s.read.ListForumRepliesByThreadWithAuthor(ctx,
+		threadID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing forum replies by thread with author: %w", err)
 	}

@@ -13,8 +13,8 @@ import (
 
 const checkIdempotencyKey = `-- name: CheckIdempotencyKey :one
 SELECT EXISTS(
-    SELECT 1 FROM wallet_ledger
-    WHERE idempotency_key = $1
+ SELECT 1 FROM wallet_ledger
+ WHERE idempotency_key = $1
 )
 `
 
@@ -27,18 +27,17 @@ func (q *Queries) CheckIdempotencyKey(ctx context.Context, idempotencyKey *strin
 
 const countUserActivityThisWeek = `-- name: CountUserActivityThisWeek :one
 SELECT COUNT(*) FROM activity_events
-WHERE tenant_id = $1 AND user_id = $2 AND activity_key = $3
-  AND created_at >= date_trunc('week', now())
+WHERE user_id = $1 AND activity_key = $2
+ AND created_at >= date_trunc('week', now())
 `
 
 type CountUserActivityThisWeekParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	ActivityKey string      `json:"activity_key"`
 }
 
 func (q *Queries) CountUserActivityThisWeek(ctx context.Context, arg CountUserActivityThisWeekParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserActivityThisWeek, arg.TenantID, arg.UserID, arg.ActivityKey)
+	row := q.db.QueryRow(ctx, countUserActivityThisWeek, arg.UserID, arg.ActivityKey)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -46,18 +45,17 @@ func (q *Queries) CountUserActivityThisWeek(ctx context.Context, arg CountUserAc
 
 const countUserActivityToday = `-- name: CountUserActivityToday :one
 SELECT COUNT(*) FROM activity_events
-WHERE tenant_id = $1 AND user_id = $2 AND activity_key = $3
-  AND created_at >= date_trunc('day', now())
+WHERE user_id = $1 AND activity_key = $2
+ AND created_at >= date_trunc('day', now())
 `
 
 type CountUserActivityTodayParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	ActivityKey string      `json:"activity_key"`
 }
 
 func (q *Queries) CountUserActivityToday(ctx context.Context, arg CountUserActivityTodayParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserActivityToday, arg.TenantID, arg.UserID, arg.ActivityKey)
+	row := q.db.QueryRow(ctx, countUserActivityToday, arg.UserID, arg.ActivityKey)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -66,22 +64,20 @@ func (q *Queries) CountUserActivityToday(ctx context.Context, arg CountUserActiv
 const countUserLedgerBySource = `-- name: CountUserLedgerBySource :one
 
 SELECT COUNT(*) FROM wallet_ledger
-WHERE tenant_id = $1
-  AND user_id = $2
-  AND source = $3
+WHERE user_id = $1
+ AND source = $2
 `
 
 type CountUserLedgerBySourceParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	Source   *string     `json:"source"`
+	UserID pgtype.UUID `json:"user_id"`
+	Source *string     `json:"source"`
 }
 
 // =====================
 // Activity Point Rules
 // =====================
 func (q *Queries) CountUserLedgerBySource(ctx context.Context, arg CountUserLedgerBySourceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserLedgerBySource, arg.TenantID, arg.UserID, arg.Source)
+	row := q.db.QueryRow(ctx, countUserLedgerBySource, arg.UserID, arg.Source)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -90,30 +86,23 @@ func (q *Queries) CountUserLedgerBySource(ctx context.Context, arg CountUserLedg
 const countUserPointsEarned = `-- name: CountUserPointsEarned :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS points
 FROM wallet_ledger
-WHERE tenant_id = $1
-  AND user_id = $2
-  AND ledger_type = 'points'
-  AND amount > 0
-  AND ($3::timestamptz IS NULL OR created_at >= $3)
-  AND ($4::timestamptz IS NULL OR created_at <= $4)
+WHERE user_id = $1
+ AND ledger_type = 'points'
+ AND amount > 0
+ AND ($2::timestamptz IS NULL OR created_at >= $2)
+ AND ($3::timestamptz IS NULL OR created_at <= $3)
 `
 
 type CountUserPointsEarnedParams struct {
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	UserID   pgtype.UUID        `json:"user_id"`
-	Column3  pgtype.Timestamptz `json:"column_3"`
-	Column4  pgtype.Timestamptz `json:"column_4"`
+	UserID  pgtype.UUID        `json:"user_id"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Column3 pgtype.Timestamptz `json:"column_3"`
 }
 
 // Total positive points earned by the user within a date range.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md
 func (q *Queries) CountUserPointsEarned(ctx context.Context, arg CountUserPointsEarnedParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserPointsEarned,
-		arg.TenantID,
-		arg.UserID,
-		arg.Column3,
-		arg.Column4,
-	)
+	row := q.db.QueryRow(ctx, countUserPointsEarned, arg.UserID, arg.Column2, arg.Column3)
 	var points int64
 	err := row.Scan(&points)
 	return points, err
@@ -121,31 +110,21 @@ func (q *Queries) CountUserPointsEarned(ctx context.Context, arg CountUserPoints
 
 const deleteActivityRule = `-- name: DeleteActivityRule :exec
 DELETE FROM activity_point_rules
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteActivityRuleParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteActivityRule(ctx context.Context, arg DeleteActivityRuleParams) error {
-	_, err := q.db.Exec(ctx, deleteActivityRule, arg.ID, arg.TenantID)
+func (q *Queries) DeleteActivityRule(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteActivityRule, id)
 	return err
 }
 
 const getActivityEventByID = `-- name: GetActivityEventByID :one
 SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetActivityEventByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetActivityEventByID(ctx context.Context, arg GetActivityEventByIDParams) (ActivityEvent, error) {
-	row := q.db.QueryRow(ctx, getActivityEventByID, arg.ID, arg.TenantID)
+func (q *Queries) GetActivityEventByID(ctx context.Context, id pgtype.UUID) (ActivityEvent, error) {
+	row := q.db.QueryRow(ctx, getActivityEventByID, id)
 	var i ActivityEvent
 	err := row.Scan(
 		&i.ID,
@@ -163,16 +142,11 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, arg GetActivityEvent
 
 const getActivityRuleByID = `-- name: GetActivityRuleByID :one
 SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetActivityRuleByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetActivityRuleByID(ctx context.Context, arg GetActivityRuleByIDParams) (ActivityPointRule, error) {
-	row := q.db.QueryRow(ctx, getActivityRuleByID, arg.ID, arg.TenantID)
+func (q *Queries) GetActivityRuleByID(ctx context.Context, id pgtype.UUID) (ActivityPointRule, error) {
+	row := q.db.QueryRow(ctx, getActivityRuleByID, id)
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
@@ -192,16 +166,11 @@ func (q *Queries) GetActivityRuleByID(ctx context.Context, arg GetActivityRuleBy
 
 const getActivityRuleByKey = `-- name: GetActivityRuleByKey :one
 SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
-WHERE tenant_id = $1 AND activity_key = $2
+WHERE activity_key = $1
 `
 
-type GetActivityRuleByKeyParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ActivityKey string      `json:"activity_key"`
-}
-
-func (q *Queries) GetActivityRuleByKey(ctx context.Context, arg GetActivityRuleByKeyParams) (ActivityPointRule, error) {
-	row := q.db.QueryRow(ctx, getActivityRuleByKey, arg.TenantID, arg.ActivityKey)
+func (q *Queries) GetActivityRuleByKey(ctx context.Context, activityKey string) (ActivityPointRule, error) {
+	row := q.db.QueryRow(ctx, getActivityRuleByKey, activityKey)
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
@@ -221,19 +190,18 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, arg GetActivityRuleB
 
 const getLatestBalance = `-- name: GetLatestBalance :one
 SELECT resulting_balance FROM wallet_ledger
-WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = $3
+WHERE user_id = $1 AND ledger_type = $2
 ORDER BY created_at DESC, id DESC
 LIMIT 1
 `
 
 type GetLatestBalanceParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	LedgerType string      `json:"ledger_type"`
 }
 
 func (q *Queries) GetLatestBalance(ctx context.Context, arg GetLatestBalanceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, getLatestBalance, arg.TenantID, arg.UserID, arg.LedgerType)
+	row := q.db.QueryRow(ctx, getLatestBalance, arg.UserID, arg.LedgerType)
 	var resulting_balance int64
 	err := row.Scan(&resulting_balance)
 	return resulting_balance, err
@@ -241,16 +209,11 @@ func (q *Queries) GetLatestBalance(ctx context.Context, arg GetLatestBalancePara
 
 const getLedgerEntryByID = `-- name: GetLedgerEntryByID :one
 SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetLedgerEntryByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetLedgerEntryByID(ctx context.Context, arg GetLedgerEntryByIDParams) (WalletLedger, error) {
-	row := q.db.QueryRow(ctx, getLedgerEntryByID, arg.ID, arg.TenantID)
+func (q *Queries) GetLedgerEntryByID(ctx context.Context, id pgtype.UUID) (WalletLedger, error) {
+	row := q.db.QueryRow(ctx, getLedgerEntryByID, id)
 	var i WalletLedger
 	err := row.Scan(
 		&i.ID,
@@ -272,19 +235,14 @@ func (q *Queries) GetLedgerEntryByID(ctx context.Context, arg GetLedgerEntryByID
 
 const getLifetimePoints = `-- name: GetLifetimePoints :one
 SELECT COALESCE(SUM(amount), 0)::bigint FROM wallet_ledger
-WHERE tenant_id = $1 AND user_id = $2
-  AND ledger_type = 'points' AND amount > 0
+WHERE user_id = $1
+ AND ledger_type = 'points' AND amount > 0
 `
-
-type GetLifetimePointsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 // Sum of all positive points earns (never decreases; used for badges/tiers,
 // Section 28). BUG-W-003: surfaced in GET /me/wallet response.
-func (q *Queries) GetLifetimePoints(ctx context.Context, arg GetLifetimePointsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, getLifetimePoints, arg.TenantID, arg.UserID)
+func (q *Queries) GetLifetimePoints(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getLifetimePoints, userID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -293,14 +251,13 @@ func (q *Queries) GetLifetimePoints(ctx context.Context, arg GetLifetimePointsPa
 const getWalletSettings = `-- name: GetWalletSettings :one
 
 SELECT id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings
-WHERE tenant_id = $1
 `
 
 // =====================
 // Wallet Settings
 // =====================
-func (q *Queries) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (WalletSetting, error) {
-	row := q.db.QueryRow(ctx, getWalletSettings, tenantID)
+func (q *Queries) GetWalletSettings(ctx context.Context) (WalletSetting, error) {
+	row := q.db.QueryRow(ctx, getWalletSettings)
 	var i WalletSetting
 	err := row.Scan(
 		&i.ID,
@@ -316,17 +273,12 @@ func (q *Queries) GetWalletSettings(ctx context.Context, tenantID pgtype.UUID) (
 
 const insertActivityEvent = `-- name: InsertActivityEvent :one
 
-INSERT INTO activity_events (
-    tenant_id, user_id, activity_key, reference, payload
-) VALUES (
-    $1, $2, $3, $4, $5
-)
-ON CONFLICT (tenant_id, activity_key, reference) DO NOTHING
+INSERT INTO activity_events (user_id, activity_key, reference, payload) VALUES ($1, $2, $3, $4)
+ON CONFLICT (activity_key, reference) DO NOTHING
 RETURNING id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at
 `
 
 type InsertActivityEventParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	ActivityKey string      `json:"activity_key"`
 	Reference   string      `json:"reference"`
@@ -338,7 +290,6 @@ type InsertActivityEventParams struct {
 // =====================
 func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEventParams) (ActivityEvent, error) {
 	row := q.db.QueryRow(ctx, insertActivityEvent,
-		arg.TenantID,
 		arg.UserID,
 		arg.ActivityKey,
 		arg.Reference,
@@ -362,19 +313,11 @@ func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEve
 const insertLedgerEntry = `-- name: InsertLedgerEntry :one
 
 
-INSERT INTO wallet_ledger (
-    tenant_id, user_id, ledger_type, operation, amount, resulting_balance,
-    source, actor_user_id, reference, idempotency_key, reason
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11
-)
+INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at
 `
 
 type InsertLedgerEntryParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	UserID           pgtype.UUID `json:"user_id"`
 	LedgerType       string      `json:"ledger_type"`
 	Operation        string      `json:"operation"`
@@ -394,7 +337,6 @@ type InsertLedgerEntryParams struct {
 // =====================
 func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryParams) (WalletLedger, error) {
 	row := q.db.QueryRow(ctx, insertLedgerEntry,
-		arg.TenantID,
 		arg.UserID,
 		arg.LedgerType,
 		arg.Operation,
@@ -427,19 +369,18 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 
 const listActivityRulesByTenant = `-- name: ListActivityRulesByTenant :many
 SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
-WHERE tenant_id = $1
+
 ORDER BY activity_key ASC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListActivityRulesByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivityRulesByTenantParams) ([]ActivityPointRule, error) {
-	rows, err := q.db.Query(ctx, listActivityRulesByTenant, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listActivityRulesByTenant, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -472,14 +413,13 @@ func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivit
 
 const listLedgerEntriesByUser = `-- name: ListLedgerEntriesByUser :many
 SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
-WHERE tenant_id = $1 AND user_id = $2
-  AND ($3::text IS NULL OR ledger_type = $3)
+WHERE user_id = $1
+ AND ($2::text IS NULL OR ledger_type = $2)
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListLedgerEntriesByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	LedgerType string      `json:"ledger_type"`
 	PageOffset int32       `json:"page_offset"`
@@ -488,7 +428,6 @@ type ListLedgerEntriesByUserParams struct {
 
 func (q *Queries) ListLedgerEntriesByUser(ctx context.Context, arg ListLedgerEntriesByUserParams) ([]WalletLedger, error) {
 	rows, err := q.db.Query(ctx, listLedgerEntriesByUser,
-		arg.TenantID,
 		arg.UserID,
 		arg.LedgerType,
 		arg.PageOffset,
@@ -566,33 +505,23 @@ func (q *Queries) ListUnprocessedEvents(ctx context.Context, pageLimit int32) ([
 const markEventProcessed = `-- name: MarkEventProcessed :exec
 UPDATE activity_events
 SET processed = true, processed_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type MarkEventProcessedParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) MarkEventProcessed(ctx context.Context, arg MarkEventProcessedParams) error {
-	_, err := q.db.Exec(ctx, markEventProcessed, arg.ID, arg.TenantID)
+func (q *Queries) MarkEventProcessed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markEventProcessed, id)
 	return err
 }
 
 const toggleActivityRule = `-- name: ToggleActivityRule :one
 UPDATE activity_point_rules
 SET is_enabled = NOT is_enabled, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
-type ToggleActivityRuleParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ToggleActivityRule(ctx context.Context, arg ToggleActivityRuleParams) (ActivityPointRule, error) {
-	row := q.db.QueryRow(ctx, toggleActivityRule, arg.ID, arg.TenantID)
+func (q *Queries) ToggleActivityRule(ctx context.Context, id pgtype.UUID) (ActivityPointRule, error) {
+	row := q.db.QueryRow(ctx, toggleActivityRule, id)
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
@@ -613,13 +542,13 @@ func (q *Queries) ToggleActivityRule(ctx context.Context, arg ToggleActivityRule
 const updateActivityRuleByID = `-- name: UpdateActivityRuleByID :one
 UPDATE activity_point_rules
 SET point_value = $1,
-    is_enabled = $2,
-    one_time = $3,
-    cap_per_day = $4,
-    cap_per_week = $5,
-    description = $6,
-    updated_at = now()
-WHERE id = $7 AND tenant_id = $8
+ is_enabled = $2,
+ one_time = $3,
+ cap_per_day = $4,
+ cap_per_week = $5,
+ description = $6,
+ updated_at = now()
+WHERE id = $7
 RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
@@ -631,7 +560,6 @@ type UpdateActivityRuleByIDParams struct {
 	CapPerWeek  *int32      `json:"cap_per_week"`
 	Description *string     `json:"description"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivityRuleByIDParams) (ActivityPointRule, error) {
@@ -643,7 +571,6 @@ func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivity
 		arg.CapPerWeek,
 		arg.Description,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i ActivityPointRule
 	err := row.Scan(
@@ -663,37 +590,30 @@ func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivity
 }
 
 const upsertActivityRule = `-- name: UpsertActivityRule :one
-INSERT INTO activity_point_rules (
-    tenant_id, activity_key, point_value, is_enabled, one_time, cap_per_day, cap_per_week, description
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8
-)
-ON CONFLICT (tenant_id, activity_key) DO UPDATE SET
-    point_value = EXCLUDED.point_value,
-    is_enabled = EXCLUDED.is_enabled,
-    one_time = EXCLUDED.one_time,
-    cap_per_day = EXCLUDED.cap_per_day,
-    cap_per_week = EXCLUDED.cap_per_week,
-    description = EXCLUDED.description,
-    updated_at = now()
+INSERT INTO activity_point_rules (activity_key, point_value, is_enabled, one_time, cap_per_day, cap_per_week, description) VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (activity_key) DO UPDATE SET
+ point_value = EXCLUDED.point_value,
+ is_enabled = EXCLUDED.is_enabled,
+ one_time = EXCLUDED.one_time,
+ cap_per_day = EXCLUDED.cap_per_day,
+ cap_per_week = EXCLUDED.cap_per_week,
+ description = EXCLUDED.description,
+ updated_at = now()
 RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type UpsertActivityRuleParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ActivityKey string      `json:"activity_key"`
-	PointValue  int32       `json:"point_value"`
-	IsEnabled   *bool       `json:"is_enabled"`
-	OneTime     bool        `json:"one_time"`
-	CapPerDay   *int32      `json:"cap_per_day"`
-	CapPerWeek  *int32      `json:"cap_per_week"`
-	Description *string     `json:"description"`
+	ActivityKey string  `json:"activity_key"`
+	PointValue  int32   `json:"point_value"`
+	IsEnabled   *bool   `json:"is_enabled"`
+	OneTime     bool    `json:"one_time"`
+	CapPerDay   *int32  `json:"cap_per_day"`
+	CapPerWeek  *int32  `json:"cap_per_week"`
+	Description *string `json:"description"`
 }
 
 func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRuleParams) (ActivityPointRule, error) {
 	row := q.db.QueryRow(ctx, upsertActivityRule,
-		arg.TenantID,
 		arg.ActivityKey,
 		arg.PointValue,
 		arg.IsEnabled,
@@ -720,30 +640,24 @@ func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRule
 }
 
 const upsertWalletSettings = `-- name: UpsertWalletSettings :one
-INSERT INTO wallet_settings (tenant_id, points_to_credits_rate, daily_earning_cap, enable_earning)
-VALUES ($1, $2, $3, $4)
+INSERT INTO wallet_settings (points_to_credits_rate, daily_earning_cap, enable_earning) VALUES ($1, $2, $3)
+
 ON CONFLICT (tenant_id) DO UPDATE SET
-    points_to_credits_rate = EXCLUDED.points_to_credits_rate,
-    daily_earning_cap = EXCLUDED.daily_earning_cap,
-    enable_earning = EXCLUDED.enable_earning,
-    updated_at = now()
+ points_to_credits_rate = EXCLUDED.points_to_credits_rate,
+ daily_earning_cap = EXCLUDED.daily_earning_cap,
+ enable_earning = EXCLUDED.enable_earning,
+ updated_at = now()
 RETURNING id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning
 `
 
 type UpsertWalletSettingsParams struct {
-	TenantID            pgtype.UUID `json:"tenant_id"`
-	PointsToCreditsRate *int32      `json:"points_to_credits_rate"`
-	DailyEarningCap     int32       `json:"daily_earning_cap"`
-	EnableEarning       bool        `json:"enable_earning"`
+	PointsToCreditsRate *int32 `json:"points_to_credits_rate"`
+	DailyEarningCap     int32  `json:"daily_earning_cap"`
+	EnableEarning       bool   `json:"enable_earning"`
 }
 
 func (q *Queries) UpsertWalletSettings(ctx context.Context, arg UpsertWalletSettingsParams) (WalletSetting, error) {
-	row := q.db.QueryRow(ctx, upsertWalletSettings,
-		arg.TenantID,
-		arg.PointsToCreditsRate,
-		arg.DailyEarningCap,
-		arg.EnableEarning,
-	)
+	row := q.db.QueryRow(ctx, upsertWalletSettings, arg.PointsToCreditsRate, arg.DailyEarningCap, arg.EnableEarning)
 	var i WalletSetting
 	err := row.Scan(
 		&i.ID,

@@ -56,9 +56,8 @@ func TestTagModeratorsIntegration(t *testing.T) {
 
 	// Add.
 	added, err := svc.AddTagModerator(ctx, AddTagModeratorInput{
-		TagID:    tagID,
-		UserID:   userID,
-		TenantID: tenantID,
+		TagID:  tagID,
+		UserID: userID,
 	})
 	if err != nil {
 		t.Fatalf("AddTagModerator: %v", err)
@@ -84,9 +83,8 @@ func TestTagModeratorsIntegration(t *testing.T) {
 
 	// Idempotent re-add does not duplicate.
 	if _, err := svc.AddTagModerator(ctx, AddTagModeratorInput{
-		TagID:    tagID,
-		UserID:   userID,
-		TenantID: tenantID,
+		TagID:  tagID,
+		UserID: userID,
 	}); err != nil {
 		t.Fatalf("re-AddTagModerator: %v", err)
 	}

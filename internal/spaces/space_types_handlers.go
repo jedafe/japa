@@ -145,7 +145,7 @@ func (h *Handlers) CreateSpaceType(w http.ResponseWriter, r *http.Request) {
 	category := strings.ToLower(strings.TrimSpace(req.Category))
 
 	st, err := h.Service.CreateSpaceType(r.Context(), gen.CreateSpaceTypeParams{
-		TenantID:     tenantID,
+
 		Name:         req.Name,
 		Slug:         req.Slug,
 		Description:  req.Description,
@@ -222,7 +222,6 @@ func (h *Handlers) UpdateSpaceType(w http.ResponseWriter, r *http.Request) {
 		FieldGroupID: fieldGroupID,
 		Category:     category,
 		ID:           id,
-		TenantID:     tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)

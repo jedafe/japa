@@ -104,13 +104,11 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
-			UserID:    uid,
-			TenantID:  tenantID,
-			Operation: gen.BanOperation(op),
-			Reason:    &input.Reason,
-			// #nosec G115 // value bounded by caller
-			Column5:  int32(seconds),
-			IssuedBy: actorID,
+			UserID: uid,
+
+			Operation:                gen.BanOperation(op),
+			Reason:                   &input.Reason, Column4: // #nosec G115 // value bounded by caller
+			int32(seconds), IssuedBy: actorID,
 		}); err != nil {
 			slog.Error("restrict: failed to create operation ban", "error", err, "user_id", uid.String(), "operation", op)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
@@ -285,9 +283,9 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Create suspension record.
 	if err := h.Queries.CreateUserSuspension(ctx, gen.CreateUserSuspensionParams{
-		UserID:   uid,
-		TenantID: tenantID,
-		Reason:   &input.Reason,
+		UserID: uid,
+
+		Reason: &input.Reason,
 	}); err != nil {
 		slog.Error("suspend: failed to create suspension record", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend user")
@@ -298,11 +296,10 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	// 2. Ban from all operations permanently.
 	for _, op := range middleware.AllOperations() {
 		if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
-			UserID:    uid,
-			TenantID:  tenantID,
+			UserID: uid,
+
 			Operation: gen.BanOperation(op),
-			Reason:    &input.Reason,
-			Column5:   0, // permanent
+			Reason:    &input.Reason, Column4: 0, // permanent
 		}); err != nil {
 			slog.Error("suspend: failed to create operation ban", "error", err, "operation", op)
 		}
@@ -377,8 +374,8 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 
 	// Create typed warning.
 	if err := h.Queries.CreateUserTypedWarning(ctx, gen.CreateUserTypedWarningParams{
-		UserID:        uid,
-		TenantID:      tenantID,
+		UserID: uid,
+
 		Reason:        &input.Reason,
 		ViolationType: &input.ViolationType,
 	}); err != nil {
@@ -406,11 +403,10 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 		ops := violationToOperations[input.ViolationType]
 		for _, op := range ops {
 			if err := h.Queries.CreateOperationBan(ctx, gen.CreateOperationBanParams{
-				UserID:    uid,
-				TenantID:  tenantID,
+				UserID: uid,
+
 				Operation: gen.BanOperation(op),
-				Reason:    strPtr("Auto-restricted after 3 " + input.ViolationType + " warnings"),
-				Column5:   604800, // 7 days in seconds
+				Reason:    strPtr("Auto-restricted after 3 " + input.ViolationType + " warnings"), Column4: 604800, // 7 days in seconds
 			}); err != nil {
 				slog.Error("warn: failed to auto-restrict operation",
 					"error", err, "user_id", uid.String(), "operation", op)

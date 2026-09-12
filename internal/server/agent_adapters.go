@@ -315,8 +315,8 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 		}
 
 		return ai.ComparisonCreateResult{
-			ID:         res.ID,
-			TenantID:   res.TenantID,
+			ID: res.ID,
+
 			AuthorID:   res.AuthorID,
 			Title:      res.Title,
 			Slug:       res.Slug,
@@ -346,8 +346,8 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 	}
 
 	return ai.ComparisonCreateResult{
-		ID:         res.ID,
-		TenantID:   res.TenantID,
+		ID: res.ID,
+
 		AuthorID:   res.AuthorID,
 		Title:      res.Title,
 		Slug:       res.Slug,
@@ -363,8 +363,8 @@ func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id, te
 	}
 
 	return ai.ComparisonDetail{
-		ID:         d.ID,
-		TenantID:   d.TenantID,
+		ID: d.ID,
+
 		AuthorID:   d.AuthorID,
 		Title:      d.Title,
 		Slug:       d.Slug,
@@ -643,7 +643,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	// 6. Create a HITL review with source='agent_draft_request'.
 	if a.aiStore != nil {
 		_, hitlErr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-			TenantID:    tenantID,
+
 			ContentID:   row.ID,
 			ContentType: payload.ContentType,
 			AIOutput:    fvJSON,
@@ -819,8 +819,8 @@ func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, tenantID pgty
 
 func learningTrackToAI(t learning.Track) ai.LearningTrack {
 	return ai.LearningTrack{
-		ID:          t.ID,
-		TenantID:    t.TenantID,
+		ID: t.ID,
+
 		Title:       t.Title,
 		Slug:        t.Slug,
 		Description: t.Description,
@@ -834,8 +834,8 @@ func learningTrackToAI(t learning.Track) ai.LearningTrack {
 
 func learningLessonToAI(l learning.Lesson) ai.LearningLesson {
 	return ai.LearningLesson{
-		ID:              l.ID,
-		TenantID:        l.TenantID,
+		ID: l.ID,
+
 		ModuleID:        l.ModuleID,
 		Title:           l.Title,
 		Slug:            l.Slug,
@@ -1926,7 +1926,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 	}
 
 	review, rerr := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-		TenantID:    tenantID,
+
 		ContentID:   draftID,
 		ContentType: contentType,
 		AIOutput:    fvJSON,
@@ -2017,7 +2017,7 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 // createStudioReview is a best-effort HITL review creation helper.
 func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, tenantID, contentID pgtype.UUID, contentType string, fvJSON []byte) {
 	_, err := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
-		TenantID:    tenantID,
+
 		ContentID:   contentID,
 		ContentType: contentType,
 		AIOutput:    fvJSON,
@@ -2098,9 +2098,9 @@ func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context
 	}
 
 	if err := a.intelStore.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
-		TenantID: tenantID,
-		ID:       intelRecordID,
-		Status:   "published",
+
+		ID:     intelRecordID,
+		Status: "published",
 	}); err != nil {
 		slog.Warn("studio: transition intel_record to published failed",
 			"intel_record_id", intelRecordID, "error", err)

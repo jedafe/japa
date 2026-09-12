@@ -122,8 +122,8 @@ func parsePageSizeOffset(r *http.Request) int32 {
 // base ticket shape after a partial update.
 func ticketRowToTicket(r gen.GetTicketByIDRow) gen.Ticket {
 	return gen.Ticket{
-		ID:              r.ID,
-		TenantID:        r.TenantID,
+		ID: r.ID,
+
 		TypeID:          r.TypeID,
 		Subject:         r.Subject,
 		Description:     r.Description,

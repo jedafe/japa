@@ -835,7 +835,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	groups, total, err := h.service.AdminListGroups(r.Context(), AdminListGroupsFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		Search:             search,
 		Limit:              limit,

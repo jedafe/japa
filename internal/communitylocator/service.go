@@ -255,7 +255,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	}
 
 	in := CreateOrgInput{
-		TenantID:             tenantID,
+
 		Name:                 input.Name,
 		Slug:                 input.Slug,
 		OrgType:              input.OrgType,
@@ -471,7 +471,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	aiModel := "content_agent_v1"
 
 	in := CreateOrgInput{
-		TenantID:             tenantID,
+
 		Name:                 input.Name,
 		Slug:                 slug,
 		OrgType:              orgType,
@@ -559,7 +559,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 	offset := (page - 1) * limit
 
 	f := ListOrgsFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		OriginCommunity:    originCommunity,
@@ -617,7 +617,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID:           tenantID,
+
 		Status:             status,
 		Q:                  q,
 		DestinationSpaceID: destSpaceID,

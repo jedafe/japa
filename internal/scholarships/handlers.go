@@ -499,7 +499,7 @@ func buildScholarshipCreateParams(
 	fieldsOfStudy, eligibleCountries, requiredDocuments, funding, languageReqs := normalizeScholarshipSlices(body)
 
 	return gen.CreateScholarshipParams{
-		TenantID:             tenantID,
+
 		GuideID:              guideID,
 		Title:                *body.Title,
 		Description:          body.Description,
@@ -703,21 +703,15 @@ func (h *Handlers) HandleAdminListScholarships(w http.ResponseWriter, r *http.Re
 	search := q.Get("q")
 	status := q.Get("verification_status")
 
-	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.AdminListScholarshipsParams{
-		Column2: search,
-		Column3: status,
-		Limit:   safeInt32(limit),
-		Offset:  offset,
+	rows, err := h.svc.store.AdminListScholarships(r.Context(), tenantID, gen.AdminListScholarshipsParams{Column1: search, Column2: status, Limit: safeInt32(limit),
+		Offset: offset,
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list scholarships")
 		return
 	}
 
-	total, err := h.svc.store.AdminCountScholarships(r.Context(), tenantID, gen.AdminCountScholarshipsParams{
-		Column2: search,
-		Column3: status,
-	})
+	total, err := h.svc.store.AdminCountScholarships(r.Context(), tenantID, gen.AdminCountScholarshipsParams{Column1: search, Column2: status})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to count scholarships")
 		return
@@ -777,7 +771,7 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 
 	// 1. Insert the guide content row.
 	contentParams := gen.CreateContentParams{
-		TenantID:        tenantID,
+
 		AuthorID:        userID,
 		ContentType:     "guide",
 		Title:           *body.Title,
@@ -854,7 +848,7 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 
 	// Merge: use provided values or fall back to existing.
 	arg := gen.UpdateScholarshipParams{
-		TenantID:             tenantID,
+
 		ID:                   id,
 		Title:                existing.Title,
 		Description:          existing.Description,

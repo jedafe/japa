@@ -279,7 +279,7 @@ func TestEngine_PreviewScoreForItems(t *testing.T) {
 	ctx := context.Background()
 
 	result, err := e.PreviewScoreForItems(ctx, jce.ScorePreviewInput{
-		TenantID:          tenantID.String(),
+
 		UserID:            &userID,
 		TypeID:            typeID.String(),
 		ItemRefs:          []map[string]any{{"type": "test", "id": "a"}, {"type": "test", "id": "b"}},
@@ -352,8 +352,8 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 	}
 
 	result, err := e.Score(ctx, jce.ScoreInput{
-		ContentID:         contentIDStr,
-		TenantID:          tenantID.String(),
+		ContentID: contentIDStr,
+
 		UserID:            &authorIDStr,
 		PermissionChecker: checker,
 	})
@@ -388,8 +388,8 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 
 	// GetScore should return the persisted result.
 	got, err := e.GetScore(ctx, jce.GetScoreInput{
-		ContentID:         contentIDStr,
-		TenantID:          tenantID.String(),
+		ContentID: contentIDStr,
+
 		UserID:            &authorIDStr,
 		PermissionChecker: checker,
 	})
@@ -413,8 +413,8 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 
 	contentID2, _ := seedComparison(t, database, tenantID, authorID, typeID, "public")
 	_, err = e.Score(ctx, jce.ScoreInput{
-		ContentID:         contentID2.String(),
-		TenantID:          tenantID.String(),
+		ContentID: contentID2.String(),
+
 		UserID:            &authorIDStr,
 		PermissionChecker: checker,
 	})
@@ -465,8 +465,8 @@ func TestEngine_ScoreFilterIneligible(t *testing.T) {
 	profileIDStr := profileID.String()
 
 	result, err := e.Score(ctx, jce.ScoreInput{
-		ContentID:         contentID.String(),
-		TenantID:          tenantID.String(),
+		ContentID: contentID.String(),
+
 		UserID:            &authorIDStr,
 		SmartMode:         "eligibility",
 		ProfileID:         &profileIDStr,

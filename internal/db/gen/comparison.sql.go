@@ -12,16 +12,11 @@ import (
 )
 
 const countComparisonItemsByType = `-- name: CountComparisonItemsByType :one
-SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND deleted_at IS NULL
 `
 
-type CountComparisonItemsByTypeParams struct {
-	TypeID   pgtype.UUID `json:"type_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CountComparisonItemsByType(ctx context.Context, arg CountComparisonItemsByTypeParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countComparisonItemsByType, arg.TypeID, arg.TenantID)
+func (q *Queries) CountComparisonItemsByType(ctx context.Context, typeID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonItemsByType, typeID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -30,35 +25,32 @@ func (q *Queries) CountComparisonItemsByType(ctx context.Context, arg CountCompa
 const countComparisonsWithFilters = `-- name: CountComparisonsWithFilters :one
 SELECT count(*)::int
 FROM contents c
-JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND (
-      $3::uuid IS NULL
-      OR EXISTS (
-          SELECT 1 FROM comparison_items ci
-          WHERE ci.content_id = c.id
-            AND ci.tenant_id = c.tenant_id
-            AND ci.type_id = $3
-            AND ci.deleted_at IS NULL
-      )
-  )
-  AND ($4::text IS NULL OR m.depth = $4)
-  AND ($5::text IS NULL OR c.status = $5)
-  AND ($6::text IS NULL OR c.visibility = $6)
-  AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
-  AND (
-      $9::text IS NULL OR $9 = ''
-      OR c.title ILIKE '%' || $9 || '%'
-      OR c.slug ILIKE '%' || $9 || '%'
-  )
+JOIN comparison_content_metadata m ON m.content_id = c.id
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND (
+ $2::uuid IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_items ci
+ WHERE ci.content_id = c.id
+ AND ci.type_id = $2
+ AND ci.deleted_at IS NULL
+ )
+ )
+ AND ($3::text IS NULL OR m.depth = $3)
+ AND ($4::text IS NULL OR c.status = $4)
+ AND ($5::text IS NULL OR c.visibility = $5)
+ AND ($6::boolean IS NOT TRUE OR c.author_id = $7)
+ AND (
+ $8::text IS NULL OR $8 = ''
+ OR c.title ILIKE '%' || $8 || '%'
+ OR c.slug ILIKE '%' || $8 || '%'
+ )
 `
 
 type CountComparisonsWithFiltersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	Depth      *string     `json:"depth"`
@@ -72,7 +64,6 @@ type CountComparisonsWithFiltersParams struct {
 // Count of comparisons matching the same filters as ListComparisonsWithFilters.
 func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComparisonsWithFiltersParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countComparisonsWithFilters,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.Depth,
@@ -89,17 +80,12 @@ func (q *Queries) CountComparisonsWithFilters(ctx context.Context, arg CountComp
 
 const createComparisonDimension = `-- name: CreateComparisonDimension :one
 
-INSERT INTO comparison_dimensions (
-    content_id, tenant_id, type_id, label, dimension_type, position
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-)
-RETURNING id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
+INSERT INTO comparison_dimensions (content_id, type_id, label, dimension_type, position) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
 `
 
 type CreateComparisonDimensionParams struct {
 	ContentID     pgtype.UUID `json:"content_id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	TypeID        pgtype.UUID `json:"type_id"`
 	Label         string      `json:"label"`
 	DimensionType string      `json:"dimension_type"`
@@ -109,7 +95,6 @@ type CreateComparisonDimensionParams struct {
 type CreateComparisonDimensionRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	TypeID        pgtype.UUID        `json:"type_id"`
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
@@ -124,7 +109,6 @@ type CreateComparisonDimensionRow struct {
 func (q *Queries) CreateComparisonDimension(ctx context.Context, arg CreateComparisonDimensionParams) (CreateComparisonDimensionRow, error) {
 	row := q.db.QueryRow(ctx, createComparisonDimension,
 		arg.ContentID,
-		arg.TenantID,
 		arg.TypeID,
 		arg.Label,
 		arg.DimensionType,
@@ -134,7 +118,6 @@ func (q *Queries) CreateComparisonDimension(ctx context.Context, arg CreateCompa
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Label,
 		&i.DimensionType,
@@ -147,18 +130,12 @@ func (q *Queries) CreateComparisonDimension(ctx context.Context, arg CreateCompa
 
 const createComparisonItem = `-- name: CreateComparisonItem :one
 
-INSERT INTO comparison_items (
-    content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, item_ref
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
-)
-RETURNING id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
+INSERT INTO comparison_items (content_id, type_id, title, description, image_id, geo_space_id, position, item_ref) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, content_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
 `
 
 type CreateComparisonItemParams struct {
 	ContentID   pgtype.UUID `json:"content_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	TypeID      pgtype.UUID `json:"type_id"`
 	Title       string      `json:"title"`
 	Description *string     `json:"description"`
@@ -171,7 +148,6 @@ type CreateComparisonItemParams struct {
 type CreateComparisonItemRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	ContentID   pgtype.UUID        `json:"content_id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	TypeID      pgtype.UUID        `json:"type_id"`
 	Title       string             `json:"title"`
 	Description *string            `json:"description"`
@@ -189,7 +165,6 @@ type CreateComparisonItemRow struct {
 func (q *Queries) CreateComparisonItem(ctx context.Context, arg CreateComparisonItemParams) (CreateComparisonItemRow, error) {
 	row := q.db.QueryRow(ctx, createComparisonItem,
 		arg.ContentID,
-		arg.TenantID,
 		arg.TypeID,
 		arg.Title,
 		arg.Description,
@@ -202,7 +177,6 @@ func (q *Queries) CreateComparisonItem(ctx context.Context, arg CreateComparison
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Title,
 		&i.Description,
@@ -219,17 +193,11 @@ func (q *Queries) CreateComparisonItem(ctx context.Context, arg CreateComparison
 const createComparisonType = `-- name: CreateComparisonType :one
 
 
-INSERT INTO comparison_type_definitions (
-    tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9
-)
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
+INSERT INTO comparison_type_definitions (name, slug, description, icon, field_group_id, item_label, is_system, config) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 `
 
 type CreateComparisonTypeParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	Name         string      `json:"name"`
 	Slug         string      `json:"slug"`
 	Description  *string     `json:"description"`
@@ -242,7 +210,6 @@ type CreateComparisonTypeParams struct {
 
 type CreateComparisonTypeRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -262,7 +229,6 @@ type CreateComparisonTypeRow struct {
 // =====================
 func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparisonTypeParams) (CreateComparisonTypeRow, error) {
 	row := q.db.QueryRow(ctx, createComparisonType,
-		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.Description,
@@ -275,7 +241,6 @@ func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparison
 	var i CreateComparisonTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -291,159 +256,125 @@ func (q *Queries) CreateComparisonType(ctx context.Context, arg CreateComparison
 
 const deleteComparisonContentMetadata = `-- name: DeleteComparisonContentMetadata :exec
 DELETE FROM comparison_content_metadata
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
-type DeleteComparisonContentMetadataParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonContentMetadata(ctx context.Context, arg DeleteComparisonContentMetadataParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonContentMetadata, arg.ContentID, arg.TenantID)
+func (q *Queries) DeleteComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonContentMetadata, contentID)
 	return err
 }
 
 const deleteComparisonDimension = `-- name: DeleteComparisonDimension :exec
 UPDATE comparison_dimensions SET deleted_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DeleteComparisonDimensionParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonDimension(ctx context.Context, arg DeleteComparisonDimensionParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonDimension, arg.ID, arg.TenantID)
+func (q *Queries) DeleteComparisonDimension(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonDimension, id)
 	return err
 }
 
 const deleteComparisonItem = `-- name: DeleteComparisonItem :exec
 UPDATE comparison_items SET deleted_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DeleteComparisonItemParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonItem(ctx context.Context, arg DeleteComparisonItemParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonItem, arg.ID, arg.TenantID)
+func (q *Queries) DeleteComparisonItem(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonItem, id)
 	return err
 }
 
 const deleteComparisonType = `-- name: DeleteComparisonType :exec
 DELETE FROM comparison_type_definitions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeleteComparisonTypeParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonType(ctx context.Context, arg DeleteComparisonTypeParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonType, arg.ID, arg.TenantID)
+func (q *Queries) DeleteComparisonType(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonType, id)
 	return err
 }
 
 const deleteComparisonTypeAccess = `-- name: DeleteComparisonTypeAccess :exec
 DELETE FROM comparison_type_access
 WHERE type_id = $1
-  AND user_group_id = $2
-  AND type_id IN (
-      SELECT id FROM comparison_type_definitions WHERE id = $1 AND tenant_id = $3
-  )
+ AND user_group_id = $2
+ AND type_id IN (
+ SELECT id FROM comparison_type_definitions WHERE id = $1
+ )
 `
 
 type DeleteComparisonTypeAccessParams struct {
 	TypeID      pgtype.UUID `json:"type_id"`
 	UserGroupID pgtype.UUID `json:"user_group_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) DeleteComparisonTypeAccess(ctx context.Context, arg DeleteComparisonTypeAccessParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonTypeAccess, arg.TypeID, arg.UserGroupID, arg.TenantID)
+	_, err := q.db.Exec(ctx, deleteComparisonTypeAccess, arg.TypeID, arg.UserGroupID)
 	return err
 }
 
 const deleteComparisonValuesByContent = `-- name: DeleteComparisonValuesByContent :exec
 DELETE FROM comparison_values cv
 WHERE cv.dimension_id IN (
-    SELECT cd.id FROM comparison_dimensions cd
-    WHERE cd.content_id = $1 AND cd.tenant_id = $2
-) AND cv.tenant_id = $2
+ SELECT cd.id FROM comparison_dimensions cd
+ WHERE cd.content_id = $1
+)
 `
 
-type DeleteComparisonValuesByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonValuesByContent(ctx context.Context, arg DeleteComparisonValuesByContentParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonValuesByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) DeleteComparisonValuesByContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonValuesByContent, contentID)
 	return err
 }
 
 const deleteComparisonValuesByDimension = `-- name: DeleteComparisonValuesByDimension :exec
 DELETE FROM comparison_values
-WHERE dimension_id = $1 AND tenant_id = $2
+WHERE dimension_id = $1
 `
 
-type DeleteComparisonValuesByDimensionParams struct {
-	DimensionID pgtype.UUID `json:"dimension_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteComparisonValuesByDimension(ctx context.Context, arg DeleteComparisonValuesByDimensionParams) error {
-	_, err := q.db.Exec(ctx, deleteComparisonValuesByDimension, arg.DimensionID, arg.TenantID)
+func (q *Queries) DeleteComparisonValuesByDimension(ctx context.Context, dimensionID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteComparisonValuesByDimension, dimensionID)
 	return err
 }
 
 const getComparisonBySlugOrID = `-- name: GetComparisonBySlugOrID :one
 
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.source_country, c.target_country,
-       c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.ai_exempt,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       u.username AS author_name,
-       u.username AS author_username,
-       up.display_name AS author_display_name,
-       up.avatar_url AS author_avatar_url,
-       s.name AS space_name,
-       s.slug AS space_slug,
-       m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
-       fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
-       hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
+SELECT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.source_country, c.target_country,
+ c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.ai_exempt,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ u.username AS author_name,
+ u.username AS author_username,
+ up.display_name AS author_display_name,
+ up.avatar_url AS author_avatar_url,
+ s.name AS space_name,
+ s.slug AS space_slug,
+ m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
+ fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
+ hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
-JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
-LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND (c.id = $2 OR c.slug = $3)
+JOIN comparison_content_metadata m ON m.content_id = c.id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND (c.id = $1 OR c.slug = $2)
 `
 
 type GetComparisonBySlugOrIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-	Slug     *string     `json:"slug"`
+	ID   pgtype.UUID `json:"id"`
+	Slug *string     `json:"slug"`
 }
 
 type GetComparisonBySlugOrIDRow struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	SpaceID               pgtype.UUID        `json:"space_id"`
 	ContentType           string             `json:"content_type"`
@@ -499,11 +430,10 @@ type GetComparisonBySlugOrIDRow struct {
 // Comparison detail / matrix helpers
 // =====================
 func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparisonBySlugOrIDParams) (GetComparisonBySlugOrIDRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonBySlugOrID, arg.TenantID, arg.ID, arg.Slug)
+	row := q.db.QueryRow(ctx, getComparisonBySlugOrID, arg.ID, arg.Slug)
 	var i GetComparisonBySlugOrIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -558,22 +488,28 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 }
 
 const getComparisonContentMetadata = `-- name: GetComparisonContentMetadata :one
-SELECT content_id, tenant_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
 FROM comparison_content_metadata
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
-type GetComparisonContentMetadataParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
+type GetComparisonContentMetadataRow struct {
+	ContentID      pgtype.UUID        `json:"content_id"`
+	Depth          string             `json:"depth"`
+	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
+	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
+	SmartMode      *string            `json:"smart_mode"`
+	ScoreVersion   int32              `json:"score_version"`
+	Config         []byte             `json:"config"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetComparisonContentMetadata(ctx context.Context, arg GetComparisonContentMetadataParams) (ComparisonContentMetadatum, error) {
-	row := q.db.QueryRow(ctx, getComparisonContentMetadata, arg.ContentID, arg.TenantID)
-	var i ComparisonContentMetadatum
+func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) (GetComparisonContentMetadataRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonContentMetadata, contentID)
+	var i GetComparisonContentMetadataRow
 	err := row.Scan(
 		&i.ContentID,
-		&i.TenantID,
 		&i.Depth,
 		&i.PromotedFromID,
 		&i.PromotedAt,
@@ -587,20 +523,14 @@ func (q *Queries) GetComparisonContentMetadata(ctx context.Context, arg GetCompa
 }
 
 const getComparisonDimensionByID = `-- name: GetComparisonDimensionByID :one
-SELECT id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
+SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
 FROM comparison_dimensions
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetComparisonDimensionByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetComparisonDimensionByIDRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	TypeID        pgtype.UUID        `json:"type_id"`
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
@@ -609,13 +539,12 @@ type GetComparisonDimensionByIDRow struct {
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetComparisonDimensionByID(ctx context.Context, arg GetComparisonDimensionByIDParams) (GetComparisonDimensionByIDRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonDimensionByID, arg.ID, arg.TenantID)
+func (q *Queries) GetComparisonDimensionByID(ctx context.Context, id pgtype.UUID) (GetComparisonDimensionByIDRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonDimensionByID, id)
 	var i GetComparisonDimensionByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Label,
 		&i.DimensionType,
@@ -627,20 +556,14 @@ func (q *Queries) GetComparisonDimensionByID(ctx context.Context, arg GetCompari
 }
 
 const getComparisonItemByID = `-- name: GetComparisonItemByID :one
-SELECT id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
+SELECT id, content_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
 FROM comparison_items
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetComparisonItemByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetComparisonItemByIDRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	ContentID   pgtype.UUID        `json:"content_id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	TypeID      pgtype.UUID        `json:"type_id"`
 	Title       string             `json:"title"`
 	Description *string            `json:"description"`
@@ -652,13 +575,12 @@ type GetComparisonItemByIDRow struct {
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) GetComparisonItemByID(ctx context.Context, arg GetComparisonItemByIDParams) (GetComparisonItemByIDRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonItemByID, arg.ID, arg.TenantID)
+func (q *Queries) GetComparisonItemByID(ctx context.Context, id pgtype.UUID) (GetComparisonItemByIDRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonItemByID, id)
 	var i GetComparisonItemByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Title,
 		&i.Description,
@@ -673,19 +595,13 @@ func (q *Queries) GetComparisonItemByID(ctx context.Context, arg GetComparisonIt
 }
 
 const getComparisonTypeByID = `-- name: GetComparisonTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
+SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetComparisonTypeByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetComparisonTypeByIDRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -697,12 +613,11 @@ type GetComparisonTypeByIDRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetComparisonTypeByID(ctx context.Context, arg GetComparisonTypeByIDParams) (GetComparisonTypeByIDRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonTypeByID, arg.ID, arg.TenantID)
+func (q *Queries) GetComparisonTypeByID(ctx context.Context, id pgtype.UUID) (GetComparisonTypeByIDRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonTypeByID, id)
 	var i GetComparisonTypeByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -717,19 +632,13 @@ func (q *Queries) GetComparisonTypeByID(ctx context.Context, arg GetComparisonTy
 }
 
 const getComparisonTypeBySlug = `-- name: GetComparisonTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
+SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
-WHERE slug = $1 AND tenant_id = $2
+WHERE slug = $1
 `
-
-type GetComparisonTypeBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetComparisonTypeBySlugRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -741,12 +650,11 @@ type GetComparisonTypeBySlugRow struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparisonTypeBySlugParams) (GetComparisonTypeBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getComparisonTypeBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, slug string) (GetComparisonTypeBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonTypeBySlug, slug)
 	var i GetComparisonTypeBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -761,24 +669,34 @@ func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, arg GetComparison
 }
 
 const getComparisonValue = `-- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+SELECT dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
-WHERE dimension_id = $1 AND item_id = $2 AND tenant_id = $3
+WHERE dimension_id = $1 AND item_id = $2
 `
 
 type GetComparisonValueParams struct {
 	DimensionID pgtype.UUID `json:"dimension_id"`
 	ItemID      pgtype.UUID `json:"item_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValueParams) (ComparisonValue, error) {
-	row := q.db.QueryRow(ctx, getComparisonValue, arg.DimensionID, arg.ItemID, arg.TenantID)
-	var i ComparisonValue
+type GetComparisonValueRow struct {
+	DimensionID  pgtype.UUID        `json:"dimension_id"`
+	ItemID       pgtype.UUID        `json:"item_id"`
+	Value        *string            `json:"value"`
+	ValueRating  pgtype.Numeric     `json:"value_rating"`
+	ValueBoolean *bool              `json:"value_boolean"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
+}
+
+func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValueParams) (GetComparisonValueRow, error) {
+	row := q.db.QueryRow(ctx, getComparisonValue, arg.DimensionID, arg.ItemID)
+	var i GetComparisonValueRow
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -791,33 +709,39 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 }
 
 const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
-SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
+SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
+ cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
-WHERE ci.content_id = $1 AND cv.tenant_id = $2
-  AND ci.deleted_at IS NULL AND cd.deleted_at IS NULL
+WHERE ci.content_id = $1
+ AND ci.deleted_at IS NULL AND cd.deleted_at IS NULL
 `
 
-type GetComparisonValuesByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
+type GetComparisonValuesByContentRow struct {
+	DimensionID  pgtype.UUID        `json:"dimension_id"`
+	ItemID       pgtype.UUID        `json:"item_id"`
+	Value        *string            `json:"value"`
+	ValueRating  pgtype.Numeric     `json:"value_rating"`
+	ValueBoolean *bool              `json:"value_boolean"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
 }
 
-func (q *Queries) GetComparisonValuesByContent(ctx context.Context, arg GetComparisonValuesByContentParams) ([]ComparisonValue, error) {
-	rows, err := q.db.Query(ctx, getComparisonValuesByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) GetComparisonValuesByContent(ctx context.Context, contentID pgtype.UUID) ([]GetComparisonValuesByContentRow, error) {
+	rows, err := q.db.Query(ctx, getComparisonValuesByContent, contentID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ComparisonValue
+	var items []GetComparisonValuesByContentRow
 	for rows.Next() {
-		var i ComparisonValue
+		var i GetComparisonValuesByContentRow
 		if err := rows.Scan(
 			&i.DimensionID,
 			&i.ItemID,
-			&i.TenantID,
 			&i.Value,
 			&i.ValueRating,
 			&i.ValueBoolean,
@@ -838,17 +762,11 @@ func (q *Queries) GetComparisonValuesByContent(ctx context.Context, arg GetCompa
 
 const insertComparisonContentMetadata = `-- name: InsertComparisonContentMetadata :exec
 
-INSERT INTO comparison_content_metadata (
-    content_id, tenant_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config
-) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8
-)
+INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config) VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertComparisonContentMetadataParams struct {
 	ContentID      pgtype.UUID        `json:"content_id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Depth          string             `json:"depth"`
 	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
@@ -863,7 +781,6 @@ type InsertComparisonContentMetadataParams struct {
 func (q *Queries) InsertComparisonContentMetadata(ctx context.Context, arg InsertComparisonContentMetadataParams) error {
 	_, err := q.db.Exec(ctx, insertComparisonContentMetadata,
 		arg.ContentID,
-		arg.TenantID,
 		arg.Depth,
 		arg.PromotedFromID,
 		arg.PromotedAt,
@@ -875,21 +792,15 @@ func (q *Queries) InsertComparisonContentMetadata(ctx context.Context, arg Inser
 }
 
 const listComparisonDimensionsByContent = `-- name: ListComparisonDimensionsByContent :many
-SELECT id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
+SELECT id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
 FROM comparison_dimensions
-WHERE content_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE content_id = $1 AND deleted_at IS NULL
 ORDER BY position ASC, created_at ASC
 `
-
-type ListComparisonDimensionsByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
 
 type ListComparisonDimensionsByContentRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	TypeID        pgtype.UUID        `json:"type_id"`
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
@@ -898,8 +809,8 @@ type ListComparisonDimensionsByContentRow struct {
 	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, arg ListComparisonDimensionsByContentParams) ([]ListComparisonDimensionsByContentRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonDimensionsByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, contentID pgtype.UUID) ([]ListComparisonDimensionsByContentRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonDimensionsByContent, contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -910,7 +821,6 @@ func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, arg Lis
 		if err := rows.Scan(
 			&i.ID,
 			&i.ContentID,
-			&i.TenantID,
 			&i.TypeID,
 			&i.Label,
 			&i.DimensionType,
@@ -929,21 +839,15 @@ func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, arg Lis
 }
 
 const listComparisonItemsByContent = `-- name: ListComparisonItemsByContent :many
-SELECT id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
+SELECT id, content_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
 FROM comparison_items
-WHERE content_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE content_id = $1 AND deleted_at IS NULL
 ORDER BY position ASC, created_at ASC
 `
-
-type ListComparisonItemsByContentParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
 
 type ListComparisonItemsByContentRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	ContentID   pgtype.UUID        `json:"content_id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	TypeID      pgtype.UUID        `json:"type_id"`
 	Title       string             `json:"title"`
 	Description *string            `json:"description"`
@@ -955,8 +859,8 @@ type ListComparisonItemsByContentRow struct {
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) ListComparisonItemsByContent(ctx context.Context, arg ListComparisonItemsByContentParams) ([]ListComparisonItemsByContentRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonItemsByContent, arg.ContentID, arg.TenantID)
+func (q *Queries) ListComparisonItemsByContent(ctx context.Context, contentID pgtype.UUID) ([]ListComparisonItemsByContentRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonItemsByContent, contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -967,7 +871,6 @@ func (q *Queries) ListComparisonItemsByContent(ctx context.Context, arg ListComp
 		if err := rows.Scan(
 			&i.ID,
 			&i.ContentID,
-			&i.TenantID,
 			&i.TypeID,
 			&i.Title,
 			&i.Description,
@@ -990,17 +893,12 @@ func (q *Queries) ListComparisonItemsByContent(ctx context.Context, arg ListComp
 
 const listComparisonTypeAccess = `-- name: ListComparisonTypeAccess :many
 SELECT cta.type_id, cta.user_group_id, cta.can_create, cta.can_fill, cta.ai_can_fill,
-       ug.name AS group_name
+ ug.name AS group_name
 FROM comparison_type_access cta
 JOIN comparison_type_definitions ctd ON ctd.id = cta.type_id
 LEFT JOIN user_groups ug ON ug.id = cta.user_group_id
-WHERE cta.type_id = $1 AND ctd.tenant_id = $2
+WHERE cta.type_id = $1
 `
-
-type ListComparisonTypeAccessParams struct {
-	TypeID   pgtype.UUID `json:"type_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type ListComparisonTypeAccessRow struct {
 	TypeID      pgtype.UUID `json:"type_id"`
@@ -1011,8 +909,8 @@ type ListComparisonTypeAccessRow struct {
 	GroupName   *string     `json:"group_name"`
 }
 
-func (q *Queries) ListComparisonTypeAccess(ctx context.Context, arg ListComparisonTypeAccessParams) ([]ListComparisonTypeAccessRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonTypeAccess, arg.TypeID, arg.TenantID)
+func (q *Queries) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]ListComparisonTypeAccessRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonTypeAccess, typeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1039,22 +937,20 @@ func (q *Queries) ListComparisonTypeAccess(ctx context.Context, arg ListComparis
 }
 
 const listComparisonTypesByTenant = `-- name: ListComparisonTypesByTenant :many
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
+SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 FROM comparison_type_definitions
-WHERE tenant_id = $1
+
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListComparisonTypesByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListComparisonTypesByTenantRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -1067,7 +963,7 @@ type ListComparisonTypesByTenantRow struct {
 }
 
 func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListComparisonTypesByTenantParams) ([]ListComparisonTypesByTenantRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonTypesByTenant, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listComparisonTypesByTenant, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1077,7 +973,6 @@ func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListCompa
 		var i ListComparisonTypesByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1099,24 +994,18 @@ func (q *Queries) ListComparisonTypesByTenant(ctx context.Context, arg ListCompa
 }
 
 const listComparisonValuesByDimension = `-- name: ListComparisonValuesByDimension :many
-SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id,
-       ci.title AS item_title
+SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
+ cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id,
+ ci.title AS item_title
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
-WHERE cv.dimension_id = $1 AND cv.tenant_id = $2
-  AND ci.deleted_at IS NULL
+WHERE cv.dimension_id = $1
+ AND ci.deleted_at IS NULL
 `
-
-type ListComparisonValuesByDimensionParams struct {
-	DimensionID pgtype.UUID `json:"dimension_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-}
 
 type ListComparisonValuesByDimensionRow struct {
 	DimensionID  pgtype.UUID        `json:"dimension_id"`
 	ItemID       pgtype.UUID        `json:"item_id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Value        *string            `json:"value"`
 	ValueRating  pgtype.Numeric     `json:"value_rating"`
 	ValueBoolean *bool              `json:"value_boolean"`
@@ -1127,8 +1016,8 @@ type ListComparisonValuesByDimensionRow struct {
 	ItemTitle    string             `json:"item_title"`
 }
 
-func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, arg ListComparisonValuesByDimensionParams) ([]ListComparisonValuesByDimensionRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonValuesByDimension, arg.DimensionID, arg.TenantID)
+func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, dimensionID pgtype.UUID) ([]ListComparisonValuesByDimensionRow, error) {
+	rows, err := q.db.Query(ctx, listComparisonValuesByDimension, dimensionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1139,7 +1028,6 @@ func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, arg ListC
 		if err := rows.Scan(
 			&i.DimensionID,
 			&i.ItemID,
-			&i.TenantID,
 			&i.Value,
 			&i.ValueRating,
 			&i.ValueBoolean,
@@ -1161,29 +1049,27 @@ func (q *Queries) ListComparisonValuesByDimension(ctx context.Context, arg ListC
 
 const listComparisonsFiltered = `-- name: ListComparisonsFiltered :many
 
-SELECT DISTINCT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at
+SELECT DISTINCT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
-LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND ($3::uuid IS NULL OR ci.type_id = $3)
+LEFT JOIN comparison_items ci ON ci.content_id = c.id
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND ($2::uuid IS NULL OR ci.type_id = $2)
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListComparisonsFilteredParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -1192,7 +1078,6 @@ type ListComparisonsFilteredParams struct {
 
 type ListComparisonsFilteredRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -1233,7 +1118,6 @@ type ListComparisonsFilteredRow struct {
 // /comparisons endpoint can be served to unauthenticated visitors (Section 30).
 func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListComparisonsFilteredParams) ([]ListComparisonsFilteredRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsFiltered,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.PageOffset,
@@ -1248,7 +1132,6 @@ func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListCompariso
 		var i ListComparisonsFilteredRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -1291,27 +1174,25 @@ func (q *Queries) ListComparisonsFiltered(ctx context.Context, arg ListCompariso
 }
 
 const listComparisonsFilteredAdmin = `-- name: ListComparisonsFilteredAdmin :many
-SELECT DISTINCT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at
+SELECT DISTINCT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at
 FROM contents c
-LEFT JOIN comparison_items ci ON ci.content_id = c.id AND ci.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND ($3::uuid IS NULL OR ci.type_id = $3)
+LEFT JOIN comparison_items ci ON ci.content_id = c.id
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND ($2::uuid IS NULL OR ci.type_id = $2)
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListComparisonsFilteredAdminParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	PageOffset int32       `json:"page_offset"`
@@ -1320,7 +1201,6 @@ type ListComparisonsFilteredAdminParams struct {
 
 type ListComparisonsFilteredAdminRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -1357,7 +1237,6 @@ type ListComparisonsFilteredAdminRow struct {
 // optionally filtered by type_id and space_id.
 func (q *Queries) ListComparisonsFilteredAdmin(ctx context.Context, arg ListComparisonsFilteredAdminParams) ([]ListComparisonsFilteredAdminRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsFilteredAdmin,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.PageOffset,
@@ -1372,7 +1251,6 @@ func (q *Queries) ListComparisonsFilteredAdmin(ctx context.Context, arg ListComp
 		var i ListComparisonsFilteredAdminRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -1416,49 +1294,46 @@ func (q *Queries) ListComparisonsFilteredAdmin(ctx context.Context, arg ListComp
 
 const listComparisonsWithFilters = `-- name: ListComparisonsWithFilters :many
 
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
+SELECT c.id, c.author_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
 FROM contents c
-JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND ($2::uuid IS NULL OR c.space_id = $2)
-  AND (
-      $3::uuid IS NULL
-      OR EXISTS (
-          SELECT 1 FROM comparison_items ci
-          WHERE ci.content_id = c.id
-            AND ci.tenant_id = c.tenant_id
-            AND ci.type_id = $3
-            AND ci.deleted_at IS NULL
-      )
-  )
-  AND ($4::text IS NULL OR m.depth = $4)
-  AND ($5::text IS NULL OR c.status = $5)
-  AND ($6::text IS NULL OR c.visibility = $6)
-  AND ($7::boolean IS NOT TRUE OR c.author_id = $8)
-  AND (
-      $9::text IS NULL OR $9 = ''
-      OR c.title ILIKE '%' || $9 || '%'
-      OR c.slug ILIKE '%' || $9 || '%'
-  )
+JOIN comparison_content_metadata m ON m.content_id = c.id
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND ($1::uuid IS NULL OR c.space_id = $1)
+ AND (
+ $2::uuid IS NULL
+ OR EXISTS (
+ SELECT 1 FROM comparison_items ci
+ WHERE ci.content_id = c.id
+ AND ci.type_id = $2
+ AND ci.deleted_at IS NULL
+ )
+ )
+ AND ($3::text IS NULL OR m.depth = $3)
+ AND ($4::text IS NULL OR c.status = $4)
+ AND ($5::text IS NULL OR c.visibility = $5)
+ AND ($6::boolean IS NOT TRUE OR c.author_id = $7)
+ AND (
+ $8::text IS NULL OR $8 = ''
+ OR c.title ILIKE '%' || $8 || '%'
+ OR c.slug ILIKE '%' || $8 || '%'
+ )
 ORDER BY
-  CASE WHEN $10::text = 'title' THEN c.title END ASC,
-  CASE WHEN $10::text = 'popularity' THEN c.view_count END DESC,
-  c.created_at DESC, c.id DESC
-LIMIT $12 OFFSET $11
+ CASE WHEN $9::text = 'title' THEN c.title END ASC,
+ CASE WHEN $9::text = 'popularity' THEN c.view_count END DESC,
+ c.created_at DESC, c.id DESC
+LIMIT $11 OFFSET $10
 `
 
 type ListComparisonsWithFiltersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	Depth      *string     `json:"depth"`
@@ -1474,7 +1349,6 @@ type ListComparisonsWithFiltersParams struct {
 
 type ListComparisonsWithFiltersRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -1519,7 +1393,6 @@ type ListComparisonsWithFiltersRow struct {
 // Supports public directory, mine=true, depth filters, status, visibility, q, sort.
 func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListComparisonsWithFiltersParams) ([]ListComparisonsWithFiltersRow, error) {
 	rows, err := q.db.Query(ctx, listComparisonsWithFilters,
-		arg.TenantID,
 		arg.SpaceID,
 		arg.TypeID,
 		arg.Depth,
@@ -1541,7 +1414,6 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 		var i ListComparisonsWithFiltersRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -1591,96 +1463,81 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 
 const reorderComparisonDimensions = `-- name: ReorderComparisonDimensions :exec
 UPDATE comparison_dimensions SET position = $1
-WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL
+WHERE id = $2 AND content_id = $3 AND deleted_at IS NULL
 `
 
 type ReorderComparisonDimensionsParams struct {
 	Position  int32       `json:"position"`
 	ID        pgtype.UUID `json:"id"`
 	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) ReorderComparisonDimensions(ctx context.Context, arg ReorderComparisonDimensionsParams) error {
-	_, err := q.db.Exec(ctx, reorderComparisonDimensions,
-		arg.Position,
-		arg.ID,
-		arg.ContentID,
-		arg.TenantID,
-	)
+	_, err := q.db.Exec(ctx, reorderComparisonDimensions, arg.Position, arg.ID, arg.ContentID)
 	return err
 }
 
 const reorderComparisonItems = `-- name: ReorderComparisonItems :exec
 UPDATE comparison_items SET position = $1
-WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL
+WHERE id = $2 AND content_id = $3 AND deleted_at IS NULL
 `
 
 type ReorderComparisonItemsParams struct {
 	Position  int32       `json:"position"`
 	ID        pgtype.UUID `json:"id"`
 	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) ReorderComparisonItems(ctx context.Context, arg ReorderComparisonItemsParams) error {
-	_, err := q.db.Exec(ctx, reorderComparisonItems,
-		arg.Position,
-		arg.ID,
-		arg.ContentID,
-		arg.TenantID,
-	)
+	_, err := q.db.Exec(ctx, reorderComparisonItems, arg.Position, arg.ID, arg.ContentID)
 	return err
 }
 
 const searchComparisonContents = `-- name: SearchComparisonContents :many
 
 SELECT
-       c.id, c.title, c.slug, c.body, c.status, c.visibility,
-       c.geo_space_id, c.source_country, c.target_country,
-       (SELECT ci.type_id FROM comparison_items ci
-        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
-        ORDER BY ci.position LIMIT 1) AS type_id,
-       COALESCE((SELECT ctd.slug
-        FROM comparison_items ci
-        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
-        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
-        ORDER BY ci.position LIMIT 1), '')::text AS type_slug,
-       COALESCE((SELECT ctd.name
-        FROM comparison_items ci
-        JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
-        WHERE ci.content_id = c.id AND ci.tenant_id = c.tenant_id AND ci.deleted_at IS NULL
-        ORDER BY ci.position LIMIT 1), '')::text AS type_name,
-       m.promoted_from_id
+ c.id, c.title, c.slug, c.body, c.status, c.visibility,
+ c.geo_space_id, c.source_country, c.target_country,
+ (SELECT ci.type_id FROM comparison_items ci
+ WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+ ORDER BY ci.position LIMIT 1) AS type_id,
+ COALESCE((SELECT ctd.slug
+ FROM comparison_items ci
+ JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id
+ WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+ ORDER BY ci.position LIMIT 1), '')::text AS type_slug,
+ COALESCE((SELECT ctd.name
+ FROM comparison_items ci
+ JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id
+ WHERE ci.content_id = c.id AND ci.deleted_at IS NULL
+ ORDER BY ci.position LIMIT 1), '')::text AS type_name,
+ m.promoted_from_id
 FROM contents c
-JOIN comparison_content_metadata m ON m.content_id = c.id AND m.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND m.depth = 'detailed'
-  AND ($2 = '' OR c.title ILIKE '%' || $2 || '%' OR c.slug ILIKE '%' || $2 || '%')
-  AND (
-      $3::text[] IS NULL
-      OR array_length($3::text[], 1) IS NULL
-      OR EXISTS (
-          SELECT 1
-          FROM comparison_items ci
-          JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id AND ctd.tenant_id = ci.tenant_id
-          WHERE ci.content_id = c.id
-            AND ci.tenant_id = c.tenant_id
-            AND ci.deleted_at IS NULL
-            AND ctd.slug = ANY($3::text[])
-      )
-  )
+JOIN comparison_content_metadata m ON m.content_id = c.id
+WHERE c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND m.depth = 'detailed'
+ AND ($1 = '' OR c.title ILIKE '%' || $1 || '%' OR c.slug ILIKE '%' || $1 || '%')
+ AND (
+ $2::text[] IS NULL
+ OR array_length($2::text[], 1) IS NULL
+ OR EXISTS (
+ SELECT 1
+ FROM comparison_items ci
+ JOIN comparison_type_definitions ctd ON ctd.id = ci.type_id
+ WHERE ci.content_id = c.id
+ AND ci.deleted_at IS NULL
+ AND ctd.slug = ANY($2::text[])
+ )
+ )
 ORDER BY c.title ASC, c.id DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type SearchComparisonContentsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Q          interface{} `json:"q"`
 	TypeSlugs  []string    `json:"type_slugs"`
 	PageOffset int32       `json:"page_offset"`
@@ -1711,7 +1568,6 @@ type SearchComparisonContentsRow struct {
 // of allowed nested comparison type slugs.
 func (q *Queries) SearchComparisonContents(ctx context.Context, arg SearchComparisonContentsParams) ([]SearchComparisonContentsRow, error) {
 	rows, err := q.db.Query(ctx, searchComparisonContents,
-		arg.TenantID,
 		arg.Q,
 		arg.TypeSlugs,
 		arg.PageOffset,
@@ -1751,12 +1607,12 @@ func (q *Queries) SearchComparisonContents(ctx context.Context, arg SearchCompar
 
 const setComparisonTypeAccess = `-- name: SetComparisonTypeAccess :exec
 
-INSERT INTO comparison_type_access (type_id, user_group_id, can_create, can_fill, ai_can_fill)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO comparison_type_access (type_id, user_group_id, can_create, can_fill, ai_can_fill) VALUES ($1, $2, $3, $4, $5)
+
 ON CONFLICT (type_id, group_key) DO UPDATE
 SET can_create = EXCLUDED.can_create,
-    can_fill = EXCLUDED.can_fill,
-    ai_can_fill = EXCLUDED.ai_can_fill
+ can_fill = EXCLUDED.can_fill,
+ ai_can_fill = EXCLUDED.ai_can_fill
 `
 
 type SetComparisonTypeAccessParams struct {
@@ -1784,9 +1640,9 @@ func (q *Queries) SetComparisonTypeAccess(ctx context.Context, arg SetComparison
 const updateComparisonContentMetadata = `-- name: UpdateComparisonContentMetadata :exec
 UPDATE comparison_content_metadata
 SET depth = $1, promoted_from_id = $2,
-    promoted_at = $3, smart_mode = $4,
-    score_version = $5, config = $6, updated_at = now()
-WHERE content_id = $7 AND tenant_id = $8
+ promoted_at = $3, smart_mode = $4,
+ score_version = $5, config = $6, updated_at = now()
+WHERE content_id = $7
 `
 
 type UpdateComparisonContentMetadataParams struct {
@@ -1797,7 +1653,6 @@ type UpdateComparisonContentMetadataParams struct {
 	ScoreVersion   *int32             `json:"score_version"`
 	Config         []byte             `json:"config"`
 	ContentID      pgtype.UUID        `json:"content_id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateComparisonContentMetadata(ctx context.Context, arg UpdateComparisonContentMetadataParams) error {
@@ -1809,7 +1664,6 @@ func (q *Queries) UpdateComparisonContentMetadata(ctx context.Context, arg Updat
 		arg.ScoreVersion,
 		arg.Config,
 		arg.ContentID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -1817,8 +1671,8 @@ func (q *Queries) UpdateComparisonContentMetadata(ctx context.Context, arg Updat
 const updateComparisonDimension = `-- name: UpdateComparisonDimension :one
 UPDATE comparison_dimensions
 SET label = $1, dimension_type = $2, position = $3
-WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
-RETURNING id, content_id, tenant_id, type_id, label, dimension_type, position, created_at, deleted_at
+WHERE id = $4 AND deleted_at IS NULL
+RETURNING id, content_id, type_id, label, dimension_type, position, created_at, deleted_at
 `
 
 type UpdateComparisonDimensionParams struct {
@@ -1826,13 +1680,11 @@ type UpdateComparisonDimensionParams struct {
 	DimensionType string      `json:"dimension_type"`
 	Position      int32       `json:"position"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateComparisonDimensionRow struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	TypeID        pgtype.UUID        `json:"type_id"`
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
@@ -1847,13 +1699,11 @@ func (q *Queries) UpdateComparisonDimension(ctx context.Context, arg UpdateCompa
 		arg.DimensionType,
 		arg.Position,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateComparisonDimensionRow
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Label,
 		&i.DimensionType,
@@ -1867,10 +1717,10 @@ func (q *Queries) UpdateComparisonDimension(ctx context.Context, arg UpdateCompa
 const updateComparisonItem = `-- name: UpdateComparisonItem :one
 UPDATE comparison_items
 SET title = $1, description = $2,
-    image_id = $3, geo_space_id = $4,
-    position = $5, item_ref = $6
-WHERE id = $7 AND tenant_id = $8 AND deleted_at IS NULL
-RETURNING id, content_id, tenant_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
+ image_id = $3, geo_space_id = $4,
+ position = $5, item_ref = $6
+WHERE id = $7 AND deleted_at IS NULL
+RETURNING id, content_id, type_id, title, description, image_id, geo_space_id, position, item_ref, created_at, deleted_at
 `
 
 type UpdateComparisonItemParams struct {
@@ -1881,13 +1731,11 @@ type UpdateComparisonItemParams struct {
 	Position    int32       `json:"position"`
 	ItemRef     []byte      `json:"item_ref"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateComparisonItemRow struct {
 	ID          pgtype.UUID        `json:"id"`
 	ContentID   pgtype.UUID        `json:"content_id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	TypeID      pgtype.UUID        `json:"type_id"`
 	Title       string             `json:"title"`
 	Description *string            `json:"description"`
@@ -1908,13 +1756,11 @@ func (q *Queries) UpdateComparisonItem(ctx context.Context, arg UpdateComparison
 		arg.Position,
 		arg.ItemRef,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateComparisonItemRow
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Title,
 		&i.Description,
@@ -1931,9 +1777,9 @@ func (q *Queries) UpdateComparisonItem(ctx context.Context, arg UpdateComparison
 const updateComparisonType = `-- name: UpdateComparisonType :one
 UPDATE comparison_type_definitions
 SET name = $1, slug = $2, description = $3, icon = $4,
-    field_group_id = $5, item_label = $6, config = $7
-WHERE id = $8 AND tenant_id = $9
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
+ field_group_id = $5, item_label = $6, config = $7
+WHERE id = $8
+RETURNING id, name, slug, description, icon, field_group_id, item_label, is_system, config, created_at
 `
 
 type UpdateComparisonTypeParams struct {
@@ -1945,12 +1791,10 @@ type UpdateComparisonTypeParams struct {
 	ItemLabel    string      `json:"item_label"`
 	Config       []byte      `json:"config"`
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateComparisonTypeRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -1972,12 +1816,10 @@ func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparison
 		arg.ItemLabel,
 		arg.Config,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateComparisonTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1993,49 +1835,53 @@ func (q *Queries) UpdateComparisonType(ctx context.Context, arg UpdateComparison
 
 const upsertComparisonValue = `-- name: UpsertComparisonValue :one
 
-INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, data_source_id, updated_at
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, now()
-)
+INSERT INTO comparison_values (dimension_id, item_id, value, value_rating, value_boolean, data_source_id, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
-    value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean,
-    data_source_id = EXCLUDED.data_source_id,
-    updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+ value_rating = EXCLUDED.value_rating,
+ value_boolean = EXCLUDED.value_boolean,
+ data_source_id = EXCLUDED.data_source_id,
+ updated_at = now()
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueParams struct {
 	DimensionID  pgtype.UUID    `json:"dimension_id"`
 	ItemID       pgtype.UUID    `json:"item_id"`
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 	Value        *string        `json:"value"`
 	ValueRating  pgtype.Numeric `json:"value_rating"`
 	ValueBoolean *bool          `json:"value_boolean"`
 	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
+type UpsertComparisonValueRow struct {
+	DimensionID  pgtype.UUID        `json:"dimension_id"`
+	ItemID       pgtype.UUID        `json:"item_id"`
+	Value        *string            `json:"value"`
+	ValueRating  pgtype.Numeric     `json:"value_rating"`
+	ValueBoolean *bool              `json:"value_boolean"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
+}
+
 // =====================
 // Comparison Values CRUD
 // =====================
-func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertComparisonValueParams) (ComparisonValue, error) {
+func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertComparisonValueParams) (UpsertComparisonValueRow, error) {
 	row := q.db.QueryRow(ctx, upsertComparisonValue,
 		arg.DimensionID,
 		arg.ItemID,
-		arg.TenantID,
 		arg.Value,
 		arg.ValueRating,
 		arg.ValueBoolean,
 		arg.DataSourceID,
 	)
-	var i ComparisonValue
+	var i UpsertComparisonValueRow
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -2048,26 +1894,20 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 }
 
 const upsertComparisonValueWithMetadata = `-- name: UpsertComparisonValueWithMetadata :one
-INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, metadata, data_source_id, updated_at
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, $8, now()
-)
+INSERT INTO comparison_values (dimension_id, item_id, value, value_rating, value_boolean, metadata, data_source_id, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
-    value_rating = EXCLUDED.value_rating,
-    value_boolean = EXCLUDED.value_boolean,
-    metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
-    data_source_id = EXCLUDED.data_source_id,
-    updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+ value_rating = EXCLUDED.value_rating,
+ value_boolean = EXCLUDED.value_boolean,
+ metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
+ data_source_id = EXCLUDED.data_source_id,
+ updated_at = now()
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueWithMetadataParams struct {
 	DimensionID  pgtype.UUID    `json:"dimension_id"`
 	ItemID       pgtype.UUID    `json:"item_id"`
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 	Value        *string        `json:"value"`
 	ValueRating  pgtype.Numeric `json:"value_rating"`
 	ValueBoolean *bool          `json:"value_boolean"`
@@ -2075,27 +1915,37 @@ type UpsertComparisonValueWithMetadataParams struct {
 	DataSourceID pgtype.UUID    `json:"data_source_id"`
 }
 
+type UpsertComparisonValueWithMetadataRow struct {
+	DimensionID  pgtype.UUID        `json:"dimension_id"`
+	ItemID       pgtype.UUID        `json:"item_id"`
+	Value        *string            `json:"value"`
+	ValueRating  pgtype.Numeric     `json:"value_rating"`
+	ValueBoolean *bool              `json:"value_boolean"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Metadata     []byte             `json:"metadata"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	DataSourceID pgtype.UUID        `json:"data_source_id"`
+}
+
 // Upserts a comparison value together with its provenance metadata JSONB
 // (Section 103 — Comparison Engine Provenance). Used by the AI Comparison
 // Engine to record the source (custom_field|rag|external|llm_knowledge),
 // source_ref, confidence, and retrieved_at timestamp for each value it
 // fills. The metadata column was added by migration 000373.
-func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg UpsertComparisonValueWithMetadataParams) (ComparisonValue, error) {
+func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg UpsertComparisonValueWithMetadataParams) (UpsertComparisonValueWithMetadataRow, error) {
 	row := q.db.QueryRow(ctx, upsertComparisonValueWithMetadata,
 		arg.DimensionID,
 		arg.ItemID,
-		arg.TenantID,
 		arg.Value,
 		arg.ValueRating,
 		arg.ValueBoolean,
 		arg.Metadata,
 		arg.DataSourceID,
 	)
-	var i ComparisonValue
+	var i UpsertComparisonValueWithMetadataRow
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,

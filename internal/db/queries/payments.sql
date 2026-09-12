@@ -5,21 +5,12 @@
 -- =====================
 
 -- name: CreatePayment :one
-INSERT INTO payments (
-    tenant_id, user_id, provider, provider_ref, purpose_type, purpose_id,
-    amount, currency, status, metadata, subscription_id,
-    discount_code_id, discount_amount, idempotency_key
-) VALUES (
-    @tenant_id, @user_id, @provider, sqlc.narg(provider_ref), @purpose_type,
-    sqlc.narg(purpose_id), @amount, @currency, @status, @metadata,
-    sqlc.narg(subscription_id), sqlc.narg(discount_code_id), @discount_amount,
-    sqlc.narg(idempotency_key)
-)
+INSERT INTO payments (user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, idempotency_key) VALUES (@user_id, @provider, sqlc.narg(provider_ref), @purpose_type, sqlc.narg(purpose_id), @amount, @currency, @status, @metadata, sqlc.narg(subscription_id), sqlc.narg(discount_code_id), @discount_amount, sqlc.narg(idempotency_key))
 RETURNING *;
 
 -- name: GetPaymentByID :one
 SELECT * FROM payments
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetPaymentByProviderRef :one
 -- Direct lookup by provider reference (Stripe pi_.../cs_..., Paystack
@@ -27,20 +18,19 @@ WHERE id = @id AND tenant_id = @tenant_id;
 -- Replaces the full-scan ListPaymentsByStatus + iterate match in the
 -- webhook worker (BUG-019).
 SELECT * FROM payments
-WHERE tenant_id = @tenant_id
-  AND provider_ref = @provider_ref
+WHERE provider_ref = @provider_ref
 ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: ListPaymentsByUser :many
 SELECT * FROM payments
-WHERE tenant_id = @tenant_id AND user_id = @user_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListPaymentsByStatus :many
 SELECT * FROM payments
-WHERE tenant_id = @tenant_id AND status = @status
+WHERE status = @status
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -48,13 +38,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Admin cross-platform payment list with optional filters (JEOS §17
 -- "Admin Payment Routes"). Nullable parameters are skipped via sqlc.narg.
 SELECT * FROM payments
-WHERE tenant_id = @tenant_id
-  AND (sqlc.narg(user_id)::uuid IS NULL OR user_id = sqlc.narg(user_id))
-  AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
-  AND (sqlc.narg(purpose_type)::text IS NULL OR purpose_type = sqlc.narg(purpose_type))
-  AND (sqlc.narg(provider)::text IS NULL OR provider = sqlc.narg(provider))
-  AND (sqlc.narg(start_date)::timestamptz IS NULL OR created_at >= sqlc.narg(start_date))
-  AND (sqlc.narg(end_date)::timestamptz IS NULL OR created_at <= sqlc.narg(end_date))
+WHERE (sqlc.narg(user_id)::uuid IS NULL OR user_id = sqlc.narg(user_id))
+ AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+ AND (sqlc.narg(purpose_type)::text IS NULL OR purpose_type = sqlc.narg(purpose_type))
+ AND (sqlc.narg(provider)::text IS NULL OR provider = sqlc.narg(provider))
+ AND (sqlc.narg(start_date)::timestamptz IS NULL OR created_at >= sqlc.narg(start_date))
+ AND (sqlc.narg(end_date)::timestamptz IS NULL OR created_at <= sqlc.narg(end_date))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -62,12 +51,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Admin payment detail (JEOS §17). Same as GetPaymentByID but used by
 -- the admin route to signal admin context for audit logging.
 SELECT * FROM payments
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: UpdatePaymentStatus :one
 UPDATE payments
 SET status = @status, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id
 RETURNING *;
 
 -- =====================
@@ -75,73 +64,60 @@ RETURNING *;
 -- =====================
 
 -- name: InsertWebhookEvent :one
-INSERT INTO payment_webhook_events (
-    tenant_id, provider, event_id, event_type, raw_payload
-) VALUES (
-    @tenant_id, @provider, @event_id, @event_type, @raw_payload
-)
-ON CONFLICT (tenant_id, provider, event_id) DO NOTHING
+INSERT INTO payment_webhook_events (provider, event_id, event_type, raw_payload) VALUES (@provider, @event_id, @event_type, @raw_payload)
+ON CONFLICT (provider, event_id) DO NOTHING
 RETURNING *;
 
 -- name: IsWebhookEventProcessed :one
 SELECT EXISTS(
-    SELECT 1 FROM payment_webhook_events
-    WHERE tenant_id = @tenant_id
-      AND provider = @provider
-      AND event_id = @event_id
-      AND processed_at IS NOT NULL
+ SELECT 1 FROM payment_webhook_events
+ WHERE provider = @provider
+ AND event_id = @event_id
+ AND processed_at IS NOT NULL
 );
 
 -- name: MarkWebhookEventProcessed :exec
 UPDATE payment_webhook_events
 SET processed_at = now()
-WHERE tenant_id = @tenant_id
-  AND provider = @provider
-  AND event_id = @event_id;
+WHERE provider = @provider
+ AND event_id = @event_id;
 
 -- =====================
 -- Subscriptions
 -- =====================
 
 -- name: CreateSubscription :one
-INSERT INTO subscriptions (
-    tenant_id, user_id, plan, provider, provider_ref,
-    status, current_period_start, current_period_end, cancel_at
-) VALUES (
-    @tenant_id, @user_id, @plan, @provider, sqlc.narg(provider_ref),
-    @status, @current_period_start, @current_period_end, sqlc.narg(cancel_at)
-)
+INSERT INTO subscriptions (user_id, plan, provider, provider_ref, status, current_period_start, current_period_end, cancel_at) VALUES (@user_id, @plan, @provider, sqlc.narg(provider_ref), @status, @current_period_start, @current_period_end, sqlc.narg(cancel_at))
 RETURNING *;
 
 -- name: GetSubscriptionByID :one
 SELECT * FROM subscriptions
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetActiveSubscriptionByUser :one
 SELECT * FROM subscriptions
-WHERE tenant_id = @tenant_id
-  AND user_id = @user_id
-  AND status = 'active'
-  AND current_period_end > now()
+WHERE user_id = @user_id
+ AND status = 'active'
+ AND current_period_end > now()
 ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: ListSubscriptionsByUser :many
 SELECT * FROM subscriptions
-WHERE tenant_id = @tenant_id AND user_id = @user_id
+WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListActiveSubscriptions :many
 SELECT * FROM subscriptions
-WHERE tenant_id = @tenant_id AND status = 'active'
+WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateSubscriptionStatus :one
 UPDATE subscriptions
 SET status = @status, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
+WHERE id = @id
 RETURNING *;
 
 -- name: CancelSubscription :one
@@ -152,14 +128,14 @@ RETURNING *;
 -- transitions to 'canceled' at current_period_end (BUG-002).
 UPDATE subscriptions
 SET cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id
-  AND status = 'active'
+WHERE id = @id
+ AND status = 'active'
 RETURNING *;
 
 -- name: SoftDeleteSubscription :exec
 UPDATE subscriptions
 SET status = 'canceled', cancel_at = now(), cancel_at_period_end = true, cancelled_at = now(), updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: ReactivateSubscription :one
 -- Reactivates the caller's most recently canceled or scheduled-for-cancellation
@@ -169,11 +145,11 @@ WHERE id = @id AND tenant_id = @tenant_id;
 UPDATE subscriptions
 SET status = 'active', cancel_at = NULL, cancel_at_period_end = false, cancelled_at = NULL, updated_at = now()
 WHERE id = (
-    SELECT s.id FROM subscriptions s
-    WHERE s.user_id = @user_id AND s.tenant_id = @tenant_id
-      AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
-    ORDER BY s.updated_at DESC
-    LIMIT 1
+ SELECT s.id FROM subscriptions s
+ WHERE s.user_id = @user_id
+ AND (s.status = 'canceled' OR (s.status = 'active' AND s.cancel_at_period_end = true))
+ ORDER BY s.updated_at DESC
+ LIMIT 1
 )
 RETURNING *;
 
@@ -182,45 +158,38 @@ RETURNING *;
 -- =====================
 
 -- name: CreateDiscountCode :one
-INSERT INTO discount_codes (
-    tenant_id, code, discount_type, discount_value, applicable_to,
-    max_uses, uses_per_user, group_id, valid_from, valid_until, created_by
-) VALUES (
-    @tenant_id, @code, @discount_type, @discount_value, @applicable_to,
-    sqlc.narg(max_uses), @uses_per_user, sqlc.narg(group_id),
-    @valid_from, sqlc.narg(valid_until), sqlc.narg(created_by)
-)
+INSERT INTO discount_codes (code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by) VALUES (@code, @discount_type, @discount_value, @applicable_to, sqlc.narg(max_uses), @uses_per_user, sqlc.narg(group_id), @valid_from, sqlc.narg(valid_until), sqlc.narg(created_by))
 RETURNING *;
 
 -- name: GetDiscountCodeByCode :one
 SELECT * FROM discount_codes
-WHERE tenant_id = @tenant_id AND code = @code;
+WHERE code = @code;
 
 -- name: GetDiscountCodeByID :one
 SELECT * FROM discount_codes
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: ListDiscountCodes :many
 SELECT * FROM discount_codes
-WHERE tenant_id = @tenant_id
+
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: DeleteDiscountCode :exec
 DELETE FROM discount_codes
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: UpdateDiscountCode :one
 UPDATE discount_codes
 SET
-    code = COALESCE(NULLIF(@new_code, ''), code),
-    discount_type = COALESCE(NULLIF(@discount_type, ''), discount_type),
-    discount_value = COALESCE(sqlc.narg(discount_value), discount_value),
-    applicable_to = COALESCE(NULLIF(@applicable_to, ''), applicable_to),
-    max_uses = sqlc.narg(max_uses),
-    valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
-    valid_until = sqlc.narg(valid_until)
-WHERE id = @id AND tenant_id = @tenant_id
+ code = COALESCE(NULLIF(@new_code, ''), code),
+ discount_type = COALESCE(NULLIF(@discount_type, ''), discount_type),
+ discount_value = COALESCE(sqlc.narg(discount_value), discount_value),
+ applicable_to = COALESCE(NULLIF(@applicable_to, ''), applicable_to),
+ max_uses = sqlc.narg(max_uses),
+ valid_from = COALESCE(sqlc.narg(valid_from), valid_from),
+ valid_until = sqlc.narg(valid_until)
+WHERE id = @id
 RETURNING *;
 
 -- =====================
@@ -228,11 +197,7 @@ RETURNING *;
 -- =====================
 
 -- name: InsertDiscountCodeUse :one
-INSERT INTO discount_code_uses (
-    code_id, user_id, payment_id
-) VALUES (
-    @code_id, @user_id, sqlc.narg(payment_id)
-)
+INSERT INTO discount_code_uses (code_id, user_id, payment_id) VALUES (@code_id, @user_id, sqlc.narg(payment_id))
 ON CONFLICT (code_id, user_id) DO NOTHING
 RETURNING *;
 
@@ -258,11 +223,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================
 
 -- name: CreateRefund :one
-INSERT INTO payment_refunds (
-    payment_id, amount, reason, status, provider_ref
-) VALUES (
-    @payment_id, @amount, sqlc.narg(reason), @status, sqlc.narg(provider_ref)
-)
+INSERT INTO payment_refunds (payment_id, amount, reason, status, provider_ref) VALUES (@payment_id, @amount, sqlc.narg(reason), @status, sqlc.narg(provider_ref))
 RETURNING *;
 
 -- name: ListRefundsByPayment :many

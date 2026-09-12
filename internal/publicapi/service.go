@@ -501,7 +501,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 	tier = capRateLimitTier(ctx, s.tierResolver, tenantID, userID, tier)
 
 	id, err := s.store.create(ctx, createParams{
-		TenantID:      tenantID,
+
 		UserID:        userID,
 		Name:          input.Name,
 		KeyPrefix:     keyPrefix,
@@ -557,9 +557,9 @@ func (s *Service) ValidateAPIKey(ctx context.Context, key string) (*APIKeyContex
 	}(row.ID)
 
 	return &APIKeyContext{
-		KeyID:         row.ID,
-		UserID:        row.UserID,
-		TenantID:      row.TenantID,
+		KeyID:  row.ID,
+		UserID: row.UserID,
+
 		Scopes:        row.Scopes,
 		KeyPrefix:     row.KeyPrefix,
 		RateLimitTier: row.RateLimitTier,

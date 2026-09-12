@@ -389,7 +389,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.CreateProvider(r.Context(), gen.CreateTravelProviderParams{
-		TenantID:        tenantID,
+
 		Name:            body.Name,
 		Slug:            body.Slug,
 		ProviderType:    body.ProviderType,
@@ -469,7 +469,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	}
 
 	provider, err := h.service.UpdateProvider(r.Context(), gen.UpdateTravelProviderParams{
-		TenantID:        tenantID,
+
 		ID:              providerID,
 		Name:            body.Name,
 		ProviderType:    body.ProviderType,

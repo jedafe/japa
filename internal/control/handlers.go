@@ -2179,7 +2179,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	createInput := spam.CreateIPBlockInput{
-		TenantID:  tenantID,
+
 		CIDR:      input.CIDR,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,

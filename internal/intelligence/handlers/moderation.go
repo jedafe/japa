@@ -439,7 +439,6 @@ func intelRecordToResponse(r gen.IntelRecord) intelRecordResponse {
 		ExtractedAt:       r.ExtractedAt,
 		LastVerifiedAt:    r.LastVerifiedAt,
 		PromotedRecordID:  r.PromotedRecordID,
-		TenantID:          r.TenantID,
 	}
 }
 

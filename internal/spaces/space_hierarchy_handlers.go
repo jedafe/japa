@@ -136,10 +136,10 @@ func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
 
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
 
-	rows, err := h.Service.read.SuggestParentSpaces(r.Context(), gen.SuggestParentSpacesParams{
-		TenantID: tenantID,
-		Search:   search,
-	})
+	rows, err := h.Service.read.SuggestParentSpaces(r.Context(),
+
+		search,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suggest parents")
 		return

@@ -45,7 +45,7 @@ func (s *Store) createKnownBot(ctx context.Context, p gen.CreateKnownBotParams) 
 }
 
 func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.KnownBot, error) {
-	row, err := s.read.GetKnownBotByID(ctx, gen.GetKnownBotByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetKnownBotByID(ctx, id)
 	if err != nil {
 		return gen.KnownBot{}, fmt.Errorf("getting known bot by ID: %w", err)
 	}
@@ -55,7 +55,7 @@ func (s *Store) getKnownBotByID(ctx context.Context, id, tenantID pgtype.UUID) (
 
 func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string, pageSize, offset int32) ([]gen.KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-		TenantID:   tenantID,
+
 		BotType:    botType,
 		PageSize:   pageSize,
 		PageOffset: offset,
@@ -70,10 +70,10 @@ func (s *Store) listKnownBots(ctx context.Context, tenantID pgtype.UUID, botType
 // countKnownBots returns the total number of bots for the tenant, optionally
 // filtered by bot_type. Used for pagination metadata in the list handler.
 func (s *Store) countKnownBots(ctx context.Context, tenantID pgtype.UUID, botType string) (int64, error) {
-	count, err := s.read.CountKnownBots(ctx, gen.CountKnownBotsParams{
-		TenantID: tenantID,
-		BotType:  botType,
-	})
+	count, err := s.read.CountKnownBots(ctx,
+
+		botType,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting known bots: %w", err)
 	}
@@ -91,7 +91,7 @@ func (s *Store) updateKnownBot(ctx context.Context, p gen.UpdateKnownBotParams) 
 }
 
 func (s *Store) deleteKnownBot(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteKnownBot(ctx, gen.DeleteKnownBotParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteKnownBot(ctx, id); err != nil {
 		return fmt.Errorf("deleting known bot: %w", err)
 	}
 
@@ -106,10 +106,10 @@ func (s *Store) deleteKnownBot(ctx context.Context, id, tenantID pgtype.UUID) er
 func (s *Store) getBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, userAgent string) ([]gen.KnownBot, error) {
 	// Query uses ILIKE with pattern concatenation for substring matching.
 	// We pass the raw user-agent and the query does pattern matching.
-	rows, err := s.read.GetBotsByUserAgent(ctx, gen.GetBotsByUserAgentParams{
-		TenantID:         tenantID,
-		UserAgentPattern: userAgent,
-	})
+	rows, err := s.read.GetBotsByUserAgent(ctx,
+
+		userAgent,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting bots by user agent: %w", err)
 	}
@@ -169,7 +169,7 @@ func (s *Store) GetBotsByUserAgent(ctx context.Context, tenantID pgtype.UUID, us
 // GetAllBots is an exported method.
 func (s *Store) GetAllBots(ctx context.Context, tenantID pgtype.UUID) ([]KnownBot, error) {
 	rows, err := s.read.ListKnownBots(ctx, gen.ListKnownBotsParams{
-		TenantID:   tenantID,
+
 		BotType:    "",
 		PageSize:   MaxPageSize,
 		PageOffset: 0,
@@ -218,7 +218,7 @@ func contentURLPath(contentType, slug string) string {
 // recent published posts, top tags, and active public spaces.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData, error) {
-	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx, tenantID)
+	posts, err := s.read.ListPublishedContentForLLMsTxt(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing posts for llms: %w", err)
 	}
@@ -228,7 +228,7 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 		recentPosts = append(recentPosts, Link{Title: p.Title, URL: contentURLPath(p.ContentType, p.Slug)})
 	}
 
-	tags, err := s.read.ListTagsByTenant(ctx, tenantID)
+	tags, err := s.read.ListTagsByTenant(ctx)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing tags for llms: %w", err)
 	}
@@ -238,10 +238,10 @@ func (s *Store) GetLLMsData(ctx context.Context, tenantID pgtype.UUID) (LLMsData
 		tagLinks = append(tagLinks, Link{Title: tg.Name, URL: "/tags/" + tg.Slug})
 	}
 
-	spaces, err := s.read.ListSpacesByTenant(ctx, gen.ListSpacesByTenantParams{
-		TenantID:     tenantID,
-		ViewerUserID: pgtype.UUID{},
-	})
+	spaces, err := s.read.ListSpacesByTenant(ctx,
+
+		pgtype.UUID{},
+	)
 	if err != nil {
 		return LLMsData{}, fmt.Errorf("listing spaces for llms: %w", err)
 	}

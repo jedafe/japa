@@ -124,8 +124,8 @@ func TestCampaignFromGen(t *testing.T) {
 	_ = id.Scan("550e8400-e29b-41d4-a716-446655440000")
 
 	c := gen.ContentCampaign{
-		ID:                    id,
-		TenantID:              id,
+		ID: id,
+
 		Name:                  "Test",
 		Prompt:                "prompt",
 		Status:                CampaignStatusPlanned,
@@ -155,8 +155,8 @@ func TestCampaignFromGen_ProvisionedPersonas(t *testing.T) {
 	planJSON, _ := json.Marshal(plan)
 
 	c := gen.ContentCampaign{
-		ID:             id,
-		TenantID:       id,
+		ID: id,
+
 		Name:           "Test",
 		Prompt:         "prompt",
 		Status:         CampaignStatusPlanned,
@@ -296,7 +296,7 @@ func (f *fakeReviewSyncStore) UpdateCampaignItem(ctx context.Context, params gen
 }
 
 func (f *fakeReviewSyncStore) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error) {
-	return gen.ContentCampaign{ID: id, TenantID: tenantID, Status: CampaignStatusGenerating}, nil
+	return gen.ContentCampaign{ID: id, Status: CampaignStatusGenerating}, nil
 }
 
 func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
@@ -304,7 +304,7 @@ func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, t
 }
 
 func (f *fakeReviewSyncStore) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
-	return gen.ContentCampaign{ID: id, TenantID: tenantID, Status: status}, nil
+	return gen.ContentCampaign{ID: id, Status: status}, nil
 }
 
 func TestOnStudioReviewApproved(t *testing.T) {
@@ -316,9 +316,9 @@ func TestOnStudioReviewApproved(t *testing.T) {
 		item: gen.ContentCampaignItem{
 			ID:         id,
 			CampaignID: id,
-			TenantID:   id,
-			ReviewID:   reviewID,
-			Status:     ItemStatusInReview,
+
+			ReviewID: reviewID,
+			Status:   ItemStatusInReview,
 		},
 	}
 	s := &Service{store: store}
@@ -341,9 +341,9 @@ func TestOnStudioReviewRejected(t *testing.T) {
 		item: gen.ContentCampaignItem{
 			ID:         id,
 			CampaignID: id,
-			TenantID:   id,
-			ReviewID:   reviewID,
-			Status:     ItemStatusInReview,
+
+			ReviewID: reviewID,
+			Status:   ItemStatusInReview,
 		},
 	}
 	s := &Service{store: store}

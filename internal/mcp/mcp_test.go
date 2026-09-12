@@ -111,8 +111,7 @@ func mustUUID(s string) pgtype.UUID {
 
 func withUser(ctx context.Context, userID, tenantID pgtype.UUID) context.Context {
 	return context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	})
 }
 
@@ -483,15 +482,15 @@ func (s *stubSessions) CreateAgentSession(ctx context.Context, arg gen.CreateAge
 	id := mustUUID(uuid.NewString())
 	s.sessionIDs = append(s.sessionIDs, id)
 
-	return gen.AiAgentSession{ID: id, TenantID: arg.TenantID, UserID: arg.UserID, Status: "running"}, nil
+	return gen.AiAgentSession{ID: id, UserID: arg.UserID, Status: "running"}, nil
 }
 
 func (s *stubSessions) CompleteAgentSession(ctx context.Context, arg gen.CompleteAgentSessionParams) (gen.AiAgentSession, error) {
 	s.completed++
-	return gen.AiAgentSession{ID: arg.ID, TenantID: arg.TenantID, Status: "completed"}, nil
+	return gen.AiAgentSession{ID: arg.ID, Status: "completed"}, nil
 }
 
 func (s *stubSessions) FailAgentSession(ctx context.Context, arg gen.FailAgentSessionParams) (gen.AiAgentSession, error) {
 	s.failed++
-	return gen.AiAgentSession{ID: arg.ID, TenantID: arg.TenantID, Status: "failed"}, nil
+	return gen.AiAgentSession{ID: arg.ID, Status: "failed"}, nil
 }

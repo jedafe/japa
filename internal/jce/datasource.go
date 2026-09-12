@@ -92,7 +92,7 @@ func (s *dataSourceStore) create(ctx context.Context, tenantID, userID pgtype.UU
 	// source's item feed can surface the comparison.
 	if row.SourceID.Valid && row.EntityID.Valid && row.EntityType != nil && *row.EntityType == "content" {
 		if err := s.write.UpdateContentIntelSourceID(ctx, gen.UpdateContentIntelSourceIDParams{
-			TenantID:      row.TenantID,
+
 			ID:            row.EntityID,
 			IntelSourceID: row.SourceID,
 		}); err != nil {
@@ -112,7 +112,7 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 	}
 
 	rows, err := s.read.ListDataSources(ctx, gen.ListDataSourcesParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   eid,
 		PageLimit:  limit,
@@ -134,7 +134,7 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 	}
 
 	total, err := s.read.CountDataSources(ctx, gen.CountDataSourcesParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   eid,
 	})
@@ -147,10 +147,9 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 
 // get returns a data source by id and tenant.
 func (s *dataSourceStore) get(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error) {
-	row, err := s.read.GetDataSource(ctx, gen.GetDataSourceParams{
-		ID:       id,
-		TenantID: tenantID,
-	})
+	row, err := s.read.GetDataSource(ctx,
+		id,
+	)
 	if err != nil {
 		return DataSource{}, fmt.Errorf("getting data source: %w", err)
 	}
@@ -175,10 +174,9 @@ func (s *dataSourceStore) update(ctx context.Context, id, tenantID pgtype.UUID, 
 
 // delete removes a data source by id and tenant.
 func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteDataSource(ctx, gen.DeleteDataSourceParams{
-		ID:       id,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.DeleteDataSource(ctx,
+		id,
+	); err != nil {
 		return fmt.Errorf("deleting data source: %w", err)
 	}
 
@@ -188,8 +186,8 @@ func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) 
 // touch updates the freshness bookkeeping columns for a data source.
 func (s *dataSourceStore) touch(ctx context.Context, id, tenantID pgtype.UUID, lastVerifiedAt pgtype.Timestamptz, freshnessScore *int32) error {
 	if err := s.write.TouchDataSource(ctx, gen.TouchDataSourceParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		LastVerifiedAt: lastVerifiedAt,
 		FreshnessScore: freshnessScore,
 	}); err != nil {
@@ -252,7 +250,7 @@ func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *strin
 	passes := make([]gen.MatchDataSourceParams, 0, 8)
 	add := func(et *string, e pgtype.UUID, d *string) {
 		passes = append(passes, gen.MatchDataSourceParams{
-			TenantID:      tenantID,
+
 			SourceName:    sourceName,
 			EntityType:    et,
 			EntityID:      e,
@@ -380,8 +378,8 @@ func toDataSource(row gen.ComparisonDataSource) (DataSource, error) {
 	}
 
 	return DataSource{
-		ID:             row.ID.String(),
-		TenantID:       row.TenantID.String(),
+		ID: row.ID.String(),
+
 		EntityType:     entityType,
 		EntityID:       entityID,
 		DimensionSlug:  dimensionSlug,
@@ -464,7 +462,7 @@ func dataSourceCreateParams(tenantID pgtype.UUID, in DataSourceInput) (gen.Creat
 	}
 
 	return gen.CreateDataSourceParams{
-		TenantID:      tenantID,
+
 		EntityType:    m.entityType,
 		EntityID:      m.entityID,
 		DimensionSlug: m.dimensionSlug,
@@ -497,7 +495,6 @@ func dataSourceUpdateParams(id, tenantID pgtype.UUID, in DataSourceInput) (gen.U
 		LastVerifiedAt: pgtype.Timestamptz{},
 		Config:         m.config,
 		ID:             id,
-		TenantID:       tenantID,
 	}, nil
 }
 

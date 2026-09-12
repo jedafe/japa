@@ -14,17 +14,11 @@ import (
 const adminCountContentImports = `-- name: AdminCountContentImports :one
 SELECT COUNT(*) AS count
 FROM content_imports
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 `
 
-type AdminCountContentImportsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-}
-
-func (q *Queries) AdminCountContentImports(ctx context.Context, arg AdminCountContentImportsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountContentImports, arg.TenantID, arg.Status)
+func (q *Queries) AdminCountContentImports(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountContentImports, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -33,21 +27,19 @@ func (q *Queries) AdminCountContentImports(ctx context.Context, arg AdminCountCo
 const adminListContentImports = `-- name: AdminListContentImports :many
 
 SELECT
-    ci.id, ci.tenant_id, ci.user_id, ci.source_type, ci.source_url, ci.status, ci.total_items, ci.imported_count, ci.failed_count, ci.error_log, ci.created_at, ci.completed_at,
-    u.username AS username
+ ci.id, ci.tenant_id, ci.user_id, ci.source_type, ci.source_url, ci.status, ci.total_items, ci.imported_count, ci.failed_count, ci.error_log, ci.created_at, ci.completed_at,
+ u.username AS username
 FROM content_imports ci
 JOIN users u ON u.id = ci.user_id
-WHERE ci.tenant_id = $1
-  AND ($2::text = '' OR ci.status = $2)
+WHERE ($1::text = '' OR ci.status = $1)
 ORDER BY ci.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type AdminListContentImportsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type AdminListContentImportsRow struct {
@@ -70,12 +62,7 @@ type AdminListContentImportsRow struct {
 // Admin: list all imports across all users.
 // =====================================================================
 func (q *Queries) AdminListContentImports(ctx context.Context, arg AdminListContentImportsParams) ([]AdminListContentImportsRow, error) {
-	rows, err := q.db.Query(ctx, adminListContentImports,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, adminListContentImports, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -111,16 +98,11 @@ func (q *Queries) AdminListContentImports(ctx context.Context, arg AdminListCont
 const countUserContentImports = `-- name: CountUserContentImports :one
 SELECT COUNT(*) AS count
 FROM content_imports
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountUserContentImportsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountUserContentImports(ctx context.Context, arg CountUserContentImportsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserContentImports, arg.TenantID, arg.UserID)
+func (q *Queries) CountUserContentImports(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserContentImports, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -129,13 +111,12 @@ func (q *Queries) CountUserContentImports(ctx context.Context, arg CountUserCont
 const createContentImport = `-- name: CreateContentImport :one
 
 
-INSERT INTO content_imports (tenant_id, user_id, source_type, source_url)
-VALUES ($1, $2, $3, $4)
+INSERT INTO content_imports (user_id, source_type, source_url) VALUES ($1, $2, $3)
+
 RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
 
 type CreateContentImportParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	SourceType string      `json:"source_type"`
 	SourceUrl  *string     `json:"source_url"`
@@ -151,12 +132,7 @@ type CreateContentImportParams struct {
 // Create an import record (pending status).
 // =====================================================================
 func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImportParams) (ContentImport, error) {
-	row := q.db.QueryRow(ctx, createContentImport,
-		arg.TenantID,
-		arg.UserID,
-		arg.SourceType,
-		arg.SourceUrl,
-	)
+	row := q.db.QueryRow(ctx, createContentImport, arg.UserID, arg.SourceType, arg.SourceUrl)
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
@@ -178,19 +154,14 @@ func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImpo
 const getContentImportByID = `-- name: GetContentImportByID :one
 
 SELECT id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetContentImportByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Get a single import by ID.
 // =====================================================================
-func (q *Queries) GetContentImportByID(ctx context.Context, arg GetContentImportByIDParams) (ContentImport, error) {
-	row := q.db.QueryRow(ctx, getContentImportByID, arg.TenantID, arg.ID)
+func (q *Queries) GetContentImportByID(ctx context.Context, id pgtype.UUID) (ContentImport, error) {
+	row := q.db.QueryRow(ctx, getContentImportByID, id)
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
@@ -212,13 +183,12 @@ func (q *Queries) GetContentImportByID(ctx context.Context, arg GetContentImport
 const listUserContentImports = `-- name: ListUserContentImports :many
 
 SELECT id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListUserContentImportsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -228,12 +198,7 @@ type ListUserContentImportsParams struct {
 // List a user's imports.
 // =====================================================================
 func (q *Queries) ListUserContentImports(ctx context.Context, arg ListUserContentImportsParams) ([]ContentImport, error) {
-	rows, err := q.db.Query(ctx, listUserContentImports,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listUserContentImports, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -269,26 +234,21 @@ const resetContentImportForRetry = `-- name: ResetContentImportForRetry :one
 
 UPDATE content_imports
 SET
-    status          = 'pending',
-    total_items     = 0,
-    imported_count  = 0,
-    failed_count    = 0,
-    error_log       = '[]'::jsonb,
-    completed_at    = NULL
-WHERE tenant_id = $1 AND id = $2 AND status IN ('failed', 'partial')
+ status = 'pending',
+ total_items = 0,
+ imported_count = 0,
+ failed_count = 0,
+ error_log = '[]'::jsonb,
+ completed_at = NULL
+WHERE id = $1 AND status IN ('failed', 'partial')
 RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
-
-type ResetContentImportForRetryParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Admin: retry a failed import (reset to pending).
 // =====================================================================
-func (q *Queries) ResetContentImportForRetry(ctx context.Context, arg ResetContentImportForRetryParams) (ContentImport, error) {
-	row := q.db.QueryRow(ctx, resetContentImportForRetry, arg.TenantID, arg.ID)
+func (q *Queries) ResetContentImportForRetry(ctx context.Context, id pgtype.UUID) (ContentImport, error) {
+	row := q.db.QueryRow(ctx, resetContentImportForRetry, id)
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
@@ -311,13 +271,13 @@ const updateContentImportStatus = `-- name: UpdateContentImportStatus :one
 
 UPDATE content_imports
 SET
-    status          = $1,
-    total_items     = COALESCE($2, total_items),
-    imported_count  = COALESCE($3, imported_count),
-    failed_count    = COALESCE($4, failed_count),
-    error_log       = COALESCE($5, error_log),
-    completed_at    = COALESCE($6, completed_at)
-WHERE tenant_id = $7 AND id = $8
+ status = $1,
+ total_items = COALESCE($2, total_items),
+ imported_count = COALESCE($3, imported_count),
+ failed_count = COALESCE($4, failed_count),
+ error_log = COALESCE($5, error_log),
+ completed_at = COALESCE($6, completed_at)
+WHERE id = $7
 RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
 
@@ -328,7 +288,6 @@ type UpdateContentImportStatusParams struct {
 	FailedCount   *int32             `json:"failed_count"`
 	ErrorLog      []byte             `json:"error_log"`
 	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ID            pgtype.UUID        `json:"id"`
 }
 
@@ -343,7 +302,6 @@ func (q *Queries) UpdateContentImportStatus(ctx context.Context, arg UpdateConte
 		arg.FailedCount,
 		arg.ErrorLog,
 		arg.CompletedAt,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i ContentImport

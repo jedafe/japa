@@ -151,7 +151,7 @@ func (f *fakeMediaManager) StoreFromBytes(ctx context.Context, tenantID, uploade
 }
 
 func (f *fakeMediaManager) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error) {
-	return gen.Medium{ID: mediaID, TenantID: tenantID, StorageBucket: "media", StoragePath: "media/test.mp4"}, nil
+	return gen.Medium{ID: mediaID, StorageBucket: "media", StoragePath: "media/test.mp4"}, nil
 }
 
 func (f *fakeMediaManager) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {

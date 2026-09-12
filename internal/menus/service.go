@@ -106,8 +106,8 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 	treeItems := buildMenuTree(genMenuItemsToJSON(items))
 
 	return &MenuResponse{
-		ID:        menu.ID.String(),
-		TenantID:  menu.TenantID.String(),
+		ID: menu.ID.String(),
+
 		Slug:      menu.Slug,
 		Name:      menu.Name,
 		Placement: menu.Placement,
@@ -156,8 +156,8 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	treeItems := buildMenuTree(filteredItems)
 
 	return &MenuResponse{
-		ID:        menu.ID.String(),
-		TenantID:  menu.TenantID.String(),
+		ID: menu.ID.String(),
+
 		Slug:      menu.Slug,
 		Name:      menu.Name,
 		Placement: menu.Placement,
@@ -181,7 +181,7 @@ func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, na
 	}
 
 	return s.store.createMenu(ctx, gen.CreateMenuParams{
-		TenantID: tenantID, Slug: slug, Name: name, Placement: placement, Status: status,
+		Slug: slug, Name: name, Placement: placement, Status: status,
 	})
 }
 
@@ -196,7 +196,7 @@ func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name
 	}
 
 	return s.store.updateMenu(ctx, gen.UpdateMenuParams{
-		ID: id, TenantID: tenantID, Name: name, Placement: placement, Status: status,
+		ID: id, Name: name, Placement: placement, Status: status,
 	})
 }
 
@@ -295,7 +295,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	}
 
 	return s.store.createMenuItem(ctx, gen.CreateMenuItemParams{
-		TenantID:         tenantID,
+
 		MenuID:           menuID,
 		ParentID:         parentID,
 		Label:            input.Label,
@@ -356,8 +356,8 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 
 	return s.store.updateMenuItem(ctx, gen.UpdateMenuItemParams{
-		ID:               id,
-		TenantID:         tenantID,
+		ID: id,
+
 		Label:            input.Label,
 		Url:              input.URL,
 		Icon:             input.Icon,

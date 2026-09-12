@@ -29,7 +29,7 @@ func TestHandleVideoGenerateSummary(t *testing.T) {
 	RegisterVideoSummaryProcessor(proc)
 
 	payload := GenerateSummaryPayload{
-		TenantID:      pgtype.UUID{Bytes: [16]byte{1}, Valid: true}.String(),
+
 		UserID:        pgtype.UUID{Bytes: [16]byte{2}, Valid: true}.String(),
 		VideoSourceID: pgtype.UUID{Bytes: [16]byte{3}, Valid: true}.String(),
 	}

@@ -15,7 +15,7 @@ const adminCountNotificationTypes = `-- name: AdminCountNotificationTypes :one
 SELECT COUNT(*)::int AS count
 FROM notification_types
 WHERE ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
-  AND ($2::int = 0 OR enabled = ($2::int = 1))
+ AND ($2::int = 0 OR enabled = ($2::int = 1))
 `
 
 type AdminCountNotificationTypesParams struct {
@@ -34,15 +34,15 @@ const adminListNotificationTypes = `-- name: AdminListNotificationTypes :many
 SELECT key, label, description, category, enabled, default_in_app, default_email, default_push
 FROM notification_types
 WHERE ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
-  AND ($2::int = 0 OR enabled = ($2::int = 1))
+ AND ($2::int = 0 OR enabled = ($2::int = 1))
 ORDER BY
-  CASE WHEN $3::text = 'key' AND $4::text = 'asc' THEN key END ASC,
-  CASE WHEN $3::text = 'key' AND $4::text = 'desc' THEN key END DESC,
-  CASE WHEN $3::text = 'label' AND $4::text = 'asc' THEN label END ASC,
-  CASE WHEN $3::text = 'label' AND $4::text = 'desc' THEN label END DESC,
-  CASE WHEN $3::text = 'enabled' AND $4::text = 'asc' THEN enabled END ASC,
-  CASE WHEN $3::text = 'enabled' AND $4::text = 'desc' THEN enabled END DESC,
-  CASE WHEN $3::text NOT IN ('key', 'label', 'enabled') THEN key END ASC
+ CASE WHEN $3::text = 'key' AND $4::text = 'asc' THEN key END ASC,
+ CASE WHEN $3::text = 'key' AND $4::text = 'desc' THEN key END DESC,
+ CASE WHEN $3::text = 'label' AND $4::text = 'asc' THEN label END ASC,
+ CASE WHEN $3::text = 'label' AND $4::text = 'desc' THEN label END DESC,
+ CASE WHEN $3::text = 'enabled' AND $4::text = 'asc' THEN enabled END ASC,
+ CASE WHEN $3::text = 'enabled' AND $4::text = 'desc' THEN enabled END DESC,
+ CASE WHEN $3::text NOT IN ('key', 'label', 'enabled') THEN key END ASC
 LIMIT $6 OFFSET $5
 `
 
@@ -104,12 +104,10 @@ func (q *Queries) AdminListNotificationTypes(ctx context.Context, arg AdminListN
 }
 
 const createBatchWindow = `-- name: CreateBatchWindow :exec
-INSERT INTO notification_batch_windows (tenant_id, recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at)
-VALUES ($1, $2, $3, $4, $5, ARRAY[$6::uuid], 1, $6, now() + make_interval(mins => $7))
+INSERT INTO notification_batch_windows (recipient_id, notification_type, subject_type, subject_id, actor_ids, actor_count, last_actor_id, window_close_at) VALUES ($1, $2, $3, $4, ARRAY[$5::uuid], 1, $5, now() + make_interval(mins => $6))
 `
 
 type CreateBatchWindowParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	RecipientID      pgtype.UUID `json:"recipient_id"`
 	NotificationType string      `json:"notification_type"`
 	SubjectType      string      `json:"subject_type"`
@@ -120,7 +118,6 @@ type CreateBatchWindowParams struct {
 
 func (q *Queries) CreateBatchWindow(ctx context.Context, arg CreateBatchWindowParams) error {
 	_, err := q.db.Exec(ctx, createBatchWindow,
-		arg.TenantID,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.SubjectType,
@@ -157,8 +154,8 @@ func (q *Queries) DeleteNotificationType(ctx context.Context, key string) error 
 const extendBatchWindow = `-- name: ExtendBatchWindow :exec
 UPDATE notification_batch_windows
 SET actor_ids = array_append(actor_ids, $1),
-    actor_count = actor_count + 1,
-    last_actor_id = $1
+ actor_count = actor_count + 1,
+ last_actor_id = $1
 WHERE id = $2
 `
 
@@ -173,15 +170,14 @@ func (q *Queries) ExtendBatchWindow(ctx context.Context, arg ExtendBatchWindowPa
 }
 
 const getBatchWindowByID = `-- name: GetBatchWindowByID :one
-SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
-       actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
+SELECT id, recipient_id, notification_type, subject_type, subject_id,
+ actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE id = $1
 `
 
 type GetBatchWindowByIDRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	RecipientID      pgtype.UUID        `json:"recipient_id"`
 	NotificationType string             `json:"notification_type"`
 	SubjectType      string             `json:"subject_type"`
@@ -199,7 +195,6 @@ func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (GetBa
 	var i GetBatchWindowByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RecipientID,
 		&i.NotificationType,
 		&i.SubjectType,
@@ -217,7 +212,7 @@ func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (GetBa
 const getNotificationPreferences = `-- name: GetNotificationPreferences :many
 
 SELECT np.user_id, np.notification_type, np.in_app, np.email, np.push,
-       nt.label AS type_label, nt.category AS type_category
+ nt.label AS type_label, nt.category AS type_category
 FROM notification_preferences np
 JOIN notification_types nt ON nt.key = np.notification_type
 WHERE np.user_id = $1
@@ -314,19 +309,18 @@ func (q *Queries) GetNotificationTypes(ctx context.Context) ([]GetNotificationTy
 }
 
 const getNotificationsByRecipient = `-- name: GetNotificationsByRecipient :many
-SELECT n.id, n.tenant_id, n.recipient_id, n.notification_type, n.actor_type, n.actor_id,
-       n.subject_type, n.subject_id, n.title, n.body, n.action_url, n.read_at, n.created_at,
-       nt.label AS type_label
+SELECT n.id, n.recipient_id, n.notification_type, n.actor_type, n.actor_id,
+ n.subject_type, n.subject_id, n.title, n.body, n.action_url, n.read_at, n.created_at,
+ nt.label AS type_label
 FROM notifications n
 JOIN notification_types nt ON nt.key = n.notification_type
-WHERE n.tenant_id = $1 AND n.recipient_id = $2
-  AND ($3::bool = false OR n.read_at IS NULL)
+WHERE n.recipient_id = $1
+ AND ($2::bool = false OR n.read_at IS NULL)
 ORDER BY n.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type GetNotificationsByRecipientParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	RecipientID pgtype.UUID `json:"recipient_id"`
 	UnreadOnly  bool        `json:"unread_only"`
 	PageOffset  int32       `json:"page_offset"`
@@ -335,7 +329,6 @@ type GetNotificationsByRecipientParams struct {
 
 type GetNotificationsByRecipientRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	RecipientID      pgtype.UUID        `json:"recipient_id"`
 	NotificationType string             `json:"notification_type"`
 	ActorType        *string            `json:"actor_type"`
@@ -352,7 +345,6 @@ type GetNotificationsByRecipientRow struct {
 
 func (q *Queries) GetNotificationsByRecipient(ctx context.Context, arg GetNotificationsByRecipientParams) ([]GetNotificationsByRecipientRow, error) {
 	rows, err := q.db.Query(ctx, getNotificationsByRecipient,
-		arg.TenantID,
 		arg.RecipientID,
 		arg.UnreadOnly,
 		arg.PageOffset,
@@ -367,7 +359,6 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, arg GetNotifi
 		var i GetNotificationsByRecipientRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.RecipientID,
 			&i.NotificationType,
 			&i.ActorType,
@@ -393,15 +384,15 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, arg GetNotifi
 
 const getOpenBatchWindow = `-- name: GetOpenBatchWindow :one
 
-SELECT id, tenant_id, recipient_id, notification_type, subject_type, subject_id,
-       actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
+SELECT id, recipient_id, notification_type, subject_type, subject_id,
+ actor_ids, actor_count, last_actor_id, window_open_at, window_close_at, dispatched
 FROM notification_batch_windows
 WHERE recipient_id = $1
-  AND notification_type = $2
-  AND subject_type = $3
-  AND subject_id = $4
-  AND dispatched = false
-  AND window_close_at > now()
+ AND notification_type = $2
+ AND subject_type = $3
+ AND subject_id = $4
+ AND dispatched = false
+ AND window_close_at > now()
 `
 
 type GetOpenBatchWindowParams struct {
@@ -413,7 +404,6 @@ type GetOpenBatchWindowParams struct {
 
 type GetOpenBatchWindowRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	RecipientID      pgtype.UUID        `json:"recipient_id"`
 	NotificationType string             `json:"notification_type"`
 	SubjectType      string             `json:"subject_type"`
@@ -439,7 +429,6 @@ func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindow
 	var i GetOpenBatchWindowRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RecipientID,
 		&i.NotificationType,
 		&i.SubjectType,
@@ -457,16 +446,11 @@ func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindow
 const getUnreadNotificationCount = `-- name: GetUnreadNotificationCount :one
 SELECT COUNT(*)::int AS count
 FROM notifications
-WHERE tenant_id = $1 AND recipient_id = $2 AND read_at IS NULL
+WHERE recipient_id = $1 AND read_at IS NULL
 `
 
-type GetUnreadNotificationCountParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	RecipientID pgtype.UUID `json:"recipient_id"`
-}
-
-func (q *Queries) GetUnreadNotificationCount(ctx context.Context, arg GetUnreadNotificationCountParams) (int32, error) {
-	row := q.db.QueryRow(ctx, getUnreadNotificationCount, arg.TenantID, arg.RecipientID)
+func (q *Queries) GetUnreadNotificationCount(ctx context.Context, recipientID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, getUnreadNotificationCount, recipientID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -475,13 +459,12 @@ func (q *Queries) GetUnreadNotificationCount(ctx context.Context, arg GetUnreadN
 const insertNotification = `-- name: InsertNotification :one
 
 
-INSERT INTO notifications (tenant_id, recipient_id, notification_type, actor_type, actor_id, subject_type, subject_id, title, body, action_url)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO notifications (recipient_id, notification_type, actor_type, actor_id, subject_type, subject_id, title, body, action_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+
 RETURNING id
 `
 
 type InsertNotificationParams struct {
-	TenantID         pgtype.UUID `json:"tenant_id"`
 	RecipientID      pgtype.UUID `json:"recipient_id"`
 	NotificationType string      `json:"notification_type"`
 	ActorType        *string     `json:"actor_type"`
@@ -502,7 +485,6 @@ type InsertNotificationParams struct {
 // ID is available for the WebSocket broadcast payload (§35 L88, §10).
 func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotificationParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, insertNotification,
-		arg.TenantID,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.ActorType,
@@ -520,16 +502,11 @@ func (q *Queries) InsertNotification(ctx context.Context, arg InsertNotification
 
 const markAllNotificationsRead = `-- name: MarkAllNotificationsRead :exec
 UPDATE notifications SET read_at = now()
-WHERE tenant_id = $1 AND recipient_id = $2 AND read_at IS NULL
+WHERE recipient_id = $1 AND read_at IS NULL
 `
 
-type MarkAllNotificationsReadParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	RecipientID pgtype.UUID `json:"recipient_id"`
-}
-
-func (q *Queries) MarkAllNotificationsRead(ctx context.Context, arg MarkAllNotificationsReadParams) error {
-	_, err := q.db.Exec(ctx, markAllNotificationsRead, arg.TenantID, arg.RecipientID)
+func (q *Queries) MarkAllNotificationsRead(ctx context.Context, recipientID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markAllNotificationsRead, recipientID)
 	return err
 }
 
@@ -559,7 +536,7 @@ func (q *Queries) MarkNotificationRead(ctx context.Context, arg MarkNotification
 const updateNotificationType = `-- name: UpdateNotificationType :exec
 UPDATE notification_types
 SET label = $1, description = $2, category = $3, enabled = $4,
-    default_in_app = $5, default_email = $6, default_push = $7
+ default_in_app = $5, default_email = $6, default_push = $7
 WHERE key = $8
 `
 
@@ -589,8 +566,8 @@ func (q *Queries) UpdateNotificationType(ctx context.Context, arg UpdateNotifica
 }
 
 const upsertNotificationPreference = `-- name: UpsertNotificationPreference :exec
-INSERT INTO notification_preferences (user_id, notification_type, in_app, email, push)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO notification_preferences (user_id, notification_type, in_app, email, push) VALUES ($1, $2, $3, $4, $5)
+
 ON CONFLICT (user_id, notification_type) DO UPDATE
 SET in_app = EXCLUDED.in_app, email = EXCLUDED.email, push = EXCLUDED.push
 `
@@ -615,16 +592,16 @@ func (q *Queries) UpsertNotificationPreference(ctx context.Context, arg UpsertNo
 }
 
 const upsertNotificationType = `-- name: UpsertNotificationType :exec
-INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO notification_types (key, label, description, category, enabled, default_in_app, default_email, default_push) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+
 ON CONFLICT (key) DO UPDATE SET
-  label = EXCLUDED.label,
-  description = EXCLUDED.description,
-  category = EXCLUDED.category,
-  enabled = EXCLUDED.enabled,
-  default_in_app = EXCLUDED.default_in_app,
-  default_email = EXCLUDED.default_email,
-  default_push = EXCLUDED.default_push
+ label = EXCLUDED.label,
+ description = EXCLUDED.description,
+ category = EXCLUDED.category,
+ enabled = EXCLUDED.enabled,
+ default_in_app = EXCLUDED.default_in_app,
+ default_email = EXCLUDED.default_email,
+ default_push = EXCLUDED.default_push
 `
 
 type UpsertNotificationTypeParams struct {

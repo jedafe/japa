@@ -266,7 +266,7 @@ func SpacesCreateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		space, err := deps.Spaces.CreateSpace(ctx, gen.CreateSpaceParams{
-			TenantID:       tenantID,
+
 			ParentID:       parentID,
 			SpaceTypeID:    spaceTypeID,
 			Name:           a.Name,
@@ -386,8 +386,8 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		space, err := deps.Spaces.UpdateSpace(ctx, gen.UpdateSpaceParams{
-			ID:             spaceID,
-			TenantID:       tenantID,
+			ID: spaceID,
+
 			Name:           a.Name,
 			Description:    description,
 			WikiContent:    existing.WikiContent,

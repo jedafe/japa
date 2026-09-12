@@ -119,7 +119,7 @@ func (s *Service) TrackEvent(ctx context.Context, tenantID pgtype.UUID, input Tr
 	}
 
 	return s.store.CreatePlatformEvent(ctx, gen.CreatePlatformEventParams{
-		TenantID:    tenantID,
+
 		EventType:   string(input.EventType),
 		UserID:      userID,
 		EntityType:  entityType,

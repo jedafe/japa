@@ -12,29 +12,32 @@ import (
 )
 
 const createCustomFieldEntityType = `-- name: CreateCustomFieldEntityType :one
-INSERT INTO custom_field_entity_types (tenant_id, value, label, is_system, sort_order)
-VALUES ($1, $2, $3, false, $4)
-RETURNING id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+INSERT INTO custom_field_entity_types (value, label, is_system, sort_order) VALUES ($1, $2, false, $3)
+
+RETURNING id, value, label, is_system, sort_order, created_at, updated_at
 `
 
 type CreateCustomFieldEntityTypeParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	Value     string      `json:"value"`
-	Label     string      `json:"label"`
-	SortOrder int32       `json:"sort_order"`
+	Value     string `json:"value"`
+	Label     string `json:"label"`
+	SortOrder int32  `json:"sort_order"`
 }
 
-func (q *Queries) CreateCustomFieldEntityType(ctx context.Context, arg CreateCustomFieldEntityTypeParams) (CustomFieldEntityType, error) {
-	row := q.db.QueryRow(ctx, createCustomFieldEntityType,
-		arg.TenantID,
-		arg.Value,
-		arg.Label,
-		arg.SortOrder,
-	)
-	var i CustomFieldEntityType
+type CreateCustomFieldEntityTypeRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateCustomFieldEntityType(ctx context.Context, arg CreateCustomFieldEntityTypeParams) (CreateCustomFieldEntityTypeRow, error) {
+	row := q.db.QueryRow(ctx, createCustomFieldEntityType, arg.Value, arg.Label, arg.SortOrder)
+	var i CreateCustomFieldEntityTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,
@@ -47,17 +50,12 @@ func (q *Queries) CreateCustomFieldEntityType(ctx context.Context, arg CreateCus
 
 const deleteCustomFieldEntityType = `-- name: DeleteCustomFieldEntityType :execrows
 DELETE FROM custom_field_entity_types
-WHERE id = $1 AND tenant_id = $2 AND is_system = false
+WHERE id = $1 AND is_system = false
 `
 
-type DeleteCustomFieldEntityTypeParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // System entity types cannot be deleted (is_system = true).
-func (q *Queries) DeleteCustomFieldEntityType(ctx context.Context, arg DeleteCustomFieldEntityTypeParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteCustomFieldEntityType, arg.ID, arg.TenantID)
+func (q *Queries) DeleteCustomFieldEntityType(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCustomFieldEntityType, id)
 	if err != nil {
 		return 0, err
 	}
@@ -65,22 +63,26 @@ func (q *Queries) DeleteCustomFieldEntityType(ctx context.Context, arg DeleteCus
 }
 
 const getCustomFieldEntityTypeByValue = `-- name: GetCustomFieldEntityTypeByValue :one
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
-WHERE tenant_id = $1 AND value = $2
+WHERE value = $1
 `
 
-type GetCustomFieldEntityTypeByValueParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Value    string      `json:"value"`
+type GetCustomFieldEntityTypeByValueRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetCustomFieldEntityTypeByValue(ctx context.Context, arg GetCustomFieldEntityTypeByValueParams) (CustomFieldEntityType, error) {
-	row := q.db.QueryRow(ctx, getCustomFieldEntityTypeByValue, arg.TenantID, arg.Value)
-	var i CustomFieldEntityType
+func (q *Queries) GetCustomFieldEntityTypeByValue(ctx context.Context, value string) (GetCustomFieldEntityTypeByValueRow, error) {
+	row := q.db.QueryRow(ctx, getCustomFieldEntityTypeByValue, value)
+	var i GetCustomFieldEntityTypeByValueRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,
@@ -93,26 +95,35 @@ func (q *Queries) GetCustomFieldEntityTypeByValue(ctx context.Context, arg GetCu
 
 const listCustomFieldEntityTypes = `-- name: ListCustomFieldEntityTypes :many
 
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
-WHERE tenant_id = $1
+
 ORDER BY sort_order ASC, label ASC
 `
 
+type ListCustomFieldEntityTypesRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Custom Field Entity Types (Section 06).
 // DB-backed registry of entity types for custom field group assignment.
-func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context, tenantID pgtype.UUID) ([]CustomFieldEntityType, error) {
-	rows, err := q.db.Query(ctx, listCustomFieldEntityTypes, tenantID)
+func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context) ([]ListCustomFieldEntityTypesRow, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldEntityTypes)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CustomFieldEntityType
+	var items []ListCustomFieldEntityTypesRow
 	for rows.Next() {
-		var i CustomFieldEntityType
+		var i ListCustomFieldEntityTypesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Value,
 			&i.Label,
 			&i.IsSystem,
@@ -131,29 +142,33 @@ func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context, tenantID pgtyp
 }
 
 const listCustomFieldEntityTypesByPrefix = `-- name: ListCustomFieldEntityTypesByPrefix :many
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
-WHERE tenant_id = $1 AND value LIKE $2
+WHERE value LIKE $1
 ORDER BY sort_order ASC, label ASC
 `
 
-type ListCustomFieldEntityTypesByPrefixParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Prefix   string      `json:"prefix"`
+type ListCustomFieldEntityTypesByPrefixRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, arg ListCustomFieldEntityTypesByPrefixParams) ([]CustomFieldEntityType, error) {
-	rows, err := q.db.Query(ctx, listCustomFieldEntityTypesByPrefix, arg.TenantID, arg.Prefix)
+func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, prefix string) ([]ListCustomFieldEntityTypesByPrefixRow, error) {
+	rows, err := q.db.Query(ctx, listCustomFieldEntityTypesByPrefix, prefix)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CustomFieldEntityType
+	var items []ListCustomFieldEntityTypesByPrefixRow
 	for rows.Next() {
-		var i CustomFieldEntityType
+		var i ListCustomFieldEntityTypesByPrefixRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Value,
 			&i.Label,
 			&i.IsSystem,
@@ -174,30 +189,33 @@ func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, arg Li
 const updateCustomFieldEntityType = `-- name: UpdateCustomFieldEntityType :one
 UPDATE custom_field_entity_types
 SET label = $1,
-    sort_order = $2,
-    updated_at = now()
-WHERE id = $3 AND tenant_id = $4
-RETURNING id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+ sort_order = $2,
+ updated_at = now()
+WHERE id = $3
+RETURNING id, value, label, is_system, sort_order, created_at, updated_at
 `
 
 type UpdateCustomFieldEntityTypeParams struct {
 	Label     string      `json:"label"`
 	SortOrder int32       `json:"sort_order"`
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
-func (q *Queries) UpdateCustomFieldEntityType(ctx context.Context, arg UpdateCustomFieldEntityTypeParams) (CustomFieldEntityType, error) {
-	row := q.db.QueryRow(ctx, updateCustomFieldEntityType,
-		arg.Label,
-		arg.SortOrder,
-		arg.ID,
-		arg.TenantID,
-	)
-	var i CustomFieldEntityType
+type UpdateCustomFieldEntityTypeRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Value     string             `json:"value"`
+	Label     string             `json:"label"`
+	IsSystem  bool               `json:"is_system"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateCustomFieldEntityType(ctx context.Context, arg UpdateCustomFieldEntityTypeParams) (UpdateCustomFieldEntityTypeRow, error) {
+	row := q.db.QueryRow(ctx, updateCustomFieldEntityType, arg.Label, arg.SortOrder, arg.ID)
+	var i UpdateCustomFieldEntityTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,

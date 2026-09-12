@@ -14,18 +14,17 @@ import (
 const countOrgAdCampaigns = `-- name: CountOrgAdCampaigns :one
 SELECT COUNT(*) AS count
 FROM ad_campaigns
-WHERE tenant_id = $1 AND organization_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE organization_id = $1
+ AND ($2::text = '' OR status = $2)
 `
 
 type CountOrgAdCampaignsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	Status         string      `json:"status"`
 }
 
 func (q *Queries) CountOrgAdCampaigns(ctx context.Context, arg CountOrgAdCampaignsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countOrgAdCampaigns, arg.TenantID, arg.OrganizationID, arg.Status)
+	row := q.db.QueryRow(ctx, countOrgAdCampaigns, arg.OrganizationID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -33,21 +32,12 @@ func (q *Queries) CountOrgAdCampaigns(ctx context.Context, arg CountOrgAdCampaig
 
 const createSelfServeAdCampaign = `-- name: CreateSelfServeAdCampaign :one
 
-INSERT INTO ad_campaigns (
-    tenant_id, organization_id, name, slot_type_id, content, target_url,
-    budget_credits, flat_rate, status, priority, frequency_cap_per_user,
-    start_date, end_date, target_geo, target_space_ids, created_by
-)
-VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, 'pending_review', 0, $9,
-    $10, $11, $12, $13, $14
-)
+INSERT INTO ad_campaigns (organization_id, name, slot_type_id, content, target_url, budget_credits, flat_rate, status, priority, frequency_cap_per_user, start_date, end_date, target_geo, target_space_ids, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_review', 0, $8, $9, $10, $11, $12, $13)
+
 RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type CreateSelfServeAdCampaignParams struct {
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	OrganizationID      pgtype.UUID        `json:"organization_id"`
 	Name                string             `json:"name"`
 	SlotTypeID          pgtype.UUID        `json:"slot_type_id"`
@@ -68,7 +58,6 @@ type CreateSelfServeAdCampaignParams struct {
 // =====================================================================
 func (q *Queries) CreateSelfServeAdCampaign(ctx context.Context, arg CreateSelfServeAdCampaignParams) (AdCampaign, error) {
 	row := q.db.QueryRow(ctx, createSelfServeAdCampaign,
-		arg.TenantID,
 		arg.OrganizationID,
 		arg.Name,
 		arg.SlotTypeID,
@@ -113,18 +102,17 @@ func (q *Queries) CreateSelfServeAdCampaign(ctx context.Context, arg CreateSelfS
 const getAdCampaignStats = `-- name: GetAdCampaignStats :one
 
 SELECT
-    COUNT(*) FILTER (WHERE ae.event_type = 'impression') AS impressions,
-    COUNT(*) FILTER (WHERE ae.event_type = 'click') AS clicks,
-    ac.spent,
-    ac.budget_credits
+ COUNT(*) FILTER (WHERE ae.event_type = 'impression') AS impressions,
+ COUNT(*) FILTER (WHERE ae.event_type = 'click') AS clicks,
+ ac.spent,
+ ac.budget_credits
 FROM ad_campaigns ac
 LEFT JOIN ad_events ae ON ae.campaign_id = ac.id
-WHERE ac.tenant_id = $1 AND ac.id = $2 AND ac.organization_id = $3
+WHERE ac.id = $1 AND ac.organization_id = $2
 GROUP BY ac.spent, ac.budget_credits
 `
 
 type GetAdCampaignStatsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 }
@@ -140,7 +128,7 @@ type GetAdCampaignStatsRow struct {
 // Campaign stats — impressions, clicks, CTR, spend.
 // =====================================================================
 func (q *Queries) GetAdCampaignStats(ctx context.Context, arg GetAdCampaignStatsParams) (GetAdCampaignStatsRow, error) {
-	row := q.db.QueryRow(ctx, getAdCampaignStats, arg.TenantID, arg.ID, arg.OrganizationID)
+	row := q.db.QueryRow(ctx, getAdCampaignStats, arg.ID, arg.OrganizationID)
 	var i GetAdCampaignStatsRow
 	err := row.Scan(
 		&i.Impressions,
@@ -154,19 +142,14 @@ func (q *Queries) GetAdCampaignStats(ctx context.Context, arg GetAdCampaignStats
 const getCampaignForRefund = `-- name: GetCampaignForRefund :one
 
 SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
-WHERE tenant_id = $1 AND id = $2 AND organization_id IS NOT NULL
+WHERE id = $1 AND organization_id IS NOT NULL
 `
-
-type GetCampaignForRefundParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Refund unused credits on rejection or early end.
 // =====================================================================
-func (q *Queries) GetCampaignForRefund(ctx context.Context, arg GetCampaignForRefundParams) (AdCampaign, error) {
-	row := q.db.QueryRow(ctx, getCampaignForRefund, arg.TenantID, arg.ID)
+func (q *Queries) GetCampaignForRefund(ctx context.Context, id pgtype.UUID) (AdCampaign, error) {
+	row := q.db.QueryRow(ctx, getCampaignForRefund, id)
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
@@ -197,11 +180,10 @@ func (q *Queries) GetCampaignForRefund(ctx context.Context, arg GetCampaignForRe
 const getSelfServeAdCampaign = `-- name: GetSelfServeAdCampaign :one
 
 SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
-WHERE tenant_id = $1 AND id = $2 AND organization_id = $3
+WHERE id = $1 AND organization_id = $2
 `
 
 type GetSelfServeAdCampaignParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 }
@@ -210,7 +192,7 @@ type GetSelfServeAdCampaignParams struct {
 // Get a single campaign by ID (org-scoped).
 // =====================================================================
 func (q *Queries) GetSelfServeAdCampaign(ctx context.Context, arg GetSelfServeAdCampaignParams) (AdCampaign, error) {
-	row := q.db.QueryRow(ctx, getSelfServeAdCampaign, arg.TenantID, arg.ID, arg.OrganizationID)
+	row := q.db.QueryRow(ctx, getSelfServeAdCampaign, arg.ID, arg.OrganizationID)
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
@@ -241,8 +223,8 @@ func (q *Queries) GetSelfServeAdCampaign(ctx context.Context, arg GetSelfServeAd
 const isOrgMember = `-- name: IsOrgMember :one
 
 SELECT EXISTS(
-    SELECT 1 FROM organization_members
-    WHERE organization_id = $1 AND user_id = $2
+ SELECT 1 FROM organization_members
+ WHERE organization_id = $1 AND user_id = $2
 ) AS is_member
 `
 
@@ -264,19 +246,14 @@ func (q *Queries) IsOrgMember(ctx context.Context, arg IsOrgMemberParams) (bool,
 const isOrgVerified = `-- name: IsOrgVerified :one
 
 SELECT verified FROM organizations
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type IsOrgVerifiedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Check if an organization is verified (eligibility gate).
 // =====================================================================
-func (q *Queries) IsOrgVerified(ctx context.Context, arg IsOrgVerifiedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isOrgVerified, arg.TenantID, arg.ID)
+func (q *Queries) IsOrgVerified(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isOrgVerified, id)
 	var verified bool
 	err := row.Scan(&verified)
 	return verified, err
@@ -286,7 +263,7 @@ const listAdSlotTypesForSelfServe = `-- name: ListAdSlotTypesForSelfServe :many
 
 
 SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
-WHERE tenant_id = $1 AND is_active = true
+WHERE is_active = true
 ORDER BY slot_name ASC
 `
 
@@ -299,8 +276,8 @@ ORDER BY slot_name ASC
 // =====================================================================
 // List available ad slot types with flat_rate for self-serve advertisers.
 // =====================================================================
-func (q *Queries) ListAdSlotTypesForSelfServe(ctx context.Context, tenantID pgtype.UUID) ([]AdSlotType, error) {
-	rows, err := q.db.Query(ctx, listAdSlotTypesForSelfServe, tenantID)
+func (q *Queries) ListAdSlotTypesForSelfServe(ctx context.Context) ([]AdSlotType, error) {
+	rows, err := q.db.Query(ctx, listAdSlotTypesForSelfServe)
 	if err != nil {
 		return nil, err
 	}
@@ -331,14 +308,13 @@ func (q *Queries) ListAdSlotTypesForSelfServe(ctx context.Context, tenantID pgty
 const listOrgAdCampaigns = `-- name: ListOrgAdCampaigns :many
 
 SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
-WHERE tenant_id = $1 AND organization_id = $2
-  AND ($3::text = '' OR status = $3)
+WHERE organization_id = $1
+ AND ($2::text = '' OR status = $2)
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListOrgAdCampaignsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	Status         string      `json:"status"`
 	PageOffset     int32       `json:"page_offset"`
@@ -350,7 +326,6 @@ type ListOrgAdCampaignsParams struct {
 // =====================================================================
 func (q *Queries) ListOrgAdCampaigns(ctx context.Context, arg ListOrgAdCampaignsParams) ([]AdCampaign, error) {
 	rows, err := q.db.Query(ctx, listOrgAdCampaigns,
-		arg.TenantID,
 		arg.OrganizationID,
 		arg.Status,
 		arg.PageOffset,
@@ -399,16 +374,11 @@ func (q *Queries) ListOrgAdCampaigns(ctx context.Context, arg ListOrgAdCampaigns
 const markCampaignRefunded = `-- name: MarkCampaignRefunded :exec
 UPDATE ad_campaigns
 SET budget_credits = 0, status = 'rejected', updated_at = now()
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type MarkCampaignRefundedParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) MarkCampaignRefunded(ctx context.Context, arg MarkCampaignRefundedParams) error {
-	_, err := q.db.Exec(ctx, markCampaignRefunded, arg.TenantID, arg.ID)
+func (q *Queries) MarkCampaignRefunded(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markCampaignRefunded, id)
 	return err
 }
 
@@ -416,13 +386,12 @@ const pauseAdCampaign = `-- name: PauseAdCampaign :one
 
 UPDATE ad_campaigns
 SET status = 'paused', updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND organization_id = $3
-  AND status = 'active'
+WHERE id = $1 AND organization_id = $2
+ AND status = 'active'
 RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type PauseAdCampaignParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 }
@@ -431,7 +400,7 @@ type PauseAdCampaignParams struct {
 // Pause an active campaign.
 // =====================================================================
 func (q *Queries) PauseAdCampaign(ctx context.Context, arg PauseAdCampaignParams) (AdCampaign, error) {
-	row := q.db.QueryRow(ctx, pauseAdCampaign, arg.TenantID, arg.ID, arg.OrganizationID)
+	row := q.db.QueryRow(ctx, pauseAdCampaign, arg.ID, arg.OrganizationID)
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
@@ -463,13 +432,12 @@ const resumeAdCampaign = `-- name: ResumeAdCampaign :one
 
 UPDATE ad_campaigns
 SET status = 'active', updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND organization_id = $3
-  AND status = 'paused'
+WHERE id = $1 AND organization_id = $2
+ AND status = 'paused'
 RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type ResumeAdCampaignParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 }
@@ -478,7 +446,7 @@ type ResumeAdCampaignParams struct {
 // Resume a paused campaign.
 // =====================================================================
 func (q *Queries) ResumeAdCampaign(ctx context.Context, arg ResumeAdCampaignParams) (AdCampaign, error) {
-	row := q.db.QueryRow(ctx, resumeAdCampaign, arg.TenantID, arg.ID, arg.OrganizationID)
+	row := q.db.QueryRow(ctx, resumeAdCampaign, arg.ID, arg.OrganizationID)
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
@@ -510,18 +478,17 @@ const updateSelfServeAdCampaignCreative = `-- name: UpdateSelfServeAdCampaignCre
 
 UPDATE ad_campaigns
 SET
-    content    = COALESCE($1, content),
-    target_url = COALESCE($2, target_url),
-    updated_at = now()
-WHERE tenant_id = $3 AND id = $4 AND organization_id = $5
-  AND status IN ('pending_review', 'paused')
+ content = COALESCE($1, content),
+ target_url = COALESCE($2, target_url),
+ updated_at = now()
+WHERE id = $3 AND organization_id = $4
+ AND status IN ('pending_review', 'paused')
 RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type UpdateSelfServeAdCampaignCreativeParams struct {
 	Content        []byte      `json:"content"`
 	TargetUrl      *string     `json:"target_url"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 }
@@ -533,7 +500,6 @@ func (q *Queries) UpdateSelfServeAdCampaignCreative(ctx context.Context, arg Upd
 	row := q.db.QueryRow(ctx, updateSelfServeAdCampaignCreative,
 		arg.Content,
 		arg.TargetUrl,
-		arg.TenantID,
 		arg.ID,
 		arg.OrganizationID,
 	)

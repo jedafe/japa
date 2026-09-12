@@ -150,9 +150,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	}
 
 	cmpRow, err := e.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
-		TenantID: tenantID,
-		ID:       contentID,
-		Slug:     nil,
+
+		ID:   contentID,
+		Slug: nil,
 	})
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
@@ -167,10 +167,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		return jce.ScoreResult{}, errpkg.ErrForbidden
 	}
 
-	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	items, err := e.read.GetComparisonItemsForScoring(ctx,
+		contentID,
+	)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison items: %w", err)
 	}
@@ -187,10 +186,9 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	var typeCfg typeConfig
 
 	if typeID.Valid {
-		typeDef, err := e.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{
-			ID:       typeID,
-			TenantID: tenantID,
-		})
+		typeDef, err := e.read.GetComparisonTypeByID(ctx,
+			typeID,
+		)
 		if err != nil {
 			return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
 		}
@@ -240,7 +238,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 
 		valueRows, err := e.read.GetComparisonValuesForScoring(ctx, gen.GetComparisonValuesForScoringParams{
-			TenantID:  tenantID,
+
 			ContentID: contentID,
 			ItemIds:   itemIDs,
 		})
@@ -328,7 +326,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 	err = db.WithTx(ctx, e.database.Writer, func(q *gen.Queries) error {
 		if err := q.DeleteComparisonScoresByContent(ctx, gen.DeleteComparisonScoresByContentParams{
-			TenantID:  tenantID,
+
 			ContentID: contentID,
 			ProfileID: profileID,
 		}); err != nil {
@@ -336,7 +334,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 		}
 
 		if err := q.DeleteComparisonRecommendationsByContent(ctx, gen.DeleteComparisonRecommendationsByContentParams{
-			TenantID:  tenantID,
+
 			ContentID: contentID,
 			ProfileID: profileID,
 		}); err != nil {
@@ -360,7 +358,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 				}
 
 				if _, err := q.UpsertComparisonScore(ctx, gen.UpsertComparisonScoreParams{
-					TenantID:       tenantID,
+
 					ContentID:      contentID,
 					ItemID:         itemID,
 					FactorID:       factorID,
@@ -381,7 +379,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 			itemID := stringToUUID(ptrString(rec.ItemID))
 
 			row, err := q.CreateComparisonRecommendation(ctx, gen.CreateComparisonRecommendationParams{
-				TenantID:   tenantID,
+
 				ContentID:  contentID,
 				ItemID:     itemID,
 				ProfileID:  profileID,
@@ -443,7 +441,6 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 			ScoreVersion:   &newVersion,
 			Config:         configBytes,
 			ContentID:      contentID,
-			TenantID:       tenantID,
 		}); err != nil {
 			return fmt.Errorf("updating comparison metadata: %w", err)
 		}
@@ -506,9 +503,9 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	}
 
 	cmpRow, err := e.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
-		TenantID: tenantID,
-		ID:       contentID,
-		Slug:     nil,
+
+		ID:   contentID,
+		Slug: nil,
 	})
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison: %w", err)
@@ -545,7 +542,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 
 	// Load persisted scores and recommendations.
 	scores, err := e.read.ListComparisonScoresByContent(ctx, gen.ListComparisonScoresByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		ProfileID: profileID,
 	})
@@ -554,7 +551,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	}
 
 	recs, err := e.read.ListComparisonRecommendationsByContent(ctx, gen.ListComparisonRecommendationsByContentParams{
-		TenantID:  tenantID,
+
 		ContentID: contentID,
 		ProfileID: profileID,
 	})
@@ -573,10 +570,9 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 	}
 
 	// Load items and type to build factor metadata.
-	items, err := e.read.GetComparisonItemsForScoring(ctx, gen.GetComparisonItemsForScoringParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	items, err := e.read.GetComparisonItemsForScoring(ctx,
+		contentID,
+	)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison items: %w", err)
 	}
@@ -751,10 +747,9 @@ func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePrevie
 		return jce.ScoreResult{}, fmt.Errorf("parsing type_id: %w", err)
 	}
 
-	typeDef, err := e.read.GetComparisonTypeByID(ctx, gen.GetComparisonTypeByIDParams{
-		ID:       typeID,
-		TenantID: tenantID,
-	})
+	typeDef, err := e.read.GetComparisonTypeByID(ctx,
+		typeID,
+	)
 	if err != nil {
 		return jce.ScoreResult{}, fmt.Errorf("loading comparison type: %w", err)
 	}
@@ -1143,7 +1138,7 @@ func (e *Engine) listScoreFactors(ctx context.Context, tenantID, typeID pgtype.U
 	includeGlobal := true
 
 	rows, err := e.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
-		TenantID:         tenantID,
+
 		ComparisonTypeID: typeID,
 		IncludeGlobal:    &includeGlobal,
 		DataSource:       nil,
@@ -1211,10 +1206,9 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 		}
 	}
 
-	row, err := e.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
-		ID:       pid,
-		TenantID: tenantID,
-	})
+	row, err := e.read.GetComparisonProfile(ctx,
+		pid,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return jce.ComparisonProfile{}, pgtype.UUID{}, errpkg.ErrNotFound
@@ -1317,10 +1311,9 @@ func (e *Engine) ensureProfileAccess(ctx context.Context, tenantID pgtype.UUID, 
 		return nil
 	}
 
-	row, err := e.read.GetComparisonProfile(ctx, gen.GetComparisonProfileParams{
-		ID:       profileID,
-		TenantID: tenantID,
-	})
+	row, err := e.read.GetComparisonProfile(ctx,
+		profileID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errpkg.ErrNotFound

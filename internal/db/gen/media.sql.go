@@ -14,12 +14,12 @@ import (
 const adminUpdateMediaStatus = `-- name: AdminUpdateMediaStatus :exec
 UPDATE media
 SET confirmed = $1,
-    quarantine_reason = $2::text,
-    reviewed_by = $3,
-    reviewed_at = CASE WHEN $2 IS NULL AND $1 THEN now() ELSE reviewed_at END,
-    rejected_at = CASE WHEN $2 IS NULL AND NOT $1 THEN now() ELSE rejected_at END,
-    quarantined_at = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN now() ELSE quarantined_at END
-WHERE id = $4 AND tenant_id = $5 AND deleted_at IS NULL
+ quarantine_reason = $2::text,
+ reviewed_by = $3,
+ reviewed_at = CASE WHEN $2 IS NULL AND $1 THEN now() ELSE reviewed_at END,
+ rejected_at = CASE WHEN $2 IS NULL AND NOT $1 THEN now() ELSE rejected_at END,
+ quarantined_at = CASE WHEN $2 IS NOT NULL AND $2 != '' THEN now() ELSE quarantined_at END
+WHERE id = $4 AND deleted_at IS NULL
 `
 
 type AdminUpdateMediaStatusParams struct {
@@ -27,7 +27,6 @@ type AdminUpdateMediaStatusParams struct {
 	QuarantineReason string      `json:"quarantine_reason"`
 	ReviewedBy       pgtype.UUID `json:"reviewed_by"`
 	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) AdminUpdateMediaStatus(ctx context.Context, arg AdminUpdateMediaStatusParams) error {
@@ -36,7 +35,6 @@ func (q *Queries) AdminUpdateMediaStatus(ctx context.Context, arg AdminUpdateMed
 		arg.QuarantineReason,
 		arg.ReviewedBy,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -44,89 +42,76 @@ func (q *Queries) AdminUpdateMediaStatus(ctx context.Context, arg AdminUpdateMed
 const approveQuarantinedMedia = `-- name: ApproveQuarantinedMedia :exec
 UPDATE media
 SET quarantine_reason = NULL,
-    quarantined_at = NULL,
-    reviewed_by = $1,
-    reviewed_at = now(),
-    confirmed = true
-WHERE id = $2 AND tenant_id = $3 AND confirmed = false AND deleted_at IS NULL
+ quarantined_at = NULL,
+ reviewed_by = $1,
+ reviewed_at = now(),
+ confirmed = true
+WHERE id = $2 AND confirmed = false AND deleted_at IS NULL
 `
 
 type ApproveQuarantinedMediaParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) ApproveQuarantinedMedia(ctx context.Context, arg ApproveQuarantinedMediaParams) error {
-	_, err := q.db.Exec(ctx, approveQuarantinedMedia, arg.ReviewedBy, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, approveQuarantinedMedia, arg.ReviewedBy, arg.ID)
 	return err
 }
 
 const bulkSoftDeleteMedia = `-- name: BulkSoftDeleteMedia :exec
 
 UPDATE media SET deleted_at = now()
-WHERE id = ANY($1::uuid[]) AND tenant_id = $2
+WHERE id = ANY($1::uuid[])
 `
-
-type BulkSoftDeleteMediaParams struct {
-	MediaIds []pgtype.UUID `json:"media_ids"`
-	TenantID pgtype.UUID   `json:"tenant_id"`
-}
 
 // =====================
 // Bulk Operations
 // =====================
 // Admin bulk delete — no ownership filter (gated by media.delete_any).
-func (q *Queries) BulkSoftDeleteMedia(ctx context.Context, arg BulkSoftDeleteMediaParams) error {
-	_, err := q.db.Exec(ctx, bulkSoftDeleteMedia, arg.MediaIds, arg.TenantID)
+func (q *Queries) BulkSoftDeleteMedia(ctx context.Context, mediaIds []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, bulkSoftDeleteMedia, mediaIds)
 	return err
 }
 
 const bulkSoftDeleteMediaOwn = `-- name: BulkSoftDeleteMediaOwn :exec
 UPDATE media SET deleted_at = now()
 WHERE id = ANY($1::uuid[])
-  AND tenant_id = $2
-  AND uploader_user_id = $3
-  AND deleted_at IS NULL
+ AND uploader_user_id = $2
+ AND deleted_at IS NULL
 `
 
 type BulkSoftDeleteMediaOwnParams struct {
 	MediaIds       []pgtype.UUID `json:"media_ids"`
-	TenantID       pgtype.UUID   `json:"tenant_id"`
 	UploaderUserID pgtype.UUID   `json:"uploader_user_id"`
 }
 
 // User-facing bulk delete — scoped to the uploader (gated by media.delete_own).
 func (q *Queries) BulkSoftDeleteMediaOwn(ctx context.Context, arg BulkSoftDeleteMediaOwnParams) error {
-	_, err := q.db.Exec(ctx, bulkSoftDeleteMediaOwn, arg.MediaIds, arg.TenantID, arg.UploaderUserID)
+	_, err := q.db.Exec(ctx, bulkSoftDeleteMediaOwn, arg.MediaIds, arg.UploaderUserID)
 	return err
 }
 
 const confirmMedia = `-- name: ConfirmMedia :exec
 
-UPDATE media SET confirmed = true WHERE id = $1 AND tenant_id = $2
+UPDATE media SET confirmed = true WHERE id = $1
 `
-
-type ConfirmMediaParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Update
 // =====================
-func (q *Queries) ConfirmMedia(ctx context.Context, arg ConfirmMediaParams) error {
-	_, err := q.db.Exec(ctx, confirmMedia, arg.ID, arg.TenantID)
+func (q *Queries) ConfirmMedia(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, confirmMedia, id)
 	return err
 }
 
 const countMediaByTenant = `-- name: CountMediaByTenant :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE tenant_id = $1 AND deleted_at IS NULL
+WHERE deleted_at IS NULL
 `
 
-func (q *Queries) CountMediaByTenant(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaByTenant, tenantID)
+func (q *Queries) CountMediaByTenant(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaByTenant)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -134,16 +119,11 @@ func (q *Queries) CountMediaByTenant(ctx context.Context, tenantID pgtype.UUID) 
 
 const countMediaByType = `-- name: CountMediaByType :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE tenant_id = $1 AND mime_type LIKE $2 || '%' AND deleted_at IS NULL
+WHERE mime_type LIKE $1 || '%' AND deleted_at IS NULL
 `
 
-type CountMediaByTypeParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	MimePattern *string     `json:"mime_pattern"`
-}
-
-func (q *Queries) CountMediaByType(ctx context.Context, arg CountMediaByTypeParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaByType, arg.TenantID, arg.MimePattern)
+func (q *Queries) CountMediaByType(ctx context.Context, mimePattern *string) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaByType, mimePattern)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -152,19 +132,14 @@ func (q *Queries) CountMediaByType(ctx context.Context, arg CountMediaByTypePara
 const countMediaByUploader = `-- name: CountMediaByUploader :one
 
 SELECT COUNT(*)::int AS count FROM media
-WHERE tenant_id = $1 AND uploader_user_id = $2 AND deleted_at IS NULL
+WHERE uploader_user_id = $1 AND deleted_at IS NULL
 `
-
-type CountMediaByUploaderParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
-}
 
 // =====================
 // Counts
 // =====================
-func (q *Queries) CountMediaByUploader(ctx context.Context, arg CountMediaByUploaderParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaByUploader, arg.TenantID, arg.UploaderUserID)
+func (q *Queries) CountMediaByUploader(ctx context.Context, uploaderUserID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaByUploader, uploaderUserID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -172,26 +147,24 @@ func (q *Queries) CountMediaByUploader(ctx context.Context, arg CountMediaByUplo
 
 const countMediaFiltered = `-- name: CountMediaFiltered :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND ($2::uuid IS NULL OR uploader_user_id = $2)
-  AND ($3::text = '' OR mime_type LIKE $3 || '%')
-  AND ($4::text = ''
-       OR original_filename ILIKE '%' || $4 || '%'
-       OR alt_text ILIKE '%' || $4 || '%'
-       OR caption ILIKE '%' || $4 || '%')
-  AND (
-    $5::text = '' OR
-    ($5 = 'approved' AND confirmed = true) OR
-    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
-    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
-    ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
-  )
-  AND ($6::text = '' OR flagged = ($6 = 'true'))
+WHERE deleted_at IS NULL
+ AND ($1::uuid IS NULL OR uploader_user_id = $1)
+ AND ($2::text = '' OR mime_type LIKE $2 || '%')
+ AND ($3::text = ''
+ OR original_filename ILIKE '%' || $3 || '%'
+ OR alt_text ILIKE '%' || $3 || '%'
+ OR caption ILIKE '%' || $3 || '%')
+ AND (
+ $4::text = '' OR
+ ($4 = 'approved' AND confirmed = true) OR
+ ($4 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+ ($4 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+ ($4 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+ )
+ AND ($5::text = '' OR flagged = ($5 = 'true'))
 `
 
 type CountMediaFilteredParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
@@ -201,7 +174,6 @@ type CountMediaFilteredParams struct {
 
 func (q *Queries) CountMediaFiltered(ctx context.Context, arg CountMediaFilteredParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countMediaFiltered,
-		arg.TenantID,
 		arg.UploaderUserID,
 		arg.MimePattern,
 		arg.Query,
@@ -215,27 +187,20 @@ func (q *Queries) CountMediaFiltered(ctx context.Context, arg CountMediaFiltered
 
 const countMediaFromOrgPublicPosts = `-- name: CountMediaFromOrgPublicPosts :one
 SELECT COUNT(*)::int AS count FROM media m
-WHERE m.tenant_id = $1
-  AND m.deleted_at IS NULL
-  AND m.confirmed = true
-  AND m.user_group_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM contents c
-    WHERE c.tenant_id = $1
-      AND c.organization_id = $2
-      AND c.status = 'published'
-      AND c.visibility = 'public'
-      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
-  )
+WHERE m.deleted_at IS NULL
+ AND m.confirmed = true
+ AND m.user_group_id IS NULL
+ AND EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.organization_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+ )
 `
 
-type CountMediaFromOrgPublicPostsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-}
-
-func (q *Queries) CountMediaFromOrgPublicPosts(ctx context.Context, arg CountMediaFromOrgPublicPostsParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaFromOrgPublicPosts, arg.TenantID, arg.OrganizationID)
+func (q *Queries) CountMediaFromOrgPublicPosts(ctx context.Context, organizationID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaFromOrgPublicPosts, organizationID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -243,29 +208,22 @@ func (q *Queries) CountMediaFromOrgPublicPosts(ctx context.Context, arg CountMed
 
 const countMediaFromPublicPostsByUser = `-- name: CountMediaFromPublicPostsByUser :one
 SELECT COUNT(*)::int AS count FROM media m
-WHERE m.tenant_id = $1
-  AND m.deleted_at IS NULL
-  AND m.confirmed = true
-  AND m.user_group_id IS NULL
-  AND m.uploader_user_id = $2
-  AND m.mime_type LIKE 'image/%'
-  AND EXISTS (
-    SELECT 1 FROM contents c
-    WHERE c.tenant_id = $1
-      AND c.author_id = $2
-      AND c.status = 'published'
-      AND c.visibility = 'public'
-      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
-  )
+WHERE m.deleted_at IS NULL
+ AND m.confirmed = true
+ AND m.user_group_id IS NULL
+ AND m.uploader_user_id = $1
+ AND m.mime_type LIKE 'image/%'
+ AND EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+ )
 `
 
-type CountMediaFromPublicPostsByUserParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-}
-
-func (q *Queries) CountMediaFromPublicPostsByUser(ctx context.Context, arg CountMediaFromPublicPostsByUserParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countMediaFromPublicPostsByUser, arg.TenantID, arg.AuthorID)
+func (q *Queries) CountMediaFromPublicPostsByUser(ctx context.Context, authorID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMediaFromPublicPostsByUser, authorID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -273,20 +231,14 @@ func (q *Queries) CountMediaFromPublicPostsByUser(ctx context.Context, arg Count
 
 const countSearchMedia = `-- name: CountSearchMedia :one
 SELECT COUNT(*)::int AS count FROM media
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND (original_filename ILIKE '%' || $2 || '%'
-       OR alt_text ILIKE '%' || $2 || '%'
-       OR caption ILIKE '%' || $2 || '%')
+WHERE deleted_at IS NULL
+ AND (original_filename ILIKE '%' || $1 || '%'
+ OR alt_text ILIKE '%' || $1 || '%'
+ OR caption ILIKE '%' || $1 || '%')
 `
 
-type CountSearchMediaParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Query    *string     `json:"query"`
-}
-
-func (q *Queries) CountSearchMedia(ctx context.Context, arg CountSearchMediaParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countSearchMedia, arg.TenantID, arg.Query)
+func (q *Queries) CountSearchMedia(ctx context.Context, query *string) (int32, error) {
+	row := q.db.QueryRow(ctx, countSearchMedia, query)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -294,19 +246,14 @@ func (q *Queries) CountSearchMedia(ctx context.Context, arg CountSearchMediaPara
 
 const getMediaByID = `-- name: GetMediaByID :one
 
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetMediaByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // =====================
 // Read
 // =====================
-func (q *Queries) GetMediaByID(ctx context.Context, arg GetMediaByIDParams) (Medium, error) {
-	row := q.db.QueryRow(ctx, getMediaByID, arg.ID, arg.TenantID)
+func (q *Queries) GetMediaByID(ctx context.Context, id pgtype.UUID) (Medium, error) {
+	row := q.db.QueryRow(ctx, getMediaByID, id)
 	var i Medium
 	err := row.Scan(
 		&i.ID,
@@ -343,16 +290,11 @@ func (q *Queries) GetMediaByID(ctx context.Context, arg GetMediaByIDParams) (Med
 }
 
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE storage_path = $1 AND tenant_id = $2
+SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE storage_path = $1
 `
 
-type GetMediaByStoragePathParams struct {
-	StoragePath string      `json:"storage_path"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetMediaByStoragePath(ctx context.Context, arg GetMediaByStoragePathParams) (Medium, error) {
-	row := q.db.QueryRow(ctx, getMediaByStoragePath, arg.StoragePath, arg.TenantID)
+func (q *Queries) GetMediaByStoragePath(ctx context.Context, storagePath string) (Medium, error) {
+	row := q.db.QueryRow(ctx, getMediaByStoragePath, storagePath)
 	var i Medium
 	err := row.Scan(
 		&i.ID,
@@ -391,23 +333,12 @@ func (q *Queries) GetMediaByStoragePath(ctx context.Context, arg GetMediaByStora
 const insertMedia = `-- name: InsertMedia :one
 
 
-INSERT INTO media (
-    tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes,
-    storage_path, storage_bucket,
-    source_platform, source_photographer, source_photographer_url,
-    source_license, source_license_url, source_photo_id
-)
-VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7,
-    $8, $9, $10,
-    $11, $12, $13
-)
+INSERT INTO media (uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, storage_bucket, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+
 RETURNING id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged
 `
 
 type InsertMediaParams struct {
-	TenantID              pgtype.UUID `json:"tenant_id"`
 	UploaderUserID        pgtype.UUID `json:"uploader_user_id"`
 	OriginalFilename      string      `json:"original_filename"`
 	MimeType              string      `json:"mime_type"`
@@ -429,7 +360,6 @@ type InsertMediaParams struct {
 // =====================
 func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (Medium, error) {
 	row := q.db.QueryRow(ctx, insertMedia,
-		arg.TenantID,
 		arg.UploaderUserID,
 		arg.OriginalFilename,
 		arg.MimeType,
@@ -480,19 +410,18 @@ func (q *Queries) InsertMedia(ctx context.Context, arg InsertMediaParams) (Mediu
 
 const listMediaByTenant = `-- name: ListMediaByTenant :many
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE tenant_id = $1 AND deleted_at IS NULL
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListMediaByTenantParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaByTenant, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listMediaByTenant, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -543,25 +472,19 @@ func (q *Queries) ListMediaByTenant(ctx context.Context, arg ListMediaByTenantPa
 
 const listMediaByType = `-- name: ListMediaByType :many
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE tenant_id = $1 AND mime_type LIKE $2 || '%' AND deleted_at IS NULL
+WHERE mime_type LIKE $1 || '%' AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListMediaByTypeParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	MimePattern *string     `json:"mime_pattern"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	MimePattern *string `json:"mime_pattern"`
+	PageOffset  int32   `json:"page_offset"`
+	PageLimit   int32   `json:"page_limit"`
 }
 
 func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaByType,
-		arg.TenantID,
-		arg.MimePattern,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMediaByType, arg.MimePattern, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -613,13 +536,12 @@ func (q *Queries) ListMediaByType(ctx context.Context, arg ListMediaByTypeParams
 const listMediaByUploader = `-- name: ListMediaByUploader :many
 
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE tenant_id = $1 AND uploader_user_id = $2 AND deleted_at IS NULL
+WHERE uploader_user_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListMediaByUploaderParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
@@ -629,12 +551,7 @@ type ListMediaByUploaderParams struct {
 // Lists
 // =====================
 func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUploaderParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaByUploader,
-		arg.TenantID,
-		arg.UploaderUserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMediaByUploader, arg.UploaderUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -686,28 +603,26 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 const listMediaFiltered = `-- name: ListMediaFiltered :many
 
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND ($2::uuid IS NULL OR uploader_user_id = $2)
-  AND ($3::text = '' OR mime_type LIKE $3 || '%')
-  AND ($4::text = ''
-       OR original_filename ILIKE '%' || $4 || '%'
-       OR alt_text ILIKE '%' || $4 || '%'
-       OR caption ILIKE '%' || $4 || '%')
-  AND (
-    $5::text = '' OR
-    ($5 = 'approved' AND confirmed = true) OR
-    ($5 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
-    ($5 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
-    ($5 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
-  )
-  AND ($6::text = '' OR flagged = ($6 = 'true'))
+WHERE deleted_at IS NULL
+ AND ($1::uuid IS NULL OR uploader_user_id = $1)
+ AND ($2::text = '' OR mime_type LIKE $2 || '%')
+ AND ($3::text = ''
+ OR original_filename ILIKE '%' || $3 || '%'
+ OR alt_text ILIKE '%' || $3 || '%'
+ OR caption ILIKE '%' || $3 || '%')
+ AND (
+ $4::text = '' OR
+ ($4 = 'approved' AND confirmed = true) OR
+ ($4 = 'pending' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NULL) OR
+ ($4 = 'quarantined' AND confirmed = false AND quarantine_reason IS NOT NULL AND quarantine_reason != '') OR
+ ($4 = 'rejected' AND confirmed = false AND (quarantine_reason IS NULL OR quarantine_reason = '') AND rejected_at IS NOT NULL)
+ )
+ AND ($5::text = '' OR flagged = ($5 = 'true'))
 ORDER BY created_at DESC
-LIMIT $8 OFFSET $7
+LIMIT $7 OFFSET $6
 `
 
 type ListMediaFilteredParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 	MimePattern    string      `json:"mime_pattern"`
 	Query          string      `json:"query"`
@@ -724,7 +639,6 @@ type ListMediaFilteredParams struct {
 // =====================
 func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredParams) ([]Medium, error) {
 	rows, err := q.db.Query(ctx, listMediaFiltered,
-		arg.TenantID,
 		arg.UploaderUserID,
 		arg.MimePattern,
 		arg.Query,
@@ -783,7 +697,7 @@ func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredPa
 
 const listMediaForScanning = `-- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
-WHERE tenant_id = $1 AND confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
+WHERE confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50
 `
@@ -793,8 +707,8 @@ type ListMediaForScanningRow struct {
 	StoragePath string      `json:"storage_path"`
 }
 
-func (q *Queries) ListMediaForScanning(ctx context.Context, tenantID pgtype.UUID) ([]ListMediaForScanningRow, error) {
-	rows, err := q.db.Query(ctx, listMediaForScanning, tenantID)
+func (q *Queries) ListMediaForScanning(ctx context.Context) ([]ListMediaForScanningRow, error) {
+	rows, err := q.db.Query(ctx, listMediaForScanning)
 	if err != nil {
 		return nil, err
 	}
@@ -815,24 +729,21 @@ func (q *Queries) ListMediaForScanning(ctx context.Context, tenantID pgtype.UUID
 
 const listMediaFromOrgPublicPosts = `-- name: ListMediaFromOrgPublicPosts :many
 SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id, m.rejected_at, m.flagged FROM media m
-WHERE m.tenant_id = $1
-  AND m.deleted_at IS NULL
-  AND m.confirmed = true
-  AND m.user_group_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM contents c
-    WHERE c.tenant_id = $1
-      AND c.organization_id = $2
-      AND c.status = 'published'
-      AND c.visibility = 'public'
-      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
-  )
+WHERE m.deleted_at IS NULL
+ AND m.confirmed = true
+ AND m.user_group_id IS NULL
+ AND EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.organization_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+ )
 ORDER BY m.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListMediaFromOrgPublicPostsParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
@@ -841,12 +752,7 @@ type ListMediaFromOrgPublicPostsParams struct {
 // Org profile Media tab: media referenced (featured/header image) by the ORG's
 // PUBLISHED PUBLIC posts. Excludes unconfirmed uploads and group-restricted media.
 func (q *Queries) ListMediaFromOrgPublicPosts(ctx context.Context, arg ListMediaFromOrgPublicPostsParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaFromOrgPublicPosts,
-		arg.TenantID,
-		arg.OrganizationID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMediaFromOrgPublicPosts, arg.OrganizationID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -897,26 +803,23 @@ func (q *Queries) ListMediaFromOrgPublicPosts(ctx context.Context, arg ListMedia
 
 const listMediaFromPublicPostsByUser = `-- name: ListMediaFromPublicPostsByUser :many
 SELECT m.id, m.tenant_id, m.uploader_user_id, m.original_filename, m.mime_type, m.file_size_bytes, m.width_px, m.height_px, m.duration_secs, m.storage_path, m.storage_bucket, m.alt_text, m.caption, m.confirmed, m.deleted_at, m.created_at, m.quarantine_reason, m.quarantined_at, m.reviewed_by, m.reviewed_at, m.user_group_id, m.source_platform, m.source_photographer, m.source_photographer_url, m.source_license, m.source_license_url, m.source_photo_id, m.rejected_at, m.flagged FROM media m
-WHERE m.tenant_id = $1
-  AND m.deleted_at IS NULL
-  AND m.confirmed = true
-  AND m.user_group_id IS NULL
-  AND m.uploader_user_id = $2
-  AND m.mime_type LIKE 'image/%'
-  AND EXISTS (
-    SELECT 1 FROM contents c
-    WHERE c.tenant_id = $1
-      AND c.author_id = $2
-      AND c.status = 'published'
-      AND c.visibility = 'public'
-      AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
-  )
+WHERE m.deleted_at IS NULL
+ AND m.confirmed = true
+ AND m.user_group_id IS NULL
+ AND m.uploader_user_id = $1
+ AND m.mime_type LIKE 'image/%'
+ AND EXISTS (
+ SELECT 1 FROM contents c
+ WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND (c.featured_image_id = m.id OR c.header_image_id = m.id)
+ )
 ORDER BY m.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListMediaFromPublicPostsByUserParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -928,12 +831,7 @@ type ListMediaFromPublicPostsByUserParams struct {
 // mislabeled as images). Public-safe. Mirrors ListMediaFromOrgPublicPosts but
 // scoped to the author's posts (c.author_id) instead of the org.
 func (q *Queries) ListMediaFromPublicPostsByUser(ctx context.Context, arg ListMediaFromPublicPostsByUserParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, listMediaFromPublicPostsByUser,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listMediaFromPublicPostsByUser, arg.AuthorID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -983,28 +881,25 @@ func (q *Queries) ListMediaFromPublicPostsByUser(ctx context.Context, arg ListMe
 }
 
 const listQuarantinedMedia = `-- name: ListQuarantinedMedia :many
-SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
-       file_size_bytes, width_px, height_px, duration_secs, storage_path,
-       storage_bucket, alt_text, caption, confirmed, deleted_at,
-       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
-       created_at, user_group_id
+SELECT id, uploader_user_id, original_filename, mime_type,
+ file_size_bytes, width_px, height_px, duration_secs, storage_path,
+ storage_bucket, alt_text, caption, confirmed, deleted_at,
+ quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
+ created_at, user_group_id
 FROM media
-WHERE tenant_id = $1
-  AND quarantine_reason IS NOT NULL
-  AND deleted_at IS NULL
+WHERE quarantine_reason IS NOT NULL
+ AND deleted_at IS NULL
 ORDER BY quarantined_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListQuarantinedMediaParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListQuarantinedMediaRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
 	OriginalFilename string             `json:"original_filename"`
 	MimeType         string             `json:"mime_type"`
@@ -1027,7 +922,7 @@ type ListQuarantinedMediaRow struct {
 }
 
 func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedMediaParams) ([]ListQuarantinedMediaRow, error) {
-	rows, err := q.db.Query(ctx, listQuarantinedMedia, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listQuarantinedMedia, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1037,7 +932,6 @@ func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedM
 		var i ListQuarantinedMediaRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UploaderUserID,
 			&i.OriginalFilename,
 			&i.MimeType,
@@ -1071,83 +965,73 @@ func (q *Queries) ListQuarantinedMedia(ctx context.Context, arg ListQuarantinedM
 const quarantineMediaByID = `-- name: QuarantineMediaByID :exec
 UPDATE media
 SET quarantine_reason = $1,
-    quarantined_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+ quarantined_at = now()
+WHERE id = $2 AND deleted_at IS NULL
 `
 
 type QuarantineMediaByIDParams struct {
-	Reason   *string     `json:"reason"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Reason *string     `json:"reason"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) QuarantineMediaByID(ctx context.Context, arg QuarantineMediaByIDParams) error {
-	_, err := q.db.Exec(ctx, quarantineMediaByID, arg.Reason, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, quarantineMediaByID, arg.Reason, arg.ID)
 	return err
 }
 
 const rejectMediaByIDAndVirus = `-- name: RejectMediaByIDAndVirus :exec
 UPDATE media
 SET deleted_at = now(),
-    alt_text = COALESCE(alt_text, '') || ' [REJECTED: ' || $1 || ']'
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+ alt_text = COALESCE(alt_text, '') || ' [REJECTED: ' || $1 || ']'
+WHERE id = $2 AND deleted_at IS NULL
 `
 
 type RejectMediaByIDAndVirusParams struct {
 	VirusName *string     `json:"virus_name"`
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) RejectMediaByIDAndVirus(ctx context.Context, arg RejectMediaByIDAndVirusParams) error {
-	_, err := q.db.Exec(ctx, rejectMediaByIDAndVirus, arg.VirusName, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, rejectMediaByIDAndVirus, arg.VirusName, arg.ID)
 	return err
 }
 
 const rejectQuarantinedMedia = `-- name: RejectQuarantinedMedia :exec
 UPDATE media
 SET deleted_at = now(),
-    reviewed_by = $1,
-    reviewed_at = now()
-WHERE id = $2 AND tenant_id = $3 AND confirmed = false AND deleted_at IS NULL
+ reviewed_by = $1,
+ reviewed_at = now()
+WHERE id = $2 AND confirmed = false AND deleted_at IS NULL
 `
 
 type RejectQuarantinedMediaParams struct {
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) RejectQuarantinedMedia(ctx context.Context, arg RejectQuarantinedMediaParams) error {
-	_, err := q.db.Exec(ctx, rejectQuarantinedMedia, arg.ReviewedBy, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, rejectQuarantinedMedia, arg.ReviewedBy, arg.ID)
 	return err
 }
 
 const searchMedia = `-- name: SearchMedia :many
 SELECT id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
-WHERE tenant_id = $1
-  AND deleted_at IS NULL
-  AND (original_filename ILIKE '%' || $2 || '%'
-       OR alt_text ILIKE '%' || $2 || '%'
-       OR caption ILIKE '%' || $2 || '%')
+WHERE deleted_at IS NULL
+ AND (original_filename ILIKE '%' || $1 || '%'
+ OR alt_text ILIKE '%' || $1 || '%'
+ OR caption ILIKE '%' || $1 || '%')
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type SearchMediaParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Query      *string     `json:"query"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Query      *string `json:"query"`
+	PageOffset int32   `json:"page_offset"`
+	PageLimit  int32   `json:"page_limit"`
 }
 
 func (q *Queries) SearchMedia(ctx context.Context, arg SearchMediaParams) ([]Medium, error) {
-	rows, err := q.db.Query(ctx, searchMedia,
-		arg.TenantID,
-		arg.Query,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, searchMedia, arg.Query, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1197,30 +1081,24 @@ func (q *Queries) SearchMedia(ctx context.Context, arg SearchMediaParams) ([]Med
 }
 
 const softDeleteMedia = `-- name: SoftDeleteMedia :exec
-UPDATE media SET deleted_at = now() WHERE id = $1 AND tenant_id = $2
+UPDATE media SET deleted_at = now() WHERE id = $1
 `
 
-type SoftDeleteMediaParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Admin delete — no ownership filter (gated by media.delete_any).
-func (q *Queries) SoftDeleteMedia(ctx context.Context, arg SoftDeleteMediaParams) error {
-	_, err := q.db.Exec(ctx, softDeleteMedia, arg.ID, arg.TenantID)
+func (q *Queries) SoftDeleteMedia(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteMedia, id)
 	return err
 }
 
 const softDeleteMediaOwn = `-- name: SoftDeleteMediaOwn :exec
 UPDATE media SET deleted_at = now()
-WHERE id = $1 AND tenant_id = $2
-  AND uploader_user_id = $3
-  AND deleted_at IS NULL
+WHERE id = $1
+ AND uploader_user_id = $2
+ AND deleted_at IS NULL
 `
 
 type SoftDeleteMediaOwnParams struct {
 	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UploaderUserID pgtype.UUID `json:"uploader_user_id"`
 }
 
@@ -1228,19 +1106,19 @@ type SoftDeleteMediaOwnParams struct {
 // Returns no rows if the media belongs to a different user, which the caller
 // treats as a 404/403 to avoid leaking existence information.
 func (q *Queries) SoftDeleteMediaOwn(ctx context.Context, arg SoftDeleteMediaOwnParams) error {
-	_, err := q.db.Exec(ctx, softDeleteMediaOwn, arg.ID, arg.TenantID, arg.UploaderUserID)
+	_, err := q.db.Exec(ctx, softDeleteMediaOwn, arg.ID, arg.UploaderUserID)
 	return err
 }
 
 const updateMediaMetadata = `-- name: UpdateMediaMetadata :exec
 UPDATE media
 SET alt_text = COALESCE($1, alt_text),
-    caption = COALESCE($2, caption),
-    width_px = COALESCE($3, width_px),
-    height_px = COALESCE($4, height_px),
-    duration_secs = COALESCE($5, duration_secs),
-    user_group_id = $6
-WHERE id = $7 AND tenant_id = $8
+ caption = COALESCE($2, caption),
+ width_px = COALESCE($3, width_px),
+ height_px = COALESCE($4, height_px),
+ duration_secs = COALESCE($5, duration_secs),
+ user_group_id = $6
+WHERE id = $7
 `
 
 type UpdateMediaMetadataParams struct {
@@ -1251,7 +1129,6 @@ type UpdateMediaMetadataParams struct {
 	DurationSecs pgtype.Numeric `json:"duration_secs"`
 	UserGroupID  pgtype.UUID    `json:"user_group_id"`
 	ID           pgtype.UUID    `json:"id"`
-	TenantID     pgtype.UUID    `json:"tenant_id"`
 }
 
 // Admin metadata update — no ownership filter (gated by media.edit_any).
@@ -1264,7 +1141,6 @@ func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetada
 		arg.DurationSecs,
 		arg.UserGroupID,
 		arg.ID,
-		arg.TenantID,
 	)
 	return err
 }
@@ -1272,14 +1148,14 @@ func (q *Queries) UpdateMediaMetadata(ctx context.Context, arg UpdateMediaMetada
 const updateMediaMetadataOwn = `-- name: UpdateMediaMetadataOwn :exec
 UPDATE media
 SET alt_text = COALESCE($1, alt_text),
-    caption = COALESCE($2, caption),
-    width_px = COALESCE($3, width_px),
-    height_px = COALESCE($4, height_px),
-    duration_secs = COALESCE($5, duration_secs),
-    user_group_id = $6
-WHERE id = $7 AND tenant_id = $8
-  AND uploader_user_id = $9
-  AND deleted_at IS NULL
+ caption = COALESCE($2, caption),
+ width_px = COALESCE($3, width_px),
+ height_px = COALESCE($4, height_px),
+ duration_secs = COALESCE($5, duration_secs),
+ user_group_id = $6
+WHERE id = $7
+ AND uploader_user_id = $8
+ AND deleted_at IS NULL
 `
 
 type UpdateMediaMetadataOwnParams struct {
@@ -1290,7 +1166,6 @@ type UpdateMediaMetadataOwnParams struct {
 	DurationSecs   pgtype.Numeric `json:"duration_secs"`
 	UserGroupID    pgtype.UUID    `json:"user_group_id"`
 	ID             pgtype.UUID    `json:"id"`
-	TenantID       pgtype.UUID    `json:"tenant_id"`
 	UploaderUserID pgtype.UUID    `json:"uploader_user_id"`
 }
 
@@ -1304,23 +1179,21 @@ func (q *Queries) UpdateMediaMetadataOwn(ctx context.Context, arg UpdateMediaMet
 		arg.DurationSecs,
 		arg.UserGroupID,
 		arg.ID,
-		arg.TenantID,
 		arg.UploaderUserID,
 	)
 	return err
 }
 
 const updateMediaStoragePath = `-- name: UpdateMediaStoragePath :exec
-UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3
+UPDATE media SET storage_path = $1 WHERE id = $2
 `
 
 type UpdateMediaStoragePathParams struct {
 	StoragePath string      `json:"storage_path"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateMediaStoragePath(ctx context.Context, arg UpdateMediaStoragePathParams) error {
-	_, err := q.db.Exec(ctx, updateMediaStoragePath, arg.StoragePath, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateMediaStoragePath, arg.StoragePath, arg.ID)
 	return err
 }

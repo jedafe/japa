@@ -291,8 +291,8 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 		}
 
 		_, uerr := s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
-			ID:          it.ID,
-			TenantID:    it.TenantID,
+			ID: it.ID,
+
 			Status:      ItemStatusQueued,
 			StudioJobID: createdJobs[i].ID,
 		})
@@ -379,8 +379,8 @@ func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype
 	}
 
 	_, err = s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
-		ID:           item.ID,
-		TenantID:     item.TenantID,
+		ID: item.ID,
+
 		Status:       ItemStatusQueued,
 		ErrorMessage: nil,
 	})
@@ -419,8 +419,8 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 		}
 
 		_, uerr := s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
-			ID:           it.ID,
-			TenantID:     it.TenantID,
+			ID: it.ID,
+
 			Status:       ItemStatusFailed,
 			ErrorMessage: &msg,
 		})
@@ -449,8 +449,8 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 	}
 
 	_, err = s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
-		ID:           item.ID,
-		TenantID:     item.TenantID,
+		ID: item.ID,
+
 		Status:       status,
 		ContentID:    contentID,
 		ReviewID:     reviewID,
@@ -492,9 +492,9 @@ func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgt
 	}
 
 	_, err = s.store.UpdateCampaignItem(ctx, gen.UpdateContentCampaignItemParams{
-		ID:       item.ID,
-		TenantID: item.TenantID,
-		Status:   status,
+		ID: item.ID,
+
+		Status: status,
 	})
 	if err != nil {
 		return fmt.Errorf("campaign: sync item by review: %w", err)

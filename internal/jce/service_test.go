@@ -103,8 +103,7 @@ func newTestService(t *testing.T, d *db.DB) testEnv {
 
 func withAuth(ctx context.Context, userID, tenantID pgtype.UUID) context.Context {
 	return context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	})
 }
 

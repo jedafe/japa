@@ -335,7 +335,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceI
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.ListPathways(ctx, ListPathwaysFilter{
-		TenantID:           tenantID,
+
 		DestinationSpaceID: destSpaceID,
 		DocumentType:       documentType,
 		IssuingSpaceID:     issuingSpaceID,
@@ -410,7 +410,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	p := Pathway{
-		TenantID:           tenantID,
+
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -552,7 +552,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	}
 
 	p := Pathway{
-		TenantID:           tenantID,
+
 		DocumentType:       input.DocumentType,
 		IssuingSpaceID:     issuingSpaceID,
 		DestinationSpaceID: destSpaceID,
@@ -732,7 +732,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 	offset := (page - 1) * limit
 
 	rows, total, err := s.store.AdminList(ctx, AdminListFilter{
-		TenantID:           tenantID,
+
 		Status:             status,
 		DocumentType:       documentType,
 		DestinationSpaceID: destSpaceID,
@@ -773,10 +773,10 @@ func (s *Service) AdminListUpdates(ctx context.Context, tenantID pgtype.UUID, st
 	}
 
 	rows, total, err := s.store.ListCommunityUpdates(ctx, ListCommunityUpdatesFilter{
-		TenantID: tenantID,
-		Status:   status,
-		Limit:    limit,
-		Offset:   offset,
+
+		Status: status,
+		Limit:  limit,
+		Offset: offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("attestationguide: admin list updates: %w", err)

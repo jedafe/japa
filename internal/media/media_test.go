@@ -429,8 +429,8 @@ func TestTaskPayloadsJSON(t *testing.T) {
 func TestQuarantinedMediaJSON(t *testing.T) {
 	t.Parallel()
 	m := QuarantinedMedia{
-		ID:               mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
-		TenantID:         mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		ID: mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
+
 		UploaderUserID:   mustUUID(t, "660e8400-e29b-41d4-a716-446655440001"),
 		OriginalFilename: "photo.jpg",
 		MimeType:         "image/jpeg",

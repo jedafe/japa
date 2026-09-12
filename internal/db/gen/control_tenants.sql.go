@@ -25,8 +25,8 @@ func (q *Queries) CountTenants(ctx context.Context, statusFilter string) (int32,
 }
 
 const createTenant = `-- name: CreateTenant :one
-INSERT INTO tenants (name, slug, domain)
-VALUES ($1, $2, $3)
+INSERT INTO tenants (name, slug, domain) VALUES ($1, $2, $3)
+
 RETURNING id, name, slug, domain, status, created_at, updated_at, deleted_at
 `
 
@@ -98,7 +98,7 @@ func (q *Queries) DeleteTenant(ctx context.Context, id pgtype.UUID) (DeleteTenan
 }
 
 const deleteTenantData = `-- name: DeleteTenantData :execrows
-DELETE FROM learning_certificates WHERE tenant_id = $1
+DELETE FROM learning_certificates
 `
 
 // Deletes all tenant-scoped rows from tables WITHOUT ON DELETE CASCADE on
@@ -112,8 +112,8 @@ DELETE FROM learning_certificates WHERE tenant_id = $1
 // dependency position. Otherwise its rows will leak after tenant hard-delete
 // (GDPR/NDPR §15 erasure gap). Tables with ON DELETE CASCADE must NOT be
 // added here (PostgreSQL handles them automatically).
-func (q *Queries) DeleteTenantData(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteTenantData, tenantID)
+func (q *Queries) DeleteTenantData(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTenantData)
 	if err != nil {
 		return 0, err
 	}

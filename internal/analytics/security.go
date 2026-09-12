@@ -67,7 +67,7 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: string(ScanFailedLoginSpike),
 			Severity: string(SeverityWarning),
 			Finding:  fmt.Sprintf("Failed login spike: %d attempts in the last hour (threshold: %d)", count, threshold),
@@ -109,7 +109,7 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: string(ScanSLABreachCount),
 			Severity: string(SeverityCritical),
 			Finding:  fmt.Sprintf("High SLA breach count: %d unresolved open tickets with breached SLA", count),
@@ -148,7 +148,7 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: string(ScanStaleTokens),
 			Severity: string(SeverityWarning),
 			Finding:  fmt.Sprintf("Stale tokens detected: %d unrevoked tokens older than 30 days", count),
@@ -186,7 +186,7 @@ func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID)
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: "unverified_users",
 			Severity: string(SeverityInfo),
 			Finding:  fmt.Sprintf("Unverified users: %d users with unverified email older than 7 days", count),
@@ -224,7 +224,7 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: "weak_password_settings",
 			Severity: string(SeverityWarning),
 			Finding:  fmt.Sprintf("Weak password policy: minimum length is %d (recommended: %d+)", minLength, recommended),
@@ -263,7 +263,7 @@ func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID
 		})
 
 		_, err = s.store.CreateSecurityScanResult(ctx, gen.CreateSecurityScanResultParams{
-			TenantID: tenantID,
+
 			ScanType: "excessive_api_keys",
 			Severity: string(SeverityInfo),
 			Finding:  fmt.Sprintf("API keys without expiration: %d active keys have no expiration date", count),

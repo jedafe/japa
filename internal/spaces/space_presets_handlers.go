@@ -82,7 +82,6 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		CommentingPerm: req.CommentingPerm,
 		JoiningPerm:    req.JoiningPerm,
 		ID:             existing.ID,
-		TenantID:       tenantID,
 	})
 	if err != nil {
 		handleServiceError(w, err)

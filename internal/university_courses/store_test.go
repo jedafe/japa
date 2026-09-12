@@ -58,7 +58,7 @@ func TestToCourseOffering_ListRow(t *testing.T) {
 	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.ListCourseOfferingsByUniversityRow{
-		ID: id, TenantID: tid, CourseID: cid, UniversityID: uid, Slug: slug,
+		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
 		Tuition: tuition, Currency: currency, DurationYears: duration, StudyMode: studyMode,
 		IntakeMonths: intake, EntryRequirements: entryReq, Accreditation: accreditation,
 		IsPublished: published, CreatedAt: created, UpdatedAt: updated,
@@ -80,7 +80,7 @@ func TestToCourseOffering_GetByIDRow(t *testing.T) {
 	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.GetCourseOfferingByIDRow{
-		ID: id, TenantID: tid, CourseID: cid, UniversityID: uid, Slug: slug,
+		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
 		Tuition: tuition, Currency: currency, DurationYears: duration, StudyMode: studyMode,
 		IntakeMonths: intake, EntryRequirements: entryReq, Accreditation: accreditation,
 		IsPublished: published, CreatedAt: created, UpdatedAt: updated,
@@ -102,7 +102,7 @@ func TestToCourseOffering_GetBySlugRow(t *testing.T) {
 	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.GetCourseOfferingBySlugRow{
-		ID: id, TenantID: tid, CourseID: cid, UniversityID: uid, Slug: slug,
+		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
 		Tuition: tuition, Currency: currency, DurationYears: duration, StudyMode: studyMode,
 		IntakeMonths: intake, EntryRequirements: entryReq, Accreditation: accreditation,
 		IsPublished: published, CreatedAt: created, UpdatedAt: updated,

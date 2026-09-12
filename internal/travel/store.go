@@ -61,20 +61,20 @@ func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) er
 
 // GetProviderByID fetches a single provider by ID within a tenant.
 func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.TravelProvider, error) {
-	return s.queries.GetTravelProviderByID(ctx, gen.GetTravelProviderByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	return s.queries.GetTravelProviderByID(ctx,
+
+		id,
+	)
 }
 
 // GetActiveProvider returns the active provider for a given type
 // (flight, hotel, or both). Providers of the exact type are preferred over
 // "both" providers (see the ORDER BY in the SQL).
 func (s *Store) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, providerType string) (gen.TravelProvider, error) {
-	return s.queries.GetActiveTravelProvider(ctx, gen.GetActiveTravelProviderParams{
-		TenantID:     tenantID,
-		ProviderType: providerType,
-	})
+	return s.queries.GetActiveTravelProvider(ctx,
+
+		providerType,
+	)
 }
 
 // ListProviders lists travel providers for a tenant with optional search and
@@ -83,7 +83,7 @@ func (s *Store) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, pro
 // providerType filters by exact type (empty = all).
 func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiveFilter, providerType, q string) ([]gen.TravelProvider, error) {
 	rows, err := s.queries.ListTravelProviders(ctx, gen.ListTravelProvidersParams{
-		TenantID:       tenantID,
+
 		IsActiveFilter: isActiveFilter,
 		ProviderType:   providerType,
 		Q:              q,

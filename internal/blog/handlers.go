@@ -23,10 +23,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-		"github.com/jedafe/japa/internal/clientip"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/content"
-	"github.com/jedafe/japa/internal/visitor"
-"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -36,6 +35,7 @@ import (
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -1728,7 +1728,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	// UUIDs return 400; an unknown sort value falls back to "latest"
 	// (the spec only defines latest|top|featured, and featured is routed
 	// to /blog/featured by the frontend).
-	filter := BlogListFilter{TenantID: tenantID}
+	filter := BlogListFilter{}
 
 	if v := r.URL.Query().Get("space_id"); v != "" {
 		if err := filter.SpaceID.Scan(v); err != nil {

@@ -13,17 +13,11 @@ import (
 
 const countContentCampaigns = `-- name: CountContentCampaigns :one
 SELECT count(*) FROM content_campaigns
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 `
 
-type CountContentCampaignsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   string      `json:"status"`
-}
-
-func (q *Queries) CountContentCampaigns(ctx context.Context, arg CountContentCampaignsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countContentCampaigns, arg.TenantID, arg.Status)
+func (q *Queries) CountContentCampaigns(ctx context.Context, status string) (int64, error) {
+	row := q.db.QueryRow(ctx, countContentCampaigns, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -32,20 +26,11 @@ func (q *Queries) CountContentCampaigns(ctx context.Context, arg CountContentCam
 const createContentCampaign = `-- name: CreateContentCampaign :one
 
 
-INSERT INTO content_campaigns (
-    tenant_id, name, prompt, status, content_type, requested_count,
-    persona_pool, auto_provision_personas, auto_assign,
-    target_space_id, target_tags, plan_json, created_by
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12, $13
-)
+INSERT INTO content_campaigns (name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
 `
 
 type CreateContentCampaignParams struct {
-	TenantID              pgtype.UUID   `json:"tenant_id"`
 	Name                  string        `json:"name"`
 	Prompt                string        `json:"prompt"`
 	Status                string        `json:"status"`
@@ -69,7 +54,6 @@ type CreateContentCampaignParams struct {
 // =====================================================================
 func (q *Queries) CreateContentCampaign(ctx context.Context, arg CreateContentCampaignParams) (ContentCampaign, error) {
 	row := q.db.QueryRow(ctx, createContentCampaign,
-		arg.TenantID,
 		arg.Name,
 		arg.Prompt,
 		arg.Status,
@@ -107,18 +91,11 @@ func (q *Queries) CreateContentCampaign(ctx context.Context, arg CreateContentCa
 
 const createContentCampaignItem = `-- name: CreateContentCampaignItem :one
 
-INSERT INTO content_campaign_items (
-    tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt,
-    title, target_space_id, target_tags, status
-) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, 'planned'
-)
+INSERT INTO content_campaign_items (campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'planned')
 RETURNING id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
 `
 
 type CreateContentCampaignItemParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	CampaignID    pgtype.UUID `json:"campaign_id"`
 	SortOrder     int32       `json:"sort_order"`
 	PersonaID     pgtype.UUID `json:"persona_id"`
@@ -134,7 +111,6 @@ type CreateContentCampaignItemParams struct {
 // =====================================================================
 func (q *Queries) CreateContentCampaignItem(ctx context.Context, arg CreateContentCampaignItemParams) (ContentCampaignItem, error) {
 	row := q.db.QueryRow(ctx, createContentCampaignItem,
-		arg.TenantID,
 		arg.CampaignID,
 		arg.SortOrder,
 		arg.PersonaID,
@@ -168,16 +144,11 @@ func (q *Queries) CreateContentCampaignItem(ctx context.Context, arg CreateConte
 
 const getContentCampaign = `-- name: GetContentCampaign :one
 SELECT id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetContentCampaignParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetContentCampaign(ctx context.Context, arg GetContentCampaignParams) (ContentCampaign, error) {
-	row := q.db.QueryRow(ctx, getContentCampaign, arg.ID, arg.TenantID)
+func (q *Queries) GetContentCampaign(ctx context.Context, id pgtype.UUID) (ContentCampaign, error) {
+	row := q.db.QueryRow(ctx, getContentCampaign, id)
 	var i ContentCampaign
 	err := row.Scan(
 		&i.ID,
@@ -202,16 +173,11 @@ func (q *Queries) GetContentCampaign(ctx context.Context, arg GetContentCampaign
 
 const getContentCampaignItem = `-- name: GetContentCampaignItem :one
 SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetContentCampaignItemParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetContentCampaignItem(ctx context.Context, arg GetContentCampaignItemParams) (ContentCampaignItem, error) {
-	row := q.db.QueryRow(ctx, getContentCampaignItem, arg.ID, arg.TenantID)
+func (q *Queries) GetContentCampaignItem(ctx context.Context, id pgtype.UUID) (ContentCampaignItem, error) {
+	row := q.db.QueryRow(ctx, getContentCampaignItem, id)
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
@@ -236,16 +202,11 @@ func (q *Queries) GetContentCampaignItem(ctx context.Context, arg GetContentCamp
 
 const getContentCampaignItemByReviewID = `-- name: GetContentCampaignItemByReviewID :one
 SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
-WHERE review_id = $1 AND tenant_id = $2
+WHERE review_id = $1
 `
 
-type GetContentCampaignItemByReviewIDParams struct {
-	ReviewID pgtype.UUID `json:"review_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, arg GetContentCampaignItemByReviewIDParams) (ContentCampaignItem, error) {
-	row := q.db.QueryRow(ctx, getContentCampaignItemByReviewID, arg.ReviewID, arg.TenantID)
+func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, reviewID pgtype.UUID) (ContentCampaignItem, error) {
+	row := q.db.QueryRow(ctx, getContentCampaignItemByReviewID, reviewID)
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
@@ -270,16 +231,11 @@ func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, arg GetC
 
 const getContentCampaignItemByStudioJob = `-- name: GetContentCampaignItemByStudioJob :one
 SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
-WHERE studio_job_id = $1 AND tenant_id = $2
+WHERE studio_job_id = $1
 `
 
-type GetContentCampaignItemByStudioJobParams struct {
-	StudioJobID pgtype.UUID `json:"studio_job_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetContentCampaignItemByStudioJob(ctx context.Context, arg GetContentCampaignItemByStudioJobParams) (ContentCampaignItem, error) {
-	row := q.db.QueryRow(ctx, getContentCampaignItemByStudioJob, arg.StudioJobID, arg.TenantID)
+func (q *Queries) GetContentCampaignItemByStudioJob(ctx context.Context, studioJobID pgtype.UUID) (ContentCampaignItem, error) {
+	row := q.db.QueryRow(ctx, getContentCampaignItemByStudioJob, studioJobID)
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
@@ -307,9 +263,9 @@ const listContentCampaignActivePersonas = `-- name: ListContentCampaignActivePer
 SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-LEFT JOIN user_profiles up ON up.user_id = ap.user_id AND up.tenant_id = ap.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = ap.user_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
-WHERE ap.tenant_id = $1 AND ap.status = 'active'
+WHERE ap.status = 'active'
 ORDER BY COALESCE(up.display_name, u.username)
 `
 
@@ -322,8 +278,8 @@ type ListContentCampaignActivePersonasRow struct {
 // =====================================================================
 // Active persona pool used for planning and validation
 // =====================================================================
-func (q *Queries) ListContentCampaignActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]ListContentCampaignActivePersonasRow, error) {
-	rows, err := q.db.Query(ctx, listContentCampaignActivePersonas, tenantID)
+func (q *Queries) ListContentCampaignActivePersonas(ctx context.Context) ([]ListContentCampaignActivePersonasRow, error) {
+	rows, err := q.db.Query(ctx, listContentCampaignActivePersonas)
 	if err != nil {
 		return nil, err
 	}
@@ -346,17 +302,12 @@ const listContentCampaignActivePersonasByIDs = `-- name: ListContentCampaignActi
 SELECT ap.id, COALESCE(up.display_name, u.username) AS profile_name, COALESCE(ap.voice_prompt, pv.voice_prompt, '') AS voice_prompt
 FROM ai_personas ap
 JOIN users u ON u.id = ap.user_id
-LEFT JOIN user_profiles up ON up.user_id = ap.user_id AND up.tenant_id = ap.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = ap.user_id
 LEFT JOIN persona_voices pv ON pv.id = ap.voice_id
-WHERE ap.tenant_id = $1 AND ap.status = 'active'
-  AND ap.id = ANY($2::uuid[])
+WHERE ap.status = 'active'
+ AND ap.id = ANY($1::uuid[])
 ORDER BY COALESCE(up.display_name, u.username)
 `
-
-type ListContentCampaignActivePersonasByIDsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	Ids      []pgtype.UUID `json:"ids"`
-}
 
 type ListContentCampaignActivePersonasByIDsRow struct {
 	ID          pgtype.UUID `json:"id"`
@@ -364,8 +315,8 @@ type ListContentCampaignActivePersonasByIDsRow struct {
 	VoicePrompt string      `json:"voice_prompt"`
 }
 
-func (q *Queries) ListContentCampaignActivePersonasByIDs(ctx context.Context, arg ListContentCampaignActivePersonasByIDsParams) ([]ListContentCampaignActivePersonasByIDsRow, error) {
-	rows, err := q.db.Query(ctx, listContentCampaignActivePersonasByIDs, arg.TenantID, arg.Ids)
+func (q *Queries) ListContentCampaignActivePersonasByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListContentCampaignActivePersonasByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listContentCampaignActivePersonasByIDs, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -386,17 +337,12 @@ func (q *Queries) ListContentCampaignActivePersonasByIDs(ctx context.Context, ar
 
 const listContentCampaignItemsByCampaign = `-- name: ListContentCampaignItemsByCampaign :many
 SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
-WHERE campaign_id = $1 AND tenant_id = $2
+WHERE campaign_id = $1
 ORDER BY sort_order, created_at
 `
 
-type ListContentCampaignItemsByCampaignParams struct {
-	CampaignID pgtype.UUID `json:"campaign_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListContentCampaignItemsByCampaign(ctx context.Context, arg ListContentCampaignItemsByCampaignParams) ([]ContentCampaignItem, error) {
-	rows, err := q.db.Query(ctx, listContentCampaignItemsByCampaign, arg.CampaignID, arg.TenantID)
+func (q *Queries) ListContentCampaignItemsByCampaign(ctx context.Context, campaignID pgtype.UUID) ([]ContentCampaignItem, error) {
+	rows, err := q.db.Query(ctx, listContentCampaignItemsByCampaign, campaignID)
 	if err != nil {
 		return nil, err
 	}
@@ -434,26 +380,19 @@ func (q *Queries) ListContentCampaignItemsByCampaign(ctx context.Context, arg Li
 
 const listContentCampaigns = `-- name: ListContentCampaigns :many
 SELECT id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
-WHERE tenant_id = $1
-  AND ($2::text = '' OR status = $2)
+WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListContentCampaignsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	Status     string      `json:"status"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status     string `json:"status"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 func (q *Queries) ListContentCampaigns(ctx context.Context, arg ListContentCampaignsParams) ([]ContentCampaign, error) {
-	rows, err := q.db.Query(ctx, listContentCampaigns,
-		arg.TenantID,
-		arg.Status,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listContentCampaigns, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -492,11 +431,11 @@ func (q *Queries) ListContentCampaigns(ctx context.Context, arg ListContentCampa
 const updateContentCampaignItem = `-- name: UpdateContentCampaignItem :one
 UPDATE content_campaign_items
 SET status = $1,
-    studio_job_id = COALESCE($2, studio_job_id),
-    content_id = COALESCE($3, content_id),
-    review_id = COALESCE($4, review_id),
-    error_message = $5
-WHERE id = $6 AND tenant_id = $7
+ studio_job_id = COALESCE($2, studio_job_id),
+ content_id = COALESCE($3, content_id),
+ review_id = COALESCE($4, review_id),
+ error_message = $5
+WHERE id = $6
 RETURNING id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
 `
 
@@ -507,7 +446,6 @@ type UpdateContentCampaignItemParams struct {
 	ReviewID     pgtype.UUID `json:"review_id"`
 	ErrorMessage *string     `json:"error_message"`
 	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateContentCampaignItem(ctx context.Context, arg UpdateContentCampaignItemParams) (ContentCampaignItem, error) {
@@ -518,7 +456,6 @@ func (q *Queries) UpdateContentCampaignItem(ctx context.Context, arg UpdateConte
 		arg.ReviewID,
 		arg.ErrorMessage,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i ContentCampaignItem
 	err := row.Scan(
@@ -545,9 +482,9 @@ func (q *Queries) UpdateContentCampaignItem(ctx context.Context, arg UpdateConte
 const updateContentCampaignStatus = `-- name: UpdateContentCampaignStatus :one
 UPDATE content_campaigns
 SET status = $1,
-    plan_json = COALESCE($2, plan_json),
-    updated_at = now()
-WHERE id = $3 AND tenant_id = $4
+ plan_json = COALESCE($2, plan_json),
+ updated_at = now()
+WHERE id = $3
 RETURNING id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
 `
 
@@ -555,16 +492,10 @@ type UpdateContentCampaignStatusParams struct {
 	Status   string      `json:"status"`
 	PlanJson []byte      `json:"plan_json"`
 	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) UpdateContentCampaignStatus(ctx context.Context, arg UpdateContentCampaignStatusParams) (ContentCampaign, error) {
-	row := q.db.QueryRow(ctx, updateContentCampaignStatus,
-		arg.Status,
-		arg.PlanJson,
-		arg.ID,
-		arg.TenantID,
-	)
+	row := q.db.QueryRow(ctx, updateContentCampaignStatus, arg.Status, arg.PlanJson, arg.ID)
 	var i ContentCampaign
 	err := row.Scan(
 		&i.ID,

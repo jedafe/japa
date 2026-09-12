@@ -34,10 +34,9 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	var depth int32
 
 	if input.ParentID.Valid {
-		parent, err := s.read.GetComment(ctx, gen.GetCommentParams{
-			ID:       input.ParentID,
-			TenantID: tenantID,
-		})
+		parent, err := s.read.GetComment(ctx,
+			input.ParentID,
+		)
 		if err != nil {
 			return gen.Comment{}, fmt.Errorf("getting parent comment for depth: %w", err)
 		}
@@ -54,7 +53,7 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	}
 
 	comment, err := s.write.CreateComment(ctx, gen.CreateCommentParams{
-		TenantID:     tenantID,
+
 		ContentID:    input.ContentID,
 		AuthorUserID: userID,
 		ParentID:     parentID,
@@ -70,10 +69,9 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	// cards (which read contents.comment_count) show accurate counts
 	// immediately, without waiting for the async scoring pipeline.
 	// Ref: Section 32, Guide §21.
-	if err := s.write.IncrementContentCommentCount(ctx, gen.IncrementContentCommentCountParams{
-		ID:       input.ContentID,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.IncrementContentCommentCount(ctx,
+		input.ContentID,
+	); err != nil {
 		slog.Warn("comments: failed to increment content comment_count",
 			"content_id", input.ContentID.String(), "error", err)
 	}
@@ -81,10 +79,9 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	// Keep the parent comment's denormalized reply_count in sync (Section 49,
 	// BUG-008). Fire-and-forget: a failure only logs.
 	if input.ParentID.Valid {
-		if err := s.write.IncrementCommentReplyCount(ctx, gen.IncrementCommentReplyCountParams{
-			ParentID: input.ParentID,
-			TenantID: tenantID,
-		}); err != nil {
+		if err := s.write.IncrementCommentReplyCount(ctx,
+			input.ParentID,
+		); err != nil {
 			slog.Warn("comments: failed to increment parent reply_count",
 				"parent_id", input.ParentID.String(), "error", err)
 		}
@@ -116,10 +113,9 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 
 	// 1. Notify content author (for top-level comments only).
 	if !comment.ParentID.Valid {
-		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       comment.ContentID,
-			TenantID: tenantID,
-		})
+		content, err := s.read.GetContentByID(ctx,
+			comment.ContentID,
+		)
 		if err != nil {
 			slog.Warn("comments: failed to fetch content for author notification", "content_id", comment.ContentID.String(), "error", err)
 		} else if content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
@@ -137,10 +133,9 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 
 	// 2. Notify parent comment author (for replies).
 	if comment.ParentID.Valid {
-		parent, err := s.read.GetComment(ctx, gen.GetCommentParams{
-			ID:       comment.ParentID,
-			TenantID: tenantID,
-		})
+		parent, err := s.read.GetComment(ctx,
+			comment.ParentID,
+		)
 		if err != nil {
 			slog.Warn("comments: failed to fetch parent for reply notification", "parent_id", comment.ParentID.String(), "error", err)
 		} else if parent.AuthorUserID.Valid && parent.AuthorUserID != comment.AuthorUserID {
@@ -168,10 +163,9 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 
 	if s.mentionCheckers != nil {
 		// Fetch the content to get its spaceID for private-space filtering.
-		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       comment.ContentID,
-			TenantID: tenantID,
-		})
+		content, err := s.read.GetContentByID(ctx,
+			comment.ContentID,
+		)
 		if err != nil {
 			slog.Warn("comments: failed to fetch content for mention filtering",
 				"content_id", comment.ContentID.String(), "error", err)
@@ -179,10 +173,9 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 			isPrivateSpace := false
 
 			if content.SpaceID.Valid {
-				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-					ID:       content.SpaceID,
-					TenantID: tenantID,
-				})
+				space, err := s.read.GetSpaceByID(ctx,
+					content.SpaceID,
+				)
 				if err == nil && space.Visibility != "public" {
 					isPrivateSpace = true
 				}
@@ -236,10 +229,9 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 	}
 
 	if s.mentionCheckers != nil {
-		content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       comment.ContentID,
-			TenantID: tenantID,
-		})
+		content, err := s.read.GetContentByID(ctx,
+			comment.ContentID,
+		)
 		if err != nil {
 			slog.Warn("comments: failed to fetch content for mention filtering",
 				"content_id", comment.ContentID.String(), "error", err)
@@ -247,10 +239,9 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 			isPrivateSpace := false
 
 			if content.SpaceID.Valid {
-				space, err := s.read.GetSpaceByID(ctx, gen.GetSpaceByIDParams{
-					ID:       content.SpaceID,
-					TenantID: tenantID,
-				})
+				space, err := s.read.GetSpaceByID(ctx,
+					content.SpaceID,
+				)
 				if err == nil && space.Visibility != "public" {
 					isPrivateSpace = true
 				}
@@ -289,10 +280,9 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 // space. Used by the handler to enforce the space's commenting_perm and
 // replying_perm axes (Section 05 lines 145-154, BUG-002).
 func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgtype.UUID) (pgtype.UUID, error) {
-	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       contentID,
-		TenantID: tenantID,
-	})
+	content, err := s.read.GetContentByID(ctx,
+		contentID,
+	)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting content for space_id: %w", err)
 	}
@@ -304,18 +294,16 @@ func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgt
 // for the given comment. Used by PinComment to allow the content author to
 // pin comments on their own content (Section 49, BL-003).
 func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, commentID pgtype.UUID) (pgtype.UUID, error) {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	comment, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting comment for content author check: %w", err)
 	}
 
-	content, err := s.read.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       comment.ContentID,
-		TenantID: tenantID,
-	})
+	content, err := s.read.GetContentByID(ctx,
+		comment.ContentID,
+	)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("getting content for content author check: %w", err)
 	}
@@ -325,10 +313,9 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, comme
 
 // GetComment is an exported method.
 func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	comment, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return gen.GetCommentRow{}, fmt.Errorf("getting comment: %w", err)
 	}
@@ -348,9 +335,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 	switch sort {
 	case "new":
 		rows, err := s.read.ListCommentsByContentNew(ctx, gen.ListCommentsByContentNewParams{
-			ViewerID:   viewerID,
-			ContentID:  contentID,
-			TenantID:   tenantID,
+			ViewerID:  viewerID,
+			ContentID: contentID,
+
 			PageLimit:  limit,
 			PageOffset: offset,
 		})
@@ -362,9 +349,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 
 	case "oldest":
 		rows, err := s.read.ListCommentsByContentOldest(ctx, gen.ListCommentsByContentOldestParams{
-			ViewerID:   viewerID,
-			ContentID:  contentID,
-			TenantID:   tenantID,
+			ViewerID:  viewerID,
+			ContentID: contentID,
+
 			PageLimit:  limit,
 			PageOffset: offset,
 		})
@@ -376,9 +363,9 @@ func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID
 
 	default: // "top" and any unrecognized value
 		comments, err := s.read.ListCommentsByContent(ctx, gen.ListCommentsByContentParams{
-			ViewerID:   viewerID,
-			ContentID:  contentID,
-			TenantID:   tenantID,
+			ViewerID:  viewerID,
+			ContentID: contentID,
+
 			PageLimit:  limit,
 			PageOffset: offset,
 		})
@@ -397,8 +384,8 @@ func (s *Service) coerceNewRows(rows []gen.ListCommentsByContentNewRow) []gen.Li
 	out := make([]gen.ListCommentsByContentRow, len(rows))
 	for i := range rows {
 		out[i] = gen.ListCommentsByContentRow{
-			ID:            rows[i].ID,
-			TenantID:      rows[i].TenantID,
+			ID: rows[i].ID,
+
 			ContentID:     rows[i].ContentID,
 			AuthorUserID:  rows[i].AuthorUserID,
 			ParentID:      rows[i].ParentID,
@@ -429,8 +416,8 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 	out := make([]gen.ListCommentsByContentRow, len(rows))
 	for i := range rows {
 		out[i] = gen.ListCommentsByContentRow{
-			ID:            rows[i].ID,
-			TenantID:      rows[i].TenantID,
+			ID: rows[i].ID,
+
 			ContentID:     rows[i].ContentID,
 			AuthorUserID:  rows[i].AuthorUserID,
 			ParentID:      rows[i].ParentID,
@@ -464,9 +451,9 @@ func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID, v
 	}
 
 	replies, err := s.read.ListRepliesByParent(ctx, gen.ListRepliesByParentParams{
-		ViewerID:   viewerID,
-		ParentID:   parentID,
-		TenantID:   tenantID,
+		ViewerID: viewerID,
+		ParentID: parentID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -486,10 +473,9 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	// Edit-window threshold (BL-001 / Section 49). Fetch the comment first
 	// to read created_at. GetComment joins users/user_profiles, so it returns
 	// a GetCommentRow; we only need the CreatedAt field.
-	existing, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	existing, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return gen.Comment{}, fmt.Errorf("getting comment for edit-window check: %w", err)
 	}
@@ -515,8 +501,8 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	// After the window: edit still allowed, but is_edited + edited_at stamped.
 	if withinWindow {
 		comment, err := s.write.UpdateCommentUnmarked(ctx, gen.UpdateCommentUnmarkedParams{
-			ID:           commentID,
-			TenantID:     tenantID,
+			ID: commentID,
+
 			AuthorUserID: userID,
 			Body:         body,
 		})
@@ -528,8 +514,8 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	}
 
 	comment, err := s.write.UpdateComment(ctx, gen.UpdateCommentParams{
-		ID:           commentID,
-		TenantID:     tenantID,
+		ID: commentID,
+
 		AuthorUserID: userID,
 		Body:         body,
 	})
@@ -544,10 +530,9 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 // moderator path (comments.delete_any) — no author check. Authors must use
 // SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
 func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	comment, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting comment for delete: %w", err)
 	}
@@ -558,10 +543,9 @@ func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgt
 		return nil
 	}
 
-	if err := s.write.SoftDeleteComment(ctx, gen.SoftDeleteCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.SoftDeleteComment(ctx,
+		commentID,
+	); err != nil {
 		return fmt.Errorf("deleting comment: %w", err)
 	}
 
@@ -576,10 +560,9 @@ func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgt
 // (BUG-003). Returns errpkg.ErrNotFound when the comment does not exist or the
 // user is not the author.
 func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	comment, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting comment for delete: %w", err)
 	}
@@ -590,8 +573,8 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, comme
 	}
 
 	if err := s.write.SoftDeleteCommentByAuthor(ctx, gen.SoftDeleteCommentByAuthorParams{
-		ID:           commentID,
-		TenantID:     tenantID,
+		ID: commentID,
+
 		AuthorUserID: userID,
 	}); err != nil {
 		return fmt.Errorf("deleting own comment: %w", err)
@@ -608,10 +591,9 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, comme
 // status filter. The reason is optional (empty string → NULL). Used by the
 // admin moderation surface (BUG-010).
 func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, moderatorID pgtype.UUID, reason string) error {
-	comment, err := s.read.GetComment(ctx, gen.GetCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	})
+	comment, err := s.read.GetComment(ctx,
+		commentID,
+	)
 	if err != nil {
 		return fmt.Errorf("getting comment for remove: %w", err)
 	}
@@ -626,8 +608,8 @@ func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, modera
 	}
 
 	if err := s.write.RemoveComment(ctx, gen.RemoveCommentParams{
-		ID:            commentID,
-		TenantID:      tenantID,
+		ID: commentID,
+
 		RemovedBy:     moderatorID,
 		RemovedReason: reasonPtr,
 	}); err != nil {
@@ -644,19 +626,17 @@ func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, modera
 // soft-deleted or removed. Failures are logged, not returned, so the request
 // still succeeds (Rule 8).
 func (s *Service) decrementCommentCounters(ctx context.Context, comment gen.GetCommentRow) {
-	if err := s.write.DecrementContentCommentCount(ctx, gen.DecrementContentCommentCountParams{
-		ID:       comment.ContentID,
-		TenantID: comment.TenantID,
-	}); err != nil {
+	if err := s.write.DecrementContentCommentCount(ctx,
+		comment.ContentID,
+	); err != nil {
 		slog.Warn("comments: failed to decrement content comment_count",
 			"content_id", comment.ContentID.String(), "error", err)
 	}
 
 	if comment.ParentID.Valid {
-		if err := s.write.DecrementCommentReplyCount(ctx, gen.DecrementCommentReplyCountParams{
-			ParentID: comment.ParentID,
-			TenantID: comment.TenantID,
-		}); err != nil {
+		if err := s.write.DecrementCommentReplyCount(ctx,
+			comment.ParentID,
+		); err != nil {
 			slog.Warn("comments: failed to decrement parent reply_count",
 				"parent_id", comment.ParentID.String(), "error", err)
 		}
@@ -665,10 +645,9 @@ func (s *Service) decrementCommentCounters(ctx context.Context, comment gen.GetC
 
 // PinComment pins a comment (only content author or moderator).
 func (s *Service) PinComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
-	if err := s.write.PinComment(ctx, gen.PinCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.PinComment(ctx,
+		commentID,
+	); err != nil {
 		return fmt.Errorf("pinning comment: %w", err)
 	}
 
@@ -677,10 +656,9 @@ func (s *Service) PinComment(ctx context.Context, tenantID, commentID pgtype.UUI
 
 // UnpinComment unpins a comment.
 func (s *Service) UnpinComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
-	if err := s.write.UnpinComment(ctx, gen.UnpinCommentParams{
-		ID:       commentID,
-		TenantID: tenantID,
-	}); err != nil {
+	if err := s.write.UnpinComment(ctx,
+		commentID,
+	); err != nil {
 		return fmt.Errorf("unpinning comment: %w", err)
 	}
 
@@ -698,7 +676,7 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 	}
 
 	if _, err := s.write.UpsertCommentVote(ctx, gen.UpsertCommentVoteParams{
-		TenantID:  tenantID,
+
 		CommentID: commentID,
 		UserID:    userID,
 		Value:     value,
@@ -711,10 +689,9 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 		return fmt.Errorf("voting on comment: %w", err)
 	}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx, gen.RecalculateCommentVoteScoreParams{
-		CommentID: commentID,
-		TenantID:  tenantID,
-	}); err != nil {
+	if err := s.write.RecalculateCommentVoteScore(ctx,
+		commentID,
+	); err != nil {
 		return fmt.Errorf("recalculating comment vote score: %w", err)
 	}
 
@@ -725,17 +702,16 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 // Tenant-scoped per Guide §4.2/§9 (SEC-001).
 func (s *Service) RemoveCommentVote(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
 	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
-		TenantID:  tenantID,
+
 		CommentID: commentID,
 		UserID:    userID,
 	}); err != nil {
 		return fmt.Errorf("removing comment vote: %w", err)
 	}
 
-	if err := s.write.RecalculateCommentVoteScore(ctx, gen.RecalculateCommentVoteScoreParams{
-		CommentID: commentID,
-		TenantID:  tenantID,
-	}); err != nil {
+	if err := s.write.RecalculateCommentVoteScore(ctx,
+		commentID,
+	); err != nil {
 		return fmt.Errorf("recalculating comment vote score: %w", err)
 	}
 
@@ -748,10 +724,9 @@ func (s *Service) RemoveCommentVote(ctx context.Context, tenantID, commentID, us
 
 // CountCommentsByContent returns the total comment count for content.
 func (s *Service) CountCommentsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) (int32, error) {
-	count, err := s.read.CountCommentsByContent(ctx, gen.CountCommentsByContentParams{
-		ContentID: contentID,
-		TenantID:  tenantID,
-	})
+	count, err := s.read.CountCommentsByContent(ctx,
+		contentID,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("counting comments: %w", err)
 	}

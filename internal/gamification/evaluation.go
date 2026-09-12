@@ -64,9 +64,9 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 
 			// Award the badge (awarded_by = NULL = system).
 			ub, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-				TenantID: tenantID,
-				UserID:   userID,
-				BadgeID:  b.ID,
+
+				UserID:  userID,
+				BadgeID: b.ID,
 			})
 			if err != nil {
 				// ON CONFLICT DO NOTHING may return no rows — skip duplicates.
@@ -125,7 +125,7 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 		wasCompleted := priorErr == nil && prior.Completed
 
 		progress, err := s.store.UpsertChallengeProgress(ctx, gen.UpsertChallengeProgressParams{
-			TenantID:     tenantID,
+
 			UserID:       userID,
 			ChallengeID:  c.ID,
 			CurrentCount: 1,
@@ -181,9 +181,9 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 			slog.Warn("gamification: check reward badge", "error", err)
 		default:
 			if _, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-				TenantID: tenantID,
-				UserID:   userID,
-				BadgeID:  c.RewardBadgeID,
+
+				UserID:  userID,
+				BadgeID: c.RewardBadgeID,
 			}); err != nil {
 				slog.Warn("gamification: award challenge reward badge failed",
 					"challenge_id", uuidStr(c.ID), "error", err)
@@ -257,9 +257,9 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 		}
 
 		ub, err := s.store.AwardBadge(ctx, gen.AwardBadgeParams{
-			TenantID: tenantID,
-			UserID:   userID,
-			BadgeID:  b.ID,
+
+			UserID:  userID,
+			BadgeID: b.ID,
 		})
 		if err != nil {
 			slog.Warn("gamification: evaluate points: award badge failed",

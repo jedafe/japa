@@ -85,7 +85,7 @@ func NewService(database *db.DB) *Service {
 // ListPrograms returns all mentorship programs for the tenant with aggregate counts.
 func (s *Service) ListPrograms(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ProgramWithCounts, error) {
 	rows, err := s.read.ListMentorshipProgramsWithCounts(ctx, gen.ListMentorshipProgramsWithCountsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -103,10 +103,10 @@ func (s *Service) ListPrograms(ctx context.Context, tenantID pgtype.UUID, limit,
 
 // GetProgram returns a single mentorship program by ID.
 func (s *Service) GetProgram(ctx context.Context, tenantID, id pgtype.UUID) (Program, error) {
-	row, err := s.read.GetMentorshipProgram(ctx, gen.GetMentorshipProgramParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	row, err := s.read.GetMentorshipProgram(ctx,
+
+		id,
+	)
 	if err != nil {
 		return Program{}, fmt.Errorf("fetching mentorship program %s: %w", id, err)
 	}
@@ -117,7 +117,7 @@ func (s *Service) GetProgram(ctx context.Context, tenantID, id pgtype.UUID) (Pro
 // CreateProgram creates a new mentorship program.
 func (s *Service) CreateProgram(ctx context.Context, tenantID pgtype.UUID, name, description string, isActive bool) (Program, error) {
 	row, err := s.write.CreateMentorshipProgram(ctx, gen.CreateMentorshipProgramParams{
-		TenantID:    tenantID,
+
 		Name:        name,
 		Description: description,
 		IsActive:    isActive,
@@ -153,7 +153,7 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID, id pgtype.UUID, n
 	}
 
 	row, err := s.write.UpdateMentorshipProgram(ctx, gen.UpdateMentorshipProgramParams{
-		TenantID:    tenantID,
+
 		ID:          id,
 		Name:        n,
 		Description: desc,
@@ -169,7 +169,7 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID, id pgtype.UUID, n
 // ListMatches returns all mentor-mentee matches for the tenant with resolved names.
 func (s *Service) ListMatches(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Match, error) {
 	rows, err := s.read.ListMentorshipMatches(ctx, gen.ListMentorshipMatchesParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -188,17 +188,17 @@ func (s *Service) ListMatches(ctx context.Context, tenantID pgtype.UUID, limit, 
 // UpdateMatch updates a mentor-mentee match status.
 func (s *Service) UpdateMatch(ctx context.Context, tenantID, id pgtype.UUID, status string) (Match, error) {
 	row, err := s.write.UpdateMentorshipMatch(ctx, gen.UpdateMentorshipMatchParams{
-		TenantID: tenantID,
-		ID:       id,
-		Status:   status,
+
+		ID:     id,
+		Status: status,
 	})
 	if err != nil {
 		return Match{}, fmt.Errorf("updating mentorship match %s: %w", id, err)
 	}
 
 	return Match{
-		ID:        row.ID,
-		TenantID:  row.TenantID,
+		ID: row.ID,
+
 		ProgramID: row.ProgramID,
 		MentorID:  row.MentorID,
 		MenteeID:  row.MenteeID,
@@ -211,10 +211,10 @@ func (s *Service) UpdateMatch(ctx context.Context, tenantID, id pgtype.UUID, sta
 // DeleteProgram deletes a mentorship program. The ON DELETE CASCADE on
 // mentorship_matches.program_id will remove all associated matches.
 func (s *Service) DeleteProgram(ctx context.Context, tenantID, id pgtype.UUID) error {
-	rowsAffected, err := s.write.DeleteMentorshipProgram(ctx, gen.DeleteMentorshipProgramParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	rowsAffected, err := s.write.DeleteMentorshipProgram(ctx,
+
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("deleting mentorship program %s: %w", id, err)
 	}
@@ -374,17 +374,17 @@ func (s *Service) trackEvent(ctx context.Context, tenantID, userID pgtype.UUID, 
 // GetMentorProfile returns the current user's mentor profile settings.
 // GET /api/v1/me/mentor-profile.
 func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.UUID) (MentorProfile, error) {
-	row, err := s.read.GetMentorProfile(ctx, gen.GetMentorProfileParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetMentorProfile(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return MentorProfile{}, fmt.Errorf("getting mentor profile: %w", err)
 	}
 
 	return MentorProfile{
-		UserID:            row.UserID,
-		TenantID:          row.TenantID,
+		UserID: row.UserID,
+
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
 		MentorMaxCapacity: s.mentorMaxCapacity(ctx, tenantID),
@@ -402,10 +402,10 @@ func (s *Service) GetMentorProfile(ctx context.Context, tenantID, userID pgtype.
 // When mentor_bio changes, enqueues the mentor:generate_embedding task.
 func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string) (MentorProfile, error) {
 	// Fetch current values for merge.
-	current, err := s.read.GetMentorProfile(ctx, gen.GetMentorProfileParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	current, err := s.read.GetMentorProfile(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return MentorProfile{}, fmt.Errorf("loading current mentor profile: %w", err)
 	}
@@ -449,8 +449,8 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 		MentorCapacity: mergedCapacity,
 		MentorAreas:    mergedAreas,
 		MentorBio:      mergedBio,
-		TenantID:       tenantID,
-		UserID:         userID,
+
+		UserID: userID,
 	})
 	if err != nil {
 		return MentorProfile{}, fmt.Errorf("updating mentor profile: %w", err)
@@ -462,8 +462,8 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 	}
 
 	return MentorProfile{
-		UserID:            row.UserID,
-		TenantID:          row.TenantID,
+		UserID: row.UserID,
+
 		IsMentor:          row.IsMentor,
 		MentorCapacity:    row.MentorCapacity,
 		MentorMaxCapacity: mentorMaxCap,
@@ -479,10 +479,10 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 // GetMentorByUsername returns a mentor's public profile by username.
 // GET /api/v1/mentors/:username.
 func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (MentorSummary, error) {
-	row, err := s.read.GetMentorByUsername(ctx, gen.GetMentorByUsernameParams{
-		TenantID: tenantID,
-		Username: username,
-	})
+	row, err := s.read.GetMentorByUsername(ctx,
+
+		username,
+	)
 	if err != nil {
 		return MentorSummary{}, ErrMentorNotFound
 	}
@@ -508,11 +508,11 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 	if sort == "match" && menteeEmbedding != nil {
 		rows, err := s.read.ListMentorsByMatch(ctx, gen.ListMentorsByMatchParams{
 			MenteeEmbedding: menteeEmbedding,
-			TenantID:        tenantID,
-			DestSpaceID:     destSpaceID,
-			Areas:           areas,
-			PageLimit:       limit,
-			PageOffset:      offset,
+
+			DestSpaceID: destSpaceID,
+			Areas:       areas,
+			PageLimit:   limit,
+			PageOffset:  offset,
 		})
 		if err != nil {
 			return nil, 0, fmt.Errorf("listing mentors by match: %w", err)
@@ -535,7 +535,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 	// Default and sort=match-without-embedding use the same ListMentors query,
 	// which now orders by area_overlap when sort='match'.
 	rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
-		TenantID:    tenantID,
+
 		DestSpaceID: destSpaceID,
 		Areas:       areas,
 		Sort:        sort,
@@ -637,10 +637,10 @@ LIMIT $3
 // the user has no embedding (non-mentor or mentor without a bio) — the caller
 // falls back to keyword-only scoring (weight = 1.0).
 func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) (*pgvector.Vector, error) {
-	row, err := s.read.GetUserEmbedding(ctx, gen.GetUserEmbeddingParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetUserEmbedding(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, nil // best-effort: fall back to keyword-only on error
 	}
@@ -655,10 +655,10 @@ func (s *Service) GetMenteeEmbedding(ctx context.Context, tenantID, userID pgtyp
 // with no UI action required"). Returns pgtype.UUID{} (invalid) when no
 // destination is set.
 func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.UUID, error) {
-	row, err := s.read.GetMenteeDestinationSpaceID(ctx, gen.GetMenteeDestinationSpaceIDParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	row, err := s.read.GetMenteeDestinationSpaceID(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return pgtype.UUID{}, nil // best-effort: no default filter on error
 	}
@@ -666,15 +666,13 @@ func (s *Service) GetMenteeDestinationSpaceID(ctx context.Context, tenantID, use
 	return row.DestinationSpaceID, nil
 }
 
-
-
 // GetMentorsByIDs returns up to 4 mentors for the comparison endpoint.
 // GET /api/v1/compare/mentors?ids=a,b,c,d.
 func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, userIDs []pgtype.UUID) ([]MentorSummary, error) {
-	rows, err := s.read.GetMentorsByIDs(ctx, gen.GetMentorsByIDsParams{
-		TenantID: tenantID,
-		UserIds:  userIDs,
-	})
+	rows, err := s.read.GetMentorsByIDs(ctx,
+
+		userIDs,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("getting mentors by IDs: %w", err)
 	}
@@ -702,7 +700,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 	// prevents duplicate same-status rows — it does not prevent a new
 	// pending request when an active connection already exists.
 	if _, err := s.read.GetActiveOrPendingConnection(ctx, gen.GetActiveOrPendingConnectionParams{
-		TenantID: tenantID,
+
 		MentorID: mentorID,
 		MenteeID: menteeID,
 	}); err == nil {
@@ -710,7 +708,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 	}
 
 	conn, err := s.write.CreateMentorshipConnection(ctx, gen.CreateMentorshipConnectionParams{
-		TenantID:           tenantID,
+
 		MentorID:           mentorID,
 		MenteeID:           menteeID,
 		Goals:              goals,
@@ -739,7 +737,7 @@ func (s *Service) CreateConnection(ctx context.Context, tenantID, mentorID, ment
 // GET /api/v1/me/mentorship/outgoing.
 func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListOutgoingConnections(ctx, gen.ListOutgoingConnectionsParams{
-		TenantID:   tenantID,
+
 		MenteeID:   menteeID,
 		Status:     status,
 		PageLimit:  limit,
@@ -752,8 +750,8 @@ func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeI
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
 		conns[i] = Connection{
-			ID:                 r.ID,
-			TenantID:           r.TenantID,
+			ID: r.ID,
+
 			MentorID:           r.MentorID,
 			MenteeID:           r.MenteeID,
 			Status:             r.Status,
@@ -777,7 +775,7 @@ func (s *Service) ListOutgoingConnections(ctx context.Context, tenantID, menteeI
 // DELETE /api/v1/me/mentorship/outgoing/:id.
 func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, menteeID, connID pgtype.UUID) error {
 	rowsAffected, err := s.write.CancelPendingConnection(ctx, gen.CancelPendingConnectionParams{
-		TenantID: tenantID,
+
 		ID:       connID,
 		MenteeID: menteeID,
 	})
@@ -796,7 +794,7 @@ func (s *Service) CancelOutgoingConnection(ctx context.Context, tenantID, mentee
 // GET /api/v1/me/mentorship/incoming.
 func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListIncomingConnections(ctx, gen.ListIncomingConnectionsParams{
-		TenantID:   tenantID,
+
 		MentorID:   mentorID,
 		Status:     status,
 		PageLimit:  limit,
@@ -809,8 +807,8 @@ func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorI
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
 		conns[i] = Connection{
-			ID:                 r.ID,
-			TenantID:           r.TenantID,
+			ID: r.ID,
+
 			MentorID:           r.MentorID,
 			MenteeID:           r.MenteeID,
 			Status:             r.Status,
@@ -836,10 +834,10 @@ func (s *Service) ListIncomingConnections(ctx context.Context, tenantID, mentorI
 // PATCH /api/v1/me/mentorship/incoming/:id/accept.
 func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	existing, err := s.read.GetMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -848,10 +846,10 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.AcceptMentorshipConnection(ctx, gen.AcceptMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	conn, err := s.write.AcceptMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -885,10 +883,10 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 // PATCH /api/v1/me/mentorship/incoming/:id/decline.
 func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	existing, err := s.read.GetMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -897,10 +895,10 @@ func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, con
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.DeclineMentorshipConnection(ctx, gen.DeclineMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	conn, err := s.write.DeclineMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -913,10 +911,10 @@ func (s *Service) DeclineConnection(ctx context.Context, tenantID, mentorID, con
 // PATCH /api/v1/mentorship/:id/complete.
 func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is a participant in this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	existing, err := s.read.GetMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -925,10 +923,10 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.CompleteMentorshipConnection(ctx, gen.CompleteMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	conn, err := s.write.CompleteMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -947,10 +945,10 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 // PATCH /api/v1/mentorship/:id/cancel.
 func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID, reason *string) (Connection, error) {
 	// Verify the current user is a participant in this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx, gen.GetMentorshipConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-	})
+	existing, err := s.read.GetMentorshipConnection(ctx,
+
+		connID,
+	)
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
 	}
@@ -960,7 +958,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 	}
 
 	conn, err := s.write.CancelMentorshipConnection(ctx, gen.CancelMentorshipConnectionParams{
-		TenantID:     tenantID,
+
 		ID:           connID,
 		CancelReason: reason,
 	})
@@ -978,7 +976,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 // GET /api/v1/admin/mentorship/connections.
 func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
 	rows, err := s.read.ListAllConnections(ctx, gen.ListAllConnectionsParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		MentorID:   mentorID,
 		MenteeID:   menteeID,
@@ -992,8 +990,8 @@ func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, 
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
 		conns[i] = Connection{
-			ID:                 r.ID,
-			TenantID:           r.TenantID,
+			ID: r.ID,
+
 			MentorID:           r.MentorID,
 			MenteeID:           r.MenteeID,
 			Status:             r.Status,
@@ -1017,9 +1015,9 @@ func (s *Service) ListAllConnections(ctx context.Context, tenantID pgtype.UUID, 
 // PATCH /api/v1/admin/mentorship/connections/:id.
 func (s *Service) AdminUpdateConnection(ctx context.Context, tenantID, connID pgtype.UUID, status string) (Connection, error) {
 	conn, err := s.write.AdminUpdateConnection(ctx, gen.AdminUpdateConnectionParams{
-		TenantID: tenantID,
-		ID:       connID,
-		Status:   status,
+
+		ID:     connID,
+		Status: status,
 	})
 	if err != nil {
 		return Connection{}, ErrConnectionNotFound
@@ -1034,7 +1032,7 @@ func (s *Service) UpdateMentorEmbedding(ctx context.Context, tenantID, userID pg
 	vec := pgvector.NewVector(embedding)
 
 	return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		Embedding: &vec,
 	})
@@ -1051,10 +1049,10 @@ func (s *Service) GenerateEmbedding(ctx context.Context, tenantID, userID pgtype
 	}
 
 	// Fetch the mentor's bio text.
-	profile, err := s.read.GetMentorProfile(ctx, gen.GetMentorProfileParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	profile, err := s.read.GetMentorProfile(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return fmt.Errorf("fetching mentor profile for embedding: %w", err)
 	}
@@ -1062,7 +1060,7 @@ func (s *Service) GenerateEmbedding(ctx context.Context, tenantID, userID pgtype
 	if profile.MentorBio == nil || *profile.MentorBio == "" {
 		// No bio — nothing to embed. Clear any stale embedding.
 		return s.write.UpdateMentorEmbedding(ctx, gen.UpdateMentorEmbeddingParams{
-			TenantID:  tenantID,
+
 			UserID:    userID,
 			Embedding: nil,
 		})
@@ -1150,8 +1148,8 @@ func mentorSummaryFromRow(userID, tenantID pgtype.UUID, isMentor *bool, capacity
 // connectionFromModel converts a gen.MentorshipConnection to Connection.
 func connectionFromModel(c gen.MentorshipConnection) Connection {
 	return Connection{
-		ID:                 c.ID,
-		TenantID:           c.TenantID,
+		ID: c.ID,
+
 		MentorID:           c.MentorID,
 		MenteeID:           c.MenteeID,
 		Status:             c.Status,

@@ -243,7 +243,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 // latestContentLastMod returns the most recent content updated_at as RFC3339,
 // or empty string when no published content exists.
 func (h *SitemapHandler) latestContentLastMod(ctx context.Context, tenantID pgtype.UUID) string {
-	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx, tenantID)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
 	if err != nil || len(rows) == 0 {
 		return ""
 	}
@@ -311,7 +311,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context(), t.ID)
+	rows, err := h.queries.ListPublishedSlugsForSitemap(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return

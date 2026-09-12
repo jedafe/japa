@@ -15,18 +15,13 @@ import (
 const acceptMentorshipConnection = `-- name: AcceptMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'active', responded_at = now(), updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+WHERE id = $1 AND status = 'pending'
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
-type AcceptMentorshipConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Mentor accepts a pending request (pending → active).
-func (q *Queries) AcceptMentorshipConnection(ctx context.Context, arg AcceptMentorshipConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, acceptMentorshipConnection, arg.TenantID, arg.ID)
+func (q *Queries) AcceptMentorshipConnection(ctx context.Context, id pgtype.UUID) (MentorshipConnection, error) {
+	row := q.db.QueryRow(ctx, acceptMentorshipConnection, id)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -49,19 +44,18 @@ func (q *Queries) AcceptMentorshipConnection(ctx context.Context, arg AcceptMent
 const adminUpdateConnection = `-- name: AdminUpdateConnection :one
 UPDATE mentorship_connections
 SET status = $1, updated_at = now()
-WHERE tenant_id = $2 AND id = $3
+WHERE id = $2
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type AdminUpdateConnectionParams struct {
-	Status   string      `json:"status"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 // Admin override: set connection status (remove bad actor, force-complete, etc.).
 func (q *Queries) AdminUpdateConnection(ctx context.Context, arg AdminUpdateConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, adminUpdateConnection, arg.Status, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, adminUpdateConnection, arg.Status, arg.ID)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -84,19 +78,18 @@ func (q *Queries) AdminUpdateConnection(ctx context.Context, arg AdminUpdateConn
 const cancelMentorshipConnection = `-- name: CancelMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'cancelled', cancelled_at = now(), cancel_reason = $1, updated_at = now()
-WHERE tenant_id = $2 AND id = $3 AND status = 'active'
+WHERE id = $2 AND status = 'active'
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type CancelMentorshipConnectionParams struct {
 	CancelReason *string     `json:"cancel_reason"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	ID           pgtype.UUID `json:"id"`
 }
 
 // Either party cancels an active connection (active → cancelled).
 func (q *Queries) CancelMentorshipConnection(ctx context.Context, arg CancelMentorshipConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, cancelMentorshipConnection, arg.CancelReason, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, cancelMentorshipConnection, arg.CancelReason, arg.ID)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -119,18 +112,17 @@ func (q *Queries) CancelMentorshipConnection(ctx context.Context, arg CancelMent
 const cancelPendingConnection = `-- name: CancelPendingConnection :execrows
 UPDATE mentorship_connections
 SET status = 'cancelled', cancelled_at = now(), updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND mentee_id = $3 AND status = 'pending'
+WHERE id = $1 AND mentee_id = $2 AND status = 'pending'
 `
 
 type CancelPendingConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	ID       pgtype.UUID `json:"id"`
 	MenteeID pgtype.UUID `json:"mentee_id"`
 }
 
 // Mentee cancels their own pending request (pending → cancelled).
 func (q *Queries) CancelPendingConnection(ctx context.Context, arg CancelPendingConnectionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, cancelPendingConnection, arg.TenantID, arg.ID, arg.MenteeID)
+	result, err := q.db.Exec(ctx, cancelPendingConnection, arg.ID, arg.MenteeID)
 	if err != nil {
 		return 0, err
 	}
@@ -140,18 +132,13 @@ func (q *Queries) CancelPendingConnection(ctx context.Context, arg CancelPending
 const completeMentorshipConnection = `-- name: CompleteMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'completed', completed_at = now(), updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND status = 'active'
+WHERE id = $1 AND status = 'active'
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
-type CompleteMentorshipConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Either party completes an active connection (active → completed).
-func (q *Queries) CompleteMentorshipConnection(ctx context.Context, arg CompleteMentorshipConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, completeMentorshipConnection, arg.TenantID, arg.ID)
+func (q *Queries) CompleteMentorshipConnection(ctx context.Context, id pgtype.UUID) (MentorshipConnection, error) {
+	row := q.db.QueryRow(ctx, completeMentorshipConnection, id)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -172,13 +159,12 @@ func (q *Queries) CompleteMentorshipConnection(ctx context.Context, arg Complete
 }
 
 const createMentorshipConnection = `-- name: CreateMentorshipConnection :one
-INSERT INTO mentorship_connections (tenant_id, mentor_id, mentee_id, status, goals, destination_space_id)
-VALUES ($1, $2, $3, 'pending', $4, $5)
+INSERT INTO mentorship_connections (mentor_id, mentee_id, status, goals, destination_space_id) VALUES ($1, $2, 'pending', $3, $4)
+
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type CreateMentorshipConnectionParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	MentorID           pgtype.UUID `json:"mentor_id"`
 	MenteeID           pgtype.UUID `json:"mentee_id"`
 	Goals              *string     `json:"goals"`
@@ -190,7 +176,6 @@ type CreateMentorshipConnectionParams struct {
 // pending requests between the same pair.
 func (q *Queries) CreateMentorshipConnection(ctx context.Context, arg CreateMentorshipConnectionParams) (MentorshipConnection, error) {
 	row := q.db.QueryRow(ctx, createMentorshipConnection,
-		arg.TenantID,
 		arg.MentorID,
 		arg.MenteeID,
 		arg.Goals,
@@ -216,29 +201,31 @@ func (q *Queries) CreateMentorshipConnection(ctx context.Context, arg CreateMent
 }
 
 const createMentorshipProgram = `-- name: CreateMentorshipProgram :one
-INSERT INTO mentorship_programs (tenant_id, name, description, is_active)
-VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
+INSERT INTO mentorship_programs (name, description, is_active) VALUES ($1, $2, $3)
+
+RETURNING id, name, description, is_active, created_at, updated_at
 `
 
 type CreateMentorshipProgramParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	IsActive    bool        `json:"is_active"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	IsActive    bool   `json:"is_active"`
 }
 
-func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentorshipProgramParams) (MentorshipProgram, error) {
-	row := q.db.QueryRow(ctx, createMentorshipProgram,
-		arg.TenantID,
-		arg.Name,
-		arg.Description,
-		arg.IsActive,
-	)
-	var i MentorshipProgram
+type CreateMentorshipProgramRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentorshipProgramParams) (CreateMentorshipProgramRow, error) {
+	row := q.db.QueryRow(ctx, createMentorshipProgram, arg.Name, arg.Description, arg.IsActive)
+	var i CreateMentorshipProgramRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -251,18 +238,13 @@ func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentors
 const declineMentorshipConnection = `-- name: DeclineMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'declined', responded_at = now(), updated_at = now()
-WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+WHERE id = $1 AND status = 'pending'
 RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
-type DeclineMentorshipConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Mentor declines a pending request (pending → declined).
-func (q *Queries) DeclineMentorshipConnection(ctx context.Context, arg DeclineMentorshipConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, declineMentorshipConnection, arg.TenantID, arg.ID)
+func (q *Queries) DeclineMentorshipConnection(ctx context.Context, id pgtype.UUID) (MentorshipConnection, error) {
+	row := q.db.QueryRow(ctx, declineMentorshipConnection, id)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -284,16 +266,11 @@ func (q *Queries) DeclineMentorshipConnection(ctx context.Context, arg DeclineMe
 
 const deleteMentorshipProgram = `-- name: DeleteMentorshipProgram :execrows
 DELETE FROM mentorship_programs
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type DeleteMentorshipProgramParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) DeleteMentorshipProgram(ctx context.Context, arg DeleteMentorshipProgramParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteMentorshipProgram, arg.TenantID, arg.ID)
+func (q *Queries) DeleteMentorshipProgram(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMentorshipProgram, id)
 	if err != nil {
 		return 0, err
 	}
@@ -302,15 +279,13 @@ func (q *Queries) DeleteMentorshipProgram(ctx context.Context, arg DeleteMentors
 
 const getActiveOrPendingConnection = `-- name: GetActiveOrPendingConnection :one
 SELECT id FROM mentorship_connections
-WHERE tenant_id = $1
-  AND mentor_id = $2
-  AND mentee_id = $3
-  AND status IN ('pending', 'active')
+WHERE mentor_id = $1
+ AND mentee_id = $2
+ AND status IN ('pending', 'active')
 LIMIT 1
 `
 
 type GetActiveOrPendingConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	MentorID pgtype.UUID `json:"mentor_id"`
 	MenteeID pgtype.UUID `json:"mentee_id"`
 }
@@ -319,7 +294,7 @@ type GetActiveOrPendingConnectionParams struct {
 // mentor and mentee (§102: a new request can only be sent after the previous
 // one has been resolved). Returns at most one row.
 func (q *Queries) GetActiveOrPendingConnection(ctx context.Context, arg GetActiveOrPendingConnectionParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getActiveOrPendingConnection, arg.TenantID, arg.MentorID, arg.MenteeID)
+	row := q.db.QueryRow(ctx, getActiveOrPendingConnection, arg.MentorID, arg.MenteeID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -328,13 +303,8 @@ func (q *Queries) GetActiveOrPendingConnection(ctx context.Context, arg GetActiv
 const getMenteeDestinationSpaceID = `-- name: GetMenteeDestinationSpaceID :one
 SELECT user_id, japa_stage_dest_space_id AS destination_space_id
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetMenteeDestinationSpaceIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetMenteeDestinationSpaceIDRow struct {
 	UserID             pgtype.UUID `json:"user_id"`
@@ -345,30 +315,24 @@ type GetMenteeDestinationSpaceIDRow struct {
 // §87) for use as the default ?dest= filter on the mentor discovery page
 // (§102 Geo Awareness: "The mentee's profile destination_country_id is
 // injected as a default filter when logged in, with no UI action required").
-func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, arg GetMenteeDestinationSpaceIDParams) (GetMenteeDestinationSpaceIDRow, error) {
-	row := q.db.QueryRow(ctx, getMenteeDestinationSpaceID, arg.TenantID, arg.UserID)
+func (q *Queries) GetMenteeDestinationSpaceID(ctx context.Context, userID pgtype.UUID) (GetMenteeDestinationSpaceIDRow, error) {
+	row := q.db.QueryRow(ctx, getMenteeDestinationSpaceID, userID)
 	var i GetMenteeDestinationSpaceIDRow
 	err := row.Scan(&i.UserID, &i.DestinationSpaceID)
 	return i, err
 }
 
 const getMentorByUsername = `-- name: GetMentorByUsername :one
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username
+SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url, u.username
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE up.tenant_id = $1 AND u.username = $2 AND up.is_mentor = true
+WHERE u.username = $1 AND up.is_mentor = true
 `
-
-type GetMentorByUsernameParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Username string      `json:"username"`
-}
 
 type GetMentorByUsernameRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -381,12 +345,11 @@ type GetMentorByUsernameRow struct {
 }
 
 // Get a mentor's public profile by username (is_mentor must be true).
-func (q *Queries) GetMentorByUsername(ctx context.Context, arg GetMentorByUsernameParams) (GetMentorByUsernameRow, error) {
-	row := q.db.QueryRow(ctx, getMentorByUsername, arg.TenantID, arg.Username)
+func (q *Queries) GetMentorByUsername(ctx context.Context, username string) (GetMentorByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getMentorByUsername, username)
 	var i GetMentorByUsernameRow
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -403,13 +366,8 @@ func (q *Queries) GetMentorByUsername(ctx context.Context, arg GetMentorByUserna
 const getMentorEmbedding = `-- name: GetMentorEmbedding :one
 SELECT user_id, mentor_embedding
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2 AND is_mentor = true
+WHERE user_id = $1 AND is_mentor = true
 `
-
-type GetMentorEmbeddingParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetMentorEmbeddingRow struct {
 	UserID          pgtype.UUID      `json:"user_id"`
@@ -417,8 +375,8 @@ type GetMentorEmbeddingRow struct {
 }
 
 // Get a mentor's embedding vector (for match scoring).
-func (q *Queries) GetMentorEmbedding(ctx context.Context, arg GetMentorEmbeddingParams) (GetMentorEmbeddingRow, error) {
-	row := q.db.QueryRow(ctx, getMentorEmbedding, arg.TenantID, arg.UserID)
+func (q *Queries) GetMentorEmbedding(ctx context.Context, userID pgtype.UUID) (GetMentorEmbeddingRow, error) {
+	row := q.db.QueryRow(ctx, getMentorEmbedding, userID)
 	var i GetMentorEmbeddingRow
 	err := row.Scan(&i.UserID, &i.MentorEmbedding)
 	return i, err
@@ -426,21 +384,15 @@ func (q *Queries) GetMentorEmbedding(ctx context.Context, arg GetMentorEmbedding
 
 const getMentorProfile = `-- name: GetMentorProfile :one
 
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url
+SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url
 FROM user_profiles up
-WHERE up.tenant_id = $1 AND up.user_id = $2
+WHERE up.user_id = $1
 `
-
-type GetMentorProfileParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetMentorProfileRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -456,12 +408,11 @@ type GetMentorProfileRow struct {
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
 // =====================================================================
 // Get the current user's mentor profile settings from user_profiles.
-func (q *Queries) GetMentorProfile(ctx context.Context, arg GetMentorProfileParams) (GetMentorProfileRow, error) {
-	row := q.db.QueryRow(ctx, getMentorProfile, arg.TenantID, arg.UserID)
+func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (GetMentorProfileRow, error) {
+	row := q.db.QueryRow(ctx, getMentorProfile, userID)
 	var i GetMentorProfileRow
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -475,26 +426,19 @@ func (q *Queries) GetMentorProfile(ctx context.Context, arg GetMentorProfilePara
 }
 
 const getMentorsByIDs = `-- name: GetMentorsByIDs :many
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url, u.username,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = $1
-  AND up.is_mentor = true
-  AND up.user_id = ANY($2::uuid[])
+JOIN users u ON u.id = up.user_id
+WHERE up.is_mentor = true
+ AND up.user_id = ANY($1::uuid[])
 ORDER BY u.username
 `
 
-type GetMentorsByIDsParams struct {
-	TenantID pgtype.UUID   `json:"tenant_id"`
-	UserIds  []pgtype.UUID `json:"user_ids"`
-}
-
 type GetMentorsByIDsRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -508,8 +452,8 @@ type GetMentorsByIDsRow struct {
 }
 
 // Get up to 4 mentors by user IDs for the comparison endpoint (§30).
-func (q *Queries) GetMentorsByIDs(ctx context.Context, arg GetMentorsByIDsParams) ([]GetMentorsByIDsRow, error) {
-	rows, err := q.db.Query(ctx, getMentorsByIDs, arg.TenantID, arg.UserIds)
+func (q *Queries) GetMentorsByIDs(ctx context.Context, userIds []pgtype.UUID) ([]GetMentorsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, getMentorsByIDs, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +463,6 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, arg GetMentorsByIDsParams
 		var i GetMentorsByIDsRow
 		if err := rows.Scan(
 			&i.UserID,
-			&i.TenantID,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,
@@ -543,17 +486,12 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, arg GetMentorsByIDsParams
 
 const getMentorshipConnection = `-- name: GetMentorshipConnection :one
 SELECT id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetMentorshipConnectionParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
 // Get a single connection by ID (within tenant).
-func (q *Queries) GetMentorshipConnection(ctx context.Context, arg GetMentorshipConnectionParams) (MentorshipConnection, error) {
-	row := q.db.QueryRow(ctx, getMentorshipConnection, arg.TenantID, arg.ID)
+func (q *Queries) GetMentorshipConnection(ctx context.Context, id pgtype.UUID) (MentorshipConnection, error) {
+	row := q.db.QueryRow(ctx, getMentorshipConnection, id)
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
@@ -574,22 +512,25 @@ func (q *Queries) GetMentorshipConnection(ctx context.Context, arg GetMentorship
 }
 
 const getMentorshipProgram = `-- name: GetMentorshipProgram :one
-SELECT id, tenant_id, name, description, is_active, created_at, updated_at
+SELECT id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetMentorshipProgramParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
+type GetMentorshipProgramRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetMentorshipProgram(ctx context.Context, arg GetMentorshipProgramParams) (MentorshipProgram, error) {
-	row := q.db.QueryRow(ctx, getMentorshipProgram, arg.TenantID, arg.ID)
-	var i MentorshipProgram
+func (q *Queries) GetMentorshipProgram(ctx context.Context, id pgtype.UUID) (GetMentorshipProgramRow, error) {
+	row := q.db.QueryRow(ctx, getMentorshipProgram, id)
+	var i GetMentorshipProgramRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -602,13 +543,8 @@ func (q *Queries) GetMentorshipProgram(ctx context.Context, arg GetMentorshipPro
 const getUserEmbedding = `-- name: GetUserEmbedding :one
 SELECT user_id, mentor_embedding
 FROM user_profiles
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
-
-type GetUserEmbeddingParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetUserEmbeddingRow struct {
 	UserID          pgtype.UUID      `json:"user_id"`
@@ -620,8 +556,8 @@ type GetUserEmbeddingRow struct {
 // a mentee who is also a mentor will have an embedding from their own bio.
 // Returns NULL for users without an embedding (service falls back to
 // keyword-only scoring, §102).
-func (q *Queries) GetUserEmbedding(ctx context.Context, arg GetUserEmbeddingParams) (GetUserEmbeddingRow, error) {
-	row := q.db.QueryRow(ctx, getUserEmbedding, arg.TenantID, arg.UserID)
+func (q *Queries) GetUserEmbedding(ctx context.Context, userID pgtype.UUID) (GetUserEmbeddingRow, error) {
+	row := q.db.QueryRow(ctx, getUserEmbedding, userID)
 	var i GetUserEmbeddingRow
 	err := row.Scan(&i.UserID, &i.MentorEmbedding)
 	return i, err
@@ -632,16 +568,14 @@ SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.
 FROM mentorship_connections mc
 LEFT JOIN users mu ON mu.id = mc.mentor_id
 LEFT JOIN users eu ON eu.id = mc.mentee_id
-WHERE mc.tenant_id = $1
-  AND ($2::text = '' OR mc.status = $2)
-  AND ($3::uuid IS NULL OR mc.mentor_id = $3)
-  AND ($4::uuid IS NULL OR mc.mentee_id = $4)
+WHERE ($1::text = '' OR mc.status = $1)
+ AND ($2::uuid IS NULL OR mc.mentor_id = $2)
+ AND ($3::uuid IS NULL OR mc.mentee_id = $3)
 ORDER BY mc.created_at DESC
-LIMIT $6 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListAllConnectionsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	MentorID   pgtype.UUID `json:"mentor_id"`
 	MenteeID   pgtype.UUID `json:"mentee_id"`
@@ -670,7 +604,6 @@ type ListAllConnectionsRow struct {
 // Admin: list all connections with optional status/mentor/mentee filters.
 func (q *Queries) ListAllConnections(ctx context.Context, arg ListAllConnectionsParams) ([]ListAllConnectionsRow, error) {
 	rows, err := q.db.Query(ctx, listAllConnections,
-		arg.TenantID,
 		arg.Status,
 		arg.MentorID,
 		arg.MenteeID,
@@ -715,15 +648,14 @@ const listIncomingConnections = `-- name: ListIncomingConnections :many
 SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentee_username, up.display_name AS mentee_display_name
 FROM mentorship_connections mc
 JOIN users u ON u.id = mc.mentee_id
-LEFT JOIN user_profiles up ON up.user_id = mc.mentee_id AND up.tenant_id = mc.tenant_id
-WHERE mc.tenant_id = $1 AND mc.mentor_id = $2
-  AND ($3::text = '' OR mc.status = $3)
+LEFT JOIN user_profiles up ON up.user_id = mc.mentee_id
+WHERE mc.mentor_id = $1
+ AND ($2::text = '' OR mc.status = $2)
 ORDER BY mc.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListIncomingConnectionsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	MentorID   pgtype.UUID `json:"mentor_id"`
 	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
@@ -751,7 +683,6 @@ type ListIncomingConnectionsRow struct {
 // List requests received by the mentor (status filter optional).
 func (q *Queries) ListIncomingConnections(ctx context.Context, arg ListIncomingConnectionsParams) ([]ListIncomingConnectionsRow, error) {
 	rows, err := q.db.Query(ctx, listIncomingConnections,
-		arg.TenantID,
 		arg.MentorID,
 		arg.Status,
 		arg.PageOffset,
@@ -793,64 +724,62 @@ func (q *Queries) ListIncomingConnections(ctx context.Context, arg ListIncomingC
 
 const listMentors = `-- name: ListMentors :many
 WITH mentors AS (
-    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-           up.display_name, up.avatar_url, u.username,
-           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
-           COUNT(*) OVER() AS total_count,
-           COALESCE(
-             (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
-              FROM unnest($4::text[]) AS a
-              WHERE EXISTS (
-                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
-              )),
-             0
-           ) AS area_overlap
-    FROM user_profiles up
-    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-    WHERE up.tenant_id = $5
-      AND up.is_mentor = true
-      AND (
-          $6::uuid IS NULL OR EXISTS (
-              SELECT 1 FROM spaces s
-              WHERE s.id = $6
-                AND s.tenant_id = $5
-                AND (
-                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
-                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
-                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
-                    OR EXISTS (
-                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
-                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
-                    )
-                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
-                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
-                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
-                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
-                    ) || '%'
-                )
-          )
-      )
-      AND (
-          $4::text[] IS NULL
-          OR COALESCE(array_length($4::text[], 1), 0) = 0
-          OR EXISTS (
-              SELECT 1 FROM unnest($4::text[]) AS a
-              WHERE EXISTS (
-                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
-              )
-          )
-      )
+ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url, u.username,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ COUNT(*) OVER() AS total_count,
+ COALESCE(
+ (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
+ FROM unnest($4::text[]) AS a
+ WHERE EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ )),
+ 0
+ ) AS area_overlap
+ FROM user_profiles up
+ JOIN users u ON u.id = up.user_id
+ WHERE up.is_mentor = true
+ AND (
+ $5::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM spaces s
+ WHERE s.id = $5
+ AND (
+ array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+ OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+ OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+ OR EXISTS (
+ SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+ WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+ )
+ OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+ SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+ FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+ WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+ ) || '%'
+ )
+ )
+ )
+ AND (
+ $4::text[] IS NULL
+ OR COALESCE(array_length($4::text[], 1), 0) = 0
+ OR EXISTS (
+ SELECT 1 FROM unnest($4::text[]) AS a
+ WHERE EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ )
+ )
+ )
 )
-SELECT user_id, tenant_id, is_mentor, mentor_capacity,
-       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
-       display_name, avatar_url, username,
-       available_slots, total_count, area_overlap
+SELECT user_id, is_mentor, mentor_capacity,
+ active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+ display_name, avatar_url, username,
+ available_slots, total_count, area_overlap
 FROM mentors
 ORDER BY
-    CASE WHEN $1 = 'match' THEN area_overlap END DESC,
-    CASE WHEN $1 = 'capacity' THEN available_slots END DESC,
-    mentor_since DESC NULLS LAST
+ CASE WHEN $1 = 'match' THEN area_overlap END DESC,
+ CASE WHEN $1 = 'capacity' THEN available_slots END DESC,
+ mentor_since DESC NULLS LAST
 LIMIT $3 OFFSET $2
 `
 
@@ -859,13 +788,11 @@ type ListMentorsParams struct {
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`
 	Areas       []string    `json:"areas"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	DestSpaceID pgtype.UUID `json:"dest_space_id"`
 }
 
 type ListMentorsRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -882,19 +809,15 @@ type ListMentorsRow struct {
 
 // Discover mentors with optional destination and area filters.
 // dest: when provided, filters mentors whose mentor_areas mention the
-//
-//	destination country name, geo_code, slug, or any word of the name.
-//
+// destination country name, geo_code, slug, or any word of the name.
 // sort: 'newest' (mentor_since DESC), 'capacity' (available_slots DESC),
-//
-//	'match' (keyword area_overlap DESC — partial substring match).
+// 'match' (keyword area_overlap DESC — partial substring match).
 func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]ListMentorsRow, error) {
 	rows, err := q.db.Query(ctx, listMentors,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 		arg.Areas,
-		arg.TenantID,
 		arg.DestSpaceID,
 	)
 	if err != nil {
@@ -906,7 +829,6 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 		var i ListMentorsRow
 		if err := rows.Scan(
 			&i.UserID,
-			&i.TenantID,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,
@@ -932,64 +854,62 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 
 const listMentorsByMatch = `-- name: ListMentorsByMatch :many
 WITH mentors AS (
-    SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
-           up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-           up.display_name, up.avatar_url, u.username,
-           (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
-           COUNT(*) OVER() AS total_count,
-           CASE WHEN up.mentor_embedding IS NOT NULL
-                THEN (1 - (up.mentor_embedding <=> $3))::double precision
-                ELSE 0::double precision
-           END AS bio_similarity,
-           COALESCE(
-             (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
-              FROM unnest($4::text[]) AS a
-              WHERE EXISTS (
-                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
-              )),
-             0
-           ) AS area_overlap
-    FROM user_profiles up
-    JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-    WHERE up.tenant_id = $5
-      AND up.is_mentor = true
-      AND (
-          $6::uuid IS NULL OR EXISTS (
-              SELECT 1 FROM spaces s
-              WHERE s.id = $6
-                AND s.tenant_id = $5
-                AND (
-                    array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
-                    OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
-                    OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
-                    OR EXISTS (
-                        SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
-                        WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
-                    )
-                    OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
-                        SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
-                        FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
-                        WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
-                    ) || '%'
-                )
-          )
-      )
-      AND (
-          $4::text[] IS NULL
-          OR COALESCE(array_length($4::text[], 1), 0) = 0
-          OR EXISTS (
-              SELECT 1 FROM unnest($4::text[]) AS a
-              WHERE EXISTS (
-                  SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
-              )
-          )
-      )
+ SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url, u.username,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots,
+ COUNT(*) OVER() AS total_count,
+ CASE WHEN up.mentor_embedding IS NOT NULL
+ THEN (1 - (up.mentor_embedding <=> $3))::double precision
+ ELSE 0::double precision
+ END AS bio_similarity,
+ COALESCE(
+ (SELECT COUNT(*)::double precision / NULLIF(array_length($4::text[], 1), 0)
+ FROM unnest($4::text[]) AS a
+ WHERE EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ )),
+ 0
+ ) AS area_overlap
+ FROM user_profiles up
+ JOIN users u ON u.id = up.user_id
+ WHERE up.is_mentor = true
+ AND (
+ $5::uuid IS NULL OR EXISTS (
+ SELECT 1 FROM spaces s
+ WHERE s.id = $5
+ AND (
+ array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.name || '%'
+ OR (s.geo_code IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.geo_code || '%')
+ OR (s.slug IS NOT NULL AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || s.slug || '%')
+ OR EXISTS (
+ SELECT 1 FROM unnest(string_to_array(s.name, ' ')) AS word
+ WHERE word <> '' AND array_to_string(up.mentor_areas, ' ') ILIKE '%' || word || '%'
+ )
+ OR array_to_string(up.mentor_areas, ' ') ILIKE '%' || (
+ SELECT upper(string_agg(left(regexp_replace(word, '[^a-zA-Z]', '', 'g'), 1), ''))
+ FROM unnest(string_to_array(regexp_replace(s.name, '\y(the|of|and|in)\y', '', 'gi'), ' ')) AS word
+ WHERE regexp_replace(word, '[^a-zA-Z]', '', 'g') <> ''
+ ) || '%'
+ )
+ )
+ )
+ AND (
+ $4::text[] IS NULL
+ OR COALESCE(array_length($4::text[], 1), 0) = 0
+ OR EXISTS (
+ SELECT 1 FROM unnest($4::text[]) AS a
+ WHERE EXISTS (
+ SELECT 1 FROM unnest(up.mentor_areas) AS ma WHERE ma ILIKE '%' || a || '%'
+ )
+ )
+ )
 )
-SELECT user_id, tenant_id, is_mentor, mentor_capacity,
-       active_mentee_count, mentor_areas, mentor_bio, mentor_since,
-       display_name, avatar_url, username,
-       available_slots, total_count, bio_similarity, area_overlap,
-       (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
+SELECT user_id, is_mentor, mentor_capacity,
+ active_mentee_count, mentor_areas, mentor_bio, mentor_since,
+ display_name, avatar_url, username,
+ available_slots, total_count, bio_similarity, area_overlap,
+ (0.6 * area_overlap + 0.4 * bio_similarity) AS match_score
 FROM mentors
 ORDER BY match_score DESC, mentor_since DESC NULLS LAST
 LIMIT $2 OFFSET $1
@@ -1000,13 +920,11 @@ type ListMentorsByMatchParams struct {
 	PageLimit       int32            `json:"page_limit"`
 	MenteeEmbedding *pgvector.Vector `json:"mentee_embedding"`
 	Areas           []string         `json:"areas"`
-	TenantID        pgtype.UUID      `json:"tenant_id"`
 	DestSpaceID     pgtype.UUID      `json:"dest_space_id"`
 }
 
 type ListMentorsByMatchRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -1031,7 +949,6 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 		arg.PageLimit,
 		arg.MenteeEmbedding,
 		arg.Areas,
-		arg.TenantID,
 		arg.DestSpaceID,
 	)
 	if err != nil {
@@ -1043,7 +960,6 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 		var i ListMentorsByMatchRow
 		if err := rows.Scan(
 			&i.UserID,
-			&i.TenantID,
 			&i.IsMentor,
 			&i.MentorCapacity,
 			&i.ActiveMenteeCount,
@@ -1071,9 +987,9 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 
 const listMentorsWithEmbeddings = `-- name: ListMentorsWithEmbeddings :many
 SELECT up.user_id, up.mentor_embedding, up.is_mentor, up.mentor_areas,
-       up.mentor_bio, up.mentor_capacity, up.active_mentee_count, up.mentor_since
+ up.mentor_bio, up.mentor_capacity, up.active_mentee_count, up.mentor_since
 FROM user_profiles up
-WHERE up.tenant_id = $1 AND up.is_mentor = true
+WHERE up.is_mentor = true
 `
 
 type ListMentorsWithEmbeddingsRow struct {
@@ -1088,8 +1004,8 @@ type ListMentorsWithEmbeddingsRow struct {
 }
 
 // Get all mentors with their embeddings for batch Meilisearch sync.
-func (q *Queries) ListMentorsWithEmbeddings(ctx context.Context, tenantID pgtype.UUID) ([]ListMentorsWithEmbeddingsRow, error) {
-	rows, err := q.db.Query(ctx, listMentorsWithEmbeddings, tenantID)
+func (q *Queries) ListMentorsWithEmbeddings(ctx context.Context) ([]ListMentorsWithEmbeddingsRow, error) {
+	rows, err := q.db.Query(ctx, listMentorsWithEmbeddings)
 	if err != nil {
 		return nil, err
 	}
@@ -1118,28 +1034,26 @@ func (q *Queries) ListMentorsWithEmbeddings(ctx context.Context, tenantID pgtype
 }
 
 const listMentorshipMatches = `-- name: ListMentorshipMatches :many
-SELECT m.id, m.tenant_id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
-       p.name AS program_name,
-       mu.username AS mentor_username,
-       eu.username AS mentee_username
+SELECT m.id, m.program_id, m.mentor_id, m.mentee_id, m.status, m.created_at, m.updated_at,
+ p.name AS program_name,
+ mu.username AS mentor_username,
+ eu.username AS mentee_username
 FROM mentorship_matches m
 LEFT JOIN mentorship_programs p ON p.id = m.program_id
 LEFT JOIN users mu ON mu.id = m.mentor_id
 LEFT JOIN users eu ON eu.id = m.mentee_id
-WHERE m.tenant_id = $1
+
 ORDER BY m.created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListMentorshipMatchesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListMentorshipMatchesRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ProgramID      pgtype.UUID        `json:"program_id"`
 	MentorID       pgtype.UUID        `json:"mentor_id"`
 	MenteeID       pgtype.UUID        `json:"mentee_id"`
@@ -1152,7 +1066,7 @@ type ListMentorshipMatchesRow struct {
 }
 
 func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipMatchesParams) ([]ListMentorshipMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listMentorshipMatches, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listMentorshipMatches, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1162,7 +1076,6 @@ func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipM
 		var i ListMentorshipMatchesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProgramID,
 			&i.MentorID,
 			&i.MenteeID,
@@ -1185,32 +1098,39 @@ func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipM
 
 const listMentorshipPrograms = `-- name: ListMentorshipPrograms :many
 
-SELECT id, tenant_id, name, description, is_active, created_at, updated_at
+SELECT id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
-WHERE tenant_id = $1
+
 ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListMentorshipProgramsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+type ListMentorshipProgramsRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Mentorship program and match queries (DB-001: migrated from raw SQL to sqlc).
-func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorshipProgramsParams) ([]MentorshipProgram, error) {
-	rows, err := q.db.Query(ctx, listMentorshipPrograms, arg.TenantID, arg.PageOffset, arg.PageLimit)
+func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorshipProgramsParams) ([]ListMentorshipProgramsRow, error) {
+	rows, err := q.db.Query(ctx, listMentorshipPrograms, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []MentorshipProgram
+	var items []ListMentorshipProgramsRow
 	for rows.Next() {
-		var i MentorshipProgram
+		var i ListMentorshipProgramsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.IsActive,
@@ -1228,40 +1148,38 @@ func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorship
 }
 
 const listMentorshipProgramsWithCounts = `-- name: ListMentorshipProgramsWithCounts :many
-SELECT p.id, p.tenant_id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
-       COALESCE(mentor_counts.cnt, 0)::int AS mentor_count,
-       COALESCE(mentee_counts.cnt, 0)::int AS mentee_count,
-       COALESCE(match_counts.cnt, 0)::int AS match_count
+SELECT p.id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
+ COALESCE(mentor_counts.cnt, 0)::int AS mentor_count,
+ COALESCE(mentee_counts.cnt, 0)::int AS mentee_count,
+ COALESCE(match_counts.cnt, 0)::int AS match_count
 FROM mentorship_programs p
 LEFT JOIN (
-    SELECT mm.program_id, COUNT(DISTINCT mm.mentor_id) AS cnt
-    FROM mentorship_matches mm WHERE mm.tenant_id = $1
-    GROUP BY mm.program_id
+ SELECT mm.program_id, COUNT(DISTINCT mm.mentor_id) AS cnt
+ FROM mentorship_matches mm
+ GROUP BY mm.program_id
 ) mentor_counts ON mentor_counts.program_id = p.id
 LEFT JOIN (
-    SELECT mm.program_id, COUNT(DISTINCT mm.mentee_id) AS cnt
-    FROM mentorship_matches mm WHERE mm.tenant_id = $1
-    GROUP BY mm.program_id
+ SELECT mm.program_id, COUNT(DISTINCT mm.mentee_id) AS cnt
+ FROM mentorship_matches mm
+ GROUP BY mm.program_id
 ) mentee_counts ON mentee_counts.program_id = p.id
 LEFT JOIN (
-    SELECT mm.program_id, COUNT(*) AS cnt
-    FROM mentorship_matches mm WHERE mm.tenant_id = $1
-    GROUP BY mm.program_id
+ SELECT mm.program_id, COUNT(*) AS cnt
+ FROM mentorship_matches mm
+ GROUP BY mm.program_id
 ) match_counts ON match_counts.program_id = p.id
-WHERE p.tenant_id = $1
+
 ORDER BY p.created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $2 OFFSET $1
 `
 
 type ListMentorshipProgramsWithCountsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type ListMentorshipProgramsWithCountsRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
 	IsActive    bool               `json:"is_active"`
@@ -1273,7 +1191,7 @@ type ListMentorshipProgramsWithCountsRow struct {
 }
 
 func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg ListMentorshipProgramsWithCountsParams) ([]ListMentorshipProgramsWithCountsRow, error) {
-	rows, err := q.db.Query(ctx, listMentorshipProgramsWithCounts, arg.TenantID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listMentorshipProgramsWithCounts, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1283,7 +1201,6 @@ func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg List
 		var i ListMentorshipProgramsWithCountsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.IsActive,
@@ -1307,15 +1224,14 @@ const listOutgoingConnections = `-- name: ListOutgoingConnections :many
 SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentor_username, up.display_name AS mentor_display_name
 FROM mentorship_connections mc
 JOIN users u ON u.id = mc.mentor_id
-LEFT JOIN user_profiles up ON up.user_id = mc.mentor_id AND up.tenant_id = mc.tenant_id
-WHERE mc.tenant_id = $1 AND mc.mentee_id = $2
-  AND ($3::text = '' OR mc.status = $3)
+LEFT JOIN user_profiles up ON up.user_id = mc.mentor_id
+WHERE mc.mentee_id = $1
+ AND ($2::text = '' OR mc.status = $2)
 ORDER BY mc.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListOutgoingConnectionsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	MenteeID   pgtype.UUID `json:"mentee_id"`
 	Status     string      `json:"status"`
 	PageOffset int32       `json:"page_offset"`
@@ -1343,7 +1259,6 @@ type ListOutgoingConnectionsRow struct {
 // List requests sent by the mentee (status filter optional).
 func (q *Queries) ListOutgoingConnections(ctx context.Context, arg ListOutgoingConnectionsParams) ([]ListOutgoingConnectionsRow, error) {
 	rows, err := q.db.Query(ctx, listOutgoingConnections,
-		arg.TenantID,
 		arg.MenteeID,
 		arg.Status,
 		arg.PageOffset,
@@ -1386,32 +1301,31 @@ func (q *Queries) ListOutgoingConnections(ctx context.Context, arg ListOutgoingC
 const updateMentorEmbedding = `-- name: UpdateMentorEmbedding :exec
 UPDATE user_profiles
 SET mentor_embedding = $1, updated_at = now()
-WHERE tenant_id = $2 AND user_id = $3
+WHERE user_id = $2
 `
 
 type UpdateMentorEmbeddingParams struct {
 	Embedding *pgvector.Vector `json:"embedding"`
-	TenantID  pgtype.UUID      `json:"tenant_id"`
 	UserID    pgtype.UUID      `json:"user_id"`
 }
 
 // Set the pgvector embedding for a mentor's bio (called by Asynq task).
 func (q *Queries) UpdateMentorEmbedding(ctx context.Context, arg UpdateMentorEmbeddingParams) error {
-	_, err := q.db.Exec(ctx, updateMentorEmbedding, arg.Embedding, arg.TenantID, arg.UserID)
+	_, err := q.db.Exec(ctx, updateMentorEmbedding, arg.Embedding, arg.UserID)
 	return err
 }
 
 const updateMentorProfile = `-- name: UpdateMentorProfile :one
 UPDATE user_profiles
 SET is_mentor = $1,
-    mentor_capacity = $2,
-    mentor_areas = $3,
-    mentor_bio = $4,
-    mentor_since = CASE WHEN $1 = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
-    updated_at = now()
-WHERE tenant_id = $5 AND user_id = $6
-RETURNING user_id, tenant_id, is_mentor, mentor_capacity, active_mentee_count,
-          mentor_areas, mentor_bio, mentor_since, display_name, avatar_url
+ mentor_capacity = $2,
+ mentor_areas = $3,
+ mentor_bio = $4,
+ mentor_since = CASE WHEN $1 = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
+ updated_at = now()
+WHERE user_id = $5
+RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
+ mentor_areas, mentor_bio, mentor_since, display_name, avatar_url
 `
 
 type UpdateMentorProfileParams struct {
@@ -1419,13 +1333,11 @@ type UpdateMentorProfileParams struct {
 	MentorCapacity *int16      `json:"mentor_capacity"`
 	MentorAreas    []string    `json:"mentor_areas"`
 	MentorBio      *string     `json:"mentor_bio"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 }
 
 type UpdateMentorProfileRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	ActiveMenteeCount *int16             `json:"active_mentee_count"`
@@ -1444,13 +1356,11 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 		arg.MentorCapacity,
 		arg.MentorAreas,
 		arg.MentorBio,
-		arg.TenantID,
 		arg.UserID,
 	)
 	var i UpdateMentorProfileRow
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.IsMentor,
 		&i.MentorCapacity,
 		&i.ActiveMenteeCount,
@@ -1466,22 +1376,30 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 const updateMentorshipMatch = `-- name: UpdateMentorshipMatch :one
 UPDATE mentorship_matches
 SET status = $1, updated_at = now()
-WHERE tenant_id = $2 AND id = $3
-RETURNING id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at
+WHERE id = $2
+RETURNING id, program_id, mentor_id, mentee_id, status, created_at, updated_at
 `
 
 type UpdateMentorshipMatchParams struct {
-	Status   string      `json:"status"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshipMatchParams) (MentorshipMatch, error) {
-	row := q.db.QueryRow(ctx, updateMentorshipMatch, arg.Status, arg.TenantID, arg.ID)
-	var i MentorshipMatch
+type UpdateMentorshipMatchRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	ProgramID pgtype.UUID        `json:"program_id"`
+	MentorID  pgtype.UUID        `json:"mentor_id"`
+	MenteeID  pgtype.UUID        `json:"mentee_id"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshipMatchParams) (UpdateMentorshipMatchRow, error) {
+	row := q.db.QueryRow(ctx, updateMentorshipMatch, arg.Status, arg.ID)
+	var i UpdateMentorshipMatchRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProgramID,
 		&i.MentorID,
 		&i.MenteeID,
@@ -1495,30 +1413,36 @@ func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshi
 const updateMentorshipProgram = `-- name: UpdateMentorshipProgram :one
 UPDATE mentorship_programs
 SET name = $1, description = $2, is_active = $3, updated_at = now()
-WHERE tenant_id = $4 AND id = $5
-RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
+WHERE id = $4
+RETURNING id, name, description, is_active, created_at, updated_at
 `
 
 type UpdateMentorshipProgramParams struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	IsActive    bool        `json:"is_active"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	ID          pgtype.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateMentorshipProgram(ctx context.Context, arg UpdateMentorshipProgramParams) (MentorshipProgram, error) {
+type UpdateMentorshipProgramRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMentorshipProgram(ctx context.Context, arg UpdateMentorshipProgramParams) (UpdateMentorshipProgramRow, error) {
 	row := q.db.QueryRow(ctx, updateMentorshipProgram,
 		arg.Name,
 		arg.Description,
 		arg.IsActive,
-		arg.TenantID,
 		arg.ID,
 	)
-	var i MentorshipProgram
+	var i UpdateMentorshipProgramRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,

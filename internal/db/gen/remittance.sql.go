@@ -14,17 +14,11 @@ import (
 const countRemittanceProviders = `-- name: CountRemittanceProviders :one
 SELECT COUNT(*) AS count
 FROM remittance_providers
-WHERE tenant_id = $1
-  AND ($2::boolean = false OR is_active = true)
+WHERE ($1::boolean = false OR is_active = true)
 `
 
-type CountRemittanceProvidersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	ActiveOnly bool        `json:"active_only"`
-}
-
-func (q *Queries) CountRemittanceProviders(ctx context.Context, arg CountRemittanceProvidersParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countRemittanceProviders, arg.TenantID, arg.ActiveOnly)
+func (q *Queries) CountRemittanceProviders(ctx context.Context, activeOnly bool) (int64, error) {
+	row := q.db.QueryRow(ctx, countRemittanceProviders, activeOnly)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -32,14 +26,13 @@ func (q *Queries) CountRemittanceProviders(ctx context.Context, arg CountRemitta
 
 const createRateAlert = `-- name: CreateRateAlert :one
 
-INSERT INTO remittance_rate_alerts (tenant_id, user_id, send_currency, receive_currency, target_rate, direction)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, user_id, send_currency, receive_currency, direction) DO NOTHING
+INSERT INTO remittance_rate_alerts (user_id, send_currency, receive_currency, target_rate, direction) VALUES ($1, $2, $3, $4, $5)
+
+ON CONFLICT (user_id, send_currency, receive_currency, direction) DO NOTHING
 RETURNING id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
 `
 
 type CreateRateAlertParams struct {
-	TenantID        pgtype.UUID    `json:"tenant_id"`
 	UserID          pgtype.UUID    `json:"user_id"`
 	SendCurrency    string         `json:"send_currency"`
 	ReceiveCurrency string         `json:"receive_currency"`
@@ -52,7 +45,6 @@ type CreateRateAlertParams struct {
 // =====================================================================
 func (q *Queries) CreateRateAlert(ctx context.Context, arg CreateRateAlertParams) (RemittanceRateAlert, error) {
 	row := q.db.QueryRow(ctx, createRateAlert,
-		arg.TenantID,
 		arg.UserID,
 		arg.SendCurrency,
 		arg.ReceiveCurrency,
@@ -78,13 +70,12 @@ func (q *Queries) CreateRateAlert(ctx context.Context, arg CreateRateAlertParams
 const createRemittanceProvider = `-- name: CreateRemittanceProvider :one
 
 
-INSERT INTO remittance_providers (tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+
 RETURNING id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
 `
 
 type CreateRemittanceProviderParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	Name         string      `json:"name"`
 	Slug         string      `json:"slug"`
 	LogoMediaID  pgtype.UUID `json:"logo_media_id"`
@@ -107,7 +98,6 @@ type CreateRemittanceProviderParams struct {
 // =====================================================================
 func (q *Queries) CreateRemittanceProvider(ctx context.Context, arg CreateRemittanceProviderParams) (RemittanceProvider, error) {
 	row := q.db.QueryRow(ctx, createRemittanceProvider,
-		arg.TenantID,
 		arg.Name,
 		arg.Slug,
 		arg.LogoMediaID,
@@ -136,26 +126,25 @@ func (q *Queries) CreateRemittanceProvider(ctx context.Context, arg CreateRemitt
 
 const deleteRateAlert = `-- name: DeleteRateAlert :exec
 DELETE FROM remittance_rate_alerts
-WHERE tenant_id = $1 AND id = $2 AND user_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type DeleteRateAlertParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) DeleteRateAlert(ctx context.Context, arg DeleteRateAlertParams) error {
-	_, err := q.db.Exec(ctx, deleteRateAlert, arg.TenantID, arg.ID, arg.UserID)
+	_, err := q.db.Exec(ctx, deleteRateAlert, arg.ID, arg.UserID)
 	return err
 }
 
 const getCorridors = `-- name: GetCorridors :many
 SELECT DISTINCT
-    send_currency,
-    receive_currency
+ send_currency,
+ receive_currency
 FROM remittance_rates
-WHERE tenant_id = $1
+
 ORDER BY send_currency, receive_currency
 `
 
@@ -164,8 +153,8 @@ type GetCorridorsRow struct {
 	ReceiveCurrency string `json:"receive_currency"`
 }
 
-func (q *Queries) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]GetCorridorsRow, error) {
-	rows, err := q.db.Query(ctx, getCorridors, tenantID)
+func (q *Queries) GetCorridors(ctx context.Context) ([]GetCorridorsRow, error) {
+	rows, err := q.db.Query(ctx, getCorridors)
 	if err != nil {
 		return nil, err
 	}
@@ -186,23 +175,21 @@ func (q *Queries) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]Get
 
 const getLatestRatesForCorridor = `-- name: GetLatestRatesForCorridor :many
 SELECT DISTINCT ON (rr.provider_id)
-    rr.id, rr.tenant_id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
-    rp.name   AS provider_name,
-    rp.slug   AS provider_slug,
-    rp.website_url AS provider_website
+ rr.id, rr.tenant_id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
+ rp.name AS provider_name,
+ rp.slug AS provider_slug,
+ rp.website_url AS provider_website
 FROM remittance_rates rr
 JOIN remittance_providers rp ON rp.id = rr.provider_id
-WHERE rr.tenant_id = $1
-  AND rr.send_currency = $2
-  AND rr.receive_currency = $3
-  AND rp.is_active = true
+WHERE rr.send_currency = $1
+ AND rr.receive_currency = $2
+ AND rp.is_active = true
 ORDER BY rr.provider_id, rr.fetched_at DESC
 `
 
 type GetLatestRatesForCorridorParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
-	SendCurrency    string      `json:"send_currency"`
-	ReceiveCurrency string      `json:"receive_currency"`
+	SendCurrency    string `json:"send_currency"`
+	ReceiveCurrency string `json:"receive_currency"`
 }
 
 type GetLatestRatesForCorridorRow struct {
@@ -230,7 +217,7 @@ type GetLatestRatesForCorridorRow struct {
 }
 
 func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRatesForCorridorParams) ([]GetLatestRatesForCorridorRow, error) {
-	rows, err := q.db.Query(ctx, getLatestRatesForCorridor, arg.TenantID, arg.SendCurrency, arg.ReceiveCurrency)
+	rows, err := q.db.Query(ctx, getLatestRatesForCorridor, arg.SendCurrency, arg.ReceiveCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -273,17 +260,16 @@ func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRa
 
 const getRateAlertByID = `-- name: GetRateAlertByID :one
 SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
-WHERE tenant_id = $1 AND id = $2 AND user_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type GetRateAlertByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) GetRateAlertByID(ctx context.Context, arg GetRateAlertByIDParams) (RemittanceRateAlert, error) {
-	row := q.db.QueryRow(ctx, getRateAlertByID, arg.TenantID, arg.ID, arg.UserID)
+	row := q.db.QueryRow(ctx, getRateAlertByID, arg.ID, arg.UserID)
 	var i RemittanceRateAlert
 	err := row.Scan(
 		&i.ID,
@@ -302,21 +288,19 @@ func (q *Queries) GetRateAlertByID(ctx context.Context, arg GetRateAlertByIDPara
 
 const getRateHistory = `-- name: GetRateHistory :many
 SELECT
-    date_trunc('day', fetched_at)::date AS day,
-    MAX(rate) AS max_rate,
-    MIN(rate) AS min_rate,
-    AVG(rate)::numeric(18,6) AS avg_rate
+ date_trunc('day', fetched_at)::date AS day,
+ MAX(rate) AS max_rate,
+ MIN(rate) AS min_rate,
+ AVG(rate)::numeric(18,6) AS avg_rate
 FROM remittance_rates
-WHERE tenant_id = $1
-  AND send_currency = $2
-  AND receive_currency = $3
-  AND fetched_at >= $4
+WHERE send_currency = $1
+ AND receive_currency = $2
+ AND fetched_at >= $3
 GROUP BY day
 ORDER BY day ASC
 `
 
 type GetRateHistoryParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	SendCurrency    string             `json:"send_currency"`
 	ReceiveCurrency string             `json:"receive_currency"`
 	FromDate        pgtype.Timestamptz `json:"from_date"`
@@ -330,12 +314,7 @@ type GetRateHistoryRow struct {
 }
 
 func (q *Queries) GetRateHistory(ctx context.Context, arg GetRateHistoryParams) ([]GetRateHistoryRow, error) {
-	rows, err := q.db.Query(ctx, getRateHistory,
-		arg.TenantID,
-		arg.SendCurrency,
-		arg.ReceiveCurrency,
-		arg.FromDate,
-	)
+	rows, err := q.db.Query(ctx, getRateHistory, arg.SendCurrency, arg.ReceiveCurrency, arg.FromDate)
 	if err != nil {
 		return nil, err
 	}
@@ -361,16 +340,11 @@ func (q *Queries) GetRateHistory(ctx context.Context, arg GetRateHistoryParams) 
 
 const getRemittanceProviderByID = `-- name: GetRemittanceProviderByID :one
 SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
 
-type GetRemittanceProviderByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) GetRemittanceProviderByID(ctx context.Context, arg GetRemittanceProviderByIDParams) (RemittanceProvider, error) {
-	row := q.db.QueryRow(ctx, getRemittanceProviderByID, arg.TenantID, arg.ID)
+func (q *Queries) GetRemittanceProviderByID(ctx context.Context, id pgtype.UUID) (RemittanceProvider, error) {
+	row := q.db.QueryRow(ctx, getRemittanceProviderByID, id)
 	var i RemittanceProvider
 	err := row.Scan(
 		&i.ID,
@@ -390,20 +364,12 @@ func (q *Queries) GetRemittanceProviderByID(ctx context.Context, arg GetRemittan
 
 const insertRemittanceRate = `-- name: InsertRemittanceRate :one
 
-INSERT INTO remittance_rates (
-    tenant_id, provider_id, send_currency, receive_currency,
-    rate, fee_flat, fee_pct, transfer_time, is_manual, source_url
-)
-VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7, $8,
-    $9, $10
-)
+INSERT INTO remittance_rates (provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, is_manual, source_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+
 RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type InsertRemittanceRateParams struct {
-	TenantID        pgtype.UUID    `json:"tenant_id"`
 	ProviderID      pgtype.UUID    `json:"provider_id"`
 	SendCurrency    string         `json:"send_currency"`
 	ReceiveCurrency string         `json:"receive_currency"`
@@ -420,7 +386,6 @@ type InsertRemittanceRateParams struct {
 // =====================================================================
 func (q *Queries) InsertRemittanceRate(ctx context.Context, arg InsertRemittanceRateParams) (RemittanceRate, error) {
 	row := q.db.QueryRow(ctx, insertRemittanceRate,
-		arg.TenantID,
 		arg.ProviderID,
 		arg.SendCurrency,
 		arg.ReceiveCurrency,
@@ -457,21 +422,19 @@ func (q *Queries) InsertRemittanceRate(ctx context.Context, arg InsertRemittance
 
 const listActiveAlertsForCorridor = `-- name: ListActiveAlertsForCorridor :many
 SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
-WHERE tenant_id = $1
-  AND send_currency = $2
-  AND receive_currency = $3
-  AND is_active = true
-  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
+WHERE send_currency = $1
+ AND receive_currency = $2
+ AND is_active = true
+ AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
 `
 
 type ListActiveAlertsForCorridorParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
-	SendCurrency    string      `json:"send_currency"`
-	ReceiveCurrency string      `json:"receive_currency"`
+	SendCurrency    string `json:"send_currency"`
+	ReceiveCurrency string `json:"receive_currency"`
 }
 
 func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiveAlertsForCorridorParams) ([]RemittanceRateAlert, error) {
-	rows, err := q.db.Query(ctx, listActiveAlertsForCorridor, arg.TenantID, arg.SendCurrency, arg.ReceiveCurrency)
+	rows, err := q.db.Query(ctx, listActiveAlertsForCorridor, arg.SendCurrency, arg.ReceiveCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -503,14 +466,13 @@ func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiv
 
 const listAllActiveAlertsForTenant = `-- name: ListAllActiveAlertsForTenant :many
 SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
-WHERE tenant_id = $1
-  AND is_active = true
-  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
+WHERE is_active = true
+ AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgtype.UUID) ([]RemittanceRateAlert, error) {
-	rows, err := q.db.Query(ctx, listAllActiveAlertsForTenant, tenantID)
+func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context) ([]RemittanceRateAlert, error) {
+	rows, err := q.db.Query(ctx, listAllActiveAlertsForTenant)
 	if err != nil {
 		return nil, err
 	}
@@ -542,18 +504,12 @@ func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgt
 
 const listRemittanceProviders = `-- name: ListRemittanceProviders :many
 SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
-WHERE tenant_id = $1
-  AND ($2::boolean = false OR is_active = true)
+WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 `
 
-type ListRemittanceProvidersParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	ActiveOnly bool        `json:"active_only"`
-}
-
-func (q *Queries) ListRemittanceProviders(ctx context.Context, arg ListRemittanceProvidersParams) ([]RemittanceProvider, error) {
-	rows, err := q.db.Query(ctx, listRemittanceProviders, arg.TenantID, arg.ActiveOnly)
+func (q *Queries) ListRemittanceProviders(ctx context.Context, activeOnly bool) ([]RemittanceProvider, error) {
+	rows, err := q.db.Query(ctx, listRemittanceProviders, activeOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -586,26 +542,19 @@ func (q *Queries) ListRemittanceProviders(ctx context.Context, arg ListRemittanc
 
 const listRemittanceProvidersPaginated = `-- name: ListRemittanceProvidersPaginated :many
 SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
-WHERE tenant_id = $1
-  AND ($2::boolean = false OR is_active = true)
+WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListRemittanceProvidersPaginatedParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	ActiveOnly bool        `json:"active_only"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	ActiveOnly bool  `json:"active_only"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 func (q *Queries) ListRemittanceProvidersPaginated(ctx context.Context, arg ListRemittanceProvidersPaginatedParams) ([]RemittanceProvider, error) {
-	rows, err := q.db.Query(ctx, listRemittanceProvidersPaginated,
-		arg.TenantID,
-		arg.ActiveOnly,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listRemittanceProvidersPaginated, arg.ActiveOnly, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -638,19 +587,18 @@ func (q *Queries) ListRemittanceProvidersPaginated(ctx context.Context, arg List
 
 const listUserRateAlerts = `-- name: ListUserRateAlerts :many
 SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
-WHERE tenant_id = $1 AND user_id = $2
-  AND ($3::boolean = false OR is_active = true)
+WHERE user_id = $1
+ AND ($2::boolean = false OR is_active = true)
 ORDER BY created_at DESC
 `
 
 type ListUserRateAlertsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	ActiveOnly bool        `json:"active_only"`
 }
 
 func (q *Queries) ListUserRateAlerts(ctx context.Context, arg ListUserRateAlertsParams) ([]RemittanceRateAlert, error) {
-	rows, err := q.db.Query(ctx, listUserRateAlerts, arg.TenantID, arg.UserID, arg.ActiveOnly)
+	rows, err := q.db.Query(ctx, listUserRateAlerts, arg.UserID, arg.ActiveOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -693,34 +641,27 @@ func (q *Queries) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error 
 
 const pruneOldRates = `-- name: PruneOldRates :exec
 DELETE FROM remittance_rates
-WHERE remittance_rates.tenant_id = $1
-  AND remittance_rates.fetched_at < $2
-  AND remittance_rates.id NOT IN (
-    SELECT MIN(remittance_rates.id) FROM remittance_rates
-    WHERE remittance_rates.tenant_id = $1
-      AND remittance_rates.fetched_at < $2
-    GROUP BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at)
-  )
+WHERE remittance_rates.fetched_at < $1
+ AND remittance_rates.id NOT IN (
+ SELECT MIN(remittance_rates.id) FROM remittance_rates
+ WHERE remittance_rates.fetched_at < $1
+ GROUP BY provider_id, send_currency, receive_currency, date_trunc('day', fetched_at)
+ )
 `
 
-type PruneOldRatesParams struct {
-	TenantID   pgtype.UUID        `json:"tenant_id"`
-	CutoffDate pgtype.Timestamptz `json:"cutoff_date"`
-}
-
-func (q *Queries) PruneOldRates(ctx context.Context, arg PruneOldRatesParams) error {
-	_, err := q.db.Exec(ctx, pruneOldRates, arg.TenantID, arg.CutoffDate)
+func (q *Queries) PruneOldRates(ctx context.Context, cutoffDate pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, pruneOldRates, cutoffDate)
 	return err
 }
 
 const updateRateAlert = `-- name: UpdateRateAlert :one
 UPDATE remittance_rate_alerts
 SET
-    target_rate      = COALESCE($1, target_rate),
-    direction        = COALESCE($2, direction),
-    is_active        = COALESCE($3, is_active),
-    last_triggered_at = COALESCE($4, last_triggered_at)
-WHERE tenant_id = $5 AND id = $6 AND user_id = $7
+ target_rate = COALESCE($1, target_rate),
+ direction = COALESCE($2, direction),
+ is_active = COALESCE($3, is_active),
+ last_triggered_at = COALESCE($4, last_triggered_at)
+WHERE id = $5 AND user_id = $6
 RETURNING id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
 `
 
@@ -729,7 +670,6 @@ type UpdateRateAlertParams struct {
 	Direction       *string            `json:"direction"`
 	IsActive        *bool              `json:"is_active"`
 	LastTriggeredAt pgtype.Timestamptz `json:"last_triggered_at"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	ID              pgtype.UUID        `json:"id"`
 	UserID          pgtype.UUID        `json:"user_id"`
 }
@@ -740,7 +680,6 @@ func (q *Queries) UpdateRateAlert(ctx context.Context, arg UpdateRateAlertParams
 		arg.Direction,
 		arg.IsActive,
 		arg.LastTriggeredAt,
-		arg.TenantID,
 		arg.ID,
 		arg.UserID,
 	)
@@ -763,12 +702,12 @@ func (q *Queries) UpdateRateAlert(ctx context.Context, arg UpdateRateAlertParams
 const updateRemittanceProvider = `-- name: UpdateRemittanceProvider :one
 UPDATE remittance_providers
 SET
-    name          = COALESCE($1, name),
-    website_url   = COALESCE($2, website_url),
-    api_config    = COALESCE($3, api_config),
-    is_active     = COALESCE($4, is_active),
-    display_order = COALESCE($5, display_order)
-WHERE tenant_id = $6 AND id = $7
+ name = COALESCE($1, name),
+ website_url = COALESCE($2, website_url),
+ api_config = COALESCE($3, api_config),
+ is_active = COALESCE($4, is_active),
+ display_order = COALESCE($5, display_order)
+WHERE id = $6
 RETURNING id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
 `
 
@@ -778,7 +717,6 @@ type UpdateRemittanceProviderParams struct {
 	ApiConfig    []byte      `json:"api_config"`
 	IsActive     *bool       `json:"is_active"`
 	DisplayOrder *int32      `json:"display_order"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 	ID           pgtype.UUID `json:"id"`
 }
 
@@ -789,7 +727,6 @@ func (q *Queries) UpdateRemittanceProvider(ctx context.Context, arg UpdateRemitt
 		arg.ApiConfig,
 		arg.IsActive,
 		arg.DisplayOrder,
-		arg.TenantID,
 		arg.ID,
 	)
 	var i RemittanceProvider

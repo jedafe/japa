@@ -14,16 +14,11 @@ import (
 const calendarAdminSoftDeleteEntry = `-- name: CalendarAdminSoftDeleteEntry :execrows
 UPDATE calendar_entries
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type CalendarAdminSoftDeleteEntryParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CalendarAdminSoftDeleteEntry(ctx context.Context, arg CalendarAdminSoftDeleteEntryParams) (int64, error) {
-	result, err := q.db.Exec(ctx, calendarAdminSoftDeleteEntry, arg.ID, arg.TenantID)
+func (q *Queries) CalendarAdminSoftDeleteEntry(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, calendarAdminSoftDeleteEntry, id)
 	if err != nil {
 		return 0, err
 	}
@@ -32,32 +27,31 @@ func (q *Queries) CalendarAdminSoftDeleteEntry(ctx context.Context, arg Calendar
 
 const calendarAdminUpdateEntry = `-- name: CalendarAdminUpdateEntry :execrows
 UPDATE calendar_entries
-SET status = $3,
-    reviewed_by = $4,
-    reviewed_at = now(),
-    updated_at = now(),
-    hitl_reviewed_by = CASE
-        WHEN $3 = 'published' AND ai_generated THEN $4
-        ELSE hitl_reviewed_by
-    END,
-    hitl_reviewed_at = CASE
-        WHEN $3 = 'published' AND ai_generated THEN now()
-        ELSE hitl_reviewed_at
-    END,
-    hitl_review_notes = CASE
-        WHEN $3 = 'published' AND ai_generated THEN COALESCE(NULLIF($5, ''), hitl_review_notes)
-        WHEN $5 IS NOT NULL AND $5 <> '' THEN COALESCE(NULLIF($5, ''), hitl_review_notes)
-        ELSE hitl_review_notes
-    END
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SET status = $2,
+ reviewed_by = $3,
+ reviewed_at = now(),
+ updated_at = now(),
+ hitl_reviewed_by = CASE
+ WHEN $2 = 'published' AND ai_generated THEN $3
+ ELSE hitl_reviewed_by
+ END,
+ hitl_reviewed_at = CASE
+ WHEN $2 = 'published' AND ai_generated THEN now()
+ ELSE hitl_reviewed_at
+ END,
+ hitl_review_notes = CASE
+ WHEN $2 = 'published' AND ai_generated THEN COALESCE(NULLIF($4, ''), hitl_review_notes)
+ WHEN $4 IS NOT NULL AND $4 <> '' THEN COALESCE(NULLIF($4, ''), hitl_review_notes)
+ ELSE hitl_review_notes
+ END
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 type CalendarAdminUpdateEntryParams struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Status     string      `json:"status"`
 	ReviewedBy pgtype.UUID `json:"reviewed_by"`
-	Column5    interface{} `json:"column_5"`
+	Column4    interface{} `json:"column_4"`
 }
 
 // On publish, stamps hitl_reviewed_by / hitl_reviewed_at for AI-generated
@@ -65,10 +59,9 @@ type CalendarAdminUpdateEntryParams struct {
 func (q *Queries) CalendarAdminUpdateEntry(ctx context.Context, arg CalendarAdminUpdateEntryParams) (int64, error) {
 	result, err := q.db.Exec(ctx, calendarAdminUpdateEntry,
 		arg.ID,
-		arg.TenantID,
 		arg.Status,
 		arg.ReviewedBy,
-		arg.Column5,
+		arg.Column4,
 	)
 	if err != nil {
 		return 0, err
@@ -78,22 +71,11 @@ func (q *Queries) CalendarAdminUpdateEntry(ctx context.Context, arg CalendarAdmi
 
 const calendarCreateEntry = `-- name: CalendarCreateEntry :one
 
-INSERT INTO calendar_entries (
-    tenant_id, title, description, category,
-    destination_space_id, origin_space_id,
-    occurs_at, ends_at, is_recurring, recurrence_pattern,
-    source_url, status, submitted_by, staleness_check_due
-) VALUES (
-    $1, $2, $3, $4,
-    $5, $6,
-    $7, $8, $9, $10,
-    $11, 'pending', $12, $13
-)
+INSERT INTO calendar_entries (title, description, category, destination_space_id, origin_space_id, occurs_at, ends_at, is_recurring, recurrence_pattern, source_url, status, submitted_by, staleness_check_due) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11, $12)
 RETURNING id
 `
 
 type CalendarCreateEntryParams struct {
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	Category           string             `json:"category"`
@@ -116,7 +98,6 @@ type CalendarCreateEntryParams struct {
 // Ref: japaconnect-engineering/sections/86-community-calendar.md
 func (q *Queries) CalendarCreateEntry(ctx context.Context, arg CalendarCreateEntryParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, calendarCreateEntry,
-		arg.TenantID,
 		arg.Title,
 		arg.Description,
 		arg.Category,
@@ -139,9 +120,9 @@ const calendarFlagStaleEntries = `-- name: CalendarFlagStaleEntries :execrows
 UPDATE calendar_entries
 SET status = 'unverified', updated_at = now()
 WHERE staleness_check_due IS NOT NULL
-  AND staleness_check_due <= now()
-  AND status = 'published'
-  AND deleted_at IS NULL
+ AND staleness_check_due <= now()
+ AND status = 'published'
+ AND deleted_at IS NULL
 `
 
 func (q *Queries) CalendarFlagStaleEntries(ctx context.Context) (int64, error) {
@@ -153,28 +134,22 @@ func (q *Queries) CalendarFlagStaleEntries(ctx context.Context) (int64, error) {
 }
 
 const calendarGetEntry = `-- name: CalendarGetEntry :one
-SELECT id, tenant_id, title, description, category,
-       destination_space_id, origin_space_id,
-       occurs_at, ends_at, is_recurring, recurrence_pattern,
-       source_url, status, submitted_by, reviewed_by, reviewed_at,
-       staleness_check_due,
-       ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
-       ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
-       created_at, updated_at, deleted_at
+SELECT id, title, description, category,
+ destination_space_id, origin_space_id,
+ occurs_at, ends_at, is_recurring, recurrence_pattern,
+ source_url, status, submitted_by, reviewed_by, reviewed_at,
+ staleness_check_due,
+ ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+ ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
+ created_at, updated_at, deleted_at
 FROM calendar_entries
-WHERE id = $1 AND tenant_id = $2 AND status = 'published'
-  AND deleted_at IS NULL
+WHERE id = $1 AND status = 'published'
+ AND deleted_at IS NULL
 LIMIT 1
 `
 
-type CalendarGetEntryParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 type CalendarGetEntryRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	Category           string             `json:"category"`
@@ -202,12 +177,11 @@ type CalendarGetEntryRow struct {
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
-func (q *Queries) CalendarGetEntry(ctx context.Context, arg CalendarGetEntryParams) (CalendarGetEntryRow, error) {
-	row := q.db.QueryRow(ctx, calendarGetEntry, arg.ID, arg.TenantID)
+func (q *Queries) CalendarGetEntry(ctx context.Context, id pgtype.UUID) (CalendarGetEntryRow, error) {
+	row := q.db.QueryRow(ctx, calendarGetEntry, id)
 	var i CalendarGetEntryRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.Category,
@@ -240,14 +214,9 @@ func (q *Queries) CalendarGetEntry(ctx context.Context, arg CalendarGetEntryPara
 const calendarGetEntryForReview = `-- name: CalendarGetEntryForReview :one
 SELECT id, ai_generated, hitl_reviewed_by, hitl_review_notes, source_url, status
 FROM calendar_entries
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
-
-type CalendarGetEntryForReviewParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type CalendarGetEntryForReviewRow struct {
 	ID              pgtype.UUID `json:"id"`
@@ -260,8 +229,8 @@ type CalendarGetEntryForReviewRow struct {
 
 // Fetches the fields needed for the ADR-088 HITL gate check before
 // publishing an AI-generated entry. Used by Service.AdminUpdate.
-func (q *Queries) CalendarGetEntryForReview(ctx context.Context, arg CalendarGetEntryForReviewParams) (CalendarGetEntryForReviewRow, error) {
-	row := q.db.QueryRow(ctx, calendarGetEntryForReview, arg.ID, arg.TenantID)
+func (q *Queries) CalendarGetEntryForReview(ctx context.Context, id pgtype.UUID) (CalendarGetEntryForReviewRow, error) {
+	row := q.db.QueryRow(ctx, calendarGetEntryForReview, id)
 	var i CalendarGetEntryForReviewRow
 	err := row.Scan(
 		&i.ID,
@@ -276,53 +245,50 @@ func (q *Queries) CalendarGetEntryForReview(ctx context.Context, arg CalendarGet
 
 const calendarIsSaved = `-- name: CalendarIsSaved :one
 SELECT EXISTS (
-    SELECT 1 FROM calendar_saves
-    WHERE user_id = $1 AND entry_id = $2 AND tenant_id = $3
+ SELECT 1 FROM calendar_saves
+ WHERE user_id = $1 AND entry_id = $2
 ) AS exists
 `
 
 type CalendarIsSavedParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	EntryID  pgtype.UUID `json:"entry_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	EntryID pgtype.UUID `json:"entry_id"`
 }
 
 // Returns true if the given user has saved the given entry.
 func (q *Queries) CalendarIsSaved(ctx context.Context, arg CalendarIsSavedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, calendarIsSaved, arg.UserID, arg.EntryID, arg.TenantID)
+	row := q.db.QueryRow(ctx, calendarIsSaved, arg.UserID, arg.EntryID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
 const calendarListSavedEntries = `-- name: CalendarListSavedEntries :many
-SELECT e.id, e.tenant_id, e.title, e.description, e.category,
-       e.destination_space_id, e.origin_space_id,
-       e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
-       e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
-       e.staleness_check_due,
-       e.ai_generated, e.ai_model, e.hitl_reviewed_by, e.ai_generated_at,
-       e.ai_prompt_hash, e.hitl_reviewed_at, e.hitl_review_notes,
-       e.created_at, e.updated_at, e.deleted_at,
-       COUNT(*) OVER() AS total_count
+SELECT e.id, e.title, e.description, e.category,
+ e.destination_space_id, e.origin_space_id,
+ e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
+ e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
+ e.staleness_check_due,
+ e.ai_generated, e.ai_model, e.hitl_reviewed_by, e.ai_generated_at,
+ e.ai_prompt_hash, e.hitl_reviewed_at, e.hitl_review_notes,
+ e.created_at, e.updated_at, e.deleted_at,
+ COUNT(*) OVER() AS total_count
 FROM calendar_saves s
 JOIN calendar_entries e ON e.id = s.entry_id
-WHERE s.user_id = $1 AND s.tenant_id = $2
-  AND e.status = 'published' AND e.deleted_at IS NULL
+WHERE s.user_id = $1
+ AND e.status = 'published' AND e.deleted_at IS NULL
 ORDER BY s.saved_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $2 OFFSET $3
 `
 
 type CalendarListSavedEntriesParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Limit    int32       `json:"limit"`
-	Offset   int32       `json:"offset"`
+	UserID pgtype.UUID `json:"user_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
 }
 
 type CalendarListSavedEntriesRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	Category           string             `json:"category"`
@@ -352,12 +318,7 @@ type CalendarListSavedEntriesRow struct {
 }
 
 func (q *Queries) CalendarListSavedEntries(ctx context.Context, arg CalendarListSavedEntriesParams) ([]CalendarListSavedEntriesRow, error) {
-	rows, err := q.db.Query(ctx, calendarListSavedEntries,
-		arg.UserID,
-		arg.TenantID,
-		arg.Limit,
-		arg.Offset,
-	)
+	rows, err := q.db.Query(ctx, calendarListSavedEntries, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +328,6 @@ func (q *Queries) CalendarListSavedEntries(ctx context.Context, arg CalendarList
 		var i CalendarListSavedEntriesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Description,
 			&i.Category,
@@ -406,27 +366,26 @@ func (q *Queries) CalendarListSavedEntries(ctx context.Context, arg CalendarList
 }
 
 const calendarSaveEntry = `-- name: CalendarSaveEntry :exec
-INSERT INTO calendar_saves (user_id, entry_id, tenant_id, saved_at)
-VALUES ($1, $2, $3, now())
+INSERT INTO calendar_saves (user_id, entry_id, saved_at) VALUES ($1, $2, now())
+
 ON CONFLICT (user_id, entry_id) DO NOTHING
 `
 
 type CalendarSaveEntryParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	EntryID  pgtype.UUID `json:"entry_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	EntryID pgtype.UUID `json:"entry_id"`
 }
 
 func (q *Queries) CalendarSaveEntry(ctx context.Context, arg CalendarSaveEntryParams) error {
-	_, err := q.db.Exec(ctx, calendarSaveEntry, arg.UserID, arg.EntryID, arg.TenantID)
+	_, err := q.db.Exec(ctx, calendarSaveEntry, arg.UserID, arg.EntryID)
 	return err
 }
 
 const calendarSetStalenessCheckDue = `-- name: CalendarSetStalenessCheckDue :exec
 UPDATE calendar_entries
 SET staleness_check_due = CASE
-    WHEN is_recurring THEN occurs_at - INTERVAL '60 days'
-    ELSE NULL
+ WHEN is_recurring THEN occurs_at - INTERVAL '60 days'
+ ELSE NULL
 END
 WHERE id = $1
 `
@@ -437,45 +396,37 @@ func (q *Queries) CalendarSetStalenessCheckDue(ctx context.Context, id pgtype.UU
 }
 
 const calendarSubscribe = `-- name: CalendarSubscribe :exec
-INSERT INTO calendar_subscriptions (user_id, tenant_id, destination_space_id, category, created_at)
-VALUES ($1, $2, $3, NULLIF($4, ''), now())
-ON CONFLICT (tenant_id, user_id, destination_space_id, category) DO NOTHING
+INSERT INTO calendar_subscriptions (user_id, destination_space_id, category, created_at) VALUES ($1, $2, NULLIF($3, ''), now())
+
+ON CONFLICT (user_id, destination_space_id, category) DO NOTHING
 `
 
 type CalendarSubscribeParams struct {
 	UserID             pgtype.UUID `json:"user_id"`
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
-	Column4            interface{} `json:"column_4"`
+	Column3            interface{} `json:"column_3"`
 }
 
 // category is NULL for "all categories" and must remain SQL NULL, not an
 // empty string, so the unique constraint and matching work correctly.
 func (q *Queries) CalendarSubscribe(ctx context.Context, arg CalendarSubscribeParams) error {
-	_, err := q.db.Exec(ctx, calendarSubscribe,
-		arg.UserID,
-		arg.TenantID,
-		arg.DestinationSpaceID,
-		arg.Column4,
-	)
+	_, err := q.db.Exec(ctx, calendarSubscribe, arg.UserID, arg.DestinationSpaceID, arg.Column3)
 	return err
 }
 
 const calendarSubscribersForEntry = `-- name: CalendarSubscribersForEntry :many
 SELECT user_id FROM calendar_subscriptions
-WHERE tenant_id = $1
-  AND destination_space_id = $2
-  AND (category IS NULL OR category = $3 OR category = '')
+WHERE destination_space_id = $1
+ AND (category IS NULL OR category = $2 OR category = '')
 `
 
 type CalendarSubscribersForEntryParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
 	Category           *string     `json:"category"`
 }
 
 func (q *Queries) CalendarSubscribersForEntry(ctx context.Context, arg CalendarSubscribersForEntryParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, calendarSubscribersForEntry, arg.TenantID, arg.DestinationSpaceID, arg.Category)
+	rows, err := q.db.Query(ctx, calendarSubscribersForEntry, arg.DestinationSpaceID, arg.Category)
 	if err != nil {
 		return nil, err
 	}
@@ -496,39 +447,32 @@ func (q *Queries) CalendarSubscribersForEntry(ctx context.Context, arg CalendarS
 
 const calendarUnsaveEntry = `-- name: CalendarUnsaveEntry :exec
 DELETE FROM calendar_saves
-WHERE user_id = $1 AND entry_id = $2 AND tenant_id = $3
+WHERE user_id = $1 AND entry_id = $2
 `
 
 type CalendarUnsaveEntryParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	EntryID  pgtype.UUID `json:"entry_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	UserID  pgtype.UUID `json:"user_id"`
+	EntryID pgtype.UUID `json:"entry_id"`
 }
 
 func (q *Queries) CalendarUnsaveEntry(ctx context.Context, arg CalendarUnsaveEntryParams) error {
-	_, err := q.db.Exec(ctx, calendarUnsaveEntry, arg.UserID, arg.EntryID, arg.TenantID)
+	_, err := q.db.Exec(ctx, calendarUnsaveEntry, arg.UserID, arg.EntryID)
 	return err
 }
 
 const calendarUnsubscribe = `-- name: CalendarUnsubscribe :exec
 DELETE FROM calendar_subscriptions
-WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
-  AND (category = $4 OR (category IS NULL AND $4 IS NULL))
+WHERE user_id = $1 AND destination_space_id = $2
+ AND (category = $3 OR (category IS NULL AND $3 IS NULL))
 `
 
 type CalendarUnsubscribeParams struct {
 	UserID             pgtype.UUID `json:"user_id"`
-	TenantID           pgtype.UUID `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
 	Category           *string     `json:"category"`
 }
 
 func (q *Queries) CalendarUnsubscribe(ctx context.Context, arg CalendarUnsubscribeParams) error {
-	_, err := q.db.Exec(ctx, calendarUnsubscribe,
-		arg.UserID,
-		arg.TenantID,
-		arg.DestinationSpaceID,
-		arg.Category,
-	)
+	_, err := q.db.Exec(ctx, calendarUnsubscribe, arg.UserID, arg.DestinationSpaceID, arg.Category)
 	return err
 }

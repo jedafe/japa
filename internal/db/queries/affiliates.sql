@@ -5,39 +5,39 @@
 -- =====================
 
 -- name: CreateAffiliateMember :one
-INSERT INTO affiliate_program_members (user_id, tenant_id, status)
-VALUES (@user_id, @tenant_id, @status)
+INSERT INTO affiliate_program_members (user_id, status) VALUES (@user_id, @status)
+
 ON CONFLICT (user_id) DO UPDATE
-    SET status = EXCLUDED.status
-RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes;
+ SET status = EXCLUDED.status
+RETURNING user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes;
 
 -- name: GetAffiliateMember :one
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
-WHERE user_id = @user_id AND tenant_id = @tenant_id;
+WHERE user_id = @user_id;
 
 -- name: GetAffiliateMemberByUserID :one
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = @user_id;
 
 -- name: ListAffiliateMembers :many
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
-WHERE tenant_id = @tenant_id
+
 ORDER BY enrolled_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateAffiliateMemberStatus :one
 UPDATE affiliate_program_members
 SET status = @status, notes = sqlc.narg(notes)
-WHERE user_id = @user_id AND tenant_id = @tenant_id
-RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes;
+WHERE user_id = @user_id
+RETURNING user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes;
 
 -- name: IncrementAffiliateMemberClicks :exec
 UPDATE affiliate_program_members
@@ -47,74 +47,69 @@ WHERE user_id = @user_id;
 -- name: IncrementAffiliateMemberConversions :exec
 UPDATE affiliate_program_members
 SET total_conversions = total_conversions + 1,
-    total_earned_credits = total_earned_credits + @commission
+ total_earned_credits = total_earned_credits + @commission
 WHERE user_id = @user_id;
 
 -- name: CountAffiliateMembersByTenant :one
 SELECT COUNT(*) AS count
 FROM affiliate_program_members
-WHERE tenant_id = @tenant_id;
+;
 
 -- =====================
 -- User Affiliate Links CRUD
 -- =====================
 
 -- name: CreateAffiliateLink :one
-INSERT INTO user_affiliate_links (
-    tenant_id, user_id, product_type, product_id, code, description, destination_url
-) VALUES (
-    @tenant_id, @user_id, @product_type, sqlc.narg(product_id), @code,
-    sqlc.narg(description), @destination_url
-)
-RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at;
+INSERT INTO user_affiliate_links (user_id, product_type, product_id, code, description, destination_url) VALUES (@user_id, @product_type, sqlc.narg(product_id), @code, sqlc.narg(description), @destination_url)
+RETURNING id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at;
 
 -- name: GetAffiliateLinkByID :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: GetAffiliateLinkByIDOnly :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = @id;
 
 -- name: GetAffiliateLinkByCode :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE code = @code AND is_active = true;
 
 -- name: ListAffiliateLinksByUser :many
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
-WHERE user_id = @user_id AND tenant_id = @tenant_id
-    AND (@is_active::bool IS NULL OR is_active = @is_active)
+WHERE user_id = @user_id
+ AND (@is_active::bool IS NULL OR is_active = @is_active)
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListAllAffiliateLinks :many
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
-WHERE tenant_id = @tenant_id
+
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateAffiliateLink :one
 UPDATE user_affiliate_links
 SET description = sqlc.narg(description), is_active = @is_active
-WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id
-RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at;
+WHERE id = @id AND user_id = @user_id
+RETURNING id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at;
 
 -- name: DeactivateAffiliateLink :exec
 UPDATE user_affiliate_links
 SET is_active = false
-WHERE id = @id AND user_id = @user_id AND tenant_id = @tenant_id;
+WHERE id = @id AND user_id = @user_id;
 
 -- name: CountActiveLinksByUser :one
 SELECT COUNT(*) AS count
@@ -132,16 +127,15 @@ WHERE user_id = @user_id AND is_active = true;
 -- affiliate.admin.manage). Soft-delete only — the row is retained for audit.
 UPDATE user_affiliate_links
 SET is_active = false
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;
 
 -- name: ListAffiliateMembersFiltered :many
 -- Admin list with optional status filter (Section 56 / catalog
 -- ?status=active|inactive). Tenant-scoped. NULL status = no filter.
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
-WHERE tenant_id = @tenant_id
-    AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+WHERE (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
 ORDER BY enrolled_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -150,16 +144,15 @@ LIMIT @page_limit OFFSET @page_offset;
 -- (Section 56 / catalog ?user_id&product_type&status=active|inactive).
 -- Tenant-scoped. Joins users for the admin UI's username column. NULL = no
 -- filter on that dimension.
-SELECT ual.id, ual.tenant_id, ual.user_id, ual.product_type, ual.product_id,
-    ual.code, ual.description, ual.destination_url, ual.click_count,
-    ual.conversion_count, ual.total_earned, ual.is_active, ual.created_at,
-    u.username
+SELECT ual.id, ual.user_id, ual.product_type, ual.product_id,
+ ual.code, ual.description, ual.destination_url, ual.click_count,
+ ual.conversion_count, ual.total_earned, ual.is_active, ual.created_at,
+ u.username
 FROM user_affiliate_links ual
 LEFT JOIN users u ON u.id = ual.user_id
-WHERE ual.tenant_id = @tenant_id
-    AND (sqlc.narg(user_id)::uuid IS NULL OR ual.user_id = sqlc.narg(user_id))
-    AND (sqlc.narg(product_type)::text IS NULL OR ual.product_type = sqlc.narg(product_type))
-    AND (sqlc.narg(is_active)::bool IS NULL OR ual.is_active = sqlc.narg(is_active))
+WHERE (sqlc.narg(user_id)::uuid IS NULL OR ual.user_id = sqlc.narg(user_id))
+ AND (sqlc.narg(product_type)::text IS NULL OR ual.product_type = sqlc.narg(product_type))
+ AND (sqlc.narg(is_active)::bool IS NULL OR ual.is_active = sqlc.narg(is_active))
 ORDER BY ual.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -168,22 +161,16 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================
 
 -- name: CreateAffiliateLinkEvent :one
-INSERT INTO affiliate_link_events (
-    tenant_id, link_id, event_type, referrer_url, ip_hash, user_agent_hash,
-    converted_payment_id, commission_amount
-) VALUES (
-    @tenant_id, @link_id, @event_type, sqlc.narg(referrer_url), sqlc.narg(ip_hash),
-    sqlc.narg(user_agent_hash), sqlc.narg(converted_payment_id), sqlc.narg(commission_amount)
-)
-RETURNING id, tenant_id, link_id, event_type, referrer_url, ip_hash,
-    user_agent_hash, converted_payment_id, commission_amount, created_at;
+INSERT INTO affiliate_link_events (link_id, event_type, referrer_url, ip_hash, user_agent_hash, converted_payment_id, commission_amount) VALUES (@link_id, @event_type, sqlc.narg(referrer_url), sqlc.narg(ip_hash), sqlc.narg(user_agent_hash), sqlc.narg(converted_payment_id), sqlc.narg(commission_amount))
+RETURNING id, link_id, event_type, referrer_url, ip_hash,
+ user_agent_hash, converted_payment_id, commission_amount, created_at;
 
 -- name: ListAffiliateLinkEvents :many
-SELECT id, tenant_id, link_id, event_type, referrer_url, ip_hash,
-    user_agent_hash, converted_payment_id, commission_amount, created_at
+SELECT id, link_id, event_type, referrer_url, ip_hash,
+ user_agent_hash, converted_payment_id, commission_amount, created_at
 FROM affiliate_link_events
 WHERE link_id = @link_id
-    AND (@event_type::text IS NULL OR event_type = @event_type)
+ AND (@event_type::text IS NULL OR event_type = @event_type)
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -195,7 +182,7 @@ WHERE id = @link_id;
 -- name: IncrementAffiliateLinkConversions :exec
 UPDATE user_affiliate_links
 SET conversion_count = conversion_count + 1,
-    total_earned = total_earned + @commission
+ total_earned = total_earned + @commission
 WHERE id = @link_id;
 
 -- =====================
@@ -204,31 +191,31 @@ WHERE id = @link_id;
 
 -- name: GetUserAffiliateEarnings :one
 SELECT
-    COALESCE(SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END), 0) AS total_clicks,
-    COALESCE(SUM(CASE WHEN event_type = 'conversion' THEN 1 ELSE 0 END), 0) AS total_conversions,
-    COALESCE(SUM(commission_amount) FILTER (WHERE event_type = 'conversion'), 0) AS total_earned
+ COALESCE(SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END), 0) AS total_clicks,
+ COALESCE(SUM(CASE WHEN event_type = 'conversion' THEN 1 ELSE 0 END), 0) AS total_conversions,
+ COALESCE(SUM(commission_amount) FILTER (WHERE event_type = 'conversion'), 0) AS total_earned
 FROM affiliate_link_events ale
 JOIN user_affiliate_links ual ON ual.id = ale.link_id
-WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id;
+WHERE ual.user_id = @user_id;
 
 -- name: GetUserAffiliateEarningsByProduct :many
 SELECT
-    ual.product_type,
-    ual.product_id,
-    COUNT(CASE WHEN ale.event_type = 'click' THEN 1 END) AS clicks,
-    COUNT(CASE WHEN ale.event_type = 'conversion' THEN 1 END) AS conversions,
-    COALESCE(SUM(ale.commission_amount) FILTER (WHERE ale.event_type = 'conversion'), 0) AS earned
+ ual.product_type,
+ ual.product_id,
+ COUNT(CASE WHEN ale.event_type = 'click' THEN 1 END) AS clicks,
+ COUNT(CASE WHEN ale.event_type = 'conversion' THEN 1 END) AS conversions,
+ COALESCE(SUM(ale.commission_amount) FILTER (WHERE ale.event_type = 'conversion'), 0) AS earned
 FROM affiliate_link_events ale
 JOIN user_affiliate_links ual ON ual.id = ale.link_id
-WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id
+WHERE ual.user_id = @user_id
 GROUP BY ual.product_type, ual.product_id;
 
 -- name: GetRecentAffiliateEvents :many
 SELECT ale.id, ale.event_type, ale.commission_amount, ale.created_at,
-    ual.code AS link_code, ual.product_type
+ ual.code AS link_code, ual.product_type
 FROM affiliate_link_events ale
 JOIN user_affiliate_links ual ON ual.id = ale.link_id
-WHERE ual.user_id = @user_id AND ual.tenant_id = @tenant_id
+WHERE ual.user_id = @user_id
 ORDER BY ale.created_at DESC
 LIMIT @page_limit;
 
@@ -241,14 +228,14 @@ LIMIT @page_limit;
 -- GET /admin/affiliate-program (Section 56 Admin management).
 -- Tenant-scoped: only counts members/links/events for the given tenant.
 SELECT
-    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = @tenant_id) AS total_members,
-    (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.tenant_id = @tenant_id AND apm.status = 'active') AS active_members,
-    (SELECT COUNT(*) FROM user_affiliate_links ual2 WHERE ual2.tenant_id = @tenant_id) AS total_links,
-    COALESCE(SUM(ale.click_count), 0) AS total_clicks,
-    COALESCE(SUM(ale.conversion_count), 0) AS total_conversions,
-    COALESCE(SUM(ale.total_earned), 0) AS total_commissions
+ (SELECT COUNT(*) FROM affiliate_program_members apm ) AS total_members,
+ (SELECT COUNT(*) FROM affiliate_program_members apm WHERE apm.status = 'active') AS active_members,
+ (SELECT COUNT(*) FROM user_affiliate_links ual2 ) AS total_links,
+ COALESCE(SUM(ale.click_count), 0) AS total_clicks,
+ COALESCE(SUM(ale.conversion_count), 0) AS total_conversions,
+ COALESCE(SUM(ale.total_earned), 0) AS total_commissions
 FROM user_affiliate_links ale
-WHERE ale.tenant_id = @tenant_id;
+;
 
 -- =====================
 -- Dedup check (for redirect handler)
@@ -261,7 +248,7 @@ WHERE ale.tenant_id = @tenant_id;
 -- name: GetAffiliateContentCommissionForCredit :one
 -- AUDIT-BE-FIN-001: replaces raw SQL read in HandleAffiliateCreditAuthorCommission.
 -- Fetches the commission row for crediting; returns only the fields needed.
-SELECT id, tenant_id, author_user_id, author_share, credited
+SELECT id, author_user_id, author_share, credited
 FROM affiliate_content_commissions
 WHERE id = @id;
 
@@ -282,20 +269,14 @@ WHERE id = @id AND credited = false;
 -- The author_share is pre-computed by the caller (external_commission * author_commission_pct / 100).
 -- After insert, the caller enqueues the affiliate:credit_author_commission task to
 -- credit the author_share to the author's wallet via the immutable credits ledger.
-INSERT INTO affiliate_content_commissions (
-    tenant_id, content_id, provider_id, author_user_id,
-    external_commission, author_share, author_commission_pct, event_description
-) VALUES (
-    @tenant_id, @content_id, @provider_id, @author_user_id,
-    @external_commission, @author_share, @author_commission_pct, sqlc.narg(event_description)
-)
-RETURNING id, tenant_id, content_id, provider_id, author_user_id,
-          external_commission, author_share, author_commission_pct, event_description,
-          credited, credited_at, created_at;
+INSERT INTO affiliate_content_commissions (content_id, provider_id, author_user_id, external_commission, author_share, author_commission_pct, event_description) VALUES (@content_id, @provider_id, @author_user_id, @external_commission, @author_share, @author_commission_pct, sqlc.narg(event_description))
+RETURNING id, content_id, provider_id, author_user_id,
+ external_commission, author_share, author_commission_pct, event_description,
+ credited, credited_at, created_at;
 
 -- name: GetActiveAffiliateLinkByUser :one
 SELECT code FROM user_affiliate_links
-WHERE user_id = @user_id AND tenant_id = @tenant_id AND is_active = true
+WHERE user_id = @user_id AND is_active = true
 LIMIT 1;
 
 -- name: GetAffiliateCommissionInfo :one
@@ -310,18 +291,18 @@ LIMIT 1;
 -- distinction is handled at the payment-purpose layer (pro_membership
 -- covers both billing cycles). This is accepted V1 behavior; V2 may
 -- introduce a separate annual product type if needed.
-SELECT apm.user_id, apm.tenant_id, ual.product_type,
-  (CASE ual.product_type
-    WHEN 'course' THEN COALESCE(
-      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.course'),
-      10)
-    WHEN 'pro_subscription' THEN COALESCE(
-      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_monthly'),
-      15)
-    ELSE COALESCE(
-      (SELECT value::numeric FROM system_settings WHERE tenant_id = apm.tenant_id AND key = 'affiliate.commission.pro_annual'),
-      20)
-  END)::float8 AS commission_rate
+SELECT apm.user_id, ual.product_type,
+ (CASE ual.product_type
+ WHEN 'course' THEN COALESCE(
+ (SELECT value::numeric FROM system_settings WHERE key = 'affiliate.commission.course'),
+ 10)
+ WHEN 'pro_subscription' THEN COALESCE(
+ (SELECT value::numeric FROM system_settings WHERE key = 'affiliate.commission.pro_monthly'),
+ 15)
+ ELSE COALESCE(
+ (SELECT value::numeric FROM system_settings WHERE key = 'affiliate.commission.pro_annual'),
+ 20)
+ END)::float8 AS commission_rate
 FROM affiliate_program_members apm
 JOIN user_affiliate_links ual ON ual.user_id = apm.user_id
 WHERE ual.code = @code AND apm.status = 'active' AND ual.is_active = true;
@@ -334,10 +315,10 @@ WHERE user_id = @user_id AND status = 'active';
 UPDATE user_affiliate_links
 SET is_active = false
 WHERE is_active = true
-  AND user_id IN (
-      SELECT user_id FROM affiliate_program_members
-      WHERE status IN ('suspended', 'banned')
-  );
+ AND user_id IN (
+ SELECT user_id FROM affiliate_program_members
+ WHERE status IN ('suspended', 'banned')
+ );
 
 -- =====================
 -- Affiliate Enhancement Queries (Section 55 — BE-LOW-002)
@@ -349,9 +330,8 @@ WHERE is_active = true
 -- Optional domain and action_taken filters via sqlc.narg().
 SELECT id, content_id, url, domain, detection_method, action_taken, created_at
 FROM content_affiliate_scan_results
-WHERE tenant_id = @tenant_id
-    AND (sqlc.narg(domain)::text IS NULL OR domain = sqlc.narg(domain))
-    AND (sqlc.narg(action_taken)::text IS NULL OR action_taken = sqlc.narg(action_taken))
+WHERE (sqlc.narg(domain)::text IS NULL OR domain = sqlc.narg(domain))
+ AND (sqlc.narg(action_taken)::text IS NULL OR action_taken = sqlc.narg(action_taken))
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -360,21 +340,20 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Returns rows affected so the handler can distinguish 404 from success.
 UPDATE content_affiliate_scan_results
 SET action_taken = @action_taken, reviewed_by = sqlc.narg(reviewed_by),
-    reviewed_at = now(), notes = sqlc.narg(notes)
-WHERE id = @id AND tenant_id = @tenant_id;
+ reviewed_at = now(), notes = sqlc.narg(notes)
+WHERE id = @id;
 
 -- name: ListAffiliateCommissions :many
 -- BE-LOW-002: replaces raw SQL in ListAffiliateCommissions handler.
 -- Optional credited filter via sqlc.narg(). Joins provider name and author username.
 SELECT ac.id, ac.content_id, ac.author_user_id, ac.external_commission,
-       ac.author_share, ac.author_commission_pct, ac.event_description,
-       ac.credited, ac.created_at,
-       ap.name AS provider_name, u.username AS author_username
+ ac.author_share, ac.author_commission_pct, ac.event_description,
+ ac.credited, ac.created_at,
+ ap.name AS provider_name, u.username AS author_username
 FROM affiliate_content_commissions ac
 LEFT JOIN affiliate_providers ap ON ap.id = ac.provider_id
 LEFT JOIN users u ON u.id = ac.author_user_id
-WHERE ac.tenant_id = @tenant_id
-    AND (sqlc.narg(credited)::bool IS NULL OR ac.credited = sqlc.narg(credited))
+WHERE (sqlc.narg(credited)::bool IS NULL OR ac.credited = sqlc.narg(credited))
 ORDER BY ac.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -383,4 +362,4 @@ LIMIT @page_limit OFFSET @page_offset;
 -- Returns rows affected so the handler can distinguish 404 from success.
 UPDATE affiliate_providers
 SET author_commission_pct = @author_commission_pct, updated_at = now()
-WHERE id = @id AND tenant_id = @tenant_id;
+WHERE id = @id;

@@ -123,7 +123,7 @@ func buildCreateSourceParams(w http.ResponseWriter, tenantID pgtype.UUID, body h
 	}
 
 	params := gen.CreateIntelSourceParams{
-		TenantID:            tenantID,
+
 		Name:                body.Name,
 		Slug:                &slug,
 		Domain:              domain,
@@ -251,7 +251,7 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 
 	// Merge: only non-zero / non-nil body fields override the existing row.
 	params := gen.UpdateIntelSourceParams{
-		TenantID:            tenantID,
+
 		ID:                  sourceID,
 		Name:                existing.Name,
 		Domain:              existing.Domain,

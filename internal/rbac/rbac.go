@@ -185,7 +185,7 @@ func (r *RBAC) HasSpacePermission(ctx context.Context, userID, tenantID, spaceID
 // Super admins bypass all permission checks.
 func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
 	inGroup, err := r.read.IsUserInGroup(ctx, gen.IsUserInGroupParams{
-		TenantID:  tenantID,
+
 		UserID:    userID,
 		GroupSlug: SystemGroupSuperAdmin,
 	})
@@ -327,10 +327,10 @@ func (r *RBAC) UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID
 
 // loadUserContext queries the database for the user's groups and permissions.
 func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID) (*UserContext, error) {
-	permRows, err := r.read.ResolveUserPermissions(ctx, gen.ResolveUserPermissionsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	permRows, err := r.read.ResolveUserPermissions(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user permissions: %w", err)
 	}
@@ -341,10 +341,10 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 		permissions[key] = true
 	}
 
-	groupRows, err := r.read.ResolveUserGroups(ctx, gen.ResolveUserGroupsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	groupRows, err := r.read.ResolveUserGroups(ctx,
+
+		userID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("querying user groups: %w", err)
 	}
@@ -353,8 +353,8 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID, tenantID pgtype.UUID
 
 	for _, g := range groupRows {
 		groups = append(groups, Group{
-			ID:       g.ID,
-			TenantID: g.TenantID,
+			ID: g.ID,
+
 			Name:     g.Name,
 			Slug:     g.Slug,
 			IsSystem: g.IsSystem,

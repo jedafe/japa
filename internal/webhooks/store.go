@@ -65,8 +65,8 @@ type WebhookDeliveryResponse struct {
 // ToResponse converts a WebhookDelivery to a JSON-safe response.
 func (d WebhookDelivery) ToResponse() WebhookDeliveryResponse {
 	r := WebhookDeliveryResponse{
-		ID:               d.ID.String(),
-		TenantID:         d.TenantID.String(),
+		ID: d.ID.String(),
+
 		EndpointID:       d.EndpointID.String(),
 		EventID:          d.EventID.String(),
 		EventType:        d.EventType,
@@ -105,7 +105,7 @@ func NewStore(database *db.DB) *Store {
 // endpointFromListRow converts a ListWebhookEndpointsRow.
 func endpointFromListRow(row gen.ListWebhookEndpointsRow) WebhookEndpointWithSecret {
 	return WebhookEndpointWithSecret{
-		ID: row.ID, TenantID: row.TenantID, Name: row.Name, URL: row.Url,
+		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -115,7 +115,7 @@ func endpointFromListRow(row gen.ListWebhookEndpointsRow) WebhookEndpointWithSec
 // endpointFromGetRow converts a GetWebhookEndpointRow.
 func endpointFromGetRow(row gen.GetWebhookEndpointRow) WebhookEndpointWithSecret {
 	return WebhookEndpointWithSecret{
-		ID: row.ID, TenantID: row.TenantID, Name: row.Name, URL: row.Url,
+		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -125,7 +125,7 @@ func endpointFromGetRow(row gen.GetWebhookEndpointRow) WebhookEndpointWithSecret
 // endpointFromCreateRow converts a CreateWebhookEndpointRow.
 func endpointFromCreateRow(row gen.CreateWebhookEndpointRow) WebhookEndpointWithSecret {
 	return WebhookEndpointWithSecret{
-		ID: row.ID, TenantID: row.TenantID, Name: row.Name, URL: row.Url,
+		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -135,7 +135,7 @@ func endpointFromCreateRow(row gen.CreateWebhookEndpointRow) WebhookEndpointWith
 // endpointFromUpdateRow converts a UpdateWebhookEndpointRow.
 func endpointFromUpdateRow(row gen.UpdateWebhookEndpointRow) WebhookEndpointWithSecret {
 	return WebhookEndpointWithSecret{
-		ID: row.ID, TenantID: row.TenantID, Name: row.Name, URL: row.Url,
+		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -145,7 +145,7 @@ func endpointFromUpdateRow(row gen.UpdateWebhookEndpointRow) WebhookEndpointWith
 // deliveryFromGetRow converts a GetWebhookDeliveryRow.
 func deliveryFromGetRow(row gen.GetWebhookDeliveryRow) WebhookDelivery {
 	return WebhookDelivery{
-		ID: row.ID, TenantID: row.TenantID, EndpointID: row.EndpointID,
+		ID: row.ID, EndpointID: row.EndpointID,
 		EventID: row.EventID, EventType: row.EventType, Payload: row.Payload,
 		Status: row.Status, Attempts: row.Attempts, LastError: row.LastError,
 		NextAttemptAt: row.NextAttemptAt, LastResponseCode: row.LastResponseCode,
@@ -157,7 +157,7 @@ func deliveryFromGetRow(row gen.GetWebhookDeliveryRow) WebhookDelivery {
 // deliveryFromGetForTenantRow converts a GetWebhookDeliveryForTenantRow.
 func deliveryFromGetForTenantRow(row gen.GetWebhookDeliveryForTenantRow) WebhookDelivery {
 	return WebhookDelivery{
-		ID: row.ID, TenantID: row.TenantID, EndpointID: row.EndpointID,
+		ID: row.ID, EndpointID: row.EndpointID,
 		EventID: row.EventID, EventType: row.EventType, Payload: row.Payload,
 		Status: row.Status, Attempts: row.Attempts, LastError: row.LastError,
 		NextAttemptAt: row.NextAttemptAt, LastResponseCode: row.LastResponseCode,
@@ -169,7 +169,7 @@ func deliveryFromGetForTenantRow(row gen.GetWebhookDeliveryForTenantRow) Webhook
 // deliveryFromListRow converts a ListWebhookDeliveriesRow.
 func deliveryFromListRow(row gen.ListWebhookDeliveriesRow) WebhookDelivery {
 	return WebhookDelivery{
-		ID: row.ID, TenantID: row.TenantID, EndpointID: row.EndpointID,
+		ID: row.ID, EndpointID: row.EndpointID,
 		EventID: row.EventID, EventType: row.EventType, Payload: row.Payload,
 		Status: row.Status, Attempts: row.Attempts, LastError: row.LastError,
 		NextAttemptAt: row.NextAttemptAt, LastResponseCode: row.LastResponseCode,
@@ -184,7 +184,7 @@ func deliveryFromListRow(row gen.ListWebhookDeliveriesRow) WebhookDelivery {
 
 // ListEndpoints returns all webhook endpoints for the given tenant, newest first.
 func (s *Store) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]WebhookEndpointWithSecret, error) {
-	rows, err := s.read.ListWebhookEndpoints(ctx, tenantID)
+	rows, err := s.read.ListWebhookEndpoints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing webhook endpoints: %w", err)
 	}
@@ -199,7 +199,7 @@ func (s *Store) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]Webh
 
 // GetEndpoint returns a tenant-scoped webhook endpoint by ID.
 func (s *Store) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
-	row, err := s.read.GetWebhookEndpoint(ctx, gen.GetWebhookEndpointParams{TenantID: tenantID, ID: id})
+	row, err := s.read.GetWebhookEndpoint(ctx, id)
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("fetching webhook endpoint %s: %w", id, err)
 	}
@@ -218,7 +218,7 @@ func (s *Store) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, name, 
 	}
 
 	row, err := s.write.CreateWebhookEndpoint(ctx, gen.CreateWebhookEndpointParams{
-		TenantID:   tenantID,
+
 		Name:       name,
 		Url:        url,
 		Secret:     encSecret,
@@ -256,7 +256,7 @@ func (s *Store) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, na
 	}
 
 	row, err := s.write.UpdateWebhookEndpoint(ctx, gen.UpdateWebhookEndpointParams{
-		TenantID:   tenantID,
+
 		ID:         id,
 		Name:       name,
 		Url:        url,
@@ -275,10 +275,10 @@ func (s *Store) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, na
 // VerifyEndpoint marks a webhook endpoint as verified and active after a
 // successful challenge/response (§12).
 func (s *Store) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
-	if err := s.write.VerifyWebhookEndpoint(ctx, gen.VerifyWebhookEndpointParams{
-		TenantID: tenantID,
-		ID:       id,
-	}); err != nil {
+	if err := s.write.VerifyWebhookEndpoint(ctx,
+
+		id,
+	); err != nil {
 		return fmt.Errorf("verifying webhook endpoint %s: %w", id, err)
 	}
 
@@ -287,7 +287,7 @@ func (s *Store) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) er
 
 // DeleteEndpoint removes a webhook endpoint by ID.
 func (s *Store) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
-	rowsAffected, err := s.write.DeleteWebhookEndpoint(ctx, gen.DeleteWebhookEndpointParams{TenantID: tenantID, ID: id})
+	rowsAffected, err := s.write.DeleteWebhookEndpoint(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting webhook endpoint %s: %w", id, err)
 	}
@@ -328,8 +328,8 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 	}
 
 	return WebhookEndpoint{
-		ID:         row.ID,
-		TenantID:   row.TenantID,
+		ID: row.ID,
+
 		Name:       row.Name,
 		URL:        row.Url,
 		Secret:     plaintextSecret,
@@ -346,7 +346,7 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 // CreateDelivery records a pending webhook delivery and returns its ID.
 func (s *Store) CreateDelivery(ctx context.Context, tenantID, endpointID, eventID pgtype.UUID, eventType string, payloadJSON []byte) (pgtype.UUID, error) {
 	id, err := s.write.CreateWebhookDelivery(ctx, gen.CreateWebhookDeliveryParams{
-		TenantID:   tenantID,
+
 		EndpointID: endpointID,
 		EventID:    eventID,
 		EventType:  eventType,
@@ -371,7 +371,7 @@ func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webhook
 
 // GetDelivery returns a tenant-scoped delivery record.
 func (s *Store) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) (WebhookDelivery, error) {
-	row, err := s.read.GetWebhookDeliveryForTenant(ctx, gen.GetWebhookDeliveryForTenantParams{TenantID: tenantID, ID: deliveryID})
+	row, err := s.read.GetWebhookDeliveryForTenant(ctx, deliveryID)
 	if err != nil {
 		return WebhookDelivery{}, fmt.Errorf("get delivery: %w", err)
 	}
@@ -382,7 +382,7 @@ func (s *Store) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUI
 // ListDeliveries returns delivery records for a specific endpoint, newest first.
 func (s *Store) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDelivery, error) {
 	rows, err := s.read.ListWebhookDeliveries(ctx, gen.ListWebhookDeliveriesParams{
-		TenantID:   tenantID,
+
 		EndpointID: endpointID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -401,7 +401,7 @@ func (s *Store) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.
 
 // RetryDelivery resets a failed delivery to pending for immediate re-enqueue.
 func (s *Store) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) error {
-	rowsAffected, err := s.write.RetryWebhookDelivery(ctx, gen.RetryWebhookDeliveryParams{TenantID: tenantID, ID: deliveryID})
+	rowsAffected, err := s.write.RetryWebhookDelivery(ctx, deliveryID)
 	if err != nil {
 		return fmt.Errorf("retry delivery: %w", err)
 	}

@@ -34,7 +34,7 @@ func (s *Store) createReview(ctx context.Context, p gen.CreateReviewParams) (gen
 }
 
 func (s *Store) getReviewByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Review, error) {
-	row, err := s.read.GetReviewByID(ctx, gen.GetReviewByIDParams{ID: id, TenantID: tenantID})
+	row, err := s.read.GetReviewByID(ctx, id)
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("getting review by ID: %w", err)
 	}
@@ -48,7 +48,7 @@ func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, e
 	}
 
 	params := gen.ListReviewsByEntityParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
@@ -58,7 +58,7 @@ func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, e
 	switch sort {
 	case "highest":
 		rows, err := s.read.ListReviewsByEntityHighestRating(ctx, gen.ListReviewsByEntityHighestRatingParams{
-			TenantID:   tenantID,
+
 			EntityType: entityType,
 			EntityID:   entityID,
 			PageLimit:  limit,
@@ -71,7 +71,7 @@ func (s *Store) listReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, e
 		return rows, nil
 	case "lowest":
 		rows, err := s.read.ListReviewsByEntityLowestRating(ctx, gen.ListReviewsByEntityLowestRatingParams{
-			TenantID:   tenantID,
+
 			EntityType: entityType,
 			EntityID:   entityID,
 			PageLimit:  limit,
@@ -98,7 +98,7 @@ func (s *Store) listReviewsByReviewer(ctx context.Context, tenantID, reviewerUse
 	}
 
 	rows, err := s.read.ListReviewsByReviewer(ctx, gen.ListReviewsByReviewerParams{
-		TenantID:       tenantID,
+
 		ReviewerUserID: reviewerUserID,
 		PageLimit:      limit,
 		PageOffset:     offset,
@@ -119,7 +119,7 @@ func (s *Store) listReviewsByEntityWithAuthor(ctx context.Context, tenantID pgty
 	}
 
 	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 		PageLimit:  limit,
@@ -142,7 +142,7 @@ func (s *Store) listReviews(ctx context.Context, tenantID pgtype.UUID, limit, of
 	}
 
 	rows, err := s.read.ListReviews(ctx, gen.ListReviewsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -161,7 +161,7 @@ func (s *Store) listAdminReviews(ctx context.Context, tenantID pgtype.UUID, limi
 	}
 
 	rows, err := s.read.ListAdminReviews(ctx, gen.ListAdminReviewsParams{
-		TenantID:   tenantID,
+
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
@@ -179,7 +179,7 @@ func (s *Store) listAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UU
 	}
 
 	rows, err := s.read.ListAdminReviewsFiltered(ctx, gen.ListAdminReviewsFilteredParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		EntityType: entityType,
 		PageLimit:  limit,
@@ -194,13 +194,13 @@ func (s *Store) listAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UU
 
 // countAdminReviews returns the total count of reviews for a tenant.
 func (s *Store) countAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.read.CountAdminReviews(ctx, tenantID)
+	return s.read.CountAdminReviews(ctx)
 }
 
 // countAdminReviewsFiltered returns the filtered count of reviews.
 func (s *Store) countAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string) (int32, error) {
 	return s.read.CountAdminReviewsFiltered(ctx, gen.CountAdminReviewsFilteredParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		EntityType: entityType,
 	})
@@ -234,7 +234,7 @@ func (s *Store) softDeleteOwnReview(ctx context.Context, p gen.SoftDeleteOwnRevi
 }
 
 func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.write.DeleteReview(ctx, gen.DeleteReviewParams{ID: id, TenantID: tenantID}); err != nil {
+	if err := s.write.DeleteReview(ctx, id); err != nil {
 		return fmt.Errorf("deleting review: %w", err)
 	}
 
@@ -243,7 +243,7 @@ func (s *Store) deleteReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 
 func (s *Store) hasUserReviewedEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, reviewerUserID pgtype.UUID) (bool, error) {
 	exists, err := s.read.HasUserReviewedEntity(ctx, gen.HasUserReviewedEntityParams{
-		TenantID:       tenantID,
+
 		EntityType:     entityType,
 		EntityID:       entityID,
 		ReviewerUserID: reviewerUserID,
@@ -270,7 +270,7 @@ func (s *Store) upsertReviewAggregate(ctx context.Context, p gen.UpsertReviewAgg
 
 func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
 	row, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	})
@@ -283,7 +283,7 @@ func (s *Store) getReviewAggregate(ctx context.Context, tenantID pgtype.UUID, en
 
 func (s *Store) recalculateReviewAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.RecalculateReviewAggregate(ctx, gen.RecalculateReviewAggregateParams{
-		TenantID:   tenantID,
+
 		EntityType: entityType,
 		EntityID:   entityID,
 	}); err != nil {

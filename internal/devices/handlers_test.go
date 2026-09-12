@@ -74,8 +74,7 @@ func TestHandleDeregisterDevice_AuthButEmptyParam_400(t *testing.T) {
 	r.Delete("/me/devices/{device_id}", h.HandleDeregisterDevice)
 
 	user := &auth.AuthenticatedUser{
-		UserID:   validUUID(t, "00000000-0000-0000-0000-000000000001"),
-		TenantID: validUUID(t, "00000000-0000-0000-0000-000000000002"),
+		UserID: validUUID(t, "00000000-0000-0000-0000-000000000001"),
 	}
 	// Hit a path where chi leaves {device_id} empty (no segment) — chi won't
 	// match, so instead register a route without the param to confirm the
@@ -121,8 +120,7 @@ func TestHandleAdminTestPush_NoAuth_401(t *testing.T) {
 func TestHandleAdminTestPush_AuthNoDispatcher_503(t *testing.T) {
 	h := NewHandlers(&Service{})
 	user := &auth.AuthenticatedUser{
-		UserID:   validUUID(t, "00000000-0000-0000-0000-000000000001"),
-		TenantID: validUUID(t, "00000000-0000-0000-0000-000000000002"),
+		UserID: validUUID(t, "00000000-0000-0000-0000-000000000001"),
 	}
 	body := `{"device_id":"dev-1"}`
 	req := httptest.NewRequest(http.MethodPost, "/admin/push/test", strBody(body))
@@ -154,8 +152,7 @@ func TestHandleAdminTestPush_AuthNoDispatcher_503(t *testing.T) {
 func TestHandleRegisterDevice_InvalidPlatform_400(t *testing.T) {
 	h := NewHandlers(&Service{})
 	user := &auth.AuthenticatedUser{
-		UserID:   validUUID(t, "00000000-0000-0000-0000-000000000001"),
-		TenantID: validUUID(t, "00000000-0000-0000-0000-000000000002"),
+		UserID: validUUID(t, "00000000-0000-0000-0000-000000000001"),
 	}
 	body := `{"device_id":"d1","token":"t1","platform":"desktop"}`
 	req := httptest.NewRequest(http.MethodPost, "/me/devices", strBody(body))
@@ -187,8 +184,7 @@ func TestHandleRegisterDevice_InvalidPlatform_400(t *testing.T) {
 func TestHandleRegisterDevice_MissingFields_400(t *testing.T) {
 	h := NewHandlers(&Service{})
 	user := &auth.AuthenticatedUser{
-		UserID:   validUUID(t, "00000000-0000-0000-0000-000000000001"),
-		TenantID: validUUID(t, "00000000-0000-0000-0000-000000000002"),
+		UserID: validUUID(t, "00000000-0000-0000-0000-000000000001"),
 	}
 	body := `{"device_id":"d1","platform":"ios"}`
 	req := httptest.NewRequest(http.MethodPost, "/me/devices", strBody(body))

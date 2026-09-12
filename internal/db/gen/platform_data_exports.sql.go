@@ -13,17 +13,11 @@ import (
 
 const countPlatformDataExports = `-- name: CountPlatformDataExports :one
 SELECT count(*) FROM platform_data_exports
-WHERE tenant_id = $1
-  AND ($2 = '' OR status = $2)
+WHERE ($1 = '' OR status = $1)
 `
 
-type CountPlatformDataExportsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Status   interface{} `json:"status"`
-}
-
-func (q *Queries) CountPlatformDataExports(ctx context.Context, arg CountPlatformDataExportsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countPlatformDataExports, arg.TenantID, arg.Status)
+func (q *Queries) CountPlatformDataExports(ctx context.Context, status interface{}) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlatformDataExports, status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -31,16 +25,11 @@ func (q *Queries) CountPlatformDataExports(ctx context.Context, arg CountPlatfor
 
 const createPlatformDataExport = `-- name: CreatePlatformDataExport :one
 
-INSERT INTO platform_data_exports (
-    tenant_id, name, export_type, format, include_metadata, created_by
-) VALUES (
-    $1, $2, $3, $4, $5, $6
-)
+INSERT INTO platform_data_exports (name, export_type, format, include_metadata, created_by) VALUES ($1, $2, $3, $4, $5)
 RETURNING id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
 `
 
 type CreatePlatformDataExportParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	Name            string      `json:"name"`
 	ExportType      string      `json:"export_type"`
 	Format          string      `json:"format"`
@@ -52,7 +41,6 @@ type CreatePlatformDataExportParams struct {
 // Admin-initiated exports of platform data (users, posts, comments, etc.)
 func (q *Queries) CreatePlatformDataExport(ctx context.Context, arg CreatePlatformDataExportParams) (PlatformDataExport, error) {
 	row := q.db.QueryRow(ctx, createPlatformDataExport,
-		arg.TenantID,
 		arg.Name,
 		arg.ExportType,
 		arg.Format,
@@ -80,31 +68,21 @@ func (q *Queries) CreatePlatformDataExport(ctx context.Context, arg CreatePlatfo
 
 const deletePlatformDataExport = `-- name: DeletePlatformDataExport :exec
 DELETE FROM platform_data_exports
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type DeletePlatformDataExportParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeletePlatformDataExport(ctx context.Context, arg DeletePlatformDataExportParams) error {
-	_, err := q.db.Exec(ctx, deletePlatformDataExport, arg.ID, arg.TenantID)
+func (q *Queries) DeletePlatformDataExport(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePlatformDataExport, id)
 	return err
 }
 
 const getPlatformDataExport = `-- name: GetPlatformDataExport :one
 SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type GetPlatformDataExportParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) GetPlatformDataExport(ctx context.Context, arg GetPlatformDataExportParams) (PlatformDataExport, error) {
-	row := q.db.QueryRow(ctx, getPlatformDataExport, arg.ID, arg.TenantID)
+func (q *Queries) GetPlatformDataExport(ctx context.Context, id pgtype.UUID) (PlatformDataExport, error) {
+	row := q.db.QueryRow(ctx, getPlatformDataExport, id)
 	var i PlatformDataExport
 	err := row.Scan(
 		&i.ID,
@@ -194,26 +172,19 @@ func (q *Queries) ListPendingPlatformDataExports(ctx context.Context, limitVal i
 
 const listPlatformDataExports = `-- name: ListPlatformDataExports :many
 SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
-WHERE tenant_id = $1
-  AND ($2 = '' OR status = $2)
+WHERE ($1 = '' OR status = $1)
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPlatformDataExportsParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	Status    interface{} `json:"status"`
 	OffsetVal int32       `json:"offset_val"`
 	LimitVal  int32       `json:"limit_val"`
 }
 
 func (q *Queries) ListPlatformDataExports(ctx context.Context, arg ListPlatformDataExportsParams) ([]PlatformDataExport, error) {
-	rows, err := q.db.Query(ctx, listPlatformDataExports,
-		arg.TenantID,
-		arg.Status,
-		arg.OffsetVal,
-		arg.LimitVal,
-	)
+	rows, err := q.db.Query(ctx, listPlatformDataExports, arg.Status, arg.OffsetVal, arg.LimitVal)
 	if err != nil {
 		return nil, err
 	}
@@ -249,30 +220,29 @@ func (q *Queries) ListPlatformDataExports(ctx context.Context, arg ListPlatformD
 const reassignPlatformDataExportCreatedBy = `-- name: ReassignPlatformDataExportCreatedBy :exec
 UPDATE platform_data_exports
 SET created_by = $1
-WHERE created_by = $2 AND tenant_id = $3
+WHERE created_by = $2
 `
 
 type ReassignPlatformDataExportCreatedByParams struct {
 	TargetUserID pgtype.UUID `json:"target_user_id"`
 	UserID       pgtype.UUID `json:"user_id"`
-	TenantID     pgtype.UUID `json:"tenant_id"`
 }
 
 // Reassign created_by to a placeholder user during GDPR erasure so the
 // export audit trail survives when the admin who created the export is
 // erased (BUG-010, Section 67 / Section 15 compliance).
 func (q *Queries) ReassignPlatformDataExportCreatedBy(ctx context.Context, arg ReassignPlatformDataExportCreatedByParams) error {
-	_, err := q.db.Exec(ctx, reassignPlatformDataExportCreatedBy, arg.TargetUserID, arg.UserID, arg.TenantID)
+	_, err := q.db.Exec(ctx, reassignPlatformDataExportCreatedBy, arg.TargetUserID, arg.UserID)
 	return err
 }
 
 const updatePlatformDataExportStatus = `-- name: UpdatePlatformDataExportStatus :one
 UPDATE platform_data_exports
 SET status = $1,
-    file_url = $2,
-    file_size = $3,
-    error_message = $4,
-    completed_at = $5
+ file_url = $2,
+ file_size = $3,
+ error_message = $4,
+ completed_at = $5
 WHERE id = $6
 RETURNING id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
 `

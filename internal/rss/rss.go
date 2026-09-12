@@ -123,10 +123,10 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cache miss — generate live from the DB.
-	rows, err := h.q.ListRSSFeedItems(r.Context(), gen.ListRSSFeedItemsParams{
-		TenantID:  tenantID,
-		PageLimit: h.feedLimit,
-	})
+	rows, err := h.q.ListRSSFeedItems(r.Context(),
+
+		h.feedLimit,
+	)
 	if err != nil {
 		slog.Error("rss: query feed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal server error")
@@ -207,7 +207,7 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSSpaceFeedItems(r.Context(), gen.ListRSSSpaceFeedItemsParams{
-				TenantID:  tenantID,
+
 				Slug:      slug,
 				PageLimit: h.feedLimit,
 			})
@@ -245,7 +245,7 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSTagFeedItems(r.Context(), gen.ListRSSTagFeedItemsParams{
-				TenantID:  tenantID,
+
 				Slug:      slug,
 				PageLimit: h.feedLimit,
 			})
@@ -283,7 +283,7 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 		w, r, cacheKey,
 		func() ([]RSSItem, error) {
 			rows, err := h.q.ListRSSUserFeedItems(r.Context(), gen.ListRSSUserFeedItemsParams{
-				TenantID:  tenantID,
+
 				Username:  username,
 				PageLimit: h.feedLimit,
 			})

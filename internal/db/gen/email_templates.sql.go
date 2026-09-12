@@ -14,39 +14,31 @@ import (
 const countEmailTemplates = `-- name: CountEmailTemplates :one
 SELECT COUNT(*)::int AS count
 FROM email_templates
-WHERE tenant_id = $1
-  AND ($2 = '' OR type = $2)
-  AND ($3 = '' OR is_active = ($3 = 'true'))
+WHERE ($1 = '' OR type = $1)
+ AND ($2 = '' OR is_active = ($2 = 'true'))
 `
 
 type CountEmailTemplatesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
 	Type     interface{} `json:"type"`
 	IsActive interface{} `json:"is_active"`
 }
 
 func (q *Queries) CountEmailTemplates(ctx context.Context, arg CountEmailTemplatesParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countEmailTemplates, arg.TenantID, arg.Type, arg.IsActive)
+	row := q.db.QueryRow(ctx, countEmailTemplates, arg.Type, arg.IsActive)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
 }
 
 const getEmailTemplate = `-- name: GetEmailTemplate :one
-SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-       is_active, variables, status, created_at, updated_at
+SELECT id, type, name, slug, subject, html_body, plain_text_body,
+ is_active, variables, status, created_at, updated_at
 FROM email_templates
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
-
-type GetEmailTemplateParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetEmailTemplateRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
@@ -60,12 +52,11 @@ type GetEmailTemplateRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetEmailTemplate(ctx context.Context, arg GetEmailTemplateParams) (GetEmailTemplateRow, error) {
-	row := q.db.QueryRow(ctx, getEmailTemplate, arg.ID, arg.TenantID)
+func (q *Queries) GetEmailTemplate(ctx context.Context, id pgtype.UUID) (GetEmailTemplateRow, error) {
+	row := q.db.QueryRow(ctx, getEmailTemplate, id)
 	var i GetEmailTemplateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.Slug,
@@ -82,20 +73,14 @@ func (q *Queries) GetEmailTemplate(ctx context.Context, arg GetEmailTemplatePara
 }
 
 const getEmailTemplateBySlug = `-- name: GetEmailTemplateBySlug :one
-SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-       is_active, variables, status, created_at, updated_at
+SELECT id, type, name, slug, subject, html_body, plain_text_body,
+ is_active, variables, status, created_at, updated_at
 FROM email_templates
-WHERE slug = $1 AND tenant_id = $2 AND is_active = true
+WHERE slug = $1 AND is_active = true
 `
-
-type GetEmailTemplateBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetEmailTemplateBySlugRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
@@ -109,12 +94,11 @@ type GetEmailTemplateBySlugRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetEmailTemplateBySlug(ctx context.Context, arg GetEmailTemplateBySlugParams) (GetEmailTemplateBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getEmailTemplateBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetEmailTemplateBySlug(ctx context.Context, slug string) (GetEmailTemplateBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getEmailTemplateBySlug, slug)
 	var i GetEmailTemplateBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.Slug,
@@ -131,20 +115,14 @@ func (q *Queries) GetEmailTemplateBySlug(ctx context.Context, arg GetEmailTempla
 }
 
 const getEmailTemplateByType = `-- name: GetEmailTemplateByType :one
-SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-       is_active, variables, status, created_at, updated_at
+SELECT id, type, name, slug, subject, html_body, plain_text_body,
+ is_active, variables, status, created_at, updated_at
 FROM email_templates
-WHERE tenant_id = $1 AND type = $2
+WHERE type = $1
 `
-
-type GetEmailTemplateByTypeParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Type     string      `json:"type"`
-}
 
 type GetEmailTemplateByTypeRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
@@ -158,12 +136,11 @@ type GetEmailTemplateByTypeRow struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) GetEmailTemplateByType(ctx context.Context, arg GetEmailTemplateByTypeParams) (GetEmailTemplateByTypeRow, error) {
-	row := q.db.QueryRow(ctx, getEmailTemplateByType, arg.TenantID, arg.Type)
+func (q *Queries) GetEmailTemplateByType(ctx context.Context, type_ string) (GetEmailTemplateByTypeRow, error) {
+	row := q.db.QueryRow(ctx, getEmailTemplateByType, type_)
 	var i GetEmailTemplateByTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.Slug,
@@ -181,18 +158,16 @@ func (q *Queries) GetEmailTemplateByType(ctx context.Context, arg GetEmailTempla
 
 const listEmailTemplates = `-- name: ListEmailTemplates :many
 
-SELECT id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-       is_active, variables, status, created_at, updated_at
+SELECT id, type, name, slug, subject, html_body, plain_text_body,
+ is_active, variables, status, created_at, updated_at
 FROM email_templates
-WHERE tenant_id = $1
-  AND ($2 = '' OR type = $2)
-  AND ($3 = '' OR is_active = ($3 = 'true'))
+WHERE ($1 = '' OR type = $1)
+ AND ($2 = '' OR is_active = ($2 = 'true'))
 ORDER BY type ASC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListEmailTemplatesParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	Type       interface{} `json:"type"`
 	IsActive   interface{} `json:"is_active"`
 	PageOffset int32       `json:"page_offset"`
@@ -201,7 +176,6 @@ type ListEmailTemplatesParams struct {
 
 type ListEmailTemplatesRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
@@ -218,7 +192,6 @@ type ListEmailTemplatesRow struct {
 // Email Templates — Tenant-customizable transactional emails (ADR-054)
 func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplatesParams) ([]ListEmailTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailTemplates,
-		arg.TenantID,
 		arg.Type,
 		arg.IsActive,
 		arg.PageOffset,
@@ -233,7 +206,6 @@ func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplates
 		var i ListEmailTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Type,
 			&i.Name,
 			&i.Slug,
@@ -259,28 +231,23 @@ func (q *Queries) ListEmailTemplates(ctx context.Context, arg ListEmailTemplates
 const resetEmailTemplate = `-- name: ResetEmailTemplate :exec
 UPDATE email_templates
 SET html_body = '', updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-type ResetEmailTemplateParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ResetEmailTemplate(ctx context.Context, arg ResetEmailTemplateParams) error {
-	_, err := q.db.Exec(ctx, resetEmailTemplate, arg.ID, arg.TenantID)
+func (q *Queries) ResetEmailTemplate(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, resetEmailTemplate, id)
 	return err
 }
 
 const updateEmailTemplate = `-- name: UpdateEmailTemplate :one
 UPDATE email_templates
 SET subject = $1, html_body = $2,
-    plain_text_body = $3, status = $4,
-    is_active = $5,
-    updated_at = now()
-WHERE id = $6 AND tenant_id = $7
-RETURNING id, tenant_id, type, name, slug, subject, html_body, plain_text_body,
-    is_active, variables, status, created_at, updated_at
+ plain_text_body = $3, status = $4,
+ is_active = $5,
+ updated_at = now()
+WHERE id = $6
+RETURNING id, type, name, slug, subject, html_body, plain_text_body,
+ is_active, variables, status, created_at, updated_at
 `
 
 type UpdateEmailTemplateParams struct {
@@ -290,12 +257,10 @@ type UpdateEmailTemplateParams struct {
 	Status        string      `json:"status"`
 	IsActive      bool        `json:"is_active"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 type UpdateEmailTemplateRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
@@ -317,12 +282,10 @@ func (q *Queries) UpdateEmailTemplate(ctx context.Context, arg UpdateEmailTempla
 		arg.Status,
 		arg.IsActive,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateEmailTemplateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.Slug,

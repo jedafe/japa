@@ -14,8 +14,7 @@ import (
 )
 
 const addContentSpace = `-- name: AddContentSpace :exec
-INSERT INTO content_spaces (content_id, space_id, is_primary)
-VALUES ($1, $2, $3)
+INSERT INTO content_spaces (content_id, space_id, is_primary) VALUES ($1, $2, $3)
 `
 
 type AddContentSpaceParams struct {
@@ -33,8 +32,8 @@ func (q *Queries) AddContentSpace(ctx context.Context, arg AddContentSpaceParams
 
 const addContentTag = `-- name: AddContentTag :exec
 
-INSERT INTO content_tags (content_id, tag_id)
-VALUES ($1, $2)
+INSERT INTO content_tags (content_id, tag_id) VALUES ($1, $2)
+
 ON CONFLICT (content_id, tag_id) DO NOTHING
 `
 
@@ -53,16 +52,11 @@ func (q *Queries) AddContentTag(ctx context.Context, arg AddContentTagParams) er
 
 const archiveContent = `-- name: ArchiveContent :execrows
 UPDATE contents SET status = 'archived', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status != 'archived'
+WHERE id = $1 AND status != 'archived'
 `
 
-type ArchiveContentParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ArchiveContent(ctx context.Context, arg ArchiveContentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, archiveContent, arg.ID, arg.TenantID)
+func (q *Queries) ArchiveContent(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, archiveContent, id)
 	if err != nil {
 		return 0, err
 	}
@@ -70,19 +64,14 @@ func (q *Queries) ArchiveContent(ctx context.Context, arg ArchiveContentParams) 
 }
 
 const contentSlugExists = `-- name: ContentSlugExists :one
-SELECT EXISTS(SELECT 1 FROM contents WHERE tenant_id = $1 AND slug = $2)
+SELECT EXISTS(SELECT 1 FROM contents WHERE slug = $1)
 `
 
-type ContentSlugExistsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Slug     string      `json:"slug"`
-}
-
 // Returns true if any contents row (including soft-deleted) in the tenant
-// uses the given slug. The unique index on (tenant_id, slug) is not partial,
+// uses the given slug. The unique index on (slug) is not partial,
 // so a slug held by a deleted row is still unavailable.
-func (q *Queries) ContentSlugExists(ctx context.Context, arg ContentSlugExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, contentSlugExists, arg.TenantID, arg.Slug)
+func (q *Queries) ContentSlugExists(ctx context.Context, slug string) (bool, error) {
+	row := q.db.QueryRow(ctx, contentSlugExists, slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -91,16 +80,11 @@ func (q *Queries) ContentSlugExists(ctx context.Context, arg ContentSlugExistsPa
 const countBookmarksByUser = `-- name: CountBookmarksByUser :one
 SELECT COUNT(*)::int AS count
 FROM bookmarks
-WHERE user_id = $1 AND tenant_id = $2
+WHERE user_id = $1
 `
 
-type CountBookmarksByUserParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) CountBookmarksByUser(ctx context.Context, arg CountBookmarksByUserParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countBookmarksByUser, arg.UserID, arg.TenantID)
+func (q *Queries) CountBookmarksByUser(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countBookmarksByUser, userID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -109,21 +93,15 @@ func (q *Queries) CountBookmarksByUser(ctx context.Context, arg CountBookmarksBy
 const countComparisonContentsBySourceID = `-- name: CountComparisonContentsBySourceID :one
 SELECT COUNT(*)::int AS total
 FROM contents
-WHERE tenant_id = $1
-  AND intel_source_id = $2
-  AND content_type = 'comparison'
-  AND deleted_at IS NULL
-  AND status = 'published'
-  AND visibility = 'public'
+WHERE intel_source_id = $1
+ AND content_type = 'comparison'
+ AND deleted_at IS NULL
+ AND status = 'published'
+ AND visibility = 'public'
 `
 
-type CountComparisonContentsBySourceIDParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	IntelSourceID pgtype.UUID `json:"intel_source_id"`
-}
-
-func (q *Queries) CountComparisonContentsBySourceID(ctx context.Context, arg CountComparisonContentsBySourceIDParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countComparisonContentsBySourceID, arg.TenantID, arg.IntelSourceID)
+func (q *Queries) CountComparisonContentsBySourceID(ctx context.Context, intelSourceID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonContentsBySourceID, intelSourceID)
 	var total int32
 	err := row.Scan(&total)
 	return total, err
@@ -132,16 +110,11 @@ func (q *Queries) CountComparisonContentsBySourceID(ctx context.Context, arg Cou
 const countContentShares = `-- name: CountContentShares :one
 SELECT COUNT(*)::int AS count
 FROM content_shares
-WHERE tenant_id = $1 AND content_id = $2
+WHERE content_id = $1
 `
 
-type CountContentSharesParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
-	ContentID pgtype.UUID `json:"content_id"`
-}
-
-func (q *Queries) CountContentShares(ctx context.Context, arg CountContentSharesParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countContentShares, arg.TenantID, arg.ContentID)
+func (q *Queries) CountContentShares(ctx context.Context, contentID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countContentShares, contentID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -150,22 +123,16 @@ func (q *Queries) CountContentShares(ctx context.Context, arg CountContentShares
 const countPostsByAuthor = `-- name: CountPostsByAuthor :one
 SELECT COUNT(*)::int AS count
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.status = 'published'
-  AND c.deleted_at IS NULL
+WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.deleted_at IS NULL
 `
-
-type CountPostsByAuthorParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-}
 
 // Counts published, non-deleted content by the given author in a tenant.
 // Used by the spam pipeline's new-user link restriction (§41 Layer 3) to
 // determine whether a user has passed the "first N posts" threshold.
-func (q *Queries) CountPostsByAuthor(ctx context.Context, arg CountPostsByAuthorParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countPostsByAuthor, arg.TenantID, arg.AuthorID)
+func (q *Queries) CountPostsByAuthor(ctx context.Context, authorID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countPostsByAuthor, authorID)
 	var count int32
 	err := row.Scan(&count)
 	return count, err
@@ -173,14 +140,13 @@ func (q *Queries) CountPostsByAuthor(ctx context.Context, arg CountPostsByAuthor
 
 const createBookmark = `-- name: CreateBookmark :one
 
-INSERT INTO bookmarks (tenant_id, user_id, entity_type, entity_id, folder, folder_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO bookmarks (user_id, entity_type, entity_id, folder, folder_id) VALUES ($1, $2, $3, $4, $5)
+
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET folder = EXCLUDED.folder, folder_id = EXCLUDED.folder_id
-RETURNING id, tenant_id, user_id, entity_type, entity_id, folder, folder_id, created_at
+RETURNING id, user_id, entity_type, entity_id, folder, folder_id, created_at
 `
 
 type CreateBookmarkParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -190,7 +156,6 @@ type CreateBookmarkParams struct {
 
 type CreateBookmarkRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -204,7 +169,6 @@ type CreateBookmarkRow struct {
 // =====================
 func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) (CreateBookmarkRow, error) {
 	row := q.db.QueryRow(ctx, createBookmark,
-		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
@@ -214,7 +178,6 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 	var i CreateBookmarkRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -228,41 +191,19 @@ func (q *Queries) CreateBookmark(ctx context.Context, arg CreateBookmarkParams) 
 const createContent = `-- name: CreateContent :one
 
 
-INSERT INTO contents (
-    tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-    field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-    canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-    status, visibility, read_time_minutes, publish_at, published_at, guide_category,
-    ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-    journey_stage, visa_route, source_country, target_country, video_source_id,
-    intel_source_id, intel_record_id
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
-    $10, $11, $12,
-    $13, $14,
-    $15, $16, $17,
-    $18, $19,
-    $20, $21, $22, $23, $24,
-    $25,
-    COALESCE($26, false), $27, $28,
-    $29, $30,
-    $31, $32, $33, $34,
-    $35,
-    $36, $37
-)
-RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-          status, visibility, is_locked, is_pinned, read_time_minutes,
-          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category,
-          ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-          journey_stage, visa_route, source_country, target_country, video_source_id,
-          intel_source_id, intel_record_id
+INSERT INTO contents (author_id, organization_id, space_id, content_type, title, slug, body, body_html, field_values, content_hash, geo_space_id, header_image_id, featured_image_id, canonical_url, meta_title, meta_description, og_image_url, seo_indexable, status, visibility, read_time_minutes, publish_at, published_at, guide_category, ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at, journey_stage, visa_route, source_country, target_country, video_source_id, intel_source_id, intel_record_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, COALESCE($25, false), $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+ journey_stage, visa_route, source_country, target_country, video_source_id,
+ intel_source_id, intel_record_id
 `
 
 type CreateContentParams struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -303,7 +244,6 @@ type CreateContentParams struct {
 
 type CreateContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -356,7 +296,6 @@ type CreateContentRow struct {
 // =====================
 func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (CreateContentRow, error) {
 	row := q.db.QueryRow(ctx, createContent,
-		arg.TenantID,
 		arg.AuthorID,
 		arg.OrganizationID,
 		arg.SpaceID,
@@ -397,7 +336,6 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 	var i CreateContentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -448,8 +386,8 @@ func (q *Queries) CreateContent(ctx context.Context, arg CreateContentParams) (C
 
 const createContentRevision = `-- name: CreateContentRevision :one
 
-INSERT INTO content_revisions (content_id, field_values, title, body, body_html, edited_by)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO content_revisions (content_id, field_values, title, body, body_html, edited_by) VALUES ($1, $2, $3, $4, $5, $6)
+
 RETURNING id, content_id, field_values, title, body, body_html, edited_by, created_at
 `
 
@@ -490,32 +428,33 @@ func (q *Queries) CreateContentRevision(ctx context.Context, arg CreateContentRe
 
 const createContentShare = `-- name: CreateContentShare :one
 
-INSERT INTO content_shares (tenant_id, content_id, user_id, platform)
-VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, content_id, user_id, platform, created_at
+INSERT INTO content_shares (content_id, user_id, platform) VALUES ($1, $2, $3)
+
+RETURNING id, content_id, user_id, platform, created_at
 `
 
 type CreateContentShareParams struct {
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	ContentID pgtype.UUID `json:"content_id"`
 	UserID    pgtype.UUID `json:"user_id"`
 	Platform  string      `json:"platform"`
 }
 
+type CreateContentShareRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Platform  string             `json:"platform"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Content Shares
 // =====================
-func (q *Queries) CreateContentShare(ctx context.Context, arg CreateContentShareParams) (ContentShare, error) {
-	row := q.db.QueryRow(ctx, createContentShare,
-		arg.TenantID,
-		arg.ContentID,
-		arg.UserID,
-		arg.Platform,
-	)
-	var i ContentShare
+func (q *Queries) CreateContentShare(ctx context.Context, arg CreateContentShareParams) (CreateContentShareRow, error) {
+	row := q.db.QueryRow(ctx, createContentShare, arg.ContentID, arg.UserID, arg.Platform)
+	var i CreateContentShareRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.UserID,
 		&i.Platform,
@@ -526,8 +465,8 @@ func (q *Queries) CreateContentShare(ctx context.Context, arg CreateContentShare
 
 const createSlugHistory = `-- name: CreateSlugHistory :one
 
-INSERT INTO slug_history (entity_type, entity_id, old_slug, new_slug)
-VALUES ($1, $2, $3, $4)
+INSERT INTO slug_history (entity_type, entity_id, old_slug, new_slug) VALUES ($1, $2, $3, $4)
+
 RETURNING id, entity_type, entity_id, old_slug, new_slug, created_at
 `
 
@@ -562,58 +501,46 @@ func (q *Queries) CreateSlugHistory(ctx context.Context, arg CreateSlugHistoryPa
 
 const decrementContentCommentCount = `-- name: DecrementContentCommentCount :exec
 UPDATE contents SET comment_count = GREATEST(comment_count - 1, 0)
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DecrementContentCommentCountParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Decrements comment_count when a comment is soft-deleted/removed.
-func (q *Queries) DecrementContentCommentCount(ctx context.Context, arg DecrementContentCommentCountParams) error {
-	_, err := q.db.Exec(ctx, decrementContentCommentCount, arg.ID, arg.TenantID)
+func (q *Queries) DecrementContentCommentCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, decrementContentCommentCount, id)
 	return err
 }
 
 const deleteBookmark = `-- name: DeleteBookmark :exec
 DELETE FROM bookmarks
-WHERE tenant_id = $1 AND user_id = $2 AND entity_type = $3 AND entity_id = $4
+WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
 
 type DeleteBookmarkParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
 func (q *Queries) DeleteBookmark(ctx context.Context, arg DeleteBookmarkParams) error {
-	_, err := q.db.Exec(ctx, deleteBookmark,
-		arg.TenantID,
-		arg.UserID,
-		arg.EntityType,
-		arg.EntityID,
-	)
+	_, err := q.db.Exec(ctx, deleteBookmark, arg.UserID, arg.EntityType, arg.EntityID)
 	return err
 }
 
 const deleteBookmarkByID = `-- name: DeleteBookmarkByID :execrows
 DELETE FROM bookmarks
-WHERE id = $1 AND tenant_id = $2 AND user_id = $3
+WHERE id = $1 AND user_id = $2
 `
 
 type DeleteBookmarkByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 // Deletes a single bookmark by its row ID, scoped to tenant + owner.
 // Used by DELETE /me/bookmarks/{id} — the polymorphic remove endpoint that
 // works regardless of entity_type (content, forum_thread, space, comment, etc.).
 func (q *Queries) DeleteBookmarkByID(ctx context.Context, arg DeleteBookmarkByIDParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteBookmarkByID, arg.ID, arg.TenantID, arg.UserID)
+	result, err := q.db.Exec(ctx, deleteBookmarkByID, arg.ID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -621,16 +548,11 @@ func (q *Queries) DeleteBookmarkByID(ctx context.Context, arg DeleteBookmarkByID
 }
 
 const deleteContent = `-- name: DeleteContent :exec
-UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+UPDATE contents SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL
 `
 
-type DeleteContentParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteContent(ctx context.Context, arg DeleteContentParams) error {
-	_, err := q.db.Exec(ctx, deleteContent, arg.ID, arg.TenantID)
+func (q *Queries) DeleteContent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteContent, id)
 	return err
 }
 
@@ -646,22 +568,17 @@ func (q *Queries) DeleteContentSpaces(ctx context.Context, contentID pgtype.UUID
 }
 
 const deleteJSONLDTemplate = `-- name: DeleteJSONLDTemplate :exec
-DELETE FROM content_type_jsonld_templates WHERE id = $1 AND tenant_id = $2
+DELETE FROM content_type_jsonld_templates WHERE id = $1
 `
 
-type DeleteJSONLDTemplateParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, arg DeleteJSONLDTemplateParams) error {
-	_, err := q.db.Exec(ctx, deleteJSONLDTemplate, arg.ID, arg.TenantID)
+func (q *Queries) DeleteJSONLDTemplate(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteJSONLDTemplate, id)
 	return err
 }
 
 const ensureContentScore = `-- name: EnsureContentScore :exec
-INSERT INTO content_scores (content_id)
-VALUES ($1)
+INSERT INTO content_scores (content_id) VALUES ($1)
+
 ON CONFLICT (content_id) DO NOTHING
 `
 
@@ -677,67 +594,65 @@ func (q *Queries) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 
 const findRoadmapContentByDimension = `-- name: FindRoadmapContentByDimension :many
 SELECT c.slug, c.title, LEFT(c.body, 200)::text AS description,
-       c.target_country, c.journey_stage, c.visa_route, c.source_country,
-       c.field_values->>'purpose' AS purpose
+ c.target_country, c.journey_stage, c.visa_route, c.source_country,
+ c.field_values->>'purpose' AS purpose
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND c.status = 'published'
-  AND c.visibility IN ('public', 'members')
-  AND c.field_values->>'dimension' = $2
-  AND (
-      $3::text = ''
-      OR c.target_country = $3
-      OR c.target_country IS NULL
-      OR c.target_country = ''
-  )
-  AND (
-      $4::text = ''
-      OR c.journey_stage = $4
-      OR c.journey_stage IS NULL
-      OR c.journey_stage = ''
-  )
-  AND (
-      $5::text = ''
-      OR c.visa_route = $5
-      OR c.visa_route IS NULL
-      OR c.visa_route = ''
-  )
-  AND (
-      $6::text = ''
-      OR c.source_country = $6
-      OR c.source_country IS NULL
-      OR c.source_country = ''
-      OR c.target_country = $3
-  )
-  AND (
-      $7::text = ''
-      OR c.field_values->>'purpose' = $7
-      OR c.field_values->>'purpose' IS NULL
-      OR c.field_values->>'purpose' = ''
-  )
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND c.status = 'published'
+ AND c.visibility IN ('public', 'members')
+ AND c.field_values->>'dimension' = $1
+ AND (
+ $2::text = ''
+ OR c.target_country = $2
+ OR c.target_country IS NULL
+ OR c.target_country = ''
+ )
+ AND (
+ $3::text = ''
+ OR c.journey_stage = $3
+ OR c.journey_stage IS NULL
+ OR c.journey_stage = ''
+ )
+ AND (
+ $4::text = ''
+ OR c.visa_route = $4
+ OR c.visa_route IS NULL
+ OR c.visa_route = ''
+ )
+ AND (
+ $5::text = ''
+ OR c.source_country = $5
+ OR c.source_country IS NULL
+ OR c.source_country = ''
+ OR c.target_country = $2
+ )
+ AND (
+ $6::text = ''
+ OR c.field_values->>'purpose' = $6
+ OR c.field_values->>'purpose' IS NULL
+ OR c.field_values->>'purpose' = ''
+ )
 ORDER BY
-  CASE WHEN c.target_country = $3 THEN 0 ELSE 1 END,
-  CASE WHEN c.journey_stage = $4 THEN 0 ELSE 1 END,
-  CASE WHEN c.visa_route = $5 THEN 0 ELSE 1 END,
-  CASE WHEN c.source_country = $6 THEN 0 ELSE 1 END,
-  CASE WHEN c.field_values->>'purpose' = $7 THEN 0 ELSE 1 END,
-  c.view_count DESC,
-  c.created_at DESC
-LIMIT $9 OFFSET $8
+ CASE WHEN c.target_country = $2 THEN 0 ELSE 1 END,
+ CASE WHEN c.journey_stage = $3 THEN 0 ELSE 1 END,
+ CASE WHEN c.visa_route = $4 THEN 0 ELSE 1 END,
+ CASE WHEN c.source_country = $5 THEN 0 ELSE 1 END,
+ CASE WHEN c.field_values->>'purpose' = $6 THEN 0 ELSE 1 END,
+ c.view_count DESC,
+ c.created_at DESC
+LIMIT $8 OFFSET $7
 `
 
 type FindRoadmapContentByDimensionParams struct {
-	TenantID           pgtype.UUID `json:"tenant_id"`
-	Dimension          []byte      `json:"dimension"`
-	DestinationCountry string      `json:"destination_country"`
-	JourneyStage       string      `json:"journey_stage"`
-	VisaRoute          string      `json:"visa_route"`
-	OriginCountry      string      `json:"origin_country"`
-	Purpose            string      `json:"purpose"`
-	PageOffset         int32       `json:"page_offset"`
-	PageLimit          int32       `json:"page_limit"`
+	Dimension          []byte `json:"dimension"`
+	DestinationCountry string `json:"destination_country"`
+	JourneyStage       string `json:"journey_stage"`
+	VisaRoute          string `json:"visa_route"`
+	OriginCountry      string `json:"origin_country"`
+	Purpose            string `json:"purpose"`
+	PageOffset         int32  `json:"page_offset"`
+	PageLimit          int32  `json:"page_limit"`
 }
 
 type FindRoadmapContentByDimensionRow struct {
@@ -761,7 +676,6 @@ type FindRoadmapContentByDimensionRow struct {
 // category can be tagged with the readiness dimension it addresses.
 func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoadmapContentByDimensionParams) ([]FindRoadmapContentByDimensionRow, error) {
 	rows, err := q.db.Query(ctx, findRoadmapContentByDimension,
-		arg.TenantID,
 		arg.Dimension,
 		arg.DestinationCountry,
 		arg.JourneyStage,
@@ -799,63 +713,49 @@ func (q *Queries) FindRoadmapContentByDimension(ctx context.Context, arg FindRoa
 }
 
 const getContentByHash = `-- name: GetContentByHash :one
-SELECT id, tenant_id, author_id, content_hash
+SELECT id, author_id, content_hash
 FROM contents
-WHERE tenant_id = $1
-  AND content_hash = $2
-  AND deleted_at IS NULL
-  AND id <> $3
+WHERE content_hash = $1
+ AND deleted_at IS NULL
+ AND id <> $2
 `
 
 type GetContentByHashParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	ContentHash *string     `json:"content_hash"`
 	ExcludeID   pgtype.UUID `json:"exclude_id"`
 }
 
 type GetContentByHashRow struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	AuthorID    pgtype.UUID `json:"author_id"`
 	ContentHash *string     `json:"content_hash"`
 }
 
 // Duplicate-detection check (Rule 12 / BL-006). Returns a conflicting row
-// with the same (tenant_id, content_hash), excluding the row being updated.
+// with the same (content_hash), excluding the row being updated.
 func (q *Queries) GetContentByHash(ctx context.Context, arg GetContentByHashParams) (GetContentByHashRow, error) {
-	row := q.db.QueryRow(ctx, getContentByHash, arg.TenantID, arg.ContentHash, arg.ExcludeID)
+	row := q.db.QueryRow(ctx, getContentByHash, arg.ContentHash, arg.ExcludeID)
 	var i GetContentByHashRow
-	err := row.Scan(
-		&i.ID,
-		&i.TenantID,
-		&i.AuthorID,
-		&i.ContentHash,
-	)
+	err := row.Scan(&i.ID, &i.AuthorID, &i.ContentHash)
 	return i, err
 }
 
 const getContentByID = `-- name: GetContentByID :one
-SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category,
-       ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
-       journey_stage, visa_route, source_country, target_country, video_source_id,
-       intel_source_id, intel_record_id
+SELECT id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ ai_generated, ai_model, ai_generated_at, hitl_reviewed_by, hitl_reviewed_at,
+ journey_stage, visa_route, source_country, target_country, video_source_id,
+ intel_source_id, intel_record_id
 FROM contents
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetContentByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentByIDRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -902,12 +802,11 @@ type GetContentByIDRow struct {
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
-func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) (GetContentByIDRow, error) {
-	row := q.db.QueryRow(ctx, getContentByID, arg.ID, arg.TenantID)
+func (q *Queries) GetContentByID(ctx context.Context, id pgtype.UUID) (GetContentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getContentByID, id)
 	var i GetContentByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -957,25 +856,19 @@ func (q *Queries) GetContentByID(ctx context.Context, arg GetContentByIDParams) 
 }
 
 const getContentByIntelRecord = `-- name: GetContentByIntelRecord :one
-SELECT c.id, c.tenant_id, c.title, c.slug, c.content_type, c.body, c.meta_description, c.canonical_url,
-       COALESCE(cs.view_count, c.view_count, 0) AS view_count,
-       COALESCE(cs.comment_count, c.comment_count, 0) AS comment_count,
-       c.share_count, c.reshare_count,
-       COALESCE(cs.vote_score, 0) AS vote_score,
-       c.publish_at, c.published_at, c.created_at, c.updated_at, c.intel_source_id, c.intel_record_id
+SELECT c.id, c.title, c.slug, c.content_type, c.body, c.meta_description, c.canonical_url,
+ COALESCE(cs.view_count, c.view_count, 0) AS view_count,
+ COALESCE(cs.comment_count, c.comment_count, 0) AS comment_count,
+ c.share_count, c.reshare_count,
+ COALESCE(cs.vote_score, 0) AS vote_score,
+ c.publish_at, c.published_at, c.created_at, c.updated_at, c.intel_source_id, c.intel_record_id
 FROM contents c
 LEFT JOIN content_scores cs ON cs.content_id = c.id
-WHERE c.tenant_id = $1 AND c.intel_record_id = $2 AND c.deleted_at IS NULL
+WHERE c.intel_record_id = $1 AND c.deleted_at IS NULL
 `
-
-type GetContentByIntelRecordParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
-	IntelRecordID pgtype.UUID `json:"intel_record_id"`
-}
 
 type GetContentByIntelRecordRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
 	ContentType     string             `json:"content_type"`
@@ -995,12 +888,11 @@ type GetContentByIntelRecordRow struct {
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 }
 
-func (q *Queries) GetContentByIntelRecord(ctx context.Context, arg GetContentByIntelRecordParams) (GetContentByIntelRecordRow, error) {
-	row := q.db.QueryRow(ctx, getContentByIntelRecord, arg.TenantID, arg.IntelRecordID)
+func (q *Queries) GetContentByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (GetContentByIntelRecordRow, error) {
+	row := q.db.QueryRow(ctx, getContentByIntelRecord, intelRecordID)
 	var i GetContentByIntelRecordRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.ContentType,
@@ -1023,33 +915,26 @@ func (q *Queries) GetContentByIntelRecord(ctx context.Context, arg GetContentByI
 }
 
 const getContentBySlug = `-- name: GetContentBySlug :one
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       c.share_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ c.share_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id
 FROM contents c
-WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+WHERE c.slug = $1 AND c.deleted_at IS NULL
 `
-
-type GetContentBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentBySlugRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -1088,12 +973,11 @@ type GetContentBySlugRow struct {
 	VideoSourceID   pgtype.UUID        `json:"video_source_id"`
 }
 
-func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugParams) (GetContentBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getContentBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetContentBySlug(ctx context.Context, slug string) (GetContentBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getContentBySlug, slug)
 	var i GetContentBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -1135,46 +1019,45 @@ func (q *Queries) GetContentBySlug(ctx context.Context, arg GetContentBySlugPara
 }
 
 const getContentDetailBySlug = `-- name: GetContentDetailBySlug :one
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
-       c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       c.share_count,
-       (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
-       c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
-       c.intel_source_id, c.intel_record_id,
-       src.id AS source_id, src.name AS source_name, src.slug AS source_slug, src.logo_url AS source_logo_url, src.source_url AS source_source_url, src.trust_level AS source_trust_level,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       m.storage_bucket AS featured_storage_bucket,
-       m.storage_path AS featured_storage_path,
-       hm.storage_bucket AS header_storage_bucket,
-       hm.storage_path AS header_storage_path,
-       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
-       bs.id AS series_id,
-       bs.title AS series_title,
-       bs.slug AS series_slug,
-       bsp.position AS series_part,
-       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
-       COALESCE(prev_c.slug, '') AS series_prev_slug,
-       COALESCE(next_c.slug, '') AS series_next_slug
+SELECT c.id, c.author_id, c.space_id, c.organization_id,
+ c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ c.share_count,
+ (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
+ c.intel_source_id, c.intel_record_id,
+ src.id AS source_id, src.name AS source_name, src.slug AS source_slug, src.logo_url AS source_logo_url, src.source_url AS source_source_url, src.trust_level AS source_trust_level,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ m.storage_bucket AS featured_storage_bucket,
+ m.storage_path AS featured_storage_path,
+ hm.storage_bucket AS header_storage_bucket,
+ hm.storage_path AS header_storage_path,
+ COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ bs.id AS series_id,
+ bs.title AS series_title,
+ bs.slug AS series_slug,
+ bsp.position AS series_part,
+ (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+ COALESCE(prev_c.slug, '') AS series_prev_slug,
+ COALESCE(next_c.slug, '') AS series_next_slug
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
-LEFT JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
+LEFT JOIN intel_sources src ON src.id = c.intel_source_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
 LEFT JOIN content_tags ct ON ct.content_id = c.id
@@ -1182,38 +1065,32 @@ LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 LEFT JOIN LATERAL (
-    SELECT c3.slug
-    FROM blog_series_posts bsp4
-    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
-    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
-    ORDER BY bsp4.position DESC
-    LIMIT 1
+ SELECT c3.slug
+ FROM blog_series_posts bsp4
+ JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+ WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+ ORDER BY bsp4.position DESC
+ LIMIT 1
 ) prev_c ON true
 LEFT JOIN LATERAL (
-    SELECT c2.slug
-    FROM blog_series_posts bsp3
-    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
-    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
-    ORDER BY bsp3.position ASC
-    LIMIT 1
+ SELECT c2.slug
+ FROM blog_series_posts bsp3
+ JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+ WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+ ORDER BY bsp3.position ASC
+ LIMIT 1
 ) next_c ON true
-WHERE c.slug = $1 AND c.tenant_id = $2 AND c.deleted_at IS NULL
+WHERE c.slug = $1 AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
-         m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
-         bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug, c.video_source_id,
-         c.intel_source_id, c.intel_record_id,
-         src.id, src.name, src.slug, src.logo_url, src.source_url, src.trust_level
+ m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
+ bs.id, bs.title, bs.slug, bsp.position,
+ prev_c.slug, next_c.slug, c.video_source_id,
+ c.intel_source_id, c.intel_record_id,
+ src.id, src.name, src.slug, src.logo_url, src.source_url, src.trust_level
 `
-
-type GetContentDetailBySlugParams struct {
-	Slug     string      `json:"slug"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentDetailBySlugRow struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	AuthorID              pgtype.UUID        `json:"author_id"`
 	SpaceID               pgtype.UUID        `json:"space_id"`
 	OrganizationID        pgtype.UUID        `json:"organization_id"`
@@ -1283,12 +1160,11 @@ type GetContentDetailBySlugRow struct {
 // name/slug, tag slugs, featured + header image storage refs, and blog_series
 // navigation (prev/next) — but without the content_type restriction so every
 // CPT single (guide, page, comparison, discussion, …) gets the same fields.
-func (q *Queries) GetContentDetailBySlug(ctx context.Context, arg GetContentDetailBySlugParams) (GetContentDetailBySlugRow, error) {
-	row := q.db.QueryRow(ctx, getContentDetailBySlug, arg.Slug, arg.TenantID)
+func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetContentDetailBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getContentDetailBySlug, slug)
 	var i GetContentDetailBySlugRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.OrganizationID,
@@ -1356,55 +1232,54 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, arg GetContentDeta
 }
 
 const getContentDetailBySlugAndType = `-- name: GetContentDetailBySlugAndType :one
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.organization_id,
-       c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count,
-       (SELECT COUNT(*)
-        FROM comments
-        WHERE content_id = c.id
-          AND tenant_id = c.tenant_id
-          AND deleted_at IS NULL
-          AND status = 'published') AS comment_count,
-       c.share_count,
-       c.reshare_count,
-       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
-       c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       m.storage_bucket AS featured_storage_bucket,
-       m.storage_path AS featured_storage_path,
-       hm.storage_bucket AS header_storage_bucket,
-       hm.storage_path AS header_storage_path,
-       o.name AS organization_name,
-       o.slug AS organization_slug,
-       om.storage_bucket AS organization_logo_storage_bucket,
-       om.storage_path AS organization_logo_storage_path,
-       COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       bs.id AS series_id,
-       bs.title AS series_title,
-       bs.slug AS series_slug,
-       bsp.position AS series_part,
-       (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
-       COALESCE(prev_c.slug, '') AS series_prev_slug,
-       COALESCE(next_c.slug, '') AS series_next_slug
+SELECT c.id, c.author_id, c.space_id, c.organization_id,
+ c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count,
+ (SELECT COUNT(*)
+ FROM comments
+ WHERE content_id = c.id
+ AND deleted_at IS NULL
+ AND status = 'published') AS comment_count,
+ c.share_count,
+ c.reshare_count,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS featured_storage_bucket,
+ m.storage_path AS featured_storage_path,
+ hm.storage_bucket AS header_storage_bucket,
+ hm.storage_path AS header_storage_path,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
+ COALESCE(string_agg(t.slug, ',' ORDER BY t.slug), '')::text AS tags_csv,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ bs.id AS series_id,
+ bs.title AS series_title,
+ bs.slug AS series_slug,
+ bsp.position AS series_part,
+ (SELECT COUNT(*) FROM blog_series_posts WHERE series_id = bs.id) AS series_total,
+ COALESCE(prev_c.slug, '') AS series_prev_slug,
+ COALESCE(next_c.slug, '') AS series_next_slug
 FROM contents c
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN spaces s ON s.id = c.space_id
-LEFT JOIN intel_sources src ON src.id = c.intel_source_id AND src.tenant_id = c.tenant_id
+LEFT JOIN intel_sources src ON src.id = c.intel_source_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
@@ -1416,40 +1291,38 @@ LEFT JOIN video_sources vs ON vs.id = c.video_source_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
 LEFT JOIN LATERAL (
-    SELECT c3.slug
-    FROM blog_series_posts bsp4
-    JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
-    WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
-    ORDER BY bsp4.position DESC
-    LIMIT 1
+ SELECT c3.slug
+ FROM blog_series_posts bsp4
+ JOIN contents c3 ON c3.id = bsp4.content_id AND c3.deleted_at IS NULL
+ WHERE bsp4.series_id = bs.id AND bsp4.position < bsp.position
+ ORDER BY bsp4.position DESC
+ LIMIT 1
 ) prev_c ON true
 LEFT JOIN LATERAL (
-    SELECT c2.slug
-    FROM blog_series_posts bsp3
-    JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
-    WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
-    ORDER BY bsp3.position ASC
-    LIMIT 1
+ SELECT c2.slug
+ FROM blog_series_posts bsp3
+ JOIN contents c2 ON c2.id = bsp3.content_id AND c2.deleted_at IS NULL
+ WHERE bsp3.series_id = bs.id AND bsp3.position > bsp.position
+ ORDER BY bsp3.position ASC
+ LIMIT 1
 ) next_c ON true
-WHERE c.slug = $1 AND c.tenant_id = $2 AND c.content_type = $3 AND c.deleted_at IS NULL
+WHERE c.slug = $1 AND c.content_type = $2 AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
-         sm.storage_bucket, sm.storage_path,
-         m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
-         o.name, o.slug, om.storage_bucket, om.storage_path,
-         bs.id, bs.title, bs.slug, bsp.position,
-         prev_c.slug, next_c.slug, c.video_source_id,
-         vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
+ sm.storage_bucket, sm.storage_path,
+ m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
+ o.name, o.slug, om.storage_bucket, om.storage_path,
+ bs.id, bs.title, bs.slug, bsp.position,
+ prev_c.slug, next_c.slug, c.video_source_id,
+ vs.source_url, vs.source_type, vs.duration_secs, vs.thumbnail_url
 `
 
 type GetContentDetailBySlugAndTypeParams struct {
-	Slug        string      `json:"slug"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ContentType string      `json:"content_type"`
+	Slug        string `json:"slug"`
+	ContentType string `json:"content_type"`
 }
 
 type GetContentDetailBySlugAndTypeRow struct {
 	ID                            pgtype.UUID        `json:"id"`
-	TenantID                      pgtype.UUID        `json:"tenant_id"`
 	AuthorID                      pgtype.UUID        `json:"author_id"`
 	SpaceID                       pgtype.UUID        `json:"space_id"`
 	OrganizationID                pgtype.UUID        `json:"organization_id"`
@@ -1521,11 +1394,10 @@ type GetContentDetailBySlugAndTypeRow struct {
 // page. Disambiguates by content_type so the same slug can exist for multiple
 // content types. Mirrors GetContentDetailBySlug with org/space/video details.
 func (q *Queries) GetContentDetailBySlugAndType(ctx context.Context, arg GetContentDetailBySlugAndTypeParams) (GetContentDetailBySlugAndTypeRow, error) {
-	row := q.db.QueryRow(ctx, getContentDetailBySlugAndType, arg.Slug, arg.TenantID, arg.ContentType)
+	row := q.db.QueryRow(ctx, getContentDetailBySlugAndType, arg.Slug, arg.ContentType)
 	var i GetContentDetailBySlugAndTypeRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.OrganizationID,
@@ -1600,18 +1472,16 @@ SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, c
 FROM content_revisions cr
 JOIN contents c ON c.id = cr.content_id
 WHERE cr.id = $1
-  AND cr.content_id = $2
-  AND c.tenant_id = $3
+ AND cr.content_id = $2
 `
 
 type GetContentRevisionParams struct {
 	ID        pgtype.UUID `json:"id"`
 	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 }
 
 func (q *Queries) GetContentRevision(ctx context.Context, arg GetContentRevisionParams) (ContentRevision, error) {
-	row := q.db.QueryRow(ctx, getContentRevision, arg.ID, arg.ContentID, arg.TenantID)
+	row := q.db.QueryRow(ctx, getContentRevision, arg.ID, arg.ContentID)
 	var i ContentRevision
 	err := row.Scan(
 		&i.ID,
@@ -1698,21 +1568,16 @@ func (q *Queries) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) (
 const getContentTitleAndBody = `-- name: GetContentTitleAndBody :one
 SELECT COALESCE(title, '') AS title, COALESCE(body, '') AS body
 FROM contents
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type GetContentTitleAndBodyParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetContentTitleAndBodyRow struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
 }
 
-func (q *Queries) GetContentTitleAndBody(ctx context.Context, arg GetContentTitleAndBodyParams) (GetContentTitleAndBodyRow, error) {
-	row := q.db.QueryRow(ctx, getContentTitleAndBody, arg.ID, arg.TenantID)
+func (q *Queries) GetContentTitleAndBody(ctx context.Context, id pgtype.UUID) (GetContentTitleAndBodyRow, error) {
+	row := q.db.QueryRow(ctx, getContentTitleAndBody, id)
 	var i GetContentTitleAndBodyRow
 	err := row.Scan(&i.Title, &i.Body)
 	return i, err
@@ -1720,25 +1585,28 @@ func (q *Queries) GetContentTitleAndBody(ctx context.Context, arg GetContentTitl
 
 const getJSONLDTemplate = `-- name: GetJSONLDTemplate :one
 
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
-WHERE tenant_id = $1 AND content_type = $2 AND is_active = true
+WHERE content_type = $1 AND is_active = true
 `
 
-type GetJSONLDTemplateParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ContentType string      `json:"content_type"`
+type GetJSONLDTemplateRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	ContentType string             `json:"content_type"`
+	Template    []byte             `json:"template"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 // =====================
 // JSON-LD Templates
 // =====================
-func (q *Queries) GetJSONLDTemplate(ctx context.Context, arg GetJSONLDTemplateParams) (ContentTypeJsonldTemplate, error) {
-	row := q.db.QueryRow(ctx, getJSONLDTemplate, arg.TenantID, arg.ContentType)
-	var i ContentTypeJsonldTemplate
+func (q *Queries) GetJSONLDTemplate(ctx context.Context, contentType string) (GetJSONLDTemplateRow, error) {
+	row := q.db.QueryRow(ctx, getJSONLDTemplate, contentType)
+	var i GetJSONLDTemplateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentType,
 		&i.Template,
 		&i.IsActive,
@@ -1750,54 +1618,44 @@ func (q *Queries) GetJSONLDTemplate(ctx context.Context, arg GetJSONLDTemplatePa
 
 const getPublicAuthorAnalytics = `-- name: GetPublicAuthorAnalytics :one
 SELECT
-    COALESCE((
-        SELECT SUM(c.view_count)::int FROM contents c
-        WHERE c.tenant_id = $1
-          AND c.author_id = $2
-          AND c.status = 'published'
-          AND c.visibility = 'public'
-          AND c.deleted_at IS NULL
-    ), 0)::int AS total_views,
-    COALESCE((
-        SELECT SUM(c.share_count)::int FROM contents c
-        WHERE c.tenant_id = $1
-          AND c.author_id = $2
-          AND c.status = 'published'
-          AND c.visibility = 'public'
-          AND c.deleted_at IS NULL
-    ), 0)::int AS total_shares,
-    COALESCE((
-        SELECT COUNT(c.id)::int FROM contents c
-        WHERE c.tenant_id = $1
-          AND c.author_id = $2
-          AND c.status = 'published'
-          AND c.visibility = 'public'
-          AND c.deleted_at IS NULL
-    ), 0)::int AS total_posts,
-    COALESCE((
-        SELECT COUNT(*)::int FROM reactions r
-        WHERE r.tenant_id = $1
-          AND r.entity_type = 'content'
-          AND r.entity_id IN (
-              SELECT c2.id FROM contents c2
-              WHERE c2.tenant_id = $1
-                AND c2.author_id = $2
-                AND c2.status = 'published'
-                AND c2.visibility = 'public'
-                AND c2.deleted_at IS NULL
-          )
-    ), 0)::int AS total_likes,
-    u.follower_count::int AS total_followers,
-    (SELECT COUNT(*)::int FROM follows f
-      WHERE f.tenant_id = $1 AND f.follower_id = u.id) AS total_following
+ COALESCE((
+ SELECT SUM(c.view_count)::int FROM contents c
+ WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ ), 0)::int AS total_views,
+ COALESCE((
+ SELECT SUM(c.share_count)::int FROM contents c
+ WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ ), 0)::int AS total_shares,
+ COALESCE((
+ SELECT COUNT(c.id)::int FROM contents c
+ WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ ), 0)::int AS total_posts,
+ COALESCE((
+ SELECT COUNT(*)::int FROM reactions r
+ WHERE r.entity_type = 'content'
+ AND r.entity_id IN (
+ SELECT c2.id FROM contents c2
+ WHERE c2.author_id = $1
+ AND c2.status = 'published'
+ AND c2.visibility = 'public'
+ AND c2.deleted_at IS NULL
+ )
+ ), 0)::int AS total_likes,
+ u.follower_count::int AS total_followers,
+ (SELECT COUNT(*)::int FROM follows f
+ WHERE f.follower_id = u.id) AS total_following
 FROM users u
-WHERE u.id = $2 AND u.tenant_id = $1
+WHERE u.id = $1
 `
-
-type GetPublicAuthorAnalyticsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-}
 
 type GetPublicAuthorAnalyticsRow struct {
 	TotalViews     int32 `json:"total_views"`
@@ -1815,8 +1673,8 @@ type GetPublicAuthorAnalyticsRow struct {
 // users table / follows subquery so the analytics response is self-contained.
 // Uses subqueries for content aggregates so the user row is always returned
 // even when the user has zero published posts (no GROUP BY needed).
-func (q *Queries) GetPublicAuthorAnalytics(ctx context.Context, arg GetPublicAuthorAnalyticsParams) (GetPublicAuthorAnalyticsRow, error) {
-	row := q.db.QueryRow(ctx, getPublicAuthorAnalytics, arg.TenantID, arg.AuthorID)
+func (q *Queries) GetPublicAuthorAnalytics(ctx context.Context, authorID pgtype.UUID) (GetPublicAuthorAnalyticsRow, error) {
+	row := q.db.QueryRow(ctx, getPublicAuthorAnalytics, authorID)
 	var i GetPublicAuthorAnalyticsRow
 	err := row.Scan(
 		&i.TotalViews,
@@ -1830,28 +1688,21 @@ func (q *Queries) GetPublicAuthorAnalytics(ctx context.Context, arg GetPublicAut
 }
 
 const getPublishedContentByID = `-- name: GetPublishedContentByID :one
-SELECT id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-       field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-       canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-       status, visibility, is_locked, is_pinned, read_time_minutes,
-       view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-       created_at, updated_at, guide_category
+SELECT id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category
 FROM contents
 WHERE id = $1
-  AND tenant_id = $2
-  AND status = 'published'
-  AND visibility = 'public'
-  AND deleted_at IS NULL
+ AND status = 'published'
+ AND visibility = 'public'
+ AND deleted_at IS NULL
 `
-
-type GetPublishedContentByIDParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 type GetPublishedContentByIDRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -1890,12 +1741,11 @@ type GetPublishedContentByIDRow struct {
 // published, public, and not soft-deleted. Drafts, scheduled, private, and
 // member-only content are never exposed to external API consumers.
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
-func (q *Queries) GetPublishedContentByID(ctx context.Context, arg GetPublishedContentByIDParams) (GetPublishedContentByIDRow, error) {
-	row := q.db.QueryRow(ctx, getPublishedContentByID, arg.ID, arg.TenantID)
+func (q *Queries) GetPublishedContentByID(ctx context.Context, id pgtype.UUID) (GetPublishedContentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getPublishedContentByID, id)
 	var i GetPublishedContentByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -1961,34 +1811,24 @@ func (q *Queries) GetSlugRedirect(ctx context.Context, arg GetSlugRedirectParams
 
 const incrementContentCommentCount = `-- name: IncrementContentCommentCount :exec
 UPDATE contents SET comment_count = comment_count + 1
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
-
-type IncrementContentCommentCountParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
 
 // Increments the denormalized comment_count on a content row. Called
 // synchronously when a comment is created so feed cards (which read
 // c.comment_count) show accurate counts without waiting for the async
 // scoring pipeline. Ref: Section 32 (feed reads contents.comment_count).
-func (q *Queries) IncrementContentCommentCount(ctx context.Context, arg IncrementContentCommentCountParams) error {
-	_, err := q.db.Exec(ctx, incrementContentCommentCount, arg.ID, arg.TenantID)
+func (q *Queries) IncrementContentCommentCount(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementContentCommentCount, id)
 	return err
 }
 
 const incrementContentView = `-- name: IncrementContentView :exec
-UPDATE contents SET view_count = view_count + 1 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+UPDATE contents SET view_count = view_count + 1 WHERE id = $1 AND deleted_at IS NULL
 `
 
-type IncrementContentViewParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) IncrementContentView(ctx context.Context, arg IncrementContentViewParams) error {
-	_, err := q.db.Exec(ctx, incrementContentView, arg.ID, arg.TenantID)
+func (q *Queries) IncrementContentView(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementContentView, id)
 	return err
 }
 
@@ -2081,8 +1921,8 @@ func (q *Queries) IncrementScoreVote(ctx context.Context, arg IncrementScoreVote
 
 const isBookmarked = `-- name: IsBookmarked :one
 SELECT EXISTS(
-    SELECT 1 FROM bookmarks
-    WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
+ SELECT 1 FROM bookmarks
+ WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 ) AS is_bookmarked
 `
 
@@ -2116,16 +1956,15 @@ func (q *Queries) IsContentPinned(ctx context.Context, arg IsContentPinnedParams
 }
 
 const listBookmarksByFolder = `-- name: ListBookmarksByFolder :many
-SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
+SELECT b.id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
 FROM bookmarks b
-WHERE b.user_id = $1 AND b.tenant_id = $2 AND b.folder_id = $3
+WHERE b.user_id = $1 AND b.folder_id = $2
 ORDER BY b.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type ListBookmarksByFolderParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	FolderID   pgtype.UUID `json:"folder_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -2133,7 +1972,6 @@ type ListBookmarksByFolderParams struct {
 
 type ListBookmarksByFolderRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -2145,7 +1983,6 @@ type ListBookmarksByFolderRow struct {
 func (q *Queries) ListBookmarksByFolder(ctx context.Context, arg ListBookmarksByFolderParams) ([]ListBookmarksByFolderRow, error) {
 	rows, err := q.db.Query(ctx, listBookmarksByFolder,
 		arg.UserID,
-		arg.TenantID,
 		arg.FolderID,
 		arg.PageOffset,
 		arg.PageLimit,
@@ -2159,7 +1996,6 @@ func (q *Queries) ListBookmarksByFolder(ctx context.Context, arg ListBookmarksBy
 		var i ListBookmarksByFolderRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.EntityType,
 			&i.EntityID,
@@ -2178,23 +2014,21 @@ func (q *Queries) ListBookmarksByFolder(ctx context.Context, arg ListBookmarksBy
 }
 
 const listBookmarksByUser = `-- name: ListBookmarksByUser :many
-SELECT b.id, b.tenant_id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
+SELECT b.id, b.user_id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at
 FROM bookmarks b
-WHERE b.user_id = $1 AND b.tenant_id = $2
+WHERE b.user_id = $1
 ORDER BY b.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListBookmarksByUserParams struct {
 	UserID     pgtype.UUID `json:"user_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListBookmarksByUserRow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -2204,12 +2038,7 @@ type ListBookmarksByUserRow struct {
 }
 
 func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUserParams) ([]ListBookmarksByUserRow, error) {
-	rows, err := q.db.Query(ctx, listBookmarksByUser,
-		arg.UserID,
-		arg.TenantID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listBookmarksByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2219,7 +2048,6 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 		var i ListBookmarksByUserRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.EntityType,
 			&i.EntityID,
@@ -2238,25 +2066,23 @@ func (q *Queries) ListBookmarksByUser(ctx context.Context, arg ListBookmarksByUs
 }
 
 const listComparisonContentsBySourceID = `-- name: ListComparisonContentsBySourceID :many
-SELECT c.id, c.tenant_id, c.title, c.slug, c.body, c.content_type,
-       c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
-       c.view_count, c.comment_count, c.share_count,
-       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
-       u.username AS author_username
+SELECT c.id, c.title, c.slug, c.body, c.content_type,
+ c.status, c.visibility, c.published_at, c.created_at, c.updated_at,
+ c.view_count, c.comment_count, c.share_count,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS vote_score,
+ u.username AS author_username
 FROM contents c
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.intel_source_id = $2
-  AND c.content_type = 'comparison'
-  AND c.deleted_at IS NULL
-  AND c.status = 'published'
-  AND c.visibility = 'public'
+LEFT JOIN users u ON u.id = c.author_id
+WHERE c.intel_source_id = $1
+ AND c.content_type = 'comparison'
+ AND c.deleted_at IS NULL
+ AND c.status = 'published'
+ AND c.visibility = 'public'
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListComparisonContentsBySourceIDParams struct {
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	IntelSourceID pgtype.UUID `json:"intel_source_id"`
 	PageOffset    int32       `json:"page_offset"`
 	PageLimit     int32       `json:"page_limit"`
@@ -2264,7 +2090,6 @@ type ListComparisonContentsBySourceIDParams struct {
 
 type ListComparisonContentsBySourceIDRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Title          string             `json:"title"`
 	Slug           string             `json:"slug"`
 	Body           string             `json:"body"`
@@ -2283,12 +2108,7 @@ type ListComparisonContentsBySourceIDRow struct {
 
 // Source item feed: comparison contents linked to a canonical source.
 func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg ListComparisonContentsBySourceIDParams) ([]ListComparisonContentsBySourceIDRow, error) {
-	rows, err := q.db.Query(ctx, listComparisonContentsBySourceID,
-		arg.TenantID,
-		arg.IntelSourceID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listComparisonContentsBySourceID, arg.IntelSourceID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -2298,7 +2118,6 @@ func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg List
 		var i ListComparisonContentsBySourceIDRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Title,
 			&i.Slug,
 			&i.Body,
@@ -2325,20 +2144,20 @@ func (q *Queries) ListComparisonContentsBySourceID(ctx context.Context, arg List
 }
 
 const listContentByTag = `-- name: ListContentByTag :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path   AS cover_storage_path,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       MAX(LEFT(c.body, 200))::text AS excerpt,
-       COALESCE(string_agg(t2.name, ',' ORDER BY t2.name), '') AS tags
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ MAX(LEFT(c.body, 200))::text AS excerpt,
+ COALESCE(string_agg(t2.name, ',' ORDER BY t2.name), '') AS tags
 FROM contents c
 JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN users u ON u.id = c.author_id
@@ -2347,35 +2166,34 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_tags ct2 ON ct2.content_id = c.id
 LEFT JOIN tags t2 ON t2.id = ct2.tag_id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
-WHERE ct.tag_id = $1 AND c.tenant_id = $2
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
-  AND (
-    $7::timestamptz IS NULL
-    OR c.created_at < $7::timestamptz
-    OR (c.created_at = $7::timestamptz AND c.id < $8::uuid)
-  )
+WHERE ct.tag_id = $1
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
+ AND (
+ $6::timestamptz IS NULL
+ OR c.created_at < $6::timestamptz
+ OR (c.created_at = $6::timestamptz AND c.id < $7::uuid)
+ )
 GROUP BY c.id, u.username, up.display_name, up.avatar_url,
-         s.name, s.slug, m.storage_bucket, m.storage_path
+ s.name, s.slug, m.storage_bucket, m.storage_path
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $9
+LIMIT $8
 `
 
 type ListContentByTagParams struct {
 	TagID             pgtype.UUID        `json:"tag_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
@@ -2387,7 +2205,6 @@ type ListContentByTagParams struct {
 
 type ListContentByTagRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	AuthorID           pgtype.UUID        `json:"author_id"`
 	SpaceID            pgtype.UUID        `json:"space_id"`
 	ContentType        string             `json:"content_type"`
@@ -2435,7 +2252,6 @@ type ListContentByTagRow struct {
 func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagParams) ([]ListContentByTagRow, error) {
 	rows, err := q.db.Query(ctx, listContentByTag,
 		arg.TagID,
-		arg.TenantID,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
@@ -2453,7 +2269,6 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 		var i ListContentByTagRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -2504,7 +2319,7 @@ func (q *Queries) ListContentByTag(ctx context.Context, arg ListContentByTagPara
 }
 
 const listContentIDsScoredSince = `-- name: ListContentIDsScoredSince :many
-SELECT c.id, c.tenant_id
+SELECT c.id
 FROM content_scores cs
 JOIN contents c ON c.id = cs.content_id
 WHERE cs.last_scored_at > $1 AND c.deleted_at IS NULL
@@ -2517,30 +2332,25 @@ type ListContentIDsScoredSinceParams struct {
 	BatchSize int32              `json:"batch_size"`
 }
 
-type ListContentIDsScoredSinceRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
 // Returns content IDs whose content_scores.last_scored_at is newer than the
 // given cursor, joined to contents for tenant scoping. Used by the §13
 // batched engagement-score re-index cron to find content whose search index
 // document needs refreshing without re-indexing on every engagement event.
 // Limits to @batch_size rows ordered by last_scored_at ascending so the
 // cursor advances monotonically.
-func (q *Queries) ListContentIDsScoredSince(ctx context.Context, arg ListContentIDsScoredSinceParams) ([]ListContentIDsScoredSinceRow, error) {
+func (q *Queries) ListContentIDsScoredSince(ctx context.Context, arg ListContentIDsScoredSinceParams) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listContentIDsScoredSince, arg.Cursor, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListContentIDsScoredSinceRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListContentIDsScoredSinceRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2553,17 +2363,11 @@ SELECT cr.id, cr.content_id, cr.field_values, cr.title, cr.body, cr.body_html, c
 FROM content_revisions cr
 JOIN contents c ON c.id = cr.content_id
 WHERE cr.content_id = $1
-  AND c.tenant_id = $2
 ORDER BY cr.created_at DESC, cr.id DESC
 `
 
-type ListContentRevisionsParams struct {
-	ContentID pgtype.UUID `json:"content_id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListContentRevisions(ctx context.Context, arg ListContentRevisionsParams) ([]ContentRevision, error) {
-	rows, err := q.db.Query(ctx, listContentRevisions, arg.ContentID, arg.TenantID)
+func (q *Queries) ListContentRevisions(ctx context.Context, contentID pgtype.UUID) ([]ContentRevision, error) {
+	rows, err := q.db.Query(ctx, listContentRevisions, contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -2636,41 +2440,39 @@ func (q *Queries) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 }
 
 const listContentsByIDs = `-- name: ListContentsByIDs :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
 FROM contents c
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.id = ANY($2::uuid[])
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.id = ANY($1::uuid[])
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $7
+LIMIT $6
 `
 
 type ListContentsByIDsParams struct {
-	TenantID          pgtype.UUID   `json:"tenant_id"`
 	Ids               []pgtype.UUID `json:"ids"`
 	CanSeeUnpublished bool          `json:"can_see_unpublished"`
 	CanSeePrivate     bool          `json:"can_see_private"`
@@ -2681,7 +2483,6 @@ type ListContentsByIDsParams struct {
 
 type ListContentsByIDsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	AuthorID          pgtype.UUID        `json:"author_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	ContentType       string             `json:"content_type"`
@@ -2730,7 +2531,6 @@ type ListContentsByIDsRow struct {
 // Ref: docs/PERFORMANCE_AUDIT.md §4 (Search Offload)
 func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsParams) ([]ListContentsByIDsRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByIDs,
-		arg.TenantID,
 		arg.Ids,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
@@ -2747,7 +2547,6 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 		var i ListContentsByIDsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -2799,56 +2598,54 @@ func (q *Queries) ListContentsByIDs(ctx context.Context, arg ListContentsByIDsPa
 }
 
 const listContentsBySlugs = `-- name: ListContentsBySlugs :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username,
-       up.display_name AS author_display_name,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       s.name AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       COALESCE(cs.vote_score, 0) AS vote_score,
-       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
-       COALESCE(cs.velocity_score, 0) AS velocity_score,
-       LEFT(c.body, 200)::text AS excerpt,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
-                 FROM content_tags ct
-                 JOIN tags t ON t.id = ct.tag_id
-                 WHERE ct.content_id = c.id), '') AS tags
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username,
+ up.display_name AS author_display_name,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ s.name AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ COALESCE(cs.vote_score, 0) AS vote_score,
+ COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+ COALESCE(cs.velocity_score, 0) AS velocity_score,
+ LEFT(c.body, 200)::text AS excerpt,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ FROM content_tags ct
+ JOIN tags t ON t.id = ct.tag_id
+ WHERE ct.content_id = c.id), '') AS tags
 FROM contents c
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id) AND m.deleted_at IS NULL
-WHERE c.tenant_id = $1
-  AND c.slug = ANY($2::text[])
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
-ORDER BY array_position($2::text[], c.slug)
-LIMIT $8 OFFSET $7
+WHERE c.slug = ANY($1::text[])
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
+ORDER BY array_position($1::text[], c.slug)
+LIMIT $7 OFFSET $6
 `
 
 type ListContentsBySlugsParams struct {
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	Slugs             []string    `json:"slugs"`
 	CanSeeUnpublished bool        `json:"can_see_unpublished"`
 	CanSeePrivate     bool        `json:"can_see_private"`
@@ -2860,7 +2657,6 @@ type ListContentsBySlugsParams struct {
 
 type ListContentsBySlugsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	AuthorID           pgtype.UUID        `json:"author_id"`
 	SpaceID            pgtype.UUID        `json:"space_id"`
 	ContentType        string             `json:"content_type"`
@@ -2916,7 +2712,6 @@ type ListContentsBySlugsRow struct {
 // to render the next steps from a readiness assessment in slug order, paginated.
 func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlugsParams) ([]ListContentsBySlugsRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySlugs,
-		arg.TenantID,
 		arg.Slugs,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
@@ -2934,7 +2729,6 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 		var i ListContentsBySlugsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -2995,43 +2789,41 @@ func (q *Queries) ListContentsBySlugs(ctx context.Context, arg ListContentsBySlu
 }
 
 const listContentsBySpace = `-- name: ListContentsBySpace :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = cs.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $2
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
-  AND (c.created_at < $7 OR ($7 IS NULL))
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = cs.space_id
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
+ AND (c.created_at < $6 OR ($6 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $8
+LIMIT $7
 `
 
 type ListContentsBySpaceParams struct {
 	SpaceID           pgtype.UUID        `json:"space_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
@@ -3042,7 +2834,6 @@ type ListContentsBySpaceParams struct {
 
 type ListContentsBySpaceRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	AuthorID          pgtype.UUID        `json:"author_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	ContentType       string             `json:"content_type"`
@@ -3090,7 +2881,6 @@ type ListContentsBySpaceRow struct {
 func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpaceParams) ([]ListContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, listContentsBySpace,
 		arg.SpaceID,
-		arg.TenantID,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
@@ -3107,7 +2897,6 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 		var i ListContentsBySpaceRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -3159,42 +2948,40 @@ func (q *Queries) ListContentsBySpace(ctx context.Context, arg ListContentsBySpa
 }
 
 const listContentsByTenant = `-- name: ListContentsByTenant :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
 FROM contents c
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($2::boolean AND $3::boolean)
-      OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $5::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
-          )
-      )
-  )
-  AND ($6::text IS NULL OR c.title ILIKE '%' || $6 || '%' OR c.slug ILIKE '%' || $6 || '%' OR c.body ILIKE '%' || $6 || '%')
-  AND (c.created_at < $7 OR ($7 IS NULL))
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($1::boolean AND $2::boolean)
+ OR (c.author_id = $3::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $4::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $3::uuid OR $2::boolean))
+ )
+ )
+ )
+ AND ($5::text IS NULL OR c.title ILIKE '%' || $5 || '%' OR c.slug ILIKE '%' || $5 || '%' OR c.body ILIKE '%' || $5 || '%')
+ AND (c.created_at < $6 OR ($6 IS NULL))
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $8
+LIMIT $7
 `
 
 type ListContentsByTenantParams struct {
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
 	CanSeePrivate     bool               `json:"can_see_private"`
 	RequesterID       pgtype.UUID        `json:"requester_id"`
@@ -3206,7 +2993,6 @@ type ListContentsByTenantParams struct {
 
 type ListContentsByTenantRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	AuthorID          pgtype.UUID        `json:"author_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	ContentType       string             `json:"content_type"`
@@ -3250,7 +3036,6 @@ type ListContentsByTenantRow struct {
 
 func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTenantParams) ([]ListContentsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByTenant,
-		arg.TenantID,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
@@ -3268,7 +3053,6 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 		var i ListContentsByTenantRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -3320,62 +3104,61 @@ func (q *Queries) ListContentsByTenant(ctx context.Context, arg ListContentsByTe
 }
 
 const listContentsByType = `-- name: ListContentsByType :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
 FROM contents c
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1 AND c.content_type = $2
-  AND ($3::text = '' OR c.guide_category = $3::text)
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($4::boolean AND $5::boolean)
-      OR (c.author_id = $6::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $7::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $6::uuid OR $5::boolean))
-          )
-      )
-  )
-  AND (
-      ($8::timestamptz IS NULL)
-      OR (c.created_at < $8::timestamptz)
-      OR (c.created_at = $8::timestamptz AND ($9::uuid IS NULL OR c.id < $9))
-  )
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE c.content_type = $1
+ AND ($2::text = '' OR c.guide_category = $2::text)
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($3::boolean AND $4::boolean)
+ OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $6::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+ )
+ )
+ )
+ AND (
+ ($7::timestamptz IS NULL)
+ OR (c.created_at < $7::timestamptz)
+ OR (c.created_at = $7::timestamptz AND ($8::uuid IS NULL OR c.id < $8))
+ )
 ORDER BY
-  CASE WHEN $10::text = 'roadmap' THEN
-    (CASE WHEN $11::text <> '' AND c.journey_stage = $11::text THEN 8 ELSE 0 END) +
-    (CASE WHEN $12::text <> '' AND c.target_country = $12::text THEN 4 ELSE 0 END) +
-    (CASE WHEN $13::text <> '' AND c.visa_route = $13::text THEN 2 ELSE 0 END) +
-    (CASE WHEN $14::text <> '' AND c.source_country = $14::text THEN 1 ELSE 0 END)
-  END DESC,
-  CASE WHEN $10::text = 'roadmap' THEN
-    CASE c.journey_stage
-      WHEN 'considering' THEN 0 WHEN 'planning' THEN 1 WHEN 'preparing' THEN 2
-      WHEN 'applied' THEN 3 WHEN 'approved' THEN 4 WHEN 'relocated' THEN 5
-      WHEN 'settled' THEN 6 ELSE 7
-    END
-  END ASC,
-  CASE WHEN $10::text = 'popular' THEN c.view_count END DESC NULLS LAST,
-  c.created_at DESC,
-  c.id DESC
-LIMIT $16 OFFSET $15
+ CASE WHEN $9::text = 'roadmap' THEN
+ (CASE WHEN $10::text <> '' AND c.journey_stage = $10::text THEN 8 ELSE 0 END) +
+ (CASE WHEN $11::text <> '' AND c.target_country = $11::text THEN 4 ELSE 0 END) +
+ (CASE WHEN $12::text <> '' AND c.visa_route = $12::text THEN 2 ELSE 0 END) +
+ (CASE WHEN $13::text <> '' AND c.source_country = $13::text THEN 1 ELSE 0 END)
+ END DESC,
+ CASE WHEN $9::text = 'roadmap' THEN
+ CASE c.journey_stage
+ WHEN 'considering' THEN 0 WHEN 'planning' THEN 1 WHEN 'preparing' THEN 2
+ WHEN 'applied' THEN 3 WHEN 'approved' THEN 4 WHEN 'relocated' THEN 5
+ WHEN 'settled' THEN 6 ELSE 7
+ END
+ END ASC,
+ CASE WHEN $9::text = 'popular' THEN c.view_count END DESC NULLS LAST,
+ c.created_at DESC,
+ c.id DESC
+LIMIT $15 OFFSET $14
 `
 
 type ListContentsByTypeParams struct {
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentType       string             `json:"content_type"`
 	GuideCategory     string             `json:"guide_category"`
 	CanSeeUnpublished bool               `json:"can_see_unpublished"`
@@ -3395,7 +3178,6 @@ type ListContentsByTypeParams struct {
 
 type ListContentsByTypeRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	AuthorID          pgtype.UUID        `json:"author_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	ContentType       string             `json:"content_type"`
@@ -3448,7 +3230,6 @@ type ListContentsByTypeRow struct {
 // non-cursor sorts.
 func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByTypeParams) ([]ListContentsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listContentsByType,
-		arg.TenantID,
 		arg.ContentType,
 		arg.GuideCategory,
 		arg.CanSeeUnpublished,
@@ -3474,7 +3255,6 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 		var i ListContentsByTypeRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -3527,43 +3307,41 @@ func (q *Queries) ListContentsByType(ctx context.Context, arg ListContentsByType
 
 const listFeaturedContentsByType = `-- name: ListFeaturedContentsByType :many
 SELECT cf.id AS featured_id, cf.featured_order, cf.featured_until,
-       c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
-       c.field_values->>'purpose' AS purpose,
-       u.username AS author_username, up.display_name AS author_display_name,
-       s.name AS space_name
+ c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country,
+ c.field_values->>'purpose' AS purpose,
+ u.username AS author_username, up.display_name AS author_display_name,
+ s.name AS space_name
 FROM content_featured cf
 JOIN contents c ON c.id = cf.content_id
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-WHERE cf.tenant_id = $1
-  AND (cf.featured_until IS NULL OR cf.featured_until > now())
-  AND ($2::text = '' OR c.content_type = $2::text)
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
+WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
+ AND ($1::text = '' OR c.content_type = $1::text)
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
 ORDER BY cf.featured_order ASC, c.created_at DESC, c.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $7 OFFSET $6
 `
 
 type ListFeaturedContentsByTypeParams struct {
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	ContentType       string      `json:"content_type"`
 	CanSeeUnpublished bool        `json:"can_see_unpublished"`
 	CanSeePrivate     bool        `json:"can_see_private"`
@@ -3578,7 +3356,6 @@ type ListFeaturedContentsByTypeRow struct {
 	FeaturedOrder     int32              `json:"featured_order"`
 	FeaturedUntil     pgtype.Timestamptz `json:"featured_until"`
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	AuthorID          pgtype.UUID        `json:"author_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	ContentType       string             `json:"content_type"`
@@ -3626,7 +3403,6 @@ type ListFeaturedContentsByTypeRow struct {
 // featured_order then created_at. Same visibility gating as the list.
 func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeaturedContentsByTypeParams) ([]ListFeaturedContentsByTypeRow, error) {
 	rows, err := q.db.Query(ctx, listFeaturedContentsByType,
-		arg.TenantID,
 		arg.ContentType,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
@@ -3647,7 +3423,6 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 			&i.FeaturedOrder,
 			&i.FeaturedUntil,
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -3699,30 +3474,32 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 }
 
 const listJSONLDTemplates = `-- name: ListJSONLDTemplates :many
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
-WHERE tenant_id = $1
-  AND ($2::text = '' OR content_type ILIKE '%' || $2 || '%' OR template::text ILIKE '%' || $2 || '%')
+WHERE ($1::text = '' OR content_type ILIKE '%' || $1 || '%' OR template::text ILIKE '%' || $1 || '%')
 ORDER BY created_at ASC, id ASC
 `
 
-type ListJSONLDTemplatesParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Q        string      `json:"q"`
+type ListJSONLDTemplatesRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	ContentType string             `json:"content_type"`
+	Template    []byte             `json:"template"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListJSONLDTemplates(ctx context.Context, arg ListJSONLDTemplatesParams) ([]ContentTypeJsonldTemplate, error) {
-	rows, err := q.db.Query(ctx, listJSONLDTemplates, arg.TenantID, arg.Q)
+func (q *Queries) ListJSONLDTemplates(ctx context.Context, q_ string) ([]ListJSONLDTemplatesRow, error) {
+	rows, err := q.db.Query(ctx, listJSONLDTemplates, q_)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ContentTypeJsonldTemplate
+	var items []ListJSONLDTemplatesRow
 	for rows.Next() {
-		var i ContentTypeJsonldTemplate
+		var i ListJSONLDTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentType,
 			&i.Template,
 			&i.IsActive,
@@ -3783,60 +3560,58 @@ func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([
 }
 
 const listPublishedContentByAuthor = `-- name: ListPublishedContentByAuthor :many
-SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
-                 FROM content_tags ct
-                 JOIN tags t ON t.id = ct.tag_id
-                 WHERE ct.content_id = c.id), '') AS tags,
-       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
-       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
-       COALESCE(cs.velocity_score, 0) AS velocity_score,
-       LEFT(c.body, 200)::text AS excerpt,
-       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
-       om.storage_bucket AS org_logo_storage_bucket,
-       om.storage_path AS org_logo_storage_path
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ FROM content_tags ct
+ JOIN tags t ON t.id = ct.tag_id
+ WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+ COALESCE(cs.velocity_score, 0) AS velocity_score,
+ LEFT(c.body, 200)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path
 FROM contents c
-LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN video_sources vs ON vs.id = c.video_source_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
-WHERE c.tenant_id = $1
-  AND c.author_id = $2
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
+WHERE c.author_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
 ORDER BY c.is_pinned DESC, c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPublishedContentByAuthorParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -3844,7 +3619,6 @@ type ListPublishedContentByAuthorParams struct {
 
 type ListPublishedContentByAuthorRow struct {
 	ID                       pgtype.UUID        `json:"id"`
-	TenantID                 pgtype.UUID        `json:"tenant_id"`
 	AuthorID                 pgtype.UUID        `json:"author_id"`
 	OrganizationID           pgtype.UUID        `json:"organization_id"`
 	SpaceID                  pgtype.UUID        `json:"space_id"`
@@ -3913,12 +3687,7 @@ type ListPublishedContentByAuthorRow struct {
 // Pinned posts (is_pinned = true) are sorted to the top so the profile
 // surfaces the author's featured/top content first.
 func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPublishedContentByAuthorParams) ([]ListPublishedContentByAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentByAuthor,
-		arg.TenantID,
-		arg.AuthorID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPublishedContentByAuthor, arg.AuthorID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -3928,7 +3697,6 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 		var i ListPublishedContentByAuthorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.OrganizationID,
 			&i.SpaceID,
@@ -4001,60 +3769,58 @@ func (q *Queries) ListPublishedContentByAuthor(ctx context.Context, arg ListPubl
 }
 
 const listPublishedContentByOrganization = `-- name: ListPublishedContentByOrganization :many
-SELECT c.id, c.tenant_id, c.author_id, c.organization_id, c.space_id, c.content_type,
-       c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
-       c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
-       c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
-       c.publish_at, c.published_at, c.created_at, c.updated_at,
-       c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
-       COALESCE(up.display_name, u.username, '') AS author_name,
-       COALESCE(u.username, '') AS author_username,
-       COALESCE(up.avatar_url, '') AS author_avatar_url,
-       COALESCE(s.name, '') AS space_name,
-       COALESCE(s.slug, '') AS space_slug,
-       sm.storage_bucket AS space_avatar_storage_bucket,
-       sm.storage_path AS space_avatar_storage_path,
-       m.storage_bucket AS cover_storage_bucket,
-       m.storage_path AS cover_storage_path,
-       vs.source_url AS video_source_url,
-       vs.source_type AS video_source_type,
-       vs.duration_secs AS video_duration_secs,
-       vs.thumbnail_url AS video_thumbnail_url,
-       COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
-                 FROM content_tags ct
-                 JOIN tags t ON t.id = ct.tag_id
-                 WHERE ct.content_id = c.id), '') AS tags,
-       (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
-       COALESCE(cs.bookmark_count, 0) AS bookmark_count,
-       COALESCE(cs.velocity_score, 0) AS velocity_score,
-       LEFT(c.body, 200)::text AS excerpt,
-       o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
-       om.storage_bucket AS org_logo_storage_bucket,
-       om.storage_path AS org_logo_storage_path
+SELECT c.id, c.author_id, c.organization_id, c.space_id, c.content_type,
+ c.title, c.slug, c.body, c.body_html, c.field_values, c.content_hash,
+ c.geo_space_id, c.header_image_id, c.featured_image_id, c.canonical_url,
+ c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.video_source_id,
+ c.publish_at, c.published_at, c.created_at, c.updated_at,
+ c.journey_stage, c.visa_route, c.source_country, c.target_country, c.guide_category,
+ COALESCE(up.display_name, u.username, '') AS author_name,
+ COALESCE(u.username, '') AS author_username,
+ COALESCE(up.avatar_url, '') AS author_avatar_url,
+ COALESCE(s.name, '') AS space_name,
+ COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ m.storage_bucket AS cover_storage_bucket,
+ m.storage_path AS cover_storage_path,
+ vs.source_url AS video_source_url,
+ vs.source_type AS video_source_type,
+ vs.duration_secs AS video_duration_secs,
+ vs.thumbnail_url AS video_thumbnail_url,
+ COALESCE((SELECT string_agg(t.name, ',' ORDER BY t.name)
+ FROM content_tags ct
+ JOIN tags t ON t.id = ct.tag_id
+ WHERE ct.content_id = c.id), '') AS tags,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
+ COALESCE(cs.bookmark_count, 0) AS bookmark_count,
+ COALESCE(cs.velocity_score, 0) AS velocity_score,
+ LEFT(c.body, 200)::text AS excerpt,
+ o.name AS org_name, o.slug AS org_slug, o.logo_media_id AS org_logo_media_id,
+ om.storage_bucket AS org_logo_storage_bucket,
+ om.storage_path AS org_logo_storage_path
 FROM contents c
-LEFT JOIN organizations o ON o.id = c.organization_id AND o.tenant_id = c.tenant_id
+LEFT JOIN organizations o ON o.id = c.organization_id
 LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
-LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = c.author_id AND up.tenant_id = c.tenant_id
-LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
 LEFT JOIN video_sources vs ON vs.id = c.video_source_id
 LEFT JOIN content_scores cs ON cs.content_id = c.id
 LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id, vs.thumbnail_media_id) AND m.deleted_at IS NULL
-WHERE c.tenant_id = $1
-  AND c.organization_id = $2
-  AND c.status = 'published'
-  AND c.visibility = 'public'
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
+WHERE c.organization_id = $1
+ AND c.status = 'published'
+ AND c.visibility = 'public'
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC, c.id DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListPublishedContentByOrganizationParams struct {
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
 	PageOffset     int32       `json:"page_offset"`
 	PageLimit      int32       `json:"page_limit"`
@@ -4062,7 +3828,6 @@ type ListPublishedContentByOrganizationParams struct {
 
 type ListPublishedContentByOrganizationRow struct {
 	ID                       pgtype.UUID        `json:"id"`
-	TenantID                 pgtype.UUID        `json:"tenant_id"`
 	AuthorID                 pgtype.UUID        `json:"author_id"`
 	OrganizationID           pgtype.UUID        `json:"organization_id"`
 	SpaceID                  pgtype.UUID        `json:"space_id"`
@@ -4129,12 +3894,7 @@ type ListPublishedContentByOrganizationRow struct {
 // PUBLIC content, newest first, paginated. Keyed by organization_id (ADR-062).
 // author_id (the human) is projected for accountability; org badge fields via join.
 func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg ListPublishedContentByOrganizationParams) ([]ListPublishedContentByOrganizationRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentByOrganization,
-		arg.TenantID,
-		arg.OrganizationID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listPublishedContentByOrganization, arg.OrganizationID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -4144,7 +3904,6 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 		var i ListPublishedContentByOrganizationRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.OrganizationID,
 			&i.SpaceID,
@@ -4219,9 +3978,8 @@ func (q *Queries) ListPublishedContentByOrganization(ctx context.Context, arg Li
 const listPublishedContentForDigest = `-- name: ListPublishedContentForDigest :many
 SELECT title, slug, created_at
 FROM contents
-WHERE tenant_id = $1
-  AND status = 'published'
-  AND created_at >= now() - interval '7 days'
+WHERE status = 'published'
+ AND created_at >= now() - interval '7 days'
 ORDER BY created_at DESC
 LIMIT 10
 `
@@ -4232,8 +3990,8 @@ type ListPublishedContentForDigestRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListPublishedContentForDigest(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForDigestRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentForDigest, tenantID)
+func (q *Queries) ListPublishedContentForDigest(ctx context.Context) ([]ListPublishedContentForDigestRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -4255,7 +4013,7 @@ func (q *Queries) ListPublishedContentForDigest(ctx context.Context, tenantID pg
 const listPublishedContentForLLMsTxt = `-- name: ListPublishedContentForLLMsTxt :many
 SELECT title, slug, content_type
 FROM contents
-WHERE tenant_id = $1 AND status = 'published' AND visibility = 'public'
+WHERE status = 'published' AND visibility = 'public'
 ORDER BY created_at DESC
 LIMIT 1000
 `
@@ -4266,8 +4024,8 @@ type ListPublishedContentForLLMsTxtRow struct {
 	ContentType string `json:"content_type"`
 }
 
-func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForLLMsTxtRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentForLLMsTxt, tenantID)
+func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context) ([]ListPublishedContentForLLMsTxtRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForLLMsTxt)
 	if err != nil {
 		return nil, err
 	}
@@ -4289,7 +4047,7 @@ func (q *Queries) ListPublishedContentForLLMsTxt(ctx context.Context, tenantID p
 const listPublishedContentForRSS = `-- name: ListPublishedContentForRSS :many
 SELECT title, slug, created_at
 FROM contents
-WHERE tenant_id = $1 AND status = 'published'
+WHERE status = 'published'
 ORDER BY created_at DESC
 LIMIT 50
 `
@@ -4300,8 +4058,8 @@ type ListPublishedContentForRSSRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-func (q *Queries) ListPublishedContentForRSS(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedContentForRSSRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedContentForRSS, tenantID)
+func (q *Queries) ListPublishedContentForRSS(ctx context.Context) ([]ListPublishedContentForRSSRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedContentForRSS)
 	if err != nil {
 		return nil, err
 	}
@@ -4322,22 +4080,22 @@ func (q *Queries) ListPublishedContentForRSS(ctx context.Context, tenantID pgtyp
 
 const listPublishedSlugsForSitemap = `-- name: ListPublishedSlugsForSitemap :many
 SELECT c.slug, c.updated_at, c.visibility, c.seo_indexable, c.content_type,
-       c.comment_count, c.share_count, c.reshare_count,
-       array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
-       COALESCE(ft.reply_count, 0) AS reply_count,
-       COALESCE(ft.solved, false) AS solved,
-       (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
-       COALESCE(r.reaction_count, 0) AS reaction_count
+ c.comment_count, c.share_count, c.reshare_count,
+ array_length(string_to_array(trim(c.body), ' '), 1) AS word_count,
+ COALESCE(ft.reply_count, 0) AS reply_count,
+ COALESCE(ft.solved, false) AS solved,
+ (ft.id IS NOT NULL AND ft.solved = false) AS is_question,
+ COALESCE(r.reaction_count, 0) AS reaction_count
 FROM contents c
 LEFT JOIN forum_threads ft ON ft.content_id = c.id
 LEFT JOIN (
-    SELECT entity_id, count(*) AS reaction_count
-    FROM reactions
-    WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
-    GROUP BY entity_id
+ SELECT entity_id, count(*) AS reaction_count
+ FROM reactions
+ WHERE entity_type IN ('content', 'blog_post', 'forum_thread', 'discussion', 'guide', 'comparison')
+ GROUP BY entity_id
 ) r ON r.entity_id = c.id
-WHERE c.tenant_id = $1 AND c.status = 'published'
-  AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
+WHERE c.status = 'published'
+ AND c.deleted_at IS NULL AND c.visibility = 'public' AND c.seo_indexable = true
 ORDER BY c.updated_at DESC
 LIMIT 10000
 `
@@ -4358,8 +4116,8 @@ type ListPublishedSlugsForSitemapRow struct {
 	ReactionCount int64              `json:"reaction_count"`
 }
 
-func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, tenantID pgtype.UUID) ([]ListPublishedSlugsForSitemapRow, error) {
-	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap, tenantID)
+func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context) ([]ListPublishedSlugsForSitemapRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedSlugsForSitemap)
 	if err != nil {
 		return nil, err
 	}
@@ -4393,33 +4151,28 @@ func (q *Queries) ListPublishedSlugsForSitemap(ctx context.Context, tenantID pgt
 }
 
 const listScheduledContentReady = `-- name: ListScheduledContentReady :many
-SELECT id, tenant_id
+SELECT id
 FROM contents
 WHERE status = 'scheduled'
-  AND publish_at IS NOT NULL
-  AND publish_at <= now()
+ AND publish_at IS NOT NULL
+ AND publish_at <= now()
 ORDER BY publish_at ASC
 LIMIT 100
 `
 
-type ListScheduledContentReadyRow struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) ListScheduledContentReady(ctx context.Context) ([]ListScheduledContentReadyRow, error) {
+func (q *Queries) ListScheduledContentReady(ctx context.Context) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listScheduledContentReady)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListScheduledContentReadyRow
+	var items []pgtype.UUID
 	for rows.Next() {
-		var i ListScheduledContentReadyRow
-		if err := rows.Scan(&i.ID, &i.TenantID); err != nil {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -4429,8 +4182,8 @@ func (q *Queries) ListScheduledContentReady(ctx context.Context) ([]ListSchedule
 
 const pinContentToSpace = `-- name: PinContentToSpace :one
 
-INSERT INTO space_pinned_posts (space_id, content_id, pinned_by, position)
-VALUES ($1, $2, $3, $4)
+INSERT INTO space_pinned_posts (space_id, content_id, pinned_by, position) VALUES ($1, $2, $3, $4)
+
 RETURNING id, space_id, content_id, pinned_by, position, created_at
 `
 
@@ -4475,21 +4228,15 @@ func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpacePa
 const publishScheduledContent = `-- name: PublishScheduledContent :execrows
 UPDATE contents
 SET status = 'published',
-    published_at = COALESCE(published_at, now()),
-    updated_at = now()
+ published_at = COALESCE(published_at, now()),
+ updated_at = now()
 WHERE id = $1
-  AND tenant_id = $2
-  AND status = 'scheduled'
-  AND publish_at <= now()
+ AND status = 'scheduled'
+ AND publish_at <= now()
 `
 
-type PublishScheduledContentParams struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-}
-
-func (q *Queries) PublishScheduledContent(ctx context.Context, arg PublishScheduledContentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, publishScheduledContent, arg.ID, arg.TenantID)
+func (q *Queries) PublishScheduledContent(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, publishScheduledContent, id)
 	if err != nil {
 		return 0, err
 	}
@@ -4499,26 +4246,24 @@ func (q *Queries) PublishScheduledContent(ctx context.Context, arg PublishSchedu
 const reassignSingleContentAuthor = `-- name: ReassignSingleContentAuthor :one
 UPDATE contents
 SET author_id = $1, field_values = $2, updated_at = now()
-WHERE id = $3 AND tenant_id = $4 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-          status, visibility, is_locked, is_pinned, read_time_minutes,
-          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country
+WHERE id = $3 AND deleted_at IS NULL
+RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ journey_stage, visa_route, source_country, target_country
 `
 
 type ReassignSingleContentAuthorParams struct {
 	AuthorID    pgtype.UUID `json:"author_id"`
 	FieldValues []byte      `json:"field_values"`
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 }
 
 type ReassignSingleContentAuthorRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -4564,16 +4309,10 @@ type ReassignSingleContentAuthorRow struct {
 // for defense-in-depth (BUG-014). Distinct from gdpr.sql's
 // ReassignContentAuthor (:exec bulk reassign on user deletion).
 func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignSingleContentAuthorParams) (ReassignSingleContentAuthorRow, error) {
-	row := q.db.QueryRow(ctx, reassignSingleContentAuthor,
-		arg.AuthorID,
-		arg.FieldValues,
-		arg.ID,
-		arg.TenantID,
-	)
+	row := q.db.QueryRow(ctx, reassignSingleContentAuthor, arg.AuthorID, arg.FieldValues, arg.ID)
 	var i ReassignSingleContentAuthorRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -4614,8 +4353,8 @@ func (q *Queries) ReassignSingleContentAuthor(ctx context.Context, arg ReassignS
 }
 
 const recordContentView = `-- name: RecordContentView :execresult
-INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO user_content_views (content_id, user_id, session_id, country_code, viewed_at) VALUES ($1, $2, $3, $4, now())
+
 ON CONFLICT DO NOTHING
 `
 
@@ -4657,25 +4396,23 @@ func (q *Queries) RemoveContentTag(ctx context.Context, arg RemoveContentTagPara
 const scheduleContent = `-- name: ScheduleContent :one
 UPDATE contents
 SET status = 'scheduled', publish_at = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-          status, visibility, is_locked, is_pinned, read_time_minutes,
-          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country
+WHERE id = $2 AND deleted_at IS NULL
+RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ journey_stage, visa_route, source_country, target_country
 `
 
 type ScheduleContentParams struct {
 	PublishAt pgtype.Timestamptz `json:"publish_at"`
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type ScheduleContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -4718,11 +4455,10 @@ type ScheduleContentRow struct {
 // task (enqueued by the caller with ProcessAt=publish_at) flips status to
 // 'published' when the time arrives.
 func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams) (ScheduleContentRow, error) {
-	row := q.db.QueryRow(ctx, scheduleContent, arg.PublishAt, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, scheduleContent, arg.PublishAt, arg.ID)
 	var i ScheduleContentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -4763,37 +4499,35 @@ func (q *Queries) ScheduleContent(ctx context.Context, arg ScheduleContentParams
 }
 
 const searchContentsBySpace = `-- name: SearchContentsBySpace :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
-WHERE c.tenant_id = $2
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($3::boolean AND $4::boolean)
-      OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $6::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
-          )
-      )
-  )
-  AND c.title ILIKE '%' || $7 || '%'
+WHERE c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($2::boolean AND $3::boolean)
+ OR (c.author_id = $4::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $5::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $4::uuid OR $3::boolean))
+ )
+ )
+ )
+ AND c.title ILIKE '%' || $6 || '%'
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $9 OFFSET $8
+LIMIT $8 OFFSET $7
 `
 
 type SearchContentsBySpaceParams struct {
 	SpaceID           pgtype.UUID `json:"space_id"`
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	CanSeeUnpublished bool        `json:"can_see_unpublished"`
 	CanSeePrivate     bool        `json:"can_see_private"`
 	RequesterID       pgtype.UUID `json:"requester_id"`
@@ -4805,7 +4539,6 @@ type SearchContentsBySpaceParams struct {
 
 type SearchContentsBySpaceRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -4848,7 +4581,6 @@ type SearchContentsBySpaceRow struct {
 func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsBySpaceParams) ([]SearchContentsBySpaceRow, error) {
 	rows, err := q.db.Query(ctx, searchContentsBySpace,
 		arg.SpaceID,
-		arg.TenantID,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
 		arg.RequesterID,
@@ -4866,7 +4598,6 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 		var i SearchContentsBySpaceRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -4914,38 +4645,36 @@ func (q *Queries) SearchContentsBySpace(ctx context.Context, arg SearchContentsB
 }
 
 const searchContentsByTypeAndSpace = `-- name: SearchContentsByTypeAndSpace :many
-SELECT c.id, c.tenant_id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
-       c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
-       c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
-       c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
-       c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
-       c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
+SELECT c.id, c.author_id, c.space_id, c.content_type, c.title, c.slug, c.body, c.body_html,
+ c.field_values, c.content_hash, c.geo_space_id, c.header_image_id, c.featured_image_id,
+ c.canonical_url, c.meta_title, c.meta_description, c.og_image_url, c.seo_indexable,
+ c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
+ c.view_count, c.comment_count, c.share_count, c.reshare_count, c.publish_at, c.published_at,
+ c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country
 FROM contents c
 JOIN content_spaces cs ON cs.content_id = c.id AND cs.space_id = $1
-WHERE c.tenant_id = $2
-  AND c.content_type = $3
-  AND c.deleted_at IS NULL
-  AND c.auto_hidden = false
-  AND (
-      ($4::boolean AND $5::boolean)
-      OR (c.author_id = $6::uuid AND c.author_id IS NOT NULL)
-      OR (
-          c.status = 'published'
-          AND (
-              c.visibility = 'public'
-              OR (c.visibility = 'members' AND $7::boolean)
-              OR (c.visibility = 'private' AND (c.author_id = $6::uuid OR $5::boolean))
-          )
-      )
-  )
-  AND c.title ILIKE '%' || $8 || '%'
+WHERE c.content_type = $2
+ AND c.deleted_at IS NULL
+ AND c.auto_hidden = false
+ AND (
+ ($3::boolean AND $4::boolean)
+ OR (c.author_id = $5::uuid AND c.author_id IS NOT NULL)
+ OR (
+ c.status = 'published'
+ AND (
+ c.visibility = 'public'
+ OR (c.visibility = 'members' AND $6::boolean)
+ OR (c.visibility = 'private' AND (c.author_id = $5::uuid OR $4::boolean))
+ )
+ )
+ )
+ AND c.title ILIKE '%' || $7 || '%'
 ORDER BY c.created_at DESC, c.id DESC
-LIMIT $10 OFFSET $9
+LIMIT $9 OFFSET $8
 `
 
 type SearchContentsByTypeAndSpaceParams struct {
 	SpaceID           pgtype.UUID `json:"space_id"`
-	TenantID          pgtype.UUID `json:"tenant_id"`
 	ContentType       string      `json:"content_type"`
 	CanSeeUnpublished bool        `json:"can_see_unpublished"`
 	CanSeePrivate     bool        `json:"can_see_private"`
@@ -4958,7 +4687,6 @@ type SearchContentsByTypeAndSpaceParams struct {
 
 type SearchContentsByTypeAndSpaceRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -5001,7 +4729,6 @@ type SearchContentsByTypeAndSpaceRow struct {
 func (q *Queries) SearchContentsByTypeAndSpace(ctx context.Context, arg SearchContentsByTypeAndSpaceParams) ([]SearchContentsByTypeAndSpaceRow, error) {
 	rows, err := q.db.Query(ctx, searchContentsByTypeAndSpace,
 		arg.SpaceID,
-		arg.TenantID,
 		arg.ContentType,
 		arg.CanSeeUnpublished,
 		arg.CanSeePrivate,
@@ -5020,7 +4747,6 @@ func (q *Queries) SearchContentsByTypeAndSpace(ctx context.Context, arg SearchCo
 		var i SearchContentsByTypeAndSpaceRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorID,
 			&i.SpaceID,
 			&i.ContentType,
@@ -5069,12 +4795,11 @@ func (q *Queries) SearchContentsByTypeAndSpace(ctx context.Context, arg SearchCo
 
 const setBookmarkFolder = `-- name: SetBookmarkFolder :exec
 UPDATE bookmarks SET folder_id = $1
-WHERE tenant_id = $2 AND user_id = $3 AND entity_type = $4 AND entity_id = $5
+WHERE user_id = $2 AND entity_type = $3 AND entity_id = $4
 `
 
 type SetBookmarkFolderParams struct {
 	FolderID   pgtype.UUID `json:"folder_id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	EntityType string      `json:"entity_type"`
 	EntityID   pgtype.UUID `json:"entity_id"`
@@ -5083,7 +4808,6 @@ type SetBookmarkFolderParams struct {
 func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderParams) error {
 	_, err := q.db.Exec(ctx, setBookmarkFolder,
 		arg.FolderID,
-		arg.TenantID,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
@@ -5093,10 +4817,10 @@ func (q *Queries) SetBookmarkFolder(ctx context.Context, arg SetBookmarkFolderPa
 
 const setContentPrimarySpace = `-- name: SetContentPrimarySpace :exec
 WITH reassigned AS (
-    UPDATE content_spaces
-    SET is_primary = false
-    WHERE content_id = $1
-    RETURNING space_id
+ UPDATE content_spaces
+ SET is_primary = false
+ WHERE content_id = $1
+ RETURNING space_id
 )
 INSERT INTO content_spaces (content_id, space_id, is_primary)
 SELECT $1, $2, true
@@ -5153,37 +4877,37 @@ func (q *Queries) UnpinContentFromSpace(ctx context.Context, arg UnpinContentFro
 const updateContent = `-- name: UpdateContent :one
 UPDATE contents
 SET title = $1, slug = $2, body = $3, body_html = $4,
-    field_values = $5, content_hash = COALESCE($6, content_hash),
-    geo_space_id = $7, canonical_url = $8,
-    header_image_id = $9,
-    featured_image_id = $10,
-    meta_title = $11,
-    meta_description = $12,
-    og_image_url = $13,
-    seo_indexable = COALESCE($14, seo_indexable),
-    status = $15, visibility = $16, read_time_minutes = $17,
-    publish_at = $18, published_at = $19,
-    is_locked = $20, is_pinned = $21,
-    organization_id = $22, guide_category = COALESCE($23, guide_category),
-    ai_generated_at = COALESCE($24, ai_generated_at),
-    ai_model = COALESCE($25, ai_model),
-    journey_stage = COALESCE($26, journey_stage),
-    visa_route = COALESCE($27, visa_route),
-    source_country = COALESCE($28, source_country),
-    target_country = COALESCE($29, target_country),
-    video_source_id = COALESCE($30, video_source_id),
-    intel_source_id = COALESCE($31, intel_source_id),
-    intel_record_id = COALESCE($32, intel_record_id),
-    updated_at = now()
-WHERE id = $33 AND tenant_id = $34 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
-          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-          status, visibility, is_locked, is_pinned, read_time_minutes,
-          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country, video_source_id,
-          intel_source_id, intel_record_id
+ field_values = $5, content_hash = COALESCE($6, content_hash),
+ geo_space_id = $7, canonical_url = $8,
+ header_image_id = $9,
+ featured_image_id = $10,
+ meta_title = $11,
+ meta_description = $12,
+ og_image_url = $13,
+ seo_indexable = COALESCE($14, seo_indexable),
+ status = $15, visibility = $16, read_time_minutes = $17,
+ publish_at = $18, published_at = $19,
+ is_locked = $20, is_pinned = $21,
+ organization_id = $22, guide_category = COALESCE($23, guide_category),
+ ai_generated_at = COALESCE($24, ai_generated_at),
+ ai_model = COALESCE($25, ai_model),
+ journey_stage = COALESCE($26, journey_stage),
+ visa_route = COALESCE($27, visa_route),
+ source_country = COALESCE($28, source_country),
+ target_country = COALESCE($29, target_country),
+ video_source_id = COALESCE($30, video_source_id),
+ intel_source_id = COALESCE($31, intel_source_id),
+ intel_record_id = COALESCE($32, intel_record_id),
+ updated_at = now()
+WHERE id = $33 AND deleted_at IS NULL
+RETURNING id, author_id, organization_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ journey_stage, visa_route, source_country, target_country, video_source_id,
+ intel_source_id, intel_record_id
 `
 
 type UpdateContentParams struct {
@@ -5220,12 +4944,10 @@ type UpdateContentParams struct {
 	IntelSourceID   pgtype.UUID        `json:"intel_source_id"`
 	IntelRecordID   pgtype.UUID        `json:"intel_record_id"`
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 }
 
 type UpdateContentRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
@@ -5302,12 +5024,10 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 		arg.IntelSourceID,
 		arg.IntelRecordID,
 		arg.ID,
-		arg.TenantID,
 	)
 	var i UpdateContentRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.OrganizationID,
 		&i.SpaceID,
@@ -5354,45 +5074,42 @@ func (q *Queries) UpdateContent(ctx context.Context, arg UpdateContentParams) (U
 const updateContentIntelSourceID = `-- name: UpdateContentIntelSourceID :exec
 UPDATE contents
 SET intel_source_id = $1, updated_at = now()
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+WHERE id = $2 AND deleted_at IS NULL
 `
 
 type UpdateContentIntelSourceIDParams struct {
 	IntelSourceID pgtype.UUID `json:"intel_source_id"`
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 }
 
 // Links a content row to its canonical intel_sources row. Used when a
 // comparison data source is attached to a comparison content.
 func (q *Queries) UpdateContentIntelSourceID(ctx context.Context, arg UpdateContentIntelSourceIDParams) error {
-	_, err := q.db.Exec(ctx, updateContentIntelSourceID, arg.IntelSourceID, arg.ID, arg.TenantID)
+	_, err := q.db.Exec(ctx, updateContentIntelSourceID, arg.IntelSourceID, arg.ID)
 	return err
 }
 
 const updateContentStatus = `-- name: UpdateContentStatus :one
 UPDATE contents
 SET status = $1, updated_at = now(),
-    published_at = CASE WHEN $1 = 'published' AND published_at IS NULL THEN now() ELSE published_at END
-WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, author_id, space_id, content_type, title, slug, body, body_html,
-          field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
-          canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
-          status, visibility, is_locked, is_pinned, read_time_minutes,
-          view_count, comment_count, share_count, reshare_count, publish_at, published_at,
-          created_at, updated_at, guide_category,
-          journey_stage, visa_route, source_country, target_country
+ published_at = CASE WHEN $1 = 'published' AND published_at IS NULL THEN now() ELSE published_at END
+WHERE id = $2 AND deleted_at IS NULL
+RETURNING id, author_id, space_id, content_type, title, slug, body, body_html,
+ field_values, content_hash, geo_space_id, header_image_id, featured_image_id,
+ canonical_url, meta_title, meta_description, og_image_url, seo_indexable,
+ status, visibility, is_locked, is_pinned, read_time_minutes,
+ view_count, comment_count, share_count, reshare_count, publish_at, published_at,
+ created_at, updated_at, guide_category,
+ journey_stage, visa_route, source_country, target_country
 `
 
 type UpdateContentStatusParams struct {
-	Status   string      `json:"status"`
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 type UpdateContentStatusRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -5431,11 +5148,10 @@ type UpdateContentStatusRow struct {
 }
 
 func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStatusParams) (UpdateContentStatusRow, error) {
-	row := q.db.QueryRow(ctx, updateContentStatus, arg.Status, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, updateContentStatus, arg.Status, arg.ID)
 	var i UpdateContentStatusRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorID,
 		&i.SpaceID,
 		&i.ContentType,
@@ -5477,12 +5193,12 @@ func (q *Queries) UpdateContentStatus(ctx context.Context, arg UpdateContentStat
 
 const upsertContentScore = `-- name: UpsertContentScore :one
 
-INSERT INTO content_scores (content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO content_scores (content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score) VALUES ($1, $2, $3, $4, $5, $6)
+
 ON CONFLICT (content_id) DO UPDATE
 SET vote_score = EXCLUDED.vote_score, comment_count = EXCLUDED.comment_count,
-    view_count = EXCLUDED.view_count, bookmark_count = EXCLUDED.bookmark_count,
-    velocity_score = EXCLUDED.velocity_score, last_scored_at = now()
+ view_count = EXCLUDED.view_count, bookmark_count = EXCLUDED.bookmark_count,
+ velocity_score = EXCLUDED.velocity_score, last_scored_at = now()
 RETURNING content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score, reaction_count, relevance_embedding, last_scored_at
 `
 
@@ -5535,31 +5251,33 @@ func (q *Queries) UpsertContentScore(ctx context.Context, arg UpsertContentScore
 }
 
 const upsertJSONLDTemplate = `-- name: UpsertJSONLDTemplate :one
-INSERT INTO content_type_jsonld_templates (tenant_id, content_type, template, is_active)
-VALUES ($1, $2, $3, $4)
-ON CONFLICT (tenant_id, content_type) DO UPDATE
+INSERT INTO content_type_jsonld_templates (content_type, template, is_active) VALUES ($1, $2, $3)
+
+ON CONFLICT (content_type) DO UPDATE
 SET template = EXCLUDED.template, is_active = EXCLUDED.is_active, updated_at = now()
-RETURNING id, tenant_id, content_type, template, is_active, created_at, updated_at
+RETURNING id, content_type, template, is_active, created_at, updated_at
 `
 
 type UpsertJSONLDTemplateParams struct {
-	TenantID    pgtype.UUID `json:"tenant_id"`
-	ContentType string      `json:"content_type"`
-	Template    []byte      `json:"template"`
-	IsActive    bool        `json:"is_active"`
+	ContentType string `json:"content_type"`
+	Template    []byte `json:"template"`
+	IsActive    bool   `json:"is_active"`
 }
 
-func (q *Queries) UpsertJSONLDTemplate(ctx context.Context, arg UpsertJSONLDTemplateParams) (ContentTypeJsonldTemplate, error) {
-	row := q.db.QueryRow(ctx, upsertJSONLDTemplate,
-		arg.TenantID,
-		arg.ContentType,
-		arg.Template,
-		arg.IsActive,
-	)
-	var i ContentTypeJsonldTemplate
+type UpsertJSONLDTemplateRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	ContentType string             `json:"content_type"`
+	Template    []byte             `json:"template"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpsertJSONLDTemplate(ctx context.Context, arg UpsertJSONLDTemplateParams) (UpsertJSONLDTemplateRow, error) {
+	row := q.db.QueryRow(ctx, upsertJSONLDTemplate, arg.ContentType, arg.Template, arg.IsActive)
+	var i UpsertJSONLDTemplateRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentType,
 		&i.Template,
 		&i.IsActive,

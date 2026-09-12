@@ -489,10 +489,10 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 		minPosts = p.settings.GetIntOr(ctx, tenantID, "moderation.new_user_min_posts_for_links", minPosts)
 	}
 
-	count, err := queries.CountPostsByAuthor(ctx, gen.CountPostsByAuthorParams{
-		TenantID: tenantID,
-		AuthorID: req.UserID,
-	})
+	count, err := queries.CountPostsByAuthor(ctx,
+
+		req.UserID,
+	)
 	if err != nil {
 		slog.Warn("new_user_links: post count lookup failed", "user_id", req.UserID, "error", err)
 		return name, 0.0, nil

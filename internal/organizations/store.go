@@ -35,7 +35,7 @@ func (s *Store) CreateOrganization(ctx context.Context, params gen.CreateOrganiz
 
 // GetOrganizationByID returns an organization by ID.
 func (s *Store) GetOrganizationByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.read.GetOrganizationByID(ctx, gen.GetOrganizationByIDParams{ID: id, TenantID: tenantID})
+	return s.read.GetOrganizationByID(ctx, id)
 }
 
 // GetOrganizationByIDOnly returns an organization by ID without tenant scoping.
@@ -46,39 +46,26 @@ func (s *Store) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (ge
 
 // CountOrganizationsByOwner counts active orgs owned by a user in a tenant.
 func (s *Store) CountOrganizationsByOwner(ctx context.Context, ownerID, tenantID pgtype.UUID) (int64, error) {
-	return s.read.CountOrganizationsByOwner(ctx, gen.CountOrganizationsByOwnerParams{
-		OwnerUserID: ownerID,
-		TenantID:    tenantID,
-	})
+	return s.read.CountOrganizationsByOwner(ctx,
+		ownerID,
+	)
 }
 
 // GetOrganizationBySlug returns an organization by slug.
 func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.read.GetOrganizationBySlug(ctx, gen.GetOrganizationBySlugParams{Slug: slug, TenantID: tenantID})
+	return s.read.GetOrganizationBySlug(ctx, slug)
 }
 
 // ListOrganizations returns paginated organizations.
 func (s *Store) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
-	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{
-		TenantID: tenantID,
-		Column2:  orgType,
-		Column3:  countryCode,
-		Column4:  search,
-		Column5:  verified,
-		Limit:    clampLimit(limit),
-		Offset:   offset,
+	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
+		Offset: offset,
 	})
 }
 
 // CountOrganizations returns the total count of matching organizations.
 func (s *Store) CountOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string) (int64, error) {
-	return s.read.CountOrganizations(ctx, gen.CountOrganizationsParams{
-		TenantID: tenantID,
-		Column2:  orgType,
-		Column3:  countryCode,
-		Column4:  search,
-		Column5:  verified,
-	})
+	return s.read.CountOrganizations(ctx, gen.CountOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified})
 }
 
 // UpdateOrganization updates an organization.
@@ -88,7 +75,7 @@ func (s *Store) UpdateOrganization(ctx context.Context, params gen.UpdateOrganiz
 
 // SoftDeleteOrganization soft-deletes an organization.
 func (s *Store) SoftDeleteOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.SoftDeleteOrganization(ctx, gen.SoftDeleteOrganizationParams{ID: id, TenantID: tenantID})
+	return s.write.SoftDeleteOrganization(ctx, id)
 }
 
 // AddMember adds a member to an organization.
@@ -107,10 +94,9 @@ func (s *Store) RemoveMember(ctx context.Context, organizationID, userID pgtype.
 // ListMembers returns members of an organization. Tenant-scoped for
 // defense-in-depth (BUG-004).
 func (s *Store) ListMembers(ctx context.Context, organizationID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.read.ListOrganizationMembers(ctx, gen.ListOrganizationMembersParams{
-		OrganizationID: organizationID,
-		TenantID:       tenantID,
-	})
+	return s.read.ListOrganizationMembers(ctx,
+		organizationID,
+	)
 }
 
 // UpdateMemberRole updates a member role.
@@ -121,7 +107,7 @@ func (s *Store) UpdateMemberRole(ctx context.Context, params gen.UpdateOrganizat
 // UpdateSourceID links an organization to its canonical intel_sources row.
 func (s *Store) UpdateSourceID(ctx context.Context, tenantID, orgID, sourceID pgtype.UUID) error {
 	return s.write.UpdateOrganizationSourceID(ctx, gen.UpdateOrganizationSourceIDParams{
-		TenantID: tenantID,
+
 		ID:       orgID,
 		SourceID: sourceID,
 	})
@@ -151,10 +137,9 @@ func (s *Store) CreateInvitation(ctx context.Context, params gen.CreateOrganizat
 // ListInvitations returns pending invitations. Tenant-scoped for
 // defense-in-depth (BUG-005).
 func (s *Store) ListInvitations(ctx context.Context, organizationID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
-	return s.read.ListOrganizationInvitations(ctx, gen.ListOrganizationInvitationsParams{
-		OrganizationID: organizationID,
-		TenantID:       tenantID,
-	})
+	return s.read.ListOrganizationInvitations(ctx,
+		organizationID,
+	)
 }
 
 // AcceptInvitation accepts an invitation.
@@ -183,7 +168,7 @@ func (s *Store) GetInvitationByToken(ctx context.Context, tokenHash string) (gen
 // member's role projected through. Used by GET /me/organizations.
 func (s *Store) ListOrganizationsByMember(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListOrganizationsByMemberRow, error) {
 	return s.read.ListOrganizationsByMember(ctx, gen.ListOrganizationsByMemberParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -197,11 +182,8 @@ func (s *Store) CreateOwnershipClaim(ctx context.Context, params gen.CreateOwner
 
 // ListOwnershipClaims returns paginated ownership claims.
 func (s *Store) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
-	return s.read.ListOwnershipClaims(ctx, gen.ListOwnershipClaimsParams{
-		TenantID: tenantID,
-		Column2:  status,
-		Limit:    clampLimit(limit),
-		Offset:   offset,
+	return s.read.ListOwnershipClaims(ctx, gen.ListOwnershipClaimsParams{Column1: status, Limit: clampLimit(limit),
+		Offset: offset,
 	})
 }
 
@@ -212,39 +194,37 @@ func (s *Store) ReviewOwnershipClaim(ctx context.Context, params gen.ReviewOwner
 
 // GetPendingOwnershipClaim returns the most recent pending claim for an org.
 func (s *Store) GetPendingOwnershipClaim(ctx context.Context, orgID, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	return s.read.GetPendingOwnershipClaim(ctx, gen.GetPendingOwnershipClaimParams{
-		OrganizationID: orgID,
-		TenantID:       tenantID,
-	})
+	return s.read.GetPendingOwnershipClaim(ctx,
+		orgID,
+	)
 }
 
 // GetPendingOwnershipClaims returns all pending ownership claims with details.
 func (s *Store) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetPendingOwnershipClaimsRow, error) {
-	return s.read.GetPendingOwnershipClaims(ctx, tenantID)
+	return s.read.GetPendingOwnershipClaims(ctx)
 }
 
 // GetOwnershipClaimByID returns a single ownership claim by ID.
 func (s *Store) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
-	return s.read.GetOwnershipClaimByID(ctx, gen.GetOwnershipClaimByIDParams{
-		ID:       claimID,
-		TenantID: tenantID,
-	})
+	return s.read.GetOwnershipClaimByID(ctx,
+		claimID,
+	)
 }
 
 // ListOwnershipClaimsByClaimant returns all claims filed by a user
 // (GET /me/claim-ownership), newest first, joined with org name/slug.
 func (s *Store) ListOwnershipClaimsByClaimant(ctx context.Context, tenantID, claimantUserID pgtype.UUID) ([]gen.ListOwnershipClaimsByClaimantRow, error) {
-	return s.read.ListOwnershipClaimsByClaimant(ctx, gen.ListOwnershipClaimsByClaimantParams{
-		TenantID:       tenantID,
-		ClaimantUserID: claimantUserID,
-	})
+	return s.read.ListOwnershipClaimsByClaimant(ctx,
+
+		claimantUserID,
+	)
 }
 
 // WithdrawOwnershipClaim withdraws (deletes) a pending claim by the claimant.
 func (s *Store) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
 	return s.write.WithdrawOwnershipClaim(ctx, gen.WithdrawOwnershipClaimParams{
-		ID:             claimID,
-		TenantID:       tenantID,
+		ID: claimID,
+
 		ClaimantUserID: claimantUserID,
 	})
 }
@@ -252,8 +232,8 @@ func (s *Store) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, c
 // ApproveOwnershipClaim approves a pending ownership claim.
 func (s *Store) ApproveOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, note string) error {
 	return s.write.ApproveOwnershipClaim(ctx, gen.ApproveOwnershipClaimParams{
-		ID:             claimID,
-		TenantID:       tenantID,
+		ID: claimID,
+
 		ReviewedBy:     reviewedBy,
 		ResolutionNote: &note,
 	})
@@ -265,37 +245,36 @@ func (s *Store) IncrementMemberCount(ctx context.Context, orgID, tenantID pgtype
 	return s.write.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          orgID,
 		MemberCount: delta,
-		TenantID:    tenantID,
 	})
 }
 
 // ActiveOrgExistsByID reports whether an ACTIVE, non-deleted org with this id
 // exists in the tenant.
 func (s *Store) ActiveOrgExistsByID(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
-	return s.read.ActiveOrgExistsByID(ctx, gen.ActiveOrgExistsByIDParams{TenantID: tenantID, ID: id})
+	return s.read.ActiveOrgExistsByID(ctx, id)
 }
 
 // GetPublicOrganizationBySlug is an exported method.
 func (s *Store) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.read.GetPublicOrganizationBySlug(ctx, gen.GetPublicOrganizationBySlugParams{Slug: slug, TenantID: tenantID})
+	return s.read.GetPublicOrganizationBySlug(ctx, slug)
 }
 
 // ListPublicMembers is an exported method.
 func (s *Store) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
-	return s.read.ListPublicOrganizationMembers(ctx, gen.ListPublicOrganizationMembersParams{OrganizationID: orgID, TenantID: tenantID})
+	return s.read.ListPublicOrganizationMembers(ctx, orgID)
 }
 
 // GetOrgOwnerPublicProfile returns the org owner's public identity for the
 // "Org Leader" sidebar widget. Unlike ListPublicMembers, this does NOT filter
 // by user.status — the owner is shown regardless of their account standing.
 func (s *Store) GetOrgOwnerPublicProfile(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrgOwnerPublicProfileRow, error) {
-	return s.read.GetOrgOwnerPublicProfile(ctx, gen.GetOrgOwnerPublicProfileParams{OrganizationID: orgID, TenantID: tenantID})
+	return s.read.GetOrgOwnerPublicProfile(ctx, orgID)
 }
 
 // ListPublicOrganizations is an exported method.
 func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, error) {
 	return s.read.ListPublicOrganizations(ctx, gen.ListPublicOrganizationsParams{
-		TenantID:   tenantID,
+
 		Search:     search,
 		OrgType:    orgType,
 		Verified:   verified,
@@ -307,7 +286,7 @@ func (s *Store) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUI
 // CountPublicOrganizations is an exported method.
 func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string) (int64, error) {
 	return s.read.CountPublicOrganizations(ctx, gen.CountPublicOrganizationsParams{
-		TenantID: tenantID,
+
 		Search:   search,
 		OrgType:  orgType,
 		Verified: verified,
@@ -318,8 +297,8 @@ func (s *Store) CountPublicOrganizations(ctx context.Context, tenantID pgtype.UU
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
 func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
 	return s.read.GetOrganizationAnalytics(ctx, gen.GetOrganizationAnalyticsParams{
-		OrgID:      orgID,
-		TenantID:   tenantID,
+		OrgID: orgID,
+
 		PeriodDays: periodDays,
 	})
 }
@@ -327,13 +306,13 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pg
 // VerifyOrganization marks an organization as verified (admin action).
 // Tenant-scoped to prevent cross-tenant verification (BUG-002).
 func (s *Store) VerifyOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.VerifyOrganization(ctx, gen.VerifyOrganizationParams{ID: id, TenantID: tenantID})
+	return s.write.VerifyOrganization(ctx, id)
 }
 
 // UnverifyOrganization revokes an organization's verification (admin action).
 // Tenant-scoped and clears verification_type (BUG-002, BUG-016).
 func (s *Store) UnverifyOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.write.UnverifyOrganization(ctx, gen.UnverifyOrganizationParams{ID: id, TenantID: tenantID})
+	return s.write.UnverifyOrganization(ctx, id)
 }
 
 // TransferOrganizationOwnership updates an org's owner_user_id to the new
@@ -343,7 +322,6 @@ func (s *Store) TransferOrganizationOwnership(ctx context.Context, orgID, newOwn
 	return s.write.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
 		ID:          orgID,
 		OwnerUserID: newOwnerID,
-		TenantID:    tenantID,
 	})
 }
 
@@ -361,7 +339,7 @@ func (s *Store) GetUserEmail(ctx context.Context, userID, tenantID pgtype.UUID) 
 func (s *Store) GetPendingClaimByClaimant(ctx context.Context, orgID, tenantID, claimantUserID pgtype.UUID) (pgtype.UUID, error) {
 	return s.read.GetPendingClaimByClaimant(ctx, gen.GetPendingClaimByClaimantParams{
 		OrganizationID: orgID,
-		TenantID:       tenantID,
+
 		ClaimantUserID: claimantUserID,
 	})
 }
@@ -370,10 +348,9 @@ func (s *Store) GetPendingClaimByClaimant(ctx context.Context, orgID, tenantID, 
 // Used by ClaimOwnership to verify the linked form submission has status='new'
 // before creating a claim (BUG-009).
 func (s *Store) GetFormSubmissionByID(ctx context.Context, submissionID, tenantID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
-	return s.read.GetFormSubmissionByID(ctx, gen.GetFormSubmissionByIDParams{
-		ID:       submissionID,
-		TenantID: tenantID,
-	})
+	return s.read.GetFormSubmissionByID(ctx,
+		submissionID,
+	)
 }
 
 // GetPendingInvitationByEmail checks if a pending invitation already exists

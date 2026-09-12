@@ -215,9 +215,8 @@ func TestExecute_Success(t *testing.T) {
 	exec := newTestExecutor(t, &stubPerms{}, &stubPrivacy{}, reg)
 
 	res, err := exec.Execute(t.Context(), ExecuteParams{
-		Call:     ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{"query":"visa"}`)},
-		UserID:   pgtype.UUID{},
-		TenantID: pgtype.UUID{},
+		Call:   ToolCall{ID: "c1", Name: "content.search", Arguments: json.RawMessage(`{"query":"visa"}`)},
+		UserID: pgtype.UUID{},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -75,7 +75,7 @@ type CreateProviderInput struct {
 // CreateProvider is an exported method.
 func (s *Service) CreateProvider(ctx context.Context, tenantID pgtype.UUID, input CreateProviderInput) (gen.AffiliateProvider, error) {
 	return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
-		TenantID:       tenantID,
+
 		Name:           input.Name,
 		Slug:           input.Slug,
 		Description:    input.Description,
@@ -125,7 +125,7 @@ func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 
 	return s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
-		ID: id, TenantID: tenantID, Name: input.Name, Description: input.Description,
+		ID: id, Name: input.Name, Description: input.Description,
 		ProviderType: input.ProviderType, LogoMediaID: toNullableUUID(input.LogoMediaID),
 		BaseUrl: input.BaseURL, TrackingParam: input.TrackingParam, TrackingValue: input.TrackingValue,
 		CommissionRate: toNullableNumeric(input.CommissionRate), IsActive: input.IsActive, IsFeatured: input.IsFeatured,
@@ -178,7 +178,7 @@ type CreateCouponInput struct {
 // CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
-		TenantID: tenantID, ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
+		ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
 		Title: input.Title, Description: input.Description, Code: input.Code,
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
@@ -287,7 +287,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 	}
 
 	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
-		ID: id, TenantID: tenantID, Title: input.Title, Description: input.Description, Code: input.Code,
+		ID: id, Title: input.Title, Description: input.Description, Code: input.Code,
 		ProviderID:   toNullableUUID(input.ProviderID),
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
@@ -560,10 +560,9 @@ type RecordAffiliateCommissionInput struct {
 // affiliate:credit_author_commission task.
 func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype.UUID, in RecordAffiliateCommissionInput) (gen.AffiliateContentCommission, error) {
 	// 1. Look up the content to get the author_id.
-	content, err := s.store.read.GetContentByID(ctx, gen.GetContentByIDParams{
-		ID:       in.ContentID,
-		TenantID: tenantID,
-	})
+	content, err := s.store.read.GetContentByID(ctx,
+		in.ContentID,
+	)
 	if err != nil {
 		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: content not found: %w", err)
 	}
@@ -573,10 +572,9 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 	}
 
 	// 2. Look up the provider to get author_commission_pct.
-	provider, err := s.store.read.GetAffiliateProviderByID(ctx, gen.GetAffiliateProviderByIDParams{
-		ID:       in.ProviderID,
-		TenantID: tenantID,
-	})
+	provider, err := s.store.read.GetAffiliateProviderByID(ctx,
+		in.ProviderID,
+	)
 	if err != nil {
 		return gen.AffiliateContentCommission{}, fmt.Errorf("affiliate: provider not found: %w", err)
 	}
@@ -592,7 +590,7 @@ func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype
 
 	// 4. Insert the commission row.
 	commission, err := s.store.write.InsertAffiliateContentCommission(ctx, gen.InsertAffiliateContentCommissionParams{
-		TenantID:            tenantID,
+
 		ContentID:           in.ContentID,
 		ProviderID:          in.ProviderID,
 		AuthorUserID:        content.AuthorID,

@@ -79,8 +79,7 @@ func TestSearch_TenantUnavailable(t *testing.T) {
 	h := NewHandlers(nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=test", nil)
 	req = withAuthCtxDirect(req, &auth.AuthenticatedUser{
-		UserID:   mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
-		TenantID: mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		UserID: mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
 	})
 	rr := httptest.NewRecorder()
 
@@ -414,8 +413,7 @@ func withAuthAndTenant(t *testing.T, r *http.Request) *http.Request {
 	t.Helper()
 
 	user := &auth.AuthenticatedUser{
-		UserID:   mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
-		TenantID: mustUUID(t, "00000000-0000-0000-0000-000000000001"),
+		UserID: mustUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
 	}
 	ten := &tenant.Tenant{
 		ID:   mustUUID(t, "00000000-0000-0000-0000-000000000001"),

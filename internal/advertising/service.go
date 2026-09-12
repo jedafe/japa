@@ -52,7 +52,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 	}
 
 	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx, gen.GetAdSlotTypeByNameParams{
-		TenantID: tenantID,
+
 		SlotName: input.SlotTypeName,
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 	}
 
 	return s.store.Queries().CreateAdCampaign(ctx, gen.CreateAdCampaignParams{
-		TenantID:            tenantID,
+
 		Name:                input.Name,
 		SlotTypeID:          slotType.ID,
 		Content:             content,
@@ -100,8 +100,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 // GetCampaign retrieves a campaign by ID.
 func (s *Service) GetCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	return s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 }
 
@@ -117,8 +116,7 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, limit
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 	if err != nil {
 		return AdCampaign{}, err
@@ -131,9 +129,8 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 	}
 
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
-		Status:   CampaignStatusActive,
-		ID:       id,
-		TenantID: tenantID,
+		Status: CampaignStatusActive,
+		ID:     id,
 	})
 }
 
@@ -143,8 +140,7 @@ func (s *Service) ActivateCampaign(ctx context.Context, id, tenantID pgtype.UUID
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate).
 func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 	if err != nil {
 		return AdCampaign{}, err
@@ -155,9 +151,8 @@ func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) 
 	}
 
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
-		Status:   CampaignStatusRejected,
-		ID:       id,
-		TenantID: tenantID,
+		Status: CampaignStatusRejected,
+		ID:     id,
 	})
 }
 
@@ -165,8 +160,7 @@ func (s *Service) RejectCampaign(ctx context.Context, id, tenantID pgtype.UUID) 
 // Only campaigns in 'active' status can be paused.
 func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 	if err != nil {
 		return AdCampaign{}, err
@@ -177,9 +171,8 @@ func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (
 	}
 
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
-		Status:   CampaignStatusPaused,
-		ID:       id,
-		TenantID: tenantID,
+		Status: CampaignStatusPaused,
+		ID:     id,
 	})
 }
 
@@ -187,8 +180,7 @@ func (s *Service) PauseCampaign(ctx context.Context, id, tenantID pgtype.UUID) (
 // Only campaigns in 'active' or 'paused' status can be ended.
 func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (AdCampaign, error) {
 	campaign, err := s.store.Queries().GetAdCampaignByID(ctx, gen.GetAdCampaignByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 	if err != nil {
 		return AdCampaign{}, err
@@ -199,9 +191,8 @@ func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (Ad
 	}
 
 	return s.store.Queries().UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{
-		Status:   CampaignStatusEnded,
-		ID:       id,
-		TenantID: tenantID,
+		Status: CampaignStatusEnded,
+		ID:     id,
 	})
 }
 
@@ -211,10 +202,10 @@ func (s *Service) EndCampaign(ctx context.Context, id, tenantID pgtype.UUID) (Ad
 // UpdateAdCampaignDetails query (COALESCE-based partial update).
 func (s *Service) UpdateCampaignDetails(ctx context.Context, id, tenantID pgtype.UUID, name string, budget *int64) (AdCampaign, error) {
 	return s.store.Queries().UpdateAdCampaignDetails(ctx, gen.UpdateAdCampaignDetailsParams{
-		ID:       id,
-		TenantID: tenantID,
-		Name:     name,
-		Budget:   budget,
+		ID: id,
+
+		Name:   name,
+		Budget: budget,
 	})
 }
 
@@ -223,8 +214,7 @@ func (s *Service) UpdateCampaignDetails(ctx context.Context, id, tenantID pgtype
 // non-existent width/height columns and would 500.
 func (s *Service) GetSlotType(ctx context.Context, id, tenantID pgtype.UUID) (AdSlotType, error) {
 	return s.store.Queries().GetAdSlotTypeByID(ctx, gen.GetAdSlotTypeByIDParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 }
 
@@ -232,7 +222,7 @@ func (s *Service) GetSlotType(ctx context.Context, id, tenantID pgtype.UUID) (Ad
 // Returns empty slice (never an error with nil campaigns) when no match.
 func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, slotName string) ([]AdCampaign, error) {
 	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx, gen.GetAdSlotTypeByNameParams{
-		TenantID: tenantID,
+
 		SlotName: slotName,
 	})
 	if err != nil {
@@ -334,7 +324,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, tenantID pgtype.UUID, even
 		}
 
 		_, err := s.store.Queries().InsertAdEvent(ctx, gen.InsertAdEventParams{
-			TenantID:   tenantID,
+
 			CampaignID: campaignID,
 			UserID:     userID,
 			EventType:  event.EventType,
@@ -370,7 +360,7 @@ type AdSlotTypeInput struct {
 // CreateSlotType creates a new ad slot type.
 func (s *Service) CreateSlotType(ctx context.Context, tenantID pgtype.UUID, input AdSlotTypeInput) (AdSlotType, error) {
 	return s.store.Queries().CreateAdSlotType(ctx, gen.CreateAdSlotTypeParams{
-		TenantID:          tenantID,
+
 		SlotName:          input.Name,
 		Description:       &input.Description,
 		MaxDisplayPerPage: 1,
@@ -436,7 +426,7 @@ func (s *Service) CreateBoost(ctx context.Context, tenantID pgtype.UUID, input C
 	}
 
 	return s.store.Queries().CreateOrganizationBoost(ctx, gen.CreateOrganizationBoostParams{
-		TenantID:       tenantID,
+
 		OrganizationID: input.OrganizationID,
 		CampaignID:     input.CampaignID,
 		BoostType:      boostType,
@@ -449,7 +439,7 @@ func (s *Service) CreateBoost(ctx context.Context, tenantID pgtype.UUID, input C
 // ListBoosts returns all boosts for an organization.
 func (s *Service) ListBoosts(ctx context.Context, tenantID, organizationID pgtype.UUID) ([]OrganizationBoost, error) {
 	return s.store.Queries().ListOrganizationBoosts(ctx, gen.ListOrganizationBoostsParams{
-		TenantID:       tenantID,
+
 		OrganizationID: organizationID,
 	})
 }
@@ -462,8 +452,7 @@ func (s *Service) ListActiveBoosts(ctx context.Context, tenantID pgtype.UUID) ([
 // EndBoost ends an active boost.
 func (s *Service) EndBoost(ctx context.Context, id, tenantID pgtype.UUID) (OrganizationBoost, error) {
 	return s.store.Queries().EndOrganizationBoost(ctx, gen.EndOrganizationBoostParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 }
 
@@ -475,18 +464,17 @@ func (s *Service) UpdateBoost(ctx context.Context, id, tenantID pgtype.UUID, sta
 	}
 
 	return s.store.Queries().UpdateOrganizationBoost(ctx, gen.UpdateOrganizationBoostParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   status,
-		EndDate:  ed,
+		ID: id,
+
+		Status:  status,
+		EndDate: ed,
 	})
 }
 
 // DeleteBoost removes a boost.
 func (s *Service) DeleteBoost(ctx context.Context, id, tenantID pgtype.UUID) error {
 	return s.store.Queries().DeleteOrganizationBoost(ctx, gen.DeleteOrganizationBoostParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
 	})
 }
 
@@ -578,8 +566,8 @@ type AdNetworkDTO struct {
 // value is masked directly.
 func toAdNetworkDTO(n AdNetwork) AdNetworkDTO {
 	dto := AdNetworkDTO{
-		ID:          n.ID,
-		TenantID:    n.TenantID,
+		ID: n.ID,
+
 		Provider:    n.Provider,
 		Name:        n.Name,
 		ClientID:    n.ClientID,
@@ -650,7 +638,7 @@ func (s *Service) CreateAdNetwork(ctx context.Context, tenantID pgtype.UUID, inp
 	}
 
 	return s.store.createAdNetwork(ctx, tenantID, gen.CreateAdNetworkParams{
-		TenantID:        tenantID,
+
 		Provider:        input.Provider,
 		Name:            input.Name,
 		ClientID:        input.ClientID,
@@ -728,8 +716,8 @@ func (s *Service) UpdateAdNetwork(ctx context.Context, tenantID, id pgtype.UUID,
 	}
 
 	return s.store.updateAdNetwork(ctx, id, tenantID, gen.UpdateAdNetworkParams{
-		ID:              id,
-		TenantID:        tenantID,
+		ID: id,
+
 		Name:            name,
 		ClientID:        clientID,
 		ApiKeyEncrypted: apiKey,

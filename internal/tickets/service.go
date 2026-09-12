@@ -97,7 +97,7 @@ func (s *Service) CreateTicketType(ctx context.Context, tenantID pgtype.UUID, in
 	}
 
 	return s.store.createTicketType(ctx, gen.CreateTicketTypeParams{
-		TenantID:          tenantID,
+
 		Name:              input.Name,
 		Slug:              input.Slug,
 		Description:       description,
@@ -148,8 +148,8 @@ func (s *Service) UpdateTicketType(ctx context.Context, id, tenantID pgtype.UUID
 	}
 
 	return s.store.updateTicketType(ctx, gen.UpdateTicketTypeParams{
-		ID:                id,
-		TenantID:          tenantID,
+		ID: id,
+
 		Name:              input.Name,
 		Description:       description,
 		FieldGroupID:      input.FieldGroupID,
@@ -266,7 +266,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	}
 
 	ticket, err := s.store.createTicket(ctx, gen.CreateTicketParams{
-		TenantID:        tenantID,
+
 		TypeID:          input.TypeID,
 		Subject:         input.Subject,
 		Description:     input.Description,
@@ -308,7 +308,7 @@ func (s *Service) GetTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 // ListTickets returns tickets for admin view with filters.
 func (s *Service) ListTickets(ctx context.Context, tenantID pgtype.UUID, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
 	return s.store.listTicketsByTenant(ctx, gen.ListTicketsByTenantParams{
-		TenantID:   tenantID,
+
 		Status:     status,
 		Priority:   priority,
 		TypeID:     typeID,
@@ -331,7 +331,7 @@ func (s *Service) ListTicketsBySubmitter(ctx context.Context, tenantID, submitte
 	}
 
 	return s.store.listTicketsBySubmitter(ctx, gen.ListTicketsBySubmitterParams{
-		TenantID:        tenantID,
+
 		SubmitterUserID: submitterUserID,
 		Status:          statusPtr,
 		PageLimit:       limit,
@@ -369,9 +369,9 @@ func (s *Service) UpdateTicketStatus(ctx context.Context, id, tenantID pgtype.UU
 
 	// Update status.
 	ticket, err := s.store.updateTicketStatus(ctx, gen.UpdateTicketStatusParams{
-		ID:       id,
-		TenantID: tenantID,
-		Status:   input.Status,
+		ID: id,
+
+		Status: input.Status,
 	})
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("updating ticket status: %w", err)
@@ -412,8 +412,8 @@ func (s *Service) UpdateTicketPriority(ctx context.Context, id, tenantID pgtype.
 	}
 
 	ticket, err := s.store.updateTicketPriority(ctx, gen.UpdateTicketPriorityParams{
-		ID:       id,
-		TenantID: tenantID,
+		ID: id,
+
 		Priority: input.Priority,
 	})
 	if err != nil {
@@ -444,8 +444,8 @@ type AssignTicketInput struct {
 // AssignTicket assigns a ticket to a staff member.
 func (s *Service) AssignTicket(ctx context.Context, id, tenantID pgtype.UUID, input AssignTicketInput) (gen.Ticket, error) {
 	ticket, err := s.store.assignTicket(ctx, gen.AssignTicketParams{
-		ID:              id,
-		TenantID:        tenantID,
+		ID: id,
+
 		AssignedTo:      input.AssignedTo,
 		AssignedGroupID: input.AssignedGroupID,
 	})
@@ -491,8 +491,8 @@ func (s *Service) ResolveTicket(ctx context.Context, id, tenantID pgtype.UUID, i
 	}
 
 	ticket, err := s.store.resolveTicket(ctx, gen.ResolveTicketParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ResolutionNote: resolutionNote,
 	})
 	if err != nil {
@@ -555,9 +555,9 @@ func (s *Service) UpdateTicketSubject(ctx context.Context, id, tenantID pgtype.U
 	}
 
 	ticket, err := s.store.updateTicketSubject(ctx, gen.UpdateTicketSubjectParams{
-		ID:       id,
-		TenantID: tenantID,
-		Subject:  input.Subject,
+		ID: id,
+
+		Subject: input.Subject,
 	})
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("updating ticket subject: %w", err)

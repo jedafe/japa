@@ -89,11 +89,11 @@ func TestProfileFromRow(t *testing.T) {
 	now := time.Now().UTC()
 
 	row := gen.ComparisonProfile{
-		ID:       pgtype.UUID{Bytes: uid, Valid: true},
-		TenantID: pgtype.UUID{Bytes: tid, Valid: true},
-		UserID:   pgtype.UUID{Bytes: uid, Valid: true},
-		Title:    "Test",
-		Goals:    []byte(`[{"key":"pr_fast","weight":0.25}]`),
+		ID: pgtype.UUID{Bytes: uid, Valid: true},
+
+		UserID: pgtype.UUID{Bytes: uid, Valid: true},
+		Title:  "Test",
+		Goals:  []byte(`[{"key":"pr_fast","weight":0.25}]`),
 		TargetSpaceIds: []pgtype.UUID{
 			{Bytes: tid, Valid: true},
 			{Valid: false},
@@ -138,8 +138,8 @@ func TestScoreFactorFromRow(t *testing.T) {
 	now := time.Now().UTC()
 
 	row := gen.ComparisonScoreFactor{
-		ID:               pgtype.UUID{Bytes: uid, Valid: true},
-		TenantID:         pgtype.UUID{Bytes: uid, Valid: true},
+		ID: pgtype.UUID{Bytes: uid, Valid: true},
+
 		ComparisonTypeID: pgtype.UUID{Bytes: cid, Valid: true},
 		FactorKey:        "cost",
 		Label:            "Cost",

@@ -34,7 +34,7 @@ func (s *Service) CreateSeries(ctx context.Context, tenantID, authorUserID pgtyp
 	}
 
 	return s.store.createBlogSeries(ctx, gen.CreateBlogSeriesParams{
-		TenantID:     tenantID,
+
 		Title:        input.Title,
 		Slug:         input.Slug,
 		Description:  description,
@@ -122,8 +122,8 @@ func (s *Service) UpdateSeries(ctx context.Context, id, tenantID pgtype.UUID, ti
 	}
 
 	return s.store.updateBlogSeries(ctx, gen.UpdateBlogSeriesParams{
-		ID:           id,
-		TenantID:     tenantID,
+		ID: id,
+
 		Title:        title,
 		Slug:         slugPtr,
 		Description:  desc,
@@ -245,7 +245,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	}
 
 	return s.store.createContentReview(ctx, gen.CreateContentReviewParams{
-		TenantID:       tenantID,
+
 		ContentID:      input.ContentID,
 		ReviewerUserID: reviewerUserID, // zero value → NULL when no reviewer
 		Status:         status,
@@ -281,8 +281,8 @@ func (s *Service) UpdateReviewStatus(ctx context.Context, id, tenantID, reviewer
 	}
 
 	return s.store.updateContentReviewStatus(ctx, gen.UpdateContentReviewStatusParams{
-		ID:             id,
-		TenantID:       tenantID,
+		ID: id,
+
 		ReviewerUserID: reviewerUserID, // COALESCE in SQL keeps existing if zero
 		Status:         status,
 		Feedback:       fb,
@@ -312,7 +312,7 @@ func (s *Service) FeaturePost(ctx context.Context, tenantID pgtype.UUID, input F
 	}
 
 	return s.store.featureContent(ctx, gen.FeatureContentParams{
-		TenantID:      tenantID,
+
 		ContentID:     input.ContentID,
 		FeaturedOrder: input.FeaturedOrder,
 		FeaturedUntil: input.FeaturedUntil,

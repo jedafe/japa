@@ -104,7 +104,7 @@ func (q *Queries) ListPushSubscriptionsByUser(ctx context.Context, userID pgtype
 const pruneStalePushTokens = `-- name: PruneStalePushTokens :exec
 DELETE FROM push_tokens
 WHERE last_used_at < now() - interval '90 days'
-   OR (last_used_at IS NULL AND created_at < now() - interval '30 days')
+ OR (last_used_at IS NULL AND created_at < now() - interval '30 days')
 `
 
 func (q *Queries) PruneStalePushTokens(ctx context.Context) error {
@@ -113,8 +113,8 @@ func (q *Queries) PruneStalePushTokens(ctx context.Context) error {
 }
 
 const savePushSubscription = `-- name: SavePushSubscription :exec
-INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
-VALUES ($1, $2, $3, $4)
+INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key) VALUES ($1, $2, $3, $4)
+
 ON CONFLICT (user_id, endpoint) DO UPDATE
 SET p256dh = EXCLUDED.p256dh, auth_key = EXCLUDED.auth_key
 `

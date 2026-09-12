@@ -202,13 +202,13 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 	offset := (page - 1) * limit
 
 	editions, total, err := s.store.ListEditions(ctx, ListEditionsFilter{
-		TenantID: f.TenantID,
-		SpaceID:  f.SpaceID,
-		Status:   f.Status,
-		Sort:     f.Sort,
-		Order:    f.Order,
-		Limit:    limit,
-		Offset:   offset,
+
+		SpaceID: f.SpaceID,
+		Status:  f.Status,
+		Sort:    f.Sort,
+		Order:   f.Order,
+		Limit:   limit,
+		Offset:  offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("digest: admin list: %w", err)
@@ -375,7 +375,7 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 	// can still publish early via AdminPublish (which short-circuits the
 	// window). Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	editionID, err := s.store.CreateEdition(ctx, DigestEdition{
-		TenantID:     tenantID,
+
 		SpaceID:      spaceID,
 		Cadence:      "weekly",
 		Status:       "draft",

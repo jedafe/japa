@@ -346,7 +346,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 	offset := parsePageOffset(r)
 
 	sessions, err := h.sessions.ListAgentSessionsByUser(r.Context(), gen.ListAgentSessionsByUserParams{
-		TenantID:   tenantID,
+
 		UserID:     user.UserID,
 		PageOffset: offset,
 		PageLimit:  limit,
@@ -359,8 +359,8 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 	}
 
 	total, err := h.sessions.CountAgentSessionsByUser(r.Context(), gen.CountAgentSessionsByUserParams{
-		TenantID: tenantID,
-		UserID:   user.UserID,
+
+		UserID: user.UserID,
 	})
 	if err != nil {
 		slog.Warn("ai: counting agent sessions", "error", err)
@@ -404,9 +404,9 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 	}
 
 	session, err := h.sessions.GetAgentSessionForUser(r.Context(), gen.GetAgentSessionForUserParams{
-		ID:       sessionID,
-		TenantID: tenantID,
-		UserID:   user.UserID,
+		ID: sessionID,
+
+		UserID: user.UserID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -422,7 +422,6 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 
 	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), gen.ListAgentToolCallsBySessionParams{
 		SessionID: sessionID,
-		TenantID:  tenantID,
 	})
 	if err != nil {
 		slog.Warn("ai: listing agent tool calls", "error", err)
@@ -467,9 +466,9 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 	// Verify ownership before cancelling. A user can only cancel their own
 	// running session.
 	session, err := h.sessions.GetAgentSessionForUser(r.Context(), gen.GetAgentSessionForUserParams{
-		ID:       sessionID,
-		TenantID: tenantID,
-		UserID:   user.UserID,
+		ID: sessionID,
+
+		UserID: user.UserID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -503,8 +502,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 	// rows with status = 'running' (race-safe: if the loop completes
 	// between the ownership check and here, the row is already terminal).
 	_, cancelErr := h.sessions.CancelAgentSession(r.Context(), gen.CancelAgentSessionParams{
-		ID:       sessionID,
-		TenantID: tenantID,
+		ID: sessionID,
 	})
 	if cancelErr != nil {
 		if errors.Is(cancelErr, pgx.ErrNoRows) {
@@ -598,8 +596,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 	// Read the current content row to get field_values for the provenance
 	// merge. GetContentByID is tenant-scoped (defense-in-depth, BUG-014).
 	current, err := h.content.GetContentByID(r.Context(), gen.GetContentByIDParams{
-		ID:       contentID,
-		TenantID: tenantID,
+		ID: contentID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -628,7 +625,6 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		AuthorID:    newAuthorID,
 		FieldValues: updatedFieldValues,
 		ID:          contentID,
-		TenantID:    tenantID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -706,8 +702,7 @@ func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID, tenan
 		}
 
 		row, err := content.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID:       entity.EntityID,
-			TenantID: tenantID,
+			ID: entity.EntityID,
 		})
 		if err != nil {
 			return false
@@ -750,8 +745,7 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 
 	// Profile-level exemption (users.ai_exempt).
 	profileExempt, err := h.sessions.GetUserAIExempt(r.Context(), gen.GetUserAIExemptParams{
-		ID:       user.UserID,
-		TenantID: tenantID,
+		ID: user.UserID,
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("ai: reading user ai_exempt", "error", err)
@@ -820,7 +814,6 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		row, err := h.sessions.SetUserAIExempt(r.Context(), gen.SetUserAIExemptParams{
 			AiExempt: input.AIExempt,
 			ID:       entityID,
-			TenantID: tenantID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -848,8 +841,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		}
 
 		current, err := h.content.GetContentByID(r.Context(), gen.GetContentByIDParams{
-			ID:       entityID,
-			TenantID: tenantID,
+			ID: entityID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -871,7 +863,6 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		row, err := h.sessions.SetContentAIExempt(r.Context(), gen.SetContentAIExemptParams{
 			AiExempt: input.AIExempt,
 			ID:       entityID,
-			TenantID: tenantID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -901,8 +892,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		// The SetCustomFieldValueAIExempt query is tenant-scoped via the
 		// custom_fields JOIN for defense-in-depth (BUG-014).
 		entity, err := h.sessions.GetCustomFieldValueEntity(r.Context(), gen.GetCustomFieldValueEntityParams{
-			ID:       entityID,
-			TenantID: tenantID,
+			ID: entityID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -925,7 +915,6 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		row, err := h.sessions.SetCustomFieldValueAIExempt(r.Context(), gen.SetCustomFieldValueAIExemptParams{
 			AiExempt: input.AIExempt,
 			ID:       entityID,
-			TenantID: tenantID,
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -968,7 +957,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 	statusFilter := r.URL.Query().Get("status")
 
 	sessions, err := h.sessions.ListAgentSessionsForAdmin(r.Context(), gen.ListAgentSessionsForAdminParams{
-		TenantID:     tenantID,
+
 		StatusFilter: statusFilter,
 		PageOffset:   offset,
 		PageLimit:    limit,
@@ -981,7 +970,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 	}
 
 	total, err := h.sessions.CountAgentSessionsForAdmin(r.Context(), gen.CountAgentSessionsForAdminParams{
-		TenantID:     tenantID,
+
 		StatusFilter: statusFilter,
 	})
 	if err != nil {
@@ -1016,8 +1005,7 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 	}
 
 	session, err := h.sessions.GetAgentSession(r.Context(), gen.GetAgentSessionParams{
-		ID:       sessionID,
-		TenantID: tenantID,
+		ID: sessionID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1033,7 +1021,6 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 
 	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), gen.ListAgentToolCallsBySessionParams{
 		SessionID: sessionID,
-		TenantID:  tenantID,
 	})
 	if err != nil {
 		slog.Warn("ai: admin listing tool calls", "error", err)
@@ -1065,7 +1052,7 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 	}
 
 	stats, err := h.sessions.GetAgentToolStats(r.Context(), gen.GetAgentToolStatsParams{
-		TenantID: tenantID,
+
 		FromDate: fromDate,
 		ToDate:   toDate,
 	})
@@ -1093,7 +1080,7 @@ func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http
 	}
 
 	report, err := h.sessions.GetAgentCostReport(r.Context(), gen.GetAgentCostReportParams{
-		TenantID: tenantID,
+
 		FromDate: fromDate,
 		ToDate:   toDate,
 	})

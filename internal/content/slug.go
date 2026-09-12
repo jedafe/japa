@@ -83,10 +83,9 @@ func (s *Service) ensureUniqueSlugWithQueries(ctx context.Context, q *gen.Querie
 			candidate = fmt.Sprintf("%s-%d", base, i-1)
 		}
 
-		_, err := q.GetContentBySlug(ctx, gen.GetContentBySlugParams{
-			Slug:     candidate,
-			TenantID: tenantID,
-		})
+		_, err := q.GetContentBySlug(ctx,
+			candidate,
+		)
 		if err != nil {
 			// pgx.ErrNoRows means the slug is available.
 			return candidate, nil //nolint:nilerr // intentional: no row means slug is unique

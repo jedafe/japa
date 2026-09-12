@@ -1,8 +1,6 @@
 -- name: CreateOperationBan :exec
-INSERT INTO user_operation_bans (user_id, tenant_id, operation, reason, expires_at, issued_by)
-VALUES ($1, $2, $3, $4,
-        CASE WHEN $5::int > 0 THEN now() + ($5 || ' seconds')::interval ELSE NULL END,
-        $6);
+INSERT INTO user_operation_bans (user_id, operation, reason, expires_at, issued_by) VALUES ($1, $2, $3, CASE WHEN $4::int > 0 THEN now() + ($4 || ' seconds')::interval ELSE NULL END, $5)
+;
 
 -- name: SoftDeleteActiveOperationBan :exec
 UPDATE user_operation_bans SET deleted_at = now()
@@ -19,28 +17,28 @@ WHERE user_id = $1 AND deleted_at IS NULL;
 -- name: CountActiveOperationBans :one
 SELECT COUNT(*)::int FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now());
+ AND (expires_at IS NULL OR expires_at > now());
 
 -- name: ListActiveOperationBans :many
 SELECT id, operation::text, reason, expires_at, created_at
 FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now())
+ AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC;
 
 -- name: GetUserOperationBansForCache :many
 SELECT operation::text, expires_at
 FROM user_operation_bans
 WHERE user_id = $1 AND deleted_at IS NULL
-  AND (expires_at IS NULL OR expires_at > now());
+ AND (expires_at IS NULL OR expires_at > now());
 
 -- name: CheckUserOperationBanExists :one
 -- AUDIT-BE-DB-003: replaces raw SQL existence check in operation ban enforcement middleware.
 -- Returns true when an active (non-expired, non-deleted) operation ban exists.
 SELECT EXISTS(
-    SELECT 1 FROM user_operation_bans
-    WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
-    AND (expires_at IS NULL OR expires_at > now())
+ SELECT 1 FROM user_operation_bans
+ WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
+ AND (expires_at IS NULL OR expires_at > now())
 );
 
 -- name: GetUserOperationBanExpiration :one
@@ -52,12 +50,12 @@ AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC LIMIT 1;
 
 -- name: CreateUserSuspension :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason)
-VALUES ($1, $2, 'suspension', $3);
+INSERT INTO user_moderation_actions (user_id, action, reason) VALUES ($1, 'suspension', $2)
+;
 
 -- name: CreateUserTypedWarning :exec
-INSERT INTO user_moderation_actions (user_id, tenant_id, action, reason, violation_type)
-VALUES ($1, $2, 'warning', $3, $4);
+INSERT INTO user_moderation_actions (user_id, action, reason, violation_type) VALUES ($1, 'warning', $2, $3)
+;
 
 -- name: CountUserWarningsByType :one
 SELECT COUNT(*)::int FROM user_moderation_actions

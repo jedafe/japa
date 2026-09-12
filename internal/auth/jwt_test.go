@@ -96,8 +96,8 @@ func TestValidateAccessToken_MissingJTI(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
-		UserID:   "user-123",
-		TenantID: "tenant-456",
+		UserID: "user-123",
+
 		// JTI intentionally empty
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -123,9 +123,9 @@ func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Minute)),
 		},
-		UserID:   userID.String(),
-		TenantID: tenantID.String(),
-		JTI:      "test-jti",
+		UserID: userID.String(),
+
+		JTI: "test-jti",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token.Header["kid"] = "key-test"

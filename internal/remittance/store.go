@@ -49,17 +49,17 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateRemittanceProv
 
 // GetProviderByID fetches a single provider by ID within a tenant.
 func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RemittanceProvider, error) {
-	return s.queries.GetRemittanceProviderByID(ctx, gen.GetRemittanceProviderByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-	})
+	return s.queries.GetRemittanceProviderByID(ctx,
+
+		id,
+	)
 }
 
 // MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
 func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
 	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-		TenantID: tenantID,
-		Column2:  recordIDs,
+
+		Column2: recordIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("remittance: map sources by record ids: %w", err)
@@ -118,16 +118,16 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 
 // ListProviders lists providers for a tenant, optionally filtering to active only.
 func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool) ([]gen.RemittanceProvider, error) {
-	return s.queries.ListRemittanceProviders(ctx, gen.ListRemittanceProvidersParams{
-		TenantID:   tenantID,
-		ActiveOnly: activeOnly,
-	})
+	return s.queries.ListRemittanceProviders(ctx,
+
+		activeOnly,
+	)
 }
 
 // ListProvidersPaginated returns a page of providers and the total count.
 func (s *Store) ListProvidersPaginated(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, limit, offset int32) ([]gen.RemittanceProvider, int64, error) {
 	rows, err := s.queries.ListRemittanceProvidersPaginated(ctx, gen.ListRemittanceProvidersPaginatedParams{
-		TenantID:   tenantID,
+
 		ActiveOnly: activeOnly,
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -136,10 +136,10 @@ func (s *Store) ListProvidersPaginated(ctx context.Context, tenantID pgtype.UUID
 		return nil, 0, fmt.Errorf("remittance: list providers paginated: %w", err)
 	}
 
-	total, err := s.queries.CountRemittanceProviders(ctx, gen.CountRemittanceProvidersParams{
-		TenantID:   tenantID,
-		ActiveOnly: activeOnly,
-	})
+	total, err := s.queries.CountRemittanceProviders(ctx,
+
+		activeOnly,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("remittance: count providers: %w", err)
 	}
@@ -155,7 +155,7 @@ func (s *Store) InsertRate(ctx context.Context, arg gen.InsertRemittanceRatePara
 // GetLatestRates returns the latest rate per active provider for a corridor.
 func (s *Store) GetLatestRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]gen.GetLatestRatesForCorridorRow, error) {
 	return s.queries.GetLatestRatesForCorridor(ctx, gen.GetLatestRatesForCorridorParams{
-		TenantID:        tenantID,
+
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 	})
@@ -164,7 +164,7 @@ func (s *Store) GetLatestRates(ctx context.Context, tenantID pgtype.UUID, sendCu
 // GetHistory returns daily best-rate aggregates for a corridor over a date range.
 func (s *Store) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string, fromDate time.Time) ([]gen.GetRateHistoryRow, error) {
 	return s.queries.GetRateHistory(ctx, gen.GetRateHistoryParams{
-		TenantID:        tenantID,
+
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 		FromDate:        pgtype.Timestamptz{Time: fromDate, Valid: true},
@@ -173,7 +173,7 @@ func (s *Store) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurren
 
 // GetCorridors returns the distinct send/receive currency pairs with rate data.
 func (s *Store) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetCorridorsRow, error) {
-	return s.queries.GetCorridors(ctx, tenantID)
+	return s.queries.GetCorridors(ctx)
 }
 
 // CreateAlert inserts a new rate alert for a user.
@@ -189,25 +189,25 @@ func (s *Store) UpdateAlert(ctx context.Context, arg gen.UpdateRateAlertParams) 
 // DeleteAlert deletes a rate alert owned by the given user.
 func (s *Store) DeleteAlert(ctx context.Context, tenantID, id, userID pgtype.UUID) error {
 	return s.queries.DeleteRateAlert(ctx, gen.DeleteRateAlertParams{
-		TenantID: tenantID,
-		ID:       id,
-		UserID:   userID,
+
+		ID:     id,
+		UserID: userID,
 	})
 }
 
 // GetAlertByID fetches a single alert owned by the given user.
 func (s *Store) GetAlertByID(ctx context.Context, tenantID, id, userID pgtype.UUID) (gen.RemittanceRateAlert, error) {
 	return s.queries.GetRateAlertByID(ctx, gen.GetRateAlertByIDParams{
-		TenantID: tenantID,
-		ID:       id,
-		UserID:   userID,
+
+		ID:     id,
+		UserID: userID,
 	})
 }
 
 // ListUserAlerts lists a user's rate alerts, optionally filtering to active only.
 func (s *Store) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID, activeOnly bool) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListUserRateAlerts(ctx, gen.ListUserRateAlertsParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		ActiveOnly: activeOnly,
 	})
@@ -217,7 +217,7 @@ func (s *Store) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID
 // eligible for notification (last_triggered_at is null or > 24h ago).
 func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
 	return s.queries.ListActiveAlertsForCorridor(ctx, gen.ListActiveAlertsForCorridorParams{
-		TenantID:        tenantID,
+
 		SendCurrency:    sendCurrency,
 		ReceiveCurrency: receiveCurrency,
 	})
@@ -227,7 +227,7 @@ func (s *Store) ListActiveAlertsForCorridor(ctx context.Context, tenantID pgtype
 // eligible for notification (last_triggered_at is null or > 24h ago). Used by
 // the remittance:check_alerts task to evaluate every corridor in one pass.
 func (s *Store) ListAllActiveAlertsForTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.RemittanceRateAlert, error) {
-	return s.queries.ListAllActiveAlertsForTenant(ctx, tenantID)
+	return s.queries.ListAllActiveAlertsForTenant(ctx)
 }
 
 // MarkAlertTriggered sets last_triggered_at to now() for the given alert.
@@ -238,10 +238,10 @@ func (s *Store) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error {
 // PruneOldRates deletes rate rows older than the cutoff, keeping one snapshot
 // per provider per corridor per day for older data (daily downsampling).
 func (s *Store) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutoffDate time.Time) error {
-	return s.queries.PruneOldRates(ctx, gen.PruneOldRatesParams{
-		TenantID:   tenantID,
-		CutoffDate: pgtype.Timestamptz{Time: cutoffDate, Valid: true},
-	})
+	return s.queries.PruneOldRates(ctx,
+
+		pgtype.Timestamptz{Time: cutoffDate, Valid: true},
+	)
 }
 
 // CreateRate inserts a new remittance rate snapshot and returns the row.

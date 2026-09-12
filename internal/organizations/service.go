@@ -166,7 +166,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	qtx := s.store.write.WithTx(tx)
 
 	org, err := qtx.CreateOrganization(ctx, gen.CreateOrganizationParams{
-		TenantID:    tenantID,
+
 		OwnerUserID: userID,
 		Name:        input.Name,
 		Slug:        input.Slug,
@@ -199,7 +199,6 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          org.ID,
 		MemberCount: 1,
-		TenantID:    tenantID,
 	}); err != nil {
 		return gen.Organization{}, fmt.Errorf("incrementing member count: %w", err)
 	}
@@ -271,7 +270,7 @@ func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgty
 
 	for i, r := range rows {
 		org := gen.Organization{
-			ID: r.ID, TenantID: r.TenantID, OwnerUserID: r.OwnerUserID,
+			ID: r.ID, OwnerUserID: r.OwnerUserID,
 			Name: r.Name, Slug: r.Slug, Tagline: r.Tagline, Description: r.Description,
 			LogoMediaID: r.LogoMediaID, HeaderMediaID: r.HeaderMediaID,
 			WebsiteUrl: r.WebsiteUrl, CountryCode: r.CountryCode, GeoSpaceID: r.GeoSpaceID,
@@ -327,8 +326,8 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 	}
 
 	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		Name:        input.Name,
 		Tagline:     strPtr(input.Tagline),
 		Description: strPtr(input.Description),
@@ -544,7 +543,6 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 			ID:          inv.OrganizationID,
 			MemberCount: 1,
-			TenantID:    org.TenantID,
 		}); err != nil {
 			return "", fmt.Errorf("incrementing member count: %w", err)
 		}
@@ -621,7 +619,6 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          orgID,
 		MemberCount: 1,
-		TenantID:    org.TenantID,
 	}); err != nil {
 		return fmt.Errorf("incrementing member count: %w", err)
 	}
@@ -692,7 +689,6 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	if err := qtx.IncrementOrganizationMemberCount(ctx, gen.IncrementOrganizationMemberCountParams{
 		ID:          orgID,
 		MemberCount: -1,
-		TenantID:    org.TenantID,
 	}); err != nil {
 		return fmt.Errorf("decrementing member count: %w", err)
 	}
@@ -786,7 +782,7 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 	}
 
 	return s.store.CreateOwnershipClaim(ctx, gen.CreateOwnershipClaimParams{
-		TenantID:         tenantID,
+
 		ClaimantUserID:   userID,
 		OrganizationID:   orgID,
 		EvidenceUrl:      strPtr(input.EvidenceURL),
@@ -854,8 +850,8 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	qtx := s.store.write.WithTx(tx)
 
 	if err := qtx.ReviewOwnershipClaim(ctx, gen.ReviewOwnershipClaimParams{
-		ID:             claimID,
-		TenantID:       tenantID,
+		ID: claimID,
+
 		Status:         input.Status,
 		ReviewedBy:     reviewedBy,
 		ResolutionNote: strPtr(input.ResolutionNote),
@@ -871,7 +867,6 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 		if err := qtx.TransferOrganizationOwnership(ctx, gen.TransferOrganizationOwnershipParams{
 			ID:          claim.OrganizationID,
 			OwnerUserID: claim.ClaimantUserID,
-			TenantID:    tenantID,
 		}); err != nil {
 			return fmt.Errorf("transferring ownership: %w", err)
 		}
@@ -1056,8 +1051,8 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 	}
 
 	if err := s.store.UpdateOrganization(ctx, gen.UpdateOrganizationParams{
-		ID:          id,
-		TenantID:    tenantID,
+		ID: id,
+
 		Name:        input.Name,
 		Tagline:     strPtr(input.Tagline),
 		Description: strPtr(input.Description),
@@ -1108,10 +1103,9 @@ func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pg
 		return nil
 	}
 
-	field, err := s.store.read.GetCustomFieldByKey(ctx, gen.GetCustomFieldByKeyParams{
-		Key:      "destination_country",
-		TenantID: tenantID,
-	})
+	field, err := s.store.read.GetCustomFieldByKey(ctx,
+		"destination_country",
+	)
 	if err != nil {
 		return fmt.Errorf("looking up destination_country custom field: %w", err)
 	}

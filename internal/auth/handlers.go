@@ -286,7 +286,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, err := h.Queries.CreateUser(r.Context(), gen.CreateUserParams{
-		TenantID:     tenant.ID,
+
 		Email:        req.Email,
 		Username:     req.Username,
 		PasswordHash: &passwordHash,
@@ -323,7 +323,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Record the initial password in history so it cannot be reused later.
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
-		TenantID:     tenant.ID,
+
 		UserID:       userID,
 		PasswordHash: passwordHash,
 	}); err != nil {
@@ -387,7 +387,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   tenant.ID,
+
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -519,7 +519,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Super admins bypass email verification — they are platform operators.
 	if EmailVerifyRequired(r.Context(), h.Settings, tenant.ID) && !user.EmailVerifiedAt.Valid {
 		isSuperAdmin, err := h.DB.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
-			TenantID:  tenant.ID,
+
 			UserID:    user.ID,
 			GroupSlug: "super_admin",
 		})
@@ -548,10 +548,10 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Check if 2FA is enabled — if so, require TOTP challenge before
 	// issuing a full session (AUDIT-BE-001).
-	hasTOTP, err := h.Queries.CheckTOTPEnabled(r.Context(), gen.CheckTOTPEnabledParams{
-		TenantID: user.TenantID,
-		UserID:   user.ID,
-	})
+	hasTOTP, err := h.Queries.CheckTOTPEnabled(r.Context(),
+
+		user.ID,
+	)
 	if err != nil {
 		slog.Warn("check TOTP enabled", "error", err)
 
@@ -597,7 +597,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   user.TenantID,
+
 		UserID:     user.ID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -670,10 +670,9 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		// (the legitimate user rotated past it, or an attacker stole it
 		// before rotation). Revoke the entire session family to contain
 		// the damage. Ref: §02 (Refresh-token rotation reuse detection).
-		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), gen.RevokeAllUserRefreshTokensParams{
-			UserID:   stored.UserID,
-			TenantID: stored.TenantID,
-		})
+		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+			stored.UserID,
+		)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
 
@@ -699,10 +698,9 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	if userRow.Status != "active" {
 		// Revoke all sessions for the inactive user.
-		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), gen.RevokeAllUserRefreshTokensParams{
-			UserID:   stored.UserID,
-			TenantID: stored.TenantID,
-		})
+		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+			stored.UserID,
+		)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "account_inactive", "Account is no longer active")
 
@@ -718,10 +716,9 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 			stored.UserID,
 		)
 		if err != nil || !verifiedAt.Valid {
-			_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), gen.RevokeAllUserRefreshTokensParams{
-				UserID:   stored.UserID,
-				TenantID: stored.TenantID,
-			})
+			_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+				stored.UserID,
+			)
 
 			errpkg.WriteError(w, http.StatusUnauthorized, "email_not_verified", "Email verification is required")
 
@@ -749,7 +746,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	newExpiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   stored.TenantID,
+
 		UserID:     stored.UserID,
 		TokenHash:  newTokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: newExpiresAt, Valid: true},
@@ -815,10 +812,10 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	totpRecord, err := h.Queries.GetTOTPCredentials(r.Context(), gen.GetTOTPCredentialsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	totpRecord, err := h.Queries.GetTOTPCredentials(r.Context(),
+
+		userID,
+	)
 	if err != nil || !totpRecord.EnabledAt.Valid {
 		errpkg.WriteError(w, http.StatusBadRequest, "totp_error", "2FA not set up")
 		return
@@ -863,7 +860,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -937,10 +934,10 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 
 	req.BackupCode = sanitizeCode(req.BackupCode)
 
-	backupRecord, err := h.Queries.GetTOTPCredentials(r.Context(), gen.GetTOTPCredentialsParams{
-		TenantID: tenantID,
-		UserID:   userID,
-	})
+	backupRecord, err := h.Queries.GetTOTPCredentials(r.Context(),
+
+		userID,
+	)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "no_backup_codes", "No backup codes found")
 		return
@@ -985,7 +982,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
-		TenantID:   tenantID,
+
 		UserID:     userID,
 		TokenHash:  tokenHash,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -1184,7 +1181,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 
 	expiresAt := time.Now().Add(ResetTokenTTL)
 	if err := h.Queries.CreatePasswordResetToken(r.Context(), gen.CreatePasswordResetTokenParams{
-		TenantID:  t.ID,
+
 		UserID:    user.ID,
 		TokenHash: hash,
 		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -1382,7 +1379,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 
 	// Record the new password in history to prevent reuse.
 	if err := h.Queries.InsertPasswordHistory(r.Context(), gen.InsertPasswordHistoryParams{
-		TenantID:     rec.TenantID,
+
 		UserID:       rec.UserID,
 		PasswordHash: passwordHash,
 	}); err != nil {
@@ -1528,16 +1525,15 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 
 	// Invalidate previous unverified tokens before issuing a new one.
 	// Ref: §02 "POST /auth/resend-verification → invalidates previous unverified token"
-	if err := h.Queries.InvalidateUserEmailVerifications(r.Context(), gen.InvalidateUserEmailVerificationsParams{
-		UserID:   user.ID,
-		TenantID: t.ID,
-	}); err != nil {
+	if err := h.Queries.InvalidateUserEmailVerifications(r.Context(),
+		user.ID,
+	); err != nil {
 		slog.Error("resend-verification: failed to invalidate previous tokens", "error", err)
 	}
 
 	expiresAt := time.Now().Add(VerificationTokenTTL)
 	if err := h.Queries.CreateEmailVerification(r.Context(), gen.CreateEmailVerificationParams{
-		TenantID:  t.ID,
+
 		UserID:    user.ID,
 		Email:     user.Email,
 		TokenHash: hash,

@@ -336,10 +336,10 @@ func extractSpaceKeywords(name string) []string {
 // auto-assign feature to link content to spaces based on title matching.
 // Ref: sections/05-geo-first-space-system.md, sections/14-content-type-system.md.
 func (s *Service) FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error) {
-	return s.read.FindSpacesByKeywords(ctx, gen.FindSpacesByKeywordsParams{
-		TenantID: tenantID,
-		Keywords: keywords,
-	})
+	return s.read.FindSpacesByKeywords(ctx,
+
+		keywords,
+	)
 }
 
 // NewService creates a Service backed by the given database pool.

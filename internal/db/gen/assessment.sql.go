@@ -14,14 +14,13 @@ import (
 const adminAssessmentCompletionStats = `-- name: AdminAssessmentCompletionStats :one
 
 SELECT
-    COUNT(DISTINCT fs.id) AS total_submissions,
-    COUNT(DISTINCT ar.id) AS total_scored,
-    COALESCE(AVG(ar.total_score), 0)::int AS avg_score
+ COUNT(DISTINCT fs.id) AS total_submissions,
+ COUNT(DISTINCT ar.id) AS total_scored,
+ COALESCE(AVG(ar.total_score), 0)::int AS avg_score
 FROM form_submissions fs
 LEFT JOIN assessment_results ar ON ar.submission_id = fs.id
 JOIN forms f ON f.id = fs.form_id
-WHERE fs.tenant_id = $1
-  AND f.form_type = 'assessment'
+WHERE f.form_type = 'assessment'
 `
 
 type AdminAssessmentCompletionStatsRow struct {
@@ -33,8 +32,8 @@ type AdminAssessmentCompletionStatsRow struct {
 // =====================================================================
 // Admin: completion stats — total submissions, total scored, avg score.
 // =====================================================================
-func (q *Queries) AdminAssessmentCompletionStats(ctx context.Context, tenantID pgtype.UUID) (AdminAssessmentCompletionStatsRow, error) {
-	row := q.db.QueryRow(ctx, adminAssessmentCompletionStats, tenantID)
+func (q *Queries) AdminAssessmentCompletionStats(ctx context.Context) (AdminAssessmentCompletionStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminAssessmentCompletionStats)
 	var i AdminAssessmentCompletionStatsRow
 	err := row.Scan(&i.TotalSubmissions, &i.TotalScored, &i.AvgScore)
 	return i, err
@@ -43,11 +42,11 @@ func (q *Queries) AdminAssessmentCompletionStats(ctx context.Context, tenantID p
 const adminAssessmentScoreDistribution = `-- name: AdminAssessmentScoreDistribution :many
 
 SELECT
-    threshold_label,
-    COUNT(*) AS count,
-    AVG(total_score)::int AS avg_score
+ threshold_label,
+ COUNT(*) AS count,
+ AVG(total_score)::int AS avg_score
 FROM assessment_results
-WHERE tenant_id = $1
+
 GROUP BY threshold_label
 ORDER BY avg_score DESC
 `
@@ -61,8 +60,8 @@ type AdminAssessmentScoreDistributionRow struct {
 // =====================================================================
 // Admin: score distribution — count of results per threshold label.
 // =====================================================================
-func (q *Queries) AdminAssessmentScoreDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminAssessmentScoreDistributionRow, error) {
-	rows, err := q.db.Query(ctx, adminAssessmentScoreDistribution, tenantID)
+func (q *Queries) AdminAssessmentScoreDistribution(ctx context.Context) ([]AdminAssessmentScoreDistributionRow, error) {
+	rows, err := q.db.Query(ctx, adminAssessmentScoreDistribution)
 	if err != nil {
 		return nil, err
 	}
@@ -84,19 +83,17 @@ func (q *Queries) AdminAssessmentScoreDistribution(ctx context.Context, tenantID
 const adminCountAssessmentResults = `-- name: AdminCountAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
-WHERE tenant_id = $1
-  AND ($2::int = 0 OR total_score >= $2)
-  AND ($3::int = 0 OR total_score <= $3)
+WHERE ($1::int = 0 OR total_score >= $1)
+ AND ($2::int = 0 OR total_score <= $2)
 `
 
 type AdminCountAssessmentResultsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	MinScore int32       `json:"min_score"`
-	MaxScore int32       `json:"max_score"`
+	MinScore int32 `json:"min_score"`
+	MaxScore int32 `json:"max_score"`
 }
 
 func (q *Queries) AdminCountAssessmentResults(ctx context.Context, arg AdminCountAssessmentResultsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountAssessmentResults, arg.TenantID, arg.MinScore, arg.MaxScore)
+	row := q.db.QueryRow(ctx, adminCountAssessmentResults, arg.MinScore, arg.MaxScore)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -105,25 +102,23 @@ func (q *Queries) AdminCountAssessmentResults(ctx context.Context, arg AdminCoun
 const adminListAssessmentResults = `-- name: AdminListAssessmentResults :many
 
 SELECT
-    ar.id, ar.tenant_id, ar.user_id, ar.submission_id, ar.total_score, ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
-    u.username AS username,
-    fs.field_values AS submission_values
+ ar.id, ar.tenant_id, ar.user_id, ar.submission_id, ar.total_score, ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
+ u.username AS username,
+ fs.field_values AS submission_values
 FROM assessment_results ar
 LEFT JOIN users u ON u.id = ar.user_id
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = $1
-  AND ($2::int = 0 OR ar.total_score >= $2)
-  AND ($3::int = 0 OR ar.total_score <= $3)
+WHERE ($1::int = 0 OR ar.total_score >= $1)
+ AND ($2::int = 0 OR ar.total_score <= $2)
 ORDER BY ar.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $4 OFFSET $3
 `
 
 type AdminListAssessmentResultsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
-	MinScore   int32       `json:"min_score"`
-	MaxScore   int32       `json:"max_score"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	MinScore   int32 `json:"min_score"`
+	MaxScore   int32 `json:"max_score"`
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
 }
 
 type AdminListAssessmentResultsRow struct {
@@ -145,7 +140,6 @@ type AdminListAssessmentResultsRow struct {
 // =====================================================================
 func (q *Queries) AdminListAssessmentResults(ctx context.Context, arg AdminListAssessmentResultsParams) ([]AdminListAssessmentResultsRow, error) {
 	rows, err := q.db.Query(ctx, adminListAssessmentResults,
-		arg.TenantID,
 		arg.MinScore,
 		arg.MaxScore,
 		arg.PageOffset,
@@ -205,15 +199,13 @@ const countAssessmentResultsByUserAndForm = `-- name: CountAssessmentResultsByUs
 SELECT COUNT(*) AS count
 FROM assessment_results ar
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = $1
-  AND ar.user_id = $2
-  AND fs.form_id = $3
+WHERE ar.user_id = $1
+ AND fs.form_id = $2
 `
 
 type CountAssessmentResultsByUserAndFormParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-	FormID   pgtype.UUID `json:"form_id"`
+	UserID pgtype.UUID `json:"user_id"`
+	FormID pgtype.UUID `json:"form_id"`
 }
 
 // =====================================================================
@@ -221,7 +213,7 @@ type CountAssessmentResultsByUserAndFormParams struct {
 // completion points only on the first submission (Rule 9 / Section 28).
 // =====================================================================
 func (q *Queries) CountAssessmentResultsByUserAndForm(ctx context.Context, arg CountAssessmentResultsByUserAndFormParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countAssessmentResultsByUserAndForm, arg.TenantID, arg.UserID, arg.FormID)
+	row := q.db.QueryRow(ctx, countAssessmentResultsByUserAndForm, arg.UserID, arg.FormID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -230,16 +222,11 @@ func (q *Queries) CountAssessmentResultsByUserAndForm(ctx context.Context, arg C
 const countUserAssessmentResults = `-- name: CountUserAssessmentResults :one
 SELECT COUNT(*) AS count
 FROM assessment_results
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 `
 
-type CountUserAssessmentResultsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) CountUserAssessmentResults(ctx context.Context, arg CountUserAssessmentResultsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countUserAssessmentResults, arg.TenantID, arg.UserID)
+func (q *Queries) CountUserAssessmentResults(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserAssessmentResults, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -247,19 +234,12 @@ func (q *Queries) CountUserAssessmentResults(ctx context.Context, arg CountUserA
 
 const createAssessmentResult = `-- name: CreateAssessmentResult :one
 
-INSERT INTO assessment_results (
-    tenant_id, user_id, submission_id, total_score,
-    dimension_scores, threshold_label, roadmap_content
-)
-VALUES (
-    $1, $2, $3, $4,
-    $5, $6, $7
-)
+INSERT INTO assessment_results (user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content) VALUES ($1, $2, $3, $4, $5, $6)
+
 RETURNING id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at
 `
 
 type CreateAssessmentResultParams struct {
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	UserID          pgtype.UUID `json:"user_id"`
 	SubmissionID    pgtype.UUID `json:"submission_id"`
 	TotalScore      int32       `json:"total_score"`
@@ -273,7 +253,6 @@ type CreateAssessmentResultParams struct {
 // =====================================================================
 func (q *Queries) CreateAssessmentResult(ctx context.Context, arg CreateAssessmentResultParams) (AssessmentResult, error) {
 	row := q.db.QueryRow(ctx, createAssessmentResult,
-		arg.TenantID,
 		arg.UserID,
 		arg.SubmissionID,
 		arg.TotalScore,
@@ -298,14 +277,13 @@ func (q *Queries) CreateAssessmentResult(ctx context.Context, arg CreateAssessme
 
 const createAssessmentSubmission = `-- name: CreateAssessmentSubmission :one
 
-INSERT INTO form_submissions (form_id, tenant_id, user_id, field_values, status)
-VALUES ($1, $2, $3, $4, 'new')
+INSERT INTO form_submissions (form_id, user_id, field_values, status) VALUES ($1, $2, $3, 'new')
+
 RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at, payment_id
 `
 
 type CreateAssessmentSubmissionParams struct {
 	FormID      pgtype.UUID `json:"form_id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	FieldValues []byte      `json:"field_values"`
 }
@@ -314,12 +292,7 @@ type CreateAssessmentSubmissionParams struct {
 // Create a form submission for an assessment (anonymous or authenticated).
 // =====================================================================
 func (q *Queries) CreateAssessmentSubmission(ctx context.Context, arg CreateAssessmentSubmissionParams) (FormSubmission, error) {
-	row := q.db.QueryRow(ctx, createAssessmentSubmission,
-		arg.FormID,
-		arg.TenantID,
-		arg.UserID,
-		arg.FieldValues,
-	)
+	row := q.db.QueryRow(ctx, createAssessmentSubmission, arg.FormID, arg.UserID, arg.FieldValues)
 	var i FormSubmission
 	err := row.Scan(
 		&i.ID,
@@ -355,9 +328,8 @@ const getActiveAssessmentForm = `-- name: GetActiveAssessmentForm :one
 
 
 SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
-WHERE tenant_id = $1
-  AND form_type = 'assessment'
-  AND status = 'active'
+WHERE form_type = 'assessment'
+ AND status = 'active'
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -371,8 +343,8 @@ LIMIT 1
 // =====================================================================
 // Get the active assessment form (form_type='assessment', status='active').
 // =====================================================================
-func (q *Queries) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUID) (Form, error) {
-	row := q.db.QueryRow(ctx, getActiveAssessmentForm, tenantID)
+func (q *Queries) GetActiveAssessmentForm(ctx context.Context) (Form, error) {
+	row := q.db.QueryRow(ctx, getActiveAssessmentForm)
 	var i Form
 	err := row.Scan(
 		&i.ID,
@@ -397,19 +369,14 @@ func (q *Queries) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.U
 const getAssessmentFormByID = `-- name: GetAssessmentFormByID :one
 
 SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
-WHERE tenant_id = $1 AND id = $2 AND form_type = 'assessment'
+WHERE id = $1 AND form_type = 'assessment'
 `
-
-type GetAssessmentFormByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Get an assessment form by ID.
 // =====================================================================
-func (q *Queries) GetAssessmentFormByID(ctx context.Context, arg GetAssessmentFormByIDParams) (Form, error) {
-	row := q.db.QueryRow(ctx, getAssessmentFormByID, arg.TenantID, arg.ID)
+func (q *Queries) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (Form, error) {
+	row := q.db.QueryRow(ctx, getAssessmentFormByID, id)
 	var i Form
 	err := row.Scan(
 		&i.ID,
@@ -435,23 +402,18 @@ const getAssessmentFormFields = `-- name: GetAssessmentFormFields :many
 
 SELECT cf.id, cf.group_id, cf.tenant_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed_platforms, cf.placeholder, cf.default_value, cf.is_required, cf.is_system, cf.show_in_frontend, cf.filterable, cf.sortable, cf.searchable, cf.position, cf.created_at, cf.config
 FROM custom_field_group_assignments a
-JOIN custom_fields cf ON cf.group_id = a.group_id AND cf.tenant_id = $1
-WHERE a.entity_class = 'form' AND a.entity_id = $2
+JOIN custom_fields cf ON cf.group_id = a.group_id
+WHERE a.entity_class = 'form' AND a.entity_id = $1
 ORDER BY cf.position
 `
-
-type GetAssessmentFormFieldsParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	FormID   pgtype.UUID `json:"form_id"`
-}
 
 // =====================================================================
 // Get form fields for an assessment form (for scoring engine to resolve
 // per-answer scores from field config). Forms link to custom_fields via
 // custom_field_group_assignments (entity_class='form').
 // =====================================================================
-func (q *Queries) GetAssessmentFormFields(ctx context.Context, arg GetAssessmentFormFieldsParams) ([]CustomField, error) {
-	rows, err := q.db.Query(ctx, getAssessmentFormFields, arg.TenantID, arg.FormID)
+func (q *Queries) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUID) ([]CustomField, error) {
+	rows, err := q.db.Query(ctx, getAssessmentFormFields, formID)
 	if err != nil {
 		return nil, err
 	}
@@ -493,19 +455,14 @@ func (q *Queries) GetAssessmentFormFields(ctx context.Context, arg GetAssessment
 const getAssessmentResultByID = `-- name: GetAssessmentResultByID :one
 
 SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
-WHERE tenant_id = $1 AND id = $2
+WHERE id = $1
 `
-
-type GetAssessmentResultByIDParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	ID       pgtype.UUID `json:"id"`
-}
 
 // =====================================================================
 // Get a single assessment result by ID.
 // =====================================================================
-func (q *Queries) GetAssessmentResultByID(ctx context.Context, arg GetAssessmentResultByIDParams) (AssessmentResult, error) {
-	row := q.db.QueryRow(ctx, getAssessmentResultByID, arg.TenantID, arg.ID)
+func (q *Queries) GetAssessmentResultByID(ctx context.Context, id pgtype.UUID) (AssessmentResult, error) {
+	row := q.db.QueryRow(ctx, getAssessmentResultByID, id)
 	var i AssessmentResult
 	err := row.Scan(
 		&i.ID,
@@ -524,13 +481,8 @@ func (q *Queries) GetAssessmentResultByID(ctx context.Context, arg GetAssessment
 const getAssessmentResultBySubmission = `-- name: GetAssessmentResultBySubmission :one
 
 SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
-WHERE tenant_id = $1 AND submission_id = $2
+WHERE submission_id = $1
 `
-
-type GetAssessmentResultBySubmissionParams struct {
-	TenantID     pgtype.UUID `json:"tenant_id"`
-	SubmissionID pgtype.UUID `json:"submission_id"`
-}
 
 // =====================================================================
 // Get a single assessment result by submission_id. Used by the public
@@ -538,8 +490,8 @@ type GetAssessmentResultBySubmissionParams struct {
 // submission_id and polls until the Asynq scoring task writes the result).
 // Returns at most one row (there is a unique link submission_id -> result).
 // =====================================================================
-func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, arg GetAssessmentResultBySubmissionParams) (AssessmentResult, error) {
-	row := q.db.QueryRow(ctx, getAssessmentResultBySubmission, arg.TenantID, arg.SubmissionID)
+func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, submissionID pgtype.UUID) (AssessmentResult, error) {
+	row := q.db.QueryRow(ctx, getAssessmentResultBySubmission, submissionID)
 	var i AssessmentResult
 	err := row.Scan(
 		&i.ID,
@@ -558,22 +510,17 @@ func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, arg GetAs
 const getLatestAssessmentJourneyContext = `-- name: GetLatestAssessmentJourneyContext :one
 
 SELECT
-    ar.roadmap_content,
-    ar.dimension_scores,
-    ar.threshold_label,
-    ar.created_at,
-    fs.field_values AS submission_values
+ ar.roadmap_content,
+ ar.dimension_scores,
+ ar.threshold_label,
+ ar.created_at,
+ fs.field_values AS submission_values
 FROM assessment_results ar
 JOIN form_submissions fs ON fs.id = ar.submission_id
-WHERE ar.tenant_id = $1 AND ar.user_id = $2
+WHERE ar.user_id = $1
 ORDER BY ar.created_at DESC
 LIMIT 1
 `
-
-type GetLatestAssessmentJourneyContextParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
 
 type GetLatestAssessmentJourneyContextRow struct {
 	RoadmapContent   []byte             `json:"roadmap_content"`
@@ -589,8 +536,8 @@ type GetLatestAssessmentJourneyContextRow struct {
 // Returns no rows if the user has not completed an assessment.
 // Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
 // =====================================================================
-func (q *Queries) GetLatestAssessmentJourneyContext(ctx context.Context, arg GetLatestAssessmentJourneyContextParams) (GetLatestAssessmentJourneyContextRow, error) {
-	row := q.db.QueryRow(ctx, getLatestAssessmentJourneyContext, arg.TenantID, arg.UserID)
+func (q *Queries) GetLatestAssessmentJourneyContext(ctx context.Context, userID pgtype.UUID) (GetLatestAssessmentJourneyContextRow, error) {
+	row := q.db.QueryRow(ctx, getLatestAssessmentJourneyContext, userID)
 	var i GetLatestAssessmentJourneyContextRow
 	err := row.Scan(
 		&i.RoadmapContent,
@@ -605,13 +552,12 @@ func (q *Queries) GetLatestAssessmentJourneyContext(ctx context.Context, arg Get
 const listUserAssessmentResults = `-- name: ListUserAssessmentResults :many
 
 SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
-WHERE tenant_id = $1 AND user_id = $2
+WHERE user_id = $1
 ORDER BY created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $3 OFFSET $2
 `
 
 type ListUserAssessmentResultsParams struct {
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	UserID     pgtype.UUID `json:"user_id"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
@@ -621,12 +567,7 @@ type ListUserAssessmentResultsParams struct {
 // List a user's assessment results (history).
 // =====================================================================
 func (q *Queries) ListUserAssessmentResults(ctx context.Context, arg ListUserAssessmentResultsParams) ([]AssessmentResult, error) {
-	rows, err := q.db.Query(ctx, listUserAssessmentResults,
-		arg.TenantID,
-		arg.UserID,
-		arg.PageOffset,
-		arg.PageLimit,
-	)
+	rows, err := q.db.Query(ctx, listUserAssessmentResults, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -659,13 +600,12 @@ const updateAssessmentFormScoring = `-- name: UpdateAssessmentFormScoring :one
 
 UPDATE forms
 SET scoring_config = $1
-WHERE tenant_id = $2 AND id = $3 AND form_type = 'assessment'
+WHERE id = $2 AND form_type = 'assessment'
 RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits
 `
 
 type UpdateAssessmentFormScoringParams struct {
 	ScoringConfig []byte      `json:"scoring_config"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ID            pgtype.UUID `json:"id"`
 }
 
@@ -673,7 +613,7 @@ type UpdateAssessmentFormScoringParams struct {
 // Update the assessment form's scoring_config.
 // =====================================================================
 func (q *Queries) UpdateAssessmentFormScoring(ctx context.Context, arg UpdateAssessmentFormScoringParams) (Form, error) {
-	row := q.db.QueryRow(ctx, updateAssessmentFormScoring, arg.ScoringConfig, arg.TenantID, arg.ID)
+	row := q.db.QueryRow(ctx, updateAssessmentFormScoring, arg.ScoringConfig, arg.ID)
 	var i Form
 	err := row.Scan(
 		&i.ID,

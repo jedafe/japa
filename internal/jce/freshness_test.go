@@ -44,10 +44,10 @@ func makeValue(t *testing.T, updatedAt time.Time, metadata string) gen.Compariso
 	return gen.ComparisonValue{
 		ItemID:      pgUUID(t, uuid.New().String()),
 		DimensionID: pgUUID(t, uuid.New().String()),
-		TenantID:    pgUUID(t, uuid.New().String()),
-		Metadata:    []byte(metadata),
-		UpdatedAt:   pgtype.Timestamptz{Time: updatedAt, Valid: !updatedAt.IsZero()},
-		CreatedAt:   pgtype.Timestamptz{Time: updatedAt, Valid: !updatedAt.IsZero()},
+
+		Metadata:  []byte(metadata),
+		UpdatedAt: pgtype.Timestamptz{Time: updatedAt, Valid: !updatedAt.IsZero()},
+		CreatedAt: pgtype.Timestamptz{Time: updatedAt, Valid: !updatedAt.IsZero()},
 	}
 }
 

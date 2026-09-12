@@ -279,7 +279,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	block, err := h.Store.CreateIPBlock(r.Context(), CreateIPBlockInput{
-		TenantID:  tenantID,
+
 		CIDR:      input.CIDR,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
@@ -460,7 +460,7 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	word, err := h.Store.CreateCensoredWord(r.Context(), CreateCensoredWordInput{
-		TenantID:    tenantID,
+
 		Pattern:     input.Pattern,
 		Action:      input.Action,
 		Replacement: input.Replacement,

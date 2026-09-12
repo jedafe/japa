@@ -77,10 +77,10 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	src, err := q.GetIntelSource(ctx, gen.GetIntelSourceParams{
-		TenantID: tenantID,
-		ID:       sourceID,
-	})
+	src, err := q.GetIntelSource(ctx,
+
+		sourceID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("task:intel:source_metadata: source not found", "source_id", p.SourceID)
@@ -96,8 +96,8 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 	}
 
 	params := gen.UpdateIntelSourceMetadataParams{
-		TenantID: tenantID,
-		ID:       sourceID,
+
+		ID: sourceID,
 	}
 
 	if preview.Description != "" && (src.Description == nil || *src.Description == "") {
@@ -164,7 +164,6 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenant
 func (e *Enqueuer) EnqueueSourceMetadata(sourceID, tenantID string) error {
 	payload, err := json.Marshal(sourceMetadataPayload{
 		SourceID: sourceID,
-		TenantID: tenantID,
 	})
 	if err != nil {
 		return err

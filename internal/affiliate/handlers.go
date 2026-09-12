@@ -173,8 +173,8 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	member, err := h.Service.Enroll(r.Context(), EnrollInput{
-		TenantID: tenantID,
-		UserID:   user.UserID,
+
+		UserID: user.UserID,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -552,7 +552,7 @@ func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
 	limit, offset := paginate(page, pageSize)
 
 	params := gen.ListAllAffiliateLinksFilteredParams{
-		TenantID: tenantID, PageLimit: limit, PageOffset: offset,
+		PageLimit: limit, PageOffset: offset,
 	}
 
 	if uid := r.URL.Query().Get("user_id"); uid != "" {
