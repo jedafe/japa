@@ -12,21 +12,16 @@ import (
 )
 
 const deleteSystemSetting = `-- name: DeleteSystemSetting :exec
-DELETE FROM system_settings WHERE tenant_id = $1 AND key = $2
+DELETE FROM system_settings WHERE key = $1
 `
 
-type DeleteSystemSettingParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-}
-
-func (q *Queries) DeleteSystemSetting(ctx context.Context, arg DeleteSystemSettingParams) error {
-	_, err := q.db.Exec(ctx, deleteSystemSetting, arg.TenantID, arg.Key)
+func (q *Queries) DeleteSystemSetting(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, deleteSystemSetting, key)
 	return err
 }
 
 const getPublicSettings = `-- name: GetPublicSettings :many
-SELECT key, value FROM system_settings WHERE tenant_id = $1 AND is_public = true ORDER BY key
+SELECT key, value FROM system_settings WHERE is_public = true ORDER BY key
 `
 
 type GetPublicSettingsRow struct {
@@ -34,8 +29,8 @@ type GetPublicSettingsRow struct {
 	Value []byte `json:"value"`
 }
 
-func (q *Queries) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) ([]GetPublicSettingsRow, error) {
-	rows, err := q.db.Query(ctx, getPublicSettings, tenantID)
+func (q *Queries) GetPublicSettings(ctx context.Context) ([]GetPublicSettingsRow, error) {
+	rows, err := q.db.Query(ctx, getPublicSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -56,24 +51,19 @@ func (q *Queries) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (
 
 const getSettingValue = `-- name: GetSettingValue :one
 
-SELECT value FROM system_settings WHERE tenant_id = $1 AND key = $2
+SELECT value FROM system_settings WHERE key = $1
 `
 
-type GetSettingValueParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-}
-
-// System settings queries (migrated from inline SQL in config/settings.go and control/handlers.go)
-func (q *Queries) GetSettingValue(ctx context.Context, arg GetSettingValueParams) ([]byte, error) {
-	row := q.db.QueryRow(ctx, getSettingValue, arg.TenantID, arg.Key)
+// System settings queries (global scope after multi-tenancy removal).
+func (q *Queries) GetSettingValue(ctx context.Context, key string) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getSettingValue, key)
 	var value []byte
 	err := row.Scan(&value)
 	return value, err
 }
 
 const listSystemSettings = `-- name: ListSystemSettings :many
-SELECT key, value, is_public, updated_at FROM system_settings WHERE tenant_id = $1 ORDER BY key
+SELECT key, value, is_public, updated_at FROM system_settings ORDER BY key
 `
 
 type ListSystemSettingsRow struct {
@@ -83,8 +73,8 @@ type ListSystemSettingsRow struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func (q *Queries) ListSystemSettings(ctx context.Context, tenantID pgtype.UUID) ([]ListSystemSettingsRow, error) {
-	rows, err := q.db.Query(ctx, listSystemSettings, tenantID)
+func (q *Queries) ListSystemSettings(ctx context.Context) ([]ListSystemSettingsRow, error) {
+	rows, err := q.db.Query(ctx, listSystemSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -109,44 +99,34 @@ func (q *Queries) ListSystemSettings(ctx context.Context, tenantID pgtype.UUID) 
 }
 
 const upsertSystemSetting = `-- name: UpsertSystemSetting :exec
-INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = now()
+INSERT INTO system_settings (key, value, is_public, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (key) DO UPDATE SET value = $2, is_public = $3, updated_at = now()
 `
 
 type UpsertSystemSettingParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-	Value    []byte      `json:"value"`
-	IsPublic bool        `json:"is_public"`
+	Key      string `json:"key"`
+	Value    []byte `json:"value"`
+	IsPublic bool   `json:"is_public"`
 }
 
 func (q *Queries) UpsertSystemSetting(ctx context.Context, arg UpsertSystemSettingParams) error {
-	_, err := q.db.Exec(ctx, upsertSystemSetting,
-		arg.TenantID,
-		arg.Key,
-		arg.Value,
-		arg.IsPublic,
-	)
+	_, err := q.db.Exec(ctx, upsertSystemSetting, arg.Key, arg.Value, arg.IsPublic)
 	return err
 }
 
 const upsertSystemSettingPreservePublic = `-- name: UpsertSystemSettingPreservePublic :exec
-INSERT INTO system_settings (tenant_id, key, value, is_public, created_at, updated_at)
-VALUES ($1, $2, $3, false, now(), now())
-ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+INSERT INTO system_settings (key, value, is_public, created_at, updated_at)
+VALUES ($1, $2, false, now(), now())
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
 `
 
 type UpsertSystemSettingPreservePublicParams struct {
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Key      string      `json:"key"`
-	Value    []byte      `json:"value"`
+	Key   string `json:"key"`
+	Value []byte `json:"value"`
 }
 
-// Like UpsertSystemSetting but preserves the existing is_public value on
-// conflict (only updates value). Used by SetSetting and UpdateSettingsBatch
-// where the caller does not manage the is_public flag.
 func (q *Queries) UpsertSystemSettingPreservePublic(ctx context.Context, arg UpsertSystemSettingPreservePublicParams) error {
-	_, err := q.db.Exec(ctx, upsertSystemSettingPreservePublic, arg.TenantID, arg.Key, arg.Value)
+	_, err := q.db.Exec(ctx, upsertSystemSettingPreservePublic, arg.Key, arg.Value)
 	return err
 }

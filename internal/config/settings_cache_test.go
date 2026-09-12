@@ -60,7 +60,7 @@ func TestGetSettingCachesMissing(t *testing.T) {
 	var tid pgtype.UUID
 	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
 
-	cacheKey := tid.String() + ":missing_key"
+	cacheKey := "missing_key"
 	s.cache[cacheKey] = cachedSetting{Value: "", CreatedAt: time.Now(), Missing: true}
 
 	_, err := s.GetSetting(t.Context(), tid, "missing_key")
