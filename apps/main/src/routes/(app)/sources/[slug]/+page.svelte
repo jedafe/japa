@@ -72,16 +72,10 @@
 		return data.entityTypes?.find((e) => e.value === type)?.label ?? type.replace(/_/g, ' ');
 	}
 
-	function slugifyTag(value: string): string {
-		return value
-			.toLowerCase()
-			.trim()
-			.replace(/[^\w\s-]+/g, '')
-			.replace(/\s+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
-
-	const visibleKeywords = $derived((source.keywords ?? []).slice(0, 4));
+	const linkableKeywords = $derived(
+		(source.keywords ?? []).filter((kw) => source.tag_slugs?.[kw] !== undefined)
+	);
+	const visibleKeywords = $derived(linkableKeywords.slice(0, 4));
 
 	function onEdit(updated: Source) {
 		source = updated;
@@ -154,8 +148,9 @@
 				<div class="mt-1 flex flex-wrap items-center gap-1.5">
 					<Tag class="h-3.5 w-3.5 text-[var(--color-text-muted)]" />
 					{#each visibleKeywords as kw (kw)}
+						{@const tagSlug = source.tag_slugs?.[kw] ?? ''}
 						<a
-							href="/tags/{slugifyTag(kw)}"
+							href="/tags/{tagSlug}"
 							class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs text-[var(--color-text-subtle)] transition hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)]"
 						>
 							{kw}
@@ -206,6 +201,8 @@
 					{item}
 					sourceName={source.name}
 					sourceLogo={source.logo_url}
+					sourceId={source.id}
+					sourceSlug={source.slug}
 					entityLabel={entityTypeLabel(item.entity_type)}
 				/>
 			{/each}

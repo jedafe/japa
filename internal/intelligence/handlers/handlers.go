@@ -31,6 +31,7 @@ import (
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/scholarships"
+	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -76,6 +77,13 @@ type reportService interface {
 	CreateReport(ctx context.Context, tenantID, reporterUserID pgtype.UUID, input reports.CreateReportInput) (gen.ContentReport, error)
 }
 
+// tagService resolves and creates directory tags from source keywords so
+// keyword chips can link to /tags/{slug} without 404ing.
+type tagService interface {
+	ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) ([]gen.GetTagsBySlugsRow, error)
+	CreateTag(ctx context.Context, tenantID pgtype.UUID, input tags.CreateTagInput) (gen.CreateTagRow, error)
+}
+
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
 	intelStores   *stores.Store
@@ -89,6 +97,7 @@ type Handlers struct {
 	contents      contentStore    // optional; enables comparison source item feeds
 	linkPreview   linkPreviewer   // optional; enriches source detail with live site metadata
 	reportSvc     reportService   // optional; creates source reports from the detail page
+	tagSvc        tagService      // optional; ensures source keyword tags exist
 }
 
 // defaultIntelTenantID is the system tenant UUID used as a fallback for
@@ -149,6 +158,10 @@ func (h *Handlers) SetLinkPreviewer(lp linkPreviewer) { h.linkPreview = lp }
 // SetReportService wires the report service so source detail can accept
 // user reports.
 func (h *Handlers) SetReportService(rs reportService) { h.reportSvc = rs }
+
+// SetTagService wires the tag service so source keywords can be auto-created
+// as directory tags and linked from the source header.
+func (h *Handlers) SetTagService(ts tagService) { h.tagSvc = ts }
 
 func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, reviewerUserID pgtype.UUID) error {
 	if h.asynqClient == nil {

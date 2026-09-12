@@ -13,11 +13,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/reports"
+	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/tenant"
 )
 
@@ -78,6 +80,7 @@ type publicSource struct {
 	PostCount     int32          `json:"post_count"`
 	LogoURL       *string        `json:"logo_url,omitempty"`
 	Keywords      []string       `json:"keywords,omitempty"`
+	TagSlugs      map[string]string `json:"tag_slugs,omitempty"`
 	IsFollowing   bool           `json:"is_following"`
 	IsBlocked     bool           `json:"is_blocked"`
 	LinkedEntity  *linkedEntity  `json:"linked_entity,omitempty"`
@@ -353,6 +356,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.enrichPublicSource(r.Context(), &src, tenantID)
+	h.ensureSourceTags(r.Context(), &src, tenantID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": src,
@@ -455,6 +459,79 @@ func (h *Handlers) enrichPublicSource(ctx context.Context, src *publicSource, te
 	if len(preview.Keywords) > 0 {
 		src.Keywords = preview.Keywords
 	}
+}
+
+// ensureSourceTags converts one-word source keywords into directory tags,
+// creating any that do not already exist. It populates src.TagSlugs with
+// keyword→slug mappings so the frontend can link chips to /tags/{slug}
+// without 404ing. Multi-word keywords are left out of TagSlugs because the
+// directory tag surface is designed for single-token tags.
+func (h *Handlers) ensureSourceTags(ctx context.Context, src *publicSource, tenantID pgtype.UUID) {
+	if h.tagSvc == nil || len(src.Keywords) == 0 {
+		return
+	}
+
+	tagSlugs := make(map[string]string, 0)
+	var slugList []string
+	var keywordList []string
+
+	for _, kw := range src.Keywords {
+		kw = strings.TrimSpace(kw)
+		if kw == "" || strings.ContainsAny(kw, " \t\n\r") {
+			continue
+		}
+		slug := content.Slugify(kw)
+		if slug == "" || slug == "untitled" {
+			continue
+		}
+		tagSlugs[kw] = slug
+		slugList = append(slugList, slug)
+		keywordList = append(keywordList, kw)
+	}
+
+	if len(slugList) == 0 {
+		src.TagSlugs = tagSlugs
+		return
+	}
+
+	existing, err := h.tagSvc.ResolveTagSlugs(ctx, tenantID, slugList)
+	if err != nil {
+		slog.Debug("intel: source tag resolution failed; leaving keywords unlinked", "source", src.Slug, "error", err)
+		src.TagSlugs = tagSlugs
+		return
+	}
+
+	found := make(map[string]struct{}, len(existing))
+	for _, row := range existing {
+		found[row.Slug] = struct{}{}
+	}
+
+	for i, kw := range keywordList {
+		slug := slugList[i]
+		if _, ok := found[slug]; ok {
+			continue
+		}
+
+		_, cerr := h.tagSvc.CreateTag(ctx, tenantID, tags.CreateTagInput{
+			Name:     kw,
+			Slug:     slug,
+			IsSystem: false,
+		})
+		if cerr != nil {
+			// The tag may have been created by a concurrent request. Re-resolve
+			// this single slug; if it now exists, keep the mapping. Otherwise
+			// remove the keyword from the linkable set so the chip won't 404.
+			retry, rerr := h.tagSvc.ResolveTagSlugs(ctx, tenantID, []string{slug})
+			if rerr == nil && len(retry) > 0 {
+				found[slug] = struct{}{}
+				continue
+			}
+			delete(tagSlugs, kw)
+			slog.Debug("intel: source tag creation failed; removing keyword link", "source", src.Slug, "slug", slug, "error", cerr)
+		}
+	}
+
+	src.TagSlugs = tagSlugs
 }
 
 func buildLinkedEntity(row gen.GetIntelSourceBySlugWithLinkedEntityRow) *linkedEntity {

@@ -2263,6 +2263,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetLinkPreviewer(linkPreviewFetcher)
 	intelHandlers.SetReportService(reportsService)
+	intelHandlers.SetTagService(tagsService)
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
 	videoHandlers := video.NewHandlers(videoService)
