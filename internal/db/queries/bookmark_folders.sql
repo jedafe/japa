@@ -5,7 +5,7 @@
 -- name: CreateBookmarkFolder :one
 INSERT INTO bookmark_folders (user_id, name, position) VALUES (@user_id, @name, @position)
 
-RETURNING id, user_id, name, created_at, updated_at, position;
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position;
 
 -- name: ListBookmarkFoldersByUser :many
 SELECT bf.id, bf.user_id, bf.name, bf.created_at, bf.updated_at,
@@ -24,7 +24,7 @@ ORDER BY bf.position, bf.name;
 UPDATE bookmark_folders
 SET name = @name, updated_at = now()
 WHERE id = @id AND user_id = @user_id
-RETURNING id, user_id, name, created_at, updated_at, position;
+RETURNING id, tenant_id, user_id, name, created_at, updated_at, position;
 
 -- name: DeleteBookmarkFolder :execrows
 DELETE FROM bookmark_folders
@@ -32,7 +32,7 @@ WHERE id = @id AND user_id = @user_id;
 
 -- name: GetBookmarkFolder :one
 -- Validates that a folder belongs to the given user and tenant (BL-013).
-SELECT id, user_id, name, created_at, updated_at, position
+SELECT id, tenant_id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
 WHERE id = @id AND user_id = @user_id;
 
