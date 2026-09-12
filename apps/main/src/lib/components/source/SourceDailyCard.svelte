@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { ArrowUp, MessageSquare, Eye, ExternalLink, Share2 } from 'lucide-svelte';
+	import { Heart, Share2, ExternalLink } from 'lucide-svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
-	import type { SourceItem } from '$lib/types/sources';
+	import SourceActions from './SourceActions.svelte';
+	import type { Source, SourceItem } from '$lib/types/sources';
 
 	interface Props {
 		item: SourceItem;
+		source: Source;
 		sourceName?: string;
 		sourceLogo?: string | null;
 		sourceId?: string;
@@ -15,11 +17,23 @@
 		entityLabel?: string;
 	}
 
-	let { item, sourceName, sourceLogo, sourceId, sourceSlug, entityLabel }: Props = $props();
+	let {
+		item,
+		source,
+		sourceName,
+		sourceLogo,
+		sourceId,
+		sourceSlug,
+		entityLabel
+	}: Props = $props();
 
 	const time = $derived(
 		item.published_at ? relativeTime(item.published_at, new Date(), i18n.locale) : ''
 	);
+
+	let loved = $state(false);
+	// svelte-ignore state_referenced_locally
+	let loveCount = $state(item.vote_score);
 
 	function navigate(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
@@ -37,7 +51,13 @@
 		return String(n);
 	}
 
-	async function share(e: Event) {
+	function toggleLove(e: Event) {
+		e.stopPropagation();
+		loved = !loved;
+		loveCount += loved ? 1 : -1;
+	}
+
+	async function shareItem(e: Event) {
 		e.stopPropagation();
 		const url = item.original_url || item.href;
 		try {
@@ -49,6 +69,16 @@
 		} catch {
 			// user cancelled or unavailable
 		}
+	}
+
+	const readHref = $derived(item.original_url || item.href);
+	const readLabel = $derived(
+		t('sources.read_content_type', 'Read {type}').replace('{type}', entityLabel || item.entity_type)
+	);
+
+	function onEdit(updated: Source) {
+		// The parent source page is the source of truth; updates are handled there.
+		Object.assign(source, updated);
 	}
 </script>
 
@@ -73,6 +103,28 @@
 		<div
 			class="h-full w-full bg-gradient-to-br from-[var(--color-primary)]/20 via-[var(--color-surface-subtle)] to-[var(--color-surface-subtle)]"
 		></div>
+
+		<!-- Top-right action cluster -->
+		<div class="absolute right-3 top-3 z-20 flex items-center gap-2">
+			<a
+				href={readHref}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="invisible flex translate-x-2 items-center gap-1.5 rounded-full bg-black/50 px-3 py-1.5 text-xs font-medium text-white opacity-0 backdrop-blur-sm transition-all group-hover:visible group-focus-within:visible group-hover:translate-x-0 group-focus-within:translate-x-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-black/70"
+				onclick={(e) => e.stopPropagation()}
+			>
+				<ExternalLink size={14} />
+				{readLabel}
+			</a>
+
+			<SourceActions
+				{source}
+				showBlock={false}
+				showDelete={true}
+				triggerClass="grid h-10 w-10 place-items-center rounded-full border-0 bg-black/40 text-white opacity-90 backdrop-blur-sm transition hover:bg-black/60 hover:opacity-100 focus:opacity-100"
+				onEdit={onEdit}
+			/>
+		</div>
 
 		<!-- Entity-type badge overlay -->
 		{#if entityLabel}
@@ -99,7 +151,9 @@
 		{/if}
 
 		<!-- Footer -->
-		<div class="relative z-10 mt-auto flex items-center justify-between border-t border-[var(--color-border)] pt-3">
+		<div
+			class="relative z-10 mt-auto flex items-center justify-between border-t border-[var(--color-border)] pt-3"
+		>
 			<div class="min-w-0 flex-1">
 				{#if sourceName && sourceId && sourceSlug}
 					<EntityHoverChip
@@ -129,38 +183,29 @@
 				{/if}
 			</div>
 
-			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-3 text-xs text-[var(--color-muted)]">
-				<span class="inline-flex items-center gap-1" title={t('sources.votes', 'Votes')}>
-					<ArrowUp size={14} />
-					{formatCount(item.vote_score)}
-				</span>
-				<span class="inline-flex items-center gap-1" title={t('sources.comments', 'Comments')}>
-					<MessageSquare size={14} />
-					{formatCount(item.comment_count)}
-				</span>
-				<span class="inline-flex items-center gap-1" title={t('sources.views', 'Views')}>
-					<Eye size={14} />
-					{formatCount(item.view_count)}
-				</span>
-				{#if item.original_url}
-					<a
-						href={item.original_url}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex items-center gap-0.5 hover:text-[var(--color-primary)]"
-						onclick={(e) => e.stopPropagation()}
-						aria-label={t('sources.original_label', 'Original source')}
-					>
-						<ExternalLink size={14} />
-					</a>
-				{/if}
+			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-2">
 				<button
 					type="button"
-					onclick={share}
-					class="inline-flex items-center gap-0.5 hover:text-[var(--color-primary)]"
+					onclick={toggleLove}
+					class="inline-flex h-11 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
+					class:text-[var(--color-primary)]={loved}
+					aria-label={t('sources.love', 'Love')}
+				>
+					<Heart
+						size={20}
+						class={loved ? 'fill-current' : ''}
+						aria-hidden="true"
+					/>
+					{formatCount(loveCount)}
+				</button>
+
+				<button
+					type="button"
+					onclick={shareItem}
+					class="grid h-11 w-11 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
 					aria-label={t('common.share', 'Share')}
 				>
-					<Share2 size={14} />
+					<Share2 size={20} aria-hidden="true" />
 				</button>
 			</div>
 		</div>

@@ -199,6 +199,7 @@
 			{#each items as item (item.id)}
 				<SourceDailyCard
 					{item}
+					{source}
 					sourceName={source.name}
 					sourceLogo={source.logo_url}
 					sourceId={source.id}
