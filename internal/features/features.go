@@ -54,7 +54,7 @@ type flagCacheEntry struct {
 // flagCache provides caching of feature flag lookups with TTL-based eviction.
 type flagCache struct {
 	mu      sync.RWMutex
-	entries map[string]map[string]*flagCacheEntry // tenant_id -> key -> entry
+	entries map[string]*flagCacheEntry // flag key -> entry
 	done    chan struct{}
 }
 
@@ -69,7 +69,7 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *Checker {
 	c := &Checker{
 		db: database,
 		cache: &flagCache{
-			entries: make(map[string]map[string]*flagCacheEntry),
+			entries: make(map[string]*flagCacheEntry),
 			done:    make(chan struct{}),
 		},
 		vk: vkClient,
@@ -96,14 +96,15 @@ func (c *Checker) Close() {
 // On transient DB errors the default is returned for the current request
 // but NOT cached — the next request retries the DB.
 func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool {
-	tenantKey := tenantID.String()
-	if cached := c.cacheGet(tenantKey, key); cached != nil {
+	// Ref: .jeos/sections/42-feature-flags.md (removal in progress).
+	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
+	if cached := c.cacheGet(key); cached != nil {
 		return *cached
 	}
 
 	// L2 — Valkey (shared across server instances)
-	if cached := c.valkeyGet(ctx, tenantKey, key); cached != nil {
-		c.cacheSet(tenantKey, key, *cached)
+	if cached := c.valkeyGet(ctx, key); cached != nil {
+		c.cacheSet(key, *cached)
 		return *cached
 	}
 
@@ -119,8 +120,8 @@ func (c *Checker) IsEnabled(ctx context.Context, tenantID pgtype.UUID, key strin
 
 	// Success or ErrNoRows (legitimate "flag not set" → use default).
 	// Safe to cache at both layers.
-	c.cacheSet(tenantKey, key, enabled)
-	c.valkeySet(ctx, tenantKey, key, enabled)
+	c.cacheSet(key, enabled)
+	c.valkeySet(ctx, key, enabled)
 
 	return enabled
 }
@@ -140,8 +141,8 @@ func (c *Checker) queryEnabled(ctx context.Context, tenantID pgtype.UUID, key st
 
 	err := c.db.Reader.QueryRow(ctx, `
 		SELECT enabled, config FROM feature_flags
-		WHERE key = $1 AND tenant_id = $2
-	`, key, tenantID).Scan(&enabled, &configBytes)
+		WHERE key = $1
+	`, key).Scan(&enabled, &configBytes)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("features: query failed, using registry default", "key", key, "error", err)
@@ -197,29 +198,23 @@ func fnvHash64(s string) uint64 {
 }
 
 // cacheGet retrieves a cached flag value if still valid.
-func (c *Checker) cacheGet(tenantKey, flagKey string) *bool {
+func (c *Checker) cacheGet(flagKey string) *bool {
 	c.cache.mu.RLock()
 	defer c.cache.mu.RUnlock()
 
-	if tenantFlags, ok := c.cache.entries[tenantKey]; ok {
-		if entry, ok := tenantFlags[flagKey]; ok {
-			return &entry.enabled
-		}
+	if entry, ok := c.cache.entries[flagKey]; ok {
+		return &entry.enabled
 	}
 
 	return nil
 }
 
 // cacheSet stores a flag value in the cache with current timestamp.
-func (c *Checker) cacheSet(tenantKey, flagKey string, enabled bool) {
+func (c *Checker) cacheSet(flagKey string, enabled bool) {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
 
-	if _, ok := c.cache.entries[tenantKey]; !ok {
-		c.cache.entries[tenantKey] = make(map[string]*flagCacheEntry)
-	}
-
-	c.cache.entries[tenantKey][flagKey] = &flagCacheEntry{
+	c.cache.entries[flagKey] = &flagCacheEntry{
 		enabled:   enabled,
 		createdAt: time.Now(),
 	}
@@ -229,30 +224,24 @@ func (c *Checker) cacheSet(tenantKey, flagKey string, enabled bool) {
 func (c *Checker) ClearCache() {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
-	c.cache.entries = make(map[string]map[string]*flagCacheEntry)
+	c.cache.entries = make(map[string]*flagCacheEntry)
 }
 
-// ClearCacheForTenant clears cached flag values for a single tenant only
-// (STD-003 — avoids clearing all tenants' caches on a per-tenant flag update).
-// Both L1 (in-memory) and L2 (Valkey) caches are invalidated.
+// ClearCacheForTenant clears all cached flag values.
+// The tenantID parameter is kept for Phase 1 compatibility and is ignored.
 func (c *Checker) ClearCacheForTenant(tenantID string) {
-	// Evict from L1.
-	c.cache.mu.Lock()
-	delete(c.cache.entries, tenantID)
-	c.cache.mu.Unlock()
-
-	// Evict from L2 — SCAN and DELETE all jc:flags:{tenant_id}:* keys.
-	c.valkeyFlushTenant(context.Background(), tenantID)
+	c.ClearCache()
+	c.valkeyFlushAll(context.Background())
 }
 
 // valkeyGet retrieves a cached flag value from Valkey (L2).
 // Returns nil on cache miss or when Valkey is unavailable.
-func (c *Checker) valkeyGet(ctx context.Context, tenantKey, flagKey string) *bool {
+func (c *Checker) valkeyGet(ctx context.Context, flagKey string) *bool {
 	if c.vk == nil {
 		return nil
 	}
 
-	val, err := c.vk.Get(ctx, flagCacheKeyPrefix+tenantKey+":"+flagKey).Result()
+	val, err := c.vk.Get(ctx, flagCacheKeyPrefix+flagKey).Result()
 	if err != nil {
 		return nil
 	}
@@ -265,7 +254,7 @@ func (c *Checker) valkeyGet(ctx context.Context, tenantKey, flagKey string) *boo
 // valkeySet stores a flag value in Valkey with a 5-minute TTL.
 // Failures are logged but never propagated — the L1 cache + DB remain
 // authoritative.
-func (c *Checker) valkeySet(ctx context.Context, tenantKey, flagKey string, enabled bool) {
+func (c *Checker) valkeySet(ctx context.Context, flagKey string, enabled bool) {
 	if c.vk == nil {
 		return
 	}
@@ -275,26 +264,26 @@ func (c *Checker) valkeySet(ctx context.Context, tenantKey, flagKey string, enab
 		val = "1"
 	}
 
-	if err := c.vk.Set(ctx, flagCacheKeyPrefix+tenantKey+":"+flagKey, val, flagCacheTTL).Err(); err != nil {
+	if err := c.vk.Set(ctx, flagCacheKeyPrefix+flagKey, val, flagCacheTTL).Err(); err != nil {
 		slog.Warn("features: failed to write valkey cache", "key", flagKey, "error", err)
 	}
 }
 
-// valkeyFlushTenant scans and deletes all jc:flags:{tenant_id}:* keys from
-// Valkey for the given tenant. Failures are logged but not propagated.
-func (c *Checker) valkeyFlushTenant(ctx context.Context, tenantID string) {
+// valkeyFlushAll scans and deletes all jc:flags:* keys from Valkey.
+// Failures are logged but not propagated.
+func (c *Checker) valkeyFlushAll(ctx context.Context) {
 	if c.vk == nil {
 		return
 	}
 
-	pattern := flagCacheKeyPrefix + tenantID + ":*"
+	pattern := flagCacheKeyPrefix + "*"
 
 	var cursor uint64
 
 	for {
 		keys, nextCursor, err := c.vk.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
-			slog.Warn("features: failed to scan valkey for cache flush", "tenant", tenantID, "error", err)
+			slog.Warn("features: failed to scan valkey for cache flush", "error", err)
 			return
 		}
 
@@ -325,15 +314,9 @@ func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 			fc.mu.Lock()
 			now := time.Now()
 
-			for tenantKey, tenantFlags := range fc.entries {
-				for key, entry := range tenantFlags {
-					if now.Sub(entry.createdAt) > maxAge {
-						delete(tenantFlags, key)
-					}
-				}
-
-				if len(tenantFlags) == 0 {
-					delete(fc.entries, tenantKey)
+			for key, entry := range fc.entries {
+				if now.Sub(entry.createdAt) > maxAge {
+					delete(fc.entries, key)
 				}
 			}
 			fc.mu.Unlock()
@@ -353,11 +336,10 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 		result[f.Key] = f.Default
 	}
 
-	// Batch-fetch all tenant overrides in one round-trip, then overlay.
+	// Batch-fetch all overrides in one round-trip, then overlay.
 	rows, err := c.db.Reader.Query(ctx, `
 		SELECT key, enabled, config FROM feature_flags
-		WHERE tenant_id = $1
-	`, tenantID)
+	`)
 	if err != nil {
 		// On DB error, fall back to defaults (already set above).
 		slog.Warn("features: batch query failed, using registry defaults", "error", err)
@@ -402,11 +384,11 @@ func (c *Checker) GetAllEnabled(ctx context.Context, tenantID pgtype.UUID) map[s
 // SetEnabled updates a feature flag in the database.
 func (c *Checker) SetEnabled(ctx context.Context, tenantID pgtype.UUID, key string, enabled bool, updatedBy pgtype.UUID) error {
 	_, err := c.db.Writer.Exec(ctx, `
-		INSERT INTO feature_flags (key, tenant_id, enabled, updated_by)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (key, tenant_id)
-		DO UPDATE SET enabled = $3, updated_by = $4, updated_at = now()
-	`, key, tenantID, enabled, updatedBy)
+		INSERT INTO feature_flags (key, enabled, updated_by)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (key)
+		DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()
+	`, key, enabled, updatedBy)
 	if err != nil {
 		return fmt.Errorf("updating feature flag %s: %w", key, err)
 	}
@@ -436,11 +418,11 @@ func (c *Checker) UpdateFlag(ctx context.Context, tenantID pgtype.UUID, key stri
 	}
 
 	_, err = c.db.Writer.Exec(ctx, `
-		INSERT INTO feature_flags (key, tenant_id, enabled, config, updated_by)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (key, tenant_id)
-		DO UPDATE SET enabled = $3, config = $4, updated_by = $5, updated_at = now()
-	`, key, tenantID, enabled, configJSON, updatedBy)
+		INSERT INTO feature_flags (key, enabled, config, updated_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (key)
+		DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()
+	`, key, enabled, configJSON, updatedBy)
 	if err != nil {
 		return fmt.Errorf("upserting feature flag %s: %w", key, err)
 	}
@@ -448,14 +430,14 @@ func (c *Checker) UpdateFlag(ctx context.Context, tenantID pgtype.UUID, key stri
 	return nil
 }
 
-// DeleteFlag removes a feature flag row for the tenant. After deletion the
+// DeleteFlag removes a feature flag row. After deletion the
 // flag falls back to its registry Default, exactly as if it had never been
-// set. The registry key itself is never removed — only the tenant override.
+// set. The registry key itself is never removed.
 func (c *Checker) DeleteFlag(ctx context.Context, tenantID pgtype.UUID, key string) error {
 	_, err := c.db.Writer.Exec(ctx, `
 		DELETE FROM feature_flags
-		WHERE key = $1 AND tenant_id = $2
-	`, key, tenantID)
+		WHERE key = $1
+	`, key)
 	if err != nil {
 		return fmt.Errorf("deleting feature flag %s: %w", key, err)
 	}
@@ -463,15 +445,14 @@ func (c *Checker) DeleteFlag(ctx context.Context, tenantID pgtype.UUID, key stri
 	return nil
 }
 
-// ListFlagRows returns every feature_flags row for the tenant, registry key or
-// not. Used by ListFeatureFlags so admin-created keys (not in the static
-// Registry) still appear in the admin UI.
+// ListFlagRows returns every feature_flags row, registry key or not. Used by
+// ListFeatureFlags so admin-created keys (not in the static Registry) still
+// appear in the admin UI.
 func (c *Checker) ListFlagRows(ctx context.Context, tenantID pgtype.UUID) ([]FlagRow, error) {
 	rows, err := c.db.Reader.Query(ctx, `
 		SELECT key, enabled, config, updated_at
 		FROM feature_flags
-		WHERE tenant_id = $1
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing feature flags: %w", err)
 	}
@@ -506,8 +487,8 @@ func (c *Checker) GetFlagConfig(ctx context.Context, tenantID pgtype.UUID, key s
 
 	err := c.db.Reader.QueryRow(ctx, `
 		SELECT config FROM feature_flags
-		WHERE key = $1 AND tenant_id = $2
-	`, key, tenantID).Scan(&configBytes)
+		WHERE key = $1
+	`, key).Scan(&configBytes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return FlagConfig{}, nil
@@ -552,11 +533,11 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, tenantID pgtype.UUID
 	defaultEnabled := DefaultFor(key)
 
 	_, err = c.db.Writer.Exec(ctx, `
-		INSERT INTO feature_flags (key, tenant_id, enabled, config, updated_by)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (key, tenant_id)
-		DO UPDATE SET config = $4, updated_by = $5, updated_at = now()
-	`, key, tenantID, defaultEnabled, configJSON, updatedBy)
+		INSERT INTO feature_flags (key, enabled, config, updated_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (key)
+		DO UPDATE SET config = $3, updated_by = $4, updated_at = now()
+	`, key, defaultEnabled, configJSON, updatedBy)
 	if err != nil {
 		return fmt.Errorf("updating rollout for %s: %w", key, err)
 	}
