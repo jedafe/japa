@@ -159,9 +159,9 @@ func (q *Queries) CreateForumPoll(ctx context.Context, arg CreateForumPollParams
 const createForumReply = `-- name: CreateForumReply :one
 
 INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
+          body, vote_score, view_count, is_anonymous, is_edited,
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 `
 
 type CreateForumReplyParams struct {
@@ -172,27 +172,10 @@ type CreateForumReplyParams struct {
 	IsAnonymous   bool        `json:"is_anonymous"`
 }
 
-type CreateForumReplyRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ThreadID      pgtype.UUID        `json:"thread_id"`
-	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	Body          []byte             `json:"body"`
-	VoteScore     int32              `json:"vote_score"`
-	ViewCount     int32              `json:"view_count"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	IsEdited      bool               `json:"is_edited"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending    bool               `json:"ama_pending"`
-	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
-}
-
 // =====================
 // Replies
 // =====================
-func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyParams) (CreateForumReplyRow, error) {
+func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyParams) (ForumReply, error) {
 	row := q.db.QueryRow(ctx, createForumReply,
 		arg.ThreadID,
 		arg.ParentReplyID,
@@ -200,9 +183,10 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 		arg.Body,
 		arg.IsAnonymous,
 	)
-	var i CreateForumReplyRow
+	var i ForumReply
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -224,8 +208,8 @@ const createForumTag = `-- name: CreateForumTag :one
 
 INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type CreateForumTagParams struct {
@@ -237,23 +221,10 @@ type CreateForumTagParams struct {
 	ModeratorUserID pgtype.UUID `json:"moderator_user_id"`
 }
 
-type CreateForumTagRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	Rules           *string            `json:"rules"`
-	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
-	FollowerCount   int32              `json:"follower_count"`
-	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-}
-
 // =====================
 // Tags
 // =====================
-func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) (CreateForumTagRow, error) {
+func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) (ForumTag, error) {
 	row := q.db.QueryRow(ctx, createForumTag,
 		arg.Name,
 		arg.Slug,
@@ -262,9 +233,10 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 		arg.CoverImageID,
 		arg.ModeratorUserID,
 	)
-	var i CreateForumTagRow
+	var i ForumTag
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -279,8 +251,6 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 }
 
 const createForumThread = `-- name: CreateForumThread :one
-
-
 INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
  title, slug, body, is_anonymous, solved, solved_at, solved_by_user_id,
@@ -324,10 +294,6 @@ type CreateForumThreadRow struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
-// Forum Q&A / Solved — threads, replies, votes, polls, tags, bookmarks, reply views.
-// =====================
-// Threads
-// =====================
 func (q *Queries) CreateForumThread(ctx context.Context, arg CreateForumThreadParams) (CreateForumThreadRow, error) {
 	row := q.db.QueryRow(ctx, createForumThread,
 		arg.ContentID,
@@ -624,35 +590,19 @@ func (q *Queries) GetForumPollResults(ctx context.Context, pollID pgtype.UUID) (
 }
 
 const getForumReplyByID = `-- name: GetForumReplyByID :one
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
+       body, vote_score, view_count, is_anonymous, is_edited,
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetForumReplyByIDRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ThreadID      pgtype.UUID        `json:"thread_id"`
-	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	Body          []byte             `json:"body"`
-	VoteScore     int32              `json:"vote_score"`
-	ViewCount     int32              `json:"view_count"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	IsEdited      bool               `json:"is_edited"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending    bool               `json:"ama_pending"`
-	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
-}
-
-func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (GetForumReplyByIDRow, error) {
+func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (ForumReply, error) {
 	row := q.db.QueryRow(ctx, getForumReplyByID, id)
-	var i GetForumReplyByIDRow
+	var i ForumReply
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -728,30 +678,18 @@ func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, id pgtype.UUI
 }
 
 const getForumTagByID = `-- name: GetForumTagByID :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-type GetForumTagByIDRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	Rules           *string            `json:"rules"`
-	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
-	FollowerCount   int32              `json:"follower_count"`
-	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (GetForumTagByIDRow, error) {
+func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (ForumTag, error) {
 	row := q.db.QueryRow(ctx, getForumTagByID, id)
-	var i GetForumTagByIDRow
+	var i ForumTag
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -766,30 +704,18 @@ func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (GetForum
 }
 
 const getForumTagBySlug = `-- name: GetForumTagBySlug :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE slug = $1 AND deleted_at IS NULL
 `
 
-type GetForumTagBySlugRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	Rules           *string            `json:"rules"`
-	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
-	FollowerCount   int32              `json:"follower_count"`
-	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) GetForumTagBySlug(ctx context.Context, slug string) (GetForumTagBySlugRow, error) {
+func (q *Queries) GetForumTagBySlug(ctx context.Context, slug string) (ForumTag, error) {
 	row := q.db.QueryRow(ctx, getForumTagBySlug, slug)
-	var i GetForumTagBySlugRow
+	var i ForumTag
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1057,7 +983,7 @@ func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtyp
 }
 
 const getForumVote = `-- name: GetForumVote :one
-SELECT id, user_id, entity_type, entity_id, value, created_at
+SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -1068,20 +994,12 @@ type GetForumVoteParams struct {
 	EntityID   pgtype.UUID `json:"entity_id"`
 }
 
-type GetForumVoteRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	Value      int16              `json:"value"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (GetForumVoteRow, error) {
+func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (ForumVote, error) {
 	row := q.db.QueryRow(ctx, getForumVote, arg.UserID, arg.EntityType, arg.EntityID)
-	var i GetForumVoteRow
+	var i ForumVote
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -1359,43 +1277,27 @@ func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollU
 }
 
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
+       body, vote_score, view_count, is_anonymous, is_edited,
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = $1
  AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
-type ListForumRepliesByThreadRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ThreadID      pgtype.UUID        `json:"thread_id"`
-	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	Body          []byte             `json:"body"`
-	VoteScore     int32              `json:"vote_score"`
-	ViewCount     int32              `json:"view_count"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	IsEdited      bool               `json:"is_edited"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending    bool               `json:"ama_pending"`
-	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
-}
-
-func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]ListForumRepliesByThreadRow, error) {
+func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]ForumReply, error) {
 	rows, err := q.db.Query(ctx, listForumRepliesByThread, threadID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListForumRepliesByThreadRow
+	var items []ForumReply
 	for rows.Next() {
-		var i ListForumRepliesByThreadRow
+		var i ForumReply
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ThreadID,
 			&i.ParentReplyID,
 			&i.AuthorUserID,
@@ -1494,8 +1396,8 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, thread
 }
 
 const listForumTags = `-- name: ListForumTags :many
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
@@ -1507,30 +1409,18 @@ type ListForumTagsParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListForumTagsRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	Rules           *string            `json:"rules"`
-	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
-	FollowerCount   int32              `json:"follower_count"`
-	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([]ListForumTagsRow, error) {
+func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([]ForumTag, error) {
 	rows, err := q.db.Query(ctx, listForumTags, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListForumTagsRow
+	var items []ForumTag
 	for rows.Next() {
-		var i ListForumTagsRow
+		var i ForumTag
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -2654,9 +2544,9 @@ SET body = $1,
 FROM forum_threads ft
 WHERE fr.id = $2 AND fr.deleted_at IS NULL
  AND ft.id = fr.thread_id
-RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
 `
 
 type UpdateForumReplyParams struct {
@@ -2664,28 +2554,12 @@ type UpdateForumReplyParams struct {
 	ID   pgtype.UUID `json:"id"`
 }
 
-type UpdateForumReplyRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	ThreadID      pgtype.UUID        `json:"thread_id"`
-	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
-	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
-	Body          []byte             `json:"body"`
-	VoteScore     int32              `json:"vote_score"`
-	ViewCount     int32              `json:"view_count"`
-	IsAnonymous   bool               `json:"is_anonymous"`
-	IsEdited      bool               `json:"is_edited"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
-	AmaPending    bool               `json:"ama_pending"`
-	AmaApprovedAt pgtype.Timestamptz `json:"ama_approved_at"`
-}
-
-func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyParams) (UpdateForumReplyRow, error) {
+func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyParams) (ForumReply, error) {
 	row := q.db.QueryRow(ctx, updateForumReply, arg.Body, arg.ID)
-	var i UpdateForumReplyRow
+	var i ForumReply
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -2712,8 +2586,8 @@ SET name = $1,
  cover_image_id = $5,
  moderator_user_id = $6
 WHERE id = $7 AND deleted_at IS NULL
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type UpdateForumTagParams struct {
@@ -2726,20 +2600,7 @@ type UpdateForumTagParams struct {
 	ID              pgtype.UUID `json:"id"`
 }
 
-type UpdateForumTagRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	Name            string             `json:"name"`
-	Slug            string             `json:"slug"`
-	Description     *string            `json:"description"`
-	Rules           *string            `json:"rules"`
-	CoverImageID    pgtype.UUID        `json:"cover_image_id"`
-	FollowerCount   int32              `json:"follower_count"`
-	ModeratorUserID pgtype.UUID        `json:"moderator_user_id"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (UpdateForumTagRow, error) {
+func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) (ForumTag, error) {
 	row := q.db.QueryRow(ctx, updateForumTag,
 		arg.Name,
 		arg.Slug,
@@ -2749,9 +2610,10 @@ func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) 
 		arg.ModeratorUserID,
 		arg.ID,
 	)
-	var i UpdateForumTagRow
+	var i ForumTag
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -2890,7 +2752,7 @@ INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES ($1, $2,
 
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
  SET value = $4
-RETURNING id, user_id, entity_type, entity_id, value, created_at
+RETURNING id, tenant_id, user_id, entity_type, entity_id, value, created_at
 `
 
 type UpsertForumVoteParams struct {
@@ -2900,28 +2762,20 @@ type UpsertForumVoteParams struct {
 	Value      int16       `json:"value"`
 }
 
-type UpsertForumVoteRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	Value      int16              `json:"value"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Votes
 // =====================
-func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams) (UpsertForumVoteRow, error) {
+func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams) (ForumVote, error) {
 	row := q.db.QueryRow(ctx, upsertForumVote,
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
 		arg.Value,
 	)
-	var i UpsertForumVoteRow
+	var i ForumVote
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,

@@ -116,12 +116,11 @@ func (q *Queries) CountPendingReportsForEntity(ctx context.Context, arg CountPen
 }
 
 const createReport = `-- name: CreateReport :one
-
 INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls) VALUES ($1, $2, $3, $4, $5, $6)
 
 ON CONFLICT (reporter_user_id, entity_type, entity_id) WHERE reporter_user_id IS NOT NULL DO NOTHING
-RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+RETURNING id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+    status, reviewed_by, resolution_note, resolved_at, created_at
 `
 
 type CreateReportParams struct {
@@ -133,23 +132,7 @@ type CreateReportParams struct {
 	EvidenceUrls   []string    `json:"evidence_urls"`
 }
 
-type CreateReportRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	Reason         string             `json:"reason"`
-	Notes          *string            `json:"notes"`
-	EvidenceUrls   []string           `json:"evidence_urls"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-// Content Reports & Flagging (JEOS Section 51).
-func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (CreateReportRow, error) {
+func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (ContentReport, error) {
 	row := q.db.QueryRow(ctx, createReport,
 		arg.ReporterUserID,
 		arg.EntityType,
@@ -158,9 +141,10 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Cre
 		arg.Notes,
 		arg.EvidenceUrls,
 	)
-	var i CreateReportRow
+	var i ContentReport
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -187,32 +171,18 @@ func (q *Queries) DeleteReport(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getReport = `-- name: GetReport :one
-SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+    status, reviewed_by, resolution_note, resolved_at, created_at
 FROM content_reports
 WHERE id = $1
 `
 
-type GetReportRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	Reason         string             `json:"reason"`
-	Notes          *string            `json:"notes"`
-	EvidenceUrls   []string           `json:"evidence_urls"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetReport(ctx context.Context, id pgtype.UUID) (GetReportRow, error) {
+func (q *Queries) GetReport(ctx context.Context, id pgtype.UUID) (ContentReport, error) {
 	row := q.db.QueryRow(ctx, getReport, id)
-	var i GetReportRow
+	var i ContentReport
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -313,8 +283,8 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Lis
 }
 
 const listReportsByReporter = `-- name: ListReportsByReporter :many
-SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+    status, reviewed_by, resolution_note, resolved_at, created_at
 FROM content_reports
 WHERE reporter_user_id = $1
 ORDER BY created_at DESC
@@ -327,32 +297,18 @@ type ListReportsByReporterParams struct {
 	PageLimit      int32       `json:"page_limit"`
 }
 
-type ListReportsByReporterRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	Reason         string             `json:"reason"`
-	Notes          *string            `json:"notes"`
-	EvidenceUrls   []string           `json:"evidence_urls"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByReporterParams) ([]ListReportsByReporterRow, error) {
+func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByReporterParams) ([]ContentReport, error) {
 	rows, err := q.db.Query(ctx, listReportsByReporter, arg.ReporterUserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListReportsByReporterRow
+	var items []ContentReport
 	for rows.Next() {
-		var i ListReportsByReporterRow
+		var i ContentReport
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ReporterUserID,
 			&i.EntityType,
 			&i.EntityID,
@@ -380,8 +336,8 @@ UPDATE content_reports
 SET status = $1, reviewed_by = $2, resolution_note = $3,
  resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
 WHERE id = $4
-RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
- status, reviewed_by, resolution_note, resolved_at, created_at
+RETURNING id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+    status, reviewed_by, resolution_note, resolved_at, created_at
 `
 
 type UpdateReportStatusParams struct {
@@ -391,31 +347,17 @@ type UpdateReportStatusParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-type UpdateReportStatusRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
-	EntityType     string             `json:"entity_type"`
-	EntityID       pgtype.UUID        `json:"entity_id"`
-	Reason         string             `json:"reason"`
-	Notes          *string            `json:"notes"`
-	EvidenceUrls   []string           `json:"evidence_urls"`
-	Status         string             `json:"status"`
-	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
-	ResolutionNote *string            `json:"resolution_note"`
-	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpdateReportStatus(ctx context.Context, arg UpdateReportStatusParams) (UpdateReportStatusRow, error) {
+func (q *Queries) UpdateReportStatus(ctx context.Context, arg UpdateReportStatusParams) (ContentReport, error) {
 	row := q.db.QueryRow(ctx, updateReportStatus,
 		arg.Status,
 		arg.ReviewedBy,
 		arg.ResolutionNote,
 		arg.ID,
 	)
-	var i UpdateReportStatusRow
+	var i ContentReport
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,

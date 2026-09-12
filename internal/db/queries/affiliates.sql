@@ -1,32 +1,26 @@
--- User Affiliate Program (Section 56)
-
--- =====================
--- Program Enrollment
--- =====================
-
 -- name: CreateAffiliateMember :one
 INSERT INTO affiliate_program_members (user_id, status) VALUES (@user_id, @status)
 
 ON CONFLICT (user_id) DO UPDATE
  SET status = EXCLUDED.status
-RETURNING user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes;
+RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes;
 
 -- name: GetAffiliateMember :one
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = @user_id;
 
 -- name: GetAffiliateMemberByUserID :one
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = @user_id;
 
 -- name: ListAffiliateMembers :many
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 
 ORDER BY enrolled_at DESC
@@ -36,8 +30,8 @@ LIMIT @page_limit OFFSET @page_offset;
 UPDATE affiliate_program_members
 SET status = @status, notes = sqlc.narg(notes)
 WHERE user_id = @user_id
-RETURNING user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes;
+RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes;
 
 -- name: IncrementAffiliateMemberClicks :exec
 UPDATE affiliate_program_members
@@ -61,30 +55,30 @@ FROM affiliate_program_members
 
 -- name: CreateAffiliateLink :one
 INSERT INTO user_affiliate_links (user_id, product_type, product_id, code, description, destination_url) VALUES (@user_id, @product_type, sqlc.narg(product_id), @code, sqlc.narg(description), @destination_url)
-RETURNING id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at;
+RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at;
 
 -- name: GetAffiliateLinkByID :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = @id;
 
 -- name: GetAffiliateLinkByIDOnly :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = @id;
 
 -- name: GetAffiliateLinkByCode :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE code = @code AND is_active = true;
 
 -- name: ListAffiliateLinksByUser :many
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE user_id = @user_id
  AND (@is_active::bool IS NULL OR is_active = @is_active)
@@ -92,8 +86,8 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListAllAffiliateLinks :many
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 
 ORDER BY created_at DESC
@@ -103,8 +97,8 @@ LIMIT @page_limit OFFSET @page_offset;
 UPDATE user_affiliate_links
 SET description = sqlc.narg(description), is_active = @is_active
 WHERE id = @id AND user_id = @user_id
-RETURNING id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at;
+RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at;
 
 -- name: DeactivateAffiliateLink :exec
 UPDATE user_affiliate_links
@@ -132,8 +126,8 @@ WHERE id = @id;
 -- name: ListAffiliateMembersFiltered :many
 -- Admin list with optional status filter (Section 56 / catalog
 -- ?status=active|inactive). Tenant-scoped. NULL status = no filter.
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
 ORDER BY enrolled_at DESC
@@ -162,12 +156,12 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CreateAffiliateLinkEvent :one
 INSERT INTO affiliate_link_events (link_id, event_type, referrer_url, ip_hash, user_agent_hash, converted_payment_id, commission_amount) VALUES (@link_id, @event_type, sqlc.narg(referrer_url), sqlc.narg(ip_hash), sqlc.narg(user_agent_hash), sqlc.narg(converted_payment_id), sqlc.narg(commission_amount))
-RETURNING id, link_id, event_type, referrer_url, ip_hash,
- user_agent_hash, converted_payment_id, commission_amount, created_at;
+RETURNING id, tenant_id, link_id, event_type, referrer_url, ip_hash,
+    user_agent_hash, converted_payment_id, commission_amount, created_at;
 
 -- name: ListAffiliateLinkEvents :many
-SELECT id, link_id, event_type, referrer_url, ip_hash,
- user_agent_hash, converted_payment_id, commission_amount, created_at
+SELECT id, tenant_id, link_id, event_type, referrer_url, ip_hash,
+    user_agent_hash, converted_payment_id, commission_amount, created_at
 FROM affiliate_link_events
 WHERE link_id = @link_id
  AND (@event_type::text IS NULL OR event_type = @event_type)
@@ -270,9 +264,9 @@ WHERE id = @id AND credited = false;
 -- After insert, the caller enqueues the affiliate:credit_author_commission task to
 -- credit the author_share to the author's wallet via the immutable credits ledger.
 INSERT INTO affiliate_content_commissions (content_id, provider_id, author_user_id, external_commission, author_share, author_commission_pct, event_description) VALUES (@content_id, @provider_id, @author_user_id, @external_commission, @author_share, @author_commission_pct, sqlc.narg(event_description))
-RETURNING id, content_id, provider_id, author_user_id,
- external_commission, author_share, author_commission_pct, event_description,
- credited, credited_at, created_at;
+RETURNING id, tenant_id, content_id, provider_id, author_user_id,
+          external_commission, author_share, author_commission_pct, event_description,
+          credited, credited_at, created_at;
 
 -- name: GetActiveAffiliateLinkByUser :one
 SELECT code FROM user_affiliate_links

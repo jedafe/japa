@@ -1,9 +1,3 @@
--- Menus — Navigation menus with hierarchical RBAC-gated items (ADR-054)
-
--- =====================
--- Menus CRUD
--- =====================
-
 -- name: ListMenus :many
 -- Admin list with optional q (name/slug ILIKE), placement, status filters
 -- and sort. Sort keys: name, slug, placement, status, updated_at (default
@@ -39,25 +33,25 @@ WHERE (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '
  AND (@status::text = '' OR status = @status);
 
 -- name: GetMenuByID :one
-SELECT id, slug, name, placement, status, created_at, updated_at
+SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE id = @id;
 
 -- name: GetMenuBySlug :one
-SELECT id, slug, name, placement, status, created_at, updated_at
+SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE slug = @slug;
 
 -- name: CreateMenu :one
 INSERT INTO menus (slug, name, placement, status) VALUES (@slug, @name, @placement, @status)
 
-RETURNING id, slug, name, placement, status, created_at, updated_at;
+RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at;
 
 -- name: UpdateMenu :one
 UPDATE menus
 SET name = @name, placement = @placement, status = @status, updated_at = now()
 WHERE id = @id
-RETURNING id, slug, name, placement, status, created_at, updated_at;
+RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at;
 
 -- name: DeleteMenu :exec
 DELETE FROM menus
@@ -122,7 +116,7 @@ WHERE menu_items.id = u.id;
 -- =====================
 
 -- name: GetMenuBySlugForTenant :one
-SELECT id, slug, name, placement, status, created_at, updated_at
+SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE slug = @slug AND status = 'active';
 

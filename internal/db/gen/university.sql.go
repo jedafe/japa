@@ -550,28 +550,18 @@ func (q *Queries) DeleteUniversityTrackCategory(ctx context.Context, id pgtype.U
 }
 
 const getEnrollmentByID = `-- name: GetEnrollmentByID :one
-SELECT id, user_id, track_id, access_type, progress_pct,
- enrolled_at, completed_at, payment_id
+SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
+       enrolled_at, completed_at, payment_id
 FROM enrollments
 WHERE id = $1
 `
 
-type GetEnrollmentByIDRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	AccessType  string             `json:"access_type"`
-	ProgressPct pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	PaymentID   pgtype.UUID        `json:"payment_id"`
-}
-
-func (q *Queries) GetEnrollmentByID(ctx context.Context, id pgtype.UUID) (GetEnrollmentByIDRow, error) {
+func (q *Queries) GetEnrollmentByID(ctx context.Context, id pgtype.UUID) (Enrollment, error) {
 	row := q.db.QueryRow(ctx, getEnrollmentByID, id)
-	var i GetEnrollmentByIDRow
+	var i Enrollment
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -3035,8 +3025,8 @@ ON CONFLICT (user_id, track_id) DO UPDATE
 SET payment_id = COALESCE(EXCLUDED.payment_id, enrollments.payment_id),
  access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
  ELSE EXCLUDED.access_type END
-RETURNING id, user_id, track_id, access_type, progress_pct,
- enrolled_at, completed_at, payment_id
+RETURNING id, tenant_id, user_id, track_id, access_type, progress_pct,
+          enrolled_at, completed_at, payment_id
 `
 
 type UpsertEnrollmentWithPaymentParams struct {
@@ -3046,32 +3036,22 @@ type UpsertEnrollmentWithPaymentParams struct {
 	PaymentID  pgtype.UUID `json:"payment_id"`
 }
 
-type UpsertEnrollmentWithPaymentRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	AccessType  string             `json:"access_type"`
-	ProgressPct pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	PaymentID   pgtype.UUID        `json:"payment_id"`
-}
-
 // =====================================================================
 // Enrollments (paid + Pro-stream)
 // =====================================================================
 // Idempotent on (user_id, track_id): a re-process of the same payment does
 // not create a duplicate enrollment. payment_id is set only when provided.
-func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnrollmentWithPaymentParams) (UpsertEnrollmentWithPaymentRow, error) {
+func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnrollmentWithPaymentParams) (Enrollment, error) {
 	row := q.db.QueryRow(ctx, upsertEnrollmentWithPayment,
 		arg.UserID,
 		arg.TrackID,
 		arg.AccessType,
 		arg.PaymentID,
 	)
-	var i UpsertEnrollmentWithPaymentRow
+	var i Enrollment
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -3084,8 +3064,6 @@ func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnr
 }
 
 const upsertInstructorApplication = `-- name: UpsertInstructorApplication :one
-
-
 INSERT INTO instructor_profiles (user_id, display_name, headline, bio, social_links, tier, status, application_note) VALUES ($1, $2, $3, $4, $5, 'standard', 'pending', $6)
 
 ON CONFLICT (user_id) DO UPDATE
@@ -3109,18 +3087,6 @@ type UpsertInstructorApplicationParams struct {
 	ApplicationNote *string     `json:"application_note"`
 }
 
-// university.sql — Japa University creator economy queries (ADR-063).
-// Covers instructor_profiles, revenue_splits, instructor_payouts, and the
-// marketplace extensions to learning_tracks / enrollments. Course reviews
-// reuse the polymorphic reviews table (entity_type='learning_track') and are
-// served by the existing reviews package; only the aggregate read is here.
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
-//
-//	japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
-//
-// =====================================================================
-// Instructor profiles
-// =====================================================================
 // A user may re-submit while pending/rejected; approved/suspended are frozen
 // from the self-service path (admin manages those states).
 func (q *Queries) UpsertInstructorApplication(ctx context.Context, arg UpsertInstructorApplicationParams) (InstructorProfile, error) {

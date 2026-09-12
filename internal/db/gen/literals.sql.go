@@ -35,7 +35,7 @@ func (q *Queries) CountTemplateLiterals(ctx context.Context, arg CountTemplateLi
 const createTemplateLiteral = `-- name: CreateTemplateLiteral :one
 INSERT INTO template_literals (key, kind, value, fallback, label, description, category, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
-RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 `
 
 type CreateTemplateLiteralParams struct {
@@ -49,23 +49,7 @@ type CreateTemplateLiteralParams struct {
 	IsActive    bool    `json:"is_active"`
 }
 
-type CreateTemplateLiteralRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Key         string             `json:"key"`
-	Kind        string             `json:"kind"`
-	Value       string             `json:"value"`
-	Fallback    *string            `json:"fallback"`
-	Label       *string            `json:"label"`
-	Description *string            `json:"description"`
-	Category    *string            `json:"category"`
-	IsSystem    bool               `json:"is_system"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) CreateTemplateLiteral(ctx context.Context, arg CreateTemplateLiteralParams) (CreateTemplateLiteralRow, error) {
+func (q *Queries) CreateTemplateLiteral(ctx context.Context, arg CreateTemplateLiteralParams) (TemplateLiteral, error) {
 	row := q.db.QueryRow(ctx, createTemplateLiteral,
 		arg.Key,
 		arg.Kind,
@@ -76,9 +60,10 @@ func (q *Queries) CreateTemplateLiteral(ctx context.Context, arg CreateTemplateL
 		arg.Category,
 		arg.IsActive,
 	)
-	var i CreateTemplateLiteralRow
+	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -108,33 +93,18 @@ func (q *Queries) DeleteTemplateLiteral(ctx context.Context, id pgtype.UUID) err
 }
 
 const getTemplateLiteral = `-- name: GetTemplateLiteral :one
-SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE id = $1
  AND deleted_at IS NULL
 `
 
-type GetTemplateLiteralRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Key         string             `json:"key"`
-	Kind        string             `json:"kind"`
-	Value       string             `json:"value"`
-	Fallback    *string            `json:"fallback"`
-	Label       *string            `json:"label"`
-	Description *string            `json:"description"`
-	Category    *string            `json:"category"`
-	IsSystem    bool               `json:"is_system"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (GetTemplateLiteralRow, error) {
+func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (TemplateLiteral, error) {
 	row := q.db.QueryRow(ctx, getTemplateLiteral, id)
-	var i GetTemplateLiteralRow
+	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -152,33 +122,18 @@ func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (GetTe
 }
 
 const getTemplateLiteralByKey = `-- name: GetTemplateLiteralByKey :one
-SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE key = $1
  AND deleted_at IS NULL
 `
 
-type GetTemplateLiteralByKeyRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Key         string             `json:"key"`
-	Kind        string             `json:"kind"`
-	Value       string             `json:"value"`
-	Fallback    *string            `json:"fallback"`
-	Label       *string            `json:"label"`
-	Description *string            `json:"description"`
-	Category    *string            `json:"category"`
-	IsSystem    bool               `json:"is_system"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (GetTemplateLiteralByKeyRow, error) {
+func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (TemplateLiteral, error) {
 	row := q.db.QueryRow(ctx, getTemplateLiteralByKey, key)
-	var i GetTemplateLiteralByKeyRow
+	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -196,7 +151,7 @@ func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (GetT
 }
 
 const listTemplateLiterals = `-- name: ListTemplateLiterals :many
-SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE deleted_at IS NULL
  AND ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%')
@@ -221,24 +176,8 @@ type ListTemplateLiteralsParams struct {
 	PageLimit  int32  `json:"page_limit"`
 }
 
-type ListTemplateLiteralsRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Key         string             `json:"key"`
-	Kind        string             `json:"kind"`
-	Value       string             `json:"value"`
-	Fallback    *string            `json:"fallback"`
-	Label       *string            `json:"label"`
-	Description *string            `json:"description"`
-	Category    *string            `json:"category"`
-	IsSystem    bool               `json:"is_system"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-}
-
 // Returns all template literals for a tenant with optional search and active filter.
-func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLiteralsParams) ([]ListTemplateLiteralsRow, error) {
+func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLiteralsParams) ([]TemplateLiteral, error) {
 	rows, err := q.db.Query(ctx, listTemplateLiterals,
 		arg.Search,
 		arg.IsActive,
@@ -252,11 +191,12 @@ func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLite
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTemplateLiteralsRow
+	var items []TemplateLiteral
 	for rows.Next() {
-		var i ListTemplateLiteralsRow
+		var i TemplateLiteral
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Key,
 			&i.Kind,
 			&i.Value,
@@ -292,7 +232,7 @@ SET kind = $1,
  updated_at = now()
 WHERE id = $8
  AND deleted_at IS NULL
-RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 `
 
 type UpdateTemplateLiteralParams struct {
@@ -306,23 +246,7 @@ type UpdateTemplateLiteralParams struct {
 	ID          pgtype.UUID `json:"id"`
 }
 
-type UpdateTemplateLiteralRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Key         string             `json:"key"`
-	Kind        string             `json:"kind"`
-	Value       string             `json:"value"`
-	Fallback    *string            `json:"fallback"`
-	Label       *string            `json:"label"`
-	Description *string            `json:"description"`
-	Category    *string            `json:"category"`
-	IsSystem    bool               `json:"is_system"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
-}
-
-func (q *Queries) UpdateTemplateLiteral(ctx context.Context, arg UpdateTemplateLiteralParams) (UpdateTemplateLiteralRow, error) {
+func (q *Queries) UpdateTemplateLiteral(ctx context.Context, arg UpdateTemplateLiteralParams) (TemplateLiteral, error) {
 	row := q.db.QueryRow(ctx, updateTemplateLiteral,
 		arg.Kind,
 		arg.Value,
@@ -333,9 +257,10 @@ func (q *Queries) UpdateTemplateLiteral(ctx context.Context, arg UpdateTemplateL
 		arg.IsActive,
 		arg.ID,
 	)
-	var i UpdateTemplateLiteralRow
+	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,

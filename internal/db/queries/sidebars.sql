@@ -1,12 +1,3 @@
--- Sidebars — Sidebar Management System (Section 59, ADR-066)
--- Dedicated tables for per-app, per-page-pattern, per-usergroup sidebar management.
--- Sidebar widgets are NOT pagebuilder blocks — they use a separate widget type
--- registry (search, theme_toggle, trending_tags, suggested_spaces, ad_slot, etc.).
-
--- =====================
--- Sidebars CRUD
--- =====================
-
 -- name: ListSidebars :many
 SELECT s.id, s.app, s.position, s.slug, s.name, s.page_pattern, s.visibility,
  s.required_group_ids, s.status, s.created_at, s.updated_at,
@@ -51,16 +42,16 @@ WHERE (@app::text = '' OR app = @app)
  AND (@q::text = '' OR name ILIKE '%' || @q || '%' OR slug ILIKE '%' || @q || '%');
 
 -- name: GetSidebarByID :one
-SELECT id, app, position, slug, name, page_pattern, visibility,
- required_group_ids, status, created_at, updated_at
+SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
+       required_group_ids, status, created_at, updated_at
 FROM sidebars
 WHERE id = @id;
 
 -- name: CreateSidebar :one
 INSERT INTO sidebars (app, position, slug, name, page_pattern, visibility, required_group_ids, status) VALUES (@app, @position, @slug, @name, @page_pattern, @visibility, @required_group_ids, @status)
 
-RETURNING id, app, position, slug, name, page_pattern, visibility,
- required_group_ids, status, created_at, updated_at;
+RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
+    required_group_ids, status, created_at, updated_at;
 
 -- name: UpdateSidebar :one
 UPDATE sidebars
@@ -68,8 +59,8 @@ SET name = @name, page_pattern = @page_pattern, visibility = @visibility,
  required_group_ids = @required_group_ids, status = @status,
  updated_at = now()
 WHERE id = @id
-RETURNING id, app, position, slug, name, page_pattern, visibility,
- required_group_ids, status, created_at, updated_at;
+RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
+    required_group_ids, status, created_at, updated_at;
 
 -- name: DeleteSidebar :exec
 DELETE FROM sidebars
@@ -80,26 +71,26 @@ WHERE id = @id;
 -- =====================
 
 -- name: ListSidebarWidgets :many
-SELECT id, sidebar_id, widget_type, label, props, sort_order,
- visibility, required_group_ids, permission_node, status,
- created_at, updated_at
+SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
+       visibility, required_group_ids, permission_node, status,
+       created_at, updated_at
 FROM sidebar_widgets
 WHERE sidebar_id = @sidebar_id
 ORDER BY sort_order ASC, created_at ASC;
 
 -- name: GetSidebarWidget :one
-SELECT id, sidebar_id, widget_type, label, props, sort_order,
- visibility, required_group_ids, permission_node, status,
- created_at, updated_at
+SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
+       visibility, required_group_ids, permission_node, status,
+       created_at, updated_at
 FROM sidebar_widgets
 WHERE id = @id;
 
 -- name: CreateSidebarWidget :one
 INSERT INTO sidebar_widgets (sidebar_id, widget_type, label, props, sort_order, visibility, required_group_ids, permission_node, status) VALUES (@sidebar_id, @widget_type, @label, @props, @sort_order, @visibility, @required_group_ids, sqlc.narg(permission_node), @status)
 
-RETURNING id, sidebar_id, widget_type, label, props, sort_order,
- visibility, required_group_ids, permission_node, status,
- created_at, updated_at;
+RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
+    visibility, required_group_ids, permission_node, status,
+    created_at, updated_at;
 
 -- name: UpdateSidebarWidget :one
 UPDATE sidebar_widgets
@@ -109,9 +100,9 @@ SET label = @label, widget_type = @widget_type, props = @props,
  permission_node = sqlc.narg(permission_node), status = @status,
  updated_at = now()
 WHERE id = @id
-RETURNING id, sidebar_id, widget_type, label, props, sort_order,
- visibility, required_group_ids, permission_node, status,
- created_at, updated_at;
+RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
+    visibility, required_group_ids, permission_node, status,
+    created_at, updated_at;
 
 -- name: DeleteSidebarWidget :exec
 DELETE FROM sidebar_widgets
@@ -130,8 +121,8 @@ WHERE sidebar_widgets.id = u.id;
 -- =====================
 
 -- name: ListActiveSidebarsForResolve :many
-SELECT id, app, position, slug, name, page_pattern, visibility,
- required_group_ids, status, created_at, updated_at
+SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
+       required_group_ids, status, created_at, updated_at
 FROM sidebars
 WHERE app = @app
  AND position = @position
@@ -139,9 +130,9 @@ WHERE app = @app
 ORDER BY created_at ASC;
 
 -- name: ListActiveSidebarWidgets :many
-SELECT id, sidebar_id, widget_type, label, props, sort_order,
- visibility, required_group_ids, permission_node, status,
- created_at, updated_at
+SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
+       visibility, required_group_ids, permission_node, status,
+       created_at, updated_at
 FROM sidebar_widgets
 WHERE sidebar_id = @sidebar_id
  AND status = 'active'

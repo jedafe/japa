@@ -154,13 +154,19 @@ func receiverIsGen(expr ast.Expr) bool {
 			return true
 		}
 	case *ast.CallExpr:
-		// gen.New(...) or gen.NewWithOptions(...) return *Queries
+		// gen.New(...) or gen.NewWithOptions(...) return *Queries;
+		// *.Queries(), *.Read(), *.Write() also return *Queries.
 		if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "gen" {
 				switch sel.Sel.Name {
 				case "New", "NewWithOptions":
 					return true
 				}
+			}
+			// any expression ending in a known Queries/Read/Write call
+			switch sel.Sel.Name {
+			case "Queries", "Query", "Read", "Write", "Reader", "Writer":
+				return true
 			}
 		}
 	}

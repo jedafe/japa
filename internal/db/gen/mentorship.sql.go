@@ -203,7 +203,7 @@ func (q *Queries) CreateMentorshipConnection(ctx context.Context, arg CreateMent
 const createMentorshipProgram = `-- name: CreateMentorshipProgram :one
 INSERT INTO mentorship_programs (name, description, is_active) VALUES ($1, $2, $3)
 
-RETURNING id, name, description, is_active, created_at, updated_at
+RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
 `
 
 type CreateMentorshipProgramParams struct {
@@ -212,20 +212,12 @@ type CreateMentorshipProgramParams struct {
 	IsActive    bool   `json:"is_active"`
 }
 
-type CreateMentorshipProgramRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentorshipProgramParams) (CreateMentorshipProgramRow, error) {
+func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentorshipProgramParams) (MentorshipProgram, error) {
 	row := q.db.QueryRow(ctx, createMentorshipProgram, arg.Name, arg.Description, arg.IsActive)
-	var i CreateMentorshipProgramRow
+	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -512,25 +504,17 @@ func (q *Queries) GetMentorshipConnection(ctx context.Context, id pgtype.UUID) (
 }
 
 const getMentorshipProgram = `-- name: GetMentorshipProgram :one
-SELECT id, name, description, is_active, created_at, updated_at
+SELECT id, tenant_id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 WHERE id = $1
 `
 
-type GetMentorshipProgramRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetMentorshipProgram(ctx context.Context, id pgtype.UUID) (GetMentorshipProgramRow, error) {
+func (q *Queries) GetMentorshipProgram(ctx context.Context, id pgtype.UUID) (MentorshipProgram, error) {
 	row := q.db.QueryRow(ctx, getMentorshipProgram, id)
-	var i GetMentorshipProgramRow
+	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -1097,8 +1081,7 @@ func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipM
 }
 
 const listMentorshipPrograms = `-- name: ListMentorshipPrograms :many
-
-SELECT id, name, description, is_active, created_at, updated_at
+SELECT id, tenant_id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 
 ORDER BY created_at DESC
@@ -1110,27 +1093,18 @@ type ListMentorshipProgramsParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListMentorshipProgramsRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Mentorship program and match queries (DB-001: migrated from raw SQL to sqlc).
-func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorshipProgramsParams) ([]ListMentorshipProgramsRow, error) {
+func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorshipProgramsParams) ([]MentorshipProgram, error) {
 	rows, err := q.db.Query(ctx, listMentorshipPrograms, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMentorshipProgramsRow
+	var items []MentorshipProgram
 	for rows.Next() {
-		var i ListMentorshipProgramsRow
+		var i MentorshipProgram
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.IsActive,
@@ -1377,7 +1351,7 @@ const updateMentorshipMatch = `-- name: UpdateMentorshipMatch :one
 UPDATE mentorship_matches
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, program_id, mentor_id, mentee_id, status, created_at, updated_at
+RETURNING id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at
 `
 
 type UpdateMentorshipMatchParams struct {
@@ -1385,21 +1359,12 @@ type UpdateMentorshipMatchParams struct {
 	ID     pgtype.UUID `json:"id"`
 }
 
-type UpdateMentorshipMatchRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	ProgramID pgtype.UUID        `json:"program_id"`
-	MentorID  pgtype.UUID        `json:"mentor_id"`
-	MenteeID  pgtype.UUID        `json:"mentee_id"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshipMatchParams) (UpdateMentorshipMatchRow, error) {
+func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshipMatchParams) (MentorshipMatch, error) {
 	row := q.db.QueryRow(ctx, updateMentorshipMatch, arg.Status, arg.ID)
-	var i UpdateMentorshipMatchRow
+	var i MentorshipMatch
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ProgramID,
 		&i.MentorID,
 		&i.MenteeID,
@@ -1414,7 +1379,7 @@ const updateMentorshipProgram = `-- name: UpdateMentorshipProgram :one
 UPDATE mentorship_programs
 SET name = $1, description = $2, is_active = $3, updated_at = now()
 WHERE id = $4
-RETURNING id, name, description, is_active, created_at, updated_at
+RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
 `
 
 type UpdateMentorshipProgramParams struct {
@@ -1424,25 +1389,17 @@ type UpdateMentorshipProgramParams struct {
 	ID          pgtype.UUID `json:"id"`
 }
 
-type UpdateMentorshipProgramRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	IsActive    bool               `json:"is_active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateMentorshipProgram(ctx context.Context, arg UpdateMentorshipProgramParams) (UpdateMentorshipProgramRow, error) {
+func (q *Queries) UpdateMentorshipProgram(ctx context.Context, arg UpdateMentorshipProgramParams) (MentorshipProgram, error) {
 	row := q.db.QueryRow(ctx, updateMentorshipProgram,
 		arg.Name,
 		arg.Description,
 		arg.IsActive,
 		arg.ID,
 	)
-	var i UpdateMentorshipProgramRow
+	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,

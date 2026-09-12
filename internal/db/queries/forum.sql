@@ -1,9 +1,3 @@
--- Forum Q&A / Solved — threads, replies, votes, polls, tags, bookmarks, reply views.
-
--- =====================
--- Threads
--- =====================
-
 -- name: CreateForumThread :one
 INSERT INTO forum_threads (content_id, space_id, author_user_id, parent_reply_id, title, slug, body, is_anonymous, edit_window_minutes) VALUES (sqlc.narg(content_id), sqlc.narg(space_id), @author_user_id, sqlc.narg(parent_reply_id), @title, @slug, @body, @is_anonymous, @edit_window_minutes)
 RETURNING id, content_id, space_id, author_user_id, parent_reply_id,
@@ -308,14 +302,14 @@ WHERE id = @id;
 
 -- name: CreateForumReply :one
 INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES (@thread_id, sqlc.narg(parent_reply_id), @author_user_id, @body, @is_anonymous)
-RETURNING id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
+RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
+          body, vote_score, view_count, is_anonymous, is_edited,
+          created_at, updated_at, deleted_at, ama_pending, ama_approved_at;
 
 -- name: GetForumReplyByID :one
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
+       body, vote_score, view_count, is_anonymous, is_edited,
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -335,9 +329,9 @@ WHERE fr.id = @id
  AND fr.deleted_at IS NULL;
 
 -- name: ListForumRepliesByThread :many
-SELECT id, thread_id, parent_reply_id, author_user_id,
- body, vote_score, view_count, is_anonymous, is_edited,
- created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
+       body, vote_score, view_count, is_anonymous, is_edited,
+       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = @thread_id
  AND deleted_at IS NULL
@@ -386,9 +380,9 @@ SET body = @body,
 FROM forum_threads ft
 WHERE fr.id = @id AND fr.deleted_at IS NULL
  AND ft.id = fr.thread_id
-RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
- fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
- fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at;
+RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at;
 
 -- name: SoftDeleteForumReply :exec
 UPDATE forum_replies
@@ -404,10 +398,10 @@ INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES (@user_i
 
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
  SET value = @value
-RETURNING id, user_id, entity_type, entity_id, value, created_at;
+RETURNING id, tenant_id, user_id, entity_type, entity_id, value, created_at;
 
 -- name: GetForumVote :one
-SELECT id, user_id, entity_type, entity_id, value, created_at
+SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
 WHERE user_id = @user_id AND entity_type = @entity_type AND entity_id = @entity_id;
 
@@ -521,24 +515,24 @@ WHERE option_id = @option_id AND user_id = @user_id;
 -- name: CreateForumTag :one
 INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(rules), sqlc.narg(cover_image_id), sqlc.narg(moderator_user_id))
 
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at;
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at, deleted_at;
 
 -- name: GetForumTagByID :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: GetForumTagBySlug :one
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE slug = @slug AND deleted_at IS NULL;
 
 -- name: ListForumTags :many
-SELECT id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
+       follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
@@ -585,8 +579,8 @@ SET name = @name,
  cover_image_id = @cover_image_id,
  moderator_user_id = @moderator_user_id
 WHERE id = @id AND deleted_at IS NULL
-RETURNING id, name, slug, description, rules, cover_image_id,
- follower_count, moderator_user_id, created_at, deleted_at;
+RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
+          follower_count, moderator_user_id, created_at, deleted_at;
 
 -- name: SoftDeleteForumTag :exec
 UPDATE forum_tags SET deleted_at = now()

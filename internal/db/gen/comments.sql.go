@@ -76,8 +76,6 @@ func (q *Queries) CountRepliesByParent(ctx context.Context, parentID pgtype.UUID
 }
 
 const createComment = `-- name: CreateComment :one
-
-
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous) VALUES ($1, $2, $3, $4, $5, $6)
 
 RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
@@ -92,10 +90,6 @@ type CreateCommentParams struct {
 	IsAnonymous  bool        `json:"is_anonymous"`
 }
 
-// Comments system queries (Section 49 — Unified Comments).
-// =====================
-// Comments CRUD
-// =====================
 func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error) {
 	row := q.db.QueryRow(ctx, createComment,
 		arg.ContentID,
@@ -140,7 +134,7 @@ INSERT INTO content_thread_links (content_id, thread_id) VALUES ($1, $2)
 ON CONFLICT (content_id, thread_id) DO UPDATE
  SET link_count = content_thread_links.link_count + 1,
  created_at = now()
-RETURNING id, content_id, thread_id, link_count, created_at
+RETURNING id, tenant_id, content_id, thread_id, link_count, created_at
 `
 
 type CreateContentThreadLinkParams struct {
@@ -148,24 +142,17 @@ type CreateContentThreadLinkParams struct {
 	ThreadID  pgtype.UUID `json:"thread_id"`
 }
 
-type CreateContentThreadLinkRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	ContentID pgtype.UUID        `json:"content_id"`
-	ThreadID  pgtype.UUID        `json:"thread_id"`
-	LinkCount int32              `json:"link_count"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Content Thread Links (Section 49 — blog/non-forum ↔ discussion cross-links)
 // =====================
 // Upsert a cross-link; bump link_count when the pair already exists so
 // repeated "Start A Conversation" shares are reflected.
-func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContentThreadLinkParams) (CreateContentThreadLinkRow, error) {
+func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContentThreadLinkParams) (ContentThreadLink, error) {
 	row := q.db.QueryRow(ctx, createContentThreadLink, arg.ContentID, arg.ThreadID)
-	var i CreateContentThreadLinkRow
+	var i ContentThreadLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ContentID,
 		&i.ThreadID,
 		&i.LinkCount,
@@ -267,7 +254,7 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow
 }
 
 const getCommentVote = `-- name: GetCommentVote :one
-SELECT comment_id, user_id, value, created_at
+SELECT tenant_id, comment_id, user_id, value, created_at
 FROM comment_votes
 WHERE comment_id = $1 AND user_id = $2
 `
@@ -277,17 +264,11 @@ type GetCommentVoteParams struct {
 	UserID    pgtype.UUID `json:"user_id"`
 }
 
-type GetCommentVoteRow struct {
-	CommentID pgtype.UUID        `json:"comment_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Value     int16              `json:"value"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) (GetCommentVoteRow, error) {
+func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) (CommentVote, error) {
 	row := q.db.QueryRow(ctx, getCommentVote, arg.CommentID, arg.UserID)
-	var i GetCommentVoteRow
+	var i CommentVote
 	err := row.Scan(
+		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,
 		&i.Value,
@@ -1277,7 +1258,7 @@ const upsertCommentVote = `-- name: UpsertCommentVote :one
 INSERT INTO comment_votes (comment_id, user_id, value) VALUES ($1, $2, $3)
 
 ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING comment_id, user_id, value, created_at
+RETURNING tenant_id, comment_id, user_id, value, created_at
 `
 
 type UpsertCommentVoteParams struct {
@@ -1286,20 +1267,14 @@ type UpsertCommentVoteParams struct {
 	Value     int16       `json:"value"`
 }
 
-type UpsertCommentVoteRow struct {
-	CommentID pgtype.UUID        `json:"comment_id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Value     int16              `json:"value"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Comment Votes
 // =====================
-func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVoteParams) (UpsertCommentVoteRow, error) {
+func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVoteParams) (CommentVote, error) {
 	row := q.db.QueryRow(ctx, upsertCommentVote, arg.CommentID, arg.UserID, arg.Value)
-	var i UpsertCommentVoteRow
+	var i CommentVote
 	err := row.Scan(
+		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,
 		&i.Value,

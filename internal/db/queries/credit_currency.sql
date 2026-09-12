@@ -1,10 +1,3 @@
--- Credit Currency System (Section 58, ADR-065)
--- Currencies reference table, credit packs, and user preferred currency.
-
--- =====================
--- Currencies CRUD
--- =====================
-
 -- name: ListActiveCurrencies :many
 SELECT code, name, symbol, credits_per_unit, is_active, position, created_at, updated_at
 FROM currencies
@@ -45,30 +38,30 @@ SELECT count(*)::int FROM spaces WHERE currency_code = @currency_code;
 -- =====================
 
 -- name: ListActiveCreditPacks :many
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE is_active = true
 ORDER BY position ASC, created_at ASC;
 
 -- name: ListAllCreditPacks :many
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 
 ORDER BY position ASC, created_at ASC;
 
 -- name: GetCreditPackByID :one
-SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at
+SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+       is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE id = @id;
 
 -- name: CreateCreditPack :one
 INSERT INTO credit_packs (name, description, credit_amount, bonus_credits, min_user_level, position) VALUES (@name, sqlc.narg(description), @credit_amount, @bonus_credits, sqlc.narg(min_user_level), @position)
 
-RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at;
+RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+          is_active, position, created_at, updated_at;
 
 -- name: UpdateCreditPack :one
 UPDATE credit_packs
@@ -76,8 +69,8 @@ SET name = @name, description = sqlc.narg(description), credit_amount = @credit_
  bonus_credits = @bonus_credits, min_user_level = sqlc.narg(min_user_level),
  is_active = @is_active, position = @position, updated_at = now()
 WHERE id = @id
-RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
- is_active, position, created_at, updated_at;
+RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
+          is_active, position, created_at, updated_at;
 
 -- name: DeactivateCreditPack :exec
 UPDATE credit_packs SET is_active = false, updated_at = now()

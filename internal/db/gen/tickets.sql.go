@@ -16,10 +16,10 @@ UPDATE tickets
 SET assigned_to = $1, assigned_group_id = $2,
  updated_at = now()
 WHERE id = $3
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type AssignTicketParams struct {
@@ -28,31 +28,12 @@ type AssignTicketParams struct {
 	ID              pgtype.UUID `json:"id"`
 }
 
-type AssignTicketRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (AssignTicketRow, error) {
+func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, assignTicket, arg.AssignedTo, arg.AssignedGroupID, arg.ID)
-	var i AssignTicketRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -95,37 +76,18 @@ const closeTicket = `-- name: CloseTicket :one
 UPDATE tickets
 SET status = 'closed', closed_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
-type CloseTicketRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (CloseTicketRow, error) {
+func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, error) {
 	row := q.db.QueryRow(ctx, closeTicket, id)
-	var i CloseTicketRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -216,10 +178,10 @@ func (q *Queries) CountTicketsByType(ctx context.Context, typeID pgtype.UUID) (i
 const createTicket = `-- name: CreateTicket :one
 
 INSERT INTO tickets (type_id, subject, description, status, priority, submitter_user_id, submitter_email, assigned_to, assigned_group_id, field_values, sla_breach_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type CreateTicketParams struct {
@@ -236,30 +198,10 @@ type CreateTicketParams struct {
 	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
 }
 
-type CreateTicketRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Tickets CRUD
 // =====================
-func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (CreateTicketRow, error) {
+func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, createTicket,
 		arg.TypeID,
 		arg.Subject,
@@ -273,9 +215,10 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Cre
 		arg.FieldValues,
 		arg.SlaBreachAt,
 	)
-	var i CreateTicketRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -402,11 +345,9 @@ func (q *Queries) CreateTicketEvent(ctx context.Context, arg CreateTicketEventPa
 }
 
 const createTicketType = `-- name: CreateTicketType :one
-
-
 INSERT INTO ticket_types (name, slug, description, field_group_id, default_priority, auto_assign_group_id, sla_hours, is_public, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 `
 
 type CreateTicketTypeParams struct {
@@ -421,26 +362,7 @@ type CreateTicketTypeParams struct {
 	IsSystem          bool        `json:"is_system"`
 }
 
-type CreateTicketTypeRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       *string            `json:"description"`
-	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
-	DefaultPriority   string             `json:"default_priority"`
-	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
-	SlaHours          *int32             `json:"sla_hours"`
-	IsPublic          bool               `json:"is_public"`
-	IsSystem          bool               `json:"is_system"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-// Ticket System — Section 38
-// =====================
-// Ticket Types CRUD
-// =====================
-func (q *Queries) CreateTicketType(ctx context.Context, arg CreateTicketTypeParams) (CreateTicketTypeRow, error) {
+func (q *Queries) CreateTicketType(ctx context.Context, arg CreateTicketTypeParams) (TicketType, error) {
 	row := q.db.QueryRow(ctx, createTicketType,
 		arg.Name,
 		arg.Slug,
@@ -452,9 +374,10 @@ func (q *Queries) CreateTicketType(ctx context.Context, arg CreateTicketTypePara
 		arg.IsPublic,
 		arg.IsSystem,
 	)
-	var i CreateTicketTypeRow
+	var i TicketType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -619,32 +542,18 @@ func (q *Queries) GetTicketByID(ctx context.Context, id pgtype.UUID) (GetTicketB
 }
 
 const getTicketTypeByID = `-- name: GetTicketTypeByID :one
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE id = $1
 `
 
-type GetTicketTypeByIDRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       *string            `json:"description"`
-	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
-	DefaultPriority   string             `json:"default_priority"`
-	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
-	SlaHours          *int32             `json:"sla_hours"`
-	IsPublic          bool               `json:"is_public"`
-	IsSystem          bool               `json:"is_system"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetTicketTypeByID(ctx context.Context, id pgtype.UUID) (GetTicketTypeByIDRow, error) {
+func (q *Queries) GetTicketTypeByID(ctx context.Context, id pgtype.UUID) (TicketType, error) {
 	row := q.db.QueryRow(ctx, getTicketTypeByID, id)
-	var i GetTicketTypeByIDRow
+	var i TicketType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -661,32 +570,18 @@ func (q *Queries) GetTicketTypeByID(ctx context.Context, id pgtype.UUID) (GetTic
 }
 
 const getTicketTypeBySlug = `-- name: GetTicketTypeBySlug :one
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE slug = $1
 `
 
-type GetTicketTypeBySlugRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       *string            `json:"description"`
-	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
-	DefaultPriority   string             `json:"default_priority"`
-	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
-	SlaHours          *int32             `json:"sla_hours"`
-	IsPublic          bool               `json:"is_public"`
-	IsSystem          bool               `json:"is_system"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetTicketTypeBySlug(ctx context.Context, slug string) (GetTicketTypeBySlugRow, error) {
+func (q *Queries) GetTicketTypeBySlug(ctx context.Context, slug string) (TicketType, error) {
 	row := q.db.QueryRow(ctx, getTicketTypeBySlug, slug)
-	var i GetTicketTypeBySlugRow
+	var i TicketType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -853,8 +748,8 @@ func (q *Queries) ListTicketEvents(ctx context.Context, ticketID pgtype.UUID) ([
 }
 
 const listTicketTypesByTenant = `-- name: ListTicketTypesByTenant :many
-SELECT id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE ($1::bool IS NULL OR is_public = $1)
 ORDER BY created_at DESC
@@ -867,32 +762,18 @@ type ListTicketTypesByTenantParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListTicketTypesByTenantRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       *string            `json:"description"`
-	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
-	DefaultPriority   string             `json:"default_priority"`
-	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
-	SlaHours          *int32             `json:"sla_hours"`
-	IsPublic          bool               `json:"is_public"`
-	IsSystem          bool               `json:"is_system"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTypesByTenantParams) ([]ListTicketTypesByTenantRow, error) {
+func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTypesByTenantParams) ([]TicketType, error) {
 	rows, err := q.db.Query(ctx, listTicketTypesByTenant, arg.IsPublic, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTicketTypesByTenantRow
+	var items []TicketType
 	for rows.Next() {
-		var i ListTicketTypesByTenantRow
+		var i TicketType
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1105,10 +986,10 @@ UPDATE tickets
 SET status = 'resolved', resolution_note = $1,
  resolved_at = now(), updated_at = now()
 WHERE id = $2
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type ResolveTicketParams struct {
@@ -1116,31 +997,12 @@ type ResolveTicketParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
-type ResolveTicketRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ResolveTicket(ctx context.Context, arg ResolveTicketParams) (ResolveTicketRow, error) {
+func (q *Queries) ResolveTicket(ctx context.Context, arg ResolveTicketParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, resolveTicket, arg.ResolutionNote, arg.ID)
-	var i ResolveTicketRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1165,10 +1027,10 @@ const updateTicketPriority = `-- name: UpdateTicketPriority :one
 UPDATE tickets
 SET priority = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type UpdateTicketPriorityParams struct {
@@ -1176,31 +1038,12 @@ type UpdateTicketPriorityParams struct {
 	ID       pgtype.UUID `json:"id"`
 }
 
-type UpdateTicketPriorityRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateTicketPriority(ctx context.Context, arg UpdateTicketPriorityParams) (UpdateTicketPriorityRow, error) {
+func (q *Queries) UpdateTicketPriority(ctx context.Context, arg UpdateTicketPriorityParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, updateTicketPriority, arg.Priority, arg.ID)
-	var i UpdateTicketPriorityRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1238,10 +1081,10 @@ SET status = $1, updated_at = now(),
  resolved_at = CASE WHEN $1 = 'resolved' THEN now() ELSE resolved_at END,
  closed_at = CASE WHEN $1 = 'closed' THEN now() ELSE closed_at END
 WHERE id = $2
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type UpdateTicketStatusParams struct {
@@ -1249,31 +1092,12 @@ type UpdateTicketStatusParams struct {
 	ID     pgtype.UUID `json:"id"`
 }
 
-type UpdateTicketStatusRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (UpdateTicketStatusRow, error) {
+func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, updateTicketStatus, arg.Status, arg.ID)
-	var i UpdateTicketStatusRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1298,10 +1122,10 @@ const updateTicketSubject = `-- name: UpdateTicketSubject :one
 UPDATE tickets
 SET subject = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, type_id, subject, description, status, priority,
- submitter_user_id, submitter_email, assigned_to, assigned_group_id,
- resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+RETURNING id, tenant_id, type_id, subject, description, status, priority,
+    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+    created_at, updated_at
 `
 
 type UpdateTicketSubjectParams struct {
@@ -1309,31 +1133,12 @@ type UpdateTicketSubjectParams struct {
 	ID      pgtype.UUID `json:"id"`
 }
 
-type UpdateTicketSubjectRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	TypeID          pgtype.UUID        `json:"type_id"`
-	Subject         string             `json:"subject"`
-	Description     string             `json:"description"`
-	Status          string             `json:"status"`
-	Priority        string             `json:"priority"`
-	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
-	SubmitterEmail  *string            `json:"submitter_email"`
-	AssignedTo      pgtype.UUID        `json:"assigned_to"`
-	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
-	ResolutionNote  *string            `json:"resolution_note"`
-	FieldValues     []byte             `json:"field_values"`
-	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
-	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
-	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateTicketSubject(ctx context.Context, arg UpdateTicketSubjectParams) (UpdateTicketSubjectRow, error) {
+func (q *Queries) UpdateTicketSubject(ctx context.Context, arg UpdateTicketSubjectParams) (Ticket, error) {
 	row := q.db.QueryRow(ctx, updateTicketSubject, arg.Subject, arg.ID)
-	var i UpdateTicketSubjectRow
+	var i Ticket
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1361,8 +1166,8 @@ SET name = $1, description = $2,
  auto_assign_group_id = $5, sla_hours = $6,
  is_public = $7, updated_at = now()
 WHERE id = $8
-RETURNING id, name, slug, description, field_group_id, default_priority,
- auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
+    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 `
 
 type UpdateTicketTypeParams struct {
@@ -1376,22 +1181,7 @@ type UpdateTicketTypeParams struct {
 	ID                pgtype.UUID `json:"id"`
 }
 
-type UpdateTicketTypeRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       *string            `json:"description"`
-	FieldGroupID      pgtype.UUID        `json:"field_group_id"`
-	DefaultPriority   string             `json:"default_priority"`
-	AutoAssignGroupID pgtype.UUID        `json:"auto_assign_group_id"`
-	SlaHours          *int32             `json:"sla_hours"`
-	IsPublic          bool               `json:"is_public"`
-	IsSystem          bool               `json:"is_system"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypeParams) (UpdateTicketTypeRow, error) {
+func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypeParams) (TicketType, error) {
 	row := q.db.QueryRow(ctx, updateTicketType,
 		arg.Name,
 		arg.Description,
@@ -1402,9 +1192,10 @@ func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypePara
 		arg.IsPublic,
 		arg.ID,
 	)
-	var i UpdateTicketTypeRow
+	var i TicketType
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

@@ -1,8 +1,3 @@
--- General cross-domain tags (Section 08/49 catalog: GET /tags, /tags/:slug).
--- Distinct from forum_tags (forum-scoped) — this is the tags table content
--- is tagged against via content_tags, and the entity followed via follows
--- (entity_type='tag').
-
 -- name: ListTagsByTenant :many
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
@@ -132,7 +127,7 @@ ORDER BY tm.created_at ASC;
 INSERT INTO tag_moderators (tag_id, user_id, assigned_by, assigned_by_user_id) VALUES (@tag_id, @user_id, @assigned_by, @assigned_by_user_id)
 
 ON CONFLICT (tag_id, user_id) DO UPDATE SET created_at = now()
-RETURNING id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
+RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
 
 -- name: RemoveTagModerator :exec
 DELETE FROM tag_moderators

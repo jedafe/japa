@@ -1,23 +1,17 @@
--- Universal Ratings & Reviews — polymorphic reviews with aggregate rollup.
-
--- =====================
--- Reviews CRUD
--- =====================
-
 -- name: CreateReview :one
 INSERT INTO reviews (entity_type, entity_id, reviewer_user_id, rating, title, body) VALUES (@entity_type, @entity_id, @reviewer_user_id, @rating, sqlc.narg(title), sqlc.narg(body))
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by;
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by;
 
 -- name: GetReviewByID :one
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE id = @id;
 
 -- name: ListReviewsByEntity :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = @entity_type
  AND entity_id = @entity_id
@@ -27,8 +21,8 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListReviewsByEntityHighestRating :many
 -- Sort by highest rating first (spec §29: ?sort=highest).
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = @entity_type
  AND entity_id = @entity_id
@@ -38,8 +32,8 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListReviewsByEntityLowestRating :many
 -- Sort by lowest rating first (spec §29: ?sort=lowest).
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = @entity_type
  AND entity_id = @entity_id
@@ -68,16 +62,16 @@ ORDER BY r.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListReviewsByReviewer :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE reviewer_user_id = @reviewer_user_id
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListReviews :many
-SELECT id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
+       rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 
 ORDER BY created_at DESC
@@ -135,8 +129,8 @@ SET rating = @rating, title = sqlc.narg(title), body = sqlc.narg(body),
  updated_at = now()
 WHERE id = @id
  AND reviewer_user_id = @reviewer_user_id
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by;
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by;
 
 -- name: UpdateReviewStatus :one
 -- Sets status and records who removed the review (spec §29 L55: removed_by).
@@ -144,8 +138,8 @@ RETURNING id, entity_type, entity_id, reviewer_user_id,
 UPDATE reviews
 SET status = @status, removed_by = sqlc.narg(removed_by), updated_at = now()
 WHERE id = @id
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by;
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by;
 
 -- name: SoftDeleteOwnReview :one
 -- Owner-scoped soft delete: sets status to 'removed' only if the requesting
@@ -155,8 +149,8 @@ UPDATE reviews
 SET status = 'removed', removed_by = @reviewer_user_id, updated_at = now()
 WHERE id = @id
  AND reviewer_user_id = @reviewer_user_id
-RETURNING id, entity_type, entity_id, reviewer_user_id,
- rating, title, body, status, created_at, updated_at, removed_by;
+RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
+          rating, title, body, status, created_at, updated_at, removed_by;
 
 -- name: DeleteReview :exec
 DELETE FROM reviews
@@ -188,12 +182,12 @@ ON CONFLICT (entity_type, entity_id) DO UPDATE
 SET review_count = EXCLUDED.review_count,
  average_rating = EXCLUDED.average_rating,
  updated_at = now()
-RETURNING entity_type, entity_id, review_count,
- average_rating, updated_at;
+RETURNING tenant_id, entity_type, entity_id, review_count,
+          average_rating, updated_at;
 
 -- name: GetReviewAggregate :one
-SELECT entity_type, entity_id, review_count,
- average_rating, updated_at
+SELECT tenant_id, entity_type, entity_id, review_count,
+       average_rating, updated_at
 FROM review_aggregates
 WHERE entity_type = @entity_type
  AND entity_id = @entity_id;

@@ -82,8 +82,6 @@ func (q *Queries) CountSpamQueue(ctx context.Context) (int32, error) {
 }
 
 const createPlatformEvent = `-- name: CreatePlatformEvent :one
-
-
 INSERT INTO platform_events (event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
 RETURNING id, event_type, user_id, entity_type, entity_id, meta, country_code, session_id, is_synthetic, created_at
@@ -113,13 +111,6 @@ type CreatePlatformEventRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
-// Platform Analytics & Site Reports (Section 40)
-// Dashboard queries using real database tables (users, contents, spaces, space_members).
-// platform_events and materialized views are kept for the events list and future
-// event-tracking pipeline; dashboard aggregates bypass them so they work immediately.
-// =====================
-// Platform Events (write-optimised, future use)
-// =====================
 func (q *Queries) CreatePlatformEvent(ctx context.Context, arg CreatePlatformEventParams) (CreatePlatformEventRow, error) {
 	row := q.db.QueryRow(ctx, createPlatformEvent,
 		arg.EventType,
@@ -1209,7 +1200,7 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 }
 
 const listSecurityScanResults = `-- name: ListSecurityScanResults :many
-SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
+SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)
@@ -1224,17 +1215,7 @@ type ListSecurityScanResultsParams struct {
 	Offset  int32  `json:"offset"`
 }
 
-type ListSecurityScanResultsRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ScanType   string             `json:"scan_type"`
-	Severity   string             `json:"severity"`
-	Finding    string             `json:"finding"`
-	Meta       []byte             `json:"meta"`
-	ResolvedAt pgtype.Timestamptz `json:"resolved_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]ListSecurityScanResultsRow, error) {
+func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityScanResultsParams) ([]SecurityScanResult, error) {
 	rows, err := q.db.Query(ctx, listSecurityScanResults,
 		arg.Column1,
 		arg.Column2,
@@ -1245,11 +1226,12 @@ func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityS
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSecurityScanResultsRow
+	var items []SecurityScanResult
 	for rows.Next() {
-		var i ListSecurityScanResultsRow
+		var i SecurityScanResult
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.ScanType,
 			&i.Severity,
 			&i.Finding,

@@ -1,9 +1,3 @@
--- Comments system queries (Section 49 — Unified Comments).
-
--- =====================
--- Comments CRUD
--- =====================
-
 -- name: CreateComment :one
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous) VALUES (@content_id, @author_user_id, sqlc.narg(parent_id), @body, @depth, @is_anonymous)
 
@@ -229,7 +223,7 @@ WHERE id = @id AND deleted_at IS NULL;
 INSERT INTO comment_votes (comment_id, user_id, value) VALUES (@comment_id, @user_id, @value)
 
 ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING comment_id, user_id, value, created_at;
+RETURNING tenant_id, comment_id, user_id, value, created_at;
 
 -- name: DeleteCommentVote :exec
 DELETE FROM comment_votes
@@ -256,7 +250,7 @@ updated_at = now()
 WHERE id = @comment_id;
 
 -- name: GetCommentVote :one
-SELECT comment_id, user_id, value, created_at
+SELECT tenant_id, comment_id, user_id, value, created_at
 FROM comment_votes
 WHERE comment_id = @comment_id AND user_id = @user_id;
 
@@ -337,7 +331,7 @@ INSERT INTO content_thread_links (content_id, thread_id) VALUES (@content_id, @t
 ON CONFLICT (content_id, thread_id) DO UPDATE
  SET link_count = content_thread_links.link_count + 1,
  created_at = now()
-RETURNING id, content_id, thread_id, link_count, created_at;
+RETURNING id, tenant_id, content_id, thread_id, link_count, created_at;
 
 -- name: ListContentThreadLinks :many
 -- Linked discussion threads for a blog/content, most recently linked first.

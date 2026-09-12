@@ -1,10 +1,3 @@
--- Follow system queries (Section 31).
--- Polymorphic follows for users, spaces, tags, and organizations.
-
--- =====================
--- Follow CRUD
--- =====================
-
 -- name: InsertFollow :exec
 INSERT INTO follows (follower_id, entity_type, entity_id) VALUES (@follower_id, @entity_type, @entity_id)
 
@@ -18,7 +11,7 @@ WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = 
 DELETE FROM follows WHERE id = @id;
 
 -- name: GetFollow :one
-SELECT id, follower_id, entity_type, entity_id, created_at
+SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
 FROM follows
 WHERE follower_id = @follower_id AND entity_type = @entity_type AND entity_id = @entity_id;
 

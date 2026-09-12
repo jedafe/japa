@@ -1,15 +1,3 @@
--- university.sql — Japa University creator economy queries (ADR-063).
--- Covers instructor_profiles, revenue_splits, instructor_payouts, and the
--- marketplace extensions to learning_tracks / enrollments. Course reviews
--- reuse the polymorphic reviews table (entity_type='learning_track') and are
--- served by the existing reviews package; only the aggregate read is here.
--- Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
---      japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
-
--- =====================================================================
--- Instructor profiles
--- =====================================================================
-
 -- name: UpsertInstructorApplication :one
 -- A user may re-submit while pending/rejected; approved/suspended are frozen
 -- from the self-service path (admin manages those states).
@@ -352,12 +340,12 @@ ON CONFLICT (user_id, track_id) DO UPDATE
 SET payment_id = COALESCE(EXCLUDED.payment_id, enrollments.payment_id),
  access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
  ELSE EXCLUDED.access_type END
-RETURNING id, user_id, track_id, access_type, progress_pct,
- enrolled_at, completed_at, payment_id;
+RETURNING id, tenant_id, user_id, track_id, access_type, progress_pct,
+          enrolled_at, completed_at, payment_id;
 
 -- name: GetEnrollmentByID :one
-SELECT id, user_id, track_id, access_type, progress_pct,
- enrolled_at, completed_at, payment_id
+SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
+       enrolled_at, completed_at, payment_id
 FROM enrollments
 WHERE id = @id;
 

@@ -123,7 +123,7 @@ func (q *Queries) CreateLearningLesson(ctx context.Context, arg CreateLearningLe
 const createLearningModule = `-- name: CreateLearningModule :one
 INSERT INTO learning_modules (track_id, title, slug, description, sort_order) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, track_id, title, slug, description, sort_order, created_at, updated_at
+RETURNING id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 `
 
 type CreateLearningModuleParams struct {
@@ -134,18 +134,7 @@ type CreateLearningModuleParams struct {
 	SortOrder   int32       `json:"sort_order"`
 }
 
-type CreateLearningModuleRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) CreateLearningModule(ctx context.Context, arg CreateLearningModuleParams) (CreateLearningModuleRow, error) {
+func (q *Queries) CreateLearningModule(ctx context.Context, arg CreateLearningModuleParams) (LearningModule, error) {
 	row := q.db.QueryRow(ctx, createLearningModule,
 		arg.TrackID,
 		arg.Title,
@@ -153,9 +142,10 @@ func (q *Queries) CreateLearningModule(ctx context.Context, arg CreateLearningMo
 		arg.Description,
 		arg.SortOrder,
 	)
-	var i CreateLearningModuleRow
+	var i LearningModule
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TrackID,
 		&i.Title,
 		&i.Slug,
@@ -308,7 +298,7 @@ func (q *Queries) GetEnrollmentByUserAndTrack(ctx context.Context, arg GetEnroll
 
 const getLearningCertificate = `-- name: GetLearningCertificate :one
 
-SELECT id, user_id, track_id, certificate_number, media_id, issued_at
+SELECT id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 FROM learning_certificates
 WHERE user_id = $1 AND track_id = $2
 `
@@ -318,23 +308,15 @@ type GetLearningCertificateParams struct {
 	TrackID pgtype.UUID `json:"track_id"`
 }
 
-type GetLearningCertificateRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	UserID            pgtype.UUID        `json:"user_id"`
-	TrackID           pgtype.UUID        `json:"track_id"`
-	CertificateNumber string             `json:"certificate_number"`
-	MediaID           pgtype.UUID        `json:"media_id"`
-	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
-}
-
 // =====================
 // Certificate Operations
 // =====================
-func (q *Queries) GetLearningCertificate(ctx context.Context, arg GetLearningCertificateParams) (GetLearningCertificateRow, error) {
+func (q *Queries) GetLearningCertificate(ctx context.Context, arg GetLearningCertificateParams) (LearningCertificate, error) {
 	row := q.db.QueryRow(ctx, getLearningCertificate, arg.UserID, arg.TrackID)
-	var i GetLearningCertificateRow
+	var i LearningCertificate
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.CertificateNumber,
@@ -548,27 +530,17 @@ func (q *Queries) GetLearningLessonDetailBySlug(ctx context.Context, arg GetLear
 }
 
 const getLearningModuleByID = `-- name: GetLearningModuleByID :one
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE id = $1
 `
 
-type GetLearningModuleByIDRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetLearningModuleByID(ctx context.Context, id pgtype.UUID) (GetLearningModuleByIDRow, error) {
+func (q *Queries) GetLearningModuleByID(ctx context.Context, id pgtype.UUID) (LearningModule, error) {
 	row := q.db.QueryRow(ctx, getLearningModuleByID, id)
-	var i GetLearningModuleByIDRow
+	var i LearningModule
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TrackID,
 		&i.Title,
 		&i.Slug,
@@ -581,7 +553,7 @@ func (q *Queries) GetLearningModuleByID(ctx context.Context, id pgtype.UUID) (Ge
 }
 
 const getLearningModuleBySlug = `-- name: GetLearningModuleBySlug :one
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE track_id = $1 AND slug = $2
 `
@@ -591,22 +563,12 @@ type GetLearningModuleBySlugParams struct {
 	Slug    string      `json:"slug"`
 }
 
-type GetLearningModuleBySlugRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetLearningModuleBySlug(ctx context.Context, arg GetLearningModuleBySlugParams) (GetLearningModuleBySlugRow, error) {
+func (q *Queries) GetLearningModuleBySlug(ctx context.Context, arg GetLearningModuleBySlugParams) (LearningModule, error) {
 	row := q.db.QueryRow(ctx, getLearningModuleBySlug, arg.TrackID, arg.Slug)
-	var i GetLearningModuleBySlugRow
+	var i LearningModule
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TrackID,
 		&i.Title,
 		&i.Slug,
@@ -836,7 +798,7 @@ func (q *Queries) GetLessonCompletionStatus(ctx context.Context, arg GetLessonCo
 
 const getLessonProgress = `-- name: GetLessonProgress :one
 
-SELECT id, user_id, lesson_id, status, completed_at, created_at
+SELECT id, tenant_id, user_id, lesson_id, status, completed_at, created_at
 FROM lesson_progress
 WHERE user_id = $1 AND lesson_id = $2
 `
@@ -846,23 +808,15 @@ type GetLessonProgressParams struct {
 	LessonID pgtype.UUID `json:"lesson_id"`
 }
 
-type GetLessonProgressRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Status      string             `json:"status"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Progress Operations
 // =====================
-func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressParams) (GetLessonProgressRow, error) {
+func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressParams) (LessonProgress, error) {
 	row := q.db.QueryRow(ctx, getLessonProgress, arg.UserID, arg.LessonID)
-	var i GetLessonProgressRow
+	var i LessonProgress
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.LessonID,
 		&i.Status,
@@ -912,37 +866,27 @@ func (q *Queries) GetNextIncompleteLessonByTrack(ctx context.Context, arg GetNex
 
 const getQuizQuestionsByLesson = `-- name: GetQuizQuestionsByLesson :many
 
-SELECT id, lesson_id, question, options, answer, explanation, position, created_at
+SELECT id, tenant_id, lesson_id, question, options, answer, explanation, position, created_at
 FROM lesson_quizzes
 WHERE lesson_id = $1
 ORDER BY position ASC
 `
 
-type GetQuizQuestionsByLessonRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Question    string             `json:"question"`
-	Options     string             `json:"options"`
-	Answer      string             `json:"answer"`
-	Explanation *string            `json:"explanation"`
-	Position    int32              `json:"position"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Quiz Operations
 // =====================
-func (q *Queries) GetQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.UUID) ([]GetQuizQuestionsByLessonRow, error) {
+func (q *Queries) GetQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.UUID) ([]LessonQuiz, error) {
 	rows, err := q.db.Query(ctx, getQuizQuestionsByLesson, lessonID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetQuizQuestionsByLessonRow
+	var items []LessonQuiz
 	for rows.Next() {
-		var i GetQuizQuestionsByLessonRow
+		var i LessonQuiz
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.LessonID,
 			&i.Question,
 			&i.Options,
@@ -992,7 +936,7 @@ const issueLearningCertificate = `-- name: IssueLearningCertificate :one
 INSERT INTO learning_certificates (user_id, track_id, certificate_number) VALUES ($1, $2, $3)
 
 ON CONFLICT DO NOTHING
-RETURNING id, user_id, track_id, certificate_number, media_id, issued_at
+RETURNING id, tenant_id, user_id, track_id, certificate_number, media_id, issued_at
 `
 
 type IssueLearningCertificateParams struct {
@@ -1001,20 +945,12 @@ type IssueLearningCertificateParams struct {
 	CertificateNumber string      `json:"certificate_number"`
 }
 
-type IssueLearningCertificateRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	UserID            pgtype.UUID        `json:"user_id"`
-	TrackID           pgtype.UUID        `json:"track_id"`
-	CertificateNumber string             `json:"certificate_number"`
-	MediaID           pgtype.UUID        `json:"media_id"`
-	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
-}
-
-func (q *Queries) IssueLearningCertificate(ctx context.Context, arg IssueLearningCertificateParams) (IssueLearningCertificateRow, error) {
+func (q *Queries) IssueLearningCertificate(ctx context.Context, arg IssueLearningCertificateParams) (LearningCertificate, error) {
 	row := q.db.QueryRow(ctx, issueLearningCertificate, arg.UserID, arg.TrackID, arg.CertificateNumber)
-	var i IssueLearningCertificateRow
+	var i LearningCertificate
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.CertificateNumber,
@@ -1086,37 +1022,27 @@ func (q *Queries) ListAllLearningLessons(ctx context.Context) ([]ListAllLearning
 
 const listAllLearningModules = `-- name: ListAllLearningModules :many
 
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 
 ORDER BY sort_order ASC, created_at DESC
 `
 
-type ListAllLearningModulesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Admin List Operations
 // =====================
-func (q *Queries) ListAllLearningModules(ctx context.Context) ([]ListAllLearningModulesRow, error) {
+func (q *Queries) ListAllLearningModules(ctx context.Context) ([]LearningModule, error) {
 	rows, err := q.db.Query(ctx, listAllLearningModules)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAllLearningModulesRow
+	var items []LearningModule
 	for rows.Next() {
-		var i ListAllLearningModulesRow
+		var i LearningModule
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TrackID,
 			&i.Title,
 			&i.Slug,
@@ -1579,37 +1505,27 @@ func (q *Queries) ListLearningLessonsByModule(ctx context.Context, moduleID pgty
 
 const listLearningModulesByTrack = `-- name: ListLearningModulesByTrack :many
 
-SELECT id, track_id, title, slug, description, sort_order, created_at, updated_at
+SELECT id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 FROM learning_modules
 WHERE track_id = $1
 ORDER BY sort_order ASC, created_at DESC
 `
 
-type ListLearningModulesByTrackRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
 // =====================
 // Module Operations
 // =====================
-func (q *Queries) ListLearningModulesByTrack(ctx context.Context, trackID pgtype.UUID) ([]ListLearningModulesByTrackRow, error) {
+func (q *Queries) ListLearningModulesByTrack(ctx context.Context, trackID pgtype.UUID) ([]LearningModule, error) {
 	rows, err := q.db.Query(ctx, listLearningModulesByTrack, trackID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListLearningModulesByTrackRow
+	var items []LearningModule
 	for rows.Next() {
-		var i ListLearningModulesByTrackRow
+		var i LearningModule
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.TrackID,
 			&i.Title,
 			&i.Slug,
@@ -1629,8 +1545,6 @@ func (q *Queries) ListLearningModulesByTrack(ctx context.Context, trackID pgtype
 }
 
 const listPublishedLearningTracks = `-- name: ListPublishedLearningTracks :many
-
-
 SELECT id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university,
@@ -1661,10 +1575,6 @@ type ListPublishedLearningTracksRow struct {
 	SubscriptionEligible    bool               `json:"subscription_eligible"`
 }
 
-// Learning platform queries: tracks, modules, lessons, progress, certificates, enrollments, quizzes.
-// =====================
-// Track Operations
-// =====================
 func (q *Queries) ListPublishedLearningTracks(ctx context.Context) ([]ListPublishedLearningTracksRow, error) {
 	rows, err := q.db.Query(ctx, listPublishedLearningTracks)
 	if err != nil {
@@ -1853,7 +1763,7 @@ SET title = COALESCE($1, title),
  sort_order = COALESCE($3, sort_order),
  updated_at = now()
 WHERE id = $4
-RETURNING id, track_id, title, slug, description, sort_order, created_at, updated_at
+RETURNING id, tenant_id, track_id, title, slug, description, sort_order, created_at, updated_at
 `
 
 type UpdateLearningModuleParams struct {
@@ -1863,27 +1773,17 @@ type UpdateLearningModuleParams struct {
 	ID          pgtype.UUID `json:"id"`
 }
 
-type UpdateLearningModuleRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) UpdateLearningModule(ctx context.Context, arg UpdateLearningModuleParams) (UpdateLearningModuleRow, error) {
+func (q *Queries) UpdateLearningModule(ctx context.Context, arg UpdateLearningModuleParams) (LearningModule, error) {
 	row := q.db.QueryRow(ctx, updateLearningModule,
 		arg.Title,
 		arg.Description,
 		arg.SortOrder,
 		arg.ID,
 	)
-	var i UpdateLearningModuleRow
+	var i LearningModule
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TrackID,
 		&i.Title,
 		&i.Slug,
@@ -1986,7 +1886,7 @@ INSERT INTO lesson_progress (user_id, lesson_id, status, completed_at) VALUES ($
 ON CONFLICT (user_id, lesson_id) DO UPDATE
 SET status = EXCLUDED.status,
  completed_at = COALESCE(EXCLUDED.completed_at, lesson_progress.completed_at)
-RETURNING id, user_id, lesson_id, status, completed_at, created_at
+RETURNING id, tenant_id, user_id, lesson_id, status, completed_at, created_at
 `
 
 type UpsertLessonProgressParams struct {
@@ -1996,25 +1896,17 @@ type UpsertLessonProgressParams struct {
 	CompletedAt pgtype.Timestamptz `json:"completed_at"`
 }
 
-type UpsertLessonProgressRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Status      string             `json:"status"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpsertLessonProgress(ctx context.Context, arg UpsertLessonProgressParams) (UpsertLessonProgressRow, error) {
+func (q *Queries) UpsertLessonProgress(ctx context.Context, arg UpsertLessonProgressParams) (LessonProgress, error) {
 	row := q.db.QueryRow(ctx, upsertLessonProgress,
 		arg.UserID,
 		arg.LessonID,
 		arg.Status,
 		arg.CompletedAt,
 	)
-	var i UpsertLessonProgressRow
+	var i LessonProgress
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.LessonID,
 		&i.Status,

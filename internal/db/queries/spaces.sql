@@ -1,17 +1,11 @@
--- Space type, space, space rule, and permission preset queries.
-
--- =====================
--- Space Permission Presets
--- =====================
-
 -- name: ListPermissionPresetsByTenant :many
-SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetPermissionPresetByName :one
-SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 WHERE name = @name;
 
@@ -20,14 +14,14 @@ UPDATE space_permission_presets
 SET visibility = @visibility, posting_perm = @posting_perm, replying_perm = @replying_perm,
  commenting_perm = @commenting_perm, joining_perm = @joining_perm
 WHERE id = @id AND is_system = true
-RETURNING id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at;
+RETURNING id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at;
 
 -- =====================
 -- Space Types
 -- =====================
 
 -- name: ListSpaceTypesByTenant :many
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 
 ORDER BY created_at ASC, id ASC;
@@ -36,7 +30,7 @@ ORDER BY created_at ASC, id ASC;
 -- Supports optional search (q), category filter, and a selectable-only flag
 -- for the admin panel and the member space-creation flow. Pass empty strings
 -- and false booleans to skip filters.
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
  AND (@category_filter::text = '' OR category = @category_filter)
@@ -44,26 +38,26 @@ WHERE (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' 
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetSpaceTypeByID :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE id = @id;
 
 -- name: GetSpaceTypeBySlug :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE slug = @slug;
 
 -- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), sqlc.narg(category), @is_system)
 
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
 
 -- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = @name, description = sqlc.narg(description), icon = sqlc.narg(icon),
  field_group_id = sqlc.narg(field_group_id), category = sqlc.narg(category)
 WHERE id = @id AND is_system = false
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
+RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
 
 -- name: DeleteSpaceType :exec
 DELETE FROM space_types
@@ -875,7 +869,7 @@ ORDER BY sm.created_at ASC;
 
 -- name: GetSpaceModerator :one
 -- SPACES-015: tenant-scoped for defense-in-depth.
-SELECT id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
+SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
 WHERE space_id = @space_id AND user_id = @user_id;
 

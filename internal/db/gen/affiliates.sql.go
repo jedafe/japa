@@ -39,8 +39,8 @@ func (q *Queries) CountAffiliateMembersByTenant(ctx context.Context) (int64, err
 const createAffiliateLink = `-- name: CreateAffiliateLink :one
 
 INSERT INTO user_affiliate_links (user_id, product_type, product_id, code, description, destination_url) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 `
 
 type CreateAffiliateLinkParams struct {
@@ -52,25 +52,10 @@ type CreateAffiliateLinkParams struct {
 	DestinationUrl string      `json:"destination_url"`
 }
 
-type CreateAffiliateLinkRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // User Affiliate Links CRUD
 // =====================
-func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLinkParams) (CreateAffiliateLinkRow, error) {
+func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLinkParams) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, createAffiliateLink,
 		arg.UserID,
 		arg.ProductType,
@@ -79,9 +64,10 @@ func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLi
 		arg.Description,
 		arg.DestinationUrl,
 	)
-	var i CreateAffiliateLinkRow
+	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -100,8 +86,8 @@ func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLi
 const createAffiliateLinkEvent = `-- name: CreateAffiliateLinkEvent :one
 
 INSERT INTO affiliate_link_events (link_id, event_type, referrer_url, ip_hash, user_agent_hash, converted_payment_id, commission_amount) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, link_id, event_type, referrer_url, ip_hash,
- user_agent_hash, converted_payment_id, commission_amount, created_at
+RETURNING id, tenant_id, link_id, event_type, referrer_url, ip_hash,
+    user_agent_hash, converted_payment_id, commission_amount, created_at
 `
 
 type CreateAffiliateLinkEventParams struct {
@@ -114,22 +100,10 @@ type CreateAffiliateLinkEventParams struct {
 	CommissionAmount   pgtype.Numeric `json:"commission_amount"`
 }
 
-type CreateAffiliateLinkEventRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	LinkID             pgtype.UUID        `json:"link_id"`
-	EventType          string             `json:"event_type"`
-	ReferrerUrl        *string            `json:"referrer_url"`
-	IpHash             *string            `json:"ip_hash"`
-	UserAgentHash      *string            `json:"user_agent_hash"`
-	ConvertedPaymentID pgtype.UUID        `json:"converted_payment_id"`
-	CommissionAmount   pgtype.Numeric     `json:"commission_amount"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Affiliate Link Events
 // =====================
-func (q *Queries) CreateAffiliateLinkEvent(ctx context.Context, arg CreateAffiliateLinkEventParams) (CreateAffiliateLinkEventRow, error) {
+func (q *Queries) CreateAffiliateLinkEvent(ctx context.Context, arg CreateAffiliateLinkEventParams) (AffiliateLinkEvent, error) {
 	row := q.db.QueryRow(ctx, createAffiliateLinkEvent,
 		arg.LinkID,
 		arg.EventType,
@@ -139,9 +113,10 @@ func (q *Queries) CreateAffiliateLinkEvent(ctx context.Context, arg CreateAffili
 		arg.ConvertedPaymentID,
 		arg.CommissionAmount,
 	)
-	var i CreateAffiliateLinkEventRow
+	var i AffiliateLinkEvent
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.LinkID,
 		&i.EventType,
 		&i.ReferrerUrl,
@@ -155,14 +130,12 @@ func (q *Queries) CreateAffiliateLinkEvent(ctx context.Context, arg CreateAffili
 }
 
 const createAffiliateMember = `-- name: CreateAffiliateMember :one
-
-
 INSERT INTO affiliate_program_members (user_id, status) VALUES ($1, $2)
 
 ON CONFLICT (user_id) DO UPDATE
  SET status = EXCLUDED.status
-RETURNING user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 `
 
 type CreateAffiliateMemberParams struct {
@@ -170,26 +143,12 @@ type CreateAffiliateMemberParams struct {
 	Status string      `json:"status"`
 }
 
-type CreateAffiliateMemberRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
-// User Affiliate Program (Section 56)
-// =====================
-// Program Enrollment
-// =====================
-func (q *Queries) CreateAffiliateMember(ctx context.Context, arg CreateAffiliateMemberParams) (CreateAffiliateMemberRow, error) {
+func (q *Queries) CreateAffiliateMember(ctx context.Context, arg CreateAffiliateMemberParams) (AffiliateProgramMember, error) {
 	row := q.db.QueryRow(ctx, createAffiliateMember, arg.UserID, arg.Status)
-	var i CreateAffiliateMemberRow
+	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
+		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -348,32 +307,18 @@ func (q *Queries) GetAffiliateContentCommissionForCredit(ctx context.Context, id
 }
 
 const getAffiliateLinkByCode = `-- name: GetAffiliateLinkByCode :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE code = $1 AND is_active = true
 `
 
-type GetAffiliateLinkByCodeRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetAffiliateLinkByCode(ctx context.Context, code string) (GetAffiliateLinkByCodeRow, error) {
+func (q *Queries) GetAffiliateLinkByCode(ctx context.Context, code string) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, getAffiliateLinkByCode, code)
-	var i GetAffiliateLinkByCodeRow
+	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -390,32 +335,18 @@ func (q *Queries) GetAffiliateLinkByCode(ctx context.Context, code string) (GetA
 }
 
 const getAffiliateLinkByID = `-- name: GetAffiliateLinkByID :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = $1
 `
 
-type GetAffiliateLinkByIDRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetAffiliateLinkByID(ctx context.Context, id pgtype.UUID) (GetAffiliateLinkByIDRow, error) {
+func (q *Queries) GetAffiliateLinkByID(ctx context.Context, id pgtype.UUID) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, getAffiliateLinkByID, id)
-	var i GetAffiliateLinkByIDRow
+	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -432,32 +363,18 @@ func (q *Queries) GetAffiliateLinkByID(ctx context.Context, id pgtype.UUID) (Get
 }
 
 const getAffiliateLinkByIDOnly = `-- name: GetAffiliateLinkByIDOnly :one
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = $1
 `
 
-type GetAffiliateLinkByIDOnlyRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) (GetAffiliateLinkByIDOnlyRow, error) {
+func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, getAffiliateLinkByIDOnly, id)
-	var i GetAffiliateLinkByIDOnlyRow
+	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -474,28 +391,18 @@ func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) 
 }
 
 const getAffiliateMember = `-- name: GetAffiliateMember :one
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = $1
 `
 
-type GetAffiliateMemberRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
-func (q *Queries) GetAffiliateMember(ctx context.Context, userID pgtype.UUID) (GetAffiliateMemberRow, error) {
+func (q *Queries) GetAffiliateMember(ctx context.Context, userID pgtype.UUID) (AffiliateProgramMember, error) {
 	row := q.db.QueryRow(ctx, getAffiliateMember, userID)
-	var i GetAffiliateMemberRow
+	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
+		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -508,28 +415,18 @@ func (q *Queries) GetAffiliateMember(ctx context.Context, userID pgtype.UUID) (G
 }
 
 const getAffiliateMemberByUserID = `-- name: GetAffiliateMemberByUserID :one
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = $1
 `
 
-type GetAffiliateMemberByUserIDRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
-func (q *Queries) GetAffiliateMemberByUserID(ctx context.Context, userID pgtype.UUID) (GetAffiliateMemberByUserIDRow, error) {
+func (q *Queries) GetAffiliateMemberByUserID(ctx context.Context, userID pgtype.UUID) (AffiliateProgramMember, error) {
 	row := q.db.QueryRow(ctx, getAffiliateMemberByUserID, userID)
-	var i GetAffiliateMemberByUserIDRow
+	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
+		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -778,9 +675,9 @@ func (q *Queries) IncrementAffiliateMemberConversions(ctx context.Context, arg I
 const insertAffiliateContentCommission = `-- name: InsertAffiliateContentCommission :one
 
 INSERT INTO affiliate_content_commissions (content_id, provider_id, author_user_id, external_commission, author_share, author_commission_pct, event_description) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, content_id, provider_id, author_user_id,
- external_commission, author_share, author_commission_pct, event_description,
- credited, credited_at, created_at
+RETURNING id, tenant_id, content_id, provider_id, author_user_id,
+          external_commission, author_share, author_commission_pct, event_description,
+          credited, credited_at, created_at
 `
 
 type InsertAffiliateContentCommissionParams struct {
@@ -793,20 +690,6 @@ type InsertAffiliateContentCommissionParams struct {
 	EventDescription    *string        `json:"event_description"`
 }
 
-type InsertAffiliateContentCommissionRow struct {
-	ID                  pgtype.UUID        `json:"id"`
-	ContentID           pgtype.UUID        `json:"content_id"`
-	ProviderID          pgtype.UUID        `json:"provider_id"`
-	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
-	ExternalCommission  pgtype.Numeric     `json:"external_commission"`
-	AuthorShare         pgtype.Numeric     `json:"author_share"`
-	AuthorCommissionPct pgtype.Numeric     `json:"author_commission_pct"`
-	EventDescription    *string            `json:"event_description"`
-	Credited            bool               `json:"credited"`
-	CreditedAt          pgtype.Timestamptz `json:"credited_at"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Record external affiliate commission (Section 55 — Author Revenue Sharing)
 // =====================
@@ -814,7 +697,7 @@ type InsertAffiliateContentCommissionRow struct {
 // The author_share is pre-computed by the caller (external_commission * author_commission_pct / 100).
 // After insert, the caller enqueues the affiliate:credit_author_commission task to
 // credit the author_share to the author's wallet via the immutable credits ledger.
-func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg InsertAffiliateContentCommissionParams) (InsertAffiliateContentCommissionRow, error) {
+func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg InsertAffiliateContentCommissionParams) (AffiliateContentCommission, error) {
 	row := q.db.QueryRow(ctx, insertAffiliateContentCommission,
 		arg.ContentID,
 		arg.ProviderID,
@@ -824,9 +707,10 @@ func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg Inse
 		arg.AuthorCommissionPct,
 		arg.EventDescription,
 	)
-	var i InsertAffiliateContentCommissionRow
+	var i AffiliateContentCommission
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.ContentID,
 		&i.ProviderID,
 		&i.AuthorUserID,
@@ -909,8 +793,8 @@ func (q *Queries) ListAffiliateCommissions(ctx context.Context, arg ListAffiliat
 }
 
 const listAffiliateLinkEvents = `-- name: ListAffiliateLinkEvents :many
-SELECT id, link_id, event_type, referrer_url, ip_hash,
- user_agent_hash, converted_payment_id, commission_amount, created_at
+SELECT id, tenant_id, link_id, event_type, referrer_url, ip_hash,
+    user_agent_hash, converted_payment_id, commission_amount, created_at
 FROM affiliate_link_events
 WHERE link_id = $1
  AND ($2::text IS NULL OR event_type = $2)
@@ -925,19 +809,7 @@ type ListAffiliateLinkEventsParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListAffiliateLinkEventsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	LinkID             pgtype.UUID        `json:"link_id"`
-	EventType          string             `json:"event_type"`
-	ReferrerUrl        *string            `json:"referrer_url"`
-	IpHash             *string            `json:"ip_hash"`
-	UserAgentHash      *string            `json:"user_agent_hash"`
-	ConvertedPaymentID pgtype.UUID        `json:"converted_payment_id"`
-	CommissionAmount   pgtype.Numeric     `json:"commission_amount"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliateLinkEventsParams) ([]ListAffiliateLinkEventsRow, error) {
+func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliateLinkEventsParams) ([]AffiliateLinkEvent, error) {
 	rows, err := q.db.Query(ctx, listAffiliateLinkEvents,
 		arg.LinkID,
 		arg.EventType,
@@ -948,11 +820,12 @@ func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliate
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAffiliateLinkEventsRow
+	var items []AffiliateLinkEvent
 	for rows.Next() {
-		var i ListAffiliateLinkEventsRow
+		var i AffiliateLinkEvent
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.LinkID,
 			&i.EventType,
 			&i.ReferrerUrl,
@@ -973,8 +846,8 @@ func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliate
 }
 
 const listAffiliateLinksByUser = `-- name: ListAffiliateLinksByUser :many
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE user_id = $1
  AND ($2::bool IS NULL OR is_active = $2)
@@ -989,22 +862,7 @@ type ListAffiliateLinksByUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListAffiliateLinksByUserRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliateLinksByUserParams) ([]ListAffiliateLinksByUserRow, error) {
+func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliateLinksByUserParams) ([]UserAffiliateLink, error) {
 	rows, err := q.db.Query(ctx, listAffiliateLinksByUser,
 		arg.UserID,
 		arg.IsActive,
@@ -1015,11 +873,12 @@ func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliat
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAffiliateLinksByUserRow
+	var items []UserAffiliateLink
 	for rows.Next() {
-		var i ListAffiliateLinksByUserRow
+		var i UserAffiliateLink
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.ProductType,
 			&i.ProductID,
@@ -1043,8 +902,8 @@ func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliat
 }
 
 const listAffiliateMembers = `-- name: ListAffiliateMembers :many
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 
 ORDER BY enrolled_at DESC
@@ -1056,28 +915,18 @@ type ListAffiliateMembersParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListAffiliateMembersRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
-func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMembersParams) ([]ListAffiliateMembersRow, error) {
+func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMembersParams) ([]AffiliateProgramMember, error) {
 	rows, err := q.db.Query(ctx, listAffiliateMembers, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAffiliateMembersRow
+	var items []AffiliateProgramMember
 	for rows.Next() {
-		var i ListAffiliateMembersRow
+		var i AffiliateProgramMember
 		if err := rows.Scan(
 			&i.UserID,
+			&i.TenantID,
 			&i.EnrolledAt,
 			&i.Status,
 			&i.TotalClicks,
@@ -1097,8 +946,8 @@ func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMem
 }
 
 const listAffiliateMembersFiltered = `-- name: ListAffiliateMembersFiltered :many
-SELECT user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE ($1::text IS NULL OR status = $1)
 ORDER BY enrolled_at DESC
@@ -1111,30 +960,20 @@ type ListAffiliateMembersFilteredParams struct {
 	PageLimit  int32   `json:"page_limit"`
 }
 
-type ListAffiliateMembersFilteredRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
 // Admin list with optional status filter (Section 56 / catalog
 // ?status=active|inactive). Tenant-scoped. NULL status = no filter.
-func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffiliateMembersFilteredParams) ([]ListAffiliateMembersFilteredRow, error) {
+func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffiliateMembersFilteredParams) ([]AffiliateProgramMember, error) {
 	rows, err := q.db.Query(ctx, listAffiliateMembersFiltered, arg.Status, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAffiliateMembersFilteredRow
+	var items []AffiliateProgramMember
 	for rows.Next() {
-		var i ListAffiliateMembersFilteredRow
+		var i AffiliateProgramMember
 		if err := rows.Scan(
 			&i.UserID,
+			&i.TenantID,
 			&i.EnrolledAt,
 			&i.Status,
 			&i.TotalClicks,
@@ -1220,8 +1059,8 @@ func (q *Queries) ListAffiliateScanResults(ctx context.Context, arg ListAffiliat
 }
 
 const listAllAffiliateLinks = `-- name: ListAllAffiliateLinks :many
-SELECT id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 
 ORDER BY created_at DESC
@@ -1233,32 +1072,18 @@ type ListAllAffiliateLinksParams struct {
 	PageLimit  int32 `json:"page_limit"`
 }
 
-type ListAllAffiliateLinksRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliateLinksParams) ([]ListAllAffiliateLinksRow, error) {
+func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliateLinksParams) ([]UserAffiliateLink, error) {
 	rows, err := q.db.Query(ctx, listAllAffiliateLinks, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAllAffiliateLinksRow
+	var items []UserAffiliateLink
 	for rows.Next() {
-		var i ListAllAffiliateLinksRow
+		var i UserAffiliateLink
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.ProductType,
 			&i.ProductID,
@@ -1413,8 +1238,8 @@ const updateAffiliateLink = `-- name: UpdateAffiliateLink :one
 UPDATE user_affiliate_links
 SET description = $1, is_active = $2
 WHERE id = $3 AND user_id = $4
-RETURNING id, user_id, product_type, product_id, code, description,
- destination_url, click_count, conversion_count, total_earned, is_active, created_at
+RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
+    destination_url, click_count, conversion_count, total_earned, is_active, created_at
 `
 
 type UpdateAffiliateLinkParams struct {
@@ -1424,31 +1249,17 @@ type UpdateAffiliateLinkParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
 }
 
-type UpdateAffiliateLinkRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	ProductType     string             `json:"product_type"`
-	ProductID       pgtype.UUID        `json:"product_id"`
-	Code            string             `json:"code"`
-	Description     *string            `json:"description"`
-	DestinationUrl  string             `json:"destination_url"`
-	ClickCount      int32              `json:"click_count"`
-	ConversionCount int32              `json:"conversion_count"`
-	TotalEarned     pgtype.Numeric     `json:"total_earned"`
-	IsActive        bool               `json:"is_active"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) UpdateAffiliateLink(ctx context.Context, arg UpdateAffiliateLinkParams) (UpdateAffiliateLinkRow, error) {
+func (q *Queries) UpdateAffiliateLink(ctx context.Context, arg UpdateAffiliateLinkParams) (UserAffiliateLink, error) {
 	row := q.db.QueryRow(ctx, updateAffiliateLink,
 		arg.Description,
 		arg.IsActive,
 		arg.ID,
 		arg.UserID,
 	)
-	var i UpdateAffiliateLinkRow
+	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -1468,8 +1279,8 @@ const updateAffiliateMemberStatus = `-- name: UpdateAffiliateMemberStatus :one
 UPDATE affiliate_program_members
 SET status = $1, notes = $2
 WHERE user_id = $3
-RETURNING user_id, enrolled_at, status, total_clicks,
- total_conversions, total_earned_credits, payout_method, notes
+RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
+    total_conversions, total_earned_credits, payout_method, notes
 `
 
 type UpdateAffiliateMemberStatusParams struct {
@@ -1478,22 +1289,12 @@ type UpdateAffiliateMemberStatusParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 }
 
-type UpdateAffiliateMemberStatusRow struct {
-	UserID             pgtype.UUID        `json:"user_id"`
-	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
-	Status             string             `json:"status"`
-	TotalClicks        int32              `json:"total_clicks"`
-	TotalConversions   int32              `json:"total_conversions"`
-	TotalEarnedCredits pgtype.Numeric     `json:"total_earned_credits"`
-	PayoutMethod       *string            `json:"payout_method"`
-	Notes              *string            `json:"notes"`
-}
-
-func (q *Queries) UpdateAffiliateMemberStatus(ctx context.Context, arg UpdateAffiliateMemberStatusParams) (UpdateAffiliateMemberStatusRow, error) {
+func (q *Queries) UpdateAffiliateMemberStatus(ctx context.Context, arg UpdateAffiliateMemberStatusParams) (AffiliateProgramMember, error) {
 	row := q.db.QueryRow(ctx, updateAffiliateMemberStatus, arg.Status, arg.Notes, arg.UserID)
-	var i UpdateAffiliateMemberStatusRow
+	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
+		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,

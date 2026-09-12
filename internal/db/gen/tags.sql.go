@@ -15,7 +15,7 @@ const addTagModerator = `-- name: AddTagModerator :one
 INSERT INTO tag_moderators (tag_id, user_id, assigned_by, assigned_by_user_id) VALUES ($1, $2, $3, $4)
 
 ON CONFLICT (tag_id, user_id) DO UPDATE SET created_at = now()
-RETURNING id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
+RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
 `
 
 type AddTagModeratorParams struct {
@@ -25,26 +25,18 @@ type AddTagModeratorParams struct {
 	AssignedByUserID pgtype.UUID `json:"assigned_by_user_id"`
 }
 
-type AddTagModeratorRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	TagID            pgtype.UUID        `json:"tag_id"`
-	UserID           pgtype.UUID        `json:"user_id"`
-	AssignedBy       string             `json:"assigned_by"`
-	AssignedByUserID pgtype.UUID        `json:"assigned_by_user_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
 // Idempotent: re-adding an existing moderator just refreshes created_at.
-func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams) (AddTagModeratorRow, error) {
+func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams) (TagModerator, error) {
 	row := q.db.QueryRow(ctx, addTagModerator,
 		arg.TagID,
 		arg.UserID,
 		arg.AssignedBy,
 		arg.AssignedByUserID,
 	)
-	var i AddTagModeratorRow
+	var i TagModerator
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.TagID,
 		&i.UserID,
 		&i.AssignedBy,
@@ -465,7 +457,6 @@ func (q *Queries) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]L
 }
 
 const listTagsByTenant = `-- name: ListTagsByTenant :many
-
 SELECT t.id, t.name, t.slug, t.description, t.rules, t.cover_media_id,
  t.logo_media_id, t.color, t.follower_count, t.content_count, t.is_system,
  t.field_values, t.created_at, t.updated_at,
@@ -499,10 +490,6 @@ type ListTagsByTenantRow struct {
 	CoverStorageBucket *string            `json:"cover_storage_bucket"`
 }
 
-// General cross-domain tags (Section 08/49 catalog: GET /tags, /tags/:slug).
-// Distinct from forum_tags (forum-scoped) — this is the tags table content
-// is tagged against via content_tags, and the entity followed via follows
-// (entity_type='tag').
 func (q *Queries) ListTagsByTenant(ctx context.Context) ([]ListTagsByTenantRow, error) {
 	rows, err := q.db.Query(ctx, listTagsByTenant)
 	if err != nil {
