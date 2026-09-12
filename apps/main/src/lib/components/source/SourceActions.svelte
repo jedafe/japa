@@ -1,26 +1,49 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { MoreVertical, Ban, Flag, Share2, Check } from 'lucide-svelte';
+	import { MoreVertical, Ban, Flag, Share2, Check, Pencil } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
+	import SourceEditDialog from './SourceEditDialog.svelte';
 	import type { Source } from '$lib/types/sources';
 
 	interface Props {
 		source: Source;
 		isBlocked?: boolean;
 		onBlockChange?: (isBlocked: boolean) => void;
+		onEdit?: (updated: Source) => void;
 	}
 
-	let { source, isBlocked = false, onBlockChange }: Props = $props();
+	let { source, isBlocked = false, onBlockChange, onEdit }: Props = $props();
 
 	let blockLoading = $state(false);
 	let blockError = $state('');
 	let reportOpen = $state(false);
+	let editOpen = $state(false);
 	let shared = $state(false);
 	let open = $state(false);
+	// svelte-ignore state_referenced_locally
+	let userPerms = $state<string[]>(page.data.user?.permissions ?? []);
+	// svelte-ignore state_referenced_locally
+	let permsLoaded = $state(!!page.data.user?.permissions && page.data.user.permissions.length > 0);
+
+	$effect(() => {
+		if (permsLoaded || !page.data.isAuthed) return;
+		permsLoaded = true;
+		api.get<{ permissions: string[] }>('/me/permissions').then((res) => {
+			if (res.data) {
+				userPerms = res.data.permissions ?? [];
+			}
+		});
+	});
+
+	const canEdit = $derived(
+		!!page.data.isAuthed &&
+			(!!userPerms.includes('intel.sources.manage') ||
+				!!page.data.user?.groups?.some((g) => g === 'super_admin' || g === 'Super Admin'))
+	);
 
 	async function toggleBlock() {
 		if (blockLoading) return;
@@ -45,6 +68,12 @@
 	async function openReport() {
 		if (!(await requireAuthOrRedirect())) return;
 		reportOpen = true;
+		open = false;
+	}
+
+	async function openEdit() {
+		if (!(await requireAuthOrRedirect())) return;
+		editOpen = true;
 		open = false;
 	}
 
@@ -80,6 +109,16 @@
 			sideOffset={8}
 			class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
 		>
+			{#if canEdit}
+				<DropdownMenu.Item
+					onSelect={openEdit}
+					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
+				>
+					<Pencil class="h-4 w-4" />
+					{t('sources.edit.label', 'Edit')}
+				</DropdownMenu.Item>
+			{/if}
+
 			<DropdownMenu.Item
 				disabled={blockLoading}
 				onSelect={toggleBlock}
@@ -118,3 +157,4 @@
 {/if}
 
 <ReportDialog bind:open={reportOpen} entityType="source" entityId={source.slug} entityName={source.name} />
+<SourceEditDialog bind:open={editOpen} {source} onSave={onEdit} />
