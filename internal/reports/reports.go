@@ -28,6 +28,7 @@ const (
 	EntityTypeUser    = "user"
 	EntityTypeSpace   = "space"
 	EntityTypeMessage = "message"
+	EntityTypeSource  = "source"
 )
 
 var validEntityTypes = map[string]bool{
@@ -36,6 +37,7 @@ var validEntityTypes = map[string]bool{
 	EntityTypeUser:    true,
 	EntityTypeSpace:   true,
 	EntityTypeMessage: true,
+	EntityTypeSource:  true,
 }
 
 var validReasons = map[string]bool{

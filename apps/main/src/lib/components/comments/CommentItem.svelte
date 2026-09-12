@@ -18,7 +18,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import type { Comment } from '$lib/types';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
-	import EntityHoverChip from '$lib/components/feed/EntityHoverChip.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
 

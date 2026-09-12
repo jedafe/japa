@@ -2261,6 +2261,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	videoService.SetDispatcher(aiDispatcher)
 	intelHandlers.SetVideoStore(videoStore)
 	intelHandlers.SetContentStore(contentService)
+	intelHandlers.SetLinkPreviewer(linkPreviewFetcher)
+	intelHandlers.SetReportService(reportsService)
 	worker.RegisterVideoImportProcessor(videoService)
 	worker.RegisterVideoSummaryProcessor(videoService)
 	videoHandlers := video.NewHandlers(videoService)
@@ -6347,6 +6349,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/sources/{slug}/block", intelHandlers.HandleToggleSourceBlock)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.submit")).
+				Post("/sources/{slug}/report", intelHandlers.HandleReportSource)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/me/blocked-sources", intelHandlers.HandleListBlockedSources)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle")).

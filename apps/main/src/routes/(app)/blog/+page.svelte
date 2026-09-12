@@ -4,16 +4,15 @@
 	import { t } from '$lib/i18n';
 	import { BookOpen, ArrowRight, X } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, UrlTabs, type UrlTab, FilterToggle } from '$lib/components/ui';
-	import { cardStyleFor, gridMode, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem, BlogSeries } from '$lib/types';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
+	
 
 	interface SpaceOption {
 		id: string;
@@ -134,23 +133,26 @@
 			content_type: 'blog_post',
 			author_id: post.author_id ?? '',
 			author_name: post.author_name,
+			author_username: post.author_username,
 			author_avatar_url: post.author_avatar_url,
 			space_id: post.space_id,
 			space_name: post.space_name,
 			space_slug: post.space_slug,
 			excerpt: post.excerpt,
 			created_at: post.created_at,
+			published_at: post.published_at,
 			view_count: post.view_count,
 			comment_count: post.comment_count,
 			reading_time_minutes: post.read_time_minutes,
 			cover_image_url: post.featured_image_url,
+			reaction_count: post.reaction_count,
+			bookmark_count: post.bookmark_count,
 			vote_score: post.reshare_count ?? post.share_count ?? 0,
 			tags: post.tags
 		};
 	}
 
 	const feedItems = $derived(data.items.map(toFeedItem));
-	const gridLayout = $derived(gridMode(feedItems.map((i) => i.content_type), config));
 
 	// Labels for the currently selected filters, looked up from the suggestion
 	// lists (which are back-filled by the live search fetchers) or the feed.
@@ -427,19 +429,11 @@
 			{:else if data.items.length === 0}
 				<p class="py-12 text-center text-[var(--color-text-subtle)]">{t('blog.empty', 'No posts yet. Check back soon.')}</p>
 			{:else}
-				{#if gridLayout}
-					<div class="blog-grid grid gap-3.5 sm:grid-cols-2">
-						{#each feedItems as item (item.id)}
-							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="grid-cell" />
-						{/each}
-					</div>
-				{:else}
-					<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-						{#each feedItems as item (item.id)}
-							<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
-						{/each}
-					</div>
-				{/if}
+				<div class="grid gap-3.5 sm:grid-cols-2">
+					{#each feedItems as item (item.id)}
+						<ContentGridCard {item} />
+					{/each}
+				</div>
 
 				{#if data.meta?.total != null && data.meta.total > 0}
 					<p class="mt-6 text-center text-xs text-[var(--color-muted)]">
@@ -471,13 +465,3 @@
 	</div>
 </div>
 
-<style>
-	@media (min-width: 640px) {
-		:global(.shell[data-nav-collapsed="false"]) .blog-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
-		:global(.shell[data-nav-collapsed="true"]) .blog-grid {
-			grid-template-columns: repeat(3, 1fr);
-		}
-	}
-</style>

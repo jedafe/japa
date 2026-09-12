@@ -7,9 +7,10 @@
 	interface Props {
 		slug: string;
 		initial?: boolean;
+		onChange?: (isBlocked: boolean) => void;
 	}
 
-	let { slug, initial = false }: Props = $props();
+	let { slug, initial = false, onChange }: Props = $props();
 
 	// svelte-ignore state_referenced_locally
 	let isBlocked = $state(initial);
@@ -24,6 +25,7 @@
 		try {
 			const res = await api[method]<{ is_blocked: boolean }>(`/sources/${slug}/block`);
 			isBlocked = res.data?.is_blocked ?? !isBlocked;
+			onChange?.(isBlocked);
 		} catch (err) {
 			error = err instanceof Error ? err.message : t('sources.block.error', 'Block failed');
 		} finally {

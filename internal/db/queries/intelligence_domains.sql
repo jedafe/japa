@@ -230,6 +230,12 @@ INSERT INTO wiki_pages (
 -- name: GetWikiPageByIntelRecord :one
 SELECT * FROM wiki_pages WHERE tenant_id = $1 AND intel_record_id = $2;
 
+-- name: GetWikiPageByIntelRecordWithSpace :one
+SELECT wp.*, s.slug AS space_slug
+FROM wiki_pages wp
+JOIN spaces s ON s.id = wp.space_id AND s.tenant_id = wp.tenant_id
+WHERE wp.tenant_id = $1 AND wp.intel_record_id = $2;
+
 -- name: UpdateWikiPageIntel :exec
 UPDATE wiki_pages
 SET title = $3, category = $4, is_active = $5, is_featured = $6, is_locked = $7,

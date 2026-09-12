@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Reusable hover chip for users, spaces, and organizations.
+	 * Reusable hover chip for users, spaces, organizations, and sources.
 	 * Wraps a bits-ui LinkPreview (hover card primitive) and fetches
 	 * the public entity detail on first open so follower/member counts and
 	 * descriptions are available without over-fetching in the feed list.
@@ -15,9 +15,9 @@
 	import type { FollowableType } from '$lib/api/hub';
 
 	interface Props {
-		type: 'user' | 'space' | 'organization';
+		type: 'user' | 'space' | 'organization' | 'source';
 		id: string;
-		slug: string;
+		slug?: string | null;
 		name: string;
 		avatar?: string | null;
 		/** Initial description/bio from the feed row; may be overwritten by fetched detail. */
@@ -91,7 +91,7 @@
 	const avatarSrc = $derived(detailAvatar ?? avatar ?? undefined);
 	const displayName = $derived(detailName ?? name);
 	const handle = $derived(
-		type === 'user' ? (detailUsername ?? slug) : slug
+		type === 'user' ? (detailUsername ?? slug ?? '') : (slug ?? '')
 	);
 	const stats = $derived(
 		type === 'user'
@@ -113,9 +113,25 @@
 	const visibleStats = $derived(stats.filter((s) => s.value != null));
 
 	const href = $derived(
-		type === 'user' ? (handle ? `/u/${handle}` : '') : type === 'space' ? `/spaces/${slug}` : `/org/${slug}`
+		slug
+			? type === 'user'
+				? `/u/${handle}`
+				: type === 'space'
+					? `/spaces/${slug}`
+					: type === 'organization'
+						? `/org/${slug}`
+						: `/sources/${slug}`
+			: ''
 	);
-	const followType: FollowableType = $derived(type === 'user' ? 'user' : type === 'space' ? 'space' : 'organization');
+	const followType: FollowableType = $derived(
+		type === 'user'
+			? 'user'
+			: type === 'space'
+				? 'space'
+				: type === 'organization'
+					? 'organization'
+					: 'source'
+	);
 
 	function pick(obj: Record<string, unknown>, ...keys: string[]) {
 		for (const key of keys) {
@@ -141,7 +157,14 @@
 		if (fetched || loading) return;
 		if (!slug) return;
 		loading = true;
-		const path = type === 'user' ? `/users/${slug}` : type === 'space' ? `/spaces/${slug}` : `/organizations/${slug}`;
+		const path =
+		type === 'user'
+			? `/users/${slug}`
+			: type === 'space'
+				? `/spaces/${slug}`
+				: type === 'organization'
+					? `/organizations/${slug}`
+					: `/sources/${slug}`;
 		const res = await api.get<Record<string, unknown>>(path);
 		if (!res.error && res.data && typeof res.data === 'object') {
 			const d = res.data;

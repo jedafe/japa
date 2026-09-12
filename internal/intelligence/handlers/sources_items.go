@@ -255,9 +255,6 @@ func (h *Handlers) scholarshipRecordToSourceItem(ctx context.Context, tenantID p
 	}
 
 	href := "/scholarships/" + pgtypeUUIDString(sch.GuideID)
-	if content, err := h.intelStores.GetContentByID(ctx, tenantID, sch.GuideID); err == nil && content.Slug != "" {
-		href = "/scholarships/" + content.Slug
-	}
 
 	publishedAt := sch.CreatedAt
 	if !publishedAt.Valid || publishedAt.Time.IsZero() {
@@ -400,7 +397,7 @@ func (h *Handlers) contentRecordToSourceItem(ctx context.Context, tenantID pgtyp
 }
 
 func (h *Handlers) wikiRecordToSourceItem(ctx context.Context, tenantID pgtype.UUID, rec gen.IntelRecord) (sourceItem, bool, error) {
-	page, err := h.intelStores.GetWikiPageByIntelRecord(ctx, tenantID, rec.ID)
+	page, err := h.intelStores.GetWikiPageByIntelRecordWithSpace(ctx, tenantID, rec.ID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return sourceItem{}, false, nil
@@ -408,11 +405,17 @@ func (h *Handlers) wikiRecordToSourceItem(ctx context.Context, tenantID pgtype.U
 		return sourceItem{}, false, err
 	}
 
+	spaceSlug := page.SpaceSlug
+	if spaceSlug == "" {
+		spaceSlug = page.Slug
+	}
+	href := "/wiki/" + spaceSlug + "/" + page.Slug
+
 	return sourceItem{
 		ID:          pgtypeUUIDString(page.ID),
 		EntityType:  "wiki_page",
 		Title:       page.Title,
-		Href:        "/wiki/" + page.Slug,
+		Href:        href,
 		PublishedAt: rec.ExtractedAt,
 	}, true, nil
 }

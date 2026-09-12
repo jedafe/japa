@@ -6,16 +6,13 @@
 	import { EmptyState, FilterToggle, ListPageBar, PageAction, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
 	import type { FeedItem } from '$lib/types';
 	import type { GuideListItem } from '$lib/types/content';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-
-	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	function toFeedItem(g: GuideListItem): FeedItem {
 		return {
@@ -25,19 +22,26 @@
 			content_type: 'guide',
 			author_id: g.author_id ?? '',
 			author_name: g.author_display_name ?? g.author_username ?? '',
+			author_username: g.author_username,
+			author_avatar_url: g.author_avatar_url,
 			space_id: g.space_id,
 			space_name: g.space_name,
 			excerpt: g.purpose ?? undefined,
-			created_at: g.published_at ?? g.created_at,
+			created_at: g.created_at,
+			published_at: g.published_at ?? undefined,
 			view_count: g.view_count,
 			comment_count: g.comment_count,
+			reaction_count: g.reaction_count,
+			bookmark_count: g.bookmark_count,
 			vote_score: g.reshare_count ?? g.share_count ?? 0,
 			reading_time_minutes: g.read_time_minutes,
+			cover_image_url: g.featured_image_url ?? g.header_image_url ?? null,
 			guide_category: g.guide_category,
 			journey_stage: g.journey_stage,
 			visa_route: g.visa_route,
 			source_country: g.source_country,
-			target_country: g.target_country
+			target_country: g.target_country,
+			tags: g.tags
 		};
 	}
 
@@ -328,9 +332,9 @@
 								<h2 class="text-sm font-semibold text-[var(--color-text)]">{group.label}</h2>
 								<span class="text-xs text-[var(--color-muted)]">{group.items.length}</span>
 							</div>
-							<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+							<div class="grid gap-3.5 sm:grid-cols-2">
 								{#each group.items as item (item.id)}
-									<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+									<ContentGridCard {item} />
 								{/each}
 							</div>
 						</section>
@@ -344,9 +348,9 @@
 		{:else if feedItems.length === 0}
 			<EmptyState icon={BookOpen} title={t('guides.empty', 'No guides yet. Check back soon.')} />
 		{:else}
-			<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+			<div class="grid gap-3.5 sm:grid-cols-2">
 				{#each feedItems as item (item.id)}
-					<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+					<ContentGridCard {item} />
 				{/each}
 			</div>
 

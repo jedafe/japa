@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -11,12 +12,53 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/intelligence/sources"
+	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/tenant"
 )
+
+// sourceOption is a single selectable option with a value and a display label.
+// Keeping the label on the backend lets the frontend render tabs and selects
+// without hardcoding a display map (Rule 16).
+type sourceOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// sourceItemEntityTypes is the canonical set of entity types the source feed
+// can return. It must stay in sync with recordToSourceItem in sources_items.go.
+var sourceItemEntityTypes = []sourceOption{
+	{Value: "scholarship", Label: "Scholarships"},
+	{Value: "job", Label: "Jobs"},
+	{Value: "remittance", Label: "Remittance"},
+	{Value: "news", Label: "News"},
+	{Value: "culture_lifestyle", Label: "Culture & Lifestyle"},
+	{Value: "guide", Label: "Guide"},
+	{Value: "blog", Label: "Blog"},
+	{Value: "article", Label: "Article"},
+	{Value: "wiki_page", Label: "Wiki"},
+	{Value: "video", Label: "Video"},
+	{Value: "comparison", Label: "Comparison"},
+}
+
+// sourceSortOptions are the sorts exposed by the public source directory.
+var sourceSortOptions = []sourceOption{
+	{Value: "popular", Label: "Popular"},
+	{Value: "recent", Label: "Recently added"},
+	{Value: "trending", Label: "Trending"},
+}
+
+// sourceItemSortOptions are the sorts exposed by a source's item feed.
+var sourceItemSortOptions = []sourceOption{
+	{Value: "latest", Label: "Latest"},
+	{Value: "popular", Label: "Popular"},
+	{Value: "discussed", Label: "Discussed"},
+	{Value: "upvoted", Label: "Upvoted"},
+}
 
 // publicSource is the public source profile shape returned by the /sources
 // directory and /sources/{slug} detail endpoints. It omits internal crawl
@@ -27,6 +69,7 @@ type publicSource struct {
 	Name          string         `json:"name"`
 	Description   *string        `json:"description,omitempty"`
 	Domain        string         `json:"domain"`
+	SourceURL     string         `json:"source_url,omitempty"`
 	Category      string         `json:"category"`
 	SourceType    string         `json:"source_type"`
 	SourceKind    string         `json:"source_kind"`
@@ -34,6 +77,7 @@ type publicSource struct {
 	FollowerCount int32          `json:"follower_count"`
 	PostCount     int32          `json:"post_count"`
 	LogoURL       *string        `json:"logo_url,omitempty"`
+	Keywords      []string       `json:"keywords,omitempty"`
 	IsFollowing   bool           `json:"is_following"`
 	IsBlocked     bool           `json:"is_blocked"`
 	LinkedEntity  *linkedEntity  `json:"linked_entity,omitempty"`
@@ -294,6 +338,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		Name:          row.Name,
 		Description:   row.Description,
 		Domain:        row.Domain,
+		SourceURL:     row.SourceUrl,
 		Category:      row.Category,
 		SourceType:    row.SourceType,
 		SourceKind:    row.SourceKind,
@@ -301,14 +346,115 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		FollowerCount: row.FollowerCount,
 		PostCount:     row.PostCount,
 		LogoURL:       row.LogoUrl,
+		Keywords:      []string{},
 		IsFollowing:   isFollowing,
 		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
 	}
 
+	h.enrichPublicSource(r.Context(), &src, tenantID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": src,
 	})
+}
+
+// HandleReportSource accepts a user report against a publisher source.
+//
+// POST /api/v1/sources/{slug}/report
+type sourceReportBody struct {
+	Reason       string   `json:"reason"`
+	Notes        *string  `json:"notes"`
+	EvidenceURLs []string `json:"evidence_urls"`
+}
+
+func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil || h.reportSvc == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "unavailable", "Source reporting is not configured")
+		return
+	}
+
+	tenantID := tenant.IDFromContext(r.Context())
+	if !tenantID.Valid {
+		tenantID = h.defaultTenant
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Source slug is required")
+		return
+	}
+
+	src, err := h.intelStores.GetPublicSourceBySlugWithLinkedEntity(r.Context(), tenantID, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "source_not_found", "Source not found")
+			return
+		}
+		slog.Error("intel: source report lookup failed", "slug", slug, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_report_lookup_failed", "Failed to load source")
+		return
+	}
+
+	var body sourceReportBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	report, err := h.reportSvc.CreateReport(r.Context(), tenantID, user.UserID, reports.CreateReportInput{
+		EntityType:   reports.EntityTypeSource,
+		EntityID:     src.ID,
+		Reason:       body.Reason,
+		Notes:        body.Notes,
+		EvidenceURLs: body.EvidenceURLs,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "source_report_failed", "Failed to submit report")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"data": report,
+	})
+}
+
+// enrichPublicSource fetches the source's public site metadata and overlays
+// any missing description, logo, or keywords. Failures are logged but ignored
+// so a 3rd-party outage never breaks the source detail page.
+func (h *Handlers) enrichPublicSource(ctx context.Context, src *publicSource, tenantID pgtype.UUID) {
+	if h.linkPreview == nil {
+		return
+	}
+
+	pageURL := src.SourceURL
+	if pageURL == "" {
+		pageURL = "https://" + src.Domain
+	}
+
+	preview, err := h.linkPreview.Fetch(ctx, pageURL, tenantID)
+	if err != nil {
+		slog.Debug("intel: source preview fetch failed; using registry values", "url", pageURL, "error", err)
+		return
+	}
+
+	if preview.Description != "" {
+		src.Description = &preview.Description
+	}
+	if preview.Favicon != "" {
+		src.LogoURL = &preview.Favicon
+	} else if preview.Image != "" && src.LogoURL == nil {
+		src.LogoURL = &preview.Image
+	}
+	if len(preview.Keywords) > 0 {
+		src.Keywords = preview.Keywords
+	}
 }
 
 func buildLinkedEntity(row gen.GetIntelSourceBySlugWithLinkedEntityRow) *linkedEntity {
@@ -346,6 +492,7 @@ func intelSourceToPublic(s gen.IntelSource, isFollowing, isBlocked bool, linked 
 		Name:          s.Name,
 		Description:   s.Description,
 		Domain:        s.Domain,
+		SourceURL:     s.SourceUrl,
 		Category:      s.Category,
 		SourceType:    s.SourceType,
 		SourceKind:    s.SourceKind,
@@ -353,6 +500,7 @@ func intelSourceToPublic(s gen.IntelSource, isFollowing, isBlocked bool, linked 
 		FollowerCount: s.FollowerCount,
 		PostCount:     s.PostCount,
 		LogoURL:       s.LogoUrl,
+		Keywords:      []string{},
 		IsFollowing:   isFollowing,
 		IsBlocked:     isBlocked,
 		LinkedEntity:  linked,
@@ -458,6 +606,9 @@ func (h *Handlers) HandleGetSourcesMeta(w http.ResponseWriter, r *http.Request) 
 				"cost_of_living", "university", "video", "organization", "people",
 			},
 			"source_types": []string{"rss", "youtube", "api", "static"},
+			"entity_types": sourceItemEntityTypes,
+			"sorts":        sourceSortOptions,
+			"item_sorts":   sourceItemSortOptions,
 		},
 	})
 }

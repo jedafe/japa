@@ -26,11 +26,17 @@ export const load: LayoutServerLoad = async (event) => {
 		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
 			ctx,
 			`/sidebars/resolve?app=main&position=right&path=${sidebarPath}`
-		).catch(() => null),
+		).catch((err) => {
+			console.error('sidebar: right sidebar resolution failed', { path: event.url.pathname, err });
+			return null;
+		}),
 		apiGet<{ sidebar?: { id?: string } | null; widgets?: unknown[] }>(
 			ctx,
 			`/sidebars/resolve?app=main&position=left&path=${sidebarPath}`
-		).catch(() => null)
+		).catch((err) => {
+			console.error('sidebar: left sidebar resolution failed', { path: event.url.pathname, err });
+			return null;
+		})
 	]);
 
 	return {

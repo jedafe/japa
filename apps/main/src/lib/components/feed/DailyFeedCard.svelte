@@ -24,7 +24,7 @@
 	import { contentHref } from '$lib/utils/contentLink';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
-	import EntityHoverChip from './EntityHoverChip.svelte';
+	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import ShareMenu from './ShareMenu.svelte';
 	import ShareMenuItems from './ShareMenuItems.svelte';
 	import type { FeedItem } from '$lib/types';

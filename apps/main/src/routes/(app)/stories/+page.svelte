@@ -7,19 +7,14 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { relativeTime } from '$lib/feed/time';
-	import { i18n } from '$lib/i18n';
-	import { BookOpen, BadgeCheck, PenSquare, ArrowRight, Loader2, X } from 'lucide-svelte';
+	import { BookOpen, PenSquare, ArrowRight, Loader2, X } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import type { FeedItem, Story } from '$lib/types';
 	import type { GuideListItem } from '$lib/types/content';
-	import FeedCard from '$lib/components/feed/FeedCard.svelte';
-	import { cardStyleFor, type CardStyleConfig } from '$lib/feed/cardStyle';
+	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
 	import type { PageData } from './$types';
-
-	const config = $derived((page.data.cardStyleConfig as CardStyleConfig) ?? { default: 'reddit', byType: {} });
 
 	let { data }: { data: PageData } = $props();
 
@@ -126,6 +121,31 @@
 		setSort(value);
 	}
 
+	function storyToFeedItem(s: Story): FeedItem {
+		return {
+			id: s.id,
+			title: s.title,
+			slug: s.slug,
+			content_type: 'story',
+			author_id: s.author_id ?? '',
+			author_name: s.author_display_name ?? s.author_name ?? s.author_username ?? '',
+			author_username: s.author_username,
+			author_avatar_url: s.author_avatar,
+			excerpt: s.biggest_challenge ?? undefined,
+			created_at: s.created_at,
+			published_at: s.published_at,
+			view_count: s.view_count,
+			comment_count: s.comment_count,
+			reaction_count: s.reaction_count,
+			bookmark_count: s.bookmark_count,
+			vote_score: 0,
+			cover_image_url: s.featured_image_url ?? s.header_image_url ?? null,
+			source_country: s.origin_space_name,
+			target_country: s.destination_space_name,
+			visa_route: s.visa_category
+		};
+	}
+
 	function featuredToFeedItem(g: GuideListItem): FeedItem {
 		return {
 			id: g.id,
@@ -134,19 +154,25 @@
 			content_type: 'story',
 			author_id: g.author_id ?? '',
 			author_name: g.author_display_name ?? g.author_username ?? '',
-			space_id: g.space_id ?? undefined,
-			space_name: g.space_name ?? undefined,
+			author_username: g.author_username,
+			author_avatar_url: g.author_avatar_url,
 			excerpt: g.purpose ?? undefined,
-			created_at: g.published_at ?? g.created_at,
+			created_at: g.created_at,
+			published_at: g.published_at ?? undefined,
 			view_count: g.view_count,
 			comment_count: g.comment_count,
+			reaction_count: g.reaction_count,
+			bookmark_count: g.bookmark_count,
 			vote_score: g.reshare_count ?? g.share_count ?? 0,
 			reading_time_minutes: g.read_time_minutes,
+			cover_image_url: g.featured_image_url ?? g.header_image_url ?? null,
 			source_country: g.source_country,
-			target_country: g.target_country
+			target_country: g.target_country,
+			visa_route: g.visa_route
 		};
 	}
 
+	const feedItems = $derived(stories.map(storyToFeedItem));
 	const featuredItems = $derived(data.featured.map(featuredToFeedItem));
 
 	async function loadMore() {
@@ -376,9 +402,9 @@
 					body={t('stories.featured_empty_body', 'Curators have not featured any stories yet.')}
 				/>
 			{:else}
-				<div class="divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="grid gap-3.5 sm:grid-cols-2">
 					{#each featuredItems as item (item.id)}
-						<FeedCard {item} style={cardStyleFor(item.content_type, config)} layout="stream" />
+						<ContentGridCard {item} />
 					{/each}
 				</div>
 			{/if}
@@ -398,51 +424,9 @@
 					: { label: t('stories.share', 'Share Your Story'), href: '/login?redirect=/create%3Ftype%3Dstory' }}
 			/>
 		{:else}
-			<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-				{#each stories as story (story.id)}
-					<a
-						href="/story/{story.slug}"
-						class="flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<div class="flex items-start justify-between gap-2">
-							<h2 class="line-clamp-2 text-sm font-semibold text-[var(--color-text)]">{story.title}</h2>
-							{#if story.verified}
-								<BadgeCheck size={16} class="shrink-0 text-[var(--color-primary)]" />
-							{/if}
-						</div>
-
-						{#if story.origin_space_name || story.destination_space_name}
-							<p class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
-								<span>{story.origin_space_name ?? '—'}</span>
-								<ArrowRight size={12} />
-								<span>{story.destination_space_name ?? '—'}</span>
-							</p>
-						{/if}
-
-						{#if story.biggest_challenge}
-							<p class="line-clamp-3 text-xs text-[var(--color-text-subtle)]">
-								{story.biggest_challenge}
-							</p>
-						{/if}
-
-						<div class="mt-auto flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-							{#if story.relocation_year}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{story.relocation_year}</span>
-							{/if}
-							{#if story.visa_category}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{story.visa_category}</span>
-							{/if}
-							{#if story.profession}
-								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{story.profession}</span>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-2 border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-muted)]">
-							<span class="font-medium text-[var(--color-text-subtle)]">@{story.author_name}</span>
-							<span>·</span>
-							<span>{relativeTime(story.created_at, new Date(), i18n.locale)}</span>
-						</div>
-					</a>
+			<div class="grid gap-3.5 sm:grid-cols-2">
+				{#each feedItems as item (item.id)}
+					<ContentGridCard {item} />
 				{/each}
 			</div>
 
