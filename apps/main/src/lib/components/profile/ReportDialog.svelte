@@ -109,8 +109,9 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
 		<Dialog.Content
-			class="z-50 flex max-h-[80vh] w-full max-w-md flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-lg"
+			class="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-lg"
 		>
 			<div class="mb-4 flex items-center gap-2">
 				<Flag size={18} class="text-[var(--color-primary)]" />

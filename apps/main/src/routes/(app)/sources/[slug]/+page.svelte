@@ -102,22 +102,20 @@
 					{/if}
 				</div>
 
-				{#if page.data.user}
-					<div class="flex items-center gap-2">
-						<FollowButton
-							entityType="source"
-							entityId={source.id}
-							entitySlug={source.slug}
-							initiallyFollowing={source.is_following ?? false}
-							onFollowerCountChange={(count) => { followerCount = count; }}
-						/>
-						<SourceActions
-							source={source}
-							isBlocked={isBlocked}
-							onBlockChange={(v) => { isBlocked = v; }}
-						/>
-					</div>
-				{/if}
+				<div class="flex items-center gap-2">
+					<FollowButton
+						entityType="source"
+						entityId={source.id}
+						entitySlug={source.slug}
+						initiallyFollowing={source.is_following ?? false}
+						onFollowerCountChange={(count) => { followerCount = count; }}
+					/>
+					<SourceActions
+						source={source}
+						isBlocked={isBlocked}
+						onBlockChange={(v) => { isBlocked = v; }}
+					/>
+				</div>
 			</div>
 			<a
 				href={source.source_url || (source.domain ? `https://${source.domain}` : '#')}
@@ -164,12 +162,6 @@
 					{source.post_count} {t('sources.posts', 'posts')}
 				</span>
 			</div>
-
-			{#if !page.data.user}
-				<p class="mt-2 text-xs text-[var(--color-text-muted)]">
-					{t('sources.sign_in_to_follow', 'Sign in to follow this source.')}
-				</p>
-			{/if}
 		</div>
 	</div>
 
