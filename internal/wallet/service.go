@@ -172,9 +172,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 		if count > 0 {
 			// Mark processed so the event is not retried.
-			if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-				ID: eventID,
-			}); err != nil {
+			if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
 				return fmt.Errorf("marking one-time event processed: %w", err)
 			}
 
@@ -236,9 +234,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 			// Cap reached — no points, but the activity still counts toward
 			// badges/challenges. Mark processed inside the tx for exactly-once
 			// evaluation on any replay (same pattern as the one-time skip).
-			if merr := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-				ID: eventID,
-			}); merr != nil {
+			if merr := qtx.MarkEventProcessed(ctx, eventID); merr != nil {
 				return fmt.Errorf("marking capped event processed: %w", merr)
 			}
 
@@ -277,9 +273,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	}
 
 	// Mark event as processed within the transaction.
-	if err := qtx.MarkEventProcessed(ctx, gen.MarkEventProcessedParams{
-		ID: eventID,
-	}); err != nil {
+	if err := qtx.MarkEventProcessed(ctx, eventID); err != nil {
 		return fmt.Errorf("marking event processed: %w", err)
 	}
 

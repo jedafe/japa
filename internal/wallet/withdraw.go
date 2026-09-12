@@ -826,10 +826,7 @@ func (s *Service) CreateWithdrawalMethod(ctx context.Context, tenantID, userID p
 
 	// If this is the new default, clear any existing default.
 	if input.IsDefault {
-		if err := qtx.UpdateWithdrawalMethodDefault(ctx, gen.UpdateWithdrawalMethodDefaultParams{
-
-			UserID: userID,
-		}); err != nil {
+		if err := qtx.UpdateWithdrawalMethodDefault(ctx, userID); err != nil {
 			return gen.WalletWithdrawalMethod{}, fmt.Errorf("clearing default method: %w", err)
 		}
 	}

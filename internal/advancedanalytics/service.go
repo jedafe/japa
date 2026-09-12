@@ -80,10 +80,7 @@ func (s *Service) GetRevenueStreams(ctx context.Context, tenantID pgtype.UUID, p
 		fromMonth = pgtype.Date{Time: time.Now().AddDate(-2, 0, 0), Valid: true}
 	}
 
-	return s.store.RevenueStreams(ctx, gen.AdvancedAnalyticsRevenueStreamsParams{
-
-		FromMonth: fromMonth,
-	})
+	return s.store.RevenueStreams(ctx, fromMonth)
 }
 
 // GetAdPerformance returns ad campaign aggregate performance.
@@ -105,10 +102,7 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, tenantID pgtype.U
 		limit = 20
 	}
 
-	return s.store.NewsletterEngagement(ctx, gen.AdvancedAnalyticsNewsletterEngagementParams{
-
-		TopN: int32(limit), // #nosec
-	})
+	return s.store.NewsletterEngagement(ctx, int32(limit))
 }
 
 // GetSubscriberGrowth returns newsletter subscriber counts per list.

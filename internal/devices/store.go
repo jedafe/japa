@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -60,8 +61,8 @@ func (s *Store) ListUserTokens(ctx context.Context, arg gen.ListUserDeviceTokens
 }
 
 // GetActiveTokensForUser is an exported method.
-func (s *Store) GetActiveTokensForUser(ctx context.Context, arg gen.GetActiveDeviceTokensForUserParams) ([]gen.DeviceToken, error) {
-	rows, err := s.queries.GetActiveDeviceTokensForUser(ctx, arg)
+func (s *Store) GetActiveTokensForUser(ctx context.Context, userID pgtype.UUID) ([]gen.DeviceToken, error) {
+	rows, err := s.queries.GetActiveDeviceTokensForUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("devices: get active tokens: %w", err)
 	}
@@ -88,8 +89,8 @@ func (s *Store) TouchToken(ctx context.Context, arg gen.TouchDeviceTokenParams) 
 }
 
 // GetTokenByDeviceID is an exported method.
-func (s *Store) GetTokenByDeviceID(ctx context.Context, arg gen.GetDeviceTokenByDeviceIDParams) (gen.DeviceToken, error) {
-	row, err := s.queries.GetDeviceTokenByDeviceID(ctx, arg)
+func (s *Store) GetTokenByDeviceID(ctx context.Context, deviceID string) (gen.DeviceToken, error) {
+	row, err := s.queries.GetDeviceTokenByDeviceID(ctx, deviceID)
 	if err != nil {
 		return gen.DeviceToken{}, fmt.Errorf("devices: get token by device id: %w", err)
 	}
