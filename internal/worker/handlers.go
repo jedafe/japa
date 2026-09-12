@@ -401,9 +401,7 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 
 	q := gen.New(dbPool.Reader)
 
-	row, err := q.GetSettingValue(ctx, gen.GetSettingValueParams{
-		TenantID: tenantID, Key: "site.base_url",
-	})
+	row, err := q.GetSettingValue(ctx, "site.base_url")
 	if err == nil && len(row) > 0 {
 		return string(row)
 	}
@@ -3177,9 +3175,7 @@ func newsletterBatchSize(ctx context.Context, tenantID pgtype.UUID) int32 {
 		return 500
 	}
 
-	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, gen.GetSettingValueParams{
-		TenantID: tenantID, Key: "newsletter.batch_size",
-	})
+	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, "newsletter.batch_size")
 	if err != nil || len(row) == 0 {
 		return 500
 	}

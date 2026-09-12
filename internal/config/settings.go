@@ -135,13 +135,13 @@ func parseCachedSetting(data []byte) (cachedSetting, bool) {
 	return entry, true
 }
 
-func (s *Settings) loadFromDB(ctx context.Context, tenantID pgtype.UUID, key, cacheKey string) (string, error) {
+func (s *Settings) loadFromDB(ctx context.Context, key, cacheKey string) (string, error) {
 	v, err, _ := s.sf.Do(cacheKey, func() (any, error) {
 		if value, ok, err := s.getFromL1(cacheKey, key); ok {
 			return value, err
 		}
 
-		return s.queryAndCache(ctx, tenantID, key, cacheKey)
+		return s.queryAndCache(ctx, key, cacheKey)
 	})
 	if err != nil {
 		return "", err
@@ -155,11 +155,8 @@ func (s *Settings) loadFromDB(ctx context.Context, tenantID pgtype.UUID, key, ca
 	return value, nil
 }
 
-func (s *Settings) queryAndCache(ctx context.Context, tenantID pgtype.UUID, key, cacheKey string) (any, error) {
-	valueBytes, err := s.q.GetSettingValue(ctx, gen.GetSettingValueParams{
-		TenantID: tenantID,
-		Key:      key,
-	})
+func (s *Settings) queryAndCache(ctx context.Context, key, cacheKey string) (any, error) {
+	valueBytes, err := s.q.GetSettingValue(ctx, key)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Debug("settings: setting not stored, using default", "key", key)
@@ -204,7 +201,9 @@ func (s *Settings) setValkeyCache(ctx context.Context, cacheKey string, entry ca
 // Missing settings are cached with a sentinel so repeated lookups do not hit
 // the database. The cache is invalidated by Set/Update calls and by the TTL.
 func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
-	cacheKey := tenantID.String() + ":" + key
+	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
+	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
+	cacheKey := key
 
 	if value, ok, err := s.getFromL1(cacheKey, key); ok {
 		return value, err
@@ -214,7 +213,7 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 		return value, err
 	}
 
-	return s.loadFromDB(ctx, tenantID, key, cacheKey)
+	return s.loadFromDB(ctx, key, cacheKey)
 }
 
 // GetSettingBool returns the boolean value for a system setting.
@@ -282,27 +281,21 @@ func parseInt(sv string) (int, error) {
 	return 0, fmt.Errorf("value is not an integer: %q", sv)
 }
 
-// InvalidateSettings clears the L1 and L2 cache for every setting belonging
-// to the given tenant. Callers should invoke this after any system_settings
-// write for the tenant.
+// InvalidateSettings clears the L1 and L2 cache for all settings.
+// Callers should invoke this after any system_settings write.
 func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID) {
-	tenantPrefix := tenantID.String() + ":"
+	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
+	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
 
 	s.mu.Lock()
-	for k := range s.cache {
-		if strings.HasPrefix(k, tenantPrefix) {
-			delete(s.cache, k)
-		}
-	}
+	s.cache = make(map[string]cachedSetting)
 	s.mu.Unlock()
-
-	prefix := settingsCachePrefix + tenantID.String() + ":"
 
 	if s.vk != nil {
 		var cursor uint64
 
 		for {
-			keys, nextCursor, err := s.vk.Scan(ctx, cursor, prefix+"*", 100).Result()
+			keys, nextCursor, err := s.vk.Scan(ctx, cursor, settingsCachePrefix+"*", 100).Result()
 			if err != nil {
 				slog.Warn("settings: failed to scan valkey for invalidation", "error", err)
 				return
@@ -406,13 +399,12 @@ func (s *Settings) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key stri
 	return v
 }
 
-// SetSetting upserts a setting value for the given tenant and key.
+// SetSetting upserts a setting value for the given key.
 // The is_public flag is preserved on conflict (not reset to false).
 func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, value string) error {
 	if err := s.qWriter.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
-		TenantID: tenantID,
-		Key:      key,
-		Value:    []byte(value),
+		Key:   key,
+		Value: []byte(value),
 	}); err != nil {
 		return fmt.Errorf("upserting setting %q: %w", key, err)
 	}
@@ -422,7 +414,7 @@ func (s *Settings) SetSetting(ctx context.Context, tenantID pgtype.UUID, key, va
 	return nil
 }
 
-// UpdateSettingsBatch atomically upserts multiple settings for one tenant in a
+// UpdateSettingsBatch atomically upserts multiple settings in a
 // single transaction. Each entry in settings maps a full dot-notation key
 // (e.g. "site.name") to its already-serialized JSON value. The cache is
 // invalidated once after commit so callers do not need to invalidate per key.
@@ -431,9 +423,8 @@ func (s *Settings) UpdateSettingsBatch(ctx context.Context, tenantID pgtype.UUID
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		for key, valueJSON := range settings {
 			if err := q.UpsertSystemSettingPreservePublic(ctx, gen.UpsertSystemSettingPreservePublicParams{
-				TenantID: tenantID,
-				Key:      key,
-				Value:    valueJSON,
+				Key:   key,
+				Value: valueJSON,
 			}); err != nil {
 				return fmt.Errorf("upserting setting %q: %w", key, err)
 			}
@@ -459,7 +450,6 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 		for key, valueJSON := range settings {
 			pub := isPublic[key]
 			if err := q.UpsertSystemSetting(ctx, gen.UpsertSystemSettingParams{
-				TenantID: tenantID,
 				Key:      key,
 				Value:    valueJSON,
 				IsPublic: pub,
@@ -479,9 +469,9 @@ func (s *Settings) UpdateSettingsBatchWithPublic(ctx context.Context, tenantID p
 	return nil
 }
 
-// GetPublicSettings returns all settings marked as public for the given tenant.
+// GetPublicSettings returns all settings marked as public.
 func (s *Settings) GetPublicSettings(ctx context.Context, tenantID pgtype.UUID) (map[string]any, error) {
-	rows, err := s.q.GetPublicSettings(ctx, tenantID)
+	rows, err := s.q.GetPublicSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying public settings: %w", err)
 	}
