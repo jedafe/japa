@@ -33,6 +33,7 @@ export interface Source {
 
 export interface SourceItem {
 	id: string;
+	content_id?: string;
 	entity_type: string;
 	title: string;
 	excerpt?: string | null;

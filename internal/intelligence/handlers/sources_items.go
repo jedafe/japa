@@ -21,17 +21,18 @@ import (
 // flattened, UI-ready shape so the source detail page and the tools can render
 // it without domain-specific knowledge.
 type sourceItem struct {
-	ID           string             `json:"id"`
-	EntityType   string             `json:"entity_type"`
-	Title        string             `json:"title"`
-	Excerpt      *string            `json:"excerpt,omitempty"`
-	OriginalURL  string             `json:"original_url"`
-	Href         string             `json:"href"`
-	PublishedAt  pgtype.Timestamptz `json:"published_at"`
-	ViewCount    int32              `json:"view_count"`
-	CommentCount int32              `json:"comment_count"`
-	ShareCount   int32              `json:"share_count"`
-	VoteScore    int32              `json:"vote_score"`
+	ID          string             `json:"id"`
+	ContentID   string             `json:"content_id,omitempty"`
+	EntityType  string             `json:"entity_type"`
+	Title       string             `json:"title"`
+	Excerpt     *string            `json:"excerpt,omitempty"`
+	OriginalURL string             `json:"original_url"`
+	Href        string             `json:"href"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	ViewCount   int32              `json:"view_count"`
+	CommentCount int32             `json:"comment_count"`
+	ShareCount  int32              `json:"share_count"`
+	VoteScore   int32              `json:"vote_score"`
 }
 
 // sourceItemEnvelope is the response payload for the source item feed.
@@ -263,6 +264,7 @@ func (h *Handlers) scholarshipRecordToSourceItem(ctx context.Context, tenantID p
 
 	return sourceItem{
 		ID:          pgtypeUUIDString(sch.ID),
+		ContentID:   pgtypeUUIDString(sch.GuideID),
 		EntityType:  "scholarship",
 		Title:       sch.Title,
 		Excerpt:     sch.Description,
@@ -309,6 +311,7 @@ func (h *Handlers) jobRecordToSourceItem(ctx context.Context, tenantID pgtype.UU
 
 	return sourceItem{
 		ID:          pgtypeUUIDString(job.ID),
+		ContentID:   pgtypeUUIDString(job.GuideID),
 		EntityType:  "job",
 		Title:       job.Title,
 		Excerpt:     excerptPtr,
@@ -383,6 +386,7 @@ func (h *Handlers) contentRecordToSourceItem(ctx context.Context, tenantID pgtyp
 
 	return sourceItem{
 		ID:           pgtypeUUIDString(content.ID),
+		ContentID:    pgtypeUUIDString(content.ID),
 		EntityType:   content.ContentType,
 		Title:        content.Title,
 		Excerpt:      excerptPtr,
@@ -566,6 +570,7 @@ func comparisonContentToItem(c gen.ListComparisonContentsBySourceIDRow) sourceIt
 
 	return sourceItem{
 		ID:           pgtypeUUIDString(c.ID),
+		ContentID:    pgtypeUUIDString(c.ID),
 		EntityType:   "comparison",
 		Title:        c.Title,
 		Excerpt:      &excerpt,
