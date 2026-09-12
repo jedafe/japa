@@ -33,10 +33,6 @@
 		item.published_at ? relativeTime(item.published_at, new Date(), i18n.locale) : ''
 	);
 
-	let loved = $state(false);
-	// svelte-ignore state_referenced_locally
-	let loveCount = $state(item.vote_score);
-
 	function navigate(e: MouseEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target && (target.closest('a') || target.closest('button'))) return;
@@ -47,20 +43,16 @@
 		if (e.key === 'Enter') goto(item.href);
 	}
 
-	function onToggleLove(next: boolean) {
-		loved = next;
-		loveCount += next ? 1 : -1;
-	}
-
 	const viewHref = $derived(item.original_url);
 	const viewLabel = $derived(
 		t('sources.view_content_type', 'View {type}').replace('{type}', entityLabel || item.entity_type)
 	);
 
 	function onEdit(updated: Source) {
-		// The parent source page is the source of truth; updates are handled there.
 		Object.assign(source, updated);
 	}
+
+	const shareUrl = $derived(item.original_url || item.href);
 </script>
 
 <div
@@ -134,7 +126,9 @@
 		{/if}
 
 		<!-- Footer -->
-		<div class="relative z-10 mt-auto flex items-center gap-6 border-t border-[var(--color-border)] pt-3">
+		<div
+			class="relative z-10 mt-auto flex items-center gap-6 border-t border-[var(--color-border)] pt-3"
+		>
 			<div class="min-w-0 flex-1">
 				{#if sourceName && sourceId && sourceSlug}
 					<EntityHoverChip
@@ -166,16 +160,14 @@
 
 			<div class="pointer-events-auto relative z-10 flex shrink-0 items-center gap-3">
 				<ReactionButton
-					count={loveCount}
-					active={loved}
-					onToggle={onToggleLove}
+					contentId={item.content_id}
+					count={item.vote_score}
+					side="top"
+					align="end"
 					ariaLabel={t('sources.love', 'Love')}
 				/>
 
-				<ShareButton
-					url={item.original_url || item.href}
-					title={item.title}
-				/>
+				<ShareButton contentId={item.content_id} url={shareUrl} title={item.title} />
 			</div>
 		</div>
 	</div>
