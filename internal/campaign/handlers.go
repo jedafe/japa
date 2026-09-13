@@ -155,7 +155,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	campaign, _, err := h.service.CreateCampaign(r.Context(), tenantID, user.UserID, in)
 	if err != nil {
-		slog.Error("campaign: create failed", "error", err, "tenant_id", tenantID.String())
+		slog.Error("campaign: create failed", "error", err)
 		h.writeServiceError(w, err)
 
 		return
@@ -189,7 +189,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	campaigns, total, err := h.service.ListCampaigns(r.Context(), tenantID, f)
 	if err != nil {
-		slog.Error("campaign: list failed", "error", err, "tenant_id", tenantID.String())
+		slog.Error("campaign: list failed", "error", err)
 		h.writeServiceError(w, err)
 
 		return

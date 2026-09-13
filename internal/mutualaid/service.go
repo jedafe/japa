@@ -434,7 +434,7 @@ func (s *Service) NeedReputationThreshold(ctx context.Context, tenantID pgtype.U
 		return 0
 	}
 
-	return int64(s.settings.GetIntOr(ctx, tenantID, "mutual_aid.need_reputation_threshold", 0))
+	return int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "mutual_aid.need_reputation_threshold", 0))
 }
 
 // ExpirePosts marks all active posts past their expires_at as 'expired'

@@ -770,8 +770,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initialsToStore); err != nil {
-		slog.Warn("universities: failed to upsert initials on create",
-			"space_id", space.ID.String(), "error", err)
+		slog.Warn("universities: failed to upsert initials on create", "space_id", space.ID.String(), "error", err)
 	}
 
 	// Always run Wikidata enrichment for a new university (P1813 short name,
@@ -876,8 +875,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	if input.Initials != nil {
 		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, *input.Initials); err != nil {
-			slog.Warn("universities: failed to upsert initials on update",
-				"space_id", space.ID.String(), "error", err)
+			slog.Warn("universities: failed to upsert initials on update", "space_id", space.ID.String(), "error", err)
 		}
 	}
 
@@ -1195,8 +1193,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		adminSuppliedInitials := initialsOK && initialsCol < len(row) && strings.TrimSpace(row[initialsCol]) != ""
 
 		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initials); err != nil {
-			slog.Warn("universities: bulk import failed to set initials",
-				"space_id", space.ID.String(), "error", err)
+			slog.Warn("universities: bulk import failed to set initials", "space_id", space.ID.String(), "error", err)
 		}
 
 		if !adminSuppliedInitials {

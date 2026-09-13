@@ -636,7 +636,7 @@ LIMIT 1
 
 	var r OrgRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
 		&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,

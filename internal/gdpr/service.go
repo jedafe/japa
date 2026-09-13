@@ -200,7 +200,7 @@ func (s *Service) GetConsentConfig(ctx context.Context, tenantID pgtype.UUID) (*
 		// Use GetStringOr — system_settings values are stored as JSON-encoded
 		// strings (e.g. '"1.0"'), so GetSetting returns the raw quoted value.
 		// GetStringOr unquotes it to '1.0'. Ref: §6.2 nil/quote handling.
-		policyVersion = s.settings.GetStringOr(ctx, tenantID, "gdpr.policy_version", "1.0")
+		policyVersion = s.settings.GetStringOr(ctx, pgtype.UUID{}, "gdpr.policy_version", "1.0")
 	}
 
 	return &ConsentConfigResponse{
@@ -380,10 +380,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 		exportURL = fmt.Sprintf("/exports/%s/data.json", request.UserID.String())
 	}
 
-	slog.Info("data export generated",
-		"user_id", request.UserID.String(),
-		"export_size", len(exportJSON),
-		"url", exportURL)
+	slog.Info("data export generated", "user_id", request.UserID.String(), "export_size", len(exportJSON), "url", exportURL)
 
 	_, err = s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 		ID:          requestID,
@@ -428,8 +425,7 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 		if s.storage != nil {
 			if path, pathErr := s.storage.GetPath(pgtype.UUID{}, e); pathErr == nil {
 				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
-					slog.Warn("gdpr: failed to delete expired export file",
-						"request_id", e.String(), "error", rmErr)
+					slog.Warn("gdpr: failed to delete expired export file", "request_id", e.String(), "error", rmErr)
 				}
 			}
 		}
@@ -437,8 +433,7 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 		// Null out the download URL and set status to 'expired' so the
 		// download handler returns 404 and the row is not re-cleaned.
 		if err := s.store.write.ExpireDataExport(ctx, e); err != nil {
-			slog.Warn("gdpr: failed to expire data export row",
-				"request_id", e.String(), "error", err)
+			slog.Warn("gdpr: failed to expire data export row", "request_id", e.String(), "error", err)
 		}
 	}
 
@@ -564,8 +559,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// delete (ADR-014 / ADR-057). Best-effort: a failure logs a warning
 		// but does not abort — the user row is already anonymized.
 		if err := s.store.anonymizeUserProfile(ctx, request.UserID); err != nil {
-			slog.Warn("failed to anonymize user profile during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to anonymize user profile during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 		// Scrub PII (goals) from mentorship_connections where the user is
 		// mentor or mentee (§102, ADR-014). The connection rows are retained
@@ -573,24 +567,21 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// cleared so it is not recoverable during the retention window.
 		// Best-effort: a failure logs a warning but does not abort.
 		if err := s.store.anonymizeMentorshipConnections(ctx, request.UserID); err != nil {
-			slog.Warn("failed to anonymize mentorship connections during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to anonymize mentorship connections during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 		// Scrub PII (ip_hash, user_agent_hash) from affiliate_link_events
 		// owned by the user's affiliate links (Section 56, ADR-014). The
 		// events are retained for commission audit; only tracking hashes are
 		// cleared. Best-effort: a failure logs a warning but does not abort.
 		if err := s.store.anonymizeAffiliateLinkEvents(ctx, request.UserID); err != nil {
-			slog.Warn("failed to anonymize affiliate link events during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to anonymize affiliate link events during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 		// Scrub user_id from coupon_events recorded by the deleted user
 		// (Section 55, ADR-014). The events are retained for aggregate
 		// click/copy analytics; only the user association is cleared.
 		// Best-effort: a failure logs a warning but does not abort.
 		if err := s.store.anonymizeCouponEvents(ctx, request.UserID); err != nil {
-			slog.Warn("failed to anonymize coupon events during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to anonymize coupon events during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
@@ -600,8 +591,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.store.write.AnonymizeOnboardingState(ctx,
 			request.UserID,
 		); err != nil {
-			slog.Warn("failed to anonymize onboarding state during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to anonymize onboarding state during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 		// Scrub auth-related PII tables during the anonymization phase so
 		// sensitive data (TOTP secrets, OAuth provider IDs, email addresses,
@@ -633,9 +623,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		}
 		for _, t := range authPIITables {
 			if err := t.fn(); err != nil {
-				slog.Warn("failed to scrub auth PII table during deletion",
-					"table", t.name,
-					"user_id", request.UserID.String(), "error", err)
+				slog.Warn("failed to scrub auth PII table during deletion", "table", t.name, "user_id", request.UserID.String(), "error", err)
 			}
 		}
 		// Revoke all of the user's API keys during the anonymization phase
@@ -649,8 +637,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			SET status = 'revoked', revoked_at = now(), revoked_by = user_id, updated_at = now()
 			WHERE user_id = $1 AND status = 'active'
 		`, request.UserID); err != nil {
-			slog.Warn("failed to revoke api keys during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to revoke api keys during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 
 		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepAnonymized); err != nil {
@@ -671,8 +658,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			SET notes = NULL
 			WHERE user_id = $1 AND notes IS NOT NULL
 		`, request.UserID); err != nil {
-			slog.Warn("failed to scrub saved_scholarships notes during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to scrub saved_scholarships notes during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
@@ -688,8 +674,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			SET source_url = NULL
 			WHERE user_id = $1 AND source_url IS NOT NULL
 		`, request.UserID); err != nil {
-			slog.Warn("failed to scrub content_imports source_url during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to scrub content_imports source_url during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
@@ -704,8 +689,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			SET notes = NULL
 			WHERE user_id = $1 AND notes IS NOT NULL
 		`, request.UserID); err != nil {
-			slog.Warn("failed to scrub checklist_progress notes during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to scrub checklist_progress notes during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
@@ -721,8 +705,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			DELETE FROM remittance_rate_alerts
 			WHERE user_id = $1
 		`, request.UserID); err != nil {
-			slog.Warn("failed to delete remittance_rate_alerts during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to delete remittance_rate_alerts during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
@@ -741,16 +724,14 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			SET deleted_at = now(), updated_at = now(), status = 'expired'
 			WHERE user_id = $1 AND deleted_at IS NULL
 		`, request.UserID); err != nil {
-			slog.Warn("failed to soft-delete appointment_alerts during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to soft-delete appointment_alerts during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 	}
 
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
 		if err := s.store.deleteUserTokens(ctx, request.UserID); err != nil {
-			slog.Warn("failed to revoke user tokens during deletion",
-				"user_id", request.UserID.String(), "error", err)
+			slog.Warn("failed to revoke user tokens during deletion", "user_id", request.UserID.String(), "error", err)
 		}
 
 		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepTokensRevoked); err != nil {
@@ -764,8 +745,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	if step < deletionStepSessionsDeleted {
 		if s.sessionDeleter != nil {
 			if err := s.sessionDeleter.DeleteSessions(ctx, request.UserID.String()); err != nil {
-				slog.Warn("failed to delete valkey sessions",
-					"user_id", request.UserID.String(), "error", err)
+				slog.Warn("failed to delete valkey sessions", "user_id", request.UserID.String(), "error", err)
 			}
 		}
 
@@ -792,8 +772,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("honcho eraser not configured — required in production for user %s", request.UserID)
 		} else {
-			slog.Warn("honcho eraser not configured, skipping AI context deletion",
-				"request_id", requestID, "user_id", request.UserID)
+			slog.Warn("honcho eraser not configured, skipping AI context deletion", "request_id", requestID, "user_id", request.UserID)
 		}
 
 		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepHonchoDeleted); err != nil {
@@ -815,19 +794,14 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 				retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
 				if time.Now().After(retentionDeadline) {
-					slog.Info("gdpr: performing physical erasure",
-						"user_id", request.UserID.String(),
-						"request_id", requestID.String())
+					slog.Info("gdpr: performing physical erasure", "user_id", request.UserID.String(), "request_id", requestID.String())
 
 					if hardErr := s.hardDeleteUser(ctx, request.UserID, pgtype.UUID{}); hardErr != nil {
 						s.markDeletionFailed(ctx, requestID)
 						return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
 					}
 				} else {
-					slog.Info("gdpr: retention period not elapsed, entering retention_wait",
-						"user_id", request.UserID.String(),
-						"retention_days", retentionDays,
-						"retention_deadline", retentionDeadline.Format(time.RFC3339))
+					slog.Info("gdpr: retention period not elapsed, entering retention_wait", "user_id", request.UserID.String(), "retention_days", retentionDays, "retention_deadline", retentionDeadline.Format(time.RFC3339))
 
 					retentionWait = true
 				}
@@ -915,8 +889,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 			"retention_wait": retentionWait,
 		},
 	}); err != nil {
-		slog.Warn("gdpr: failed to write deletion audit log",
-			"request_id", request.ID.String(), "error", err)
+		slog.Warn("gdpr: failed to write deletion audit log", "request_id", request.ID.String(), "error", err)
 	}
 }
 
@@ -929,7 +902,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 	_ = deletedUserPlaceholder.Scan("00000000-0000-0000-0000-000000000000")
 
 	if s.settings != nil {
-		if placeholderStr, err := s.settings.GetSetting(ctx, tenantID, "gdpr.deleted_user_placeholder_uuid"); err == nil && placeholderStr != "" {
+		if placeholderStr, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "gdpr.deleted_user_placeholder_uuid"); err == nil && placeholderStr != "" {
 			var p pgtype.UUID
 			if scanErr := p.Scan(placeholderStr); scanErr == nil {
 				deletedUserPlaceholder = p
@@ -953,8 +926,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 				return fmt.Errorf("hard delete blocked: honcho erasure failed for user %s: %w", userID, err)
 			}
 
-			slog.Warn("hard delete: honcho erasure failed (non-production, proceeding)",
-				"user_id", userID.String(), "error", err)
+			slog.Warn("hard delete: honcho erasure failed (non-production, proceeding)", "user_id", userID.String(), "error", err)
 		}
 	} else if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
 		return fmt.Errorf("hard delete blocked: honcho eraser not configured — required in production for user %s", userID)
@@ -1747,8 +1719,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			    output_text = NULL
 			WHERE user_id = $1
 		`, userID); err != nil {
-			slog.Warn("failed to scrub cv_format_sessions PII during deletion",
-				"user_id", userID.String(), "error", err)
+			slog.Warn("failed to scrub cv_format_sessions PII during deletion", "user_id", userID.String(), "error", err)
 		}
 
 		// BUG-010: Platform data exports/imports (Section 67) created_by
@@ -1971,9 +1942,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		return err
 	}
 
-	slog.Info("gdpr: user physically deleted",
-		"user_id", userID.String(),
-		"tenant_id", tenantID.String())
+	slog.Info("gdpr: user physically deleted", "user_id", userID.String())
 
 	// §15/§19: remove the user's document from the Meilisearch users index
 	// so they no longer appear in search results. Also delete any content
@@ -2002,8 +1971,7 @@ func (s *Service) enqueueSearchIndexDelete(tenantID, entityID pgtype.UUID, entit
 		"operation":   "delete",
 	})
 	if err := s.enqueuer.Enqueue("search:index_entity", payload); err != nil {
-		slog.Warn("gdpr: failed to enqueue search:index_entity delete",
-			"entity_id", entityID.String(), "entity_type", entityType, "error", err)
+		slog.Warn("gdpr: failed to enqueue search:index_entity delete", "entity_id", entityID.String(), "entity_type", entityType, "error", err)
 	}
 }
 
@@ -3050,8 +3018,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 
 			if err := rows.Scan(&id, &sendCurrency, &receiveCurrency, &targetRate,
 				&direction, &isActive, &lastTriggered, &createdAt); err != nil {
-				slog.Warn("failed to scan remittance_rate_alerts row for export",
-					"user_id", userID.String(), "error", err)
+				slog.Warn("failed to scan remittance_rate_alerts row for export", "user_id", userID.String(), "error", err)
 				continue
 			}
 

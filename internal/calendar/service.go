@@ -172,7 +172,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "calendar.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "calendar.enabled", false)
 }
 
 // CategoryOption is a single allowed calendar category (§86).
@@ -228,7 +228,7 @@ func (s *Service) safeGetSetting(ctx context.Context, tenantID pgtype.UUID, key 
 		}
 	}()
 
-	return s.settings.GetSetting(ctx, tenantID, key)
+	return s.settings.GetSetting(ctx, pgtype.UUID{}, key)
 }
 
 // ValidCategory checks whether a category value is in the allowed list.
@@ -666,8 +666,7 @@ func (s *Service) SendReminders(ctx context.Context) (int, error) {
 		// Query subscribers for this entry's destination+category.
 		subscribers, err := s.store.SubscribersForEntry(ctx, e)
 		if err != nil {
-			slog.Warn("calendar: failed to get subscribers for reminder",
-				"entry_id", e.ID.String(), "error", err)
+			slog.Warn("calendar: failed to get subscribers for reminder", "entry_id", e.ID.String(), "error", err)
 			continue
 		}
 
@@ -698,8 +697,7 @@ func (s *Service) SendReminders(ctx context.Context) (int, error) {
 				body,
 				actionURL,
 			); err != nil {
-				slog.Warn("calendar: failed to dispatch reminder notification",
-					"entry_id", e.ID.String(), "user_id", userID.String(), "error", err)
+				slog.Warn("calendar: failed to dispatch reminder notification", "entry_id", e.ID.String(), "user_id", userID.String(), "error", err)
 				continue
 			}
 
@@ -854,9 +852,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			description = text
 		}
 
-		slog.Info("calendar: AI Gateway generated draft",
-			"destination_space_id", input.DestinationSpaceID,
-			"category", category, "prompt_hash", promptHash)
+		slog.Info("calendar: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "category", category, "prompt_hash", promptHash)
 	}
 
 	descPtr := &description
@@ -882,8 +878,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// BUG-004: pass ai_prompt_hash for audit reproducibility (ADR-088).
 	aiModel := "content_agent_v1"
 	if err := s.store.MarkAIGenerated(ctx, entryID, tenantID, aiModel, promptHash); err != nil {
-		slog.Warn("calendar: mark ai generated failed, draft remains",
-			"entry_id", entryID, "error", err)
+		slog.Warn("calendar: mark ai generated failed, draft remains", "entry_id", entryID, "error", err)
 	}
 
 	return GenerateDraftResponse{

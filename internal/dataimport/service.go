@@ -251,9 +251,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 				Error: err.Error(),
 			})
 
-			slog.Warn("dataimport: row failed",
-				"import_id", importID.String(),
-				"row", i+1, "error", err)
+			slog.Warn("dataimport: row failed", "import_id", importID.String(), "row", i+1, "error", err)
 		} else {
 			imported++
 		}
@@ -282,11 +280,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 		return fmt.Errorf("updating import status: %w", err)
 	}
 
-	slog.Info("dataimport: import completed",
-		"import_id", importID.String(),
-		"type", imp.ImportType,
-		"total", totalRows, "imported", imported, "failed", failed,
-		"status", finalStatus)
+	slog.Info("dataimport: import completed", "import_id", importID.String(), "type", imp.ImportType, "total", totalRows, "imported", imported, "failed", failed, "status", finalStatus)
 
 	return nil
 }

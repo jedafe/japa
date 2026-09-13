@@ -109,7 +109,7 @@ func (h *Handlers) resolveFeedLiterals(r *http.Request, tenantID pgtype.UUID, it
 	rc := literals.NewRequestContext(r, tenantID, "")
 
 	if err := h.contentResolver.ResolveContentFields(r.Context(), items, rc); err != nil {
-		slog.Warn("feed: failed to resolve item literals", "error", err, "tenant_id", tenantID.String())
+		slog.Warn("feed: failed to resolve item literals", "error", err)
 	}
 }
 

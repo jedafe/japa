@@ -20,7 +20,7 @@ func (s *Service) badgesEnabled(ctx context.Context, tenantID pgtype.UUID) bool 
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "gamification.badges_enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.badges_enabled", true)
 }
 
 // challengesEnabled returns whether the challenge system is enabled.
@@ -29,7 +29,7 @@ func (s *Service) challengesEnabled(ctx context.Context, tenantID pgtype.UUID) b
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "gamification.challenges_enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.challenges_enabled", true)
 }
 
 // leaderboardEnabled returns whether the leaderboard is visible.
@@ -38,7 +38,7 @@ func (s *Service) leaderboardEnabled(ctx context.Context, tenantID pgtype.UUID) 
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "gamification.leaderboard_enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.leaderboard_enabled", true)
 }
 
 // ---------------------------------------------------------------------------

@@ -135,9 +135,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 		return nil
 	}
 
-	slog.Info("fan_out_post: no enqueuer wired, skipping fan-out",
-		"content_id", contentID.String(),
-		"fan_out_type", fanOutType)
+	slog.Info("fan_out_post: no enqueuer wired, skipping fan-out", "content_id", contentID.String(), "fan_out_type", fanOutType)
 
 	return nil
 }
@@ -1047,7 +1045,7 @@ func (s *Service) loadAffinity(
 	// with thousands of followed spaces from making the candidate query
 	// unbounded. Hot-reloadable via feed.max_followed_spaces_in_feed.
 	if s.settings != nil {
-		maxSpaces := s.settings.GetIntOr(ctx, tenantID, "feed.max_followed_spaces_in_feed", 50)
+		maxSpaces := s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.max_followed_spaces_in_feed", 50)
 		if maxSpaces > 0 && len(spaceIDs) > maxSpaces {
 			spaceIDs = spaceIDs[:maxSpaces]
 		}
@@ -1086,7 +1084,7 @@ func (s *Service) GetForYouFeed(
 	// BUG-007: honor geo_personalization.enabled. When disabled, clear
 	// contentCountry/contentRegion so no geo boost is applied. Ref: Section 32 L147–149.
 	if s.settings != nil && (contentCountry != "" || contentRegion != "") {
-		if !s.settings.GetBoolOr(ctx, tenantID, "geo_personalization.enabled", true) {
+		if !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "geo_personalization.enabled", true) {
 			contentCountry = ""
 			contentRegion = ""
 		}
@@ -1120,7 +1118,7 @@ func (s *Service) GetForYouFeed(
 		w.JourneySource = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_source", w.JourneySource)
 		w.JourneyRoad = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_roadmap", w.JourneyRoad)
 		w.JourneyCap = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_boost_cap", w.JourneyCap)
-		w.TagOverlapCap = s.settings.GetIntOr(ctx, tenantID, "feed.for_you_tag_overlap_cap", w.TagOverlapCap)
+		w.TagOverlapCap = s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.for_you_tag_overlap_cap", w.TagOverlapCap)
 		w.HalfLifeHours = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_half_life_hours", w.HalfLifeHours)
 	}
 
@@ -1134,7 +1132,7 @@ func (s *Service) GetForYouFeed(
 
 	windowDays := forYouWindowDaysDefault
 	if s.settings != nil {
-		windowDays = s.settings.GetIntOr(ctx, tenantID, "feed.for_you_window_days", forYouWindowDaysDefault)
+		windowDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.for_you_window_days", forYouWindowDaysDefault)
 	}
 
 	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, cacheTTL, func(ctx context.Context) ([]FeedItem, error) {

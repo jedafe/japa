@@ -85,9 +85,7 @@ func HandleAffiliateCreditAuthorCommission(ctx context.Context, t *asynq.Task) e
 		return err
 	}
 
-	slog.Info("affiliate: credited author commission",
-		"commission_id", payload.CommissionID,
-		"author_user_id", row.AuthorUserID.String(), "amount_kobo", amountKobo)
+	slog.Info("affiliate: credited author commission", "commission_id", payload.CommissionID, "author_user_id", row.AuthorUserID.String(), "amount_kobo", amountKobo)
 
 	return nil
 }
@@ -263,12 +261,10 @@ func scanURLForAffiliate(ctx context.Context, tenantID, contentID pgtype.UUID, r
 	if _, err := dbPool.Writer.Exec(ctx, `INSERT INTO content_affiliate_scan_results
 		 (content_id, url, domain, detection_method, action_taken)
 		 VALUES ($1, $2, $3, $4, $5)`, contentID, rawURL, domain, method, action); err != nil {
-		slog.Warn("affiliate scan: insert scan result failed",
-			"content_id", contentID, "url", rawURL, "domain", domain, "error", err)
+		slog.Warn("affiliate scan: insert scan result failed", "content_id", contentID, "url", rawURL, "domain", domain, "error", err)
 	}
 
-	slog.Info("affiliate scan: detected unregistered link",
-		"content_id", contentID, "url", rawURL, "domain", domain)
+	slog.Info("affiliate scan: detected unregistered link", "content_id", contentID, "url", rawURL, "domain", domain)
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────

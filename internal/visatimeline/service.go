@@ -137,7 +137,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "visa_timeline.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "visa_timeline.enabled", false)
 }
 
 // Create records a new visa timeline for the authenticated user.

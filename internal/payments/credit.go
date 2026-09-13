@@ -70,7 +70,7 @@ func (s *Service) PayWithCredit(
 	currency := "NGN"
 
 	if s.settings != nil {
-		if v, err := s.settings.GetSetting(ctx, tenantID, "payment.currency"); err == nil && v != "" {
+		if v, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "payment.currency"); err == nil && v != "" {
 			currency = v
 		}
 	}

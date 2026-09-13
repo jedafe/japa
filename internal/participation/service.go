@@ -245,7 +245,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	}
 
 	if globalToday >= globalCap {
-		slog.Info("participation: run_activity: global daily cap reached", "tenant_id", persona.TenantID, "count", globalToday)
+		slog.Info("participation: run_activity: global daily cap reached", "count", globalToday)
 		return nil
 	}
 
@@ -401,15 +401,13 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	default:
 		// Non-content action: route through the dispatcher (BUG-010).
 		if s.dispatcher == nil {
-			slog.Warn("participation: dispatch_action: no dispatcher configured, skipping non-content action",
-				"action_id", actionID, "action_type", p.ActionType)
+			slog.Warn("participation: dispatch_action: no dispatcher configured, skipping non-content action", "action_id", actionID, "action_type", p.ActionType)
 			return nil
 		}
 
 		dispErr := s.dispatchNonContentAction(ctx, p, tenantID, authorID)
 		if dispErr != nil {
-			slog.Error("participation: dispatch_action: non-content action failed",
-				"action_id", actionID, "action_type", p.ActionType, "error", dispErr)
+			slog.Error("participation: dispatch_action: non-content action failed", "action_id", actionID, "action_type", p.ActionType, "error", dispErr)
 			return dispErr
 		}
 
@@ -512,8 +510,7 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 		if err == nil {
 			if lastTime, err := time.Parse(time.RFC3339, lastVal); err == nil {
 				if time.Since(lastTime) < time.Duration(intervalMinutes)*time.Minute {
-					slog.Debug("participation: sweep: interval not elapsed, skipping",
-						"elapsed", time.Since(lastTime), "interval_min", intervalMinutes)
+					slog.Debug("participation: sweep: interval not elapsed, skipping", "elapsed", time.Since(lastTime), "interval_min", intervalMinutes)
 					return nil
 				}
 			}
@@ -1066,7 +1063,7 @@ func (s *Service) getGlobalDailyCap(ctx context.Context, tenantID pgtype.UUID) i
 		return 500
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "participation.global_daily_cap", 500)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "participation.global_daily_cap", 500)
 }
 
 func (s *Service) isEnabled(ctx context.Context) bool {

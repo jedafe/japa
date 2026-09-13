@@ -616,7 +616,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 		// Falls back to "en" when settings are not injected or the key is unset.
 		language := "en"
 		if h.settings != nil {
-			language = h.settings.GetStringOr(r.Context(), tenantID, "i18n.default_language", "en")
+			language = h.settings.GetStringOr(r.Context(), pgtype.UUID{}, "i18n.default_language", "en")
 		}
 
 		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)

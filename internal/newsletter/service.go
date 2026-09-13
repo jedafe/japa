@@ -136,7 +136,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "newsletter.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "newsletter.enabled", true)
 }
 
 // WebhookSecret returns the shared secret used to authenticate provider
@@ -170,9 +170,7 @@ func (s *Service) EnqueueNewsletterSend(_ context.Context, campaignID, tenantID 
 		return fmt.Errorf("enqueuing newsletter send: %w", err)
 	}
 
-	slog.Info("newsletter: send task enqueued",
-		"campaign_id", campaignID.String(),
-		"task_id", info.ID)
+	slog.Info("newsletter: send task enqueued", "campaign_id", campaignID.String(), "task_id", info.ID)
 
 	return nil
 }

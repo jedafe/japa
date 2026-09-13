@@ -173,7 +173,7 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 
 	// Check the global toggle (assessment.enabled).
 	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), tenantID, "assessment.enabled", true); !enabled {
+		if enabled := h.settings.GetBoolOr(r.Context(), pgtype.UUID{}, "assessment.enabled", true); !enabled {
 			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}
@@ -238,7 +238,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), tenantID, "assessment.enabled", true); !enabled {
+		if enabled := h.settings.GetBoolOr(r.Context(), pgtype.UUID{}, "assessment.enabled", true); !enabled {
 			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}

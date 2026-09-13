@@ -194,7 +194,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "wiki.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "wiki.enabled", false)
 }
 
 // CommunityEditsAllowed checks if community edits are allowed (vs mod-only).
@@ -206,7 +206,7 @@ func (s *Service) CommunityEditsAllowed(ctx context.Context, tenantID pgtype.UUI
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "wiki.community_edits", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "wiki.community_edits", true)
 }
 
 // MinReputationToEdit returns the reputation threshold for wiki edits.
@@ -215,7 +215,7 @@ func (s *Service) MinReputationToEdit(ctx context.Context, tenantID pgtype.UUID)
 		return 100
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "wiki.min_reputation_to_edit", 100)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "wiki.min_reputation_to_edit", 100)
 }
 
 // GetWikiDestinations returns active destination spaces (country/state/city)
@@ -753,8 +753,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			generatedText = text
 		}
 
-		slog.Info("wiki: AI Gateway generated draft",
-			"space_id", input.SpaceID, "title", input.Title, "prompt_hash", promptHash)
+		slog.Info("wiki: AI Gateway generated draft", "space_id", input.SpaceID, "title", input.Title, "prompt_hash", promptHash)
 	}
 
 	// Create the wiki page.

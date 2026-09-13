@@ -578,14 +578,14 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 	sortOptions := []string{"created_at", "title", "popularity"}
 
 	if s.settingsSvc != nil {
-		raw := s.settingsSvc.GetStringOr(ctx, tenantID, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
+		raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
 		_ = json.Unmarshal([]byte(raw), &sortOptions)
 	}
 
 	pageSizeOptions := []int32{12, 24, 48, 96}
 
 	if s.settingsSvc != nil {
-		raw := s.settingsSvc.GetStringOr(ctx, tenantID, "jce.comparisons.page_size_options", `[12,24,48,96]`)
+		raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "jce.comparisons.page_size_options", `[12,24,48,96]`)
 		_ = json.Unmarshal([]byte(raw), &pageSizeOptions)
 	}
 

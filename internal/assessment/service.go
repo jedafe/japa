@@ -398,7 +398,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	if s.ai != nil && s.ai.HasCategory("content_generation") {
 		aiEnabled := true
 		if s.settings != nil {
-			aiEnabled = s.settings.GetBoolOr(ctx, tenantID, "assessment.ai_roadmap_enabled", true)
+			aiEnabled = s.settings.GetBoolOr(ctx, pgtype.UUID{}, "assessment.ai_roadmap_enabled", true)
 		}
 
 		if aiEnabled {
@@ -477,7 +477,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 	// A deterministic per-form idempotency key in the wallet ledger makes
 	// concurrent first-submission races safe (Rule 9).
 	if s.settings != nil && input.UserID.Valid && priorResults == 0 {
-		points := s.settings.GetIntOr(ctx, tenantID, "assessment.completion_points", 50)
+		points := s.settings.GetIntOr(ctx, pgtype.UUID{}, "assessment.completion_points", 50)
 		if points > 0 && s.enqueuer != nil {
 			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
 
@@ -497,12 +497,7 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 		}
 	}
 
-	slog.Info("assessment: score: complete",
-		"tenant_id", tenantID.String(),
-		"submission_id", input.SubmissionID.String(),
-		"result_id", ar.ID.String(),
-		"total_score", result.TotalScore,
-		"threshold", result.ThresholdLabel)
+	slog.Info("assessment: score: complete", "submission_id", input.SubmissionID.String(), "result_id", ar.ID.String(), "total_score", result.TotalScore, "threshold", result.ThresholdLabel)
 
 	return ar.ID, nil
 }
@@ -1138,7 +1133,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 		return steps
 	}
 
-	enabled := s.settings.GetBoolOr(ctx, tenantID, "assessment.geo_content_resolution_enabled", true)
+	enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "assessment.geo_content_resolution_enabled", true)
 	if !enabled {
 		return steps
 	}
@@ -1168,9 +1163,7 @@ func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUI
 			journeyCtx.Purpose,
 		)
 		if err != nil {
-			slog.Warn("assessment: resolve roadmap content failed",
-				"dimension", steps[i].Dimension,
-				"error", err)
+			slog.Warn("assessment: resolve roadmap content failed", "dimension", steps[i].Dimension, "error", err)
 
 			continue
 		}

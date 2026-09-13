@@ -30,7 +30,7 @@ func NewProcessorAdapter(fetcher *Fetcher) *ProcessorAdapter {
 func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tenantID string) error {
 	var tid pgtype.UUID
 	if err := tid.Scan(tenantID); err != nil {
-		slog.Warn("link_preview: invalid tenant_id in task payload, using zero", "tenant_id", tenantID, "error", err)
+		slog.Warn("link_preview: invalid tenant_id in task payload, using zero", "error", err)
 	}
 
 	preview, err := a.fetcher.Fetch(ctx, url, tid)
@@ -38,11 +38,7 @@ func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tena
 		return err
 	}
 
-	slog.Info("link_preview: fetched and cached",
-		"url", url,
-		"title", preview.Title,
-		"block_id", blockID,
-		"tenant_id", tenantID)
+	slog.Info("link_preview: fetched and cached", "url", url, "title", preview.Title, "block_id", blockID)
 
 	return nil
 }

@@ -108,8 +108,7 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 			"tenant_id":   tenantID.String(),
 		})
 		if err := h.enqueuer.Enqueue(worker.TypeModerationAutoHide, payload); err != nil {
-			slog.Warn("reports: failed to enqueue moderation:auto_hide",
-				"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+			slog.Warn("reports: failed to enqueue moderation:auto_hide", "entity_type", entityType, "entity_id", entityID.String(), "error", err)
 		}
 
 		// Enqueue admin notification (Section 51 report:notify_admin).
@@ -122,8 +121,7 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 			"reason":      body.Reason,
 		})
 		if err := h.enqueuer.Enqueue(worker.TypeReportNotifyAdmin, notifyPayload); err != nil {
-			slog.Warn("reports: failed to enqueue report:notify_admin",
-				"report_id", report.ID.String(), "error", err)
+			slog.Warn("reports: failed to enqueue report:notify_admin", "report_id", report.ID.String(), "error", err)
 		}
 	}
 

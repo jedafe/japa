@@ -167,17 +167,17 @@ func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.
 }
 
 func (d *CompositeDispatcher) loadAPNsCredentials(ctx context.Context, tenantID pgtype.UUID) (keyID, teamID, privKeyPEM string, err error) {
-	keyID, err = d.settings.GetSetting(ctx, tenantID, "push.apns_key_id")
+	keyID, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_key_id")
 	if err != nil || keyID == "" {
 		return "", "", "", errors.New("push.apns_key_id not configured")
 	}
 
-	teamID, err = d.settings.GetSetting(ctx, tenantID, "push.apns_team_id")
+	teamID, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_team_id")
 	if err != nil || teamID == "" {
 		return "", "", "", errors.New("push.apns_team_id not configured")
 	}
 
-	privKeyPEM, err = d.settings.GetSetting(ctx, tenantID, "push.apns_private_key")
+	privKeyPEM, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_private_key")
 	if err != nil || privKeyPEM == "" {
 		return "", "", "", errors.New("push.apns_private_key not configured")
 	}
@@ -302,7 +302,7 @@ func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.U
 }
 
 func (d *CompositeDispatcher) loadFCMServiceAccount(ctx context.Context, tenantID pgtype.UUID) (*fcmServiceAccount, error) {
-	raw, err := d.settings.GetSetting(ctx, tenantID, "push.fcm_service_account")
+	raw, err := d.settings.GetSetting(ctx, pgtype.UUID{}, "push.fcm_service_account")
 	if err != nil || raw == "" {
 		return nil, errors.New("push.fcm_service_account not configured")
 	}

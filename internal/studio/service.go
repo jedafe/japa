@@ -215,8 +215,7 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 	// Enqueue a single studio:run_batch task — the processor fans out
 	// individual content:generate_draft jobs respecting max_concurrent_jobs.
 	if err := s.enqueueRunBatch(ctx, tenantID, batch.ID); err != nil {
-		slog.Warn("studio: enqueue run_batch failed, jobs remain queued",
-			"batch_id", batch.ID, "error", err)
+		slog.Warn("studio: enqueue run_batch failed, jobs remain queued", "batch_id", batch.ID, "error", err)
 	}
 
 	return batch, jobs, nil
@@ -307,8 +306,7 @@ func (s *Service) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype
 	if err := s.checkConcurrency(ctx, tenantID, len(jobs)); err != nil {
 		// If the full batch would exceed the limit, still retry as many as
 		// we can within the limit — the rest stay queued for later pickup.
-		slog.Warn("studio: retry batch: concurrency limit, retrying partial",
-			"batch_id", batchID, "failed_count", len(jobs), "error", err)
+		slog.Warn("studio: retry batch: concurrency limit, retrying partial", "batch_id", batchID, "failed_count", len(jobs), "error", err)
 	}
 
 	var count int
@@ -361,7 +359,7 @@ func (s *Service) DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (p
 		return id, nil
 	}
 
-	val, err := s.settings.GetSetting(ctx, tenantID, "studio.default_persona_id")
+	val, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.default_persona_id")
 	if err != nil || val == "" {
 		return id, err
 	}
@@ -413,7 +411,7 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) Co
 	// the setting at generation time.
 	defaultPersonaID := ""
 	if s.settings != nil {
-		defaultPersonaID, _ = s.settings.GetSetting(ctx, tenantID, "studio.default_persona_id")
+		defaultPersonaID, _ = s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.default_persona_id")
 	}
 
 	return ContentTypeResponse{
@@ -502,7 +500,7 @@ func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "studio.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "studio.enabled", true)
 }
 
 // checkConcurrency enforces studio.max_concurrent_jobs (ADR-076, §75).
@@ -510,7 +508,7 @@ func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 func (s *Service) checkConcurrency(ctx context.Context, tenantID pgtype.UUID, pending int) error {
 	maxConcurrent := 3
 	if s.settings != nil {
-		maxConcurrent = s.settings.GetIntOr(ctx, tenantID, "studio.max_concurrent_jobs", 3)
+		maxConcurrent = s.settings.GetIntOr(ctx, pgtype.UUID{}, "studio.max_concurrent_jobs", 3)
 	}
 
 	if maxConcurrent <= 0 {
@@ -599,7 +597,7 @@ func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, c
 
 	autoPublishCSV := ""
 	if s.settings != nil {
-		autoPublishCSV, _ = s.settings.GetSetting(ctx, tenantID, "studio.auto_publish_types")
+		autoPublishCSV, _ = s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.auto_publish_types")
 	}
 
 	return parseCSV(autoPublishCSV)[contentType]
@@ -626,13 +624,12 @@ func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) e
 	// max_concurrent_jobs limit.
 	maxConcurrent := 3
 	if s.settings != nil {
-		maxConcurrent = s.settings.GetIntOr(ctx, tenantID, "studio.max_concurrent_jobs", 3)
+		maxConcurrent = s.settings.GetIntOr(ctx, pgtype.UUID{}, "studio.max_concurrent_jobs", 3)
 	}
 
 	active, err := s.store.CountActiveJobs(ctx, tenantID)
 	if err != nil {
-		slog.Warn("studio: run_batch: count active failed, enqueuing all",
-			"batch_id", batchID, "error", err)
+		slog.Warn("studio: run_batch: count active failed, enqueuing all", "batch_id", batchID, "error", err)
 
 		active = 0
 	}
@@ -656,17 +653,14 @@ func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) e
 
 	for i := range toEnqueue {
 		if err := s.enqueueGeneration(ctx, jobs[i]); err != nil {
-			slog.Warn("studio: run_batch: enqueue failed",
-				"job_id", jobs[i].ID, "error", err)
+			slog.Warn("studio: run_batch: enqueue failed", "job_id", jobs[i].ID, "error", err)
 			continue
 		}
 
 		enqueued++
 	}
 
-	slog.Info("studio: run_batch: enqueued jobs",
-		"batch_id", batchID, "enqueued", enqueued,
-		"remaining_queued", len(jobs)-enqueued)
+	slog.Info("studio: run_batch: enqueued jobs", "batch_id", batchID, "enqueued", enqueued, "remaining_queued", len(jobs)-enqueued)
 
 	return nil
 }
@@ -702,8 +696,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 	if s.hitlReader != nil {
 		review, herr := s.hitlReader.GetHITLReview(ctx, tenantID, reviewID)
 		if herr != nil {
-			slog.Warn("studio: approve: could not load HITL review, defaulting to contents target",
-				"review_id", reviewID, "error", herr)
+			slog.Warn("studio: approve: could not load HITL review, defaulting to contents target", "review_id", reviewID, "error", herr)
 		} else {
 			targetTable = review.TargetTable
 			if targetTable == "" {
@@ -754,10 +747,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 	// Transition the linked intel_record to 'published' (§75).
 	s.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
 
-	slog.Info("studio: review approved, job published",
-		"job_id", job.ID, "review_id", reviewID,
-		"target_table", targetTable, "target_id", targetID,
-		"content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
+	slog.Info("studio: review approved, job published", "job_id", job.ID, "review_id", reviewID, "target_table", targetTable, "target_id", targetID, "content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
 
 	return nil
 }
@@ -774,8 +764,7 @@ func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID
 		return fmt.Errorf("studio: reject: update job status: %w", err)
 	}
 
-	slog.Info("studio: review rejected, job rejected",
-		"job_id", job.ID, "review_id", reviewID)
+	slog.Info("studio: review rejected, job rejected", "job_id", job.ID, "review_id", reviewID)
 
 	return nil
 }
@@ -790,7 +779,6 @@ func (s *Service) transitionIntelRecordOnPublish(ctx context.Context, tenantID, 
 	}
 
 	if err := s.intelUpdater.UpdateIntelRecordStatus(ctx, tenantID, intelRecordID, "published"); err != nil {
-		slog.Warn("studio: transition intel_record to published failed",
-			"intel_record_id", intelRecordID, "error", err)
+		slog.Warn("studio: transition intel_record to published failed", "intel_record_id", intelRecordID, "error", err)
 	}
 }

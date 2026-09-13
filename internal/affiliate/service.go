@@ -273,7 +273,7 @@ func (s *Service) CreateLink(ctx context.Context, tenantID, userID pgtype.UUID, 
 	// (affiliate.max_links_per_user, default 10) — SETTING-002.
 	maxLinks := 10
 	if s.settings != nil {
-		maxLinks = s.settings.GetIntOr(ctx, tenantID, "affiliate.max_links_per_user", 10)
+		maxLinks = s.settings.GetIntOr(ctx, pgtype.UUID{}, "affiliate.max_links_per_user", 10)
 	}
 
 	if count >= int64(maxLinks) {

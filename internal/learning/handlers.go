@@ -82,7 +82,7 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // unset. BUG-002 (rag-audit): replaces hardcoded "en" at the call sites.
 func (h *Handlers) resolveRAGLanguage(ctx context.Context, tenantID pgtype.UUID) string {
 	if h.settings != nil {
-		return h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+		return h.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
 	}
 
 	return "en"
@@ -116,8 +116,7 @@ func (h *Handlers) indexTrackRAG(ctx context.Context, tenantID, trackID pgtype.U
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "learning_track", trackID, text, language); err != nil {
-			slog.Warn("learning: RAG index failed for track",
-				"track_id", trackID.String(), "error", err)
+			slog.Warn("learning: RAG index failed for track", "track_id", trackID.String(), "error", err)
 		}
 	}()
 }
@@ -131,8 +130,7 @@ func (h *Handlers) purgeTrackRAG(ctx context.Context, tenantID, trackID pgtype.U
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "learning_track", trackID); err != nil {
-			slog.Warn("learning: RAG purge failed for track",
-				"track_id", trackID.String(), "error", err)
+			slog.Warn("learning: RAG purge failed for track", "track_id", trackID.String(), "error", err)
 		}
 	}()
 }
@@ -158,8 +156,7 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype
 		asynq.NewTask(worker.TypeLearningUpdateTrackCompletion, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeLearningUpdateTrackCompletion)),
 	); err != nil {
-		slog.Warn("learning: failed to enqueue track completion task",
-			"user_id", userID.String(), "track_id", trackID.String(), "error", err)
+		slog.Warn("learning: failed to enqueue track completion task", "user_id", userID.String(), "track_id", trackID.String(), "error", err)
 	}
 }
 
@@ -364,8 +361,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 			if perr == nil && total > 0 {
 				pct := float64(completed) / float64(total) * 100
 				if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
-					slog.Warn("learning: update_progress — enrollment progress update failed",
-						"user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
+					slog.Warn("learning: update_progress — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 				}
 			}
 		}
@@ -1003,8 +999,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	if perr == nil && total > 0 {
 		pct := float64(completed) / float64(total) * 100
 		if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
-			slog.Warn("learning: complete_lesson — enrollment progress update failed",
-				"user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
+			slog.Warn("learning: complete_lesson — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 		}
 	}
 

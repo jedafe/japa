@@ -144,7 +144,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "tax_calculator.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "tax_calculator.enabled", false)
 }
 
 // List returns a paginated, filtered list of published, active tax
@@ -385,14 +385,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		return GenerateGuideResult{}, fmt.Errorf("taxcalculator: generate guide: %w", err)
 	}
 
-	slog.Info(
-		"taxcalculator: content agent draft created",
-		"tenant_id", tenantID,
-		"guide_id", row.ID.String(),
-		"origin_space_id", req.OriginSpaceID,
-		"destination_space_id", req.DestinationSpaceID,
-		"employment_status", req.EmploymentStatus,
-	)
+	slog.Info("taxcalculator: content agent draft created", "guide_id", row.ID.String(), "origin_space_id", req.OriginSpaceID, "destination_space_id", req.DestinationSpaceID, "employment_status", req.EmploymentStatus, )
 
 	return GenerateGuideResult{
 		Status:             GuideStatusAIDraft,

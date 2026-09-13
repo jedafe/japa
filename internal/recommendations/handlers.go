@@ -342,7 +342,7 @@ func (h *Handlers) resolveLimit(ctx context.Context, tenantID pgtype.UUID, raw s
 
 	maxLimit := defaultMaxLimit
 	if h.settings != nil {
-		maxLimit = h.settings.GetIntOr(ctx, tenantID, "geo_personalization.recommendations_max_limit", defaultMaxLimit)
+		maxLimit = h.settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_max_limit", defaultMaxLimit)
 	}
 
 	if maxLimit < 1 {
@@ -364,7 +364,7 @@ func (h *Handlers) resolveCacheTTL(ctx context.Context, tenantID pgtype.UUID) ti
 		return defaultCacheTTL
 	}
 
-	secs := h.settings.GetIntOr(ctx, tenantID, "geo_personalization.recommendations_cache_ttl_seconds", int(defaultCacheTTL/time.Second))
+	secs := h.settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_cache_ttl_seconds", int(defaultCacheTTL/time.Second))
 	if secs < 1 {
 		return defaultCacheTTL
 	}
@@ -380,7 +380,7 @@ func (h *Handlers) resolveTrendingWindow(ctx context.Context, tenantID pgtype.UU
 		return defaultTrendingWindow
 	}
 
-	w := h.settings.GetStringOr(ctx, tenantID, "geo_personalization.recommendations_trending_window", defaultTrendingWindow)
+	w := h.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.recommendations_trending_window", defaultTrendingWindow)
 	if w == "" {
 		return defaultTrendingWindow
 	}
@@ -585,7 +585,7 @@ func (h *Handlers) loadToolMap(ctx context.Context, tenantID pgtype.UUID, key st
 		return nil
 	}
 
-	raw := h.settings.GetStringOr(ctx, tenantID, key, "")
+	raw := h.settings.GetStringOr(ctx, pgtype.UUID{}, key, "")
 	if raw == "" {
 		return nil
 	}
@@ -606,7 +606,7 @@ func (h *Handlers) loadToolMap(ctx context.Context, tenantID pgtype.UUID, key st
 func (h *Handlers) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, vc visitor.VisitorContext) []string {
 	raw := ""
 	if h.settings != nil {
-		raw = h.settings.GetStringOr(ctx, tenantID, "geo_personalization.stage_tool_matrix", "")
+		raw = h.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.stage_tool_matrix", "")
 	}
 
 	if raw == "" {

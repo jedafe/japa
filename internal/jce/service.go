@@ -492,7 +492,7 @@ func (s *Service) allowedGoalKeys(ctx context.Context, tenantID pgtype.UUID) (ma
 	}
 
 	if s.settings != nil {
-		raw := s.settings.GetStringOr(ctx, tenantID, "jce.default_goals", "")
+		raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "jce.default_goals", "")
 		if raw != "" {
 			var goals []allowedGoal
 			if err := json.Unmarshal([]byte(raw), &goals); err == nil {

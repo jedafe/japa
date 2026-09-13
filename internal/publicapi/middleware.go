@@ -150,11 +150,11 @@ func resolveTierLimit(ctx context.Context, tier string, tenantID pgtype.UUID, sr
 
 	switch tier {
 	case "standard":
-		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.standard", 1000)
+		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.standard", 1000)
 	case "premium":
-		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.premium", 10000)
+		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.premium", 10000)
 	default:
-		return sr.GetIntOr(ctx, tenantID, "api.rate_limit.basic", 100)
+		return sr.GetIntOr(ctx, pgtype.UUID{}, "api.rate_limit.basic", 100)
 	}
 }
 

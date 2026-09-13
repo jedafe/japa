@@ -86,8 +86,7 @@ func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtyp
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 	); err != nil {
-		slog.Warn("organizations: failed to enqueue search index task",
-			"entity_id", entityID.String(), "error", err)
+		slog.Warn("organizations: failed to enqueue search index task", "entity_id", entityID.String(), "error", err)
 	}
 }
 

@@ -810,7 +810,7 @@ ORDER BY community_rating DESC NULLS LAST, created_at DESC
 LIMIT $2 OFFSET $3
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, testID, limit, offset)
+	rows, err := s.pool.Reader.Query(ctx, q, testID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("languagetesthub: list resources: %w", err)
 	}

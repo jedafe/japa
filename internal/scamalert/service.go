@@ -168,7 +168,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scam_alert.enabled", false)
 }
 
 // AnonymousReportsAllowed reads the scam_alert.anonymous_reports setting.
@@ -178,7 +178,7 @@ func (s *Service) AnonymousReportsAllowed(ctx context.Context, tenantID pgtype.U
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "scam_alert.anonymous_reports", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scam_alert.anonymous_reports", true)
 }
 
 // Option is a single selectable value exposed by the schema endpoint.
@@ -614,8 +614,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 	destSpaceID, reporterID, scamType, description, err := s.store.GetReportForNotification(ctx, reportID, tenantID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Warn("scamalert: notify: report not found or not confirmed",
-				"report_id", reportID.String())
+			slog.Warn("scamalert: notify: report not found or not confirmed", "report_id", reportID.String())
 			return nil
 		}
 
@@ -639,13 +638,11 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 					"scam_report", reportID,
 					title, body, actionURL,
 				); err != nil {
-					slog.Warn("scamalert: notify: create notification failed",
-						"subscriber_id", subID.String(), "error", err)
+					slog.Warn("scamalert: notify: create notification failed", "subscriber_id", subID.String(), "error", err)
 				}
 			}
 
-			slog.Info("scamalert: notify: dispatched notifications",
-				"report_id", reportID.String(), "subscriber_count", len(subscribers))
+			slog.Info("scamalert: notify: dispatched notifications", "report_id", reportID.String(), "subscriber_count", len(subscribers))
 		}
 	} else {
 		slog.Warn("scamalert: notify: notifier not wired, skipping subscriber fan-out")
@@ -666,12 +663,10 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 		})
 		if err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
-				slog.Warn("scamalert: notify: emit activity event failed",
-					"reporter_id", reporterID.String(), "error", err)
+				slog.Warn("scamalert: notify: emit activity event failed", "reporter_id", reporterID.String(), "error", err)
 			}
 		} else if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
-			slog.Warn("scamalert: notify: enqueue activity event failed",
-				"reporter_id", reporterID.String(), "error", err)
+			slog.Warn("scamalert: notify: enqueue activity event failed", "reporter_id", reporterID.String(), "error", err)
 		}
 	}
 

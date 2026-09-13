@@ -420,7 +420,7 @@ func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, 
 	var personaID pgtype.UUID
 
 	if a.settings != nil {
-		if pidStr := a.settings.GetStringOr(ctx, tenantID, "studio.default_persona_id", ""); pidStr != "" {
+		if pidStr := a.settings.GetStringOr(ctx, pgtype.UUID{}, "studio.default_persona_id", ""); pidStr != "" {
 			_ = personaID.Scan(pidStr)
 		}
 	}

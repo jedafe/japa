@@ -174,7 +174,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "appointment_alert.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "appointment_alert.enabled", false)
 }
 
 // ErrNotOwner is returned when a user tries to manage an alert they do not own.
@@ -375,8 +375,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	// immediately (§91). Best-effort — a failure here does not abort the
 	// poll because the availability check is the critical path.
 	if err := s.store.MarkEmbassyPolled(ctx, embassyID, tenantID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("appointmentalert: poll embassy: mark polled failed",
-			"embassy_id", embassyID.String(), "error", err)
+		slog.Warn("appointmentalert: poll embassy: mark polled failed", "embassy_id", embassyID.String(), "error", err)
 	}
 
 	// Fetch the booking page. A short timeout prevents a slow embassy
@@ -395,23 +394,20 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 	if err != nil {
 		// Network errors are expected (embassy sites can be flaky). Log
 		// and return nil so Asynq does not retry-storm the endpoint.
-		slog.Warn("appointmentalert: poll embassy: fetch booking page failed",
-			"embassy_slug", embassy.Slug, "error", err)
+		slog.Warn("appointmentalert: poll embassy: fetch booking page failed", "embassy_slug", embassy.Slug, "error", err)
 		return nil
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("appointmentalert: poll embassy: non-200 booking page",
-			"embassy_slug", embassy.Slug, "status", resp.StatusCode)
+		slog.Warn("appointmentalert: poll embassy: non-200 booking page", "embassy_slug", embassy.Slug, "status", resp.StatusCode)
 		return nil
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap
 	if err != nil {
-		slog.Warn("appointmentalert: poll embassy: read body failed",
-			"embassy_slug", embassy.Slug, "error", err)
+		slog.Warn("appointmentalert: poll embassy: read body failed", "embassy_slug", embassy.Slug, "error", err)
 		return nil
 	}
 
@@ -440,8 +436,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 
 		key := "jc:embassy_avail:" + embassy.Slug
 		if err := s.cache.Set(ctx, key, availVal, availabilityCacheTTL).Err(); err != nil {
-			slog.Warn("appointmentalert: poll embassy: set valkey availability failed",
-				"embassy_slug", embassy.Slug, "error", err)
+			slog.Warn("appointmentalert: poll embassy: set valkey availability failed", "embassy_slug", embassy.Slug, "error", err)
 		}
 	}
 
@@ -465,8 +460,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 			return fmt.Errorf("appointmentalert: poll embassy: enqueue dispatch: %w", err)
 		}
 
-		slog.Info("appointmentalert: availability detected, dispatch enqueued",
-			"embassy_slug", embassy.Slug, "tenant_id", tenantID.String())
+		slog.Info("appointmentalert: availability detected, dispatch enqueued", "embassy_slug", embassy.Slug)
 	}
 
 	return nil
@@ -482,8 +476,7 @@ func (s *Service) PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UU
 // briefly and then disappear (§91, ADR-099).
 func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error {
 	if s.notifier == nil {
-		slog.Warn("appointmentalert: dispatch alerts: no notifier configured, skipping",
-			"embassy_slug", embassySlug)
+		slog.Warn("appointmentalert: dispatch alerts: no notifier configured, skipping", "embassy_slug", embassySlug)
 		return nil
 	}
 
@@ -500,8 +493,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 	// link and the name for the notification title.
 	embassy, err := s.store.GetEmbassyBySlug(ctx, embassySlug, tenantID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn("appointmentalert: dispatch alerts: get embassy by slug failed",
-			"embassy_slug", embassySlug, "error", err)
+		slog.Warn("appointmentalert: dispatch alerts: get embassy by slug failed", "embassy_slug", embassySlug, "error", err)
 	}
 
 	var zeroUUID pgtype.UUID
@@ -528,8 +520,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 			"appointment_alert", "system", zeroUUID,
 			"embassy", alert.ID,
 			title, body, actionURL); err != nil {
-			slog.Warn("appointmentalert: dispatch alerts: create notification failed",
-				"alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
+			slog.Warn("appointmentalert: dispatch alerts: create notification failed", "alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
 			continue
 		}
 
@@ -545,20 +536,17 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 				smsBody := fmt.Sprintf("JapaConnect: appointment available at %s. Book quickly — slots can disappear fast. %s",
 					embassy.Name, embassy.BookingURL)
 				if err := s.smsSender.SendSMS(ctx, tenantID, alert.UserID, smsBody, embassy.BookingURL); err != nil {
-					slog.Warn("appointmentalert: dispatch alerts: sms send failed",
-						"alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
+					slog.Warn("appointmentalert: dispatch alerts: sms send failed", "alert_id", alert.ID.String(), "user_id", alert.UserID.String(), "error", err)
 				}
 			} else {
-				slog.Warn("appointmentalert: dispatch alerts: sms channel requested but no SMSSender wired",
-					"alert_id", alert.ID.String(), "user_id", alert.UserID.String())
+				slog.Warn("appointmentalert: dispatch alerts: sms channel requested but no SMSSender wired", "alert_id", alert.ID.String(), "user_id", alert.UserID.String())
 			}
 		}
 
 		// Mark the alert as fired (sets fired_at = now(), status = 'fired').
 		// The 24-hour pause prevents re-firing on the next poll cycle.
 		if err := s.store.MarkAlertFired(ctx, alert.ID, tenantID); err != nil {
-			slog.Warn("appointmentalert: dispatch alerts: mark fired failed",
-				"alert_id", alert.ID.String(), "error", err)
+			slog.Warn("appointmentalert: dispatch alerts: mark fired failed", "alert_id", alert.ID.String(), "error", err)
 			continue
 		}
 
@@ -566,8 +554,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 	}
 
 	if fired > 0 {
-		slog.Info("appointmentalert: dispatch alerts: fired notifications",
-			"embassy_slug", embassySlug, "fired", fired)
+		slog.Info("appointmentalert: dispatch alerts: fired notifications", "embassy_slug", embassySlug, "fired", fired)
 	}
 
 	return nil
@@ -611,14 +598,12 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 			"tenant_id":  e.TenantID.String(),
 		})
 		if err != nil {
-			slog.Warn("appointmentalert: schedule due polls: marshal payload failed",
-				"embassy_id", e.ID.String(), "error", err)
+			slog.Warn("appointmentalert: schedule due polls: marshal payload failed", "embassy_id", e.ID.String(), "error", err)
 			continue
 		}
 
 		if err := s.enqueuer.Enqueue(worker.TypeEmbassyPoll, payload); err != nil {
-			slog.Warn("appointmentalert: schedule due polls: enqueue failed",
-				"embassy_id", e.ID.String(), "error", err)
+			slog.Warn("appointmentalert: schedule due polls: enqueue failed", "embassy_id", e.ID.String(), "error", err)
 			continue
 		}
 
@@ -626,8 +611,7 @@ func (s *Service) ScheduleDuePolls(ctx context.Context) (int, error) {
 	}
 
 	if enqueued > 0 {
-		slog.Info("appointmentalert: schedule due polls: enqueued",
-			"count", enqueued)
+		slog.Info("appointmentalert: schedule due polls: enqueued", "count", enqueued)
 	}
 
 	return enqueued, nil

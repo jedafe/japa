@@ -61,7 +61,7 @@ func bulkMaxItems(ctx context.Context, settings SettingsReader, tenantID pgtype.
 		return 50
 	}
 
-	return settings.GetIntOr(ctx, tenantID, key, 50)
+	return settings.GetIntOr(ctx, pgtype.UUID{}, key, 50)
 }
 
 // ContentBulkCreateHandler returns a ToolHandler that creates multiple content

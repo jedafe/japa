@@ -250,7 +250,7 @@ func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtyp
 		if serialized, err := json.Marshal(p); err == nil {
 			ttlSecs := 300
 			if s.settings != nil {
-				ttlSecs = s.settings.GetIntOr(ctx, tenantID, "page.cache_ttl_secs", 300)
+				ttlSecs = s.settings.GetIntOr(ctx, pgtype.UUID{}, "page.cache_ttl_secs", 300)
 			}
 
 			if ttlSecs <= 0 {

@@ -654,7 +654,7 @@ func (s *Service) validateCount(ctx context.Context, tenantID pgtype.UUID, count
 
 	maxCount := 100
 	if s.settings != nil {
-		maxCount = s.settings.GetIntOr(ctx, tenantID, "campaign.max_count", 50)
+		maxCount = s.settings.GetIntOr(ctx, pgtype.UUID{}, "campaign.max_count", 50)
 	}
 
 	if maxCount > 100 {
@@ -805,7 +805,7 @@ func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "campaign.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "campaign.enabled", true)
 }
 
 func toPersonaInput(sp PersonaSpec, index int) (personas.PersonaInput, error) {

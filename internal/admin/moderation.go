@@ -573,10 +573,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		processed++
 	}
 
-	slog.Info("bulk moderation completed",
-		"user_id", user.UserID.String(),
-		"total_actions", len(req.Actions),
-		"processed", processed)
+	slog.Info("bulk moderation completed", "user_id", user.UserID.String(), "total_actions", len(req.Actions), "processed", processed)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -726,12 +723,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("broadcast sent",
-		"user_id", user.UserID.String(),
-		"tenant_id", tenantID.String(),
-		"recipients", sent,
-		"target", req.Target,
-		"subject", req.Subject)
+	slog.Info("broadcast sent", "user_id", user.UserID.String(), "recipients", sent, "target", req.Target, "subject", req.Subject)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1391,8 +1383,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 		// Fail closed (BUG-004): the studio hook ran before the review status
 		// was committed, so the review stays pending and the reviewer sees
 		// why the publish/reject step failed.
-		slog.Error("moderation: studio hook failed",
-			"item_id", id, "action", input.Action, "error", hookErr)
+		slog.Error("moderation: studio hook failed", "item_id", id, "action", input.Action, "error", hookErr)
 		errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed",
 			fmt.Sprintf("The studio %s step failed: %v. The review status has not been changed", input.Action, hookErr))
 
@@ -1400,8 +1391,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if handled {
-		slog.Info("moderation: studio review processed",
-			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+		slog.Info("moderation: studio review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	} else {
 		err := h.Queries.AdminUpdateReviewStatus(ctx, gen.AdminUpdateReviewStatusParams{
 			Status: newStatus,
@@ -1433,14 +1423,10 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// touched the `reviews` table (§29 Ratings & Reviews) and the
 	// content_reviews persona-action row stayed 'pending' forever.
 	if h.handlePersonaActionReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
-		slog.Info("moderation: persona action review processed",
-			"item_id", id, "action", input.Action, "reviewer", user.UserID.String())
+		slog.Info("moderation: persona action review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	}
 
-	slog.Info("moderation item processed",
-		"user_id", user.UserID.String(),
-		"item_id", id,
-		"action", input.Action)
+	slog.Info("moderation item processed", "user_id", user.UserID.String(), "item_id", id, "action", input.Action)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -1500,8 +1486,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	}
 
 	if reason != "" {
-		slog.Info("moderation: persona action review reason",
-			"id", id.String(), "action", action, "reason", reason)
+		slog.Info("moderation: persona action review reason", "id", id.String(), "action", action, "reason", reason)
 	}
 
 	// On approve, enqueue persona:dispatch_action so the action is published
@@ -1534,8 +1519,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 		 WHERE id = $1`, id).Scan(&hitlSource, &hitlStatus)
 	if err == nil && hitlSource == "studio" {
 		if hitlStatus != "pending" {
-			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping",
-				"review_id", id, "status", hitlStatus)
+			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping", "review_id", id, "status", hitlStatus)
 			return true, nil
 		}
 
@@ -1584,8 +1568,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	}
 
 	if reason != "" {
-		slog.Info("moderation: studio review reason",
-			"id", id.String(), "action", action, "reason", reason)
+		slog.Info("moderation: studio review reason", "id", id.String(), "action", action, "reason", reason)
 	}
 
 	return true, nil
@@ -1625,8 +1608,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 	}
 
 	if reason != "" {
-		slog.Info("moderation: studio ai_hitl review reason",
-			"id", id.String(), "action", action, "reason", reason)
+		slog.Info("moderation: studio ai_hitl review reason", "id", id.String(), "action", action, "reason", reason)
 	}
 
 	return true, nil
@@ -1638,22 +1620,19 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 // (BUG-004).
 func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action string) error {
 	if h.StudioHook == nil {
-		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned",
-			"review_id", id, "action", action)
+		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned", "review_id", id, "action", action)
 		return nil
 	}
 
 	switch action {
 	case "approve":
 		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id, reviewerID); err != nil {
-			slog.Error("moderation: studio review approve hook failed",
-				"review_id", id, "error", err)
+			slog.Error("moderation: studio review approve hook failed", "review_id", id, "error", err)
 			return err
 		}
 	case "reject", "delete":
 		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id, reviewerID); err != nil {
-			slog.Error("moderation: studio review reject hook failed",
-				"review_id", id, "error", err)
+			slog.Error("moderation: studio review reject hook failed", "review_id", id, "error", err)
 			return err
 		}
 	}

@@ -784,8 +784,7 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 			BlockedID: uid,
 		})
 		if err != nil {
-			slog.Warn("autocomplete: IsBlocked check failed",
-				"user_id", uid.String(), "error", err)
+			slog.Warn("autocomplete: IsBlocked check failed", "user_id", uid.String(), "error", err)
 
 			filtered = append(filtered, s)
 

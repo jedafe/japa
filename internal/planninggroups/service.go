@@ -142,7 +142,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "planning_group.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "planning_group.enabled", false)
 }
 
 // Create creates a new planning group owned by the requesting user. The
@@ -497,7 +497,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 	// to share in Achievement Feed (§89). Only fires when the milestone was
 	// just marked complete and the achievement feature is enabled.
 	if completed && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false) {
+		s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false) {
 		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID, tenantID)
 		if err != nil {
 			slog.Warn("planninggroups: count incomplete milestones failed", "error", err)

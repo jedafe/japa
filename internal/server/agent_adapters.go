@@ -628,12 +628,10 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	if a.perms != nil && userID.Valid &&
 		a.perms.HasPermission(ctx, userID, tenantID, "agent.skip_hitl") {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr == nil {
-			slog.Info("agent draft: auto-published via agent.skip_hitl",
-				"content_id", row.ID, "user_id", userID)
+			slog.Info("agent draft: auto-published via agent.skip_hitl", "content_id", row.ID, "user_id", userID)
 			return nil
 		} else {
-			slog.Warn("agent draft: skip_hitl publish failed, routing to HITL",
-				"content_id", row.ID, "error", perr)
+			slog.Warn("agent draft: skip_hitl publish failed, routing to HITL", "content_id", row.ID, "error", perr)
 		}
 	}
 
@@ -1209,8 +1207,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 	// Guard against re-processing a job that already produced a draft.
 	if job.Status != "queued" && job.Status != "generating" {
-		slog.Warn("studio: generate: job not in a generatable state, skipping",
-			"job_id", jobID, "status", job.Status)
+		slog.Warn("studio: generate: job not in a generatable state, skipping", "job_id", jobID, "status", job.Status)
 		return nil
 	}
 
@@ -1219,8 +1216,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// this prevents duplicate draft generation from concurrent tasks.
 	if err := a.studio.MarkJobGenerating(ctx, tenantID, jobID); err != nil {
 		if errors.Is(err, studio.ErrJobAlreadyGenerating) {
-			slog.Info("studio: generate: job already claimed by another worker, skipping",
-				"job_id", jobID)
+			slog.Info("studio: generate: job already claimed by another worker, skipping", "job_id", jobID)
 			return nil
 		}
 
@@ -1233,8 +1229,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// content_hash dedup and (previously) regress the job to 'failed'.
 	if fresh, ferr := a.studio.GetJob(ctx, tenantID, jobID); ferr == nil &&
 		(fresh.DraftContentID.Valid || fresh.ReviewID.Valid) {
-		slog.Info("studio: generate: job already produced a draft, skipping",
-			"job_id", jobID, "draft_content_id", fresh.DraftContentID, "review_id", fresh.ReviewID)
+		slog.Info("studio: generate: job already produced a draft, skipping", "job_id", jobID, "draft_content_id", fresh.DraftContentID, "review_id", fresh.ReviewID)
 		return nil
 	}
 
@@ -1256,8 +1251,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		if rerr == nil && len(record.Extracted) > 0 {
 			extractionContext = string(record.Extracted)
 		} else if rerr != nil {
-			slog.Warn("studio: generate: load intel_record failed, generating without extraction context",
-				"job_id", jobID, "intel_record_id", job.IntelRecordID, "error", rerr)
+			slog.Warn("studio: generate: load intel_record failed, generating without extraction context", "job_id", jobID, "intel_record_id", job.IntelRecordID, "error", rerr)
 		}
 	}
 
@@ -1316,8 +1310,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 			return nil
 		}
 
-		slog.Info("studio: generate: tool table routing fell back to contents",
-			"job_id", jobID, "content_type", job.ContentType)
+		slog.Info("studio: generate: tool table routing fell back to contents", "job_id", jobID, "content_type", job.ContentType)
 	}
 
 	// 5b. Create the contents row with status='draft' (default path).
@@ -1347,8 +1340,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		a.perms.HasPermission(ctx, job.CreatedBy, tenantID, "agent.skip_hitl")
 	if skipHITL || a.studio.ShouldAutoPublish(ctx, tenantID, job.ContentType, derefStr(job.GuideCategory)) {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
-			slog.Warn("studio: generate: auto-publish failed, routing to review",
-				"job_id", jobID, "content_id", row.ID, "error", perr)
+			slog.Warn("studio: generate: auto-publish failed, routing to review", "job_id", jobID, "content_id", row.ID, "error", perr)
 			a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 
 			return nil
@@ -1475,8 +1467,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 		}
 
 		a.createStudioReview(ctx, tenantID, draft.ID, existing.ContentType, fvJSON)
-		slog.Info("regenerate: created HITL draft for manual edit or HITL-required content",
-			"content_id", contentID, "draft_id", draft.ID, "high_stakes", highStakes, "manual_edit", manual)
+		slog.Info("regenerate: created HITL draft for manual edit or HITL-required content", "content_id", contentID, "draft_id", draft.ID, "high_stakes", highStakes, "manual_edit", manual)
 
 		return nil
 	}
@@ -1510,8 +1501,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 		a.transitionIntelRecordOnPublish(ctx, tenantID, intelRecordID)
 	}
 
-	slog.Info("regenerate: updated content from source",
-		"content_id", contentID, "slug", updated.Slug, "ai_model", aiModel)
+	slog.Info("regenerate: updated content from source", "content_id", contentID, "slug", updated.Slug, "ai_model", aiModel)
 
 	return nil
 }
@@ -1623,8 +1613,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:             promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: arrival_checklist routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: arrival_checklist routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1643,8 +1632,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			DestinationSpaceID: destSpaceStr,
 		})
 		if err != nil {
-			slog.Warn("studio: community_organisation routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: community_organisation routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1671,8 +1659,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:             promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: attestation_guide routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: attestation_guide routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1697,8 +1684,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			TestSlug:           testSlug,
 		})
 		if err != nil {
-			slog.Warn("studio: language_test_requirement routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: language_test_requirement routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1734,8 +1720,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 
 		prof, perr := a.credentialSvc.GetProfessionBySlug(ctx, professionSlug)
 		if perr != nil {
-			slog.Info("studio: credential_pathway: profession slug not found, falling back to contents",
-				"job_id", jobID, "profession_slug", professionSlug)
+			slog.Info("studio: credential_pathway: profession slug not found, falling back to contents", "job_id", jobID, "profession_slug", professionSlug)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1745,8 +1730,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			DestinationSpaceID: destSpaceStr,
 		})
 		if err != nil {
-			slog.Warn("studio: credential_pathway routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: credential_pathway routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1765,8 +1749,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			AccommodationType:  visaCat,
 		})
 		if err != nil {
-			slog.Warn("studio: housing_guide routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: housing_guide routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1786,8 +1769,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:             promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: visa_route routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: visa_route routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1809,8 +1791,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:   promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: wiki_page routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: wiki_page routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1830,8 +1811,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:             promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: calendar_entry routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: calendar_entry routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1850,8 +1830,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt: promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: doc_page routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: doc_page routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1873,8 +1852,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			Prompt:             promptWithCtx,
 		})
 		if err != nil {
-			slog.Warn("studio: story routing failed, falling back to contents",
-				"job_id", jobID, "error", err)
+			slog.Warn("studio: story routing failed, falling back to contents", "job_id", jobID, "error", err)
 			return pgtype.UUID{}, "", false, nil
 		}
 
@@ -1911,8 +1889,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 	fvJSON []byte,
 ) {
 	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, draftID, aiModel); err != nil {
-		slog.Warn("studio: generate: mark generated failed",
-			"job_id", jobID, "draft_id", draftID, "error", err)
+		slog.Warn("studio: generate: mark generated failed", "job_id", jobID, "draft_id", draftID, "error", err)
 		return
 	}
 
@@ -1932,21 +1909,17 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 		TargetTable: targetTable,
 	})
 	if rerr != nil {
-		slog.Warn("studio: generate: create HITL review failed, draft remains in draft_ready",
-			"job_id", jobID, "draft_id", draftID, "target_table", targetTable, "error", rerr)
+		slog.Warn("studio: generate: create HITL review failed, draft remains in draft_ready", "job_id", jobID, "draft_id", draftID, "target_table", targetTable, "error", rerr)
 		return
 	}
 
 	if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, review.ID); err != nil {
-		slog.Warn("studio: generate: mark routed to review failed",
-			"job_id", jobID, "review_id", review.ID, "error", err)
+		slog.Warn("studio: generate: mark routed to review failed", "job_id", jobID, "review_id", review.ID, "error", err)
 		return
 	}
 
 	a.syncCampaignItem(ctx, tenantID, jobID, "in_review", draftID, review.ID, nil)
-	slog.Info("studio: generate: draft routed to review",
-		"job_id", jobID, "draft_id", draftID,
-		"target_table", targetTable, "review_id", review.ID)
+	slog.Info("studio: generate: draft routed to review", "job_id", jobID, "draft_id", draftID, "target_table", targetTable, "review_id", review.ID)
 }
 
 // studioGenerateBody synthesizes a draft body via the AI gateway, weaving in
@@ -2099,8 +2072,7 @@ func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context
 		ID:     intelRecordID,
 		Status: "published",
 	}); err != nil {
-		slog.Warn("studio: transition intel_record to published failed",
-			"intel_record_id", intelRecordID, "error", err)
+		slog.Warn("studio: transition intel_record to published failed", "intel_record_id", intelRecordID, "error", err)
 	}
 }
 

@@ -176,7 +176,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	// the endpoint returns 403 credit_purchase_disabled but spending existing
 	// credits continues to work (Section 58).
 	if s.settings != nil {
-		if !s.settings.GetBoolOr(ctx, tenantID, "wallet.credit_purchase_enabled", true) {
+		if !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "wallet.credit_purchase_enabled", true) {
 			return PurchaseCreditsResult{}, errCreditPurchaseDisabled
 		}
 	}
@@ -204,7 +204,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	if currencyCode == "" {
 		// Final fallback: system default via settings, then compiled default.
 		if s.settings != nil {
-			currencyCode = s.settings.GetStringOr(ctx, tenantID, "wallet.default_currency", "NGN")
+			currencyCode = s.settings.GetStringOr(ctx, pgtype.UUID{}, "wallet.default_currency", "NGN")
 		} else {
 			currencyCode = "NGN"
 		}
@@ -251,7 +251,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 	// caller can bypass it. Pack purchases are exempt (the pack defines its
 	// own amount). Defense in depth (Rule 16).
 	if input.PackID == "" && s.settings != nil {
-		minPurchase := s.settings.GetIntOr(ctx, tenantID, "wallet.min_purchase_credits", 100)
+		minPurchase := s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_purchase_credits", 100)
 		if creditsToGrant < minPurchase {
 			return PurchaseCreditsResult{}, fmt.Errorf("minimum %d credits required for purchase", minPurchase)
 		}

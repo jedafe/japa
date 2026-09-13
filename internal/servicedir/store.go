@@ -473,7 +473,7 @@ LIMIT 1
 
 	var r ServiceRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
 		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,

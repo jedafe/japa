@@ -98,8 +98,7 @@ func (h *Handlers) enqueueSearchIndex(operation string, tagID, tenantID pgtype.U
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 	); err != nil {
-		slog.Warn("tags: failed to enqueue search index task",
-			"entity_id", tagID.String(), "error", err)
+		slog.Warn("tags: failed to enqueue search index task", "entity_id", tagID.String(), "error", err)
 	}
 }
 
@@ -381,8 +380,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	// best-effort resolution the content list handler applies.
 	rc := literals.NewRequestContext(r, tenantID, "")
 	if resErr := h.content.ResolveContentFields(r.Context(), items, rc); resErr != nil {
-		slog.Warn("tags: failed to resolve item literals",
-			"error", resErr, "tenant_id", tenantID.String())
+		slog.Warn("tags: failed to resolve item literals", "error", resErr)
 	}
 
 	// Enrich each item with featured_image_url resolved from the media JOIN

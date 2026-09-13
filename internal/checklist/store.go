@@ -71,7 +71,7 @@ WHERE c.content_type = 'guide'
 ORDER BY c.id, cf.key
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, fieldKeys)
+	rows, err := s.pool.Reader.Query(ctx, q, fieldKeys)
 	if err != nil {
 		return nil, fmt.Errorf("checklist: list visa guide fields: %w", err)
 	}
@@ -119,7 +119,7 @@ WHERE level = 'country' AND deleted_at IS NULL
 ORDER BY name ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, )
 	if err != nil {
 		return nil, fmt.Errorf("checklist: list country spaces: %w", err)
 	}
@@ -162,7 +162,7 @@ WHERE c.id = $1
 LIMIT 1
 `
 
-	row := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID, fieldKey)
+	row := s.pool.Reader.QueryRow(ctx, q, guideID, fieldKey)
 
 	var f VisaGuideField
 
@@ -197,7 +197,7 @@ LIMIT 1
 `
 
 	var title string
-	if err := s.pool.Reader.QueryRow(ctx, q, tenantID, guideID).Scan(&title); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, q, guideID).Scan(&title); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
 		}

@@ -453,8 +453,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 		isMutualFollow = mutualFollow
 	default:
 		// Unknown privacy value — fail closed (treat as nobody).
-		slog.Warn("dm: unknown dm_privacy value, failing closed",
-			"recipient_id", recipientID.String(), "dm_privacy", privacy)
+		slog.Warn("dm: unknown dm_privacy value, failing closed", "recipient_id", recipientID.String(), "dm_privacy", privacy)
 		return ConversationResult{}, ErrDMPrivacyNobody
 	}
 
@@ -470,8 +469,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 	// for all non-mutual-follow senders.)
 	if !isMutualFollow {
 		if err := s.store.CreateMessageRequest(ctx, tenantID, senderID, recipientID, conv.ID, previewMessage); err != nil {
-			slog.Warn("dm: failed to create message request",
-				"conversation_id", conv.ID.String(), "error", err)
+			slog.Warn("dm: failed to create message request", "conversation_id", conv.ID.String(), "error", err)
 		}
 		// Enqueue push notification for the recipient (fire-and-forget).
 		s.enqueueDMNotifyRequest(ctx, tenantID, recipientID, senderID, conv.ID)
@@ -878,8 +876,7 @@ func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipi
 		asynq.NewTask(worker.TypeDMNotifyMessage, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeDMNotifyMessage)),
 	); err != nil {
-		slog.Warn("dm: failed to enqueue notify_message",
-			"conversation_id", conversationID.String(), "error", err)
+		slog.Warn("dm: failed to enqueue notify_message", "conversation_id", conversationID.String(), "error", err)
 	}
 }
 
@@ -909,8 +906,7 @@ func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipi
 		asynq.NewTask(worker.TypeDMNotifyRequest, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeDMNotifyRequest)),
 	); err != nil {
-		slog.Warn("dm: failed to enqueue notify_request",
-			"conversation_id", conversationID.String(), "error", err)
+		slog.Warn("dm: failed to enqueue notify_request", "conversation_id", conversationID.String(), "error", err)
 	}
 }
 

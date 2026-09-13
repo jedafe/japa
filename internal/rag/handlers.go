@@ -206,7 +206,7 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,10 +218,10 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	settings := map[string]any{
-		"rag.enabled":          h.settings.GetBoolOr(ctx, tenantID, "rag.enabled", true),
-		"rag.embedding_model":  h.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small"),
-		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5),
-		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, tenantID, "rag.chunk_max_tokens", 400),
+		"rag.enabled":          h.settings.GetBoolOr(ctx, pgtype.UUID{}, "rag.enabled", true),
+		"rag.embedding_model":  h.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small"),
+		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.retrieval_top_k", 5),
+		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.chunk_max_tokens", 400),
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

@@ -225,8 +225,7 @@ func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) 
 	defer cancel()
 
 	if err := PerformChallenge(challengeCtx, endpoint.URL, token); err != nil {
-		slog.Warn("webhook challenge/response failed",
-			"endpoint_id", id, "url", endpoint.URL, "error", err)
+		slog.Warn("webhook challenge/response failed", "endpoint_id", id, "url", endpoint.URL, "error", err)
 		return fmt.Errorf("challenge/response verification failed: %w", err)
 	}
 
@@ -234,8 +233,7 @@ func (s *Service) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) 
 		return err
 	}
 
-	slog.Info("webhook endpoint verified",
-		"endpoint_id", id, "url", endpoint.URL)
+	slog.Info("webhook endpoint verified", "endpoint_id", id, "url", endpoint.URL)
 
 	return nil
 }
@@ -270,18 +268,12 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 		payload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
 		// Without this task the delivery row stays 'pending' forever — surface a failed enqueue.
 		if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, payload); err != nil {
-			slog.Error("webhooks: failed to enqueue test delivery",
-				"delivery_id", deliveryID.String(), "error", err)
+			slog.Error("webhooks: failed to enqueue test delivery", "delivery_id", deliveryID.String(), "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
 		}
 	}
 
-	slog.Info(
-		"webhook test delivery created",
-		"delivery_id", deliveryID,
-		"endpoint_id", endpointID,
-		"event_type", eventType,
-	)
+	slog.Info("webhook test delivery created", "delivery_id", deliveryID, "endpoint_id", endpointID, "event_type", eventType, )
 
 	return deliveryID, nil
 }
@@ -308,8 +300,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 	// §12: only active (verified) endpoints receive deliveries. An inactive
 	// endpoint is marked failed so the delivery log reflects the skip reason.
 	if !endpoint.IsActive {
-		slog.Info("webhook endpoint inactive, skipping delivery",
-			"delivery_id", delivery.ID, "endpoint_id", endpoint.ID)
+		slog.Info("webhook endpoint inactive, skipping delivery", "delivery_id", delivery.ID, "endpoint_id", endpoint.ID)
 		return s.store.MarkWebhookFailed(ctx, id, delivery.Attempts, "endpoint inactive or not verified")
 	}
 
@@ -354,12 +345,10 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	if deliverErr == nil {
 		if err := s.store.MarkWebhookDelivered(ctx, id, attempt, respCode, respBody); err != nil {
-			slog.Error("failed to mark webhook delivery as delivered",
-				"delivery_id", id, "error", err)
+			slog.Error("failed to mark webhook delivery as delivered", "delivery_id", id, "error", err)
 		}
 
-		slog.Info("webhook delivered successfully",
-			"delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType, "attempt", attempt)
+		slog.Info("webhook delivered successfully", "delivery_id", id, "endpoint", endpoint.URL, "event_type", delivery.EventType, "attempt", attempt)
 
 		return nil
 	}
@@ -372,14 +361,10 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 		errMsg := deliverErr.Error()
 
 		if markErr := s.store.MarkWebhookRetrying(ctx, id, attempt, errMsg, nextAttempt, respCode, respBody); markErr != nil {
-			slog.Error("failed to mark webhook delivery as retrying",
-				"delivery_id", id, "error", markErr)
+			slog.Error("failed to mark webhook delivery as retrying", "delivery_id", id, "error", markErr)
 		}
 
-		slog.Warn("webhook delivery failed, will retry",
-			"delivery_id", id, "endpoint", endpoint.URL,
-			"attempt", attempt, "max_attempts", maxAttempts,
-			"next_attempt_at", nextAttempt, "error", deliverErr)
+		slog.Warn("webhook delivery failed, will retry", "delivery_id", id, "endpoint", endpoint.URL, "attempt", attempt, "max_attempts", maxAttempts, "next_attempt_at", nextAttempt, "error", deliverErr)
 
 		return fmt.Errorf("webhook delivery attempt %d failed: %w", attempt, deliverErr)
 	}
@@ -387,12 +372,10 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 	// All retries exhausted — mark as failed and return nil so Asynq stops.
 	errMsg := deliverErr.Error()
 	if markErr := s.store.MarkWebhookFailed(ctx, id, attempt, errMsg); markErr != nil {
-		slog.Error("failed to mark webhook delivery as failed",
-			"delivery_id", id, "error", markErr)
+		slog.Error("failed to mark webhook delivery as failed", "delivery_id", id, "error", markErr)
 	}
 
-	slog.Error("webhook delivery failed after all retries",
-		"delivery_id", id, "endpoint", endpoint.URL, "attempts", attempt, "error", deliverErr)
+	slog.Error("webhook delivery failed after all retries", "delivery_id", id, "endpoint", endpoint.URL, "attempts", attempt, "error", deliverErr)
 
 	return nil
 }
@@ -463,8 +446,7 @@ func (s *Service) RetryDelivery(ctx context.Context, tenantID, endpointID, deliv
 		payload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
 		// The row was just reset to 'pending'; a lost enqueue would strand it — surface the failure.
 		if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, payload); err != nil {
-			slog.Error("webhooks: failed to enqueue retry delivery",
-				"delivery_id", deliveryID.String(), "error", err)
+			slog.Error("webhooks: failed to enqueue retry delivery", "delivery_id", deliveryID.String(), "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
 		}
 	}
@@ -493,7 +475,7 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
 	endpoints, err := s.store.ListEndpoints(ctx, tenantID)
 	if err != nil {
-		slog.Warn("webhooks: failed to list endpoints for emit", "tenant_id", tenantID, "error", err)
+		slog.Warn("webhooks: failed to list endpoints for emit", "error", err)
 		return
 	}
 
@@ -520,8 +502,7 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 
 		deliveryID, err := s.CreateDelivery(ctx, tenantID, ep.ID, eventID, eventType, payload)
 		if err != nil {
-			slog.Error("webhooks: failed to create delivery for emit",
-				"endpoint_id", ep.ID, "event_type", eventType, "error", err)
+			slog.Error("webhooks: failed to create delivery for emit", "endpoint_id", ep.ID, "event_type", eventType, "error", err)
 			errpkg.CaptureException(fmt.Errorf("emit create delivery %s: %w", eventType, err))
 
 			continue
@@ -530,8 +511,7 @@ func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType
 		if s.enqueuer != nil {
 			taskPayload, _ := json.Marshal(map[string]string{"delivery_id": deliveryID.String()})
 			if err := s.enqueuer.Enqueue(worker.TypeWebhookDelivery, taskPayload); err != nil {
-				slog.Error("webhooks: failed to enqueue delivery for emit",
-					"delivery_id", deliveryID.String(), "error", err)
+				slog.Error("webhooks: failed to enqueue delivery for emit", "delivery_id", deliveryID.String(), "error", err)
 				errpkg.CaptureException(fmt.Errorf("enqueue %s (delivery %s): %w", worker.TypeWebhookDelivery, deliveryID.String(), err))
 			}
 		}

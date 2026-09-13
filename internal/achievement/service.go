@@ -143,7 +143,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false)
 }
 
 // defaultReactions is the spec-defined curated reaction set (§89 Reaction
@@ -163,7 +163,7 @@ func (s *Service) allowedReactions(ctx context.Context, tenantID pgtype.UUID) []
 		return defaultReactions
 	}
 
-	raw := s.settings.GetStringOr(ctx, tenantID, "achievement_reactions", "")
+	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "achievement_reactions", "")
 	if raw == "" || raw == "[]" {
 		return defaultReactions
 	}

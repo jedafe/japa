@@ -226,7 +226,7 @@ func (h *Handlers) RevokeConsent(w http.ResponseWriter, r *http.Request) {
 	// hardcoded config). Falls back to "1.0" when unset.
 	policyVersion := "1.0"
 	if h.Service != nil && h.Service.settings != nil {
-		policyVersion = h.Service.settings.GetStringOr(r.Context(), tenantID, "gdpr.policy_version", "1.0")
+		policyVersion = h.Service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "gdpr.policy_version", "1.0")
 	}
 
 	err := h.Service.RevokeConsent(r.Context(), tenantID, user.UserID, consentType, policyVersion)

@@ -417,8 +417,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 	// Fetch media record to get MIME type for routing.
 	m, err := h.service.GetMedia(ctx, tenantID, mediaID)
 	if err != nil {
-		slog.Warn("media: failed to fetch media for task enqueue",
-			"media_id", mediaID.String(), "error", err)
+		slog.Warn("media: failed to fetch media for task enqueue", "media_id", mediaID.String(), "error", err)
 		return
 	}
 
@@ -433,8 +432,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 		asynq.NewTask(worker.TypeMediaScan, scanPayload),
 		asynq.Queue(worker.QueueForTask(worker.TypeMediaScan)),
 	); err != nil {
-		slog.Warn("media: failed to enqueue scan task",
-			"media_id", mediaIDStr, "error", err)
+		slog.Warn("media: failed to enqueue scan task", "media_id", mediaIDStr, "error", err)
 	}
 
 	// Route by MIME type for processing.
@@ -451,8 +449,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 			asynq.NewTask(worker.TypeImageProcessing, processPayload),
 			asynq.Queue(worker.QueueForTask(worker.TypeImageProcessing)),
 		); err != nil {
-			slog.Warn("media: failed to enqueue image processing",
-				"media_id", mediaIDStr, "error", err)
+			slog.Warn("media: failed to enqueue image processing", "media_id", mediaIDStr, "error", err)
 		}
 	case isVideoMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
@@ -464,8 +461,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 			asynq.NewTask(worker.TypeVideoProcessing, processPayload),
 			asynq.Queue(worker.QueueForTask(worker.TypeVideoProcessing)),
 		); err != nil {
-			slog.Warn("media: failed to enqueue video processing",
-				"media_id", mediaIDStr, "error", err)
+			slog.Warn("media: failed to enqueue video processing", "media_id", mediaIDStr, "error", err)
 		}
 	}
 }

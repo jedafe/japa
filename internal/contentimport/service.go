@@ -169,7 +169,7 @@ func (s *Service) maxItemsPerRun(ctx context.Context, tenantID pgtype.UUID) int 
 		return DefaultMaxItemsPerRun
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "import.max_items_per_run", DefaultMaxItemsPerRun)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "import.max_items_per_run", DefaultMaxItemsPerRun)
 }
 
 // safeInt32 converts an int to int32 clamped to [0, math.MaxInt32]. The
@@ -219,8 +219,7 @@ func (s *Service) StartImport(ctx context.Context, tenantID, userID pgtype.UUID,
 		if err != nil {
 			slog.Error("contentimport: start: marshal payload", "error", err)
 		} else if err := s.enqueuer.Enqueue(TaskProcessSource, payload); err != nil {
-			slog.Error("contentimport: start: enqueue process_source",
-				"import_id", imp.ID.String(), "error", err)
+			slog.Error("contentimport: start: enqueue process_source", "import_id", imp.ID.String(), "error", err)
 		}
 	}
 
@@ -318,8 +317,7 @@ func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUI
 		if err != nil {
 			slog.Error("contentimport: retry: marshal payload", "error", err)
 		} else if err := s.enqueuer.Enqueue(TaskProcessSource, payload); err != nil {
-			slog.Error("contentimport: retry: enqueue process_source",
-				"import_id", imp.ID.String(), "error", err)
+			slog.Error("contentimport: retry: enqueue process_source", "import_id", imp.ID.String(), "error", err)
 		}
 	}
 
@@ -349,14 +347,12 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 	}
 
 	if existing.Status == StatusProcessing {
-		slog.Info("contentimport: process: already processing, skipping (idempotent)",
-			"import_id", importID.String())
+		slog.Info("contentimport: process: already processing, skipping (idempotent)", "import_id", importID.String())
 		return nil
 	}
 
 	if existing.Status == StatusCompleted {
-		slog.Info("contentimport: process: already completed, skipping (idempotent)",
-			"import_id", importID.String())
+		slog.Info("contentimport: process: already completed, skipping (idempotent)", "import_id", importID.String())
 		return nil
 	}
 
@@ -417,8 +413,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 				Error:     err.Error(),
 			})
 
-			slog.Warn("contentimport: process: item failed",
-				"import_id", importID.String(), "title", item.Title, "error", err)
+			slog.Warn("contentimport: process: item failed", "import_id", importID.String(), "title", item.Title, "error", err)
 
 			continue
 		}
@@ -443,10 +438,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 		return fmt.Errorf("contentimport: process: update final status: %w", err)
 	}
 
-	slog.Info("contentimport: process: complete",
-		"import_id", importID.String(),
-		"total", totalItems, "imported", importedCount, "failed", failedCount,
-		"status", finalStatus)
+	slog.Info("contentimport: process: complete", "import_id", importID.String(), "total", totalItems, "imported", importedCount, "failed", failedCount, "status", finalStatus)
 
 	return nil
 }
@@ -461,8 +453,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 // the imported content is still usable, just with external image URLs.
 func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
 	if s.mediaFetcher == nil {
-		slog.Warn("contentimport: fetch_media: no media fetcher configured, skipping",
-			"content_id", contentID.String())
+		slog.Warn("contentimport: fetch_media: no media fetcher configured, skipping", "content_id", contentID.String())
 		return nil
 	}
 
@@ -528,8 +519,7 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 		if err != nil {
 			slog.Warn("contentimport: fetch_media: marshal payload", "error", err)
 		} else if err := s.enqueuer.Enqueue(TaskFetchMedia, payload); err != nil {
-			slog.Warn("contentimport: fetch_media: enqueue failed",
-				"content_id", row.ID.String(), "error", err)
+			slog.Warn("contentimport: fetch_media: enqueue failed", "content_id", row.ID.String(), "error", err)
 		}
 	}
 

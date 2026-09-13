@@ -266,8 +266,7 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 		"operation":   operation,
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
-		slog.Warn("spaces: failed to enqueue search:index_entity",
-			"space_id", spaceID.String(), "operation", operation, "error", err)
+		slog.Warn("spaces: failed to enqueue search:index_entity", "space_id", spaceID.String(), "operation", operation, "error", err)
 	}
 }
 

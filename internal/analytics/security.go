@@ -30,7 +30,7 @@ func (s *Service) getSettingInt(ctx context.Context, tenantID pgtype.UUID, key s
 		return fallback
 	}
 
-	val, err := s.settings.GetSettingInt(ctx, tenantID, key)
+	val, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, key)
 	if err != nil || val <= 0 {
 		return fallback
 	}

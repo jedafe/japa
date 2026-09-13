@@ -93,9 +93,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 			); err != nil {
 				return fmt.Errorf("scholarships: sync from guide: delete stale projection: %w", err)
 			}
-			slog.Info("scholarships: deleted stale projection",
-				"content_id", content.ID.String(),
-				"tenant_id", tenantID.String())
+			slog.Info("scholarships: deleted stale projection", "content_id", content.ID.String())
 		}
 		return nil
 	}
@@ -123,10 +121,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 		if err != nil {
 			return fmt.Errorf("scholarships: sync from guide: update: %w", err)
 		}
-		slog.Info("scholarships: synced guide to existing scholarship",
-			"content_id", content.ID.String(),
-			"scholarship_id", existing.ID.String(),
-			"tenant_id", tenantID.String())
+		slog.Info("scholarships: synced guide to existing scholarship", "content_id", content.ID.String(), "scholarship_id", existing.ID.String())
 		return nil
 	}
 
@@ -136,9 +131,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	if err != nil {
 		return fmt.Errorf("scholarships: sync from guide: create: %w", err)
 	}
-	slog.Info("scholarships: created scholarship from guide",
-		"content_id", content.ID.String(),
-		"tenant_id", tenantID.String())
+	slog.Info("scholarships: created scholarship from guide", "content_id", content.ID.String())
 	return nil
 }
 
@@ -167,9 +160,7 @@ func (s *Store) deleteProjectionIfExists(ctx context.Context, tenantID, guideID 
 	); err != nil {
 		return fmt.Errorf("scholarships: sync from guide: delete projection for deleted guide: %w", err)
 	}
-	slog.Info("scholarships: deleted projection for deleted guide",
-		"content_id", guideID.String(),
-		"tenant_id", tenantID.String())
+	slog.Info("scholarships: deleted projection for deleted guide", "content_id", guideID.String())
 	return nil
 }
 

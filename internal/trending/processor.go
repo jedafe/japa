@@ -96,9 +96,9 @@ func (p *Processor) loadScoringConfig(ctx context.Context, tenantID pgtype.UUID)
 	sc.SpaceMemberWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_member", sc.SpaceMemberWeight)
 	sc.SpacePostWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_post", sc.SpacePostWeight)
 	sc.SpaceRecentWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_recent", sc.SpaceRecentWeight)
-	sc.Expiry24hHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.24h_hours", sc.Expiry24hHours)
-	sc.Expiry7dHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.7d_hours", sc.Expiry7dHours)
-	sc.Expiry30dHours = p.settings.GetIntOr(ctx, tenantID, "trending.expiry.30d_hours", sc.Expiry30dHours)
+	sc.Expiry24hHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.24h_hours", sc.Expiry24hHours)
+	sc.Expiry7dHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.7d_hours", sc.Expiry7dHours)
+	sc.Expiry30dHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.30d_hours", sc.Expiry30dHours)
 
 	return sc
 }

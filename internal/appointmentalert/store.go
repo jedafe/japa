@@ -231,7 +231,7 @@ LIMIT 1
 
 	var r EmbassyRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
 		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
@@ -722,7 +722,7 @@ WHERE a.embassy_slug = $1
 ORDER BY a.created_at ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, embassySlug)
+	rows, err := s.pool.Reader.Query(ctx, q, embassySlug)
 	if err != nil {
 		return nil, fmt.Errorf("appointmentalert: list active alerts by embassy slug: %w", err)
 	}

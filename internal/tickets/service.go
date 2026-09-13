@@ -226,7 +226,7 @@ func (s *Service) CreateTicket(ctx context.Context, tenantID pgtype.UUID, input 
 	if ticketType.SlaHours != nil && *ticketType.SlaHours > 0 {
 		slaHours = *ticketType.SlaHours
 	} else if s.settings != nil {
-		slaHours = int32(s.settings.GetIntOr(ctx, tenantID, "tickets.default_sla_hours", 48)) // #nosec
+		slaHours = int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "tickets.default_sla_hours", 48)) // #nosec
 	}
 
 	if slaHours > 0 {

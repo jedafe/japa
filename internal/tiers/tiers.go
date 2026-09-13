@@ -163,5 +163,5 @@ func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UU
 		return 0, errors.New("settings reader not configured")
 	}
 
-	return sr.GetIntOr(ctx, tenantID, fmt.Sprintf("%s.%s", keyPrefix, tier), fallback), nil
+	return sr.GetIntOr(ctx, pgtype.UUID{}, fmt.Sprintf("%s.%s", keyPrefix, tier), fallback), nil
 }

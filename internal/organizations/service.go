@@ -134,9 +134,9 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		maxPerUser := -1
 		perTierKey := "organizations.max_per_user." + tier
 
-		if v, err := s.settings.GetSettingInt(ctx, tenantID, perTierKey); err == nil {
+		if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, perTierKey); err == nil {
 			maxPerUser = v
-		} else if v, err := s.settings.GetSettingInt(ctx, tenantID, "organizations.max_per_user"); err == nil {
+		} else if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "organizations.max_per_user"); err == nil {
 			maxPerUser = v
 		}
 

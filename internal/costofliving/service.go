@@ -124,7 +124,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) IsStale(ctx context.Context, tenantID pgtype.UUID, lastUpdatedAt time.Time) bool {
 	staleDays := defaultStaleDays
 	if s.settings != nil {
-		staleDays = s.settings.GetIntOr(ctx, tenantID, "col_calculator.stale_days", defaultStaleDays)
+		staleDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "col_calculator.stale_days", defaultStaleDays)
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -staleDays)
@@ -145,7 +145,7 @@ func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
 		return defaultMaxCities
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "col_calculator.max_cities", defaultMaxCities)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "col_calculator.max_cities", defaultMaxCities)
 }
 
 // ListCities returns a paginated list of cities with cost_of_living data.
@@ -154,7 +154,7 @@ func (s *Service) maxCities(ctx context.Context, tenantID pgtype.UUID) int {
 // filter cities to those in the selected primary geo space.
 func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, countryCode string, page, limit int) (CitiesListResponse, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, tenantID, "col_calculator.enabled", defaultEnabled); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "col_calculator.enabled", defaultEnabled); !enabled {
 			return CitiesListResponse{}, ErrCalculatorDisabled
 		}
 	}
@@ -239,7 +239,7 @@ func (s *Service) ListCities(ctx context.Context, tenantID pgtype.UUID, search, 
 // The baseline city is always included in the result even if not in cityIDs.
 func (s *Service) CompareCities(ctx context.Context, tenantID pgtype.UUID, cityIDs []pgtype.UUID) (ComparisonMatrix, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, tenantID, "col_calculator.enabled", defaultEnabled); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "col_calculator.enabled", defaultEnabled); !enabled {
 			return ComparisonMatrix{}, ErrCalculatorDisabled
 		}
 	}

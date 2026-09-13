@@ -296,7 +296,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		PointsToConvert: input.PointsToConvert,
 	})
 	if err != nil {
-		slog.Error("points conversion failed", "user_id", user.UserID, "tenant_id", tenantID, "points", input.PointsToConvert, "error", err)
+		slog.Error("points conversion failed", "user_id", user.UserID, "points", input.PointsToConvert, "error", err)
 		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, tenantID, input.PointsToConvert, err))
 		handleServiceError(w, err)
 
@@ -370,7 +370,7 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	// hardcoding the minimum (BUG-011, Rule 16).
 	minPurchaseCredits := 100
 	if h.Service.settings != nil {
-		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), tenantID, "wallet.min_purchase_credits", 100)
+		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), pgtype.UUID{}, "wallet.min_purchase_credits", 100)
 	}
 
 	// min_withdrawal_credits from system_settings (default 1000, Section 58).
@@ -378,7 +378,7 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	// hardcoding the minimum (Rule 16).
 	minWithdrawalCredits := 1000
 	if h.Service.settings != nil {
-		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), tenantID, "wallet.min_withdrawal_credits", 1000)
+		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), pgtype.UUID{}, "wallet.min_withdrawal_credits", 1000)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -664,7 +664,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		Reference:  input.Reference,
 	})
 	if err != nil {
-		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "tenant_id", tenantID, "amount", input.Amount, "error", err)
+		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "amount", input.Amount, "error", err)
 		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, tenantID, input.Amount, err))
 		handleServiceError(w, err)
 
@@ -741,7 +741,7 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		CurrencyCode: input.CurrencyCode,
 	})
 	if err != nil {
-		slog.Error("withdrawal calculation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
+		slog.Error("withdrawal calculation failed", "user_id", user.UserID, "error", err)
 		handleServiceError(w, err)
 
 		return
@@ -784,7 +784,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
-		slog.Error("withdrawal creation failed", "user_id", user.UserID, "tenant_id", tenantID, "error", err)
+		slog.Error("withdrawal creation failed", "user_id", user.UserID, "error", err)
 		handleServiceError(w, err)
 
 		return
@@ -931,7 +931,7 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		slog.Error("process withdrawal failed", "withdrawal_id", id, "tenant_id", tenantID, "error", err)
+		slog.Error("process withdrawal failed", "withdrawal_id", id, "error", err)
 		handleServiceError(w, err)
 
 		return

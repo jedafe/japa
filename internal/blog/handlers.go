@@ -202,8 +202,7 @@ func (h *Handlers) dispatchMentionNotifications(
 	if h.mentionCheckers != nil {
 		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
 		if err != nil {
-			slog.Warn("blog: IsPrivateSpace check failed",
-				"space_id", spaceID.String(), "error", err)
+			slog.Warn("blog: IsPrivateSpace check failed", "space_id", spaceID.String(), "error", err)
 
 			isPrivateSpace = false
 		}
@@ -213,8 +212,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
-			slog.Warn("blog: FilterMentions returned unexpected error",
-				"content_id", contentID.String(), "error", err)
+			slog.Warn("blog: FilterMentions returned unexpected error", "content_id", contentID.String(), "error", err)
 		}
 	}
 
@@ -230,8 +228,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			"content", contentID,
 			"", "", "",
 		); err != nil {
-			slog.Warn("blog: failed to dispatch mention.content notification",
-				"user_id", m.ID.String(), "error", err)
+			slog.Warn("blog: failed to dispatch mention.content notification", "user_id", m.ID.String(), "error", err)
 		}
 	}
 }
@@ -278,8 +275,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 		asynq.NewTask(worker.TypeRSSRegenerate, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeRSSRegenerate)),
 	); err != nil {
-		slog.Warn("blog: failed to enqueue rss:regenerate task",
-			"tenant_id", tenantID.String(), "error", err)
+		slog.Warn("blog: failed to enqueue rss:regenerate task", "error", err)
 	}
 }
 
@@ -1321,8 +1317,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 	if h.content != nil {
 		rc := literals.NewRequestContext(r, tenantID, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), cards, rc); resErr != nil {
-			slog.Warn("blog: failed to resolve featured literals",
-				"error", resErr, "tenant_id", tenantID.String())
+			slog.Warn("blog: failed to resolve featured literals", "error", resErr)
 		}
 	}
 
@@ -1539,8 +1534,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	if h.content != nil {
 		rc := literals.NewRequestContext(r, tenantID, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), &post, rc); resErr != nil {
-			slog.Warn("blog: failed to resolve post literals",
-				"error", resErr, "post_id", post.ID.String())
+			slog.Warn("blog: failed to resolve post literals", "error", resErr, "post_id", post.ID.String())
 		}
 	}
 
@@ -1644,8 +1638,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 			h.mentionCheckers,
 		)
 		if redErr != nil {
-			slog.Warn("blog: RedactErasedMentionsInBody failed",
-				"post_id", post.ID.String(), "error", redErr)
+			slog.Warn("blog: RedactErasedMentionsInBody failed", "post_id", post.ID.String(), "error", redErr)
 		} else {
 			dto["body_html"] = redactedHTML
 
@@ -1770,8 +1763,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	if h.content != nil {
 		rc := literals.NewRequestContext(r, tenantID, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), posts, rc); resErr != nil {
-			slog.Warn("blog: failed to resolve list literals",
-				"error", resErr, "tenant_id", tenantID.String())
+			slog.Warn("blog: failed to resolve list literals", "error", resErr)
 		}
 	}
 

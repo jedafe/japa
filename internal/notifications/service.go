@@ -84,7 +84,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 	// AUDIT-FRESH-SETTING-007: batch window is configurable via system_settings.
 	batchWindowMinutes := 5
 	if s.settings != nil {
-		batchWindowMinutes = s.settings.GetIntOr(ctx, tenantID, "notifications.batch_window_minutes", batchWindowMinutes)
+		batchWindowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
 	// BUG-001: pass tenant_id so the batch window carries tenant context
 	// through to DispatchBatch, which needs it for the notifications insert.

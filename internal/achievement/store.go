@@ -427,7 +427,7 @@ WHERE c.id = $1 AND c.content_type = 'achievement'
 LIMIT 1
 `
 
-	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, tenantID, contentID))
+	r, err := scanAchievementRow(s.pool.Reader.QueryRow(ctx, q, contentID))
 	if err != nil {
 		return AchievementRow{}, fmt.Errorf("achievement: get by id (admin): %w", err)
 	}
@@ -471,7 +471,7 @@ ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
 LIMIT $2
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceSlug, limit)
+	rows, err := s.pool.Reader.Query(ctx, q, spaceSlug, limit)
 	if err != nil {
 		return nil, fmt.Errorf("achievement: list by space: %w", err)
 	}

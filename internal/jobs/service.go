@@ -185,7 +185,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "jobs.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "jobs.enabled", true)
 }
 
 // FeaturedCredits reads the jobs.featured_credits system_setting (default 1000).
@@ -194,7 +194,7 @@ func (s *Service) FeaturedCredits(ctx context.Context, tenantID pgtype.UUID) int
 		return 1000
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "jobs.featured_credits", 1000)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "jobs.featured_credits", 1000)
 }
 
 // IsOrgMember returns true if the user is a member of the org with one of the

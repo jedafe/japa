@@ -902,8 +902,7 @@ func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("intel: source disabled via review queue",
-		"source_id", sourceID.String(), "actor", userID.String())
+	slog.Info("intel: source disabled via review queue", "source_id", sourceID.String(), "actor", userID.String())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{

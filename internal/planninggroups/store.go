@@ -491,7 +491,7 @@ RETURNING id, group_id, user_id, title, completed, completed_at, created_at
 
 	var m PlanningGroupMilestone
 
-	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, title).Scan(
+	err := s.pool.Writer.QueryRow(ctx, q, groupID, userID, title).Scan(
 		&m.ID, &m.GroupID, &m.UserID, &m.Title,
 		&m.Completed, &m.CompletedAt, &m.CreatedAt,
 	)
@@ -607,7 +607,7 @@ RETURNING id, group_id, user_id, note, created_at
 
 	var c PlanningGroupCheckin
 
-	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, note).Scan(
+	err := s.pool.Writer.QueryRow(ctx, q, groupID, userID, note).Scan(
 		&c.ID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
 	)
 	if err != nil {

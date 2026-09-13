@@ -96,7 +96,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "referral.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "referral.enabled", true)
 }
 
 // SetValkey injects the Valkey client for attribution caching.
@@ -463,7 +463,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	// Check monthly cap.
 	maxPerPeriod := 10
 	if s.settings != nil {
-		maxPerPeriod = s.settings.GetIntOr(ctx, tenantID, "referral.max_rewards_per_period", 10)
+		maxPerPeriod = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.max_rewards_per_period", 10)
 	}
 
 	periodStart := time.Now().AddDate(0, -1, 0)
@@ -486,7 +486,7 @@ func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymen
 	// awarded — non-idempotent and unrecoverable without manual SQL.
 	rewardCredits := 500
 	if s.settings != nil {
-		rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
+		rewardCredits = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.reward_credits", 500)
 	}
 
 	tx, err := s.db.Writer.Begin(ctx)
@@ -634,7 +634,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, tenantID, referralID 
 	case "credit":
 		rewardCredits := 500
 		if s.settings != nil {
-			rewardCredits = s.settings.GetIntOr(ctx, tenantID, "referral.reward_credits", 500)
+			rewardCredits = s.settings.GetIntOr(ctx, pgtype.UUID{}, "referral.reward_credits", 500)
 		}
 
 		_, err := s.queries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{

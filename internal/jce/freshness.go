@@ -32,12 +32,12 @@ func (s *Service) loadFreshnessSettings(ctx context.Context, tenantID pgtype.UUI
 	}
 
 	return freshnessSettings{
-		staleHours:       s.settings.GetIntOr(ctx, tenantID, "jce.freshness_stale_hours", 168),
-		decayPerHour:     s.settings.GetIntOr(ctx, tenantID, "jce.freshness_decay_per_hour", 2),
-		officialWeight:   s.settings.GetIntOr(ctx, tenantID, "jce.freshness_official_weight", 100),
-		thirdPartyWeight: s.settings.GetIntOr(ctx, tenantID, "jce.freshness_third_party_weight", 75),
-		aiEstimateWeight: s.settings.GetIntOr(ctx, tenantID, "jce.freshness_ai_estimate_weight", 50),
-		cacheTTLMinutes:  s.settings.GetIntOr(ctx, tenantID, "jce.freshness_cache_ttl_minutes", 10),
+		staleHours:       s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_stale_hours", 168),
+		decayPerHour:     s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_decay_per_hour", 2),
+		officialWeight:   s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_official_weight", 100),
+		thirdPartyWeight: s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_third_party_weight", 75),
+		aiEstimateWeight: s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_ai_estimate_weight", 50),
+		cacheTTLMinutes:  s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_cache_ttl_minutes", 10),
 	}
 }
 

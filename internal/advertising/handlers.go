@@ -69,8 +69,7 @@ func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID
 		asynq.NewTask(worker.TypeAdEventIngest, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAdEventIngest)),
 	); err != nil {
-		slog.Warn("ads: failed to enqueue event ingest task",
-			"campaign_id", campaignID.String(), "error", err)
+		slog.Warn("ads: failed to enqueue event ingest task", "campaign_id", campaignID.String(), "error", err)
 	}
 }
 
@@ -353,8 +352,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 			asynq.NewTask(worker.TypeAdsNotifyCampaignStatus, notifyPayload),
 			asynq.Queue(worker.QueueForTask(worker.TypeAdsNotifyCampaignStatus)),
 		); err != nil {
-			slog.Warn("ads: failed to enqueue notify task on activate",
-				"campaign_id", id.String(), "error", err)
+			slog.Warn("ads: failed to enqueue notify task on activate", "campaign_id", id.String(), "error", err)
 		}
 	}
 
@@ -453,8 +451,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 			asynq.NewTask(worker.TypeAdsRefundCampaignCredits, payload),
 			asynq.Queue(worker.QueueForTask(worker.TypeAdsRefundCampaignCredits)),
 		); err != nil {
-			slog.Warn("ads: failed to enqueue refund task on reject",
-				"campaign_id", id.String(), "error", err)
+			slog.Warn("ads: failed to enqueue refund task on reject", "campaign_id", id.String(), "error", err)
 		}
 
 		// Enqueue status notification (fire-and-forget).
@@ -466,8 +463,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 			asynq.NewTask(worker.TypeAdsNotifyCampaignStatus, notifyPayload),
 			asynq.Queue(worker.QueueForTask(worker.TypeAdsNotifyCampaignStatus)),
 		); err != nil {
-			slog.Warn("ads: failed to enqueue notify task on reject",
-				"campaign_id", id.String(), "error", err)
+			slog.Warn("ads: failed to enqueue notify task on reject", "campaign_id", id.String(), "error", err)
 		}
 	}
 

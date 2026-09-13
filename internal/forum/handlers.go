@@ -153,8 +153,7 @@ func (h *Handlers) enqueueSearchIndex(entityType, operation string, entityID, te
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 	); err != nil {
-		slog.Warn("forum: failed to enqueue search index task",
-			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+		slog.Warn("forum: failed to enqueue search index task", "entity_type", entityType, "entity_id", entityID.String(), "error", err)
 	}
 }
 
@@ -179,8 +178,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 		asynq.NewTask(worker.TypeAIGenerateContentEmbedding, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
 	); err != nil {
-		slog.Warn("forum: failed to enqueue content embedding task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("forum: failed to enqueue content embedding task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -209,14 +207,13 @@ func (h *Handlers) indexThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	// to "en" when settings are not injected or the key is unset.
 	language := "en"
 	if h.settings != nil {
-		language = h.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+		language = h.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "forum_thread", threadID, text, language); err != nil {
-			slog.Warn("forum: RAG index failed for thread",
-				"thread_id", threadID.String(), "error", err)
+			slog.Warn("forum: RAG index failed for thread", "thread_id", threadID.String(), "error", err)
 		}
 	}()
 }
@@ -230,8 +227,7 @@ func (h *Handlers) purgeThreadRAG(ctx context.Context, tenantID, threadID pgtype
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
 		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "forum_thread", threadID); err != nil {
-			slog.Warn("forum: RAG purge failed for thread",
-				"thread_id", threadID.String(), "error", err)
+			slog.Warn("forum: RAG purge failed for thread", "thread_id", threadID.String(), "error", err)
 		}
 	}()
 }
@@ -535,8 +531,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		// Roll back the backing content row so we don't leave an orphan.
 		if h.content != nil && contentID.Valid {
 			if delErr := h.content.DeleteContent(r.Context(), contentID, tenantID); delErr != nil {
-				slog.Warn("forum: failed to clean up backing content after thread creation failure",
-					"content_id", contentID.String(), "error", delErr)
+				slog.Warn("forum: failed to clean up backing content after thread creation failure", "content_id", contentID.String(), "error", delErr)
 			}
 		}
 
@@ -864,8 +859,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 			r.Context(), thread.Body, tenantID, h.mentionCheckers,
 		)
 		if err != nil {
-			slog.Warn("forum: ComputeErasedMentionIDs failed",
-				"thread_id", thread.ID.String(), "error", err)
+			slog.Warn("forum: ComputeErasedMentionIDs failed", "thread_id", thread.ID.String(), "error", err)
 		} else if len(erasedIDs) > 0 {
 			response["deleted_user_ids"] = erasedIDs
 		}
@@ -906,8 +900,7 @@ func (h *Handlers) dispatchMentionNotifications(
 	if h.mentionCheckers != nil {
 		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
 		if err != nil {
-			slog.Warn("forum: IsPrivateSpace check failed",
-				"space_id", spaceID.String(), "error", err)
+			slog.Warn("forum: IsPrivateSpace check failed", "space_id", spaceID.String(), "error", err)
 
 			isPrivateSpace = false
 		}
@@ -917,8 +910,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
-			slog.Warn("forum: FilterMentions returned unexpected error",
-				"subject_id", subjectID.String(), "error", err)
+			slog.Warn("forum: FilterMentions returned unexpected error", "subject_id", subjectID.String(), "error", err)
 		}
 	}
 
@@ -934,8 +926,7 @@ func (h *Handlers) dispatchMentionNotifications(
 			"forum", subjectID,
 			"", "", "",
 		); err != nil {
-			slog.Warn("forum: failed to dispatch mention notification",
-				"user_id", m.ID.String(), "type", notificationType, "error", err)
+			slog.Warn("forum: failed to dispatch mention notification", "user_id", m.ID.String(), "type", notificationType, "error", err)
 		}
 	}
 }
@@ -1088,8 +1079,7 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 
 	if h.content != nil && thread.ContentID.Valid {
 		if err := h.content.DeleteContent(r.Context(), thread.ContentID, tenantID); err != nil {
-			slog.Warn("forum: failed to delete backing content for thread",
-				"content_id", thread.ContentID.String(), "error", err)
+			slog.Warn("forum: failed to delete backing content for thread", "content_id", thread.ContentID.String(), "error", err)
 		}
 	}
 
@@ -1285,8 +1275,7 @@ func (h *Handlers) ListReplies(w http.ResponseWriter, r *http.Request) {
 
 			erased, err := mentions.ComputeErasedMentionIDs(r.Context(), reply.Body, tenantID, h.mentionCheckers)
 			if err != nil {
-				slog.Warn("forum: ComputeErasedMentionIDs failed for reply",
-					"reply_id", reply.ID.String(), "error", err)
+				slog.Warn("forum: ComputeErasedMentionIDs failed for reply", "reply_id", reply.ID.String(), "error", err)
 				continue
 			}
 
@@ -2214,8 +2203,7 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 
 	existing, err := h.content.GetContent(ctx, contentID, tenantID)
 	if err != nil {
-		slog.Warn("forum: failed to fetch backing content for sync",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("forum: failed to fetch backing content for sync", "content_id", contentID.String(), "error", err)
 		return
 	}
 
@@ -2281,8 +2269,7 @@ func (h *Handlers) syncThreadContent(ctx context.Context, tenantID, userID, cont
 	}
 
 	if _, err := h.content.UpdateContent(ctx, contentID, tenantID, userID, input, true); err != nil {
-		slog.Warn("forum: failed to sync backing content for thread",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("forum: failed to sync backing content for thread", "content_id", contentID.String(), "error", err)
 		return
 	}
 

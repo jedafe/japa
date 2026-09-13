@@ -122,7 +122,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "community_locator.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "community_locator.enabled", false)
 }
 
 // ErrDuplicateSlug is returned when a submission's slug already exists for
@@ -426,12 +426,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 			aiGeneratedText = text
 		}
 
-		slog.Info(
-			"communitylocator: AI Gateway generated draft",
-			"destination_space_id", input.DestinationSpaceID,
-			"org_type", input.OrgType,
-			"prompt_hash", promptHash,
-		)
+		slog.Info("communitylocator: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "org_type", input.OrgType, "prompt_hash", promptHash, )
 	}
 
 	slug := slugify(input.Name)

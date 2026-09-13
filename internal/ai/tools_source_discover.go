@@ -90,7 +90,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 
 		autoEnable := false
 		if deps.Settings != nil {
-			autoEnable = deps.Settings.GetBoolOr(ctx, tenantID, "agent.auto_enable_discovered_sources", false)
+			autoEnable = deps.Settings.GetBoolOr(ctx, pgtype.UUID{}, "agent.auto_enable_discovered_sources", false)
 		}
 
 		var proposed, existing []sourceDiscoverCandidate

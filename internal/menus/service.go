@@ -416,7 +416,7 @@ func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, it
 	}
 
 	if err := s.store.bulkUpdateMenuItemSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
-		slog.Error("reorder menu items failed", "tenant_id", tenantID.String(), "error", err)
+		slog.Error("reorder menu items failed", "error", err)
 		return err
 	}
 

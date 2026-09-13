@@ -162,8 +162,7 @@ func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UU
 		asynq.NewTask(worker.TypeEngagementCountUpdate, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeEngagementCountUpdate)),
 	); err != nil {
-		slog.Warn("comments: failed to enqueue engagement update task",
-			"entity_id", entityID.String(), "error", err)
+		slog.Warn("comments: failed to enqueue engagement update task", "entity_id", entityID.String(), "error", err)
 	}
 }
 
@@ -192,8 +191,7 @@ func (h *Handlers) enqueueContentFanOut(contentID, tenantID, authorID, spaceID p
 		asynq.NewTask(worker.TypeContentFanOutToFeeds, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
 	); err != nil {
-		slog.Warn("comments: failed to enqueue fan-out task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("comments: failed to enqueue fan-out task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -480,8 +478,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 	if h.spaceChecker != nil {
 		spaceID, err := h.Service.GetContentSpaceID(r.Context(), tenantID, contentID)
 		if err != nil {
-			slog.Warn("comments: failed to resolve content space_id for perm check",
-				"content_id", contentID.String(), "error", err)
+			slog.Warn("comments: failed to resolve content space_id for perm check", "content_id", contentID.String(), "error", err)
 		} else if spaceID.Valid {
 			isReply := createInput.ParentID.Valid
 
@@ -494,8 +491,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err != nil {
-				slog.Warn("comments: space perm check failed",
-					"space_id", spaceID.String(), "error", err)
+				slog.Warn("comments: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
 					"You do not have permission to comment in this space")
@@ -802,8 +798,7 @@ func (h *Handlers) canPinComment(r *http.Request, userID, tenantID, commentID pg
 	// Content-author path — the author of the parent content may pin.
 	contentAuthorID, err := h.Service.GetCommentContentAuthorID(r.Context(), tenantID, commentID)
 	if err != nil {
-		slog.Warn("comments: failed to resolve content author for pin check",
-			"comment_id", commentID.String(), "error", err)
+		slog.Warn("comments: failed to resolve content author for pin check", "comment_id", commentID.String(), "error", err)
 		return false
 	}
 

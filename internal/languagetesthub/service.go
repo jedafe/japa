@@ -184,7 +184,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "language_test_hub.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "language_test_hub.enabled", false)
 }
 
 // ListTests returns all language tests.
@@ -696,8 +696,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			},
 		})
 		if derr != nil {
-			slog.Warn("languagetesthub: AI generation failed, creating draft with empty fields",
-				"error", derr)
+			slog.Warn("languagetesthub: AI generation failed, creating draft with empty fields", "error", derr)
 		} else {
 			minimumScore, scoreBreakdown, notes, sourceURL = parseRequirementFromAIResponse(resp)
 		}
