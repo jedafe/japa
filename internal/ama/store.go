@@ -100,7 +100,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 
 	out := make([]AMAThread, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
+		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
 	}
 
 	return out, nil
@@ -113,7 +113,7 @@ func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThrea
 		return AMAThread{}, err
 	}
 
-	return rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
+	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
 // GetAuthorID returns the author (author_user_id) of an AMA thread, used by
@@ -177,7 +177,7 @@ func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, t
 		return AMAThread{}, err
 	}
 
-	return rowToAMAThread(r.ID, r.TenantID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
+	return rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt), nil
 }
 
 // CloseAMA sets the closes_at field in ama_config to now(), closing the AMA.
@@ -219,7 +219,7 @@ func (s *Store) CheckCooldown(ctx context.Context, userID, tenantID pgtype.UUID,
 // rowToAMAThread converts sqlc-generated row fields (with interface{} for
 // nullable CASE WHEN columns) to the canonical AMAThread struct.
 func rowToAMAThread(
-	id, tenantID pgtype.UUID, title, slug string, body, amaConfig []byte,
+	id pgtype.UUID, title, slug string, body, amaConfig []byte,
 	authorUserID pgtype.UUID, authorUsername, authorAvatar interface{},
 	isAnonymous bool,
 	createdAt, updatedAt pgtype.Timestamptz,

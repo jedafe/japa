@@ -163,7 +163,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// Get the last actor's display name for the batch title.
 	// BUG-003: pass the batch window's tenant_id so the profile lookup
 	// resolves correctly (previously always returned "Someone").
-	actorName := s.resolveActorDisplayName(ctx, window.TenantID, window.LastActorID)
+	actorName := s.resolveActorDisplayName(ctx, pgtype.UUID{}, window.LastActorID)
 
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
 
@@ -184,7 +184,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
 			}
 
 			return nil
@@ -249,7 +249,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
 			}
 
 			return nil
@@ -258,7 +258,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 
 	// Fallback if preference resolution failed — use the old per-call checks.
 	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
-	s.checkAndEnqueueEmail(ctx, window.TenantID, window.RecipientID, window.NotificationType, title, "", "")
+	s.checkAndEnqueueEmail(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
 
 	return nil
 }
