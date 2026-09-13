@@ -144,7 +144,6 @@ func (d ComparisonTypeDetail) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(map[string]any{
 		"id":             d.ID,
-		"tenant_id":      d.TenantID,
 		"name":           d.Name,
 		"slug":           d.Slug,
 		"description":    d.Description,
@@ -225,7 +224,6 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(map[string]any{
 		"id":             i.ID,
-		"tenant_id":      i.TenantID,
 		"name":           i.Name,
 		"slug":           i.Slug,
 		"description":    i.Description,

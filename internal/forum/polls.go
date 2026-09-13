@@ -106,7 +106,7 @@ func (s *Service) RetractPollVote(ctx context.Context, optionID, userID pgtype.U
 // broadcastPollResults publishes the current poll results to the space's
 // WebSocket room so connected clients see live vote counts. Ref: Section 10.
 func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) {
-	tenantID, spaceID, err := s.store.getThreadTenantAndSpaceByID(ctx, poll.ThreadID)
+	spaceID, err := s.store.getThreadSpaceByID(ctx, poll.ThreadID)
 	if err != nil {
 		slog.Warn("forum: failed to resolve thread for poll broadcast", "thread_id", poll.ThreadID, "error", err)
 		return
@@ -117,7 +117,7 @@ func (s *Service) broadcastPollResults(ctx context.Context, poll gen.ForumPoll) 
 		return
 	}
 
-	s.broadcastSpace(tenantID, spaceID, "poll_updated", map[string]any{
+	s.broadcastSpace(pgtype.UUID{}, spaceID, "poll_updated", map[string]any{
 		"poll_id": poll.ID, "results": results,
 	})
 }

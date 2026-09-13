@@ -509,7 +509,7 @@ func (h *Handlers) BulkModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -599,7 +599,7 @@ func (h *Handlers) AppealModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -803,8 +803,12 @@ func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderI
 	}
 
 	// Batch insert notifications using unnest for a single round-trip.
-	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{RecipientID: rows, Column2: senderID, Title: title,
-		Body: &body,
+	err = h.Queries.CreateBroadcastNotifications(ctx, gen.CreateBroadcastNotificationsParams{
+		RecipientID: senderID,
+		Column2:     rows,
+		Title:       title,
+		Body:        &body,
+		CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		return 0, err
@@ -1691,7 +1695,7 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID 
 
 // RemoveContent handles POST /admin/content/:id/remove.
 func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1718,7 +1722,7 @@ func (h *Handlers) RemoveContent(w http.ResponseWriter, r *http.Request) {
 
 // RestoreContent handles POST /admin/content/:id/restore.
 func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1747,7 +1751,7 @@ func (h *Handlers) RestoreContent(w http.ResponseWriter, r *http.Request) {
 // Returns soft-deleted and removed content items for the admin deletions audit view.
 // Ref: sections/19-gdpr-ndpr-compliance.md, Rule 11 (soft deletes only for user content).
 func (h *Handlers) ListDeletedContents(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

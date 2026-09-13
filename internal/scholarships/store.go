@@ -99,11 +99,8 @@ func (s *Store) CountSavedScholarships(ctx context.Context, arg gen.CountSavedSc
 }
 
 // GetSourceByRecordID returns source attribution for a single intel record.
-func (s *Store) GetSourceByRecordID(ctx context.Context, tenantID, recordID pgtype.UUID) (gen.ListSourcesByRecordIDsRow, error) {
-	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-
-		Column2: []pgtype.UUID{recordID},
-	})
+func (s *Store) GetSourceByRecordID(ctx context.Context, recordID pgtype.UUID) (gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, []pgtype.UUID{recordID})
 	if err != nil {
 		return gen.ListSourcesByRecordIDsRow{}, fmt.Errorf("scholarships: get source by record id: %w", err)
 	}
@@ -116,11 +113,8 @@ func (s *Store) GetSourceByRecordID(ctx context.Context, tenantID, recordID pgty
 }
 
 // MapSourcesByRecordIDs returns a map of source attribution keyed by intel record ID.
-func (s *Store) MapSourcesByRecordIDs(ctx context.Context, tenantID pgtype.UUID, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
-	rows, err := s.queries.ListSourcesByRecordIDs(ctx, gen.ListSourcesByRecordIDsParams{
-
-		Column2: recordIDs,
-	})
+func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UUID) (map[string]gen.ListSourcesByRecordIDsRow, error) {
+	rows, err := s.queries.ListSourcesByRecordIDs(ctx, recordIDs)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: map sources by record ids: %w", err)
 	}
@@ -174,8 +168,8 @@ func (s *Store) AdminReminderLog(ctx context.Context, arg gen.AdminScholarshipRe
 }
 
 // FindNeedingReminders returns saved scholarships that are due for a reminder.
-func (s *Store) FindNeedingReminders(ctx context.Context, arg gen.FindScholarshipsNeedingRemindersParams) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
-	rows, err := s.queries.FindScholarshipsNeedingReminders(ctx, arg)
+func (s *Store) FindNeedingReminders(ctx context.Context, batchLimit int32) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
+	rows, err := s.queries.FindScholarshipsNeedingReminders(ctx, batchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: find needing reminders: %w", err)
 	}

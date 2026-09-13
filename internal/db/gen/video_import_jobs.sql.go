@@ -38,7 +38,7 @@ const createVideoImportJob = `-- name: CreateVideoImportJob :one
 
 INSERT INTO video_import_jobs (user_id, source_type, source_url, query, target_author_user_id, status, total_items, imported_count, failed_count, error_log, auto_publish) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'pending'), $7, $8, $9, COALESCE($10, '[]'::jsonb), $11)
 RETURNING
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 `
@@ -57,26 +57,8 @@ type CreateVideoImportJobParams struct {
 	AutoPublish        bool        `json:"auto_publish"`
 }
 
-type CreateVideoImportJobRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	SourceType         string             `json:"source_type"`
-	SourceUrl          *string            `json:"source_url"`
-	Query              *string            `json:"query"`
-	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
-	Status             string             `json:"status"`
-	TotalItems         int32              `json:"total_items"`
-	ImportedCount      int32              `json:"imported_count"`
-	FailedCount        int32              `json:"failed_count"`
-	ErrorLog           []byte             `json:"error_log"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	AutoPublish        bool               `json:"auto_publish"`
-	StartedAt          pgtype.Timestamptz `json:"started_at"`
-}
-
 // Video import jobs: bulk YouTube channel/playlist/keyword imports.
-func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImportJobParams) (CreateVideoImportJobRow, error) {
+func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImportJobParams) (VideoImportJob, error) {
 	row := q.db.QueryRow(ctx, createVideoImportJob,
 		arg.UserID,
 		arg.SourceType,
@@ -90,9 +72,10 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 		arg.ErrorLog,
 		arg.AutoPublish,
 	)
-	var i CreateVideoImportJobRow
+	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -113,36 +96,19 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 
 const getVideoImportJobByID = `-- name: GetVideoImportJobByID :one
 SELECT
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
 WHERE id = $1
 `
 
-type GetVideoImportJobByIDRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	SourceType         string             `json:"source_type"`
-	SourceUrl          *string            `json:"source_url"`
-	Query              *string            `json:"query"`
-	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
-	Status             string             `json:"status"`
-	TotalItems         int32              `json:"total_items"`
-	ImportedCount      int32              `json:"imported_count"`
-	FailedCount        int32              `json:"failed_count"`
-	ErrorLog           []byte             `json:"error_log"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	AutoPublish        bool               `json:"auto_publish"`
-	StartedAt          pgtype.Timestamptz `json:"started_at"`
-}
-
-func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (GetVideoImportJobByIDRow, error) {
+func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (VideoImportJob, error) {
 	row := q.db.QueryRow(ctx, getVideoImportJobByID, id)
-	var i GetVideoImportJobByIDRow
+	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -163,7 +129,7 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (Ge
 
 const listVideoImportJobsByUser = `-- name: ListVideoImportJobsByUser :many
 SELECT
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
@@ -178,35 +144,18 @@ type ListVideoImportJobsByUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-type ListVideoImportJobsByUserRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	SourceType         string             `json:"source_type"`
-	SourceUrl          *string            `json:"source_url"`
-	Query              *string            `json:"query"`
-	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
-	Status             string             `json:"status"`
-	TotalItems         int32              `json:"total_items"`
-	ImportedCount      int32              `json:"imported_count"`
-	FailedCount        int32              `json:"failed_count"`
-	ErrorLog           []byte             `json:"error_log"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	AutoPublish        bool               `json:"auto_publish"`
-	StartedAt          pgtype.Timestamptz `json:"started_at"`
-}
-
-func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoImportJobsByUserParams) ([]ListVideoImportJobsByUserRow, error) {
+func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoImportJobsByUserParams) ([]VideoImportJob, error) {
 	rows, err := q.db.Query(ctx, listVideoImportJobsByUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListVideoImportJobsByUserRow
+	var items []VideoImportJob
 	for rows.Next() {
-		var i ListVideoImportJobsByUserRow
+		var i VideoImportJob
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -339,7 +288,7 @@ SET status = $1,
  completed_at = COALESCE($7, completed_at)
 WHERE id = $8
 RETURNING
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 `
@@ -355,25 +304,7 @@ type UpdateVideoImportJobParams struct {
 	ID            pgtype.UUID        `json:"id"`
 }
 
-type UpdateVideoImportJobRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	UserID             pgtype.UUID        `json:"user_id"`
-	SourceType         string             `json:"source_type"`
-	SourceUrl          *string            `json:"source_url"`
-	Query              *string            `json:"query"`
-	TargetAuthorUserID pgtype.UUID        `json:"target_author_user_id"`
-	Status             string             `json:"status"`
-	TotalItems         int32              `json:"total_items"`
-	ImportedCount      int32              `json:"imported_count"`
-	FailedCount        int32              `json:"failed_count"`
-	ErrorLog           []byte             `json:"error_log"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	AutoPublish        bool               `json:"auto_publish"`
-	StartedAt          pgtype.Timestamptz `json:"started_at"`
-}
-
-func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImportJobParams) (UpdateVideoImportJobRow, error) {
+func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImportJobParams) (VideoImportJob, error) {
 	row := q.db.QueryRow(ctx, updateVideoImportJob,
 		arg.Status,
 		arg.TotalItems,
@@ -384,9 +315,10 @@ func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImpor
 		arg.CompletedAt,
 		arg.ID,
 	)
-	var i UpdateVideoImportJobRow
+	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,

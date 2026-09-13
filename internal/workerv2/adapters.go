@@ -364,7 +364,7 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 	var total int
 
 	for _, tid := range tenantIDs {
-		reminders, err := a.svc.FindNeedingReminders(ctx, tid, 100)
+		reminders, err := a.svc.FindNeedingReminders(ctx, 100)
 		if err != nil {
 			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "tenant_id", tid, "error", err)
 			continue

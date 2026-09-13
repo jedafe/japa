@@ -65,7 +65,7 @@ func (h *Handlers) AcknowledgeModerationAlert(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -97,7 +97,7 @@ func (h *Handlers) ResolveModerationAlert(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -222,7 +222,7 @@ func (h *Handlers) ClaimOrganization(w http.ResponseWriter, r *http.Request) {
 // or empty defaults to "pending" (the review queue view), and "all" returns
 // every claim for history/audit. Ref: sections/07-organization-profiles-claim-ownership.md.
 func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -234,10 +234,7 @@ func (h *Handlers) ListPendingOwnershipClaims(w http.ResponseWriter, r *http.Req
 		status = "pending"
 	}
 
-	claims, err := h.Queries.ListOwnershipClaimsForAdmin(r.Context(), gen.ListOwnershipClaimsForAdminParams{
-
-		Column2: status,
-	})
+	claims, err := h.Queries.ListOwnershipClaimsForAdmin(r.Context(), status)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to fetch pending claims")
 		return
@@ -310,7 +307,7 @@ func (h *Handlers) GetClaimFormSubmission(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

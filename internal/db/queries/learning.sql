@@ -1,5 +1,5 @@
 -- name: ListPublishedLearningTracks :many
-SELECT id, title, slug, description, difficulty, cover_media_id,
+SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university,
  category, language, total_enrolled, subscription_eligible
@@ -8,7 +8,7 @@ WHERE is_published = true
 ORDER BY sort_order ASC, created_at DESC;
 
 -- name: GetLearningTrackBySlug :one
-SELECT id, title, slug, description, difficulty, cover_media_id,
+SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university,
  category, language, total_enrolled, subscription_eligible
@@ -16,7 +16,7 @@ FROM learning_tracks
 WHERE slug = @slug;
 
 -- name: GetLearningTrackByID :one
-SELECT id, title, slug, description, difficulty, cover_media_id,
+SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university,
  category, language, total_enrolled, subscription_eligible
@@ -30,7 +30,7 @@ WHERE id = @id;
 -- (ADR-060) without extra round-trips. Mirrors the university catalog join
 -- pattern (university.sql: m.storage_path AS thumbnail_url). All joins are
 -- LEFT so platform/staff-authored courses (no instructor) still resolve.
-SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
+SELECT lt.id, lt.tenant_id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.cover_media_id, lt.is_published, lt.sort_order, lt.created_at, lt.updated_at,
  lt.instructor_id, lt.price_kobo, lt.currency, lt.is_published_to_university,
  lt.category, lt.language, lt.total_enrolled, lt.subscription_eligible,
@@ -49,7 +49,7 @@ WHERE lt.slug = @slug;
 -- name: CreateLearningTrack :one
 INSERT INTO learning_tracks (title, slug, description, difficulty, cover_media_id, is_published, sort_order, category, subscription_eligible) VALUES (@title, @slug, sqlc.narg(description), @difficulty, sqlc.narg(cover_media_id), @is_published, @sort_order, sqlc.narg(category), @subscription_eligible)
 
-RETURNING id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled, subscription_eligible;
 
 -- name: UpdateLearningTrack :one
@@ -64,14 +64,14 @@ SET title = COALESCE(@title, title),
  subscription_eligible = COALESCE(sqlc.narg(subscription_eligible), subscription_eligible),
  updated_at = now()
 WHERE id = @id
-RETURNING id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
+RETURNING id, tenant_id, title, slug, description, difficulty, cover_media_id, is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university, category, language, total_enrolled, subscription_eligible;
 
 -- name: DeleteLearningTrack :exec
 DELETE FROM learning_tracks WHERE id = @id;
 
 -- name: ListAllLearningTracks :many
-SELECT id, title, slug, description, difficulty, cover_media_id,
+SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
  is_published, sort_order, created_at, updated_at,
  instructor_id, price_kobo, currency, is_published_to_university,
  category, language, total_enrolled, subscription_eligible
@@ -121,20 +121,20 @@ DELETE FROM learning_modules WHERE id = @id;
 -- =====================
 
 -- name: ListLearningLessonsByModule :many
-SELECT id, module_id, title, slug, lesson_type, content, media_id,
+SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
  duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE module_id = @module_id
 ORDER BY sort_order ASC, created_at DESC;
 
 -- name: GetLearningLessonBySlug :one
-SELECT id, module_id, title, slug, lesson_type, content, media_id,
+SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
  duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE module_id = @module_id AND slug = @slug;
 
 -- name: GetLearningLessonByID :one
-SELECT id, module_id, title, slug, lesson_type, content, media_id,
+SELECT id, tenant_id, module_id, title, slug, lesson_type, content, media_id,
  duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 FROM learning_lessons
 WHERE id = @id;
@@ -143,7 +143,7 @@ WHERE id = @id;
 -- Fetches a lesson joined to its module and track for the lesson player
 -- (ADR-060). Returns module_title, track_id, track_slug, track_title so the
 -- frontend can build breadcrumbs, the curriculum rail, and prev/next nav.
-SELECT ll.id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
+SELECT ll.id, ll.tenant_id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
  ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
  ll.is_published, ll.is_preview, ll.created_at, ll.updated_at,
  lm.title AS module_title, lm.slug AS module_slug,
@@ -175,7 +175,7 @@ ORDER BY lm.sort_order ASC, ll.sort_order ASC, ll.created_at DESC;
 -- name: CreateLearningLesson :one
 INSERT INTO learning_lessons (module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview) VALUES (@module_id, @title, @slug, @lesson_type, sqlc.narg(content), sqlc.narg(media_id), sqlc.narg(duration_minutes), @sort_order, @is_published, @is_preview)
 
-RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
+RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
 
 -- name: UpdateLearningLesson :one
 UPDATE learning_lessons
@@ -189,7 +189,7 @@ SET title = COALESCE(@title, title),
  is_preview = COALESCE(sqlc.narg(is_preview), is_preview),
  updated_at = now()
 WHERE id = @id
-RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
+RETURNING id, tenant_id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at;
 
 -- name: DeleteLearningLesson :exec
 DELETE FROM learning_lessons WHERE id = @id;

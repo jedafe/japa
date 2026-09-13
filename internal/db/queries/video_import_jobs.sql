@@ -3,13 +3,13 @@
 -- name: CreateVideoImportJob :one
 INSERT INTO video_import_jobs (user_id, source_type, source_url, query, target_author_user_id, status, total_items, imported_count, failed_count, error_log, auto_publish) VALUES (@user_id, @source_type, @source_url, @query, @target_author_user_id, COALESCE(@status, 'pending'), @total_items, @imported_count, @failed_count, COALESCE(@error_log, '[]'::jsonb), @auto_publish)
 RETURNING
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at;
 
 -- name: GetVideoImportJobByID :one
 SELECT
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
@@ -17,7 +17,7 @@ WHERE id = @id;
 
 -- name: ListVideoImportJobsByUser :many
 SELECT
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
@@ -36,7 +36,7 @@ SET status = @status,
  completed_at = COALESCE(sqlc.narg(completed_at), completed_at)
 WHERE id = @id
 RETURNING
- id, user_id, source_type, source_url, query, target_author_user_id,
+ id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at;
 

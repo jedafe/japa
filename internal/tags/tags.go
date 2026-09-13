@@ -54,8 +54,8 @@ func (s *Service) ListTagsPaginated(ctx context.Context, params gen.ListTagsPagi
 }
 
 // CountTagsPaginated returns the count of tags matching the search query.
-func (s *Service) CountTagsPaginated(ctx context.Context, params gen.CountTagsPaginatedParams) (int, error) {
-	count, err := s.read.CountTagsPaginated(ctx, params)
+func (s *Service) CountTagsPaginated(ctx context.Context, q string) (int, error) {
+	count, err := s.read.CountTagsPaginated(ctx, q)
 	if err != nil {
 		return 0, fmt.Errorf("counting tags paginated: %w", err)
 	}

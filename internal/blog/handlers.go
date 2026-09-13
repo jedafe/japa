@@ -1554,7 +1554,6 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// Build the enriched response DTO.
 	dto := map[string]any{
 		"id":                post.ID,
-		"tenant_id":         post.TenantID,
 		"author_id":         post.AuthorID,
 		"space_id":          post.SpaceID,
 		"content_type":      post.ContentType,
@@ -1795,7 +1794,6 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	for _, p := range posts {
 		card := map[string]any{
 			"id":                p.ID,
-			"tenant_id":         p.TenantID,
 			"author_id":         p.AuthorID,
 			"space_id":          p.SpaceID,
 			"content_type":      p.ContentType,

@@ -283,7 +283,7 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, tenantID, userID
 	}
 
 	if len(recordIDs) > 0 {
-		sourceMap, err := h.intelStores.MapSourcesByRecordIDs(ctx, tenantID, recordIDs)
+		sourceMap, err := h.intelStores.MapSourcesByRecordIDs(ctx, recordIDs)
 		if err != nil {
 			return nil, err
 		}

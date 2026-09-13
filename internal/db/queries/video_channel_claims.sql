@@ -3,13 +3,13 @@
 -- name: CreateVideoChannelClaim :one
 INSERT INTO video_channel_claims (claimant_user_id, video_author_user_id, video_source_id, claim_type, evidence_url, notes, status) VALUES (@claimant_user_id, @video_author_user_id, sqlc.narg(video_source_id), @claim_type, @evidence_url, @notes, COALESCE(@status, 'pending'))
 RETURNING
- id, claimant_user_id, video_author_user_id, claim_type,
+ id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id;
 
 -- name: GetVideoChannelClaimByID :one
 SELECT
- id, claimant_user_id, video_author_user_id, claim_type,
+ id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -17,7 +17,7 @@ WHERE id = @id;
 
 -- name: ListVideoChannelClaimsByAuthor :many
 SELECT
- id, claimant_user_id, video_author_user_id, claim_type,
+ id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -28,7 +28,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListVideoChannelClaimsByClaimant :many
 -- Claims filed by the requesting user (GET /me/video-claims).
 SELECT
- id, claimant_user_id, video_author_user_id, claim_type,
+ id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -91,6 +91,6 @@ SET status = @status,
  resolved_at = now()
 WHERE id = @id
 RETURNING
- id, claimant_user_id, video_author_user_id, claim_type,
+ id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id;

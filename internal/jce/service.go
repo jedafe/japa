@@ -449,7 +449,7 @@ func (s *Service) canViewJCEComparison(ctx context.Context, cmp comparison.JCECo
 		return true
 	}
 	// Admin with edit_any.
-	check := s.permissionChecker(ctx, userID, cmp.Content.TenantID)
+	check := s.permissionChecker(ctx, userID, pgtype.UUID{})
 	if check("comparison.edit_any") {
 		return true
 	}

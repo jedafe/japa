@@ -719,7 +719,7 @@ func (s *Service) FindScholarships(ctx context.Context, tenantID pgtype.UUID, fi
 	}
 
 	if len(recordIDs) > 0 {
-		sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs)
+		sources, err := s.store.MapSourcesByRecordIDs(ctx, recordIDs)
 		if err == nil {
 			for i := range results {
 				if src, ok := sources[results[i].IntelRecordID]; ok {
@@ -802,7 +802,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 	populateScholarshipResult(&r, country, degreeLevel, deadline, applicationURL, university, eligibleCountries, funding, description, fieldValues)
 
 	if intelRecordID.Valid {
-		if src, err := s.store.GetSourceByRecordID(ctx, tenantID, intelRecordID); err == nil {
+		if src, err := s.store.GetSourceByRecordID(ctx, intelRecordID); err == nil {
 			r.Source = sourceAttributionFromRow(src)
 		}
 	}
@@ -1250,11 +1250,8 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 // that are still ahead and within the user's configured lead time. Without
 // this filter the daily sweep would notify users about far-future deadlines
 // (and re-notify every day), which is notification spam (ADR-073 §3).
-func (s *Service) FindNeedingReminders(ctx context.Context, tenantID pgtype.UUID, batchLimit int32) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
-	rows, err := s.store.FindNeedingReminders(ctx, gen.FindScholarshipsNeedingRemindersParams{
-
-		BatchLimit: batchLimit,
-	})
+func (s *Service) FindNeedingReminders(ctx context.Context, batchLimit int32) ([]gen.FindScholarshipsNeedingRemindersRow, error) {
+	rows, err := s.store.FindNeedingReminders(ctx, batchLimit)
 	if err != nil {
 		return nil, err
 	}

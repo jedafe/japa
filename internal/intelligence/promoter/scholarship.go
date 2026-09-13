@@ -47,8 +47,8 @@ type Store interface {
 	// Content operations for creating and updating the guide entry.
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error)
-	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
-	ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error)
+	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
+	ContentSlugExists(ctx context.Context, slug string) (bool, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	WithTx(ctx context.Context, fn func(TxStore) error) error
 }
@@ -64,8 +64,8 @@ type TxStore interface {
 	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
 	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error)
-	ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error)
+	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
+	ContentSlugExists(ctx context.Context, slug string) (bool, error)
 	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
 }
