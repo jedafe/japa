@@ -92,7 +92,7 @@ type SessionStore interface {
 	CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error)
 	CompleteAgentSession(ctx context.Context, arg gen.CompleteAgentSessionParams) (gen.AiAgentSession, error)
 	FailAgentSession(ctx context.Context, arg gen.FailAgentSessionParams) (gen.AiAgentSession, error)
-	CancelAgentSession(ctx context.Context, arg gen.CancelAgentSessionParams) (gen.AiAgentSession, error)
+	CancelAgentSession(ctx context.Context, id pgtype.UUID) (gen.AiAgentSession, error)
 }
 
 // GeoSpaceResolver resolves the user's current geo space. *gen.Queries
@@ -942,9 +942,7 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 		return
 	}
 
-	_, err := h.sessions.CancelAgentSession(context.WithoutCancel(ctx), gen.CancelAgentSessionParams{
-		ID: session.ID,
-	})
+	_, err := h.sessions.CancelAgentSession(context.WithoutCancel(ctx), session.ID)
 	if err != nil {
 		slog.Warn("ai: failed to cancel agent session", "session_id", session.ID, "error", err)
 	}
