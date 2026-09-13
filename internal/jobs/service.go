@@ -501,7 +501,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	}
 
 	if len(recordIDs) > 0 {
-		if sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs); err == nil {
+		if sources, err := s.store.MapSourcesByRecordIDs(ctx, recordIDs); err == nil {
 			for i := range results {
 				if src, ok := sources[results[i].intelRecordID.String()]; ok {
 					results[i].Source = sourceAttributionFromRow(src)
@@ -594,7 +594,7 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 	}
 
 	if intelRecordID.Valid {
-		if sources, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, []pgtype.UUID{intelRecordID}); err == nil {
+		if sources, err := s.store.MapSourcesByRecordIDs(ctx, []pgtype.UUID{intelRecordID}); err == nil {
 			if src, ok := sources[intelRecordID.String()]; ok {
 				detail.Source = sourceAttributionFromRow(src)
 			}

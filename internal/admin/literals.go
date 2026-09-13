@@ -68,7 +68,7 @@ func (h *Handlers) ListLiterals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -269,7 +269,7 @@ func (h *Handlers) GetLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

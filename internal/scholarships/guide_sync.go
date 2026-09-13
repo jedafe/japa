@@ -353,7 +353,7 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 		p.Country = firstFromList(fields["countries_eligible"])
 	}
 
-	countrySpaceID, err := s.resolveCountrySpaceID(ctx, content.TenantID, p.Country)
+	countrySpaceID, err := s.resolveCountrySpaceID(ctx, pgtype.UUID{}, p.Country)
 	if err == nil {
 		p.CountrySpaceID = countrySpaceID
 	}

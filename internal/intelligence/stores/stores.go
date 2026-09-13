@@ -604,10 +604,10 @@ func (s *Store) GetContentByIntelRecord(ctx context.Context, tenantID, intelReco
 	return row, nil
 }
 
-// GetContentBySlug fetches a single contents row by slug and tenant. Used by
+// GetContentBySlug fetches a single contents row by slug. Used by
 // the promoter (Task 3) to check whether an existing non-deleted guide already
 // occupies a candidate slug.
-func (s *Store) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetContentBySlugRow, error) {
+func (s *Store) GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error) {
 	row, err := s.queries.GetContentBySlug(ctx, slug)
 	if err != nil {
 		return gen.GetContentBySlugRow{}, fmt.Errorf("stores: get content by slug: %w", err)
@@ -616,10 +616,10 @@ func (s *Store) GetContentBySlug(ctx context.Context, tenantID pgtype.UUID, slug
 	return row, nil
 }
 
-// ContentSlugExists reports whether any contents row in the tenant uses the
-// given slug, including soft-deleted rows, because the (tenant_id, slug)
+// ContentSlugExists reports whether any contents row uses the
+// given slug, including soft-deleted rows, because the slug
 // unique index is not partial.
-func (s *Store) ContentSlugExists(ctx context.Context, tenantID pgtype.UUID, slug string) (bool, error) {
+func (s *Store) ContentSlugExists(ctx context.Context, slug string) (bool, error) {
 	exists, err := s.queries.ContentSlugExists(ctx, slug)
 	if err != nil {
 		return false, fmt.Errorf("stores: check content slug exists: %w", err)

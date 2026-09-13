@@ -1189,15 +1189,15 @@ func (s *Store) getThreadSpaceIDByID(ctx context.Context, id pgtype.UUID) (pgtyp
 	return spaceID, nil
 }
 
-// getThreadTenantAndSpaceByID returns the tenant and space for a thread by
-// ID without requiring a tenant filter. Used for WebSocket broadcasts.
-func (s *Store) getThreadTenantAndSpaceByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, pgtype.UUID, error) {
-	row, err := s.read.GetForumThreadTenantAndSpaceByID(ctx, id)
+// getThreadSpaceByID returns the space for a thread by ID without requiring a
+// tenant filter. Used for WebSocket broadcasts.
+func (s *Store) getThreadSpaceByID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	spaceID, err := s.read.GetForumThreadTenantAndSpaceByID(ctx, id)
 	if err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("getting thread tenant/space by ID: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("getting thread space by ID: %w", err)
 	}
 
-	return row.TenantID, row.SpaceID, nil
+	return spaceID, nil
 }
 
 // ---------------------------------------------------------------------------

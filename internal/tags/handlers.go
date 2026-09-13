@@ -184,7 +184,7 @@ func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID p
 // ListTags handles GET /api/v1/tags — public list with ?q, ?sort, ?page, ?page_size.
 // Also handles GET /api/v1/admin/tags — admin list with pagination.
 func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -400,7 +400,6 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 	for _, c := range items {
 		row := map[string]any{
 			"id":                 c.ID,
-			"tenant_id":          c.TenantID,
 			"author_id":          c.AuthorID,
 			"space_id":           c.SpaceID,
 			"content_type":       c.ContentType,

@@ -699,7 +699,7 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 
 // CreateSelectionToken handles POST /api/v1/jce/selections.
 func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

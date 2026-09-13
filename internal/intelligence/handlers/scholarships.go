@@ -172,9 +172,9 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 }
 
 // buildSearchScholarshipsParams maps the search query params onto the
-// SearchScholarshipsParams columns (country→Column2, eligible_country→Column3,
-// degree_level→Column4, deadline_after→Column5, deadline_before→Column6,
-// fields_of_study→Column7). It returns the params and the resolved
+// SearchScholarshipsParams columns (country→Column1, eligible_country→Column2,
+// degree_level→Column3, deadline_after→Column4, deadline_before→Column5,
+// fields_of_study→Column6). It returns the params and the resolved
 // fields_of_study CSV for the post-query filter.
 //
 // Deprecated aliases are honoured for backward compatibility:
@@ -187,19 +187,19 @@ func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) (gen.S
 	}
 
 	if v := q.Get("country"); v != "" {
-		params.Column2 = v
+		params.Column1 = v
 	}
 
 	if v := q.Get("eligible_country"); v != "" {
-		params.Column3 = v
+		params.Column2 = v
 	}
 
 	if v := q.Get("degree_level"); v != "" {
-		params.Column4 = v
+		params.Column3 = v
 	}
 
-	params.Column5 = deadlineParam(q, "deadline_after", "deadline_from")
-	params.Column6 = deadlineParam(q, "deadline_before", "deadline_to")
+	params.Column4 = deadlineParam(q, "deadline_after", "deadline_from")
+	params.Column5 = deadlineParam(q, "deadline_before", "deadline_to")
 
 	// BUG-07 fix: spec uses fields_of_study (plural, CSV); keep
 	// field_of_study (singular) as a deprecated alias.
@@ -213,7 +213,7 @@ func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) (gen.S
 		// filter; additional elements are matched post-query.
 		parts := strings.Split(fieldsOfStudy, ",")
 		if len(parts) > 0 {
-			params.Column7 = strings.TrimSpace(parts[0])
+			params.Column6 = strings.TrimSpace(parts[0])
 		}
 	}
 
