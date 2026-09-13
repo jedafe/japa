@@ -166,8 +166,8 @@ func (s *Store) updateStatus(ctx context.Context, params gen.UpdateDocPageStatus
 }
 
 // getStatus returns the current review_status of a doc page.
-func (s *Store) getStatus(ctx context.Context, params gen.GetDocPageStatusParams) (string, error) {
-	status, err := s.read.GetDocPageStatus(ctx, params)
+func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (string, error) {
+	status, err := s.read.GetDocPageStatus(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("getting doc page status: %w", err)
 	}

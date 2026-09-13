@@ -141,7 +141,7 @@ func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message st
 // flight search to the configured provider.
 // Query: origin, dest, date, adults, return_date, cabin_class.
 func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -203,7 +203,7 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 // search to the configured provider.
 // Query: dest, checkin, checkout, guests, rooms.
 func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -261,7 +261,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 // HandlePublicListProviders handles GET /api/v1/travel/providers — list active
 // travel providers for the current tenant. Public, no auth required.
 func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -296,7 +296,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

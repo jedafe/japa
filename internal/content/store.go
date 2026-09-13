@@ -518,10 +518,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	if input.ContentType == TypeStory && !input.GeoSpaceID.Valid && !input.SpaceID.Valid {
 		if input.TargetCountry != nil {
 			if code := toCountryCode(*input.TargetCountry); code != "" {
-				if sp, err := readQ.GetCountrySpaceIDByGeoCode(ctx, gen.GetCountrySpaceIDByGeoCodeParams{
-
-					GeoCode: &code,
-				}); err == nil {
+				if sp, err := readQ.GetCountrySpaceIDByGeoCode(ctx, &code); err == nil {
 					input.GeoSpaceID = sp
 				}
 			}
@@ -1805,10 +1802,7 @@ func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, conte
 // ListJSONLDTemplates returns all JSON-LD templates for a tenant, optionally
 // filtered by q (matches content_type or template body).
 func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
-	templates, err := s.read.ListJSONLDTemplates(ctx, gen.ListJSONLDTemplatesParams{
-
-		Q: q.String,
-	})
+	templates, err := s.read.ListJSONLDTemplates(ctx, q.String)
 	if err != nil {
 		return nil, fmt.Errorf("listing JSON-LD templates: %w", err)
 	}

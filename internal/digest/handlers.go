@@ -99,7 +99,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleGetLatest handles GET /digest/latest — latest published digest.
 func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -136,7 +136,7 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /digest/:id — single published digest (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -222,7 +222,7 @@ func (h *Handlers) HandleAdminGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -254,7 +254,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -297,7 +297,7 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -331,7 +331,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

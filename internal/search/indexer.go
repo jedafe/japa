@@ -474,7 +474,6 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 		return nil
 	}
 
-	tID := pgtype.UUID{Bytes: tenantID, Valid: true}
 	uID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// §13/§19: check search_indexable opt-out before indexing. If the user

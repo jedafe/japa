@@ -85,7 +85,7 @@ type AgentSessionQueries interface {
 // check), verify the target author exists in the tenant, and update
 // author_id + field_values. *gen.Queries satisfies this.
 type ContentAuthorQueries interface {
-	GetContentByID(ctx context.Context, arg gen.GetContentByIDParams) (gen.GetContentByIDRow, error)
+	GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	ReassignSingleContentAuthor(ctx context.Context, arg gen.ReassignSingleContentAuthorParams) (gen.ReassignSingleContentAuthorRow, error)
 	GetUserByID(ctx context.Context, userID pgtype.UUID) (gen.GetUserByIDRow, error)
 }
@@ -337,7 +337,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -390,7 +390,7 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -532,7 +532,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -588,9 +588,7 @@ func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.
 
 	// Read the current content row to get field_values for the provenance
 	// merge. GetContentByID is tenant-scoped (defense-in-depth, BUG-014).
-	current, err := h.content.GetContentByID(r.Context(), gen.GetContentByIDParams{
-		ID: contentID,
-	})
+	current, err := h.content.GetContentByID(r.Context(), contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
@@ -694,9 +692,7 @@ func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID, tenan
 			return false
 		}
 
-		row, err := content.GetContentByID(ctx, gen.GetContentByIDParams{
-			ID: entity.EntityID,
-		})
+		row, err := content.GetContentByID(ctx, entity.EntityID)
 		if err != nil {
 			return false
 		}
@@ -731,7 +727,7 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -831,9 +827,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		current, err := h.content.GetContentByID(r.Context(), gen.GetContentByIDParams{
-			ID: entityID,
-		})
+		current, err := h.content.GetContentByID(r.Context(), entityID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
@@ -936,7 +930,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 // HandleAdminListSessions returns all agent sessions for the tenant,
 // paginated, with an optional status filter (?status=running|completed|...).
 func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -980,7 +974,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 // HandleAdminGetSession returns any session in the tenant (not just the
 // caller's) plus its full tool call audit trail. Admin-only.
 func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1023,7 +1017,7 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 // success rate, average latency) for the tenant, optionally filtered by
 // date range (?from=YYYY-MM-DD&to=YYYY-MM-DD).
 func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1051,7 +1045,7 @@ func (h *AgentHTTPHandlers) HandleAdminToolStats(w http.ResponseWriter, r *http.
 // HandleAdminCostReport returns a cost breakdown by user for the tenant,
 // optionally filtered by date range.
 func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}

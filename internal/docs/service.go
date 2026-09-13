@@ -652,9 +652,7 @@ func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID p
 // PublishDocPage sets review_status to 'published'. Requires current status = 'approved' (§44).
 func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID pgtype.UUID) error {
 	// Validate status transition: must be 'approved' before publishing.
-	currentStatus, err := s.store.getStatus(ctx, gen.GetDocPageStatusParams{
-		ID: id,
-	})
+	currentStatus, err := s.store.getStatus(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching current status: %w", err)
 	}

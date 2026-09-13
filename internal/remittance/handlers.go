@@ -112,7 +112,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 // HandleGetRates handles GET /api/v1/remittance/rates — latest rates for a
 // corridor. Query: send, receive.
 func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -146,7 +146,7 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 // HandleCalculate handles GET /api/v1/remittance/calculate — send-amount
 // calculator. Query: send_amount, send, receive.
 func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -187,7 +187,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /api/v1/remittance/history — rate history
 // time-series. Query: send, receive, days (default 30, max 365).
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -229,7 +229,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 // HandleGetProviders handles GET /api/v1/remittance/providers — list active
 // providers.
 func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -255,7 +255,7 @@ func (h *Handlers) HandleGetProviders(w http.ResponseWriter, r *http.Request) {
 // HandleGetCorridors handles GET /api/v1/remittance/corridors — supported
 // currency pairs.
 func (h *Handlers) HandleGetCorridors(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -289,7 +289,7 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -320,7 +320,7 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -368,7 +368,7 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -414,7 +414,7 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -452,7 +452,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -654,7 +654,7 @@ func (h *Handlers) HandleAdminInsertManualRate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -722,7 +722,7 @@ func (h *Handlers) HandleAdminTriggerFetch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	tenantID, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
