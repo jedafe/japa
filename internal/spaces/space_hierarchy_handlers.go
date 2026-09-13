@@ -24,7 +24,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -129,7 +129,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 // SPACES-003: returns primary spaces (country/state/city) eligible to be
 // parents of a custom space, filtered by the optional ?q= search param.
 func (h *Handlers) SuggestParentSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

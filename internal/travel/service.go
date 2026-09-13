@@ -403,7 +403,7 @@ func searchCacheKey(tenantID pgtype.UUID, params interface{}) string {
 func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
 	_ = ""
 	if tenantID.Valid {
-		tenantPart = tenantID.String()
+		_ = tenantID.String()
 	}
 
 	return HashSearchQuery(struct {
