@@ -392,7 +392,7 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 
 	sources := make(map[string]gen.ListSourcesByRecordIDsRow)
 	if len(recordIDs) > 0 {
-		if srcMap, err := s.store.MapSourcesByRecordIDs(ctx, tenantID, recordIDs); err == nil {
+		if srcMap, err := s.store.MapSourcesByRecordIDs(ctx, recordIDs); err == nil {
 			sources = srcMap
 		} else {
 			slog.Warn("remittance: failed to load source attribution", "error", err)

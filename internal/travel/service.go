@@ -401,7 +401,7 @@ func searchCacheKey(tenantID pgtype.UUID, params interface{}) string {
 // JSON of params. Including the tenant ID prevents cross-tenant cache
 // collisions when two tenants issue identical searches.
 func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
-	tenantPart := ""
+	_ = ""
 	if tenantID.Valid {
 		tenantPart = tenantID.String()
 	}

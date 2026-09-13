@@ -287,9 +287,20 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		}
 	}
 
-	campaign, err := s.store.CreateCampaign(ctx, gen.CreateSelfServeAdCampaignParams{Name: orgID, Name: input.Name, Html: slotTypeID, PreviewText: input.Content, Body: targetURL, Segment: int32(cost), SegmentID: // #nosec
-	int32(flatRate), Status:// #nosec
-	freqCap, ScheduledAt: startDate, CreatedBy: endDate, CreatedBy: userID,
+	campaign, err := s.store.CreateCampaign(ctx, gen.CreateSelfServeAdCampaignParams{
+		OrganizationID:      orgID,
+		Name:                input.Name,
+		SlotTypeID:          slotTypeID,
+		Content:             input.Content,
+		TargetUrl:           targetURL,
+		BudgetCredits:       int32(cost),     // #nosec
+		FlatRate:            int32(flatRate), // #nosec
+		FrequencyCapPerUser: freqCap,
+		StartDate:           startDate,
+		EndDate:             endDate,
+		TargetGeo:           input.TargetGeo,
+		TargetSpaceIds:      targetSpaceIDs,
+		CreatedBy:           userID,
 	})
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: create campaign: %w", err)

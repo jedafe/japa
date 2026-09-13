@@ -167,7 +167,7 @@ func (h *Handlers) Enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -542,7 +542,7 @@ func (h *Handlers) UpdateMemberStatusAdmin(w http.ResponseWriter, r *http.Reques
 // (catalog). Uses the sqlc ListAllAffiliateLinksFiltered query (joins users
 // for the username column). Money is rendered via pgtype.Numeric → string.
 func (h *Handlers) ListAllLinksAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

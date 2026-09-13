@@ -304,7 +304,7 @@ func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) 
 
 // AdminCreateCreditPack handles POST /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -362,7 +362,7 @@ func (h *Handlers) AdminCreateCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminUpdateCreditPack handles PATCH /api/v1/admin/wallet/credit-packs/{id}.
 func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -450,7 +450,7 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPurchases handles GET /api/v1/admin/wallet/purchases.
 func (h *Handlers) AdminListCreditPurchases(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
