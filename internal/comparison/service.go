@@ -310,7 +310,6 @@ type CreateComparisonInput struct {
 // CreateComparisonResult holds the result of creating a comparison.
 type CreateComparisonResult struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`
@@ -672,7 +671,6 @@ func (s *Service) DeleteComparison(ctx context.Context, id, tenantID, deletedBy 
 //nolint:revive // Public type name already used by callers; rename would be a breaking change.
 type ComparisonDetail struct {
 	ID         pgtype.UUID                                `json:"id"`
-	TenantID   pgtype.UUID                                `json:"tenant_id"`
 	AuthorID   pgtype.UUID                                `json:"author_id"`
 	Title      string                                     `json:"title"`
 	Slug       string                                     `json:"slug"`
@@ -1080,15 +1078,15 @@ func (s *Service) DeleteComparisonItem(ctx context.Context, id, tenantID pgtype.
 }
 
 // ReorderComparisonItem changes the position of a comparison item.
-func (s *Service) ReorderComparisonItem(ctx context.Context, id, contentID, tenantID pgtype.UUID, position int32) error {
-	return s.store.reorderComparisonItems(ctx, id, contentID, tenantID, position)
+func (s *Service) ReorderComparisonItem(ctx context.Context, id, contentID pgtype.UUID, position int32) error {
+	return s.store.reorderComparisonItems(ctx, id, contentID, position)
 }
 
 // BatchReorderComparisonItems updates positions for all items in a comparison
 // in a single pgx.Batch round-trip, avoiding N individual UPDATE queries
 // (BUG-004). Each (id, position) pair is queued as a separate statement but
 // sent to the database in one network round-trip.
-func (s *Service) BatchReorderComparisonItems(ctx context.Context, contentID, tenantID pgtype.UUID, ids []pgtype.UUID, positions []int32) error {
+func (s *Service) BatchReorderComparisonItems(ctx context.Context, contentID pgtype.UUID, ids []pgtype.UUID, positions []int32) error {
 	if len(ids) != len(positions) {
 		return errors.New("ids and positions length mismatch")
 	}
@@ -1098,11 +1096,11 @@ func (s *Service) BatchReorderComparisonItems(ctx context.Context, contentID, te
 	}
 
 	const reorderSQL = `UPDATE comparison_items SET position = $1
-WHERE id = $2 AND content_id = $3 AND tenant_id = $4 AND deleted_at IS NULL`
+WHERE id = $2 AND content_id = $3 AND deleted_at IS NULL`
 
 	batch := &pgx.Batch{}
 	for i, id := range ids {
-		batch.Queue(reorderSQL, positions[i], id, contentID, tenantID)
+		batch.Queue(reorderSQL, positions[i], id, contentID)
 	}
 
 	br := s.db.Writer.SendBatch(ctx, batch)

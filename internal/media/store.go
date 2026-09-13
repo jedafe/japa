@@ -419,8 +419,8 @@ type ScanMediaRow struct {
 // Used after video processing to point to the new file location.
 func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.UUID, storagePath string) error {
 	_, err := s.writePool.Exec(ctx, `
-		UPDATE media SET storage_path = $1 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL
-	`, storagePath, id, tenantID)
+		UPDATE media SET storage_path = $1 WHERE id = $2 AND deleted_at IS NULL
+	`, storagePath, id)
 	if err != nil {
 		return fmt.Errorf("updating media storage path: %w", err)
 	}
@@ -451,8 +451,8 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 // Used by the background scan processor after a clean virus scan.
 func (s *Store) ConfirmMediaByID(ctx context.Context, mediaID []byte, tenantID string) error {
 	_, err := s.writePool.Exec(ctx, `
-		UPDATE media SET confirmed = true WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-	`, mediaID, tenantID)
+		UPDATE media SET confirmed = true WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID)
 	if err != nil {
 		return fmt.Errorf("confirming media by ID: %w", err)
 	}
@@ -467,8 +467,8 @@ func (s *Store) RejectMediaByID(ctx context.Context, mediaID []byte, tenantID, v
 		UPDATE media
 		SET deleted_at = now(),
 		    alt_text = coalesce(alt_text, '') || ' [REJECTED: ' || $2 || ']'
-		WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
-	`, mediaID, virusName, tenantID)
+		WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID, virusName)
 	if err != nil {
 		return fmt.Errorf("rejecting media by ID: %w", err)
 	}
@@ -483,8 +483,8 @@ func (s *Store) QuarantineMedia(ctx context.Context, mediaID []byte, tenantID, r
 		UPDATE media
 		SET quarantine_reason = $2,
 		    quarantined_at = now()
-		WHERE id = $1 AND tenant_id = $3 AND deleted_at IS NULL
-	`, mediaID, reason, tenantID)
+		WHERE id = $1 AND deleted_at IS NULL
+	`, mediaID, reason)
 	if err != nil {
 		return fmt.Errorf("quarantining media by ID: %w", err)
 	}
@@ -574,16 +574,16 @@ func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtyp
 	var m QuarantinedMedia
 
 	err := s.readPool.QueryRow(ctx, `
-		SELECT id, tenant_id, uploader_user_id, original_filename, mime_type,
+		SELECT id, uploader_user_id, original_filename, mime_type,
 		       file_size_bytes, width_px, height_px, duration_secs, storage_path,
 		       storage_bucket, alt_text, caption, confirmed, deleted_at,
 		       quarantine_reason, quarantined_at, reviewed_by, reviewed_at,
 		       created_at
 		FROM media
-		WHERE id = $1 AND tenant_id = $2
+		WHERE id = $1
 		  AND quarantine_reason IS NOT NULL
 		  AND deleted_at IS NULL
-	`, mediaID, tenantID).Scan(
+	`, mediaID).Scan(
 		&m.ID, &m.TenantID, &m.UploaderUserID, &m.OriginalFilename, &m.MimeType,
 		&m.FileSizeBytes, &m.WidthPx, &m.HeightPx, &m.DurationSecs, &m.StoragePath,
 		&m.StorageBucket, &m.AltText, &m.Caption, &m.Confirmed, &m.DeletedAt,

@@ -81,7 +81,7 @@ LIMIT 1
 
 	var name string
 
-	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -410,7 +410,7 @@ WHERE i.guide_id = $1
 ORDER BY i.sort_order ASC, i.created_at ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, guideID, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, guideID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get guide items: %w", err)
 	}
@@ -612,13 +612,13 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 	}
 
 	sets = append(sets, "updated_at = now()")
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	q := fmt.Sprintf(`
 UPDATE arrival_checklist_guides
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -658,16 +658,16 @@ WHERE id = $1
 func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE arrival_checklist_guides
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     status = 'published',
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     is_japabot_indexed = true,
     updated_at = now()
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: approve guide: %w", err)
 	}
@@ -712,7 +712,7 @@ JOIN arrival_checklist_items i ON i.guide_id = g.id
 LEFT JOIN checklist_progress cp
   ON cp.guide_id = g.id
  AND cp.item_key = i.id::text
- AND cp.user_id = $2
+ AND cp.user_id = $1
  AND cp.list_type = 'arrival'
 WHERE g.is_active = true
   AND g.status = 'published'
@@ -721,7 +721,7 @@ GROUP BY g.id, sp.name, sp.geo_code, g.visa_category, g.applicant_type
 ORDER BY MAX(cp.updated_at) DESC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID)
+	rows, err := s.pool.Reader.Query(ctx, q, userID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list user checklists: %w", err)
 	}
@@ -780,7 +780,7 @@ JOIN arrival_checklist_guides g ON g.id = i.guide_id
 LEFT JOIN checklist_progress cp
   ON cp.guide_id = i.guide_id
  AND cp.item_key = i.id::text
- AND cp.user_id = $2
+ AND cp.user_id = $1
  AND cp.list_type = 'arrival'
 WHERE i.guide_id = $3
   AND g.is_active = true
@@ -827,10 +827,10 @@ func (s *Store) StartChecklist(ctx context.Context, tenantID, userID, guideID pg
 	// ON CONFLICT DO NOTHING for idempotency.
 	const q = `
 INSERT INTO checklist_progress (user_id, guide_id, item_key, completed, list_type)
-SELECT $1, $2, $3, i.id::text, false, 'arrival'
+SELECT $1, $2, i.id::text, false, 'arrival'
 FROM arrival_checklist_items i
 JOIN arrival_checklist_guides g ON g.id = i.guide_id
-WHERE i.guide_id = $3
+WHERE i.guide_id = $2
   AND g.is_active = true
   AND g.status = 'published'
 ORDER BY i.sort_order ASC
@@ -838,7 +838,7 @@ LIMIT 1
 ON CONFLICT (user_id, guide_id, item_key, list_type) DO NOTHING
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, guideID)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: start checklist: %w", err)
 	}
@@ -859,7 +859,7 @@ func (s *Store) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.U
 
 	const q = `
 INSERT INTO checklist_progress (user_id, guide_id, item_key, completed, completed_at, notes, list_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, 'arrival')
+VALUES ($1, $2, $3, $4, $5, $6, 'arrival')
 ON CONFLICT (user_id, guide_id, item_key, list_type)
 DO UPDATE SET
     completed = EXCLUDED.completed,
@@ -868,7 +868,7 @@ DO UPDATE SET
     updated_at = now()
 `
 
-	_, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID, itemID, completed, completedAt, notes)
+	_, err := s.pool.Writer.Exec(ctx, q, userID, guideID, itemID, completed, completedAt, notes)
 	if err != nil {
 		return fmt.Errorf("arrivalchecklist: tick item: %w", err)
 	}

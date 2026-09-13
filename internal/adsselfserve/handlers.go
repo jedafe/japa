@@ -17,7 +17,6 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers exposes the self-serve ads HTTP routes.
@@ -326,13 +325,7 @@ func (h *Handlers) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 // requireTenant extracts the tenant ID from the request context. The tenant
 // is set by tenant.Middleware which wraps all /api/v1 routes.
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser extracts the authenticated user from the request context. The

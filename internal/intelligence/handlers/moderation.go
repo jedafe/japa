@@ -13,7 +13,6 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/intelligence/sources"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // sourceDirectoryEntry is the public-facing shape for a source in the
@@ -91,7 +90,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 
 	// OptionalAuth: tenant may or may not be present. When absent, fall
 	// back to the default tenant so the public directory still renders.
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}
@@ -478,7 +477,7 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}
@@ -569,7 +568,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}
@@ -657,7 +656,7 @@ func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}

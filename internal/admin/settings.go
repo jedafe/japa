@@ -21,7 +21,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -603,13 +602,7 @@ func invalidateLinkPreviewCache(ctx context.Context, vk valkeycompat.Cmdable) {
 
 // requireTenant resolves the tenant from the request context.
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -636,7 +629,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -644,11 +637,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Fetch all settings for this tenant from the database.
-	rows, err := h.DB.Reader.Query(
-		ctx,
-		`SELECT key, value FROM system_settings WHERE tenant_id = $1`,
-		tenantID,
-	)
+	rows, err := h.DB.Reader.Query(ctx, `SELECT key, value FROM system_settings `, )
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
 		return

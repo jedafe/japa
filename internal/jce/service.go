@@ -336,20 +336,20 @@ func (s *Service) invalidateProfileCache(ctx context.Context, tenantID pgtype.UU
 	}
 
 	if uid.Valid {
-		_ = s.vk.Del(ctx, ProfileCacheKey(tenantID, uid, profileID)).Err()
+		_ = s.vk.Del(ctx, ProfileCacheKey(uid, profileID)).Err()
 	}
 
-	s.invalidateScoreCacheForProfile(ctx, tenantID, profileID)
+	s.invalidateScoreCacheForProfile(ctx, profileID)
 }
 
 // invalidateScoreCacheForProfile removes every cached ScoreResultKey for a
 // profile by reading the tracking set written by the scoring engine.
-func (s *Service) invalidateScoreCacheForProfile(ctx context.Context, tenantID, profileID pgtype.UUID) {
+func (s *Service) invalidateScoreCacheForProfile(ctx context.Context, profileID pgtype.UUID) {
 	if s.vk == nil || !profileID.Valid {
 		return
 	}
 
-	setKey := ScoreResultSetKey(tenantID, profileID)
+	setKey := ScoreResultSetKey(profileID)
 
 	keys, err := s.vk.SMembers(ctx, setKey).Result()
 	if err != nil {

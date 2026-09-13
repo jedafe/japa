@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 )
 
@@ -29,7 +28,11 @@ func TestGetProfileFeed_GuestAllowed(t *testing.T) {
 	h := NewHandlers(service)
 
 	req := httptest.NewRequest(http.MethodGet, "/feed/profile/"+authorID.String(), nil)
-	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+	req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID}))
 	req = testdb.WithChiURLParam(req, "user_id", authorID.String())
 	// Deliberately NOT injecting auth.UserContextKey: this request is a guest.
 

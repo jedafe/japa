@@ -379,7 +379,7 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 		       COALESCE(SUM(wl.amount) FILTER (WHERE wl.amount > 0), 0)::bigint AS points
 		FROM wallet_ledger wl
 		JOIN users u ON u.id = wl.user_id
-		LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+		LEFT JOIN user_profiles up ON up.user_id = u.id
 		WHERE wl.tenant_id = $1 AND wl.ledger_type = 'points'
 		  AND u.is_bot = false AND u.status = 'active'
 		GROUP BY u.id, u.username, up.display_name, up.avatar_url
@@ -423,11 +423,11 @@ func (r *Renderer) renderUpcomingEvents(ctx context.Context, w Widget) (json.Raw
 	rows, err := r.reader.Query(ctx, `
 		SELECT id, title, slug, start_time, end_time
 		FROM calendar_entries
-		WHERE tenant_id = $1 AND status = 'approved' AND start_time >= now()
+		WHERE status = 'approved' AND start_time >= now()
 		  AND deleted_at IS NULL
 		ORDER BY start_time ASC
-		LIMIT $2
-	`, w.TenantID, limit)
+		LIMIT $1
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering upcoming_events: %w", err)
 	}

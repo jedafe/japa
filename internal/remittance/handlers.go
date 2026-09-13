@@ -43,7 +43,6 @@ import (
 	"github.com/jedafe/japa/internal/crypto"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // safeInt32 converts an int to int32, clamping to math.MaxInt32 if too large.
@@ -76,13 +75,7 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // ---------------------------------------------------------------------------
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -414,11 +407,6 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	alertID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -429,7 +417,7 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteAlert(r.Context(), tenantID, user.UserID, alertID); err != nil {
+	if err := h.service.DeleteAlert(r.Context(), user.UserID, alertID); err != nil {
 		slog.Error("remittance: delete alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_alert_failed", "Failed to delete alert")
 

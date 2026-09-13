@@ -44,17 +44,13 @@ func SeedUser(t *testing.T, d *db.DB, tenantID pgtype.UUID, o UserOpts) pgtype.U
 
 	email := username + "@example.test"
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO users (id, tenant_id, email, username, status) VALUES ($1, $2, $3, $4, $5)`,
-		userID, tenantID, email, username, status)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO users (id, email, username, status) VALUES ($1, $2, $3, $4, $5)`, userID, tenantID, email, username, status)
 	if err != nil {
 		t.Fatalf("testdb: SeedUser: inserting user: %v", err)
 	}
 
 	if o.DisplayName != "" {
-		_, err := d.Writer.Exec(ctx,
-			`INSERT INTO user_profiles (tenant_id, user_id, display_name) VALUES ($1, $2, $3)`,
-			tenantID, userID, o.DisplayName)
+		_, err := d.Writer.Exec(ctx, `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2)`, userID, o.DisplayName)
 		if err != nil {
 			t.Fatalf("testdb: SeedUser: inserting user_profiles: %v", err)
 		}
@@ -83,20 +79,16 @@ func SeedFollowers(t *testing.T, d *db.DB, tenantID, entityUserID pgtype.UUID, n
 	for range n {
 		followerID := SeedUser(t, d, tenantID, UserOpts{Username: "follower-" + uuid.New().String()})
 
-		_, err := d.Writer.Exec(ctx,
-			`INSERT INTO follows (tenant_id, follower_id, entity_type, entity_id) VALUES ($1, $2, 'user', $3)`,
-			tenantID, followerID, entityUserID)
+		_, err := d.Writer.Exec(ctx, `INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, 'user', $2)`, followerID, entityUserID)
 		if err != nil {
 			t.Fatalf("testdb: SeedFollowers: inserting follow: %v", err)
 		}
 	}
 
-	_, err := d.Writer.Exec(ctx,
-		`UPDATE users SET follower_count = (
+	_, err := d.Writer.Exec(ctx, `UPDATE users SET follower_count = (
 			SELECT count(*) FROM follows
-			WHERE tenant_id = $1 AND entity_type = 'user' AND entity_id = $2
-		) WHERE id = $2 AND tenant_id = $1`,
-		tenantID, entityUserID)
+			WHERE entity_type = 'user' AND entity_id = $1
+		) WHERE id = $1`, entityUserID)
 	if err != nil {
 		t.Fatalf("testdb: SeedFollowers: updating follower_count: %v", err)
 	}
@@ -113,9 +105,7 @@ func SeedFollowing(t *testing.T, d *db.DB, tenantID, followerID pgtype.UUID, n i
 	for range n {
 		followeeID := SeedUser(t, d, tenantID, UserOpts{Username: "followee-" + uuid.New().String()})
 
-		_, err := d.Writer.Exec(ctx,
-			`INSERT INTO follows (tenant_id, follower_id, entity_type, entity_id) VALUES ($1, $2, 'user', $3)`,
-			tenantID, followerID, followeeID)
+		_, err := d.Writer.Exec(ctx, `INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, 'user', $2)`, followerID, followeeID)
 		if err != nil {
 			t.Fatalf("testdb: SeedFollowing: inserting follow: %v", err)
 		}
@@ -161,10 +151,7 @@ func SeedContent(t *testing.T, d *db.DB, tenantID, authorID pgtype.UUID, o Conte
 
 	slug := "test-content-" + uuid.New().String()
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO contents (id, tenant_id, author_id, organization_id, space_id, content_type, title, slug, body, body_html, status, visibility, featured_image_id)
-		 VALUES ($1, $2, $3, $4, $5, 'discussion', $6, $7, 'Seeded test body.', '<p>Seeded test body.</p>', $8, $9, $10)`,
-		contentID, tenantID, authorID, o.OrganizationID, o.SpaceID, title, slug, status, visibility, o.FeaturedImageID)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO contents (id, author_id, organization_id, space_id, content_type, title, slug, body, body_html, status, visibility, featured_image_id) VALUES ($1, $2, $3, $4, $5, 'discussion', $6, $7, 'Seeded test body.', '<p>Seeded test body.</p>', $8, $9, $10)`, contentID, tenantID, authorID, o.OrganizationID, o.SpaceID, title, slug, status, visibility, o.FeaturedImageID)
 	if err != nil {
 		t.Fatalf("testdb: SeedContent: %v", err)
 	}
@@ -190,9 +177,7 @@ func SeedComment(t *testing.T, d *db.DB, tenantID, authorID, contentID pgtype.UU
 	doc := fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%s}]}]}`,
 		strconv.Quote(body))
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO comments (id, tenant_id, content_id, author_user_id, body) VALUES ($1, $2, $3, $4, $5)`,
-		commentID, tenantID, contentID, authorID, doc)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO comments (id, content_id, author_user_id, body) VALUES ($1, $2, $3, $4, $5)`, commentID, tenantID, contentID, authorID, doc)
 	if err != nil {
 		t.Fatalf("testdb: SeedComment: %v", err)
 	}
@@ -210,18 +195,13 @@ func SeedReaction(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, entityTy
 
 	ctx := t.Context()
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO reaction_types (tenant_id, key, emoji, label)
-		 VALUES ($1, $2, '👍', $3)
-		 ON CONFLICT (tenant_id, key) DO NOTHING`,
-		tenantID, key, key)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO reaction_types (key, emoji, label) VALUES ($1, '👍', $2)
+		 ON CONFLICT (key) DO NOTHING`, key, key)
 	if err != nil {
 		t.Fatalf("testdb: SeedReaction: seeding reaction_types: %v", err)
 	}
 
-	_, err = d.Writer.Exec(ctx,
-		`INSERT INTO reactions (tenant_id, entity_type, entity_id, user_id, reaction_key) VALUES ($1, $2, $3, $4, $5)`,
-		tenantID, entityType, entityID, userID, key)
+	_, err = d.Writer.Exec(ctx, `INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key) VALUES ($1, $2, $3, $4)`, entityType, entityID, userID, key)
 	if err != nil {
 		t.Fatalf("testdb: SeedReaction: %v", err)
 	}
@@ -236,10 +216,7 @@ func SeedMedia(t *testing.T, d *db.DB, tenantID, uploaderID pgtype.UUID) pgtype.
 	mediaID := mustUUID()
 	storagePath := "test/" + uuid.New().String() + ".jpg"
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO media (id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, confirmed)
-		 VALUES ($1, $2, $3, 'test.jpg', 'image/jpeg', 1024, $4, true)`,
-		mediaID, tenantID, uploaderID, storagePath)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO media (id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, confirmed) VALUES ($1, $2, $3, 'test.jpg', 'image/jpeg', 1024, $4, true)`, mediaID, tenantID, uploaderID, storagePath)
 	if err != nil {
 		t.Fatalf("testdb: SeedMedia: %v", err)
 	}
@@ -276,9 +253,7 @@ func SeedSpaceMembership(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o
 	spaceTypeID := mustUUID()
 	typeSlug := "test-space-type-" + uuid.New().String()
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO space_types (id, tenant_id, name, slug) VALUES ($1, $2, 'Test Space Type', $3)`,
-		spaceTypeID, tenantID, typeSlug)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO space_types (id, name, slug) VALUES ($1, $2, 'Test Space Type', $3)`, spaceTypeID, tenantID, typeSlug)
 	if err != nil {
 		t.Fatalf("testdb: SeedSpaceMembership: seeding space_types: %v", err)
 	}
@@ -286,16 +261,12 @@ func SeedSpaceMembership(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o
 	spaceID := mustUUID()
 	spaceSlug := "test-space-" + uuid.New().String()
 
-	_, err = d.Writer.Exec(ctx,
-		`INSERT INTO spaces (id, tenant_id, space_type_id, name, slug, level, visibility, status) VALUES ($1, $2, $3, 'Test Space', $4, 'custom', $5, $6)`,
-		spaceID, tenantID, spaceTypeID, spaceSlug, visibility, status)
+	_, err = d.Writer.Exec(ctx, `INSERT INTO spaces (id, space_type_id, name, slug, level, visibility, status) VALUES ($1, $2, $3, 'Test Space', $4, 'custom', $5, $6)`, spaceID, tenantID, spaceTypeID, spaceSlug, visibility, status)
 	if err != nil {
 		t.Fatalf("testdb: SeedSpaceMembership: seeding spaces: %v", err)
 	}
 
-	_, err = d.Writer.Exec(ctx,
-		`INSERT INTO space_members (space_id, user_id, tenant_id) VALUES ($1, $2, $3)`,
-		spaceID, userID, tenantID)
+	_, err = d.Writer.Exec(ctx, `INSERT INTO space_members (space_id, user_id) VALUES ($1, $2, $3)`, spaceID, userID, tenantID)
 	if err != nil {
 		t.Fatalf("testdb: SeedSpaceMembership: seeding space_members: %v", err)
 	}
@@ -314,9 +285,7 @@ func SeedCertificate(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) pgtyp
 	trackID := mustUUID()
 	trackSlug := "test-track-" + uuid.New().String()
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO learning_tracks (id, tenant_id, title, slug) VALUES ($1, $2, 'Test Track', $3)`,
-		trackID, tenantID, trackSlug)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO learning_tracks (id, title, slug) VALUES ($1, $2, 'Test Track', $3)`, trackID, tenantID, trackSlug)
 	if err != nil {
 		t.Fatalf("testdb: SeedCertificate: seeding learning_tracks: %v", err)
 	}
@@ -324,9 +293,7 @@ func SeedCertificate(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) pgtyp
 	certID := mustUUID()
 	certNumber := fmt.Sprintf("TEST-CERT-%s", uuid.New().String())
 
-	_, err = d.Writer.Exec(ctx,
-		`INSERT INTO learning_certificates (id, tenant_id, user_id, track_id, certificate_number) VALUES ($1, $2, $3, $4, $5)`,
-		certID, tenantID, userID, trackID, certNumber)
+	_, err = d.Writer.Exec(ctx, `INSERT INTO learning_certificates (id, user_id, track_id, certificate_number) VALUES ($1, $2, $3, $4, $5)`, certID, tenantID, userID, trackID, certNumber)
 	if err != nil {
 		t.Fatalf("testdb: SeedCertificate: %v", err)
 	}
@@ -375,10 +342,7 @@ func SeedOrganization(t *testing.T, d *db.DB, tenantID pgtype.UUID, o OrgOpts) p
 		orgType = "business"
 	}
 
-	_, err := d.Writer.Exec(ctx,
-		`INSERT INTO organizations (id, tenant_id, owner_user_id, name, slug, org_type, status, verified)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		orgID, tenantID, owner, name, slug, orgType, status, o.Verified)
+	_, err := d.Writer.Exec(ctx, `INSERT INTO organizations (id, owner_user_id, name, slug, org_type, status, verified) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, orgID, tenantID, owner, name, slug, orgType, status, o.Verified)
 	if err != nil {
 		t.Fatalf("testdb: SeedOrganization: %v", err)
 	}
@@ -391,9 +355,7 @@ func SeedOrgMembership(t *testing.T, d *db.DB, orgID, userID pgtype.UUID, role s
 	if role == "" {
 		role = "member"
 	}
-	_, err := d.Writer.Exec(t.Context(),
-		`INSERT INTO organization_members (organization_id, user_id, role) VALUES ($1, $2, $3)`,
-		orgID, userID, role)
+	_, err := d.Writer.Exec(t.Context(), `INSERT INTO organization_members (organization_id, user_id, role) VALUES ($1, $2, $3)`, orgID, userID, role)
 	if err != nil {
 		t.Fatalf("testdb: SeedOrgMembership: %v", err)
 	}
@@ -444,13 +406,11 @@ func SeedCalendarEntry(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o C
 	if o.OccursAt != "" {
 		_, err := d.Writer.Exec(t.Context(), `
 			INSERT INTO calendar_entries (
-				id, tenant_id, title, category, status, source_url,
+				id, title, category, status, source_url,
 				destination_space_id, submitted_by, occurs_at, is_recurring,
 				recurrence_pattern, created_at, updated_at
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
-		`, entryID, tenantID, title, category, status, sourceURL,
-			o.DestinationSpaceID, userID, o.OccursAt, o.IsRecurring,
-			nilIfEmpty(o.RecurrencePattern))
+		`, entryID, tenantID, title, category, status, sourceURL, o.DestinationSpaceID, userID, o.OccursAt, o.IsRecurring, nilIfEmpty(o.RecurrencePattern))
 		if err != nil {
 			t.Fatalf("testdb: SeedCalendarEntry: %v", err)
 		}
@@ -461,12 +421,11 @@ func SeedCalendarEntry(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, o C
 		}
 		_, err := d.Writer.Exec(t.Context(), `
 			INSERT INTO calendar_entries (
-				id, tenant_id, title, category, status, source_url,
+				id, title, category, status, source_url,
 				destination_space_id, submitted_by, occurs_at, is_recurring,
 				recurrence_pattern, created_at, updated_at
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + interval '30 days', $9, $10, now(), now())
-		`, entryID, tenantID, title, category, status, sourceURL,
-			o.DestinationSpaceID, userID, o.IsRecurring, recPattern)
+		`, entryID, tenantID, title, category, status, sourceURL, o.DestinationSpaceID, userID, o.IsRecurring, recPattern)
 		if err != nil {
 			t.Fatalf("testdb: SeedCalendarEntry: %v", err)
 		}

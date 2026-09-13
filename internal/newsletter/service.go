@@ -199,11 +199,11 @@ func (s *Service) GetSubscriber(ctx context.Context, tenantID, id pgtype.UUID) (
 	var sub Subscriber
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, email, user_id, status, digest_enabled, campaign_enabled,
+		SELECT id, email, user_id, status, digest_enabled, campaign_enabled,
 		       subscribed_at, unsubscribed_at, source, created_at
 		FROM newsletter_subscribers
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
+		WHERE id = $1
+	`, id).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
 		&sub.DigestEnabled, &sub.CampaignEnabled, &sub.SubscribedAt, &sub.UnsubscribedAt,
 		&sub.Source, &sub.CreatedAt)
 	if err != nil {
@@ -217,8 +217,8 @@ func (s *Service) GetSubscriber(ctx context.Context, tenantID, id pgtype.UUID) (
 func (s *Service) DeleteSubscriber(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM newsletter_subscribers
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting newsletter subscriber %s: %w", id, err)
 	}
@@ -278,12 +278,12 @@ func (s *Service) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (Ca
 	var c Campaign
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, subject, html, preview_text, body, segment, segment_id,
+		SELECT id, name, subject, html, preview_text, body, segment, segment_id,
 		       status, scheduled_at, sent_at, recipient_count, open_count, click_count,
 		       created_by, created_at, updated_at
 		FROM newsletter_campaigns
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
+		WHERE id = $1
+	`, id).Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
 		&c.Body, &c.Segment, &c.SegmentID, &c.Status, &c.ScheduledAt, &c.SentAt,
 		&c.RecipientCount, &c.OpenCount, &c.ClickCount, &c.CreatedBy, &c.CreatedAt,
 		&c.UpdatedAt)
@@ -340,8 +340,8 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, createdBy pgtype
 func (s *Service) DeleteCampaign(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM newsletter_campaigns
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting newsletter campaign %s: %w", id, err)
 	}

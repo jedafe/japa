@@ -18,7 +18,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -971,9 +970,6 @@ func (h *Handlers) DeactivateAccount(w http.ResponseWriter, r *http.Request) {
 
 // Ensure pgx.ErrNoRows is referenced to avoid import cycle.
 var _ = pgx.ErrNoRows
-
-// Ensure tenant package is referenced.
-var _ = tenant.FromContext
 
 // Ensure gen package is referenced.
 var _ = gen.GetUserProfileRow{}

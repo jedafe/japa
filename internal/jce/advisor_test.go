@@ -46,8 +46,7 @@ func enableAdvisorFeatures(t *testing.T, d *db.DB, tenantID pgtype.UUID) {
 	t.Helper()
 	ctx := t.Context()
 	_, err := d.Writer.Exec(ctx, `
-		INSERT INTO feature_flags (key, tenant_id, enabled, config)
-		VALUES ($1, $2, true, '{}')
+		INSERT INTO feature_flags (key, enabled, config) VALUES ($1, $2, true, '{}')
 		ON CONFLICT (key, tenant_id) DO UPDATE SET enabled = true, updated_at = now()
 	`, "feature.jce.ai_advisor", tenantID)
 	if err != nil {
@@ -62,8 +61,7 @@ func seedAdvisorPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID
 	groupID := mustUUID(t)
 	groupSlug := fmt.Sprintf("jce-advisor-test-%s", uuid.New().String())
 	_, err := d.Writer.Exec(ctx, `
-		INSERT INTO user_groups (id, tenant_id, name, slug, is_system)
-		VALUES ($1, $2, 'JCE Advisor Test', $3, false)
+		INSERT INTO user_groups (id, name, slug, is_system) VALUES ($1, $2, 'JCE Advisor Test', $3, false)
 	`, groupID, tenantID, groupSlug)
 	if err != nil {
 		t.Fatalf("seedAdvisorPermissions insert group: %v", err)
@@ -72,8 +70,7 @@ func seedAdvisorPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID
 	roleID := mustUUID(t)
 	roleSlug := fmt.Sprintf("jce-advisor-role-%s", uuid.New().String())
 	_, err = d.Writer.Exec(ctx, `
-		INSERT INTO user_roles (id, tenant_id, name, slug)
-		VALUES ($1, $2, 'JCE Advisor Test', $3)
+		INSERT INTO user_roles (id, name, slug) VALUES ($1, $2, 'JCE Advisor Test', $3)
 	`, roleID, tenantID, roleSlug)
 	if err != nil {
 		t.Fatalf("seedAdvisorPermissions insert role: %v", err)
@@ -85,8 +82,7 @@ func seedAdvisorPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID
 	}
 
 	_, err = d.Writer.Exec(ctx, `
-		INSERT INTO user_group_memberships (id, tenant_id, user_id, group_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO user_group_memberships (id, user_id, group_id) VALUES ($1, $2, $3, $4)
 	`, mustUUID(t), tenantID, userID, groupID)
 	if err != nil {
 		t.Fatalf("seedAdvisorPermissions insert membership: %v", err)

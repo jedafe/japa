@@ -67,44 +67,44 @@ type StoryMeta struct {
 //
 //nolint:revive // exported: stutter naming is intentional
 type StoryRow struct {
-	ID                    pgtype.UUID
-	TenantID              pgtype.UUID
-	AuthorID              pgtype.UUID
-	Title                 string
-	Slug                  string
-	Body                  string
-	BodyHTML              string
-	Status                string
-	Visibility            string
-	ViewCount             int32
-	CommentCount          int32
-	PublishedAt           pgtype.Timestamptz
-	CreatedAt             pgtype.Timestamptz
-	UpdatedAt             pgtype.Timestamptz
-	OriginSpaceID         pgtype.UUID
-	OriginSpaceName       *string
-	OriginSpaceCode       *string
-	DestSpaceID           pgtype.UUID
-	DestSpaceName         *string
-	DestSpaceCode         *string
-	RelocationYear        pgtype.Int2
-	VisaCategory          *string
-	Profession            *string
-	BiggestChallenge      *string
-	MostUsefulResource    *string
-	BestAdvice            *string
-	Verified              bool
-	AuthorName            *string
-	AuthorUsername        *string
-	AuthorDisplayName     *string
-	AuthorAvatar          *string
+	ID                 pgtype.UUID
+	TenantID           pgtype.UUID
+	AuthorID           pgtype.UUID
+	Title              string
+	Slug               string
+	Body               string
+	BodyHTML           string
+	Status             string
+	Visibility         string
+	ViewCount          int32
+	CommentCount       int32
+	PublishedAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	OriginSpaceID      pgtype.UUID
+	OriginSpaceName    *string
+	OriginSpaceCode    *string
+	DestSpaceID        pgtype.UUID
+	DestSpaceName      *string
+	DestSpaceCode      *string
+	RelocationYear     pgtype.Int2
+	VisaCategory       *string
+	Profession         *string
+	BiggestChallenge   *string
+	MostUsefulResource *string
+	BestAdvice         *string
+	Verified           bool
+	AuthorName         *string
+	AuthorUsername     *string
+	AuthorDisplayName  *string
+	AuthorAvatar       *string
 	// Series membership — stories may belong to a blog_series like any other
 	// content type (series nav on the single page mirrors the blog layout).
-	SeriesID              pgtype.UUID
-	SeriesTitle           *string
-	SeriesSlug            *string
-	SeriesPart            pgtype.Int4
-	SeriesTotal           int64
+	SeriesID    pgtype.UUID
+	SeriesTitle *string
+	SeriesSlug  *string
+	SeriesPart  pgtype.Int4
+	SeriesTotal int64
 	// §34 cover media — resolved into signed URLs by the service layer.
 	FeaturedImageID       pgtype.UUID
 	FeaturedStorageBucket *string

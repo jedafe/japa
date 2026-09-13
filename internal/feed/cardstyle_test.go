@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestResolveCardStyleConfig(t *testing.T) {
@@ -89,7 +89,11 @@ func TestGetCardStyleDefaultShape(t *testing.T) {
 	h := &Handlers{}
 
 	req := httptest.NewRequest(http.MethodGet, "/feed/card-style", nil)
-	ctx := context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{})
+	ctx := context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{})
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
 

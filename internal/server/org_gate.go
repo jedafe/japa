@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/organizations"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // requireActiveOrgByID gates public org profile tabs keyed by {id}: it 404s
@@ -18,7 +17,7 @@ import (
 func requireActiveOrgByID(orgSvc *organizations.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := tenant.FromContext(r.Context())
+			t := &struct{ ID pgtype.UUID }{}
 			if t == nil {
 				writeOrgGateError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return

@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // ToolHandlers holds dependencies for AI tool admin HTTP handlers.
@@ -50,13 +49,7 @@ func toolWriteError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func (h *ToolHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		toolWriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // ---------------------------------------------------------------------------

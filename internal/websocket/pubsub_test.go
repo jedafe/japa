@@ -165,9 +165,9 @@ func TestDispatchToSpace(t *testing.T) {
 	hub.SubscribeToSpace(c2, "s-dispatch")
 
 	msg := PubSubMessage{
-		Type:           EventSpaceActivity,
-		TargetSpaceID:  "s-dispatch",
-		Payload:        "space-data",
+		Type:          EventSpaceActivity,
+		TargetSpaceID: "s-dispatch",
+		Payload:       "space-data",
 	}
 	bridge.dispatch(msg)
 
@@ -299,9 +299,9 @@ func TestDispatchToSpaceDoesNotRepublish(t *testing.T) {
 	hub.SubscribeToSpace(c, "s-loop")
 
 	bridge.dispatch(PubSubMessage{
-		Type:           EventSpaceActivity,
-		TargetSpaceID:  "s-loop",
-		Payload:        "x",
+		Type:          EventSpaceActivity,
+		TargetSpaceID: "s-loop",
+		Payload:       "x",
 	})
 
 	select {
@@ -497,7 +497,6 @@ func (m *mockBridge) PublishTenant(event WSEvent, tenantID string) {
 // Ensure mockBridge satisfies the implicit interface at compile time.
 var _ = (*mockBridge)(nil)
 
-
 func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
 	t.Parallel()
 
@@ -510,8 +509,8 @@ func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
 	hub.Register(client)
 
 	bridge.dispatch(PubSubMessage{
-		Type:            EventPresence,
-		Payload:         "x",
+		Type:    EventPresence,
+		Payload: "x",
 	})
 
 	select {

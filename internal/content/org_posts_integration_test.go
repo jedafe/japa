@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 )
 
@@ -30,7 +29,11 @@ func TestListByOrganization_OnlyOrgPublishedPublic(t *testing.T) {
 
 	h := NewHandlers(NewService(database))
 	req := httptest.NewRequest(http.MethodGet, "/organizations/"+orgID.String()+"/content", nil)
-	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+	req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID}))
 	req = testdb.WithChiURLParam(req, "id", orgID.String())
 	rec := httptest.NewRecorder()
 	h.ListByOrganization(rec, req)

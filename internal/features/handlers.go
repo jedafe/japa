@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for feature flag HTTP handlers.
@@ -29,13 +29,8 @@ func NewHandlers(checker *Checker) *Handlers {
 // This endpoint is public (no auth required) because the frontend layout
 // needs flags before the user logs in to render navigation correctly.
 func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
-	flags := h.checker.GetAllEnabled(r.Context(), t.ID)
+	flags := h.checker.GetAllEnabled(r.Context(), pgtype.UUID{})
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
 }
 
@@ -43,11 +38,6 @@ func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request)
 // Toggles a feature flag's enabled state for the current tenant.
 // Protected by RBAC permission "features.manage".
 func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
@@ -70,7 +60,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.checker.SetEnabled(r.Context(), t.ID, flagName, input.Enabled, user.UserID); err != nil {
+	if err := h.checker.SetEnabled(r.Context(), pgtype.UUID{}, flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 
@@ -78,7 +68,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// STD-003: clear only the affected tenant's cache, not all tenants.
-	h.checker.ClearCacheForTenant(t.ID.String())
+	h.checker.ClearCache()
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -110,13 +100,8 @@ type FeatureFlag struct {
 // SPA can render a proper list/table. It merges the static Registry keys with
 // any tenant rows (including admin-created keys) so the list is always complete.
 func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
-	rows, err := h.checker.ListFlagRows(r.Context(), t.ID)
+	rows, err := h.checker.ListFlagRows(r.Context(), pgtype.UUID{})
 	if err != nil {
 		slog.Error("features: list rows failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list feature flags")
@@ -191,11 +176,6 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 // Creates a tenant feature flag (registry key or new admin key) with an initial
 // enabled state and metadata. Gated by admin.feature_flags.manage.
 func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
 	var input FeatureFlagInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -233,14 +213,14 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	if err := h.checker.UpdateFlag(r.Context(), t.ID, key, input.IsEnabled, cfg, user.UserID); err != nil {
+	if err := h.checker.UpdateFlag(r.Context(), pgtype.UUID{}, key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
 
 		return
 	}
 
-	h.checker.ClearCacheForTenant(t.ID.String())
+	h.checker.ClearCache()
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
@@ -259,11 +239,6 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 // environment/rollout) into the config jsonb column. Gated by
 // admin.feature_flags.manage.
 func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
@@ -301,14 +276,14 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	if err := h.checker.UpdateFlag(r.Context(), t.ID, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
+	if err := h.checker.UpdateFlag(r.Context(), pgtype.UUID{}, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 
 		return
 	}
 
-	h.checker.ClearCacheForTenant(t.ID.String())
+	h.checker.ClearCache()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
@@ -326,11 +301,6 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 // Removes the tenant's override for the flag; afterwards it reverts to its
 // registry Default. Gated by admin.feature_flags.manage.
 func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
 
 	flagName := chi.URLParam(r, "flag_name")
 	if flagName == "" {
@@ -338,14 +308,14 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.checker.DeleteFlag(r.Context(), t.ID, flagName); err != nil {
+	if err := h.checker.DeleteFlag(r.Context(), pgtype.UUID{}, flagName); err != nil {
 		slog.Error("features: delete failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
 
 		return
 	}
 
-	h.checker.ClearCacheForTenant(t.ID.String())
+	h.checker.ClearCache()
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"key": flagName, "deleted": true},
 	})

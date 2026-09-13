@@ -39,7 +39,6 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -210,7 +209,7 @@ func NewResolver(read *gen.Queries, rdb valkeycompat.Cmdable, settings *config.S
 func (res *Resolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vc := res.resolve(r)
-		if t := tenant.FromContext(r.Context()); t != nil {
+		if t := &struct{ ID pgtype.UUID }{}; t != nil {
 			res.enrichRegion(r.Context(), &vc, t)
 		}
 
@@ -223,7 +222,7 @@ func (res *Resolver) Middleware(next http.Handler) http.Handler {
 func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	geoCtx := geoip.FromContext(r.Context())
 	user := auth.FromContext(r.Context())
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 
 	vc := VisitorContext{
 		GeoIPCountry:      geoCtx.CountryCode,
@@ -349,7 +348,7 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 // resolves the archetype, and sets ContentCountry from the archetype when no
 // explicit override is present. When cacheKey is non-empty the resolved
 // context is cached.
-func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, user *auth.AuthenticatedUser, t *tenant.Tenant, cacheKey string) {
+func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, user *auth.AuthenticatedUser, t *struct{ ID pgtype.UUID }, cacheKey string) {
 	// Load config-driven market lists (ADR-064: config, not hardcoded).
 	originMarkets := res.marketSet(ctx, t, "geo_personalization.origin_markets", defaultOriginMarkets)
 	destMarkets := res.marketSet(ctx, t, "geo_personalization.destination_markets", defaultDestinationMarkets)
@@ -495,7 +494,7 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 // marketSet reads a CSV system_setting and returns the set of uppercase ISO
 // codes. The fallback is used when the setting is unset or the resolver has
 // no settings reader (e.g. tests).
-func (res *Resolver) marketSet(ctx context.Context, t *tenant.Tenant, key, fallback string) map[string]bool {
+func (res *Resolver) marketSet(ctx context.Context, t *struct{ ID pgtype.UUID }, key, fallback string) map[string]bool {
 	out := make(map[string]bool)
 
 	raw := fallback
@@ -524,7 +523,7 @@ func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, k
 
 // defaultCountry returns the configured fallback country code for visitors
 // with no resolvable geo signal. Falls back to "NG" when no setting/tenant.
-func (res *Resolver) defaultCountry(ctx context.Context, t *tenant.Tenant) string {
+func (res *Resolver) defaultCountry(ctx context.Context, t *struct{ ID pgtype.UUID }) string {
 	fallback := "NG"
 	if res.settings != nil && t != nil {
 		return res.settings.GetStringOr(ctx, t.ID, "geo_personalization.default_country", fallback)
@@ -546,7 +545,7 @@ func (res *Resolver) cache(ctx context.Context, key string, vc VisitorContext) {
 
 // unmarshalCache decodes a JSON-cached VisitorContext. Returns ok=false for
 // old-format (country|source) entries so the caller re-resolves.
-func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *tenant.Tenant) (VisitorContext, bool) {
+func (res *Resolver) unmarshalCache(ctx context.Context, s string, t *struct{ ID pgtype.UUID }) (VisitorContext, bool) {
 	if len(s) == 0 || s[0] != '{' {
 		return VisitorContext{}, false
 	}
@@ -589,7 +588,7 @@ func normalizeCountry(c string) string {
 
 // enrichRegion populates ContentRegion from the resolved ContentCountry by
 // looking up the matching primary country space. Falls back to empty.
-func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *tenant.Tenant) {
+func (res *Resolver) enrichRegion(ctx context.Context, vc *VisitorContext, t *struct{ ID pgtype.UUID }) {
 	if vc.ContentCountry == "" {
 		return
 	}
@@ -711,7 +710,7 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 // enrichFromAssessment loads the latest Japa Readiness Assessment result for
 // an authenticated user and overlays origin/destination/visa route, roadmap
 // slugs, and weakest dimensions onto the VisitorContext.
-func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContext, t *tenant.Tenant, userID pgtype.UUID) {
+func (res *Resolver) enrichFromAssessment(ctx context.Context, vc *VisitorContext, t *struct{ ID pgtype.UUID }, userID pgtype.UUID) {
 	if res.read == nil {
 		return
 	}
@@ -1007,7 +1006,7 @@ func normalizeVisaRoute(s string) string {
 
 // clampLanguage ensures the resolved language is in the tenant's enabled list,
 // falling back to the default and then "en".
-func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *tenant.Tenant) string {
+func (res *Resolver) clampLanguage(ctx context.Context, lang string, t *struct{ ID pgtype.UUID }) string {
 	if res.settings == nil || t == nil {
 		return lang
 	}

@@ -141,11 +141,11 @@ func (s *Store) MarkAIGenerated(ctx context.Context, id, tenantID pgtype.UUID, a
 	_, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries
 SET ai_generated = true,
-    ai_model = $3,
+    ai_model = $2,
     ai_generated_at = NOW(),
-    ai_prompt_hash = $4
-WHERE id = $1 AND tenant_id = $2
-`, id, tenantID, aiModel, aiPromptHash)
+    ai_prompt_hash = $3
+WHERE id = $1
+`, id, aiModel, aiPromptHash)
 	if err != nil {
 		return fmt.Errorf("calendar: mark ai generated: %w", err)
 	}
@@ -358,22 +358,20 @@ LIMIT 1
 func (s *Store) UpdateEntry(ctx context.Context, id, tenantID pgtype.UUID, entry CalendarEntry) (CalendarEntry, error) {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries
-SET title = $3,
-    description = $4,
-    category = $5,
-    destination_space_id = $6,
-    origin_space_id = $7,
-    occurs_at = $8,
-    ends_at = $9,
-    is_recurring = $10,
-    recurrence_pattern = $11,
-    source_url = $12,
-    staleness_check_due = $13,
+SET title = $2,
+    description = $3,
+    category = $4,
+    destination_space_id = $5,
+    origin_space_id = $6,
+    occurs_at = $7,
+    ends_at = $8,
+    is_recurring = $9,
+    recurrence_pattern = $10,
+    source_url = $11,
+    staleness_check_due = $12,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`, id, tenantID, entry.Title, entry.Description, entry.Category,
-		entry.DestinationSpaceID, entry.OriginSpaceID, entry.OccursAt, entry.EndsAt,
-		entry.IsRecurring, entry.RecurrencePattern, entry.SourceURL, entry.StalenessCheckDue)
+WHERE id = $1 AND deleted_at IS NULL
+`, id, entry.Title, entry.Description, entry.Category, entry.DestinationSpaceID, entry.OriginSpaceID, entry.OccursAt, entry.EndsAt, entry.IsRecurring, entry.RecurrencePattern, entry.SourceURL, entry.StalenessCheckDue)
 	if err != nil {
 		return CalendarEntry{}, fmt.Errorf("calendar: update entry: %w", err)
 	}

@@ -39,16 +39,15 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, 
 	}
 
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, name, slug, category, component,
+		SELECT id, name, slug, category, component,
 		       COALESCE(default_config, '{}'::jsonb),
 		       COALESCE(config_schema, '{}'::jsonb),
 		       preview_image, is_system, is_enabled, created_at, updated_at
 		FROM pagebuilder_blocks
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR category ILIKE '%' || $2 || '%')
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR category ILIKE '%' || $1 || '%')
 		ORDER BY name
-		LIMIT $3 OFFSET $4
-	`, tenantID, q, limit, offset)
+		LIMIT $2 OFFSET $3
+	`, q, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing blocks: %w", err)
 	}
@@ -78,9 +77,8 @@ func (s *Store) ListBlocks(ctx context.Context, tenantID pgtype.UUID, q string, 
 
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_blocks
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR category ILIKE '%' || $2 || '%')
-	`, tenantID, q).Scan(&total)
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR category ILIKE '%' || $1 || '%')
+	`, q).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting blocks: %w", err)
 	}
@@ -93,13 +91,13 @@ func (s *Store) GetBlock(ctx context.Context, id, tenantID pgtype.UUID) (Block, 
 	var b Block
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, slug, category, component,
+		SELECT id, name, slug, category, component,
 		       COALESCE(default_config, '{}'::jsonb),
 		       COALESCE(config_schema, '{}'::jsonb),
 		       preview_image, is_system, is_enabled, created_at, updated_at
 		FROM pagebuilder_blocks
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
@@ -125,17 +123,13 @@ func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input Cre
 
 	var b Block
 
-	err := s.writer.QueryRow(
-		ctx, `
-		INSERT INTO pagebuilder_blocks (tenant_id, name, slug, category, component, default_config, config_schema, preview_image, is_enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, name, slug, category, component,
+	err := s.writer.QueryRow(ctx, `
+		INSERT INTO pagebuilder_blocks (name, slug, category, component, default_config, config_schema, preview_image, is_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, slug, category, component,
 		          COALESCE(default_config, '{}'::jsonb),
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
-	`, tenantID, input.Name, input.Slug, input.Category, input.Component,
-		defaultConfig, configSchema, input.PreviewImage, input.IsEnabled,
-	).Scan(
+	`, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled, ).Scan(
 		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
@@ -161,20 +155,17 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 
 	var b Block
 
-	err := s.writer.QueryRow(
-		ctx, `
+	err := s.writer.QueryRow(ctx, `
 		UPDATE pagebuilder_blocks
-		SET name = $3, slug = $4, category = $5, component = $6,
-		    default_config = $7, config_schema = $8, preview_image = $9,
-		    is_enabled = $10, updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, name, slug, category, component,
+		SET name = $2, slug = $3, category = $4, component = $5,
+		    default_config = $6, config_schema = $7, preview_image = $8,
+		    is_enabled = $9, updated_at = now()
+		WHERE id = $1
+		RETURNING id, name, slug, category, component,
 		          COALESCE(default_config, '{}'::jsonb),
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
-	`, id, tenantID, input.Name, input.Slug, input.Category, input.Component,
-		defaultConfig, configSchema, input.PreviewImage, input.IsEnabled,
-	).Scan(
+	`, id, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled, ).Scan(
 		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
@@ -190,8 +181,8 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 func (s *Store) DeleteBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_blocks
-		WHERE id = $1 AND tenant_id = $2 AND is_system = false
-	`, id, tenantID)
+		WHERE id = $1 AND is_system = false
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting block: %w", err)
 	}
@@ -216,16 +207,15 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 	}
 
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, name, slug, description, page_type,
+		SELECT id, name, slug, description, page_type,
 		       COALESCE(blocks, '[]'::jsonb),
 		       is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 		FROM pagebuilder_templates
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
-		  AND ($3 = '' OR page_type = $3)
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+		  AND ($2 = '' OR page_type = $2)
 		ORDER BY name
-		LIMIT $4 OFFSET $5
-	`, tenantID, q, category, limit, offset)
+		LIMIT $3 OFFSET $4
+	`, q, category, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing templates: %w", err)
 	}
@@ -254,10 +244,9 @@ func (s *Store) ListTemplates(ctx context.Context, tenantID pgtype.UUID, q, cate
 
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_templates
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
-		  AND ($3 = '' OR page_type = $3)
-	`, tenantID, q, category).Scan(&total)
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+		  AND ($2 = '' OR page_type = $2)
+	`, q, category).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting templates: %w", err)
 	}
@@ -270,12 +259,12 @@ func (s *Store) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (Temp
 	var t Template
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, slug, description, page_type,
+		SELECT id, name, slug, description, page_type,
 		       COALESCE(blocks, '[]'::jsonb),
 		       is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 		FROM pagebuilder_templates
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -295,16 +284,12 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 
 	var t Template
 
-	err := s.writer.QueryRow(
-		ctx, `
-		INSERT INTO pagebuilder_templates (tenant_id, name, slug, description, page_type, blocks, is_active, thumbnail_media_id, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, name, slug, description, page_type,
+	err := s.writer.QueryRow(ctx, `
+		INSERT INTO pagebuilder_templates (name, slug, description, page_type, blocks, is_active, thumbnail_media_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, slug, description, page_type,
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
-	`, tenantID, input.Name, input.Slug, input.Description, input.PageType, blocks,
-		input.IsActive, input.ThumbnailMediaID, input.CreatedBy,
-	).Scan(
+	`, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, input.CreatedBy, ).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -324,21 +309,18 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 
 	var t Template
 
-	err := s.writer.QueryRow(
-		ctx, `
+	err := s.writer.QueryRow(ctx, `
 		UPDATE pagebuilder_templates
-		SET name = $3, slug = $4, description = $5, page_type = $6,
-		    blocks = $7,
-		    is_active = COALESCE($8, is_active),
-		    thumbnail_media_id = COALESCE($9, thumbnail_media_id),
+		SET name = $2, slug = $3, description = $4, page_type = $5,
+		    blocks = $6,
+		    is_active = COALESCE($7, is_active),
+		    thumbnail_media_id = COALESCE($8, thumbnail_media_id),
 		    updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, name, slug, description, page_type,
+		WHERE id = $1
+		RETURNING id, name, slug, description, page_type,
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
-	`, id, tenantID, input.Name, input.Slug, input.Description, input.PageType, blocks,
-		input.IsActive, input.ThumbnailMediaID,
-	).Scan(
+	`, id, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, ).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -353,8 +335,8 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 func (s *Store) DeleteTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_templates
-		WHERE id = $1 AND tenant_id = $2 AND is_system = false
-	`, id, tenantID)
+		WHERE id = $1 AND is_system = false
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting template: %w", err)
 	}
@@ -378,17 +360,16 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, 
 	}
 
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, name, slug, description,
+		SELECT id, name, slug, description,
 		       COALESCE(colors, '{}'::jsonb),
 		       COALESCE(typography, '{}'::jsonb),
 		       COALESCE(spacing, '{}'::jsonb),
 		       is_default, created_at, updated_at
 		FROM pagebuilder_themes
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
 		ORDER BY name
-		LIMIT $3 OFFSET $4
-	`, tenantID, q, limit, offset)
+		LIMIT $2 OFFSET $3
+	`, q, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing themes: %w", err)
 	}
@@ -418,9 +399,8 @@ func (s *Store) ListThemes(ctx context.Context, tenantID pgtype.UUID, q string, 
 
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pagebuilder_themes
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
-	`, tenantID, q).Scan(&total)
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+	`, q).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting themes: %w", err)
 	}
@@ -433,14 +413,14 @@ func (s *Store) GetTheme(ctx context.Context, id, tenantID pgtype.UUID) (Theme, 
 	var t Theme
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, slug, description,
+		SELECT id, name, slug, description,
 		       COALESCE(colors, '{}'::jsonb),
 		       COALESCE(typography, '{}'::jsonb),
 		       COALESCE(spacing, '{}'::jsonb),
 		       is_default, created_at, updated_at
 		FROM pagebuilder_themes
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
@@ -471,17 +451,14 @@ func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input Cre
 
 	var t Theme
 
-	err := s.writer.QueryRow(
-		ctx, `
-		INSERT INTO pagebuilder_themes (tenant_id, name, slug, description, colors, typography, spacing, is_default)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, tenant_id, name, slug, description,
+	err := s.writer.QueryRow(ctx, `
+		INSERT INTO pagebuilder_themes (name, slug, description, colors, typography, spacing, is_default) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, name, slug, description,
 		          COALESCE(colors, '{}'::jsonb),
 		          COALESCE(typography, '{}'::jsonb),
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
-	`, tenantID, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault,
-	).Scan(
+	`, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault, ).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
@@ -512,19 +489,17 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 
 	var t Theme
 
-	err := s.writer.QueryRow(
-		ctx, `
+	err := s.writer.QueryRow(ctx, `
 		UPDATE pagebuilder_themes
-		SET name = $3, slug = $4, description = $5, colors = $6,
-		    typography = $7, spacing = $8, is_default = $9, updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, name, slug, description,
+		SET name = $2, slug = $3, description = $4, colors = $5,
+		    typography = $6, spacing = $7, is_default = $8, updated_at = now()
+		WHERE id = $1
+		RETURNING id, name, slug, description,
 		          COALESCE(colors, '{}'::jsonb),
 		          COALESCE(typography, '{}'::jsonb),
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
-	`, id, tenantID, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault,
-	).Scan(
+	`, id, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault, ).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
@@ -540,8 +515,8 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 func (s *Store) DeleteTheme(ctx context.Context, id, tenantID pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
 		DELETE FROM pagebuilder_themes
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting theme: %w", err)
 	}
@@ -564,15 +539,15 @@ func (s *Store) SetDefaultTheme(ctx context.Context, id, tenantID pgtype.UUID) e
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
-		UPDATE pagebuilder_themes SET is_default = false WHERE tenant_id = $1
-	`, tenantID); err != nil {
+		UPDATE pagebuilder_themes SET is_default = false 
+	`); err != nil {
 		return fmt.Errorf("clearing default themes: %w", err)
 	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE pagebuilder_themes SET is_default = true, updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("setting default theme: %w", err)
 	}
@@ -605,19 +580,18 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 	}
 
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
+		SELECT id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
-		  AND ($3 = '' OR page_type = $3)
-		  AND ($4 = '' OR slug = $4)
-		  AND ($5 = '' OR status = $5)
+		WHERE ($1 = '' OR title ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+		  AND ($2 = '' OR page_type = $2)
+		  AND ($3 = '' OR slug = $3)
+		  AND ($4 = '' OR status = $4)
 		ORDER BY created_at DESC
-		LIMIT $6 OFFSET $7
-	`, tenantID, f.Q, f.PageType, f.Slug, f.Status, limit, offset)
+		LIMIT $5 OFFSET $6
+	`, f.Q, f.PageType, f.Slug, f.Status, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing pages: %w", err)
 	}
@@ -647,12 +621,11 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM pages
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR title ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%' OR description ILIKE '%' || $2 || '%')
-		  AND ($3 = '' OR page_type = $3)
-		  AND ($4 = '' OR slug = $4)
-		  AND ($5 = '' OR status = $5)
-	`, tenantID, f.Q, f.PageType, f.Slug, f.Status).Scan(&total)
+		WHERE ($1 = '' OR title ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+		  AND ($2 = '' OR page_type = $2)
+		  AND ($3 = '' OR slug = $3)
+		  AND ($4 = '' OR status = $4)
+	`, f.Q, f.PageType, f.Slug, f.Status).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting pages: %w", err)
 	}
@@ -663,14 +636,14 @@ func (s *Store) ListPages(ctx context.Context, tenantID pgtype.UUID, f PageListF
 // ListPublishedPages returns published pages for public consumption.
 func (s *Store) ListPublishedPages(ctx context.Context, tenantID pgtype.UUID) ([]Page, error) {
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
+		SELECT id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE tenant_id = $1 AND status = 'published' AND page_type IN ('page', 'landing')
+		WHERE status = 'published' AND page_type IN ('page', 'landing')
 		ORDER BY created_at DESC
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing published pages: %w", err)
 	}
@@ -700,13 +673,13 @@ func (s *Store) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, er
 	var p Page
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
+		SELECT id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -723,13 +696,13 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.
 	var p Page
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, title, slug, description, template_id, theme_id,
+		SELECT id, title, slug, description, template_id, theme_id,
 		       COALESCE(blocks, '[]'::jsonb),
 		       COALESCE(meta, '{}'::jsonb),
 		       status, page_type, published_at, created_by, created_at, updated_at
 		FROM pages
-		WHERE slug = $1 AND tenant_id = $2 AND status = 'published' AND page_type IN ('page', 'landing')
-	`, slug, tenantID).Scan(
+		WHERE slug = $1 AND status = 'published' AND page_type IN ('page', 'landing')
+	`, slug).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -747,8 +720,8 @@ func (s *Store) SlugExists(ctx context.Context, slug string, tenantID pgtype.UUI
 	var exists bool
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM pages WHERE slug = $1 AND tenant_id = $2)
-	`, slug, tenantID).Scan(&exists)
+		SELECT EXISTS(SELECT 1 FROM pages WHERE slug = $1)
+	`, slug).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("checking slug existence: %w", err)
 	}
@@ -780,17 +753,13 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID,
 
 	var p Page
 
-	err := s.writer.QueryRow(
-		ctx, `
-		INSERT INTO pages (tenant_id, title, slug, description, template_id, theme_id, blocks, meta, status, page_type, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
+	err := s.writer.QueryRow(ctx, `
+		INSERT INTO pages (title, slug, description, template_id, theme_id, blocks, meta, status, page_type, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, tenantID, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID,
-		blocks, meta, status, pageType, createdBy,
-	).Scan(
+	`, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, status, pageType, createdBy, ).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -822,27 +791,24 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 
 	var p Page
 
-	err := s.writer.QueryRow(
-		ctx, `
+	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
-		SET title = $3,
-		    slug = COALESCE(NULLIF($4, ''), slug),
-		    description = COALESCE($5, description),
-		    template_id = COALESCE($6, template_id),
-		    theme_id = COALESCE($7, theme_id),
-		    blocks = COALESCE($8::jsonb, blocks),
-		    meta = COALESCE($9::jsonb, meta),
-		    status = COALESCE(NULLIF($10, ''), status),
-		    page_type = COALESCE(NULLIF($11, ''), page_type),
+		SET title = $2,
+		    slug = COALESCE(NULLIF($3, ''), slug),
+		    description = COALESCE($4, description),
+		    template_id = COALESCE($5, template_id),
+		    theme_id = COALESCE($6, theme_id),
+		    blocks = COALESCE($7::jsonb, blocks),
+		    meta = COALESCE($8::jsonb, meta),
+		    status = COALESCE(NULLIF($9, ''), status),
+		    page_type = COALESCE(NULLIF($10, ''), page_type),
 		    updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
+		WHERE id = $1
+		RETURNING id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, id, tenantID, input.Title, input.Slug, input.Description, input.TemplateID,
-		input.ThemeID, blocks, meta, input.Status, input.PageType,
-	).Scan(
+	`, id, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, input.Status, input.PageType, ).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -857,8 +823,8 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 // DeletePage removes a page row.
 func (s *Store) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error {
 	tag, err := s.writer.Exec(ctx, `
-		DELETE FROM pages WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID)
+		DELETE FROM pages WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting page: %w", err)
 	}
@@ -877,12 +843,12 @@ func (s *Store) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
 		SET status = 'published', published_at = now(), updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
+		WHERE id = $1
+		RETURNING id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, id, tenantID).Scan(
+	`, id).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -901,12 +867,12 @@ func (s *Store) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page
 	err := s.writer.QueryRow(ctx, `
 		UPDATE pages
 		SET status = 'archived', published_at = NULL, updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, title, slug, description, template_id, theme_id,
+		WHERE id = $1
+		RETURNING id, title, slug, description, template_id, theme_id,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, id, tenantID).Scan(
+	`, id).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,

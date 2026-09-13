@@ -195,7 +195,7 @@ func (s *Service) Compare(ctx context.Context, tenantID pgtype.UUID, ids []pgtyp
 		ids = ids[:4]
 	}
 
-	rows, err := s.store.GetByIDs(ctx, tenantID, ids)
+	rows, err := s.store.GetByIDs(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("visaroutes: compare: %w", err)
 	}
@@ -490,8 +490,8 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 
 // Approve marks a visa route as HITL-reviewed and published (admin).
 // Returns the updated route DTO per the ADR-088 HITL approve pattern.
-func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, input ApproveInput) (RouteDTO, error) {
-	row, err := s.store.Approve(ctx, id, tenantID, reviewerID, input.Notes)
+func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, input ApproveInput) (RouteDTO, error) {
+	row, err := s.store.Approve(ctx, id, reviewerID, input.Notes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
@@ -504,8 +504,8 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false (admin).
-func (s *Service) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.Deactivate(ctx, id, tenantID); err != nil {
+func (s *Service) Deactivate(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.Deactivate(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

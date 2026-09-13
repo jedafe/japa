@@ -35,7 +35,6 @@ import (
 	"github.com/jedafe/japa/internal/mentions"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -187,13 +186,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 // error when none is available. The boolean return is false when the caller
 // should abort.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser resolves the authenticated user from the request context and
@@ -1249,9 +1242,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve template literals in the content title, body, and meta fields.
 	// This is best-effort: failures are logged but do not fail the request.
-	t := tenant.FromContext(r.Context())
-
-	rc := buildRenderContext(r, tenantID, t.Name)
+	rc := buildRenderContext(r, tenantID, "")
 
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
 		slog.Warn("content: failed to resolve content literals",
@@ -1582,9 +1573,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve template literals in list items best-effort.
-	t := tenant.FromContext(r.Context())
-
-	rc := buildRenderContext(r, tenantID, t.Name)
+	rc := buildRenderContext(r, tenantID, "")
 
 	if resErr := h.Service.ResolveContentFields(r.Context(), contents, rc); resErr != nil {
 		slog.Warn("content: failed to resolve list literals",

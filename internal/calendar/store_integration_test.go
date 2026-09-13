@@ -341,8 +341,7 @@ func TestSubscribersForEntry(t *testing.T) {
 
 	// Seed a subscriber.
 	_, err := database.Writer.Exec(t.Context(), `
-		INSERT INTO calendar_subscriptions (user_id, tenant_id, destination_space_id, category, created_at)
-		VALUES ($1, $2, $3, 'visa_window', now())
+		INSERT INTO calendar_subscriptions (user_id, destination_space_id, category, created_at) VALUES ($1, $2, $3, 'visa_window', now())
 	`, userID, tenantID, spaceID)
 	if err != nil {
 		t.Fatalf("seed subscription: %v", err)
@@ -386,8 +385,7 @@ func TestSubscribersForEntry_CategoryAgnostic(t *testing.T) {
 
 	// Seed a subscriber with NULL category (all categories).
 	_, err := database.Writer.Exec(t.Context(), `
-		INSERT INTO calendar_subscriptions (user_id, tenant_id, destination_space_id, category, created_at)
-		VALUES ($1, $2, $3, NULL, now())
+		INSERT INTO calendar_subscriptions (user_id, destination_space_id, category, created_at) VALUES ($1, $2, $3, NULL, now())
 	`, userID, tenantID, spaceID)
 	if err != nil {
 		t.Fatalf("seed subscription: %v", err)

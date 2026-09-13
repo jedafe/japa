@@ -50,10 +50,9 @@ func (s *Service) scanFailedLoginSpike(ctx context.Context, tenantID pgtype.UUID
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM audit_logs
-		WHERE tenant_id = $1
-		  AND action_type = 'auth.login_failed'
-		  AND created_at >= $2
-	`, tenantID, oneHourAgo).Scan(&count)
+		WHERE action_type = 'auth.login_failed'
+		  AND created_at >= $1
+	`, oneHourAgo).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("counting failed logins: %w", err)
 	}
@@ -92,11 +91,10 @@ func (s *Service) scanSLABreachCount(ctx context.Context, tenantID pgtype.UUID) 
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM tickets
-		WHERE tenant_id = $1
-		  AND sla_breach_at IS NOT NULL
+		WHERE sla_breach_at IS NOT NULL
 		  AND sla_breach_at < now()
 		  AND status NOT IN ('resolved', 'closed')
-	`, tenantID).Scan(&count)
+	`).Scan(&count)
 	if err != nil {
 		return fmt.Errorf("counting SLA breaches: %w", err)
 	}
@@ -131,10 +129,9 @@ func (s *Service) scanStaleTokens(ctx context.Context, tenantID pgtype.UUID) err
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM refresh_tokens
-		WHERE tenant_id = $1
-		  AND created_at < now() - interval '30 days'
+		WHERE created_at < now() - interval '30 days'
 		  AND revoked_at IS NULL
-	`, tenantID).Scan(&count)
+	`).Scan(&count)
 	if err != nil {
 		// Table may not exist or have different schema — treat as non-fatal.
 		return nil //nolint:nilerr // intentional: degradable security check
@@ -170,10 +167,9 @@ func (s *Service) scanUnverifiedUsers(ctx context.Context, tenantID pgtype.UUID)
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM users
-		WHERE tenant_id = $1
-		  AND email_verified_at IS NULL
+		WHERE email_verified_at IS NULL
 		  AND created_at < now() - interval '7 days'
-	`, tenantID).Scan(&count)
+	`).Scan(&count)
 	if err != nil {
 		return nil //nolint:nilerr // table may not exist
 	}
@@ -208,10 +204,10 @@ func (s *Service) scanWeakPasswordSettings(ctx context.Context, tenantID pgtype.
 
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COALESCE(
-			(SELECT value::int FROM system_settings WHERE tenant_id = $1 AND key = 'auth.password.min_length'),
+			(SELECT value::int FROM system_settings WHERE key = 'auth.password.min_length'),
 			8
 		)
-	`, tenantID).Scan(&minLength)
+	`).Scan(&minLength)
 	if err != nil {
 		return nil //nolint:nilerr // weak password check is best-effort
 	}
@@ -246,10 +242,9 @@ func (s *Service) scanExcessiveAPIKeys(ctx context.Context, tenantID pgtype.UUID
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM api_keys
-		WHERE tenant_id = $1
-		  AND status = 'active'
+		WHERE status = 'active'
 		  AND expires_at IS NULL
-	`, tenantID).Scan(&count)
+	`).Scan(&count)
 	if err != nil {
 		return nil //nolint:nilerr // api key scan is best-effort
 	}

@@ -383,8 +383,8 @@ func (s *Store) UpdateCensoredWord(ctx context.Context, id, tenantID pgtype.UUID
 	})
 }
 
-// GetCensoredWordsByTenant returns all censored words for cache population.
-func (s *Store) GetCensoredWordsByTenant(ctx context.Context, tenantID pgtype.UUID) ([]gen.CensoredWord, error) {
+// GetCensoredWords returns all censored words for cache population.
+func (s *Store) GetCensoredWords(ctx context.Context) ([]gen.CensoredWord, error) {
 	return s.queries.GetCensoredWordsByTenant(ctx)
 }
 

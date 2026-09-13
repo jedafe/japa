@@ -31,7 +31,7 @@ func main() {
 	defer conn.Close(ctx)
 
 	rows, err := conn.Query(ctx, `
-		SELECT id, tenant_id
+		SELECT id
 		FROM intel_sources
 		WHERE status = 'active'
 		  AND enabled = true

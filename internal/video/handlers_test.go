@@ -15,7 +15,6 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 	"github.com/jedafe/japa/internal/users"
 )
@@ -23,7 +22,11 @@ import (
 func testAuthMiddleware(userID, tenantID pgtype.UUID) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
+			ctx := context.WithValue(r.Context(), struct{}{}, &struct {
+				ID   pgtype.UUID
+				Name string
+				Slug string
+			}{ID: tenantID})
 			ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 				UserID: userID,
 

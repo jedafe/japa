@@ -7,14 +7,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
-// Cache key prefix for censored words. All JapaConnect Valkey keys use the
+// Cache key for censored words. All JapaConnect Valkey keys use the
 // "jc:" namespace as documented in internal/valkey/client.go.
-const cacheKeyPrefix = "jc:spam:censored:"
+const cacheKey = "jc:spam:censored"
 
 // cacheTTL is the TTL for cached censored words. One hour balances freshness
 // with database load — admin changes propagate within the hour without
@@ -29,12 +28,12 @@ type cachedWords struct {
 // CacheCensoredWords stores censored words in Valkey with a 1-hour TTL.
 // If Valkey is unreachable the error is logged but not returned — the
 // caller should fall back to a direct database read.
-func CacheCensoredWords(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID, words []CensoredWord) error {
+func CacheCensoredWords(ctx context.Context, rdb *valkey.Client, words []CensoredWord) error {
 	if rdb == nil {
 		return nil
 	}
 
-	key := cacheKeyFor(tenantID)
+	key := cacheKey
 
 	data, err := json.Marshal(cachedWords{Words: words})
 	if err != nil {
@@ -44,7 +43,6 @@ func CacheCensoredWords(ctx context.Context, rdb *valkey.Client, tenantID pgtype
 	if err := rdb.Redis().Set(ctx, key, data, cacheTTL).Err(); err != nil {
 		slog.Warn(
 			"failed to cache censored words",
-			"tenant_id", tenantID,
 			"error", err,
 		)
 
@@ -62,26 +60,24 @@ func GetCachedCensoredWords(
 	ctx context.Context,
 	rdb *valkey.Client,
 	queries *db.DB,
-	tenantID pgtype.UUID,
 ) ([]CensoredWord, error) {
 	if rdb != nil {
-		words, err := fetchFromCache(ctx, rdb, tenantID)
+		words, err := fetchFromCache(ctx, rdb)
 		if err == nil && words != nil {
 			return words, nil
 		}
 	}
 
-	words, err := fetchFromDB(ctx, queries, tenantID)
+	words, err := fetchFromDB(ctx, queries)
 	if err != nil {
 		return nil, err
 	}
 
 	// Best-effort cache population (fire and forget on error)
 	if rdb != nil && len(words) > 0 {
-		if cacheErr := CacheCensoredWords(ctx, rdb, tenantID, words); cacheErr != nil {
+		if cacheErr := CacheCensoredWords(ctx, rdb, words); cacheErr != nil {
 			slog.Warn(
 				"failed to populate censored words cache",
-				"tenant_id", tenantID,
 				"error", cacheErr,
 			)
 		}
@@ -90,18 +86,16 @@ func GetCachedCensoredWords(
 	return words, nil
 }
 
-// InvalidateCensoredWordsCache removes the cached censored words for the
-// tenant. Called after admin create/delete operations.
-func InvalidateCensoredWordsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID) error {
+// InvalidateCensoredWordsCache removes the cached censored words.
+// Called after admin create/delete operations.
+func InvalidateCensoredWordsCache(ctx context.Context, rdb *valkey.Client) error {
 	if rdb == nil {
 		return nil
 	}
 
-	key := cacheKeyFor(tenantID)
-	if err := rdb.Redis().Del(ctx, key).Err(); err != nil {
+	if err := rdb.Redis().Del(ctx, cacheKey).Err(); err != nil {
 		slog.Warn(
 			"failed to invalidate censored words cache",
-			"tenant_id", tenantID,
 			"error", err,
 		)
 
@@ -112,8 +106,8 @@ func InvalidateCensoredWordsCache(ctx context.Context, rdb *valkey.Client, tenan
 }
 
 // fetchFromCache attempts to read and deserialize cached censored words.
-func fetchFromCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUID) ([]CensoredWord, error) {
-	key := cacheKeyFor(tenantID)
+func fetchFromCache(ctx context.Context, rdb *valkey.Client) ([]CensoredWord, error) {
+	key := cacheKey
 
 	data, err := rdb.Redis().Get(ctx, key).Bytes()
 	if err != nil {
@@ -128,12 +122,12 @@ func fetchFromCache(ctx context.Context, rdb *valkey.Client, tenantID pgtype.UUI
 	return cached.Words, nil
 }
 
-// fetchFromDB reads all censored words for the tenant from the database
+// fetchFromDB reads all censored words from the database
 // and converts them to the CensoredWord type.
-func fetchFromDB(ctx context.Context, database *db.DB, tenantID pgtype.UUID) ([]CensoredWord, error) {
+func fetchFromDB(ctx context.Context, database *db.DB) ([]CensoredWord, error) {
 	store := NewStoreWithReader(database)
 
-	rows, err := store.GetCensoredWordsByTenant(ctx, tenantID)
+	rows, err := store.GetCensoredWords(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading censored words from db: %w", err)
 	}
@@ -154,9 +148,4 @@ func fetchFromDB(ctx context.Context, database *db.DB, tenantID pgtype.UUID) ([]
 	}
 
 	return words, nil
-}
-
-// cacheKeyFor builds the Valkey key for a tenant's censored words cache.
-func cacheKeyFor(tenantID pgtype.UUID) string {
-	return fmt.Sprintf("%s%s", cacheKeyPrefix, tenantID.String())
 }

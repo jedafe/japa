@@ -124,8 +124,7 @@ func enableJCEFeatures(t *testing.T, d *db.DB, tenantID pgtype.UUID) {
 	ctx := t.Context()
 	for _, key := range []string{"feature.jce.profiles", "feature.jce.smart_compare", "feature.jce.scoring"} {
 		_, err := d.Writer.Exec(ctx, `
-			INSERT INTO feature_flags (key, tenant_id, enabled, config)
-			VALUES ($1, $2, true, '{}')
+			INSERT INTO feature_flags (key, enabled, config) VALUES ($1, $2, true, '{}')
 			ON CONFLICT (key, tenant_id) DO UPDATE SET enabled = true, updated_at = now()
 		`, key, tenantID)
 		if err != nil {
@@ -141,8 +140,7 @@ func seedJCEPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) {
 	groupID := mustUUID(t)
 	groupSlug := fmt.Sprintf("jce-test-%s", uuid.New().String())
 	_, err := d.Writer.Exec(ctx, `
-		INSERT INTO user_groups (id, tenant_id, name, slug, is_system)
-		VALUES ($1, $2, 'JCE Test', $3, false)
+		INSERT INTO user_groups (id, name, slug, is_system) VALUES ($1, $2, 'JCE Test', $3, false)
 	`, groupID, tenantID, groupSlug)
 	if err != nil {
 		t.Fatalf("seedJCEPermissions insert group: %v", err)
@@ -151,8 +149,7 @@ func seedJCEPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) {
 	roleID := mustUUID(t)
 	roleSlug := fmt.Sprintf("jce-test-role-%s", uuid.New().String())
 	_, err = d.Writer.Exec(ctx, `
-		INSERT INTO user_roles (id, tenant_id, name, slug)
-		VALUES ($1, $2, 'JCE Test', $3)
+		INSERT INTO user_roles (id, name, slug) VALUES ($1, $2, 'JCE Test', $3)
 	`, roleID, tenantID, roleSlug)
 	if err != nil {
 		t.Fatalf("seedJCEPermissions insert role: %v", err)
@@ -164,8 +161,7 @@ func seedJCEPermissions(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID) {
 	}
 
 	_, err = d.Writer.Exec(ctx, `
-		INSERT INTO user_group_memberships (id, tenant_id, user_id, group_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO user_group_memberships (id, user_id, group_id) VALUES ($1, $2, $3, $4)
 	`, mustUUID(t), tenantID, userID, groupID)
 	if err != nil {
 		t.Fatalf("seedJCEPermissions insert membership: %v", err)
@@ -203,8 +199,7 @@ func seedComparisonTypeForScoring(t *testing.T, d *db.DB, tenantID pgtype.UUID) 
 	fieldGroupID := mustUUID(t)
 	groupSlug := fmt.Sprintf("test-fields-%s", uuid.New().String())
 	_, err := d.Writer.Exec(ctx, `
-		INSERT INTO custom_field_groups (id, tenant_id, name, slug, is_system)
-		VALUES ($1, $2, 'Test Fields', $3, false)
+		INSERT INTO custom_field_groups (id, name, slug, is_system) VALUES ($1, $2, 'Test Fields', $3, false)
 	`, fieldGroupID, tenantID, groupSlug)
 	if err != nil {
 		t.Fatalf("seedComparisonTypeForScoring insert field group: %v", err)
@@ -234,8 +229,7 @@ func seedComparisonTypeForScoring(t *testing.T, d *db.DB, tenantID pgtype.UUID) 
 	}
 	cfgBytes, _ := json.Marshal(cfg)
 	_, err = d.Writer.Exec(ctx, `
-		INSERT INTO comparison_type_definitions (id, tenant_id, name, slug, description, field_group_id, item_label, is_system, config)
-		VALUES ($1, $2, 'Test Type', $3, '', $4, 'Item', false, $5::jsonb)
+		INSERT INTO comparison_type_definitions (id, name, slug, description, field_group_id, item_label, is_system, config) VALUES ($1, $2, 'Test Type', $3, '', $4, 'Item', false, $5::jsonb)
 	`, typeID, tenantID, typeSlug, fieldGroupID, cfgBytes)
 	if err != nil {
 		t.Fatalf("seedComparisonTypeForScoring insert type: %v", err)
@@ -265,8 +259,7 @@ func seedScoreFactors(t *testing.T, d *db.DB, tenantID pgtype.UUID) {
 	for _, f := range factors {
 		cfgBytes, _ := json.Marshal(f.cfg)
 		_, err := d.Writer.Exec(ctx, `
-			INSERT INTO comparison_score_factors (id, tenant_id, comparison_type_id, factor_key, label, data_source, default_weight, config, is_system)
-			VALUES ($1, $2, NULL, $3, $4, $5, $6, $7::jsonb, false)
+			INSERT INTO comparison_score_factors (id, comparison_type_id, factor_key, label, data_source, default_weight, config, is_system) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7::jsonb, false)
 		`, mustUUID(t), tenantID, f.key, f.label, f.source, f.weight, cfgBytes)
 		if err != nil {
 			t.Fatalf("seedScoreFactors %s: %v", f.key, err)

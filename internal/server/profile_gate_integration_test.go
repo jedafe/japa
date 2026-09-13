@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 	"github.com/jedafe/japa/internal/users"
 )
@@ -39,7 +38,11 @@ func TestRequireActiveProfileUser(t *testing.T) {
 	newReq := func(id string, withTenant bool) *http.Request {
 		req := httptest.NewRequest(http.MethodGet, "/users/"+id+"/media", nil)
 		if withTenant {
-			req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+			req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+				ID   pgtype.UUID
+				Name string
+				Slug string
+			}{ID: tenantID}))
 		}
 		return testdb.WithChiURLParam(req, "id", id)
 	}
@@ -80,7 +83,11 @@ func TestRequireActiveProfileUser(t *testing.T) {
 
 		newFeedReq := func(id string) *http.Request {
 			req := httptest.NewRequest(http.MethodGet, "/feed/profile/"+id, nil)
-			req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+			req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+				ID   pgtype.UUID
+				Name string
+				Slug string
+			}{ID: tenantID}))
 			return testdb.WithChiURLParam(req, "user_id", id)
 		}
 

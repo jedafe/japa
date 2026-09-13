@@ -79,7 +79,7 @@ const (
 
 // TierResolver resolves a user's effective unified tier (regular/pro/business).
 type TierResolver interface {
-	ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error)
+	ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error)
 }
 
 // SettingsReader is the subset of config.Settings used by the org service.

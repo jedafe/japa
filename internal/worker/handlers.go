@@ -899,10 +899,8 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 			"payment_id", p.ID)
 
 		if p.PurposeID.Valid {
-			if _, err := dbPool.Writer.Exec(ctx,
-				`UPDATE course_access_grants SET revoked_at = now()
-				 WHERE payment_id = $1 AND revoked_at IS NULL`,
-				p.ID); err != nil {
+			if _, err := dbPool.Writer.Exec(ctx, `UPDATE course_access_grants SET revoked_at = now()
+				 WHERE payment_id = $1 AND revoked_at IS NULL`, p.ID); err != nil {
 				return fmt.Errorf("revoking course access grant: %w", err)
 			}
 		}
@@ -910,10 +908,8 @@ func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.
 		// Expire the organization boost immediately (JEOS §17).
 		if p.PurposeID.Valid {
 			if dbPool != nil {
-				_, err := dbPool.Writer.Exec(ctx,
-					`UPDATE organization_boosts SET status = 'expired', ends_at = now()
-					 WHERE payment_id = $1 AND tenant_id = $2`,
-					p.ID, tenantID)
+				_, err := dbPool.Writer.Exec(ctx, `UPDATE organization_boosts SET status = 'expired', ends_at = now()
+					 WHERE payment_id = $1`, p.ID)
 				if err != nil {
 					return fmt.Errorf("expiring org boost: %w", err)
 				}
@@ -4262,9 +4258,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 // listDigestSubscribers returns the email addresses of this tenant's
 // subscribers with digest_enabled = true.
 func listDigestSubscribers(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT email FROM newsletter_subscribers WHERE tenant_id = $1 AND status = 'subscribed' AND digest_enabled = true`,
-		tenantID)
+	rows, err := dbPool.Reader.Query(ctx, `SELECT email FROM newsletter_subscribers WHERE status = 'subscribed' AND digest_enabled = true`)
 	if err != nil {
 		return nil, err
 	}

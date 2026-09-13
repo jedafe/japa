@@ -208,13 +208,13 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// Force=true bypasses any cached result for the current score_version before
 	// recalculating. This is the public cache-bypass contract for Sub-spec 2.
 	if input.Force && e.vk != nil {
-		_ = e.vk.Del(ctx, jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())).Err()
+		_ = e.vk.Del(ctx, jce.ScoreResultKey(contentID, cmpRow.ScoreVersion, profileID.String())).Err()
 	}
 
 	// If the caller does not force a refresh, try to return the existing cached
 	// result for the current score_version before doing any recomputation.
 	if !input.Force && e.vk != nil {
-		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
+		cacheKey := jce.ScoreResultKey(contentID, cmpRow.ScoreVersion, profileID.String())
 
 		data, err := e.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil {
@@ -466,7 +466,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 	// Cache the result and track it in a profile-scoped set so that profile
 	// mutations can invalidate every cached score result for this profile.
 	if e.vk != nil {
-		cacheKey := jce.ScoreResultKey(tenantID, contentID, newVersion, profileID.String())
+		cacheKey := jce.ScoreResultKey(contentID, newVersion, profileID.String())
 
 		data, err := json.Marshal(result)
 		if err != nil {
@@ -480,7 +480,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
 		if profileID.Valid {
-			_ = e.vk.SAdd(ctx, jce.ScoreResultSetKey(tenantID, profileID), cacheKey).Err()
+			_ = e.vk.SAdd(ctx, jce.ScoreResultSetKey(profileID), cacheKey).Err()
 		}
 	}
 
@@ -523,7 +523,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 
 	// Check Valkey cache second, after access is established.
 	if e.vk != nil {
-		cacheKey := jce.ScoreResultKey(tenantID, contentID, cmpRow.ScoreVersion, profileID.String())
+		cacheKey := jce.ScoreResultKey(contentID, cmpRow.ScoreVersion, profileID.String())
 
 		data, err := e.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil {
@@ -1183,7 +1183,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	if e.vk != nil && userID != nil && *userID != "" {
 		uid, err := parseUUID(*userID)
 		if err == nil {
-			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
+			cacheKey := jce.ProfileCacheKey(uid, pid)
 
 			data, err := e.vk.Get(ctx, cacheKey).Bytes()
 			if err == nil {
@@ -1220,7 +1220,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 	if e.vk != nil && userID != nil && *userID != "" {
 		uid, err := parseUUID(*userID)
 		if err == nil {
-			cacheKey := jce.ProfileCacheKey(tenantID, uid, pid)
+			cacheKey := jce.ProfileCacheKey(uid, pid)
 			data, _ := json.Marshal(profile)
 
 			ttl := 5 * time.Minute

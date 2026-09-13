@@ -31,7 +31,6 @@ import (
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/payments"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/wallet"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -162,13 +161,7 @@ func parseIPPrefix(s string) (netip.Prefix, error) {
 // error when none is available. The boolean return is false when the caller
 // should abort (the error has already been written).
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP

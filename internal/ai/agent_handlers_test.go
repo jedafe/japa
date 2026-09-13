@@ -31,7 +31,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // ---------------------------------------------------------------------------
@@ -133,7 +132,7 @@ func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen
 	var out []gen.AiAgentSession
 
 	for _, sess := range s.sessions {
-				if arg.StatusFilter != "" && sess.Status != arg.StatusFilter {
+		if arg.StatusFilter != "" && sess.Status != arg.StatusFilter {
 			continue
 		}
 
@@ -270,20 +269,27 @@ func (c *stubCache) Set(_ context.Context, key, value string, _ int) error {
 // Test helpers
 // ---------------------------------------------------------------------------
 
+// testTenant is a minimal test stand-in for the removed tenant type.
+type testTenant struct {
+	ID   pgtype.UUID
+	Name string
+	Slug string
+}
+
 // testUserAndTenant creates a test user + tenant and returns them.
-func testUserAndTenant() (*auth.AuthenticatedUser, *tenant.Tenant) {
+func testUserAndTenant() (*auth.AuthenticatedUser, *testTenant) {
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tid := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
 	return &auth.AuthenticatedUser{UserID: uid, SessionID: "test-jti"},
-		&tenant.Tenant{ID: tid, Name: "Test", Slug: "test"}
+		&testTenant{ID: tid, Name: "Test", Slug: "test"}
 }
 
 // withAuthContext returns a request with the user + tenant injected into
 // the context, simulating what RequireAuth + tenant middleware do.
-func withAuthContext(r *http.Request, user *auth.AuthenticatedUser, t *tenant.Tenant) *http.Request {
+func withAuthContext(r *http.Request, user *auth.AuthenticatedUser, t *testTenant) *http.Request {
 	ctx := context.WithValue(r.Context(), auth.UserContextKey, user)
-	ctx = context.WithValue(ctx, tenant.TenantContextKey, t)
+	ctx = context.WithValue(ctx, struct{}{}, t)
 
 	return r.WithContext(ctx)
 }
@@ -697,7 +703,7 @@ func TestHandleCancelSession_Success(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	// Verify the Valkey cancel flag was set.
-	flagKey := "jc:agent:session:" + tn.ID.String() + ":" + sessID.String()
+	flagKey := "jc:agent:session:" + sessID.String()
 	if v, _ := cache.Get(t.Context(), flagKey); v != "cancelled" {
 		t.Errorf("Valkey cancel flag = %q, want %q", v, "cancelled")
 	}

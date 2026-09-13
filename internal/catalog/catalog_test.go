@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 func TestGetCatalog(t *testing.T) {
@@ -75,8 +74,12 @@ func TestGetCatalog(t *testing.T) {
 			// Simulate tenant middleware by injecting a valid tenant.
 			tctx := context.WithValue(
 				req.Context(),
-				tenant.TenantContextKey,
-				&tenant.Tenant{ID: pgtype.UUID{Valid: true}},
+				struct{}{},
+				&struct {
+					ID   pgtype.UUID
+					Name string
+					Slug string
+				}{ID: pgtype.UUID{Valid: true}},
 			)
 			req = req.WithContext(tctx)
 

@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 func mustUUID(t *testing.T, s string) pgtype.UUID {
@@ -136,7 +135,11 @@ func TestSearchDocPagesHandlerRequiresQuery(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/docs/search", nil)
-	ctx := context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: mustUUID(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")})
+	ctx := context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: mustUUID(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")})
 	req = req.WithContext(ctx)
 
 	w := httptest.NewRecorder()
@@ -166,7 +169,11 @@ func TestSearchDocPagesHandlerRejectsInvalidAudience(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/docs/search?q=hello&audience=bogus", nil)
-	ctx := context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: mustUUID(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")})
+	ctx := context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: mustUUID(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")})
 	req = req.WithContext(ctx)
 
 	w := httptest.NewRecorder()

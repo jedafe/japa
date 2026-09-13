@@ -28,7 +28,6 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -221,7 +220,7 @@ var featureSlugs = map[string]bool{
 //
 //	limit — max number of tools/features to return (default 10, max configurable)
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]string{"code": "tenant_unavailable", "message": "No tenant available"},

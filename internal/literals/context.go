@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/literals/countrydata"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/visitor"
 )
 
@@ -17,10 +16,6 @@ import (
 // filled by FillRequestContext. Use this in any handler that renders
 // {{...}} placeholders so all surfaces resolve identically.
 func NewRequestContext(r *http.Request, tenantID pgtype.UUID, tenantName string) RenderContext {
-	if t := tenant.FromContext(r.Context()); t != nil {
-		tenantName = t.Name
-	}
-
 	rc := RenderContext{
 		Now:        time.Now().UTC(),
 		Locale:     requestLocale(r),

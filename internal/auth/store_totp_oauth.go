@@ -107,10 +107,8 @@ func (s *TOTPStoreImpl) DisableTOTP(ctx context.Context, userID pgtype.UUID) err
 func (s *TOTPStoreImpl) HasTOTPEnrolled(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
 	var enabled bool
 
-	err := s.db.Reader.QueryRow(ctx,
-		`SELECT (enabled_at IS NOT NULL) FROM totp_credentials
-		 WHERE tenant_id = $1 AND user_id = $2`,
-		tenantID, userID).Scan(&enabled)
+	err := s.db.Reader.QueryRow(ctx, `SELECT (enabled_at IS NOT NULL) FROM totp_credentials
+		 WHERE user_id = $1`, userID).Scan(&enabled)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -129,11 +127,7 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 		return fmt.Errorf("encoding backup codes: %w", err)
 	}
 
-	_, err = s.db.Writer.Exec(
-		ctx,
-		`UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`,
-		encoded, userID,
-	)
+	_, err = s.db.Writer.Exec(ctx, `UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`, encoded, userID, )
 	if err != nil {
 		return fmt.Errorf("saving backup codes: %w", err)
 	}
@@ -146,11 +140,7 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 func (s *TOTPStoreImpl) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	var email string
 
-	err := s.db.Reader.QueryRow(
-		ctx,
-		`SELECT email FROM users WHERE id = $1`,
-		userID,
-	).Scan(&email)
+	err := s.db.Reader.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, userID, ).Scan(&email)
 	if err != nil {
 		return "", fmt.Errorf("querying user email: %w", err)
 	}

@@ -421,11 +421,7 @@ LIMIT $3 OFFSET $4
 	}
 
 	var total int64
-	if err := s.pool.Reader.QueryRow(
-		ctx,
-		`SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1 AND tenant_id = $2`,
-		pageID, tenantID,
-	).Scan(&total); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, `SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1`, pageID, ).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("wiki: count revisions: %w", err)
 	}
 
@@ -465,11 +461,10 @@ func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgt
 	contentHash := contentpkg.ComputeContentHash(plainText)
 
 	err := s.pool.Writer.QueryRow(ctx, `
-INSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,
-    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)
-VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, $9)
+INSERT INTO wiki_revisions (wiki_page_id, content, summary, status,
+    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8)
 RETURNING id
-`, tenantID, pageID, body, summaryPtr, userID, aiGenerated, aiModelPtr, aiPromptHashPtr, contentHash).Scan(&revID)
+`, pageID, body, summaryPtr, userID, aiGenerated, aiModelPtr, aiPromptHashPtr, contentHash).Scan(&revID)
 	if err != nil {
 		// Map unique-violation on idx_wiki_revisions_page_hash to ErrDuplicateContent.
 		var pgErr *pgconn.PgError
@@ -502,11 +497,11 @@ func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, re
 
 	err = tx.QueryRow(ctx, `
 UPDATE wiki_revisions
-SET status = 'approved', reviewed_by = $3, reviewed_at = now(),
-    hitl_reviewed_by = $3, hitl_reviewed_at = now(), hitl_review_notes = $4
-WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
+SET status = 'approved', reviewed_by = $2, reviewed_at = now(),
+    hitl_reviewed_by = $2, hitl_reviewed_at = now(), hitl_review_notes = $3
+WHERE id = $1 AND status = 'pending'
 RETURNING content
-`, revID, tenantID, reviewerID, notesPtr).Scan(&content)
+`, revID, reviewerID, notesPtr).Scan(&content)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.New("wiki: approve: revision not found or not pending")
@@ -516,8 +511,8 @@ RETURNING content
 	}
 
 	_, err = tx.Exec(ctx, `
-UPDATE wiki_pages SET updated_at = now() WHERE id = $1 AND tenant_id = $2
-`, pageID, tenantID)
+UPDATE wiki_pages SET updated_at = now() WHERE id = $1
+`, pageID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: approve: update page: %w", err)
 	}
@@ -538,10 +533,10 @@ func (s *Store) RejectRevision(ctx context.Context, revID, tenantID, reviewerID 
 
 	_, err := s.pool.Writer.Exec(ctx, `
 UPDATE wiki_revisions
-SET status = 'rejected', reviewed_by = $3, reviewed_at = now(),
-    hitl_reviewed_by = $3, hitl_reviewed_at = now(), hitl_review_notes = $4
-WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-`, revID, tenantID, reviewerID, notesPtr)
+SET status = 'rejected', reviewed_by = $2, reviewed_at = now(),
+    hitl_reviewed_by = $2, hitl_reviewed_at = now(), hitl_review_notes = $3
+WHERE id = $1 AND status = 'pending'
+`, revID, reviewerID, notesPtr)
 	if err != nil {
 		return fmt.Errorf("wiki: reject revision: %w", err)
 	}
@@ -606,14 +601,11 @@ func (s *Store) GetSpaceBySlug(ctx context.Context, tenantID pgtype.UUID, spaceS
 
 	var level string
 
-	err := s.pool.Reader.QueryRow(
-		ctx, `
+	err := s.pool.Reader.QueryRow(ctx, `
 SELECT id, level
 FROM spaces
-WHERE tenant_id = $1 AND slug = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
-LIMIT 1`,
-		tenantID, spaceSlug,
-	).Scan(&id, &level)
+WHERE slug = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
+LIMIT 1`, spaceSlug, ).Scan(&id, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, "", pgx.ErrNoRows
@@ -629,14 +621,11 @@ LIMIT 1`,
 // slug and level within a tenant. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
 func (s *Store) GetSpaceByID(ctx context.Context, tenantID, spaceID pgtype.UUID) (slug, level string, err error) {
-	err = s.pool.Reader.QueryRow(
-		ctx, `
+	err = s.pool.Reader.QueryRow(ctx, `
 SELECT slug, level
 FROM spaces
-WHERE tenant_id = $1 AND id = $2 AND level IN ('country', 'state', 'city') AND status = 'active'
-LIMIT 1`,
-		tenantID, spaceID,
-	).Scan(&slug, &level)
+WHERE id = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
+LIMIT 1`, spaceID, ).Scan(&slug, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", "", pgx.ErrNoRows
@@ -654,11 +643,10 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, spaceID, createdBy pgt
 	var pageID pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(ctx, `
-INSERT INTO wiki_pages (tenant_id, space_id, slug, title, category, created_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, space_id, slug) DO NOTHING
+INSERT INTO wiki_pages (space_id, slug, title, category, created_by) VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (space_id, slug) DO NOTHING
 RETURNING id
-`, tenantID, spaceID, slug, title, category, createdBy).Scan(&pageID)
+`, spaceID, slug, title, category, createdBy).Scan(&pageID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, ErrPageExists
@@ -682,11 +670,10 @@ func (s *Store) CreatePageWithRevision(ctx context.Context, tenantID, spaceID, u
 	// Insert the page, ignoring duplicate (tenant_id, space_id, slug).
 	var pageIDResult pgtype.UUID
 	if err := tx.QueryRow(ctx, `
-INSERT INTO wiki_pages (tenant_id, space_id, slug, title, category, created_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, space_id, slug) DO NOTHING
+INSERT INTO wiki_pages (space_id, slug, title, category, created_by) VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (space_id, slug) DO NOTHING
 RETURNING id
-`, tenantID, spaceID, slug, title, category, userID).Scan(&pageIDResult); err != nil {
+`, spaceID, slug, title, category, userID).Scan(&pageIDResult); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrPageExists
 		}

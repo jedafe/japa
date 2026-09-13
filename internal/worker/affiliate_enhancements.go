@@ -207,9 +207,7 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 
 	var body string
 
-	err := dbPool.Reader.QueryRow(ctx,
-		`SELECT body FROM contents WHERE id = $1 AND tenant_id = $2`,
-		contentID, tenantID).Scan(&body)
+	err := dbPool.Reader.QueryRow(ctx, `SELECT body FROM contents WHERE id = $1`, contentID).Scan(&body)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -262,11 +260,9 @@ func scanURLForAffiliate(ctx context.Context, tenantID, contentID pgtype.UUID, r
 		action = "flagged"
 	}
 
-	if _, err := dbPool.Writer.Exec(ctx,
-		`INSERT INTO content_affiliate_scan_results
-		 (tenant_id, content_id, url, domain, detection_method, action_taken)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		tenantID, contentID, rawURL, domain, method, action); err != nil {
+	if _, err := dbPool.Writer.Exec(ctx, `INSERT INTO content_affiliate_scan_results
+		 (content_id, url, domain, detection_method, action_taken)
+		 VALUES ($1, $2, $3, $4, $5)`, contentID, rawURL, domain, method, action); err != nil {
 		slog.Warn("affiliate scan: insert scan result failed",
 			"content_id", contentID, "url", rawURL, "domain", domain, "error", err)
 	}
@@ -299,9 +295,7 @@ func extractURLsFromTipTap(body string) []string {
 func getRegisteredDomains(ctx context.Context, tenantID pgtype.UUID) map[string]bool {
 	domains := make(map[string]bool)
 
-	rows, err := dbPool.Reader.Query(ctx,
-		`SELECT base_url FROM affiliate_providers WHERE tenant_id = $1 AND is_active = true AND base_url IS NOT NULL`,
-		tenantID)
+	rows, err := dbPool.Reader.Query(ctx, `SELECT base_url FROM affiliate_providers WHERE is_active = true AND base_url IS NOT NULL`)
 	if err != nil {
 		return domains
 	}
@@ -359,9 +353,7 @@ func isKnownAffDomain(domain string) bool {
 
 func getAffSystemSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
 	var value string
-	err := dbPool.Reader.QueryRow(ctx,
-		`SELECT value::text FROM system_settings WHERE tenant_id = $1 AND key = $2`,
-		tenantID, key).Scan(&value)
+	err := dbPool.Reader.QueryRow(ctx, `SELECT value::text FROM system_settings WHERE key = $1`, key).Scan(&value)
 
 	return strings.Trim(value, "\""), err
 }

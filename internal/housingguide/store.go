@@ -67,7 +67,7 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 
 	const q = `
 SELECT name FROM spaces
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -473,12 +473,12 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, input
 
 	sets = append(sets, "updated_at = now()")
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	q := fmt.Sprintf(`
 UPDATE housing_guides
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -498,15 +498,15 @@ WHERE id = $%d AND tenant_id = $%d
 func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE housing_guides
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'published',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("housingguide: approve guide: %w", err)
 	}
@@ -525,16 +525,16 @@ WHERE id = $1 AND tenant_id = $2
 func (s *Store) RejectGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE housing_guides
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'rejected',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
   AND status IN ('draft', 'ai_draft', 'pending')
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("housingguide: reject guide: %w", err)
 	}

@@ -33,7 +33,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // maxCompareIDs is the maximum number of routes the compare endpoint
@@ -56,13 +55,7 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // ---------------------------------------------------------------------------
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -427,11 +420,6 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -446,7 +434,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	// Body is optional; ignore decode errors for empty bodies.
 	_ = json.NewDecoder(r.Body).Decode(&input)
 
-	route, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, input)
+	route, err := h.service.Approve(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
@@ -511,11 +499,6 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -526,7 +509,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Deactivate(r.Context(), id, tenantID); err != nil {
+	if err := h.service.Deactivate(r.Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
 			return

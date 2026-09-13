@@ -192,7 +192,6 @@ func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, tenantID, id pg
 // AdminListAssessmentResultsRow is a single row from the admin results list.
 type AdminListAssessmentResultsRow struct {
 	ID               pgtype.UUID
-	TenantID         pgtype.UUID
 	UserID           pgtype.UUID
 	SubmissionID     pgtype.UUID
 	TotalScore       int32
@@ -217,7 +216,6 @@ var adminAssessmentSortColumns = map[string]string{
 // AdminListAssessmentResultsFilter holds the parameters for the admin results
 // list query: score-range filter, pagination, and sort.
 type AdminListAssessmentResultsFilter struct {
-	TenantID pgtype.UUID
 	MinScore int32
 	MaxScore int32
 	Offset   int32
@@ -236,10 +234,6 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 	var args []any
 
 	argIdx := 1
-
-	conditions = append(conditions, fmt.Sprintf("ar.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.MinScore != 0 {
 		conditions = append(conditions, fmt.Sprintf("ar.total_score >= $%d", argIdx))
@@ -282,7 +276,7 @@ func (s *Store) AdminListAssessmentResults(ctx context.Context, f AdminListAsses
 
 	listQ := fmt.Sprintf(`
 SELECT
-    ar.id, ar.tenant_id, ar.user_id, ar.submission_id, ar.total_score,
+    ar.id, ar.user_id, ar.submission_id, ar.total_score,
     ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
     u.username AS username,
     fs.field_values AS submission_values
@@ -307,7 +301,7 @@ LIMIT $%d OFFSET $%d`,
 	for rows.Next() {
 		var r AdminListAssessmentResultsRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.SubmissionID, &r.TotalScore,
+			&r.ID, &r.UserID, &r.SubmissionID, &r.TotalScore,
 			&r.DimensionScores, &r.ThresholdLabel, &r.RoadmapContent, &r.CreatedAt,
 			&r.Username, &r.SubmissionValues,
 		); err != nil {
@@ -323,7 +317,7 @@ LIMIT $%d OFFSET $%d`,
 
 	// Count query for pagination total.
 	countConditions := conditions[:0]
-	countArgs := []any{f.TenantID}
+	var countArgs []any
 
 	if f.MinScore != 0 {
 		countConditions = append(countConditions, fmt.Sprintf("total_score >= $%d", len(countArgs)+1))
@@ -337,7 +331,7 @@ LIMIT $%d OFFSET $%d`,
 
 	countWhere := strings.Join(countConditions, " AND ")
 	if countWhere == "" {
-		countWhere = "tenant_id = $1"
+		countWhere = "1=1"
 	}
 
 	countQ := "SELECT COUNT(*) FROM assessment_results WHERE " + countWhere

@@ -22,7 +22,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -187,7 +186,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// logging) are skipped. Ref: sections/13-search.md
 	user := auth.FromContext(r.Context())
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -308,7 +307,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -699,7 +698,7 @@ type AutocompleteResponse struct {
 // Returns lightweight suggestions across users, spaces, tags, and content.
 // Maximum 8 results. NOT logged to search analytics per Section 54.
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -913,7 +912,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -987,7 +986,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1050,7 +1049,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 // Returns search analytics: top queries, zero-result queries, and daily volume.
 // Requires admin.analytics.search RBAC permission (enforced at router level).
 func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return

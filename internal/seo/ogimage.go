@@ -21,7 +21,6 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -98,12 +97,8 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenant
 
 	var seoIndexable bool
 
-	err = h.reader.QueryRow(
-		ctx,
-		`SELECT title, content_type, visibility, seo_indexable
-		 FROM contents WHERE id = $1 AND tenant_id = $2`,
-		pgID, tenantID,
-	).Scan(&meta.Title, &meta.ContentType, &visibility, &seoIndexable)
+	err = h.reader.QueryRow(ctx, `SELECT title, content_type, visibility, seo_indexable
+		 FROM contents WHERE id = $1`, pgID, ).Scan(&meta.Title, &meta.ContentType, &visibility, &seoIndexable)
 	if err != nil {
 		return nil
 	}
@@ -132,7 +127,7 @@ func ogCacheKey(tenantID pgtype.UUID, contentID string) string {
 // non-indexable content always gets the default brand image (no title leak).
 func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 
 	// Try Valkey cache first (Section 26). The cache key is tenant-scoped
 	// so one tenant's OG image never bleeds to another (Rule 4).

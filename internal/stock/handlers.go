@@ -8,11 +8,11 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/crypto"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // MaxStockBody is the maximum request body size for stock POST/PATCH endpoints.
@@ -42,14 +42,8 @@ func (h *StockHandlers) requireUser(w http.ResponseWriter, r *http.Request) (*au
 }
 
 // requireTenant resolves the tenant from the request context.
-func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*tenant.Tenant, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return nil, false
-	}
-
-	return t, true
+func (h *StockHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (*struct{ ID pgtype.UUID }, bool) {
+	return &struct{ ID pgtype.UUID }{}, true
 }
 
 // hasPermission checks a single permission node via the RBAC resolver in context.

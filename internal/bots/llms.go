@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jedafe/japa/internal/tenant"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -113,20 +113,11 @@ func GenerateLLMsFullTxt(siteName, siteDescription string, data LLMsData) string
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		t := tenant.FromContext(r.Context())
-		if t == nil {
-			w.Header().Set("Content-Type", "text/plain")
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-			_, _ = w.Write([]byte("# Site\n\n> Site description\n"))
-
-			return
-		}
-
 		isFull := strings.HasSuffix(r.URL.Path, "/llms-full.txt")
-		cacheKey := llmsCacheKey + ":" + t.ID.String()
+		cacheKey := llmsCacheKey
 
 		if isFull {
-			cacheKey = llmsFullCacheKey + ":" + t.ID.String()
+			cacheKey = llmsFullCacheKey
 		}
 
 		// Try cache first
@@ -142,9 +133,9 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 		}
 
 		// Fetch real data from the database
-		data, err := store.GetLLMsData(r.Context(), t.ID)
+		data, err := store.GetLLMsData(r.Context(), pgtype.UUID{})
 		if err != nil {
-			slog.Error("llms: failed to load data", "tenant_id", t.ID, "error", err)
+			slog.Error("llms: failed to load data", "error", err)
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=300")
 			_, _ = w.Write([]byte(GenerateLLMsTxt(siteName, siteDescription, nil)))
@@ -168,7 +159,7 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 		// Cache in Valkey
 		if rdb != nil {
 			if err := rdb.Redis().Set(r.Context(), cacheKey, txt, llmsCacheTTL).Err(); err != nil {
-				slog.Warn("llms: failed to cache", "tenant_id", t.ID, "error", err)
+				slog.Warn("llms: failed to cache", "error", err)
 			}
 		}
 

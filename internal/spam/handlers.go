@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -73,7 +72,7 @@ func (h *Handlers) invalidateCensoredCache(ctx context.Context, tenantID pgtype.
 		return
 	}
 
-	if err := InvalidateCensoredWordsCache(ctx, h.rdb, tenantID); err != nil {
+	if err := InvalidateCensoredWordsCache(ctx, h.rdb); err != nil {
 		slog.Warn("failed to invalidate censored words cache after mutation",
 			"tenant_id", tenantID, "error", err)
 	}
@@ -158,13 +157,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {

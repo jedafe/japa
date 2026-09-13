@@ -70,10 +70,10 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 	return m, nil
 }
 
-// DeleteProvider deletes a remittance provider by ID and tenant. Deletion is
+// DeleteProvider deletes a remittance provider by ID. Deletion is
 // blocked while the provider still has remittance_rates rows so that historical
 // rate data is not accidentally destroyed (the FK cascades on delete).
-func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	tx, err := s.pool.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -84,8 +84,8 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 
 	err = tx.QueryRow(ctx, `
 		SELECT COUNT(*) FROM remittance_rates
-		WHERE tenant_id = $1 AND provider_id = $2
-	`, tenantID, id).Scan(&rateCount)
+		WHERE provider_id = $1
+	`, id).Scan(&rateCount)
 	if err != nil {
 		return fmt.Errorf("count dependent rates: %w", err)
 	}
@@ -96,8 +96,8 @@ func (s *Store) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) er
 
 	cmd, err := tx.Exec(ctx, `
 		DELETE FROM remittance_providers
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
@@ -184,18 +184,16 @@ func (s *Store) UpdateAlert(ctx context.Context, arg gen.UpdateRateAlertParams) 
 }
 
 // DeleteAlert deletes a rate alert owned by the given user.
-func (s *Store) DeleteAlert(ctx context.Context, tenantID, id, userID pgtype.UUID) error {
+func (s *Store) DeleteAlert(ctx context.Context, id, userID pgtype.UUID) error {
 	return s.queries.DeleteRateAlert(ctx, gen.DeleteRateAlertParams{
-
 		ID:     id,
 		UserID: userID,
 	})
 }
 
 // GetAlertByID fetches a single alert owned by the given user.
-func (s *Store) GetAlertByID(ctx context.Context, tenantID, id, userID pgtype.UUID) (gen.RemittanceRateAlert, error) {
+func (s *Store) GetAlertByID(ctx context.Context, id, userID pgtype.UUID) (gen.RemittanceRateAlert, error) {
 	return s.queries.GetRateAlertByID(ctx, gen.GetRateAlertByIDParams{
-
 		ID:     id,
 		UserID: userID,
 	})

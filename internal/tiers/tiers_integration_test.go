@@ -17,12 +17,11 @@ func newTierGroups(t *testing.T, s *Service, tenantID pgtype.UUID) {
 	t.Helper()
 	ctx := context.Background()
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO user_groups (id, tenant_id, name, slug, is_system, tier, max_spaces_creatable)
-		VALUES
+		INSERT INTO user_groups (id, name, slug, is_system, tier, max_spaces_creatable) VALUES
 			($1, $4, 'Members', 'members', true, 'regular', 3),
 			($2, $4, 'Pro', 'pro', true, 'pro', -1),
 			($3, $4, 'Business', 'business', true, 'business', -1)
-		ON CONFLICT (tenant_id, slug) DO NOTHING;
+		ON CONFLICT (slug) DO NOTHING;
 	`, mustUUID(t), mustUUID(t), mustUUID(t), tenantID)
 	if err != nil {
 		t.Fatalf("seed tier groups: %v", err)
@@ -73,7 +72,7 @@ func TestResolveUserTier(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		got, err := s.ResolveUserTier(ctx, tenantID, c.userID)
+		got, err := s.ResolveUserTier(ctx, c.userID)
 		if err != nil {
 			t.Fatalf("resolve tier: %v", err)
 		}

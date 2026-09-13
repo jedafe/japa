@@ -48,7 +48,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 		VALUES (gen_random_uuid(),$1,'modtag','modtag_'||replace(gen_random_uuid()::text,'-',''),0,now(),now()) RETURNING id`, tenantID)
 
 	t.Cleanup(func() {
-		database.Writer.Exec(ctx, `DELETE FROM tag_moderators WHERE tenant_id=$1`, tenantID)
+		database.Writer.Exec(ctx, `DELETE FROM tag_moderators `)
 		database.Writer.Exec(ctx, `DELETE FROM tags WHERE id=$1`, tagID)
 		database.Writer.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
 		database.Writer.Exec(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID)

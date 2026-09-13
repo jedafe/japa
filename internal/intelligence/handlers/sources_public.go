@@ -20,7 +20,6 @@ import (
 	"github.com/jedafe/japa/internal/intelligence/sources"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/tags"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // sourceOption is a single selectable option with a value and a display label.
@@ -126,7 +125,7 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -227,7 +226,7 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -300,7 +299,7 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -377,7 +376,7 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -574,7 +573,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -671,7 +670,7 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -739,7 +738,7 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}
@@ -783,7 +782,7 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}

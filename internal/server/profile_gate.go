@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/users"
 )
 
@@ -18,7 +17,7 @@ import (
 func requireActiveProfileUser(usersSvc *users.Service, paramKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := tenant.FromContext(r.Context()) // returns *tenant.Tenant, nil if absent
+			t := &struct{ ID pgtype.UUID }{} // returns *struct{ ID pgtype.UUID }, nil if absent
 			if t == nil {
 				writeProfileGateError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return

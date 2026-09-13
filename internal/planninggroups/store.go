@@ -133,7 +133,7 @@ func (s *Store) GetMemberCount(ctx context.Context, groupID, tenantID pgtype.UUI
 
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT COUNT(*) FROM planning_group_members
-WHERE group_id = $1 AND tenant_id = $2
+WHERE group_id = $1
 `, groupID, tenantID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("planninggroups: get member count: %w", err)
@@ -148,7 +148,7 @@ func (s *Store) IsMember(ctx context.Context, groupID, userID, tenantID pgtype.U
 
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS(SELECT 1 FROM planning_group_members
-WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3)
+WHERE group_id = $1 AND user_id = $2)
 `, groupID, userID, tenantID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("planninggroups: is member: %w", err)
@@ -373,11 +373,11 @@ func (s *Store) UpdateGroup(ctx context.Context, id, tenantID pgtype.UUID, input
 	}
 
 	sets = append(sets, "updated_at = now()")
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	q := fmt.Sprintf(`
-UPDATE planning_groups SET %s WHERE id = $%d AND tenant_id = $%d AND deleted_at IS NULL
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+UPDATE planning_groups SET %s WHERE id = $%d AND deleted_at IS NULL
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -396,7 +396,7 @@ func (s *Store) DeleteGroup(ctx context.Context, id, tenantID pgtype.UUID) error
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-`, id, tenantID)
+`, id)
 	if err != nil {
 		return fmt.Errorf("planninggroups: delete group: %w", err)
 	}
@@ -412,7 +412,7 @@ WHERE id = $1 AND deleted_at IS NULL
 // departureDate is optional (may be NULL).
 func (s *Store) JoinGroup(ctx context.Context, groupID, userID, tenantID pgtype.UUID, departureDate pgtype.Date) error {
 	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO planning_group_members (group_id, user_id, tenant_id, departure_date)
+INSERT INTO planning_group_members (group_id, user_id, departure_date)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (group_id, user_id) DO NOTHING
 `, groupID, userID, tenantID, departureDate)
@@ -427,8 +427,8 @@ ON CONFLICT (group_id, user_id) DO NOTHING
 func (s *Store) LeaveGroup(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM planning_group_members
-WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3
-`, groupID, userID, tenantID)
+WHERE group_id = $1 AND user_id = $2
+`, groupID, userID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: leave group: %w", err)
 	}
@@ -484,9 +484,9 @@ ORDER BY m.joined_at ASC
 // CreateMilestone inserts a new milestone for a user in a group.
 func (s *Store) CreateMilestone(ctx context.Context, groupID, userID, tenantID pgtype.UUID, title string) (PlanningGroupMilestone, error) {
 	const q = `
-INSERT INTO planning_group_milestones (tenant_id, group_id, user_id, title)
+INSERT INTO planning_group_milestones (group_id, user_id, title)
 VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, group_id, user_id, title, completed, completed_at, created_at
+RETURNING id, group_id, user_id, title, completed, completed_at, created_at
 `
 
 	var m PlanningGroupMilestone
@@ -505,9 +505,9 @@ RETURNING id, tenant_id, group_id, user_id, title, completed, completed_at, crea
 // ListMilestones returns all milestones for a user in a group.
 func (s *Store) ListMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) ([]PlanningGroupMilestone, error) {
 	const q = `
-SELECT id, tenant_id, group_id, user_id, title, completed, completed_at, created_at
+SELECT id, group_id, user_id, title, completed, completed_at, created_at
 FROM planning_group_milestones
-WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3
+WHERE group_id = $1 AND user_id = $2
 ORDER BY created_at ASC
 `
 
@@ -548,17 +548,17 @@ func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, groupID, userI
 		q = `
 UPDATE planning_group_milestones
 SET completed = true, completed_at = now()
-WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
+WHERE id = $1 AND group_id = $2 AND user_id = $3
 `
 	} else {
 		q = `
 UPDATE planning_group_milestones
 SET completed = false, completed_at = NULL
-WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
+WHERE id = $1 AND group_id = $2 AND user_id = $3
 `
 	}
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, milestoneID, groupID, userID, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, milestoneID, groupID, userID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: update milestone: %w", err)
 	}
@@ -577,7 +577,7 @@ WHERE id = $1 AND group_id = $2 AND user_id = $3 AND tenant_id = $4
 func (s *Store) CountIncompleteMilestones(ctx context.Context, groupID, userID, tenantID pgtype.UUID) (int64, error) {
 	const q = `
 SELECT count(*) FROM planning_group_milestones
-WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3 AND completed = false
+WHERE group_id = $1 AND user_id = $2 AND completed = false
 `
 
 	var count int64
@@ -602,7 +602,7 @@ func (s *Store) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgt
 	const q = `
 INSERT INTO planning_group_checkins (group_id, user_id, note)
 VALUES ($1, $2, $3, $4)
-RETURNING id, tenant_id, group_id, user_id, note, created_at
+RETURNING id, group_id, user_id, note, created_at
 `
 
 	var c PlanningGroupCheckin
@@ -669,7 +669,7 @@ func (s *Store) ExtendExpiry(ctx context.Context, id, tenantID pgtype.UUID, newE
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET expires_at = $3, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-`, id, tenantID, newExpiry)
+`, id, newExpiry)
 	if err != nil {
 		return fmt.Errorf("planninggroups: extend expiry: %w", err)
 	}
@@ -852,7 +852,7 @@ WHERE NOT EXISTS (
 // POST /planning-groups/:id/invite endpoint (owner only, §82).
 func (s *Store) InviteMember(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO planning_group_members (group_id, user_id, tenant_id)
+INSERT INTO planning_group_members (group_id, user_id)
 VALUES ($1, $2, $3)
 ON CONFLICT (group_id, user_id) DO NOTHING
 `, groupID, userID, tenantID)

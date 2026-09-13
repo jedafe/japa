@@ -19,8 +19,7 @@ type ContentWithScore struct { //nolint:revive // stuttering type name preserved
 // but never returned to the caller.
 func (s *Service) IncrementEngagementView(ctx context.Context, contentID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		VALUES ($1, 1, 0, 0, 0, 0)
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count) VALUES ($1, 1, 0, 0, 0, 0)
 		ON CONFLICT (content_id) DO UPDATE
 		SET views = content_engagement.views + 1,
 		    updated_at = now()
@@ -36,8 +35,7 @@ func (s *Service) IncrementEngagementView(ctx context.Context, contentID pgtype.
 // a content item in the content_engagement table.
 func (s *Service) IncrementEngagementComments(ctx context.Context, contentID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		VALUES ($1, 0, 1, 0, 0, 0)
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count) VALUES ($1, 0, 1, 0, 0, 0)
 		ON CONFLICT (content_id) DO UPDATE
 		SET comments_count = content_engagement.comments_count + 1,
 		    updated_at = now()
@@ -53,8 +51,7 @@ func (s *Service) IncrementEngagementComments(ctx context.Context, contentID pgt
 // the given delta (positive for upvotes, negative for downvotes).
 func (s *Service) UpdateEngagementVotesScore(ctx context.Context, contentID pgtype.UUID, delta int32) error {
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		VALUES ($1, 0, 0, $2, 0, 0)
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count) VALUES ($1, 0, 0, $2, 0, 0)
 		ON CONFLICT (content_id) DO UPDATE
 		SET votes_score = content_engagement.votes_score + $2,
 		    updated_at = now()
@@ -69,8 +66,7 @@ func (s *Service) UpdateEngagementVotesScore(ctx context.Context, contentID pgty
 // IncrementEngagementBookmarks atomically increments the bookmark count.
 func (s *Service) IncrementEngagementBookmarks(ctx context.Context, contentID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		VALUES ($1, 0, 0, 0, 1, 0)
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count) VALUES ($1, 0, 0, 0, 1, 0)
 		ON CONFLICT (content_id) DO UPDATE
 		SET bookmarks_count = content_engagement.bookmarks_count + 1,
 		    updated_at = now()
@@ -85,8 +81,7 @@ func (s *Service) IncrementEngagementBookmarks(ctx context.Context, contentID pg
 // IncrementEngagementShares atomically increments the share count.
 func (s *Service) IncrementEngagementShares(ctx context.Context, contentID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx, `
-		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count)
-		VALUES ($1, 0, 0, 0, 0, 1)
+		INSERT INTO content_engagement (content_id, views, comments_count, votes_score, bookmarks_count, shares_count) VALUES ($1, 0, 0, 0, 0, 1)
 		ON CONFLICT (content_id) DO UPDATE
 		SET shares_count = content_engagement.shares_count + 1,
 		    updated_at = now()

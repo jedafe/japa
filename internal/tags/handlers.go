@@ -25,7 +25,6 @@ import (
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -127,13 +126,7 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser resolves the authenticated user from the request context.

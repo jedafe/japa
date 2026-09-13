@@ -170,7 +170,7 @@ func (s *Store) deleteComparisonItem(ctx context.Context, id, tenantID pgtype.UU
 	return nil
 }
 
-func (s *Store) reorderComparisonItems(ctx context.Context, id, contentID, tenantID pgtype.UUID, position int32) error {
+func (s *Store) reorderComparisonItems(ctx context.Context, id, contentID pgtype.UUID, position int32) error {
 	if err := s.write.ReorderComparisonItems(ctx, gen.ReorderComparisonItemsParams{
 		ID:        id,
 		ContentID: contentID,

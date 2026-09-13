@@ -437,10 +437,7 @@ func TestService_Upload(t *testing.T) {
 	uploaderID := testdb.SeedUser(t, database, tenantID, testdb.UserOpts{Username: "uploader"})
 
 	mediaID := newMediaID(t)
-	_, err := database.Writer.Exec(context.Background(),
-		`INSERT INTO media (id, tenant_id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, confirmed)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-		mediaID, tenantID, uploaderID, "demo.mp4", "video/mp4", 6, "media/demo.mp4")
+	_, err := database.Writer.Exec(context.Background(), `INSERT INTO media (id, uploader_user_id, original_filename, mime_type, file_size_bytes, storage_path, confirmed) VALUES ($1, $2, $3, $4, $5, $6, $7, true)`, mediaID, tenantID, uploaderID, "demo.mp4", "video/mp4", 6, "media/demo.mp4")
 	if err != nil {
 		t.Fatalf("seed media: %v", err)
 	}

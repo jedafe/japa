@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds HTTP handlers for public config endpoints.
@@ -21,13 +21,7 @@ func NewHandlers(settings *Settings) *Handlers {
 // GetPublicSettings handles GET /site/settings/public.
 // Returns all settings marked as public for the current tenant.
 func (h *Handlers) GetPublicSettings(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
-	settings, err := h.Settings.GetPublicSettings(r.Context(), t.ID)
+	settings, err := h.Settings.GetPublicSettings(r.Context(), pgtype.UUID{})
 	if err != nil {
 		slog.Error("config: get public settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch public settings")

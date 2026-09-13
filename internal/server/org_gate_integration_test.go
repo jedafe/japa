@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jedafe/japa/internal/organizations"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 )
 
@@ -35,7 +34,11 @@ func TestRequireActiveOrgByID(t *testing.T) {
 	newReq := func(id string, withTenant bool) *http.Request {
 		req := httptest.NewRequest(http.MethodGet, "/organizations/"+id+"/members", nil)
 		if withTenant {
-			req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+			req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+				ID   pgtype.UUID
+				Name string
+				Slug string
+			}{ID: tenantID}))
 		}
 		return testdb.WithChiURLParam(req, "id", id)
 	}

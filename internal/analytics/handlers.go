@@ -21,7 +21,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -71,13 +70,7 @@ func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
 // ---------------------------------------------------------------------------
 
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -472,11 +465,6 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input struct {
 		Scope string `json:"scope"`
 	}
@@ -491,7 +479,7 @@ func (h *Handlers) HandleCacheFlush(w http.ResponseWriter, r *http.Request) {
 		scope = FlushAll
 	}
 
-	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope, tenantID.String())
+	deleted, err := h.CacheFlusher.FlushCache(r.Context(), scope)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "flush_error", "Failed to flush cache")
 		return

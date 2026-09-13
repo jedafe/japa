@@ -117,11 +117,11 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 	var p Program
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		SELECT id, referrer_reward_cents, referee_reward_cents,
 		       max_referrals, cookie_days, is_active, description, created_at, updated_at
 		FROM referral_programs
-		WHERE tenant_id = $1
-	`, tenantID).Scan(
+		
+	`).Scan(
 		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
@@ -143,12 +143,11 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 	var p Program
 
 	err := s.db.Writer.QueryRow(ctx, `
-		INSERT INTO referral_programs (tenant_id)
-		VALUES ($1)
+		INSERT INTO referral_programs () VALUES ($1)
 		ON CONFLICT (tenant_id) DO NOTHING
-		RETURNING id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		RETURNING id, referrer_reward_cents, referee_reward_cents,
 		          max_referrals, cookie_days, is_active, description, created_at, updated_at
-	`, tenantID).Scan(
+	`).Scan(
 		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
@@ -162,11 +161,11 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 	}
 
 	err = s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		SELECT id, referrer_reward_cents, referee_reward_cents,
 		       max_referrals, cookie_days, is_active, description, created_at, updated_at
 		FROM referral_programs
-		WHERE tenant_id = $1
-	`, tenantID).Scan(
+		
+	`).Scan(
 		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
@@ -219,13 +218,13 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 
 	err = s.db.Writer.QueryRow(ctx, `
 		UPDATE referral_programs
-		SET referrer_reward_cents = $2, referee_reward_cents = $3,
-		    max_referrals = $4, cookie_days = $5, is_active = $6,
-		    description = $7, updated_at = now()
-		WHERE tenant_id = $1
-		RETURNING id, tenant_id, referrer_reward_cents, referee_reward_cents,
+		SET referrer_reward_cents = $1, referee_reward_cents = $2,
+		    max_referrals = $3, cookie_days = $4, is_active = $5,
+		    description = $6, updated_at = now()
+		
+		RETURNING id, referrer_reward_cents, referee_reward_cents,
 		          max_referrals, cookie_days, is_active, description, created_at, updated_at
-	`, tenantID, rr, rf, mr, cd, ia, desc).Scan(
+	`, rr, rf, mr, cd, ia, desc).Scan(
 		&updated.ID, &updated.TenantID, &updated.ReferrerRewardCents, &updated.RefereeRewardCents,
 		&updated.MaxReferrals, &updated.CookieDays, &updated.IsActive, &updated.Description,
 		&updated.CreatedAt, &updated.UpdatedAt,
@@ -717,9 +716,9 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 		       reu.username, rep.display_name
 		FROM referrals r
 		LEFT JOIN users ru ON ru.id = r.referrer_id
-		LEFT JOIN user_profiles rp ON rp.user_id = r.referrer_id AND rp.tenant_id = r.tenant_id
+		LEFT JOIN user_profiles rp ON rp.user_id = r.referrer_id
 		LEFT JOIN users reu ON reu.id = r.referee_id
-		LEFT JOIN user_profiles rep ON rep.user_id = r.referee_id AND rep.tenant_id = r.tenant_id
+		LEFT JOIN user_profiles rep ON rep.user_id = r.referee_id
 		WHERE r.tenant_id = $1
 		ORDER BY r.created_at DESC
 		LIMIT $2 OFFSET $3
@@ -748,10 +747,10 @@ func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Re
 	var ref Referral
 
 	err := s.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
+		SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
 		FROM referrals
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt)
+		WHERE id = $1
+	`, id).Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt)
 	if err != nil {
 		return Referral{}, fmt.Errorf("fetching referral %s: %w", id, err)
 	}
@@ -765,8 +764,8 @@ func (s *Service) DeleteReferral(ctx context.Context, tenantID, id pgtype.UUID) 
 	cmd, err := s.db.Writer.Exec(ctx, `
 		UPDATE referrals
 		SET status = 'rejected'
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting referral %s: %w", id, err)
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -100,7 +99,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	// OAuth providers are rejected at initiation so the setting actually
 	// affects the site. Ref: conventions/system-settings-catalog.md
 	if h.Settings != nil {
-		if t := tenant.FromContext(r.Context()); t != nil {
+		if t := &struct{ ID pgtype.UUID }{}; t != nil {
 			if allowed, err := h.Settings.GetSettingBool(r.Context(), t.ID, "users.allow_social_login"); err == nil && !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
 					"Social login is disabled for this tenant")
@@ -236,7 +235,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		h.redirectOAuthError(w, r, "tenant_unavailable")
 		return

@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // ---------------------------------------------------------------------------
@@ -453,7 +452,11 @@ func TestParseFieldScoringConfig(t *testing.T) {
 func withTenant(ctx context.Context) context.Context {
 	tenantID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
 
-	return context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{
+	return context.WithValue(ctx, struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{
 		ID:   tenantID,
 		Name: "Test Tenant",
 		Slug: "test",

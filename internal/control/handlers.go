@@ -29,7 +29,6 @@ import (
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/spam"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/websocket"
 	"github.com/jedafe/japa/internal/worker"
@@ -340,8 +339,7 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.Client.Enqueue(
 			task,
 			asynq.ProcessAt(time.Now().Add(30*24*time.Hour)),
-			asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData)),
-		); err != nil {
+			asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData))); err != nil {
 			slog.Error("control: enqueue cleanup task", "error", err)
 		}
 	}
@@ -393,16 +391,12 @@ func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
 
 // ListSystemSettings is an exported method.
 func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	rows, err := h.DB.Reader.Query(
-		r.Context(),
-		`SELECT id, key, value, is_public, created_at, updated_at FROM system_settings WHERE tenant_id = $1 ORDER BY key`,
-		tenantID,
-	)
+	rows, err := h.DB.Reader.Query(r.Context(), `SELECT id, key, value, is_public, created_at, updated_at FROM system_settings  ORDER BY key`)
 	if err != nil {
 		slog.Error("control: list system settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
@@ -539,11 +533,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 			isPublic = meta.Public
 		}
 
-		_, err := h.DB.Writer.Exec(
-			r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data), isPublic,
-		)
+		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, key, string(data), isPublic)
 		if err != nil {
 			slog.Error("control: update system setting", "key", key, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
@@ -601,11 +591,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		isPublic = meta.Public
 	}
 
-	_, err := h.DB.Writer.Exec(
-		r.Context(),
-		`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`,
-		tenantID, key, string(data), isPublic,
-	)
+	_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`, key, string(data), isPublic)
 	if err != nil {
 		slog.Error("control: update system setting", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
@@ -633,11 +619,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.DB.Writer.Exec(
-		r.Context(),
-		`DELETE FROM system_settings WHERE tenant_id = $1 AND key = $2`,
-		tenantID, key,
-	)
+	tag, err := h.DB.Writer.Exec(r.Context(), `DELETE FROM system_settings WHERE key = $1`, key)
 	if err != nil {
 		slog.Error("control: reset system setting", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
@@ -670,17 +652,13 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 
 // GetTenantSettings handles GET /control/tenants/:id/settings.
 func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	_, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
 	}
 
-	rows, err := h.DB.Reader.Query(
-		r.Context(),
-		`SELECT id, key, value, is_public, created_at, updated_at FROM system_settings WHERE tenant_id = $1 ORDER BY key`,
-		tenantID,
-	)
+	rows, err := h.DB.Reader.Query(r.Context(), `SELECT id, key, value, is_public, created_at, updated_at FROM system_settings  ORDER BY key`)
 	if err != nil {
 		slog.Error("control: get tenant settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list settings")
@@ -815,11 +793,7 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 			isPublic = meta.Public
 		}
 
-		_, err := h.DB.Writer.Exec(
-			r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data), isPublic,
-		)
+		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, key, string(data), isPublic)
 		if err != nil {
 			slog.Error("control: update tenant setting", "key", key, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting: "+key)
@@ -868,11 +842,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 
 	data := encodeSettingValue(input.Value)
 	if input.IsPublic != nil {
-		_, err := h.DB.Writer.Exec(
-			r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, is_public, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`,
-			tenantID, key, string(data), *input.IsPublic,
-		)
+		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, is_public, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, is_public = $4, updated_at = NOW()`, key, string(data), *input.IsPublic)
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
@@ -880,11 +850,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 			return
 		}
 	} else {
-		_, err := h.DB.Writer.Exec(
-			r.Context(),
-			`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-			tenantID, key, string(data),
-		)
+		_, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, key, string(data))
 		if err != nil {
 			slog.Error("control: update tenant setting key", "key", key, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update setting")
@@ -914,11 +880,7 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.DB.Writer.Exec(
-		r.Context(),
-		`DELETE FROM system_settings WHERE tenant_id = $1 AND key = $2`,
-		tenantID, key,
-	)
+	tag, err := h.DB.Writer.Exec(r.Context(), `DELETE FROM system_settings WHERE key = $1`, key)
 	if err != nil {
 		slog.Error("control: reset tenant setting", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reset setting")
@@ -2006,7 +1968,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 
 // ListSecurityScanResults is an exported method.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2025,24 +1987,16 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 
 	var total int64
 
-	countErr := h.DB.Reader.QueryRow(
-		r.Context(),
-		`SELECT count(*) FROM security_scan_results WHERE tenant_id = $1 AND ($2::text = '' OR severity = $2)`,
-		tenantID, severity,
-	).Scan(&total)
+	countErr := h.DB.Reader.QueryRow(r.Context(), `SELECT count(*) FROM security_scan_results WHERE ($1::text = '' OR severity = $1)`, severity).Scan(&total)
 	if countErr != nil {
 		slog.Warn("control: count security scan results", "error", countErr)
 	}
 
-	rows, err := h.DB.Reader.Query(
-		r.Context(),
-		`SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
+	rows, err := h.DB.Reader.Query(r.Context(), `SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 		 FROM security_scan_results
-		 WHERE tenant_id = $1 AND ($2::text = '' OR severity = $2)
+		 WHERE ($1::text = '' OR severity = $1)
 		 ORDER BY created_at DESC, id DESC
-		 LIMIT $3 OFFSET $4`,
-		tenantID, severity, int32(limit), offset,
-	)
+		 LIMIT $2 OFFSET $3`, severity, int32(limit), offset)
 	if err != nil {
 		slog.Error("control: list security scan results", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list security scan results")
@@ -2353,11 +2307,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	threshold := *input.BudgetThresholdUSD
 
 	data, _ := json.Marshal(threshold)
-	if _, err := h.DB.Writer.Exec(
-		r.Context(),
-		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-		tenantID, aiBudgetThresholdKey, string(data),
-	); err != nil {
+	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, aiBudgetThresholdKey, string(data)); err != nil {
 		slog.Error("control: update ai budget", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update AI budget threshold")
 
@@ -2733,7 +2683,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 		if input.Confirm {
 			where = "" // clear everything
 		} else {
-			retentionDays := h.Settings.GetIntOr(r.Context(), tenant.IDFromContext(r.Context()), "audit.log_retention_days", 365)
+			retentionDays := h.Settings.GetIntOr(r.Context(), pgtype.UUID{}, "audit.log_retention_days", 365)
 			cutoff := time.Now().AddDate(0, 0, -retentionDays)
 			where = "created_at < $1"
 			args = []any{cutoff}
@@ -2822,12 +2772,12 @@ func (h *Handlers) GetAPIKeyAnalytics(w http.ResponseWriter, r *http.Request) {
 // Tenant-scoping (Rule 4 / §4.2 / §9) prevents one tenant's control panel from
 // seeing or mutating another tenant's custom scheduler entries.
 func cronCustomKey(ctx context.Context) string {
-	return valkey.MustKey("cron:custom:%s", tenant.IDFromContext(ctx).String())
+	return valkey.MustKey("cron:custom:%s", pgtype.UUID{}.String())
 }
 
 // cronPausedKey returns the tenant-scoped Valkey key for paused scheduler entries.
 func cronPausedKey(ctx context.Context) string {
-	return valkey.MustKey("cron:paused:%s", tenant.IDFromContext(ctx).String())
+	return valkey.MustKey("cron:paused:%s", pgtype.UUID{}.String())
 }
 
 // cronCustomEntry is the JSON shape stored per custom cron job in Valkey.
@@ -3288,11 +3238,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetID pgtype.UUID) {
 	ctx := r.Context()
 
-	t := tenant.FromContext(ctx)
-	if t == nil {
-		return
-	}
-
 	var actorID any
 	if u := auth.FromContext(ctx); u != nil {
 		actorID = u.UserID
@@ -3300,21 +3245,14 @@ func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetI
 
 	ip := clientip.FromRequest(r)
 	if _, err := h.DB.Writer.Exec(ctx, `
-		INSERT INTO audit_logs (tenant_id, actor_user_id, action_type, target_type, target_id, ip_address)
-		VALUES ($1, $2, $3, 'tenant', $4, $5::inet)
-	`, t.ID, actorID, actionType, targetID, ip); err != nil {
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, ip_address) VALUES ($1, $2, 'tenant', $3, $4::inet)
+	`, actorID, actionType, targetID, ip); err != nil {
 		slog.Error("control: audit tenant action", "action", actionType, "error", err)
 	}
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
@@ -3342,8 +3280,7 @@ func authUserFromContext(r *http.Request) pgtype.UUID {
 
 // ListPermissionNodes is an exported method.
 func (h *Handlers) ListPermissionNodes(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.Reader.Query(r.Context(),
-		`SELECT key, description FROM permissions ORDER BY key`)
+	rows, err := h.DB.Reader.Query(r.Context(), `SELECT key, description FROM permissions ORDER BY key`)
 	if err != nil {
 		slog.Error("control: list permission nodes", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list permission nodes")
@@ -3398,7 +3335,7 @@ var supportedOAuthProviders = []map[string]string{
 }
 
 func oauthClientsKey(ctx context.Context) string {
-	return valkey.MustKey("oauth_clients:%s", tenant.IDFromContext(ctx).String())
+	return valkey.MustKey("oauth_clients:%s", pgtype.UUID{}.String())
 }
 
 const oauthClientSecretMasked = "••••••••" // #nosec
@@ -3958,9 +3895,7 @@ func (h *Handlers) setExtensionEnabled(r *http.Request, tenantID pgtype.UUID, ex
 		val = "true"
 	}
 
-	if _, err := h.DB.Writer.Exec(r.Context(),
-		`INSERT INTO system_settings (tenant_id, key, value, updated_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_at = NOW()`,
-		tenantID, settingKey, val); err != nil {
+	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $3, updated_at = NOW()`, settingKey, val); err != nil {
 		return fmt.Errorf("writing system_setting %s: %w", settingKey, err)
 	}
 
@@ -4042,7 +3977,7 @@ var supportedBackupTargets = []map[string]string{
 }
 
 func backupConfigsKey(ctx context.Context) string {
-	return valkey.MustKey("backup_configs:%s", tenant.IDFromContext(ctx).String())
+	return valkey.MustKey("backup_configs:%s", pgtype.UUID{}.String())
 }
 
 // ListBackupConfigs is an exported method.

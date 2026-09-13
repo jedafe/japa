@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-		"github.com/jedafe/japa/internal/visitor"
-"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // ContentResolver resolves content items as comparison references.
