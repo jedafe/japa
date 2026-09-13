@@ -106,17 +106,17 @@ func (s *Service) ReconfigureS3FromSettings(ctx context.Context, tenantID pgtype
 		return
 	}
 
-	endpoint := s.settings.GetStringOr(ctx, tenantID, "media.storage.endpoint", "")
-	accessKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.access_key", "")
-	secretKey := s.settings.GetStringOr(ctx, tenantID, "media.storage.secret_key", "")
+	endpoint := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.endpoint", "")
+	accessKey := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.access_key", "")
+	secretKey := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.secret_key", "")
 
 	if endpoint == "" || accessKey == "" || secretKey == "" {
 		// Not configured via settings — keep the env-var-based client.
 		return
 	}
 
-	region := s.settings.GetStringOr(ctx, tenantID, "media.storage.region", "us-east-1")
-	bucket := s.settings.GetStringOr(ctx, tenantID, "media.storage.bucket", DefaultBucket)
+	region := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.region", "us-east-1")
+	bucket := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.bucket", DefaultBucket)
 	s.s3 = NewS3ClientFromConfig(S3Config{
 		Endpoint:  endpoint,
 		AccessKey: accessKey,

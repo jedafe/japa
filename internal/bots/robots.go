@@ -116,7 +116,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 		// Generate from bot registry
 		bots, err := store.GetAllBots(r.Context(), t.ID)
 		if err != nil {
-			slog.Error("robots: failed to load bots", "tenant_id", t.ID, "error", err)
+			slog.Error("robots: failed to load bots", "error", err)
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			_, _ = w.Write([]byte("User-agent: *\nAllow: /\n"))
@@ -129,7 +129,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 		// Cache in Valkey
 		if rdb != nil {
 			if err := rdb.Redis().Set(r.Context(), cacheKey, txt, robotsCacheTTL).Err(); err != nil {
-				slog.Warn("robots: failed to cache", "tenant_id", t.ID, "error", err)
+				slog.Warn("robots: failed to cache", "error", err)
 			}
 		}
 
@@ -148,7 +148,7 @@ func InvalidateRobotsCache(ctx context.Context, rdb *valkey.Client, tenantID pgt
 
 	cacheKey := robotsCacheKey + ":" + tenantID.String()
 	if err := rdb.Redis().Del(ctx, cacheKey).Err(); err != nil {
-		slog.Warn("robots: failed to invalidate cache", "tenant_id", tenantID, "error", err)
+		slog.Warn("robots: failed to invalidate cache", "error", err)
 	}
 }
 
@@ -168,5 +168,5 @@ func InvalidateLLMsCache(ctx context.Context, rdb *valkey.Client, tenantID pgtyp
 		}
 	}
 
-	slog.Info("invalidated llms cache", "tenant_id", tenantID.String())
+	slog.Info("invalidated llms cache")
 }

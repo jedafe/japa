@@ -366,7 +366,7 @@ func (s *Service) SuggestDimensions(ctx context.Context, tenantID pgtype.UUID, i
 		return nil, errors.New("settings service not configured")
 	}
 
-	raw := s.settingsSvc.GetStringOr(ctx, tenantID, "comparison.auto_dimension_hints", defaultAutoDimensionHintsJSON)
+	raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "comparison.auto_dimension_hints", defaultAutoDimensionHintsJSON)
 
 	var hints autoDimensionHints
 	if err := json.Unmarshal([]byte(raw), &hints); err != nil {

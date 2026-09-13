@@ -211,7 +211,7 @@ func (h *Handlers) applyModelAndVoice(
 ) bool {
 	effectiveModel := model
 	if effectiveModel == "" && defaultKey != "" && h.Settings != nil {
-		effectiveModel = h.Settings.GetStringOr(r.Context(), tenantID, defaultKey, "")
+		effectiveModel = h.Settings.GetStringOr(r.Context(), pgtype.UUID{}, defaultKey, "")
 	}
 
 	if effectiveModel != "" {
@@ -416,7 +416,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // when the ai.content_assist_enabled system setting is false (Section 20 V1
 // Tool Catalog; conventions/system-settings-catalog.md).
 func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID) bool {
-	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, tenantID, "ai.content_assist_enabled", true) {
+	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.content_assist_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
 		return false
 	}
@@ -561,8 +561,8 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 	cacheTTL := 0
 
 	if h.Settings != nil {
-		cacheEnabled = h.Settings.GetBoolOr(ctx, tenantID, "ai.cache_enabled", false)
-		cacheTTL = h.Settings.GetIntOr(ctx, tenantID, "ai.cache_ttl_seconds", 300)
+		cacheEnabled = h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.cache_enabled", false)
+		cacheTTL = h.Settings.GetIntOr(ctx, pgtype.UUID{}, "ai.cache_ttl_seconds", 300)
 	}
 
 	cacheKey := ""
@@ -920,7 +920,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
 	// default true). A disabled toggle short-circuits before any provider call.
-	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), tenantID, "ai.japabot_enabled", true) {
+	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), pgtype.UUID{}, "ai.japabot_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
 		return
 	}
@@ -988,8 +988,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 		chunks, err := h.ragService.Retrieve(r.Context(), tenantID, input.Message, ragLang, nil)
 		if err != nil {
-			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG",
-				"error", err)
+			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG", "error", err)
 		} else if len(chunks) > 0 {
 			ragContext := h.ragService.FormatContext(chunks)
 			if ragContext != "" {

@@ -180,7 +180,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "arrival_checklist.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "arrival_checklist.enabled", false)
 }
 
 // Research runs grounded web research for the given destination and visa
@@ -635,14 +635,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		}
 
 		checklistItems = parseChecklistItemsFromAIResponse(resp)
-		slog.Info(
-			"arrivalchecklist: AI Gateway generated draft items",
-			"destination_space_id", req.DestinationSpaceID,
-			"visa_category", req.VisaCategory,
-			"applicant_type", applicantType,
-			"prompt_hash", promptHash,
-			"item_count", len(checklistItems),
-		)
+		slog.Info("arrivalchecklist: AI Gateway generated draft items", "destination_space_id", req.DestinationSpaceID, "visa_category", req.VisaCategory, "applicant_type", applicantType, "prompt_hash", promptHash, "item_count", len(checklistItems), )
 	}
 
 	aiModel := "content_agent_v1"
@@ -670,8 +663,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		}
 
 		if err := s.store.CreateItems(ctx, checklistItems); err != nil {
-			slog.Warn("arrivalchecklist: create items failed, guide draft remains",
-				"guide_id", row.ID, "error", err)
+			slog.Warn("arrivalchecklist: create items failed, guide draft remains", "guide_id", row.ID, "error", err)
 		}
 	}
 

@@ -589,8 +589,7 @@ func (s *Service) createVideoContent(ctx context.Context, tenantID, userID pgtyp
 		if spaceID.Valid {
 			status = content.StatusPublished
 		} else {
-			slog.WarnContext(ctx, "auto_publish enabled but no default space; creating draft content",
-				"job_id", job.ID, "tenant_id", tenantID)
+			slog.WarnContext(ctx, "auto_publish enabled but no default space; creating draft content", "job_id", job.ID)
 		}
 	}
 

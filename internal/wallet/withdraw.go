@@ -97,7 +97,7 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, tenantID, userID pgty
 	// Check minimum withdrawal amount.
 	minCredits := 1000
 	if s.settings != nil {
-		minCredits = s.settings.GetIntOr(ctx, tenantID, "wallet.min_withdrawal_credits", 1000)
+		minCredits = s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_withdrawal_credits", 1000)
 	}
 
 	if input.CreditAmount < int64(minCredits) {

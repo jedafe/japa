@@ -114,7 +114,7 @@ func (s *Service) CooldownDays(ctx context.Context, tenantID pgtype.UUID) int {
 		return 30
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "ama_cooldown_days", 30)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "ama_cooldown_days", 30)
 }
 
 // ListActive returns active AMA sessions (not yet closed), filtered by
@@ -207,7 +207,7 @@ func (s *Service) CreateAMA(ctx context.Context, tenantID, authorUserID pgtype.U
 
 	editWindow := int32(30)
 	if s.settings != nil {
-		editWindow = int32(s.settings.GetIntOr(ctx, tenantID, "forum.edit_window_minutes", 30)) // #nosec
+		editWindow = int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "forum.edit_window_minutes", 30)) // #nosec
 	}
 
 	body := in.Body

@@ -299,7 +299,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "remittance.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "remittance.enabled", true)
 }
 
 // manualStaleHours returns the configured manual-staleness threshold.
@@ -308,7 +308,7 @@ func (s *Service) manualStaleHours(ctx context.Context, tenantID pgtype.UUID) in
 		return 24
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "remittance.manual_stale_hours", 24)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "remittance.manual_stale_hours", 24)
 }
 
 // HistoryRetentionDays returns the configured history retention period.
@@ -317,7 +317,7 @@ func (s *Service) HistoryRetentionDays(ctx context.Context, tenantID pgtype.UUID
 		return 365
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "remittance.history_retention_days", 365)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "remittance.history_retention_days", 365)
 }
 
 // DefaultSendCurrency returns the pre-selected send currency for the UI.
@@ -326,7 +326,7 @@ func (s *Service) DefaultSendCurrency(ctx context.Context, tenantID pgtype.UUID)
 		return "GBP"
 	}
 
-	return s.settings.GetStringOr(ctx, tenantID, "remittance.default_send_currency", "GBP")
+	return s.settings.GetStringOr(ctx, pgtype.UUID{}, "remittance.default_send_currency", "GBP")
 }
 
 // IsManualRateStale returns true if a manual rate's fetched_at is older than
@@ -1083,9 +1083,7 @@ func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID,
 		bestCacheKey(tenantID, sendCurrency, receiveCurrency),
 	}
 	if err := s.cache.Del(ctx, keys...).Err(); err != nil {
-		slog.Warn("remittance: invalidate cache failed",
-			"tenant_id", tenantID.String(),
-			"send", sendCurrency, "receive", receiveCurrency, "error", err)
+		slog.Warn("remittance: invalidate cache failed", "send", sendCurrency, "receive", receiveCurrency, "error", err)
 	}
 }
 
@@ -1126,8 +1124,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 
 	// Manual providers have no live API to call — rates are admin-entered.
 	if provider.DataSource == DataSourceManual {
-		slog.Info("remittance: fetch provider rates: skipping manual provider",
-			"provider_id", providerID.String(), "slug", provider.Slug)
+		slog.Info("remittance: fetch provider rates: skipping manual provider", "provider_id", providerID.String(), "slug", provider.Slug)
 		return nil
 	}
 
@@ -1160,8 +1157,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 	}
 
 	if len(snapshots) == 0 {
-		slog.Info("remittance: fetch provider rates: adapter returned no snapshots",
-			"provider_id", providerID.String(), "slug", provider.Slug)
+		slog.Info("remittance: fetch provider rates: adapter returned no snapshots", "provider_id", providerID.String(), "slug", provider.Slug)
 		return nil
 	}
 
@@ -1193,10 +1189,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 		}
 
 		if _, err := s.store.InsertRate(ctx, arg); err != nil {
-			slog.Warn("remittance: fetch provider rates: insert rate failed",
-				"provider_id", providerID.String(),
-				"send", snap.SendCurrency, "receive", snap.ReceiveCurrency,
-				"error", err)
+			slog.Warn("remittance: fetch provider rates: insert rate failed", "provider_id", providerID.String(), "send", snap.SendCurrency, "receive", snap.ReceiveCurrency, "error", err)
 
 			continue
 		}
@@ -1204,9 +1197,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 		s.InvalidateRateCache(ctx, pgtype.UUID{}, snap.SendCurrency, snap.ReceiveCurrency)
 	}
 
-	slog.Info("remittance: fetch provider rates: completed",
-		"provider_id", providerID.String(), "slug", provider.Slug,
-		"snapshots", len(snapshots))
+	slog.Info("remittance: fetch provider rates: completed", "provider_id", providerID.String(), "slug", provider.Slug, "snapshots", len(snapshots))
 
 	return nil
 }
@@ -1229,8 +1220,7 @@ func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUI
 		}
 
 		if err := s.FetchProviderRates(ctx, tenantID, p.ID); err != nil {
-			slog.Warn("remittance: fetch all provider rates: provider failed",
-				"provider_id", p.ID.String(), "slug", p.Slug, "error", err)
+			slog.Warn("remittance: fetch all provider rates: provider failed", "provider_id", p.ID.String(), "slug", p.Slug, "error", err)
 			continue
 		}
 
@@ -1272,9 +1262,7 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 		if !ok {
 			best, err = s.GetBestRate(ctx, tenantID, alert.SendCurrency, alert.ReceiveCurrency)
 			if err != nil {
-				slog.Warn("remittance: check alerts: get best rate failed",
-					"send", alert.SendCurrency, "receive", alert.ReceiveCurrency,
-					"error", err)
+				slog.Warn("remittance: check alerts: get best rate failed", "send", alert.SendCurrency, "receive", alert.ReceiveCurrency, "error", err)
 
 				continue
 			}
@@ -1313,15 +1301,13 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 			"remittance_alert", "", zeroUUID,
 			"remittance_corridor", alert.ID,
 			title, body, actionURL); err != nil {
-			slog.Warn("remittance: check alerts: create notification failed",
-				"alert_id", alert.ID.String(), "error", err)
+			slog.Warn("remittance: check alerts: create notification failed", "alert_id", alert.ID.String(), "error", err)
 			continue
 		}
 
 		// Mark the alert as triggered (24h debounce).
 		if err := s.store.MarkAlertTriggered(ctx, alert.ID); err != nil {
-			slog.Warn("remittance: check alerts: mark triggered failed",
-				"alert_id", alert.ID.String(), "error", err)
+			slog.Warn("remittance: check alerts: mark triggered failed", "alert_id", alert.ID.String(), "error", err)
 			continue
 		}
 

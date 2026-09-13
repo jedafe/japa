@@ -345,7 +345,7 @@ func (p *SpamPipeline) checkLinkAnalysis(ctx context.Context, tenantID pgtype.UU
 
 	maxLinks := maxLinksPerPost
 	if p.settings != nil {
-		maxLinks = p.settings.GetIntOr(ctx, tenantID, "moderation.max_links_per_post", maxLinksPerPost)
+		maxLinks = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.max_links_per_post", maxLinksPerPost)
 	}
 
 	linkCount := countLinks(req.Content)
@@ -421,7 +421,7 @@ func (p *SpamPipeline) checkUserAge(ctx context.Context, tenantID pgtype.UUID, r
 	threshold := newAccountThreshold
 
 	if p.settings != nil {
-		days := p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", 7)
+		days := p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_account_threshold_days", 7)
 		threshold = time.Duration(days) * 24 * time.Hour
 	}
 
@@ -465,7 +465,7 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 	// 1. Is the account "new"? Use the same threshold as checkUserAge.
 	days := 7
 	if p.settings != nil {
-		days = p.settings.GetIntOr(ctx, tenantID, "moderation.new_account_threshold_days", days)
+		days = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_account_threshold_days", days)
 	}
 
 	threshold := time.Duration(days) * 24 * time.Hour
@@ -486,7 +486,7 @@ func (p *SpamPipeline) checkNewUserLinks(ctx context.Context, tenantID pgtype.UU
 	// 2. How many published posts does the user already have?
 	minPosts := newUserMinPostsForLinks
 	if p.settings != nil {
-		minPosts = p.settings.GetIntOr(ctx, tenantID, "moderation.new_user_min_posts_for_links", minPosts)
+		minPosts = p.settings.GetIntOr(ctx, pgtype.UUID{}, "moderation.new_user_min_posts_for_links", minPosts)
 	}
 
 	count, err := queries.CountPostsByAuthor(ctx,
@@ -523,7 +523,7 @@ func (p *SpamPipeline) checkContentLength(ctx context.Context, tenantID pgtype.U
 
 	minLen := minContentLength
 	if p.settings != nil {
-		minLen = p.settings.GetIntOr(ctx, tenantID, "content.min_length", minContentLength)
+		minLen = p.settings.GetIntOr(ctx, pgtype.UUID{}, "content.min_length", minContentLength)
 	}
 
 	if length < minLen {

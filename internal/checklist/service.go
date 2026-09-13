@@ -157,7 +157,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "checklist.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "checklist.enabled", true)
 }
 
 // GetSelector returns origin country Geo Spaces (§05) and destination
@@ -453,7 +453,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	// Full-completion reward (Section 28 integration). Only when the item was
 	// just marked complete — avoids re-awarding on no-op or note-only updates.
 	if completed != nil && *completed && s.enqueuer != nil && s.settings != nil {
-		points := s.settings.GetIntOr(ctx, tenantID, "checklist.completion_points", 0)
+		points := s.settings.GetIntOr(ctx, pgtype.UUID{}, "checklist.completion_points", 0)
 		if points > 0 {
 			s.maybeAwardCompletionPoints(ctx, tenantID, userID, guideID, points)
 		}
@@ -503,8 +503,7 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 		return
 	}
 
-	slog.Info("checklist: completion award enqueued",
-		"user_id", userID.String(), "guide_id", guideID.String(), "points", points)
+	slog.Info("checklist: completion award enqueued", "user_id", userID.String(), "guide_id", guideID.String(), "points", points)
 }
 
 // ResetProgress deletes all progress rows for a user + guide.

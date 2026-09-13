@@ -168,7 +168,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "story.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "story.enabled", false)
 }
 
 // Submit creates a new story — a contents row with content_type='story' plus
@@ -835,9 +835,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 			body = text
 		}
 
-		slog.Info("story: AI Gateway generated draft",
-			"destination_space_id", input.DestinationSpaceID,
-			"visa_category", input.VisaCategory, "prompt_hash", promptHash)
+		slog.Info("story: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "visa_category", input.VisaCategory, "prompt_hash", promptHash)
 	}
 
 	// 1. Create the contents row with content_type='story', status='draft'.
@@ -874,8 +872,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 	}
 
 	if err := s.store.CreateStoryMeta(ctx, meta); err != nil {
-		slog.Error("story: generate draft: create story_meta failed",
-			"content_id", contentRow.ID, "error", err)
+		slog.Error("story: generate draft: create story_meta failed", "content_id", contentRow.ID, "error", err)
 		return GenerateDraftResponse{}, fmt.Errorf("story: generate draft: create story_meta: %w", err)
 	}
 

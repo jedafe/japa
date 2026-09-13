@@ -151,7 +151,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "video.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "video.enabled", true)
 }
 
 // isPlatformAllowed checks the tenant's video.import.allowed_platforms setting.
@@ -161,7 +161,7 @@ func (s *Service) isPlatformAllowed(ctx context.Context, tenantID pgtype.UUID, p
 		return true
 	}
 
-	raw := s.settings.GetStringOr(ctx, tenantID, "video.import.allowed_platforms", "")
+	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.allowed_platforms", "")
 	if raw == "" {
 		return true
 	}
@@ -182,7 +182,7 @@ func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL s
 	}
 
 	if s.settings != nil {
-		if token := s.settings.GetStringOr(ctx, tenantID, "video.import.instagram_access_token", ""); token != "" {
+		if token := s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.instagram_access_token", ""); token != "" {
 			ctx = withInstagramToken(ctx, token)
 		}
 	}
@@ -533,11 +533,7 @@ func (s *Service) ReviewClaim(ctx context.Context, tenantID, reviewerUserID, cla
 		return gen.VideoChannelClaim{}, err
 	}
 
-	slog.InfoContext(ctx, "video claim reviewed",
-		"claim_id", claimID.String(),
-		"tenant_id", tenantID.String(),
-		"reviewer_id", reviewerUserID.String(),
-		"status", status)
+	slog.InfoContext(ctx, "video claim reviewed", "claim_id", claimID.String(), "reviewer_id", reviewerUserID.String(), "status", status)
 
 	return claim, nil
 }
@@ -903,11 +899,7 @@ func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtyp
 		return gen.CreateContentRow{}, fmt.Errorf("creating video draft content: %w", err)
 	}
 
-	slog.InfoContext(ctx, "video: AI draft generated",
-		"content_id", created.ID.String(),
-		"video_source_id", source.ID.String(),
-		"tenant_id", tenantID.String(),
-		"prompt_hash", promptHash)
+	slog.InfoContext(ctx, "video: AI draft generated", "content_id", created.ID.String(), "video_source_id", source.ID.String(), "prompt_hash", promptHash)
 
 	return created, nil
 }
@@ -924,7 +916,7 @@ func (s *Service) EnqueueGenerateSummary(ctx context.Context, tenantID, userID, 
 		return errpkg.ErrFeatureDisabled
 	}
 
-	if s.settings != nil && !s.settings.GetBoolOr(ctx, tenantID, "video.ai_summary.enabled", false) {
+	if s.settings != nil && !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "video.ai_summary.enabled", false) {
 		return fmt.Errorf("%w: video AI summary is disabled", errpkg.ErrFeatureDisabled)
 	}
 

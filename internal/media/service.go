@@ -30,7 +30,7 @@ func (s *Service) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int6
 	maxBytes := MaxFileSizeBytes
 
 	if s.settings != nil {
-		if maxMB := s.settings.GetIntOr(ctx, tenantID, "media.max_upload_mb", 50); maxMB > 0 {
+		if maxMB := s.settings.GetIntOr(ctx, pgtype.UUID{}, "media.max_upload_mb", 50); maxMB > 0 {
 			maxBytes = int64(maxMB) * 1024 * 1024
 		}
 	}
@@ -538,7 +538,7 @@ func (s *Service) isAllowedMIME(ctx context.Context, tenantID pgtype.UUID, mimeT
 		return AllowedMIMETypes[canonical]
 	}
 
-	allowedCSV := s.settings.GetStringOr(ctx, tenantID, "media.allowed_video_types", "mp4,webm,mov")
+	allowedCSV := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.allowed_video_types", "mp4,webm,mov")
 
 	return isVideoTypeAllowed(canonical, allowedCSV)
 }

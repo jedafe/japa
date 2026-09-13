@@ -61,8 +61,7 @@ func (h *Handlers) enqueueReviewAggregateRecalc(tenantID pgtype.UUID, entityType
 		asynq.NewTask(worker.TypeReviewAggregateRecalc, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeReviewAggregateRecalc)),
 	); err != nil {
-		slog.Warn("reviews: failed to enqueue aggregate recalc task",
-			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+		slog.Warn("reviews: failed to enqueue aggregate recalc task", "entity_type", entityType, "entity_id", entityID.String(), "error", err)
 	}
 }
 

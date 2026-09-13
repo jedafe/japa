@@ -612,8 +612,7 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 			UserPrompt:   userPrompt,
 		})
 		if err != nil {
-			slog.Warn("credentialchecker: AI dispatch failed, using placeholder",
-				"error", err, "profession_id", req.ProfessionID)
+			slog.Warn("credentialchecker: AI dispatch failed, using placeholder", "error", err, "profession_id", req.ProfessionID)
 		} else if resp.Text != "" {
 			// Try to parse the JSON response; fall back to raw text as description.
 			if parsed, ok := parseAIPathwayResponse(resp.Text); ok {
@@ -637,8 +636,7 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 			}
 		}
 	} else {
-		slog.Info("credentialchecker: no content_generation provider, using placeholder draft",
-			"profession_id", req.ProfessionID)
+		slog.Info("credentialchecker: no content_generation provider, using placeholder draft", "profession_id", req.ProfessionID)
 	}
 
 	input := CreatePathwayInput{
@@ -661,13 +659,7 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
 	}
 
-	slog.Info(
-		"credentialchecker: content agent draft created",
-		"tenant_id", tenantID,
-		"pathway_id", id.String(),
-		"profession_id", req.ProfessionID,
-		"ai_model", aiModel,
-	)
+	slog.Info("credentialchecker: content agent draft created", "pathway_id", id.String(), "profession_id", req.ProfessionID, "ai_model", aiModel, )
 
 	return GeneratePathwayResponse{
 		Status:             "accepted",

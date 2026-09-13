@@ -70,8 +70,7 @@ func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string, t
 		asynq.NewTask(worker.TypeLanguagePackAITranslate, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeLanguagePackAITranslate)),
 	); err != nil {
-		slog.Warn("i18n: failed to enqueue translate pack task",
-			"pack_id", packID, "error", err)
+		slog.Warn("i18n: failed to enqueue translate pack task", "pack_id", packID, "error", err)
 	}
 }
 

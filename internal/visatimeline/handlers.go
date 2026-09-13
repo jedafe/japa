@@ -313,12 +313,12 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenantID, userID pgtype.UUID) bool {
 	minAgeDays := 30
 	if h.settings != nil {
-		minAgeDays = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_account_age_days", 30)
+		minAgeDays = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "visa_timeline.min_account_age_days", 30)
 	}
 
 	minReputation := 50
 	if h.settings != nil {
-		minReputation = h.settings.GetIntOr(r.Context(), tenantID, "visa_timeline.min_reputation", 50)
+		minReputation = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "visa_timeline.min_reputation", 50)
 	}
 
 	// Account-age check via the store.

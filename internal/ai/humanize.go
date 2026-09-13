@@ -136,9 +136,9 @@ func (h *Handlers) resolveHandlerHumanize(ctx context.Context, tenantID pgtype.U
 	globalLevel := HumanizeMedium
 
 	if h.Settings != nil {
-		globalEnabled = h.Settings.GetBoolOr(ctx, tenantID, "ai.humanize.enabled", false)
+		globalEnabled = h.Settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.humanize.enabled", false)
 
-		if lvl := h.Settings.GetStringOr(ctx, tenantID, "ai.humanize.level", "medium"); lvl != "" {
+		if lvl := h.Settings.GetStringOr(ctx, pgtype.UUID{}, "ai.humanize.level", "medium"); lvl != "" {
 			globalLevel = HumanizeLevel(lvl)
 		}
 	}

@@ -56,8 +56,8 @@ func reverseGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	timeoutMs := nominatimDefaultTimeoutMs
 
 	if settings != nil {
-		url = settings.GetStringOr(ctx, tenantID, "geo_personalization.nominatim_url", nominatimDefaultURL)
-		timeoutMs = settings.GetIntOr(ctx, tenantID, "geo_personalization.nominatim_timeout_ms", nominatimDefaultTimeoutMs)
+		url = settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_url", nominatimDefaultURL)
+		timeoutMs = settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_timeout_ms", nominatimDefaultTimeoutMs)
 	}
 
 	fullURL := fmt.Sprintf("%s?format=json&lat=%f&lon=%f&zoom=10&addressdetails=1", url, lat, lng)

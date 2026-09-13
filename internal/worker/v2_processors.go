@@ -948,15 +948,13 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 	for _, it := range items {
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, it.url, nil)
 		if err != nil {
-			slog.Warn("task:"+taskName+": invalid URL",
-				spec.idLabel, it.id.String(), "url", it.url, "error", err)
+			slog.Warn("task:"+taskName+": invalid URL", spec.idLabel, it.id.String(), "url", it.url, "error", err)
 			continue
 		}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Warn("task:"+taskName+": request failed",
-				spec.idLabel, it.id.String(), "url", it.url, "error", err)
+			slog.Warn("task:"+taskName+": request failed", spec.idLabel, it.id.String(), "url", it.url, "error", err)
 			continue
 		}
 
@@ -965,8 +963,7 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 		if resp.StatusCode == http.StatusNotFound {
 			broken++
 
-			slog.Warn("task:"+taskName+": "+spec.urlColumn+" returns 404",
-				spec.idLabel, it.id.String(), "url", it.url)
+			slog.Warn("task:"+taskName+": "+spec.urlColumn+" returns 404", spec.idLabel, it.id.String(), "url", it.url)
 		}
 	}
 
@@ -977,8 +974,7 @@ func checkBrokenLinks(ctx context.Context, taskName string, spec linkCheckSpec) 
 		}
 	}
 
-	slog.Info("task:"+taskName+": checked "+spec.noun,
-		"total", len(items), "broken", broken)
+	slog.Info("task:"+taskName+": checked "+spec.noun, "total", len(items), "broken", broken)
 
 	return nil
 }
@@ -1101,8 +1097,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:digest:generate: %w", err)
 	}
 
-	slog.Info("task:digest:generate: edition assembled",
-		"tenant_id", p.TenantID, "space_id", p.SpaceID)
+	slog.Info("task:digest:generate: edition assembled", "space_id", p.SpaceID)
 
 	return nil
 }
@@ -1161,8 +1156,7 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:digest:send_email: %w", err)
 	}
 
-	slog.Info("task:digest:send_email: sent",
-		"edition_id", p.EditionID, "tenant_id", p.TenantID)
+	slog.Info("task:digest:send_email: sent", "edition_id", p.EditionID)
 
 	return nil
 }
@@ -1202,8 +1196,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:japa_stage:recommend: %w", err)
 	}
 
-	slog.Info("task:japa_stage:recommend: dispatched",
-		"user_id", p.UserID, "stage", p.Stage)
+	slog.Info("task:japa_stage:recommend: dispatched", "user_id", p.UserID, "stage", p.Stage)
 
 	return nil
 }

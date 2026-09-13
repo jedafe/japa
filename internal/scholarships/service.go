@@ -446,7 +446,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "scholarship_finder.enabled", true)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "scholarship_finder.enabled", true)
 }
 
 // Option is a single selectable value exposed by the statuses endpoint.
@@ -833,7 +833,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		return gen.SavedScholarship{}, ErrGuideNotFound
 	}
 
-	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.default_reminder_days", 14))
+	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "scholarship_finder.default_reminder_days", 14))
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
 
@@ -863,7 +863,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 
 	// Award completion points if this is the user's first save (fire-and-forget).
 	if s.enqueuer != nil {
-		completionPoints := s.settings.GetIntOr(ctx, tenantID, "scholarship_finder.completion_points", 10)
+		completionPoints := s.settings.GetIntOr(ctx, pgtype.UUID{}, "scholarship_finder.completion_points", 10)
 		if completionPoints > 0 {
 			payload, _ := json.Marshal(map[string]interface{}{
 				"tenant_id": tenantID.String(),

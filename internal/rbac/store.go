@@ -103,7 +103,7 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 	// after the group is removed.
 	memberRows, err := s.read.ListUserGroupsByTenant(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to list groups for member lookup", "tenant_id", tenantID, "error", err)
+		slog.Warn("rbac: failed to list groups for member lookup", "error", err)
 	}
 
 	var memberIDs []pgtype.UUID
@@ -260,7 +260,7 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 	// Batch query 1: member counts for all groups in this tenant.
 	memberCountRows, err := s.read.CountGroupMembersByTenant(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to batch count group members", "tenant_id", tenantID, "error", err)
+		slog.Warn("rbac: failed to batch count group members", "error", err)
 
 		memberCountRows = nil
 	}
@@ -273,7 +273,7 @@ func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, 
 	// Batch query 2: all permissions for all groups in this tenant.
 	permRows, err := s.read.ListGroupPermissionsByTenant(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to batch list group permissions", "tenant_id", tenantID, "error", err)
+		slog.Warn("rbac: failed to batch list group permissions", "error", err)
 
 		permRows = nil
 	}
@@ -412,7 +412,7 @@ func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, se
 	// Batch query: all role permissions for this tenant.
 	permRows, err := s.read.ListRolePermissionsByTenant(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to batch list role permissions", "tenant_id", tenantID, "error", err)
+		slog.Warn("rbac: failed to batch list role permissions", "error", err)
 
 		permRows = nil
 	}
@@ -425,7 +425,7 @@ func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, se
 	// Batch query: group counts per role for this tenant.
 	groupCountRows, err := s.read.CountGroupsByRoleAndTenant(ctx)
 	if err != nil {
-		slog.Warn("rbac: failed to batch count groups by role", "tenant_id", tenantID, "error", err)
+		slog.Warn("rbac: failed to batch count groups by role", "error", err)
 
 		groupCountRows = nil
 	}

@@ -37,7 +37,7 @@ func ResolveLanguages(ctx context.Context, reader hreflangSettingsReader, tenant
 		return FallbackLanguages
 	}
 
-	raw := reader.GetStringOr(ctx, tenantID, "i18n.enabled_languages", "en,fr")
+	raw := reader.GetStringOr(ctx, pgtype.UUID{}, "i18n.enabled_languages", "en,fr")
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
 

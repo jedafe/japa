@@ -70,8 +70,8 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	if settings != nil {
 		// Reuse the same settings keys as the reverse geocoder — the
 		// Nominatim base URL is the same host, just a different path.
-		url = settings.GetStringOr(ctx, tenantID, "geo_personalization.nominatim_url", nominatimForwardDefaultURL)
-		timeoutMs = settings.GetIntOr(ctx, tenantID, "geo_personalization.nominatim_timeout_ms", nominatimForwardDefaultTimeoutMs)
+		url = settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_url", nominatimForwardDefaultURL)
+		timeoutMs = settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_timeout_ms", nominatimForwardDefaultTimeoutMs)
 		// The nominatim_url setting points at /reverse for the users
 		// package. Replace the path with /search for forward geocoding.
 		url = strings.Replace(url, "/reverse", "/search", 1)

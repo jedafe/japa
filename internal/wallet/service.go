@@ -207,7 +207,7 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 	// (DailyEarningCap) or system_settings (wallet.max_daily_earn_points).
 	dailyCap := int64(0)
 	if s.settings != nil {
-		dailyCap = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.max_daily_earn_points", 0))
+		dailyCap = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.max_daily_earn_points", 0))
 	}
 
 	if dailyCap == 0 {
@@ -379,7 +379,7 @@ func (s *Service) ConvertPointsToCredits(ctx context.Context, tenantID, userID p
 	// AUDIT-BE2-SETTING-008: enforce minimum convertible points from settings.
 	minConvert := int64(DefaultMinConvertPoints)
 	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
+		minConvert = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
 
 	if input.PointsToConvert < minConvert {
@@ -752,7 +752,7 @@ func (s *Service) GetWalletSettingsWithMinConvert(ctx context.Context, tenantID 
 
 	minConvert := int64(DefaultMinConvertPoints)
 	if s.settings != nil {
-		minConvert = int64(s.settings.GetIntOr(ctx, tenantID, "wallet.min_convert_points", DefaultMinConvertPoints))
+		minConvert = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "wallet.min_convert_points", DefaultMinConvertPoints))
 	}
 
 	return settings, minConvert, nil

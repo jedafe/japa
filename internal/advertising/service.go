@@ -245,7 +245,7 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 
 	globalFreqCap := 0
 	if s.settings != nil {
-		globalFreqCap = s.settings.GetIntOr(ctx, tenantID, "ads.frequency_cap_per_day", 3)
+		globalFreqCap = s.settings.GetIntOr(ctx, pgtype.UUID{}, "ads.frequency_cap_per_day", 3)
 	}
 
 	for _, c := range campaigns {

@@ -91,8 +91,7 @@ func main() {
 			"fan_out_type": "followers",
 		})
 		if err != nil {
-			slog.Warn("skipping: failed to marshal payload",
-				"content_id", item.ContentID.String(), "error", err)
+			slog.Warn("skipping: failed to marshal payload", "content_id", item.ContentID.String(), "error", err)
 
 			skipped++
 
@@ -103,28 +102,19 @@ func main() {
 
 		info, err := client.Enqueue(task, asynq.Queue("default"))
 		if err != nil {
-			slog.Warn("skipping: failed to enqueue",
-				"content_id", item.ContentID.String(), "error", err)
+			slog.Warn("skipping: failed to enqueue", "content_id", item.ContentID.String(), "error", err)
 
 			skipped++
 
 			continue
 		}
 
-		slog.Info("enqueued fan-out task",
-			"content_id", item.ContentID.String(),
-			"author_id", item.AuthorID.String(),
-			"tenant_id", item.TenantID.String(),
-			"content_type", item.ContentType,
-			"task_id", info.ID)
+		slog.Info("enqueued fan-out task", "content_id", item.ContentID.String(), "author_id", item.AuthorID.String(), "content_type", item.ContentType, "task_id", info.ID)
 
 		enqueued++
 	}
 
-	slog.Info("backfill complete",
-		"total_content", len(items),
-		"enqueued", enqueued,
-		"skipped", skipped)
+	slog.Info("backfill complete", "total_content", len(items), "enqueued", enqueued, "skipped", skipped)
 	fmt.Printf("\nBackfill complete: %d fan-out tasks enqueued, %d skipped\n", enqueued, skipped)
 }
 

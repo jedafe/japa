@@ -474,8 +474,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil {
 		spaceAutoPopulateAdapter.SetSystemUserID(sysUID)
 	} else {
-		slog.Warn("server: could not resolve system user for university logo attribution",
-			"error", err)
+		slog.Warn("server: could not resolve system user for university logo attribution", "error", err)
 	}
 
 	// Hot-reloadable system settings (AUDIT-BE-009). Previously config.NewSettings
@@ -1006,13 +1005,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 		adminIDs, err := queries.ListTenantAdminIDs(ctx)
 		if err != nil {
-			slog.Error("customfields: notify_admin form trigger, listing tenant admins",
-				"tenant_id", tenantID.String(), "error", err)
+			slog.Error("customfields: notify_admin form trigger, listing tenant admins", "error", err)
 			return fmt.Errorf("notify_admin: listing tenant admins: %w", err)
 		}
 
-		slog.Info("customfields: notify_admin form trigger",
-			"tenant_id", tenantID.String(), "title", title, "admin_count", len(adminIDs))
+		slog.Info("customfields: notify_admin form trigger", "title", title, "admin_count", len(adminIDs))
 
 		var systemID pgtype.UUID
 
@@ -1023,8 +1020,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				"admin_notification", "system", systemID,
 				"form_submission", systemID,
 				title, body, actionURL); err != nil {
-				slog.Warn("customfields: notify_admin delivery failed",
-					"tenant_id", tenantID.String(), "admin_id", adminID.String(), "error", err)
+				slog.Warn("customfields: notify_admin delivery failed", "admin_id", adminID.String(), "error", err)
 
 				if firstErr == nil {
 					firstErr = err
@@ -1636,8 +1632,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiDispatcher.RegisterProvider("chat", xiaomiProvider)
 		aiDispatcher.RegisterProvider("moderation", xiaomiProvider)
 		aiDispatcher.RegisterProvider("extraction", xiaomiProvider)
-		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash,
-			"categories", []string{"content_generation", "chat", "moderation", "extraction"})
+		slog.Info("ai: registered xiaomi provider", "model", ai.XiaomiModelFlash, "categories", []string{"content_generation", "chat", "moderation", "extraction"})
 	}
 
 	// Wire the AI classifier into the spam pipeline so the

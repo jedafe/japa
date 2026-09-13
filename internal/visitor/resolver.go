@@ -518,7 +518,7 @@ func (res *Resolver) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, k
 		return fallback
 	}
 
-	return res.settings.GetBoolOr(ctx, tenantID, key, fallback)
+	return res.settings.GetBoolOr(ctx, pgtype.UUID{}, key, fallback)
 }
 
 // defaultCountry returns the configured fallback country code for visitors

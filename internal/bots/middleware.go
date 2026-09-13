@@ -50,11 +50,7 @@ func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler)
 
 			bots, err := getCachedBots(r.Context(), store, rdb, t.ID)
 			if err != nil {
-				slog.Warn(
-					"bot detection: failed to query bots",
-					"tenant_id", t.ID,
-					"error", err,
-				)
+				slog.Warn("bot detection: failed to query bots", "error", err, )
 				next.ServeHTTP(w, r)
 
 				return
@@ -103,7 +99,7 @@ func getCachedBots(ctx context.Context, store *Store, rdb *valkey.Client, tenant
 	if rdb != nil {
 		if data, err := json.Marshal(bots); err == nil {
 			if err := rdb.Redis().Set(ctx, cacheKey, data, botListCacheTTL).Err(); err != nil {
-				slog.Warn("bot detection: failed to cache bot list", "tenant_id", tenantID, "error", err)
+				slog.Warn("bot detection: failed to cache bot list", "error", err)
 			}
 		}
 	}

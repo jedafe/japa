@@ -149,7 +149,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "visa_routes.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "visa_routes.enabled", false)
 }
 
 // List returns a paginated, filtered list of published+active visa routes.
@@ -578,12 +578,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			eligibilitySummary = text
 		}
 
-		slog.Info(
-			"visaroutes: AI Gateway generated draft",
-			"destination_space_id", input.DestinationSpaceID,
-			"visa_category", visaCategory,
-			"prompt_hash", promptHash,
-		)
+		slog.Info("visaroutes: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "visa_category", visaCategory, "prompt_hash", promptHash, )
 	}
 
 	aiModel := "content_agent_v1"

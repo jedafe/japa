@@ -399,7 +399,7 @@ func (h *AgentHandler) getStringSetting(ctx context.Context, tenantID pgtype.UUI
 		return fallback
 	}
 
-	return h.settings.GetStringOr(ctx, tenantID, key, fallback)
+	return h.settings.GetStringOr(ctx, pgtype.UUID{}, key, fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +671,7 @@ func (h *AgentHandler) getIntSetting(ctx context.Context, tenantID pgtype.UUID, 
 		return fallback
 	}
 
-	return h.settings.GetIntOr(ctx, tenantID, key, fallback)
+	return h.settings.GetIntOr(ctx, pgtype.UUID{}, key, fallback)
 }
 
 // getFloatSetting reads a float setting with fallback.
@@ -689,7 +689,7 @@ func (h *AgentHandler) getBoolSetting(ctx context.Context, tenantID pgtype.UUID,
 		return fallback
 	}
 
-	return h.settings.GetBoolOr(ctx, tenantID, key, fallback)
+	return h.settings.GetBoolOr(ctx, pgtype.UUID{}, key, fallback)
 }
 
 // resolveGeoContext fetches the user's current_geo_space_id and builds a

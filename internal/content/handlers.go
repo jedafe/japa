@@ -351,15 +351,13 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	// Auto-assignment is system-driven, so bypass the per-user membership
 	// check while keeping the tenant-level space validation.
 	if err := h.Service.UpdateContentSpaces(ctx, contentID, tenantID, pgtype.UUID{}, primarySpaceID, additionalIDs, true); err != nil {
-		slog.Warn("content: auto-assign UpdateContentSpaces failed",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: auto-assign UpdateContentSpaces failed", "content_id", contentID.String(), "error", err)
 		return selectedSpaceID
 	}
 
 	// Also update the content's space_id column for backward-compat queries.
 	if err := h.Service.SetContentSpaceID(ctx, contentID, primarySpaceID); err != nil {
-		slog.Warn("content: auto-assign SetContentSpaceID failed",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: auto-assign SetContentSpaceID failed", "content_id", contentID.String(), "error", err)
 		return selectedSpaceID
 	}
 
@@ -372,10 +370,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 		}
 	}
 
-	slog.Info("content: auto-assigned spaces",
-		"content_id", contentID.String(),
-		"primary_space", primaryName,
-		"match_count", len(matches))
+	slog.Info("content: auto-assigned spaces", "content_id", contentID.String(), "primary_space", primaryName, "match_count", len(matches))
 
 	return primarySpaceID
 }
@@ -398,8 +393,7 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 		asynq.NewTask(worker.TypeAIGenerateContentEmbedding, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeAIGenerateContentEmbedding)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue embedding task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: failed to enqueue embedding task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -424,8 +418,7 @@ func (h *Handlers) enqueueAffiliateLinkScan(contentID, tenantID pgtype.UUID) {
 		asynq.NewTask(worker.TypeContentScanAffiliateLinks, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeContentScanAffiliateLinks)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue affiliate scan task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: failed to enqueue affiliate scan task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -451,8 +444,7 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue search index task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: failed to enqueue search index task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -481,8 +473,7 @@ func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UU
 		asynq.NewTask(worker.TypeScholarshipSyncFromGuide, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeScholarshipSyncFromGuide)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue scholarship sync task",
-			"content_id", contentID.String(), "error", err)
+		slog.Warn("content: failed to enqueue scholarship sync task", "content_id", contentID.String(), "error", err)
 	}
 }
 
@@ -507,8 +498,7 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 		asynq.NewTask(worker.TypeModerationScan, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeModerationScan)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue moderation scan task",
-			"entity_id", entityID.String(), "error", err)
+		slog.Warn("content: failed to enqueue moderation scan task", "entity_id", entityID.String(), "error", err)
 	}
 }
 
@@ -539,8 +529,7 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 	if h.Service != nil && h.Service.read != nil {
 		rows, err := h.Service.read.GetContentSpaces(ctx, contentID)
 		if err != nil {
-			slog.Warn("content: failed to fetch content_spaces for fan-out, using primary space_id",
-				"content_id", contentID.String(), "error", err)
+			slog.Warn("content: failed to fetch content_spaces for fan-out, using primary space_id", "content_id", contentID.String(), "error", err)
 		} else {
 			for _, r := range rows {
 				spaceIDs = append(spaceIDs, r.SpaceID)
@@ -578,8 +567,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 		asynq.NewTask(worker.TypeContentFanOutToFeeds, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeContentFanOutToFeeds)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue fan-out task",
-			"content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
+		slog.Warn("content: failed to enqueue fan-out task", "content_id", contentID.String(), "fan_out_type", fanOutType, "error", err)
 	}
 }
 
@@ -606,8 +594,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 		asynq.NewTask(worker.TypeRSSRegenerate, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeRSSRegenerate)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue rss:regenerate task",
-			"tenant_id", tenantID.String(), "error", err)
+		slog.Warn("content: failed to enqueue rss:regenerate task", "error", err)
 	}
 }
 
@@ -653,8 +640,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 			// FilterMentions logs individual checker errors internally and
 			// never returns a fatal error. This branch is retained for
 			// forward-compatibility but is not expected to fire.
-			slog.Warn("content: FilterMentions returned unexpected error",
-				"content_id", contentID.String(), "error", err)
+			slog.Warn("content: FilterMentions returned unexpected error", "content_id", contentID.String(), "error", err)
 		}
 	}
 
@@ -670,8 +656,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 			"content", contentID,
 			"", "", "",
 		); err != nil {
-			slog.Warn("content: failed to dispatch mention.content notification",
-				"user_id", m.ID.String(), "error", err)
+			slog.Warn("content: failed to dispatch mention.content notification", "user_id", m.ID.String(), "error", err)
 		}
 	}
 }
@@ -697,8 +682,7 @@ func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID)
 		asynq.NewTask(worker.TypeLinkPreviewFetch, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeLinkPreviewFetch)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue link preview task",
-			"url", url, "error", err)
+		slog.Warn("content: failed to enqueue link preview task", "url", url, "error", err)
 	}
 }
 
@@ -848,8 +832,7 @@ func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UU
 		asynq.NewTask(worker.TypeEngagementCountUpdate, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeEngagementCountUpdate)),
 	); err != nil {
-		slog.Warn("content: failed to enqueue engagement update task",
-			"entity_id", entityID.String(), "error", err)
+		slog.Warn("content: failed to enqueue engagement update task", "entity_id", entityID.String(), "error", err)
 	}
 }
 
@@ -973,7 +956,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.Status != StatusDraft {
 		minLength := defaultMinLength
 		if h.settings != nil {
-			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
+			minLength = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.min_length", defaultMinLength)
 		}
 
 		if len(strings.TrimSpace(body)) < minLength {
@@ -1161,8 +1144,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// emitted by UpdateContentStatus, which the direct-publish path skips).
 	if content.Status == StatusPublished {
 		if err := h.Service.EnsureContentScore(r.Context(), content.ID); err != nil {
-			slog.Warn("content: failed to ensure content_scores row on direct publish",
-				"content_id", content.ID.String(), "error", err)
+			slog.Warn("content: failed to ensure content_scores row on direct publish", "content_id", content.ID.String(), "error", err)
 		}
 
 		h.enqueueAffiliateLinkScan(content.ID, tenantID)
@@ -1245,8 +1227,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	rc := buildRenderContext(r, tenantID, "")
 
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
-		slog.Warn("content: failed to resolve content literals",
-			"error", err, "content_id", content.ID.String())
+		slog.Warn("content: failed to resolve content literals", "error", err, "content_id", content.ID.String())
 	}
 
 	// View tracking is handled by the dedicated POST /content/{id}/view
@@ -1270,8 +1251,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 			h.mentionCheckers,
 		)
 		if redErr != nil {
-			slog.Warn("content: RedactErasedMentionsInBody failed",
-				"content_id", content.ID.String(), "error", redErr)
+			slog.Warn("content: RedactErasedMentionsInBody failed", "content_id", content.ID.String(), "error", redErr)
 		} else {
 			content.BodyHtml = redactedHTML
 			erasedIDs = ids
@@ -1576,8 +1556,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	rc := buildRenderContext(r, tenantID, "")
 
 	if resErr := h.Service.ResolveContentFields(r.Context(), contents, rc); resErr != nil {
-		slog.Warn("content: failed to resolve list literals",
-			"error", resErr, "tenant_id", tenantID.String())
+		slog.Warn("content: failed to resolve list literals", "error", resErr)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": contents})
@@ -1688,7 +1667,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if body != "" && input.Status != StatusDraft {
 		minLength := defaultMinLength
 		if h.settings != nil {
-			minLength = h.settings.GetIntOr(r.Context(), tenantID, "content.min_length", defaultMinLength)
+			minLength = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.min_length", defaultMinLength)
 		}
 
 		if len(strings.TrimSpace(body)) < minLength {
@@ -2484,7 +2463,7 @@ var defaultAchievementReactions = []string{"🎉", "🔥", "💪"}
 // pairs); if the setting is empty or unparseable, the spec defaults
 // (🎉 🔥 💪) are used. Ref: §89 Reaction Set.
 func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings, tenantID pgtype.UUID, key string) bool {
-	raw := settings.GetStringOr(ctx, tenantID, "achievement_reactions", "")
+	raw := settings.GetStringOr(ctx, pgtype.UUID{}, "achievement_reactions", "")
 	if raw != "" && raw != "[]" {
 		var pairs []struct {
 			Emoji string `json:"emoji"`
@@ -2997,7 +2976,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 	maxTags := defaultMaxTags
 	if h.settings != nil {
-		maxTags = h.settings.GetIntOr(r.Context(), tenantID, "content.max_tags", defaultMaxTags)
+		maxTags = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.max_tags", defaultMaxTags)
 	}
 
 	existing, err := h.Service.ListContentTags(r.Context(), contentID)
@@ -3357,8 +3336,7 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Service.GetContentSpaces(r.Context(), contentID)
 	if err != nil {
-		slog.Error("getting content spaces",
-			"error", err, "content_id", contentID.String())
+		slog.Error("getting content spaces", "error", err, "content_id", contentID.String())
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error",
 			"Failed to fetch space assignments")
 
@@ -3454,9 +3432,7 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, tenantID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {
-		slog.Error("updating content spaces",
-			"error", err, "content_id", contentID.String(),
-			"user_id", user.UserID.String())
+		slog.Error("updating content spaces", "error", err, "content_id", contentID.String(), "user_id", user.UserID.String())
 
 		switch {
 		case errors.Is(err, ErrInvalidSpace):

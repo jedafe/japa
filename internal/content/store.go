@@ -1038,7 +1038,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		existing.AuthorID.Bytes == editedBy.Bytes {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
-			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "content.edit_window_minutes", defaultEditWindowMinutes)
+			windowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "content.edit_window_minutes", defaultEditWindowMinutes)
 		}
 
 		if windowMinutes > 0 {
@@ -1546,7 +1546,7 @@ func (s *Service) GetContentRevision(ctx context.Context, tenantID, id, contentI
 func (s *Service) PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error) {
 	maxPinned := 5
 	if s.settings != nil {
-		maxPinned = s.settings.GetIntOr(ctx, tenantID, "spaces.max_pinned_posts", 5)
+		maxPinned = s.settings.GetIntOr(ctx, pgtype.UUID{}, "spaces.max_pinned_posts", 5)
 	}
 
 	if maxPinned > 0 {

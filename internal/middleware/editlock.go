@@ -104,12 +104,7 @@ func EditLockMiddleware(rdb valkeycompat.Cmdable, settings editLockSettingsReade
 			ttl := editLockTTLDefault
 
 			if settings != nil {
-				tenantID := defaultTenantUUID
-				if user != nil && user.TenantID.Valid {
-					tenantID = user.TenantID
-				}
-
-				ttl = time.Duration(settings.GetIntOr(ctx, tenantID, "content.edit_lock_ttl_seconds", 90)) * time.Second
+				ttl = time.Duration(settings.GetIntOr(ctx, pgtype.UUID{}, "content.edit_lock_ttl_seconds", 90)) * time.Second
 			}
 
 			if r.Method == http.MethodDelete {

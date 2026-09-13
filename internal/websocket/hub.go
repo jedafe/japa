@@ -214,8 +214,7 @@ func (h *Hub) deliverLocalSpace(spaceID string, event WSEvent) {
 		select {
 		case client.Send <- data:
 		default:
-			slog.Warn("ws client send buffer full, dropping space message",
-				"user_id", client.UserID, "space_id", spaceID)
+			slog.Warn("ws client send buffer full, dropping space message", "user_id", client.UserID, "space_id", spaceID)
 		}
 	}
 }
@@ -308,8 +307,7 @@ func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
 		select {
 		case client.Send <- data:
 		default:
-			slog.Warn("ws client send buffer full, dropping tenant broadcast",
-				"user_id", client.UserID, "tenant_id", tenantID)
+			slog.Warn("ws client send buffer full, dropping tenant broadcast", "user_id", client.UserID)
 		}
 	}
 }

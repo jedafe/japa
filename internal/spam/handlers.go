@@ -73,8 +73,7 @@ func (h *Handlers) invalidateCensoredCache(ctx context.Context, tenantID pgtype.
 	}
 
 	if err := InvalidateCensoredWordsCache(ctx, h.rdb); err != nil {
-		slog.Warn("failed to invalidate censored words cache after mutation",
-			"tenant_id", tenantID, "error", err)
+		slog.Warn("failed to invalidate censored words cache after mutation", "error", err)
 	}
 }
 

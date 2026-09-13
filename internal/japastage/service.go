@@ -120,7 +120,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "japa_stage.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "japa_stage.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoint.
@@ -280,7 +280,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 	// Ref: §87 Integration — "stage advance to relocated or settled triggers
 	// an opt-in prompt to post to the achievement feed."
 	if (stage == "relocated" || stage == "settled") && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, tenantID, "achievement.enabled", false) {
+		s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false) {
 		zero := pgtype.UUID{}
 		title := "Share your milestone in the Achievement Feed"
 		body := "You've reached a major relocation milestone. Share your win with the community to inspire others on the same journey."
@@ -299,7 +299,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 // "*:*". The archetype is resolved by the recommendations resolver (§50);
 // here only the stage-only fallbacks ("*:{stage}" and "*:*") are used.
 func (s *Service) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, stage string) []string {
-	raw := s.settings.GetStringOr(ctx, tenantID, "geo_personalization.stage_tool_matrix", "")
+	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.stage_tool_matrix", "")
 	if raw == "" {
 		return nil
 	}

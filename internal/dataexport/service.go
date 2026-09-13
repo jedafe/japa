@@ -257,14 +257,12 @@ func (s *Service) ProcessExport(ctx context.Context, exportID pgtype.UUID) error
 
 	// Idempotency guard: a completed export is not re-processed.
 	if exp.Status == "completed" {
-		slog.Info("dataexport: export already completed, skipping",
-			"export_id", exportID.String())
+		slog.Info("dataexport: export already completed, skipping", "export_id", exportID.String())
 		return nil
 	}
 	// Avoid racing with another worker that is already processing this export.
 	if exp.Status == "processing" {
-		slog.Warn("dataexport: export already processing, skipping",
-			"export_id", exportID.String())
+		slog.Warn("dataexport: export already processing, skipping", "export_id", exportID.String())
 		return nil
 	}
 
@@ -303,12 +301,7 @@ func (s *Service) ProcessExport(ctx context.Context, exportID pgtype.UUID) error
 		return fmt.Errorf("marking export as completed: %w", err)
 	}
 
-	slog.Info("dataexport: export completed",
-		"export_id", exportID.String(),
-		"type", exp.ExportType,
-		"format", exp.Format,
-		"rows", len(rows),
-		"size", fileSize)
+	slog.Info("dataexport: export completed", "export_id", exportID.String(), "type", exp.ExportType, "format", exp.Format, "rows", len(rows), "size", fileSize)
 
 	return nil
 }

@@ -470,7 +470,7 @@ func (s *Service) ReorderSidebarWidgets(ctx context.Context, sidebarID, tenantID
 	}
 
 	if err := s.store.bulkUpdateSidebarWidgetSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
-		slog.Error("reorder sidebar widgets failed", "tenant_id", tenantID.String(), "error", err)
+		slog.Error("reorder sidebar widgets failed", "error", err)
 		return err
 	}
 

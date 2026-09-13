@@ -788,7 +788,7 @@ WHERE i.guide_id = $2
 ORDER BY i.sort_order ASC, i.created_at ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, userID, guideID)
+	rows, err := s.pool.Reader.Query(ctx, q, userID, guideID)
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: get user checklist items: %w", err)
 	}
@@ -892,7 +892,7 @@ GROUP BY g.destination_space_id, sp.name, sp.geo_code, g.visa_category
 ORDER BY sp.name ASC, g.visa_category ASC NULLS FIRST
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, )
 	if err != nil {
 		return nil, fmt.Errorf("arrivalchecklist: list selectors: %w", err)
 	}

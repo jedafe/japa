@@ -108,8 +108,7 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 // This is called by the extended content:generate_embedding task handler.
 func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error {
 	if s.embedder == nil {
-		slog.Warn("rag: index: no embedder configured, skipping",
-			"entity_type", entityType, "entity_id", entityID.String())
+		slog.Warn("rag: index: no embedder configured, skipping", "entity_type", entityType, "entity_id", entityID.String())
 		return nil
 	}
 
@@ -119,7 +118,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 		return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
 	}
 
-	maxTokens := s.settings.GetIntOr(ctx, tenantID, "rag.chunk_max_tokens", 400)
+	maxTokens := s.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.chunk_max_tokens", 400)
 	// Defense-in-depth: clamp to [1, 8000] even if catalog validation is
 	// bypassed. 0 or negative causes ChunkText to return the whole text as
 	// one giant chunk (may exceed the embedding model's token limit).
@@ -134,7 +133,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 		return s.store.DeleteEntityEmbeddings(ctx, tenantID, entityType, entityID)
 	}
 
-	model := s.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small")
+	model := s.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small")
 
 	for i, chunkText := range chunkTexts {
 		vec, err := s.embedder.GenerateEmbedding(ctx, chunkText, model)
@@ -158,12 +157,10 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 	// Delete stale tail chunks from a previous, longer index.
 	//nolint:gosec // G115: bounded
 	if err := s.store.DeleteStaleTail(ctx, tenantID, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
-		slog.Warn("rag: index: failed to delete stale tail",
-			"entity_id", entityID.String(), "error", err)
+		slog.Warn("rag: index: failed to delete stale tail", "entity_id", entityID.String(), "error", err)
 	}
 
-	slog.Info("rag: index: complete",
-		"entity_type", entityType, "entity_id", entityID.String(), "chunks", len(chunkTexts))
+	slog.Info("rag: index: complete", "entity_type", entityType, "entity_id", entityID.String(), "chunks", len(chunkTexts))
 
 	return nil
 }
@@ -193,7 +190,7 @@ func (s *Service) PurgeEntityType(ctx context.Context, tenantID pgtype.UUID, ent
 // non-RAG LLM call).
 func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, tenantID, "rag.enabled", true); !enabled {
+		if enabled := s.settings.GetBoolOr(ctx, pgtype.UUID{}, "rag.enabled", true); !enabled {
 			return nil, nil
 		}
 	}
@@ -207,8 +204,8 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 		return nil, nil
 	}
 
-	model := s.settings.GetStringOr(ctx, tenantID, "rag.embedding_model", "text-embedding-3-small")
-	topK := int32(s.settings.GetIntOr(ctx, tenantID, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
+	model := s.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small")
+	topK := int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.retrieval_top_k", 5)) // #nosec G115 -- bounded by settings validation (1-50)
 	// Defense-in-depth: clamp topK to [1, 50] even if the catalog validation
 	// is bypassed (e.g. direct DB write). LIMIT 0 in PostgreSQL returns no
 	// rows, silently breaking RAG; LIMIT -1 returns all rows (unbounded).
@@ -325,14 +322,12 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 				"tenant_id":  id.TenantID.String(),
 			})
 			if err != nil {
-				slog.Warn("rag: reindex: marshal payload failed",
-					"content_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex: marshal payload failed", "content_id", id.ID.String(), "error", err)
 				continue
 			}
 
 			if err := s.enqueuer.Enqueue(worker.TypeAIGenerateContentEmbedding, payload); err != nil {
-				slog.Warn("rag: reindex: enqueue failed",
-					"content_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex: enqueue failed", "content_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -342,7 +337,7 @@ func (s *Service) QueueReindex(ctx context.Context, tenantID pgtype.UUID) error 
 		offset += batchSize
 	}
 
-	slog.Info("rag: reindex: queued", "tenant_id", tenantID.String(), "total_enqueued", totalEnqueued)
+	slog.Info("rag: reindex: queued", "total_enqueued", totalEnqueued)
 
 	// BUG-001 fix: also re-index forum_threads, spaces, and learning_tracks
 	// (ADR-069 §2 corpus). These entity types are indexed inline (not via the
@@ -365,7 +360,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -377,8 +372,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 	for {
 		ids, err := s.store.ListForumThreadIDs(ctx, tenantID, batchSize, offset)
 		if err != nil {
-			slog.Warn("rag: reindex forum threads: list batch failed",
-				"offset", offset, "error", err)
+			slog.Warn("rag: reindex forum threads: list batch failed", "offset", offset, "error", err)
 			return
 		}
 
@@ -390,8 +384,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 			// Fetch thread title + body from DB for embedding.
 			thread, err := s.fetchForumThreadText(ctx, tenantID, id.ID)
 			if err != nil {
-				slog.Warn("rag: reindex forum threads: fetch failed",
-					"thread_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex forum threads: fetch failed", "thread_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -400,8 +393,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 			}
 
 			if err := s.IndexEntity(ctx, tenantID, "forum_thread", id.ID, thread, language); err != nil {
-				slog.Warn("rag: reindex forum threads: index failed",
-					"thread_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex forum threads: index failed", "thread_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -412,8 +404,7 @@ func (s *Service) reindexForumThreads(tenantID pgtype.UUID) {
 	}
 
 	if total > 0 {
-		slog.Info("rag: reindex forum threads: done",
-			"tenant_id", tenantID.String(), "total_indexed", total)
+		slog.Info("rag: reindex forum threads: done", "total_indexed", total)
 	}
 }
 
@@ -425,7 +416,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -437,8 +428,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 	for {
 		ids, err := s.store.ListSpaceIDs(ctx, tenantID, batchSize, offset)
 		if err != nil {
-			slog.Warn("rag: reindex spaces: list batch failed",
-				"offset", offset, "error", err)
+			slog.Warn("rag: reindex spaces: list batch failed", "offset", offset, "error", err)
 			return
 		}
 
@@ -449,8 +439,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 		for _, id := range ids {
 			text, err := s.fetchSpaceText(ctx, tenantID, id.ID)
 			if err != nil {
-				slog.Warn("rag: reindex spaces: fetch failed",
-					"space_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex spaces: fetch failed", "space_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -459,8 +448,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 			}
 
 			if err := s.IndexEntity(ctx, tenantID, "space", id.ID, text, language); err != nil {
-				slog.Warn("rag: reindex spaces: index failed",
-					"space_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex spaces: index failed", "space_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -471,8 +459,7 @@ func (s *Service) reindexSpaces(tenantID pgtype.UUID) {
 	}
 
 	if total > 0 {
-		slog.Info("rag: reindex spaces: done",
-			"tenant_id", tenantID.String(), "total_indexed", total)
+		slog.Info("rag: reindex spaces: done", "total_indexed", total)
 	}
 }
 
@@ -484,7 +471,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 	language := "en"
 
 	if s.settings != nil {
-		language = s.settings.GetStringOr(ctx, tenantID, "i18n.default_language", "en")
+		language = s.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
 	}
 
 	const batchSize int32 = 100
@@ -496,8 +483,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 	for {
 		ids, err := s.store.ListLearningTrackIDs(ctx, tenantID, batchSize, offset)
 		if err != nil {
-			slog.Warn("rag: reindex learning tracks: list batch failed",
-				"offset", offset, "error", err)
+			slog.Warn("rag: reindex learning tracks: list batch failed", "offset", offset, "error", err)
 			return
 		}
 
@@ -508,8 +494,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 		for _, id := range ids {
 			text, err := s.fetchLearningTrackText(ctx, tenantID, id.ID)
 			if err != nil {
-				slog.Warn("rag: reindex learning tracks: fetch failed",
-					"track_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex learning tracks: fetch failed", "track_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -518,8 +503,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 			}
 
 			if err := s.IndexEntity(ctx, tenantID, "learning_track", id.ID, text, language); err != nil {
-				slog.Warn("rag: reindex learning tracks: index failed",
-					"track_id", id.ID.String(), "error", err)
+				slog.Warn("rag: reindex learning tracks: index failed", "track_id", id.ID.String(), "error", err)
 				continue
 			}
 
@@ -530,8 +514,7 @@ func (s *Service) reindexLearningTracks(tenantID pgtype.UUID) {
 	}
 
 	if total > 0 {
-		slog.Info("rag: reindex learning tracks: done",
-			"tenant_id", tenantID.String(), "total_indexed", total)
+		slog.Info("rag: reindex learning tracks: done", "total_indexed", total)
 	}
 }
 

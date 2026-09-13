@@ -610,10 +610,7 @@ func (h *Handlers) CreateFieldGroupAdmin(w http.ResponseWriter, r *http.Request)
 			EntityID:    pgtype.UUID{},
 			Position:    0,
 		}); err != nil {
-			slog.Error("creating field group assignment",
-				"group_id", group.ID,
-				"entity_class", entityClass,
-				"error", err)
+			slog.Error("creating field group assignment", "group_id", group.ID, "entity_class", entityClass, "error", err)
 			// Don't fail the whole request — the group was created
 			// successfully; the assignment can be retried. Log and
 			// continue so the admin sees the group in the list.
@@ -2148,7 +2145,7 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 	feeCredits := int64(form.SubmissionFeeCredits)
 
 	if h.settings != nil && form.Slug == "claim-ownership" {
-		override := h.settings.GetIntOr(r.Context(), tenantID, "claim_ownership.fee_credits", 0)
+		override := h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "claim_ownership.fee_credits", 0)
 		if override > 0 {
 			feeCredits = int64(override)
 		}
@@ -2329,8 +2326,7 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 
 	task := asynq.NewTask(worker.TypeFormFireSubmissionTriggers, payloadBytes)
 	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeFormFireSubmissionTriggers))); err != nil {
-		slog.Warn("customfields: enqueuing form trigger task",
-			"submission_id", submissionID.String(), "error", err)
+		slog.Warn("customfields: enqueuing form trigger task", "submission_id", submissionID.String(), "error", err)
 	}
 }
 

@@ -111,7 +111,7 @@ type PaymentProviderInfo struct {
 // panel). If no rows exist yet, falls back to system_settings pricing config
 // and ultimately to compiled-in defaults (Rule 3).
 func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -149,11 +149,11 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	bizYearly := int64(15000000)
 
 	if h.settings != nil {
-		currency = h.settings.GetStringOr(r.Context(), tenantID, "pricing.currency", "NGN")
-		proMonthly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.pro.monthly_amount", 500000))
-		proYearly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.pro.yearly_amount", 5000000))
-		bizMonthly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.business.monthly_amount", 1500000))
-		bizYearly = int64(h.settings.GetIntOr(r.Context(), tenantID, "pricing.plan.business.yearly_amount", 15000000))
+		currency = h.settings.GetStringOr(r.Context(), pgtype.UUID{}, "pricing.currency", "NGN")
+		proMonthly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.pro.monthly_amount", 500000))
+		proYearly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.pro.yearly_amount", 5000000))
+		bizMonthly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.business.monthly_amount", 1500000))
+		bizYearly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.business.yearly_amount", 15000000))
 	}
 
 	plans := []PricingPlan{
@@ -466,7 +466,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderPaystack, event, status); err != nil {
-		slog.Error("paystack webhook processing failed", "tenant_id", tenantID, "error", err)
+		slog.Error("paystack webhook processing failed", "error", err)
 		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 
@@ -529,7 +529,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderStripe, event, status); err != nil {
-		slog.Error("stripe webhook processing failed", "tenant_id", tenantID, "error", err)
+		slog.Error("stripe webhook processing failed", "error", err)
 		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 
@@ -597,7 +597,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), tenantID, ProviderNOWPayments, event, status); err != nil {
-		slog.Error("nowpayments webhook processing failed", "tenant_id", tenantID, "error", err)
+		slog.Error("nowpayments webhook processing failed", "error", err)
 		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", tenantID, err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 

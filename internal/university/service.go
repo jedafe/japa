@@ -295,8 +295,7 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		}
 
 		if already {
-			slog.Info("university: process_enrollment: split already recorded, skipping",
-				"payment_id", paymentID.String())
+			slog.Info("university: process_enrollment: split already recorded, skipping", "payment_id", paymentID.String())
 			return nil
 		}
 	} else if source == "pro_stream" {
@@ -306,15 +305,14 @@ func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, track
 		}
 
 		if already {
-			slog.Info("university: process_enrollment: pro_stream split already recorded, skipping",
-				"track_id", trackID.String(), "user_id", userID.String())
+			slog.Info("university: process_enrollment: pro_stream split already recorded, skipping", "track_id", trackID.String(), "user_id", userID.String())
 			return nil
 		}
 		// Read the configured per-stream rate from system_settings (BUG-008).
 		// Setting key: university.pro_stream_rate_kobo (default 5000 = 50.00 NGN,
 		// matching system-settings-catalog.md and migration 000169).
 		if s.settings != nil {
-			grossKobo = int64(s.settings.GetIntOr(ctx, tenantID, "university.pro_stream_rate_kobo", 5000))
+			grossKobo = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.pro_stream_rate_kobo", 5000))
 		}
 	}
 
@@ -391,8 +389,8 @@ func (s *Service) resolveSplit(ctx context.Context, tenantID, instructorID pgtyp
 	platformDefault := 25.0
 
 	if s.settings != nil {
-		creatorDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.creator_percentage_default", 75))
-		platformDefault = float64(s.settings.GetIntOr(ctx, tenantID, "university.platform_percentage_default", 25))
+		creatorDefault = float64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.creator_percentage_default", 75))
+		platformDefault = float64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.platform_percentage_default", 25))
 	}
 
 	creatorPct = creatorDefault
@@ -450,7 +448,7 @@ func numericFromFloat(f float64) pgtype.Numeric {
 func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UUID, periodStart, periodEnd time.Time) error {
 	minPayout := int64(500000)
 	if s.settings != nil {
-		minPayout = int64(s.settings.GetIntOr(ctx, tenantID, "university.min_payout_kobo", 500000))
+		minPayout = int64(s.settings.GetIntOr(ctx, pgtype.UUID{}, "university.min_payout_kobo", 500000))
 	}
 
 	// List all approved instructors via the status filter (no space scope —
@@ -575,20 +573,17 @@ func (s *Service) SendInstructorPayout(ctx context.Context, tenantID, payoutID p
 // dev/test).
 func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, logoURL string, uploaderID pgtype.UUID) error {
 	if s.mediaUploader == nil {
-		slog.Warn("university:fetch_logo: no media uploader wired, skipping",
-			"space_id", spaceID.String(), "logo_url", logoURL)
+		slog.Warn("university:fetch_logo: no media uploader wired, skipping", "space_id", spaceID.String(), "logo_url", logoURL)
 		return nil
 	}
 
 	if s.spaceLogoUpdater == nil {
-		slog.Warn("university:fetch_logo: no space logo updater wired, skipping",
-			"space_id", spaceID.String(), "logo_url", logoURL)
+		slog.Warn("university:fetch_logo: no space logo updater wired, skipping", "space_id", spaceID.String(), "logo_url", logoURL)
 		return nil
 	}
 
 	if !uploaderID.Valid {
-		slog.Warn("university:fetch_logo: no valid uploaded_by, skipping",
-			"space_id", spaceID.String(), "logo_url", logoURL)
+		slog.Warn("university:fetch_logo: no valid uploaded_by, skipping", "space_id", spaceID.String(), "logo_url", logoURL)
 		return nil
 	}
 
@@ -607,8 +602,7 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 		return fmt.Errorf("university:fetch_logo: updating space logo_media_id: %w", err)
 	}
 
-	slog.Info("university:fetch_logo: logo stored and space updated",
-		"space_id", spaceID.String(), "media_id", mediaID.String())
+	slog.Info("university:fetch_logo: logo stored and space updated", "space_id", spaceID.String(), "media_id", mediaID.String())
 
 	return nil
 }
@@ -655,8 +649,7 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
 	if s.notifier == nil {
-		slog.Info("university:notify_instructor_approved: no notifier wired, logging only",
-			"tenant_id", tenantID, "instructor_id", instructorID)
+		slog.Info("university:notify_instructor_approved: no notifier wired, logging only", "instructor_id", instructorID)
 		return nil
 	}
 
@@ -667,8 +660,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 	}
 
 	if !profile.UserID.Valid {
-		slog.Warn("university:notify_instructor_approved: instructor has no backing user",
-			"instructor_id", instructorID)
+		slog.Warn("university:notify_instructor_approved: instructor has no backing user", "instructor_id", instructorID)
 		return nil
 	}
 
@@ -692,8 +684,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, trackID pgtype.UUID) error {
 	if s.notifier == nil {
-		slog.Info("university:notify_course_approved: no notifier wired, logging only",
-			"tenant_id", tenantID, "track_id", trackID)
+		slog.Info("university:notify_course_approved: no notifier wired, logging only", "track_id", trackID)
 		return nil
 	}
 
@@ -710,8 +701,7 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 	}
 
 	if !profile.UserID.Valid {
-		slog.Warn("university:notify_course_approved: instructor has no backing user",
-			"instructor_id", track.InstructorID)
+		slog.Warn("university:notify_course_approved: instructor has no backing user", "instructor_id", track.InstructorID)
 		return nil
 	}
 

@@ -60,8 +60,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	// could start impersonating a non-existent UUID, leaving a dangling
 	// Valkey key that breaks downstream handlers using EffectiveUserID.
 	if _, err := s.GetTargetProfile(ctx, tenantID, targetUserID); err != nil {
-		slog.Warn("impersonation refused: target user not found",
-			"admin_id", adminID.String(), "target_id", targetUserID.String(), "error", err)
+		slog.Warn("impersonation refused: target user not found", "admin_id", adminID.String(), "target_id", targetUserID.String(), "error", err)
 		return ErrTargetNotFound
 	}
 
@@ -69,8 +68,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	// Section 46: "A user with admin.impersonate cannot impersonate another
 	// user who holds any admin-level role."
 	if s.rbac != nil && s.rbac.HasAdminCapability(ctx, targetUserID, tenantID) {
-		slog.Warn("impersonation refused: target is admin-level",
-			"admin_id", adminID.String(), "target_id", targetUserID.String())
+		slog.Warn("impersonation refused: target is admin-level", "admin_id", adminID.String(), "target_id", targetUserID.String())
 		return ErrTargetIsAdmin
 	}
 
@@ -95,7 +93,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 		"target_id":   targetUserID.String(),
 		"ttl_seconds": strconv.FormatInt(int64(DefaultImpersonationTTL.Seconds()), 10),
 	}); err != nil {
-		slog.Error("impersonation: audit log INSERT failed", "error", err, "tenant_id", tenantID.String(), "admin_id", adminID.String(), "target_id", targetUserID.String())
+		slog.Error("impersonation: audit log INSERT failed", "error", err, "admin_id", adminID.String(), "target_id", targetUserID.String())
 		return fmt.Errorf("abort impersonation: audit log failed: %w", err)
 	}
 
@@ -183,8 +181,7 @@ func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID
 
 	profile, profileErr := s.GetTargetProfile(ctx, tenantID, targetUUID)
 	if profileErr != nil {
-		slog.Warn("impersonation status: failed to fetch target profile",
-			"error", profileErr, "target_id", targetID)
+		slog.Warn("impersonation status: failed to fetch target profile", "error", profileErr, "target_id", targetID)
 	}
 
 	return targetID, true, ttlSeconds, profile, nil

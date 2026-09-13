@@ -183,7 +183,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 		return gen.AdCampaign{}, ErrFeatureDisabled
 	}
 
-	minDays := s.settings.GetIntOr(ctx, tenantID, "ads.min_campaign_days", 3)
+	minDays := s.settings.GetIntOr(ctx, pgtype.UUID{}, "ads.min_campaign_days", 3)
 	if input.DurationDays < minDays {
 		return gen.AdCampaign{}, fmt.Errorf("%w: must be at least %d days", ErrDurationTooShort, minDays)
 	}
@@ -448,8 +448,7 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 			slog.Warn("adsselfserve: enqueue refund failed", "error", err)
 		}
 	} else if !refundEnabled {
-		slog.Info("adsselfserve: credit refund skipped (ads.credit_refund_on_reject=false)",
-			"campaign_id", campaignID.String())
+		slog.Info("adsselfserve: credit refund skipped (ads.credit_refund_on_reject=false)", "campaign_id", campaignID.String())
 	}
 
 	return s.store.MarkCampaignRefunded(ctx, tenantID, campaignID)
@@ -469,14 +468,12 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID
 	}
 
 	if s.notifier == nil {
-		slog.Warn("adsselfserve: notifier not wired, skipping campaign status notification",
-			"campaign_id", campaignID.String())
+		slog.Warn("adsselfserve: notifier not wired, skipping campaign status notification", "campaign_id", campaignID.String())
 		return nil
 	}
 
 	if !campaign.CreatedBy.Valid {
-		slog.Warn("adsselfserve: campaign has no created_by, cannot notify",
-			"campaign_id", campaignID.String())
+		slog.Warn("adsselfserve: campaign has no created_by, cannot notify", "campaign_id", campaignID.String())
 		return nil
 	}
 
@@ -493,8 +490,7 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID
 		actionURL = "/org/" + campaign.OrganizationID.String() + "/ads/" + campaign.ID.String()
 	default:
 		// Status hasn't changed to a review decision yet — nothing to notify.
-		slog.Debug("adsselfserve: campaign status is not a review decision, skipping notify",
-			"campaign_id", campaignID.String(), "status", campaign.Status)
+		slog.Debug("adsselfserve: campaign status is not a review decision, skipping notify", "campaign_id", campaignID.String(), "status", campaign.Status)
 		return nil
 	}
 

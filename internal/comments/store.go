@@ -488,7 +488,7 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	if existing.CreatedAt.Valid {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
-			windowMinutes = s.settings.GetIntOr(ctx, tenantID, "comments.edit_window_minutes", defaultEditWindowMinutes)
+			windowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "comments.edit_window_minutes", defaultEditWindowMinutes)
 		}
 
 		if windowMinutes > 0 {

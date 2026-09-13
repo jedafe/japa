@@ -185,7 +185,7 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 
 	currency := ""
 	if h.service.settings != nil {
-		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
+		currency = h.service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "wallet.default_currency", "")
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
@@ -728,7 +728,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 
 	currency := ""
 	if h.service.settings != nil {
-		currency = h.service.settings.GetStringOr(r.Context(), tenantID, "wallet.default_currency", "")
+		currency = h.service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "wallet.default_currency", "")
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{

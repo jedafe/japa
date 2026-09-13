@@ -311,7 +311,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetTopContent(r.Context(), user.TenantID, period, contentType, limit)
 	if err != nil {
-		slog.Error("advancedanalytics: top content query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: top content query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve top content")
 
 		return
@@ -335,7 +335,7 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 
 	rows, err := h.svc.GetRevenueStreams(r.Context(), user.TenantID, period)
 	if err != nil {
-		slog.Error("advancedanalytics: revenue streams query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: revenue streams query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve revenue streams")
 
 		return
@@ -357,7 +357,7 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetAdPerformance(r.Context(), user.TenantID, status, limit)
 	if err != nil {
-		slog.Error("advancedanalytics: ad performance query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: ad performance query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve ad performance")
 
 		return
@@ -378,7 +378,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 
 	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), user.TenantID, limit)
 	if err != nil {
-		slog.Error("advancedanalytics: newsletter engagement query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: newsletter engagement query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve newsletter engagement")
 
 		return
@@ -386,7 +386,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 
 	lists, err := h.svc.GetSubscriberGrowth(r.Context(), user.TenantID)
 	if err != nil {
-		slog.Error("advancedanalytics: subscriber growth query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: subscriber growth query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve subscriber growth")
 
 		return
@@ -410,7 +410,7 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.svc.GetRetentionCohorts(r.Context(), user.TenantID, limit)
 	if err != nil {
-		slog.Error("advancedanalytics: retention cohorts query failed", "error", err, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: retention cohorts query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve retention cohorts")
 
 		return
@@ -437,7 +437,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 
 	csvData, _, err := h.svc.ExportCSV(r.Context(), user.TenantID, metric, period)
 	if err != nil {
-		slog.Error("advancedanalytics: CSV export failed", "error", err, "metric", metric, "tenant_id", user.TenantID)
+		slog.Error("advancedanalytics: CSV export failed", "error", err, "metric", metric)
 		errpkg.WriteError(w, http.StatusBadRequest, "export_failed", "Export unavailable")
 
 		return

@@ -139,10 +139,7 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenant
 		if err == nil {
 			return preview, true
 		}
-		slog.Debug("task:intel:source_metadata: source_url preview failed; trying domain",
-			"source_id", src.ID.String(),
-			"source_url", src.SourceUrl,
-			"error", err)
+		slog.Debug("task:intel:source_metadata: source_url preview failed; trying domain", "source_id", src.ID.String(), "source_url", src.SourceUrl, "error", err)
 	}
 
 	if src.Domain != "" {
@@ -151,10 +148,7 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenant
 		if err == nil {
 			return preview, true
 		}
-		slog.Debug("task:intel:source_metadata: domain preview failed",
-			"source_id", src.ID.String(),
-			"url", pageURL,
-			"error", err)
+		slog.Debug("task:intel:source_metadata: domain preview failed", "source_id", src.ID.String(), "url", pageURL, "error", err)
 	}
 
 	return nil, false

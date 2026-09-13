@@ -27,7 +27,7 @@ func GetRefreshTokenTTL(ctx context.Context, settings SettingsReader, tenantID p
 		return DefaultRefreshTokenTTL
 	}
 
-	days := settings.GetIntOr(ctx, tenantID, "auth.session.refresh_days", 30)
+	days := settings.GetIntOr(ctx, pgtype.UUID{}, "auth.session.refresh_days", 30)
 	if days <= 0 {
 		return DefaultRefreshTokenTTL
 	}
@@ -44,7 +44,7 @@ func GetAccessTokenTTL(ctx context.Context, settings SettingsReader, tenantID pg
 		return DefaultAccessTokenTTL
 	}
 
-	minutes := settings.GetIntOr(ctx, tenantID, "auth.session.access_token_ttl_minutes", 15)
+	minutes := settings.GetIntOr(ctx, pgtype.UUID{}, "auth.session.access_token_ttl_minutes", 15)
 	if minutes <= 0 {
 		return DefaultAccessTokenTTL
 	}

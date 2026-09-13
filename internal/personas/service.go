@@ -193,7 +193,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	// BUG-006: cap the batch size via system_settings (Rule 3: configurable).
 	maxBatch := 100
 	if s.settings != nil {
-		maxBatch = s.settings.GetIntOr(ctx, tenantID, "persona.max_batch_size", 100)
+		maxBatch = s.settings.GetIntOr(ctx, pgtype.UUID{}, "persona.max_batch_size", 100)
 	}
 
 	if maxBatch <= 0 {

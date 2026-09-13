@@ -151,7 +151,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "cv_formatter.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "cv_formatter.enabled", false)
 }
 
 // CheckQuota returns nil if the user may submit a new format request,
@@ -168,7 +168,7 @@ func (s *Service) CheckQuota(ctx context.Context, userID, tenantID pgtype.UUID) 
 
 	limit := 3
 	if s.settings != nil {
-		limit = s.settings.GetIntOr(ctx, tenantID, "cv_formatter.quota_standard", 3)
+		limit = s.settings.GetIntOr(ctx, pgtype.UUID{}, "cv_formatter.quota_standard", 3)
 	}
 
 	if limit <= 0 {

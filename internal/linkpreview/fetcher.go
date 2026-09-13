@@ -95,7 +95,7 @@ func (f *Fetcher) resolveTimeout(ctx context.Context, tenantID pgtype.UUID) time
 		return time.Duration(defaultFetchTimeoutSeconds) * time.Second
 	}
 
-	secs := f.settings.GetIntOr(ctx, tenantID, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
+	secs := f.settings.GetIntOr(ctx, pgtype.UUID{}, "linkpreview.fetch_timeout_seconds", defaultFetchTimeoutSeconds)
 	if secs < 1 {
 		secs = 1
 	}
@@ -114,7 +114,7 @@ func (f *Fetcher) resolveTimeout(ctx context.Context, tenantID pgtype.UUID) time
 // SetBlacklist (BUG-001: parsed as JSON, not CSV).
 func (f *Fetcher) resolveBlacklist(ctx context.Context, tenantID pgtype.UUID) []string {
 	if f.settings != nil {
-		raw, err := f.settings.GetSetting(ctx, tenantID, "content.link_preview.blacklist")
+		raw, err := f.settings.GetSetting(ctx, pgtype.UUID{}, "content.link_preview.blacklist")
 		if err == nil && raw != "" {
 			if bl := ParseBlacklistJSON(raw); len(bl) > 0 {
 				return bl

@@ -2230,7 +2230,7 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 	threshold := 0.0
 
 	if h.Settings != nil {
-		if v, err := h.Settings.GetSetting(r.Context(), tenantID, aiBudgetThresholdKey); err == nil {
+		if v, err := h.Settings.GetSetting(r.Context(), pgtype.UUID{}, aiBudgetThresholdKey); err == nil {
 			threshold = parseBudgetUSD(v)
 		}
 	}
@@ -3698,7 +3698,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 				settingKey = "extensions." + ext.Key + ".enabled"
 			}
 
-			enabled = h.Settings.GetBoolOr(r.Context(), tenantID, settingKey, enabled)
+			enabled = h.Settings.GetBoolOr(r.Context(), pgtype.UUID{}, settingKey, enabled)
 		}
 
 		ext.Enabled = enabled

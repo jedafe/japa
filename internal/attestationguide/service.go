@@ -150,7 +150,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "attestation_guide.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "attestation_guide.enabled", false)
 }
 
 // Research runs grounded web research for the given issuing jurisdiction,
@@ -303,7 +303,7 @@ func (s *Service) isHagueMember(ctx context.Context, tenantID, destSpaceID pgtyp
 		return false
 	}
 
-	raw := s.settings.GetStringOr(ctx, tenantID, "attestation_guide.hague_members", "[]")
+	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "attestation_guide.hague_members", "[]")
 
 	var members []string
 

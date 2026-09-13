@@ -218,7 +218,7 @@ func (s *Settings) GetSetting(ctx context.Context, tenantID pgtype.UUID, key str
 
 // GetSettingBool returns the boolean value for a system setting.
 func (s *Settings) GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error) {
-	val, err := s.GetSetting(ctx, tenantID, key)
+	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
 	if err != nil {
 		return false, err
 	}
@@ -248,7 +248,7 @@ func parseBool(sv string) bool {
 
 // GetSettingInt returns the integer value for a system setting.
 func (s *Settings) GetSettingInt(ctx context.Context, tenantID pgtype.UUID, key string) (int, error) {
-	val, err := s.GetSetting(ctx, tenantID, key)
+	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
 	if err != nil {
 		return 0, err
 	}
@@ -318,7 +318,7 @@ func (s *Settings) InvalidateSettings(ctx context.Context, tenantID pgtype.UUID)
 // so call sites read a hot-reloadable operational limit with a safe default
 // and unchanged behaviour when the setting has not been configured.
 func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
-	v, err := s.GetSettingInt(ctx, tenantID, key)
+	v, err := s.GetSettingInt(ctx, pgtype.UUID{}, key)
 	if err != nil {
 		return fallback
 	}
@@ -330,7 +330,7 @@ func (s *Settings) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key strin
 // unset or missing. It never returns an error. The value is unquoted if it
 // is a JSON-encoded string (e.g. "\"https://...\"" → "https://...").
 func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
-	val, err := s.GetSetting(ctx, tenantID, key)
+	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
 	if err != nil || val == "" {
 		return fallback
 	}
@@ -350,7 +350,7 @@ func (s *Settings) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, f
 // GetFloatOr returns the float64 value for key, or fallback when the key is
 // unset, missing, or not parseable as a float. It never returns an error.
 func (s *Settings) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
-	val, err := s.GetSetting(ctx, tenantID, key)
+	val, err := s.GetSetting(ctx, pgtype.UUID{}, key)
 	if err != nil {
 		return fallback
 	}

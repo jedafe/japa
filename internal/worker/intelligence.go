@@ -240,8 +240,7 @@ func marshalPayload(v any) []byte {
 // policy).
 func recoverPanic(taskType string) {
 	if r := recover(); r != nil {
-		slog.Error("intel: task handler panicked",
-			"task", taskType, "panic", r)
+		slog.Error("intel: task handler panicked", "task", taskType, "panic", r)
 	}
 }
 
@@ -485,8 +484,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		Success: true,
 	})
 
-	slog.Info("task:intel:fetch_source: fetched",
-		"source_id", sourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
+	slog.Info("task:intel:fetch_source: fetched", "source_id", sourceID.String(), "raw_doc_id", rawDoc.ID.String(), "hash", result.ContentHash)
 
 	payload := marshalPayload(intelDetectChangesPayload{
 		Version:   intelPayloadVersion,
@@ -598,15 +596,14 @@ func handleFetchFailure(ctx context.Context, tenantID, sourceID pgtype.UUID, sou
 	// Auto-disable sources that fail repeatedly (spec §4 failure modes).
 	threshold := 5
 	if appSettings != nil {
-		threshold = appSettings.GetIntOr(ctx, tenantID, "intel.consecutive_failure_disable_threshold", 5)
+		threshold = appSettings.GetIntOr(ctx, pgtype.UUID{}, "intel.consecutive_failure_disable_threshold", 5)
 	}
 
 	if threshold <= 0 || int64(src.ConsecutiveFailures+1) < int64(threshold) {
 		return
 	}
 
-	slog.Warn("task:intel:fetch_source: disabling source after consecutive failures",
-		"source_id", sourceIDStr, "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
+	slog.Warn("task:intel:fetch_source: disabling source after consecutive failures", "source_id", sourceIDStr, "consecutive_failures", src.ConsecutiveFailures+1, "threshold", threshold)
 
 	if disableErr := intelSourcesStore.UpdateEnabled(ctx, tenantID, sourceID, false); disableErr != nil {
 		slog.Warn("task:intel:fetch_source: failed to disable source", "source_id", sourceIDStr, "error", disableErr)
@@ -660,9 +657,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 
 	// Compare the new hash to the prior hash (passed from fetch_source).
 	decision := changedetector.Compare(rawDoc.ContentHash, p.PriorHash)
-	slog.Info("task:intel:detect_changes: decision",
-		"source_id", p.SourceID, "decision", decision.String(),
-		"new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
+	slog.Info("task:intel:detect_changes: decision", "source_id", p.SourceID, "decision", decision.String(), "new_hash", rawDoc.ContentHash, "prior_hash", p.PriorHash)
 
 	switch decision {
 	case changedetector.DecisionUnchanged:
@@ -741,8 +736,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		// Unknown / unsupported source category — route to review so an
 		// admin can reclassify the source. No extraction attempted. The
 		// raw category is stored on the record for the moderation surface.
-		slog.Warn("task:intel:extract: unsupported source category, routing to review",
-			"raw_doc_id", p.RawDocID, "category", src.Category)
+		slog.Warn("task:intel:extract: unsupported source category, routing to review", "raw_doc_id", p.RawDocID, "category", src.Category)
 
 		return intelCreateReviewStub(ctx, tenantID, rawDoc.SourceID, rawDocID, src.Category)
 	}
@@ -786,8 +780,7 @@ func intelPersistExtractedRecords(ctx context.Context, tenantID, sourceID, rawDo
 			return fmt.Errorf("task:intel:extract: create record %d: %w", i, err)
 		}
 
-		slog.Info("task:intel:extract: extracted",
-			"record_id", record.ID.String(), "index", i, "confidence", result.ConfidenceOverall)
+		slog.Info("task:intel:extract: extracted", "record_id", record.ID.String(), "index", i, "confidence", result.ConfidenceOverall)
 
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
@@ -912,8 +905,7 @@ func intelHandleCrossSourceConflict(ctx context.Context, tenantID, recordID pgty
 		return false, nil
 	}
 
-	slog.Info("task:intel:dedup: cross-source conflict detected",
-		"record_id", recordID.String(), "external_key", record.ExternalKey)
+	slog.Info("task:intel:dedup: cross-source conflict detected", "record_id", recordID.String(), "external_key", record.ExternalKey)
 
 	if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 		ID:     recordID,
@@ -1000,8 +992,7 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 
 	switch decision {
 	case services.GateAutoPublish:
-		slog.Info("task:intel:publish_gate: auto-publish",
-			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		slog.Info("task:intel:publish_gate: auto-publish", "record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
 		payload := marshalPayload(intelRecordPayload{
 			Version:  intelPayloadVersion,
@@ -1011,8 +1002,7 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 			enqueueIntel(TypeIntelPromote, payload)
 		}
 	case services.GateReviewRequired:
-		slog.Info("task:intel:publish_gate: review-required",
-			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		slog.Info("task:intel:publish_gate: review-required", "record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
 		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     recordID,
@@ -1022,8 +1012,7 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 		}
 		// Stop the chain — record is in the review queue for human action.
 	case services.GateReject:
-		slog.Info("task:intel:publish_gate: rejected",
-			"record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
+		slog.Info("task:intel:publish_gate: rejected", "record_id", p.RecordID, "confidence", record.ConfidenceOverall, "trust_level", source.TrustLevel)
 
 		// Stop the chain — record is rejected, no promotion.
 		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
@@ -1072,8 +1061,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 
 	prom, ok := intelPromoters[record.EntityType]
 	if !ok {
-		slog.Warn("task:intel:promote: no promoter registered for entity type, routing to review",
-			"record_id", p.RecordID, "entity_type", record.EntityType)
+		slog.Warn("task:intel:promote: no promoter registered for entity type, routing to review", "record_id", p.RecordID, "entity_type", record.EntityType)
 
 		if err := intelStores.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
 			ID:     recordID,
@@ -1104,9 +1092,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:promote: %w", err)
 	}
 
-	slog.Info("task:intel:promote: promoted",
-		"record_id", p.RecordID, "entity_type", record.EntityType,
-		"action", result.Action, "domain_id", result.DomainID)
+	slog.Info("task:intel:promote: promoted", "record_id", p.RecordID, "entity_type", record.EntityType, "action", result.Action, "domain_id", result.DomainID)
 
 	intelMaybeAutoPromoteStudio(ctx, tenantID, recordID, p.RecordID, record, result)
 	intelMaybeEnqueueRegeneration(ctx, tenantID, record, result)
@@ -1137,7 +1123,7 @@ func intelMaybeAutoPromoteStudio(ctx context.Context, tenantID, recordID pgtype.
 		return
 	}
 
-	if appSettings == nil || !appSettings.GetBoolOr(ctx, tenantID, "studio.auto_promote_intel_records", false) {
+	if appSettings == nil || !appSettings.GetBoolOr(ctx, pgtype.UUID{}, "studio.auto_promote_intel_records", false) {
 		return
 	}
 
@@ -1149,15 +1135,12 @@ func intelMaybeAutoPromoteStudio(ctx context.Context, tenantID, recordID pgtype.
 	if err := intelStudioAutoPromote.AutoPromoteIntelRecord(ctx, tenantID, recordID, record.EntityType, record.Extracted); err != nil {
 		// Non-fatal: the record is already 'extracted' and can be manually
 		// promoted via the admin review UI.
-		slog.Warn("task:intel:promote: auto-promote to studio failed",
-			"record_id", recordIDStr, "entity_type", record.EntityType, "error", err)
+		slog.Warn("task:intel:promote: auto-promote to studio failed", "record_id", recordIDStr, "entity_type", record.EntityType, "error", err)
 
 		return
 	}
 
-	slog.Info("task:intel:promote: auto-promoted to studio",
-		"record_id", recordIDStr, "entity_type", record.EntityType,
-		"confidence", record.ConfidenceOverall)
+	slog.Info("task:intel:promote: auto-promoted to studio", "record_id", recordIDStr, "entity_type", record.EntityType, "confidence", record.ConfidenceOverall)
 }
 
 // intelMaybeEnqueueRegeneration implements ADR-076 Amendment 2: when a
@@ -1170,7 +1153,7 @@ func intelMaybeEnqueueRegeneration(ctx context.Context, tenantID pgtype.UUID, re
 		return
 	}
 
-	if appSettings == nil || !appSettings.GetBoolOr(ctx, tenantID, "agent.regenerate_content_on_promote", false) {
+	if appSettings == nil || !appSettings.GetBoolOr(ctx, pgtype.UUID{}, "agent.regenerate_content_on_promote", false) {
 		return
 	}
 
@@ -1188,8 +1171,7 @@ func intelMaybeEnqueueRegeneration(ctx context.Context, tenantID pgtype.UUID, re
 	}
 
 	if qerr := taskEnqueuer.Enqueue(TypeContentRegenerateFromSource, regenPayload); qerr != nil {
-		slog.Warn("task:intel:promote: enqueue content regeneration failed",
-			"record_id", record.ID, "content_id", result.ContentID, "error", qerr)
+		slog.Warn("task:intel:promote: enqueue content regeneration failed", "record_id", record.ID, "content_id", result.ContentID, "error", qerr)
 	}
 }
 
@@ -1237,8 +1219,7 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:post_publish: publish event: %w", err)
 	}
 
-	slog.Info("task:intel:post_publish: event published",
-		"entity_type", p.EntityType, "domain_id", domainID.String())
+	slog.Info("task:intel:post_publish: event published", "entity_type", p.EntityType, "domain_id", domainID.String())
 
 	payload := marshalPayload(intelNotifyPayload{
 		Version:    intelPayloadVersion,
@@ -1323,8 +1304,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		// followers via the country in the payload if the domain promoter
 		// stamps it. This is a graceful degradation — notifications are
 		// best-effort, not a hard dependency.
-		slog.Info("task:intel:notify_discoveries: no geo space resolver for entity type, emitting generic discovery",
-			"entity_type", p.EntityType, "domain_id", domainID.String())
+		slog.Info("task:intel:notify_discoveries: no geo space resolver for entity type, emitting generic discovery", "entity_type", p.EntityType, "domain_id", domainID.String())
 	}
 
 	// Publish the {entity_type}.discovered event with the geo space id so
@@ -1347,8 +1327,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:notify_discoveries: publish event: %w", err)
 	}
 
-	slog.Info("task:intel:notify_discoveries: discovery event published",
-		"entity_type", p.EntityType, "domain_id", domainID.String(), "country_space_id", geoSpaceID)
+	slog.Info("task:intel:notify_discoveries: discovery event published", "entity_type", p.EntityType, "domain_id", domainID.String(), "country_space_id", geoSpaceID)
 
 	return nil
 }
@@ -1397,8 +1376,7 @@ func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 			ID:             record.ID,
 			FreshnessScore: newScore,
 		}); err != nil {
-			slog.Error("task:intel:refresh_freshness: update freshness failed",
-				"record_id", record.ID.String(), "error", err)
+			slog.Error("task:intel:refresh_freshness: update freshness failed", "record_id", record.ID.String(), "error", err)
 			continue
 		}
 
@@ -1418,8 +1396,7 @@ func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {
 		}
 	}
 
-	slog.Info("task:intel:refresh_freshness: processed",
-		"stale_records", len(stale), "re-enqueued_sources", len(reEnqueuedSources))
+	slog.Info("task:intel:refresh_freshness: processed", "stale_records", len(stale), "re-enqueued_sources", len(reEnqueuedSources))
 
 	return nil
 }

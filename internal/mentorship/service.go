@@ -362,7 +362,7 @@ func (s *Service) SetSettingsProvider(sp SettingsProvider) { s.settings = sp }
 func (s *Service) mentorMaxCapacity(ctx context.Context, tenantID pgtype.UUID) int32 {
 	maxCap := int32(10) // catalog default for mentorship.max_capacity (§102)
 	if s.settings != nil {
-		if v, err := s.settings.GetSettingInt(ctx, tenantID, "mentorship.max_capacity"); err == nil && v > 0 {
+		if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "mentorship.max_capacity"); err == nil && v > 0 {
 			maxCap = int32(v)
 		}
 	}
@@ -603,7 +603,7 @@ ORDER BY up.display_name, u.username
 LIMIT $2
 `
 
-	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
+	rows, err := s.db.Reader.Query(ctx, q, "%"+query+"%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching mentors: %w", err)
 	}
@@ -876,8 +876,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	result := connectionFromModel(conn)
 	if s.dmCreator != nil {
 		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, tenantID, conn.MentorID, conn.MenteeID); dmErr != nil {
-			slog.Warn("mentorship: auto-open DM thread on accept",
-				"connection_id", connID, "error", dmErr)
+			slog.Warn("mentorship: auto-open DM thread on accept", "connection_id", connID, "error", dmErr)
 			// Non-fatal — the connection is still accepted; the DM can be
 			// opened manually later.
 		} else {

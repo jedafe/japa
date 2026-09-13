@@ -276,7 +276,7 @@ LIMIT 1
 
 	var r TreatyRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, originSpaceID, destSpaceID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, originSpaceID, destSpaceID).Scan(
 		&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 		&r.DestinationSpaceID, &r.DestinationSpaceName,
 		&r.TreatyExists, &r.TreatySummary, &r.TreatySourceURL,

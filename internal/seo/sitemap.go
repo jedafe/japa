@@ -145,20 +145,20 @@ func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context, tenantID pgty
 		return cfg
 	}
 
-	cfg.MinMembers = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.space_min_members", cfg.MinMembers)
-	cfg.MinPosts = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.space_min_posts", cfg.MinPosts)
-	cfg.MinForums = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.space_min_forums", cfg.MinForums)
-	cfg.MinQuestions = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.space_min_questions", cfg.MinQuestions)
-	cfg.MinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.content_min_words", cfg.MinWords)
-	cfg.BlogMinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-	cfg.ForumMinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
-	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
-	cfg.GuideMinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
-	cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-	cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
-	cfg.ForumMinReplies = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
-	cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
-	cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, tenantID, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+	cfg.MinMembers = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_members", cfg.MinMembers)
+	cfg.MinPosts = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_posts", cfg.MinPosts)
+	cfg.MinForums = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_forums", cfg.MinForums)
+	cfg.MinQuestions = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_questions", cfg.MinQuestions)
+	cfg.MinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.content_min_words", cfg.MinWords)
+	cfg.BlogMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+	cfg.ForumMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+	cfg.GuideMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+	cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+	cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+	cfg.ForumMinReplies = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+	cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+	cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
 
 	return cfg
 }

@@ -475,7 +475,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 		ttl := 15 * time.Minute
 		if e.settings != nil {
-			ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.score_cache_ttl_minutes", 15)) * time.Minute
+			ttl = time.Duration(e.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.score_cache_ttl_minutes", 15)) * time.Minute
 		}
 
 		_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()
@@ -1225,7 +1225,7 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 
 			ttl := 5 * time.Minute
 			if e.settings != nil {
-				ttl = time.Duration(e.settings.GetIntOr(ctx, tenantID, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
+				ttl = time.Duration(e.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.profile_cache_ttl_minutes", 5)) * time.Minute
 			}
 
 			_ = e.vk.Set(ctx, cacheKey, data, ttl).Err()

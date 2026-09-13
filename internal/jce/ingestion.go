@@ -855,7 +855,7 @@ func refreshLockKey(contentID pgtype.UUID) string {
 func (s *Service) refreshLockDuration(ctx context.Context, tenantID pgtype.UUID) time.Duration {
 	minutes := 5
 	if s.settings != nil {
-		minutes = s.settings.GetIntOr(ctx, tenantID, "jce.refresh_lock_ttl_minutes", minutes)
+		minutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.refresh_lock_ttl_minutes", minutes)
 	}
 
 	return time.Duration(minutes) * time.Minute

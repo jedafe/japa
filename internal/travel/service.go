@@ -367,7 +367,7 @@ func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "travel.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "travel.enabled", false)
 }
 
 // cacheTTL returns the configured cache TTL, falling back to 5 min.
@@ -376,7 +376,7 @@ func (s *Service) cacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Durat
 		return defaultCacheTTL
 	}
 
-	secs := s.settings.GetIntOr(ctx, tenantID, "travel.cache_ttl_seconds", 300)
+	secs := s.settings.GetIntOr(ctx, pgtype.UUID{}, "travel.cache_ttl_seconds", 300)
 	if secs <= 0 {
 		return defaultCacheTTL
 	}

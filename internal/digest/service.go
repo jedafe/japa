@@ -133,7 +133,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "digest.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "digest.enabled", false)
 }
 
 // EmailEnabled reads the digest.email system_setting toggle.
@@ -142,7 +142,7 @@ func (s *Service) EmailEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "digest.email", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "digest.email", false)
 }
 
 // GetLatest returns the most recently published edition for a tenant
@@ -340,7 +340,7 @@ func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.
 
 		for _, tid := range tenantIDs {
 			if err := s.generateForTenant(ctx, tid, spaceID); err != nil {
-				slog.Warn("task:digest:generate: tenant failed", "tenant_id", tid, "error", err)
+				slog.Warn("task:digest:generate: tenant failed", "error", err)
 
 				if firstErr == nil {
 					firstErr = err
@@ -360,7 +360,7 @@ func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.
 // tenant (and optionally one Space).
 func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
 	if !s.Enabled(ctx, tenantID) {
-		slog.Info("task:digest:generate: feature disabled, skipping", "tenant_id", tenantID)
+		slog.Info("task:digest:generate: feature disabled, skipping")
 		return nil
 	}
 
@@ -390,8 +390,7 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 	// Set the draft review lock so the admin review window is tracked (§84).
 	s.setDraftLock(ctx, tenantID, editionID)
 
-	slog.Info("task:digest:generate: edition assembled",
-		"tenant_id", tenantID, "edition_id", editionID, "space_id", spaceID.Valid)
+	slog.Info("task:digest:generate: edition assembled", "edition_id", editionID, "space_id", spaceID.Valid)
 
 	return nil
 }
@@ -425,8 +424,7 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 			"tenant_id":  e.TenantID.String(),
 		})
 		if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
-			slog.Error("digest: auto-publish enqueue send_email failed",
-				"error", err, "edition_id", e.ID.String())
+			slog.Error("digest: auto-publish enqueue send_email failed", "error", err, "edition_id", e.ID.String())
 		}
 	}
 
@@ -451,12 +449,12 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	}
 
 	if !s.EmailEnabled(ctx, tenantID) {
-		slog.Info("task:digest:send_email: email disabled, skipping", "tenant_id", tenantID)
+		slog.Info("task:digest:send_email: email disabled, skipping")
 		return nil
 	}
 
 	if s.emailDispatcher == nil {
-		slog.Warn("task:digest:send_email: no email dispatcher wired, skipping", "tenant_id", tenantID)
+		slog.Warn("task:digest:send_email: no email dispatcher wired, skipping")
 		return nil
 	}
 
@@ -476,7 +474,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	}
 
 	if len(subscribers) == 0 {
-		slog.Info("task:digest:send_email: no subscribers, skipping", "tenant_id", tenantID)
+		slog.Info("task:digest:send_email: no subscribers, skipping")
 		return nil
 	}
 
@@ -517,9 +515,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 		slog.Warn("task:digest:send_email: mark email_sent failed", "error", err)
 	}
 
-	slog.Info("task:digest:send_email: complete",
-		"tenant_id", tenantID, "edition_id", editionID,
-		"subscribers", len(subscribers), "sent", sent, "failed", failed)
+	slog.Info("task:digest:send_email: complete", "edition_id", editionID, "subscribers", len(subscribers), "sent", sent, "failed", failed)
 
 	return nil
 }
@@ -528,7 +524,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 // falling back to the JC_SITE_URL env var (mirrors worker.resolveBaseURL).
 func (s *Service) resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, tenantID, "site.base_url", ""); v != "" {
+		if v := s.settings.GetStringOr(ctx, pgtype.UUID{}, "site.base_url", ""); v != "" {
 			return v
 		}
 	}
@@ -541,7 +537,7 @@ func (s *Service) emailSubject(ctx context.Context, tenantID pgtype.UUID) string
 	name := "JapaConnect"
 
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, tenantID, "site.name", ""); v != "" {
+		if v := s.settings.GetStringOr(ctx, pgtype.UUID{}, "site.name", ""); v != "" {
 			name = v
 		}
 	}

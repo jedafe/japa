@@ -258,10 +258,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn(
-				"registration blocked: breached password",
-				"breach_count", breached.Count,
-			)
+			slog.Warn("registration blocked: breached password", "breach_count", breached.Count, )
 			errpkg.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
@@ -478,8 +475,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// or the Content Studio as their backing account. This is an explicit
 	// security gate — do not rely on the null-password_hash incidental block.
 	if user.IsBot {
-		slog.Warn("login blocked: is_bot account attempted login",
-			"user_id", user.ID, "email", req.Email)
+		slog.Warn("login blocked: is_bot account attempted login", "user_id", user.ID, "email", req.Email)
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
 		return
@@ -760,8 +756,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: a failure here leaves two valid refresh tokens, which
 	// is a minor security degradation, not a correctness issue.
 	if err := h.Queries.RevokeRefreshTokenByHash(r.Context(), tokenHash); err != nil {
-		slog.Warn("refresh: failed to revoke old refresh token",
-			"user_id", stored.UserID.String(), "error", err)
+		slog.Warn("refresh: failed to revoke old refresh token", "user_id", stored.UserID.String(), "error", err)
 	}
 
 	data := map[string]interface{}{"access_token": accessToken}
@@ -1301,11 +1296,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn(
-				"password reset blocked: breached password",
-				"token_prefix", req.Token[:min(8, len(req.Token))],
-				"breach_count", breached.Count,
-			)
+			slog.Warn("password reset blocked: breached password", "token_prefix", req.Token[:min(8, len(req.Token))], "breach_count", breached.Count, )
 			errpkg.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
@@ -1339,10 +1330,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err := CheckPasswordHistory(r.Context(), h.DB, rec.UserID, req.NewPassword, h.Policy); err != nil {
 		var reused *PasswordReusedError
 		if errors.As(err, &reused) {
-			slog.Warn(
-				"password reset blocked: reused password",
-				"token_prefix", req.Token[:min(8, len(req.Token))],
-			)
+			slog.Warn("password reset blocked: reused password", "token_prefix", req.Token[:min(8, len(req.Token))], )
 			errpkg.WriteError(w, http.StatusBadRequest, "password_reused",
 				"New password cannot be the same as a recent password. Please choose a different password.")
 

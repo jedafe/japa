@@ -131,7 +131,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "service_directory.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "service_directory.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoints.

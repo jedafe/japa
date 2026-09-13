@@ -818,11 +818,7 @@ func (h *Handlers) resolvePageLiterals(r *http.Request, tenantID pgtype.UUID) ma
 
 	m, err := h.Catalog.ResolveMap(r.Context(), tenantID, rc)
 	if err != nil {
-		slog.Warn(
-			"pagebuilder: failed to resolve page literals",
-			"tenant_id", tenantID.String(),
-			"error", err,
-		)
+		slog.Warn("pagebuilder: failed to resolve page literals", "error", err, )
 
 		return map[string]string{}
 	}

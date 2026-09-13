@@ -172,7 +172,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, tenantID, "housing_guide.enabled", false)
+	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "housing_guide.enabled", false)
 }
 
 // Research runs grounded web research for the given destination, optional
@@ -682,12 +682,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			tips = text
 		}
 
-		slog.Info(
-			"housingguide: AI Gateway generated draft",
-			"destination_space_id", input.DestinationSpaceID,
-			"accommodation_type", input.AccommodationType,
-			"prompt_hash", promptHash,
-		)
+		slog.Info("housingguide: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "accommodation_type", input.AccommodationType, "prompt_hash", promptHash, )
 	}
 
 	aiModel := "content_agent_v1"

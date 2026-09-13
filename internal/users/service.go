@@ -890,8 +890,7 @@ func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
 		"tenant_id":   tenantID.String(),
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
-		slog.Warn("users: failed to enqueue search:index_entity for user",
-			"user_id", userID.String(), "error", err)
+		slog.Warn("users: failed to enqueue search:index_entity for user", "user_id", userID.String(), "error", err)
 	}
 }
 
@@ -1576,7 +1575,7 @@ func (s *Service) usernameCooldownDaysFor(ctx context.Context, tenantID pgtype.U
 		return defaultUsernameCooldownDays
 	}
 
-	return s.authSettings.GetIntOr(ctx, tenantID, "users.username_cooldown_days", defaultUsernameCooldownDays)
+	return s.authSettings.GetIntOr(ctx, pgtype.UUID{}, "users.username_cooldown_days", defaultUsernameCooldownDays)
 }
 
 // ErrUsernameCooldown is returned when the user attempts to change their

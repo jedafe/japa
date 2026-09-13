@@ -50,10 +50,10 @@ func (s *Service) invalidateCaches(ctx context.Context, tenantID pgtype.UUID) {
 	// Also invalidate the bot detection middleware's cached bot list.
 	botListKey := valkey.MustKey("bot_list:%s", tenantID.String())
 	if err := s.rdb.Redis().Del(ctx, botListKey).Err(); err != nil {
-		slog.Warn("bots: failed to invalidate bot_list cache", "tenant_id", tenantID.String(), "error", err)
+		slog.Warn("bots: failed to invalidate bot_list cache", "error", err)
 	}
 
-	slog.Info("bots: invalidated robots/llms/bot_list caches after mutation", "tenant_id", tenantID.String())
+	slog.Info("bots: invalidated robots/llms/bot_list caches after mutation")
 }
 
 // CreateKnownBotInput holds the fields needed to create a new known bot.

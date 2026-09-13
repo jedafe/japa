@@ -492,7 +492,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 			// No AI provider is configured — degrade to a deterministic,
 			// data-backed summary so the endpoint still works instead of
 			// surfacing 501 to the caller.
-			slog.Warn("advisor fallback: no AI provider available", "kind", kind, "content_id", input.ContentID, "tenant_id", input.TenantID)
+			slog.Warn("advisor fallback: no AI provider available", "kind", kind, "content_id", input.ContentID)
 			fallback := fallbackAdvisorText(kind, input, ranking, nextActions)
 
 			return advisorFromResponse(fallback, input.ContentID.String(), pid, ranking, nextActions, freshness.OverallFreshnessScore), nil
@@ -585,7 +585,7 @@ func (s *Service) StreamAdvisor(ctx context.Context, contentID, tenantID, userID
 	// response open indefinitely. The caller's context is still respected.
 	timeout := time.Duration(60) * time.Second
 	if s.settings != nil {
-		timeout = time.Duration(s.settings.GetIntOr(ctx, tenantID, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
+		timeout = time.Duration(s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.advisor_stream_timeout_seconds", 60)) * time.Second
 	}
 
 	streamCtx, cancel := context.WithTimeout(ctx, timeout)

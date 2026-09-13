@@ -47,11 +47,7 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 				return lits, nil
 			}
 
-			slog.Warn(
-				"literals: failed to unmarshal cached active literals",
-				"tenant_id", tenantID.String(),
-				"error", err,
-			)
+			slog.Warn("literals: failed to unmarshal cached active literals", "error", err, )
 		}
 	}
 
@@ -92,11 +88,7 @@ func (c *Catalog) GetActive(ctx context.Context, tenantID pgtype.UUID) ([]Templa
 		encoded, err := json.Marshal(lits)
 		if err == nil {
 			if sErr := c.valkey.Set(ctx, c.cacheKey(tenantID), string(encoded), catalogCacheTTL).Err(); sErr != nil {
-				slog.Warn(
-					"literals: failed to cache active literals",
-					"tenant_id", tenantID.String(),
-					"error", sErr,
-				)
+				slog.Warn("literals: failed to cache active literals", "error", sErr, )
 			}
 		}
 	}

@@ -115,7 +115,7 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 	for _, tid := range tenantIDs {
 		n, err := a.svc.ExpireListingsPastDeadline(ctx, tid)
 		if err != nil {
-			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "error", err)
 			continue
 		}
 
@@ -147,15 +147,11 @@ func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID
 			"Job Application Update",
 			"Your application status is now: "+app.Status,
 			""); err != nil {
-			slog.Warn("jobs: notify application status: create notification failed",
-				"application_id", applicationID.String(), "error", err)
+			slog.Warn("jobs: notify application status: create notification failed", "application_id", applicationID.String(), "error", err)
 		}
 	}
 
-	slog.Info("jobs: notify application status",
-		"application_id", applicationID.String(),
-		"applicant_id", app.ApplicantID.String(),
-		"status", app.Status)
+	slog.Info("jobs: notify application status", "application_id", applicationID.String(), "applicant_id", app.ApplicantID.String(), "status", app.Status)
 
 	return nil
 }
@@ -188,7 +184,7 @@ func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error)
 	for _, tid := range tenantIDs {
 		n, err := a.svc.ExpireChallenges(ctx, tid)
 		if err != nil {
-			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "error", err)
 			continue
 		}
 
@@ -366,7 +362,7 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 	for _, tid := range tenantIDs {
 		reminders, err := a.svc.FindNeedingReminders(ctx, 100)
 		if err != nil {
-			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "error", err)
 			continue
 		}
 
@@ -477,8 +473,7 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 	for _, tid := range tenantIDs {
 		n, err := a.svc.FetchAllProviderRates(ctx, tid)
 		if err != nil {
-			slog.Warn("task:remittance:fetch_rates: tenant sweep failed",
-				"tenant_id", tid, "error", err)
+			slog.Warn("task:remittance:fetch_rates: tenant sweep failed", "error", err)
 			continue
 		}
 
@@ -504,7 +499,7 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 	for _, tid := range tenantIDs {
 		n, err := a.svc.CheckAndDispatchAlerts(ctx, tid)
 		if err != nil {
-			slog.Warn("task:remittance:check_alerts: tenant check failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:remittance:check_alerts: tenant check failed", "error", err)
 			continue
 		}
 
@@ -532,7 +527,7 @@ func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 
 		cutoff := time.Now().AddDate(0, 0, -retentionDays)
 		if err := a.svc.PruneOldRates(ctx, tid, cutoff); err != nil {
-			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "tenant_id", tid, "error", err)
+			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "error", err)
 			continue
 		}
 
@@ -716,11 +711,5 @@ func RegisterV2Processors(
 	worker.RegisterAdsSelfServeProcessor(NewAdsSelfServeAdapter(adsSvc, database))
 	worker.RegisterPushProcessor(NewPushAdapter(devSvc, database))
 
-	slog.Info(
-		"v2 processors registered",
-		"jobs", true, "gamification", true, "import", true,
-		"assessment", true, "scholarship", true, "remittance", true,
-		"referral", true, "ads_self_serve", true, "push", true,
-		"persona", false, "studio", false,
-	)
+	slog.Info("v2 processors registered", "jobs", true, "gamification", true, "import", true, "assessment", true, "scholarship", true, "remittance", true, "referral", true, "ads_self_serve", true, "push", true, "persona", false, "studio", false, )
 }

@@ -129,7 +129,7 @@ LIMIT 1
 
 	var p WikiPageWithSpace
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, spaceSlug, pageSlug).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, spaceSlug, pageSlug).Scan(
 		&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 		&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 		&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
@@ -160,7 +160,7 @@ WHERE sp.slug = $1 AND wp.is_active = true
 ORDER BY wp.category, wp.title
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceSlug)
+	rows, err := s.pool.Reader.Query(ctx, q, spaceSlug)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: list pages by space: %w", err)
 	}
@@ -203,7 +203,7 @@ JOIN spaces sp ON sp.id = wp.space_id
 WHERE wp.space_id = $1 AND wp.is_active = true
 ORDER BY wp.category, wp.title`
 
-	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceID)
+	rows, err := s.pool.Reader.Query(ctx, q, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: list pages by space ID: %w", err)
 	}

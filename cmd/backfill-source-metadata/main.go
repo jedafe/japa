@@ -85,8 +85,7 @@ func main() {
 			"tenant_id": s.TenantID.String(),
 		})
 		if err != nil {
-			slog.Warn("skipping: failed to marshal payload",
-				"source_id", s.ID.String(), "error", err)
+			slog.Warn("skipping: failed to marshal payload", "source_id", s.ID.String(), "error", err)
 			skipped++
 			continue
 		}
@@ -95,24 +94,17 @@ func main() {
 
 		info, err := client.Enqueue(task, asynq.Queue("default"))
 		if err != nil {
-			slog.Warn("skipping: failed to enqueue",
-				"source_id", s.ID.String(), "error", err)
+			slog.Warn("skipping: failed to enqueue", "source_id", s.ID.String(), "error", err)
 			skipped++
 			continue
 		}
 
-		slog.Info("enqueued source metadata task",
-			"source_id", s.ID.String(),
-			"tenant_id", s.TenantID.String(),
-			"task_id", info.ID)
+		slog.Info("enqueued source metadata task", "source_id", s.ID.String(), "task_id", info.ID)
 
 		enqueued++
 	}
 
-	slog.Info("backfill complete",
-		"total_sources", len(sources),
-		"enqueued", enqueued,
-		"skipped", skipped)
+	slog.Info("backfill complete", "total_sources", len(sources), "enqueued", enqueued, "skipped", skipped)
 	fmt.Printf("\nBackfill complete: %d metadata tasks enqueued, %d skipped\n", enqueued, skipped)
 }
 

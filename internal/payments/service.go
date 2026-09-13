@@ -54,7 +54,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		currency = "NGN"
 
 		if s.settings != nil {
-			if v, err := s.settings.GetSetting(ctx, tenantID, "payment.currency"); err == nil && v != "" {
+			if v, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "payment.currency"); err == nil && v != "" {
 				currency = v
 			}
 		}
@@ -75,8 +75,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		}
 
 		if _, uErr := s.UpdatePaymentStatus(ctx, p.ID, tenantID, PaymentStatusSucceeded); uErr != nil {
-			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment",
-				"payment_id", p.ID, "error", uErr)
+			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment", "payment_id", p.ID, "error", uErr)
 		}
 
 		return CreatePaymentResult{Payment: p}, nil
@@ -224,8 +223,7 @@ func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.
 	// is rejected at the DB level.
 	if discountCodeID.Valid {
 		if err := s.ApplyDiscountCodeUse(ctx, discountCodeID, userID, payment.ID); err != nil {
-			slog.Warn("payments: failed to record discount code use",
-				"payment_id", payment.ID, "code_id", discountCodeID, "error", err)
+			slog.Warn("payments: failed to record discount code use", "payment_id", payment.ID, "code_id", discountCodeID, "error", err)
 			// Non-fatal: the payment is already created. The use just won't
 			// be counted, which is a softer failure than blocking checkout.
 		}
@@ -262,8 +260,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 		// Debit failed — mark the payment as failed.
 		failed, fErr := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
 		if fErr != nil {
-			slog.Error("payments: failed to mark credit payment as failed",
-				"payment_id", payment.ID, "error", fErr)
+			slog.Error("payments: failed to mark credit payment as failed", "payment_id", payment.ID, "error", fErr)
 		} else {
 			s.emitPaymentStatusWebhook(ctx, tenantID, failed)
 		}
@@ -274,8 +271,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	// Step 3: Mark the payment as succeeded.
 	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded)
 	if err != nil {
-		slog.Error("payments: failed to mark credit payment as succeeded",
-			"payment_id", payment.ID, "error", err)
+		slog.Error("payments: failed to mark credit payment as succeeded", "payment_id", payment.ID, "error", err)
 	} else {
 		s.emitPaymentStatusWebhook(ctx, tenantID, succeeded)
 	}
@@ -397,8 +393,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 			"provider":     provider,
 		})
 		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
-			slog.Error("payments: failed to enqueue webhook processing",
-				"event_id", event.EventID, "provider", provider, "error", err)
+			slog.Error("payments: failed to enqueue webhook processing", "event_id", event.EventID, "provider", provider, "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue %s (event %s): %w", worker.TypePaymentWebhookProcess, event.EventID, err))
 			// Return the error so the provider receives a 5xx and retries.
 			// The event is NOT marked processed, so on retry we re-enqueue.
@@ -789,8 +784,7 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 			"provider":     updated.Provider,
 		})
 		if err := s.enqueuer.Enqueue(worker.TypePaymentWebhookProcess, payload); err != nil {
-			slog.Error("payments: failed to enqueue refund reversal",
-				"payment_id", paymentID, "refund_id", refund.ID, "error", err)
+			slog.Error("payments: failed to enqueue refund reversal", "payment_id", paymentID, "refund_id", refund.ID, "error", err)
 			errpkg.CaptureException(fmt.Errorf("enqueue refund reversal (payment %s): %w", paymentID, err))
 			// Non-fatal: the payment is already marked refunded. The
 			// reversal can be retried by re-running the refund or by a

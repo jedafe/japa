@@ -68,11 +68,11 @@ type SettingsReader interface {
 func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) PasswordPolicy {
 	policy := DefaultPasswordPolicy()
 
-	if val := reader.GetIntOr(ctx, tenantID, "auth.password.min_length", policy.MinLength); val > 0 {
+	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.min_length", policy.MinLength); val > 0 {
 		policy.MinLength = val
 	}
 
-	if val := reader.GetIntOr(ctx, tenantID, "auth.password.max_length", policy.MaxLength); val > 0 {
+	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.max_length", policy.MaxLength); val > 0 {
 		policy.MaxLength = val
 	}
 
@@ -92,7 +92,7 @@ func PasswordPolicyFromSettings(ctx context.Context, reader SettingsReader, tena
 		policy.CheckBreach = val
 	}
 
-	if val := reader.GetIntOr(ctx, tenantID, "auth.password.history_count", policy.HistoryCount); val >= 0 {
+	if val := reader.GetIntOr(ctx, pgtype.UUID{}, "auth.password.history_count", policy.HistoryCount); val >= 0 {
 		policy.HistoryCount = val
 	}
 

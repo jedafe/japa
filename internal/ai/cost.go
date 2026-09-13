@@ -100,7 +100,7 @@ func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, pr
 // The map is cached on the CostEstimator for the lifetime of the estimate call
 // (the caller holds a context, so the same request does not parse it twice).
 func (e *CostEstimator) loadProviderCostOverrides(ctx context.Context, tenantID pgtype.UUID) map[string]float64 {
-	raw := e.settings.GetStringOr(ctx, tenantID, "ai.provider_cost_overrides", "{}")
+	raw := e.settings.GetStringOr(ctx, pgtype.UUID{}, "ai.provider_cost_overrides", "{}")
 	if raw == "" {
 		raw = "{}"
 	}

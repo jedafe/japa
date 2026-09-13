@@ -266,7 +266,7 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 			return nil
 		}
 
-		promotedTagsJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags)
+		promotedTagsJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedTags)
 
 		var promotedTags []string
 
@@ -346,7 +346,7 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 // getMinTagsFollow reads the onboarding.min_tags_follow setting with the
 // Section 09 default of 3.
 func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinTagsFollow)
+	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinTagsFollow)
 	if v == 0 {
 		return 3
 	}
@@ -357,7 +357,7 @@ func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) in
 // getMinUsersFollow reads the onboarding.min_users_follow setting with the
 // Section 09 default of 2.
 func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinUsersFollow)
+	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinUsersFollow)
 	if v == 0 {
 		return 2
 	}
@@ -368,7 +368,7 @@ func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) i
 // getMinSpacesJoin reads the onboarding.min_spaces_join setting with the
 // Section 09 default of 2.
 func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, tenantID, keyMinSpacesJoin)
+	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinSpacesJoin)
 	if v == 0 {
 		return 2
 	}
@@ -509,8 +509,8 @@ func mergeRecommendations(tiers ...[]OnboardingRecommendation) []OnboardingRecom
 // recommendation records with reason="promoted" and the highest score (1.0),
 // so they always appear first in the tiered ordering per Section 09.
 func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingRecommendation, error) {
-	promotedSpacesJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces)
-	promotedUsersJSON, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers)
+	promotedSpacesJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedSpaces)
+	promotedUsersJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedUsers)
 
 	var spaceIDs, userIDs []string
 	if promotedSpacesJSON != "" {
@@ -1044,15 +1044,15 @@ func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*
 		MinSpacesJoin:  s.getMinSpacesJoin(ctx, tenantID),
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedSpaces); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedSpaces); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedSpaces)
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedUsers); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedUsers); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedUsers)
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, tenantID, keyPromotedTags); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedTags); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedTags)
 	}
 

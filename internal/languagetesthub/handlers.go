@@ -82,8 +82,7 @@ func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation str
 		asynq.NewTask(worker.TypeSearchIndexSync, payload),
 		asynq.Queue(worker.QueueForTask(worker.TypeSearchIndexSync)),
 	); err != nil {
-		slog.Warn("languagetesthub: failed to enqueue search index task",
-			"req_id", reqID.String(), "error", err)
+		slog.Warn("languagetesthub: failed to enqueue search index task", "req_id", reqID.String(), "error", err)
 	}
 }
 

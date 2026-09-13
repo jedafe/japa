@@ -238,8 +238,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 		}
 
 		if count > 0 {
-			slog.Info("wallet:award_points: one-time rule already satisfied, skipping",
-				"reason", p.Reason, "user_id", userID.String())
+			slog.Info("wallet:award_points: one-time rule already satisfied, skipping", "reason", p.Reason, "user_id", userID.String())
 			return nil
 		}
 	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -391,9 +390,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 	// which per Section 28 may take a Credits balance negative rather than
 	// being blocked outright (BUG-W-004).
 	if newBalance < 0 && operation != OperationClawback {
-		slog.Warn("wallet: deduct would result in negative balance, skipping",
-			"user_id", userID.String(), "ledger_type", ledgerType,
-			"current", currentBalance, "amount", amount)
+		slog.Warn("wallet: deduct would result in negative balance, skipping", "user_id", userID.String(), "ledger_type", ledgerType, "current", currentBalance, "amount", amount)
 
 		return fmt.Errorf("wallet: insufficient balance: current=%d, delta=%d", currentBalance, amount)
 	}
@@ -415,9 +412,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 		// treat it as a successful no-op (Rule 9).
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			slog.Info("wallet: duplicate award idempotency key, skipping",
-				"user_id", userID.String(), "ledger_type", ledgerType,
-				"idempotency_key", idempotencyKey)
+			slog.Info("wallet: duplicate award idempotency key, skipping", "user_id", userID.String(), "ledger_type", ledgerType, "idempotency_key", idempotencyKey)
 
 			return nil
 		}
@@ -429,10 +424,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 		return fmt.Errorf("wallet: committing transaction: %w", err)
 	}
 
-	slog.Info("wallet: ledger entry inserted",
-		"user_id", userID.String(), "ledger_type", ledgerType,
-		"operation", operation, "amount", amount, "new_balance", newBalance,
-		"source", source)
+	slog.Info("wallet: ledger entry inserted", "user_id", userID.String(), "ledger_type", ledgerType, "operation", operation, "amount", amount, "new_balance", newBalance, "source", source)
 
 	return nil
 }

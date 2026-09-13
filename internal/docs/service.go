@@ -811,8 +811,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			generatedText = text
 		}
 
-		slog.Info("docs: AI Gateway generated draft",
-			"title", input.Title, "audience", audience)
+		slog.Info("docs: AI Gateway generated draft", "title", input.Title, "audience", audience)
 	}
 
 	// Build TipTap JSON content from the generated text.
