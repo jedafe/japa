@@ -3255,16 +3255,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			mutualAidHandlers.SetDMInitiator(&mutualAidDMAdapter{dm: wsDMService})
 			wsHandlers := websocket.NewHandlers(wsService, wsDMService, wsHub, vkClient, kr)
 			wsHandlers.SetSpamPipeline(spamPipeline)
-			wsHandlers.SetSessionChecker(func(userID, tenantID string) bool {
+			wsHandlers.SetSessionChecker(func(userID string) bool {
 				var uid pgtype.UUID
 				if err := uid.Scan(userID); err != nil {
 					return false
 				}
 
-				var tid pgtype.UUID
-				if err := tid.Scan(tenantID); err != nil {
-					return false
-				}
 
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
@@ -7217,8 +7213,8 @@ type forumSpaceBroadcaster struct {
 	hub *websocket.Hub
 }
 
-func (f *forumSpaceBroadcaster) BroadcastToSpace(tenantID, spaceID string, event forum.WSEvent) {
-	f.hub.BroadcastToSpace(tenantID, spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
+func (f *forumSpaceBroadcaster) BroadcastToSpace(spaceID string, event forum.WSEvent) {
+	f.hub.BroadcastToSpace(spaceID, websocket.WSEvent{Type: event.Type, Payload: event.Payload})
 }
 
 // mediaURLResolver adapts media.Service to the users.MediaResolver

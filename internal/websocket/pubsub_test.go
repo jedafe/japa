@@ -166,7 +166,6 @@ func TestDispatchToSpace(t *testing.T) {
 
 	msg := PubSubMessage{
 		Type:           EventSpaceActivity,
-		TargetTenantID: "t1",
 		TargetSpaceID:  "s-dispatch",
 		Payload:        "space-data",
 	}
@@ -301,7 +300,6 @@ func TestDispatchToSpaceDoesNotRepublish(t *testing.T) {
 
 	bridge.dispatch(PubSubMessage{
 		Type:           EventSpaceActivity,
-		TargetTenantID: "t1",
 		TargetSpaceID:  "s-loop",
 		Payload:        "x",
 	})
@@ -429,7 +427,7 @@ func TestHubSpaceBroadcastTriggersPublish(t *testing.T) {
 	hub.SetPubSub(bridge)
 
 	event := WSEvent{Type: EventSpaceActivity, Payload: "space-data"}
-	hub.BroadcastToSpace("t1", "s-pub", event)
+	hub.BroadcastToSpace("s-pub", event)
 
 	select {
 	case <-client.Send:
@@ -499,94 +497,6 @@ func (m *mockBridge) PublishTenant(event WSEvent, tenantID string) {
 // Ensure mockBridge satisfies the implicit interface at compile time.
 var _ = (*mockBridge)(nil)
 
-// ---------------------------------------------------------------------------
-// BroadcastToTenant — tenant-scoped presence (WS-002 regression)
-// ---------------------------------------------------------------------------
-//
-// Presence must be delivered only to clients in the same tenant. A user in
-// tenant A connecting must NOT cause a presence event to reach a user in
-// tenant B. These tests verify both local delivery isolation and that the
-// bridge PublishTenant path is used (not the global Publish path).
-
-func TestBroadcastToTenantDeliversOnlyToSameTenant(t *testing.T) {
-	t.Parallel()
-
-	hub := NewHub()
-	sameTenant := &Client{Hub: hub, UserID: "u-same", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	otherTenant := &Client{Hub: hub, UserID: "u-other", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	hub.Register(sameTenant)
-	hub.Register(otherTenant)
-
-	hub.BroadcastToTenant("t1", WSEvent{Type: EventPresence, Payload: "online"})
-
-	// Same-tenant client receives the event.
-	select {
-	case <-sameTenant.Send:
-	default:
-		t.Error("same-tenant client did not receive tenant broadcast")
-	}
-
-	// Other-tenant client must NOT receive the event.
-	select {
-	case <-otherTenant.Send:
-		t.Error("other-tenant client received tenant broadcast — cross-tenant leak")
-	default:
-		// expected
-	}
-}
-
-func TestBroadcastToTenantTriggersPublishTenant(t *testing.T) {
-	t.Parallel()
-
-	hub := NewHub()
-	client := &Client{Hub: hub, UserID: "u-pres", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	hub.Register(client)
-
-	mock := &mockBridge{hub: hub}
-	hub.SetPubSub(mock)
-
-	hub.BroadcastToTenant("t1", WSEvent{Type: EventPresence, Payload: "online"})
-
-	if mock.lastEvent.Type != EventPresence {
-		t.Errorf("publish type = %q, want %q", mock.lastEvent.Type, EventPresence)
-	}
-
-	if mock.lastTenantID != "t1" {
-		t.Errorf("publish tenant = %q, want t1", mock.lastTenantID)
-	}
-}
-
-func TestDispatchTenantBroadcastDoesNotLeakAcrossTenants(t *testing.T) {
-	t.Parallel()
-
-	hub := NewHub()
-	bridge := &PubSubBridge{hub: hub}
-
-	t1Client := &Client{Hub: hub, UserID: "u-t1", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	t2Client := &Client{Hub: hub, UserID: "u-t2", Send: make(chan []byte, 256), SpaceIDs: make(map[string]bool)}
-	hub.Register(t1Client)
-	hub.Register(t2Client)
-
-	bridge.dispatch(PubSubMessage{
-		Type:            EventPresence,
-		TargetTenantID:  "t1",
-		TenantBroadcast: true,
-		Payload:         "online",
-	})
-
-	select {
-	case <-t1Client.Send:
-	default:
-		t.Error("t1 client did not receive tenant broadcast")
-	}
-
-	select {
-	case <-t2Client.Send:
-		t.Error("t2 client received t1 tenant broadcast — cross-tenant leak via pubsub")
-	default:
-		// expected
-	}
-}
 
 func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
 	t.Parallel()
@@ -601,8 +511,6 @@ func TestDispatchTenantBroadcastDoesNotRepublish(t *testing.T) {
 
 	bridge.dispatch(PubSubMessage{
 		Type:            EventPresence,
-		TargetTenantID:  "t1",
-		TenantBroadcast: true,
 		Payload:         "x",
 	})
 

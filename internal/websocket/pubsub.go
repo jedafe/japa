@@ -18,18 +18,10 @@ const PubSubChannel = "jc:ws:broadcast"
 // target user or space ID (and the tenant ID for space-scoped delivery) so
 // that receiving instances can dispatch it to the correct local subscribers.
 type PubSubMessage struct {
-	Type           string `json:"type"`
-	TargetUserID   string `json:"target_user_id,omitempty"`
-	TargetTenantID string `json:"target_tenant_id,omitempty"`
-	TargetSpaceID  string `json:"target_space_id,omitempty"`
-	// TenantBroadcast is true for a tenant-scoped broadcast (e.g. presence).
-	// It distinguishes a tenant broadcast (deliver to every client in the
-	// tenant) from a space-scoped delivery (TargetSpaceID set) which happens
-	// to also carry TargetTenantID for tenant scoping. Without this flag a
-	// tenant broadcast with no space/user target would fall through to the
-	// global BroadcastToAll path and leak across tenants (Rule 4).
-	TenantBroadcast bool        `json:"tenant_broadcast,omitempty"`
-	Payload         interface{} `json:"payload"`
+	Type          string      `json:"type"`
+	TargetUserID  string      `json:"target_user_id,omitempty"`
+	TargetSpaceID string      `json:"target_space_id,omitempty"`
+	Payload       interface{} `json:"payload"`
 }
 
 // PubSubBridge connects the local WebSocket hub to Valkey pub/sub for
@@ -95,9 +87,8 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targ
 	// receiving instances scope local delivery to the correct tenant.
 	msg := PubSubMessage{
 		Type:           event.Type,
-		TargetUserID:   targetUserID,
-		TargetTenantID: targetTenantID,
-		TargetSpaceID:  targetSpaceID,
+		TargetUserID:  targetUserID,
+		TargetSpaceID: targetSpaceID,
 		Payload:        event.Payload,
 	}
 
@@ -112,17 +103,14 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targ
 	}
 }
 
-// PublishTenant serialises a tenant-scoped broadcast event as a PubSubMessage
-// and publishes it to Valkey for delivery to other instances. Receiving
-// instances deliver it only to clients in the same tenant. The local hub is
+// PublishTenant serialises a broadcast event as a PubSubMessage
+// and publishes it to Valkey for delivery to other instances. The local hub is
 // NOT called here — callers invoke BroadcastToTenant for local delivery and
 // PublishTenant separately for cross-instance.
-func (b *PubSubBridge) PublishTenant(event WSEvent, targetTenantID string) {
+func (b *PubSubBridge) PublishTenant(event WSEvent, _ string) {
 	msg := PubSubMessage{
-		Type:            event.Type,
-		TargetTenantID:  targetTenantID,
-		TenantBroadcast: true,
-		Payload:         event.Payload,
+		Type:    event.Type,
+		Payload: event.Payload,
 	}
 
 	data, err := json.Marshal(msg)
@@ -149,12 +137,7 @@ func (b *PubSubBridge) dispatch(msg PubSubMessage) {
 	case msg.TargetUserID != "":
 		b.hub.deliverLocalUser(msg.TargetUserID, event)
 	case msg.TargetSpaceID != "":
-		b.hub.deliverLocalSpace(msg.TargetTenantID, msg.TargetSpaceID, event)
-	case msg.TenantBroadcast:
-		// Tenant-scoped broadcast (e.g. presence). Deliver only to clients
-		// in the same tenant — never fall through to deliverLocalAll, which
-		// would leak the event across tenants (Rule 4: tenant-scoped).
-		b.hub.deliverLocalTenant(msg.TargetTenantID, event)
+		b.hub.deliverLocalSpace(msg.TargetSpaceID, event)
 	default:
 		b.hub.deliverLocalAll(event)
 	}

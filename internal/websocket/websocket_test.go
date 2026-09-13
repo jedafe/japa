@@ -240,7 +240,7 @@ func TestHubSubscribeToSpace(t *testing.T) {
 		t.Error("client should be subscribed to space-1")
 	}
 
-	subs, ok := hub.spaceSubscribers["tenant-1:space-1"]
+	subs, ok := hub.spaceSubscribers["space-1"]
 	if !ok || len(subs) != 1 {
 		t.Error("space-1 should have 1 subscriber")
 	}
@@ -251,7 +251,7 @@ func TestHubSubscribeToSpace(t *testing.T) {
 		t.Error("client should not be subscribed to space-1 after unsubscribe")
 	}
 
-	subs, ok = hub.spaceSubscribers["tenant-1:space-1"]
+	subs, ok = hub.spaceSubscribers["space-1"]
 	if ok && len(subs) > 0 {
 		t.Error("space-1 should have 0 subscribers after unsubscribe")
 	}
@@ -286,7 +286,7 @@ func TestHubBroadcastToSpace(t *testing.T) {
 		Type:    EventSpaceActivity,
 		Payload: map[string]interface{}{"space_id": "space-1"},
 	}
-	hub.BroadcastToSpace("tenant-1", "space-1", event)
+	hub.BroadcastToSpace("space-1", event)
 
 	// Both clients should receive the message.
 	for _, client := range []*Client{client1, client2} {
@@ -753,36 +753,3 @@ func TestHandleTypingEventMissingConversationIDIgnores(t *testing.T) {
 // WS-006: SessionChecker signature (userID + tenantID)
 // ---------------------------------------------------------------------------
 
-func TestSessionCheckerReceivesTenantID(t *testing.T) {
-	t.Parallel()
-
-	var receivedUserID, receivedTenantID string
-
-	hub := NewHub()
-	client := &Client{
-		Hub:    hub,
-		UserID: "user-1",
-
-		Send:     make(chan []byte, 256),
-		SpaceIDs: make(map[string]bool),
-		SessionChecker: func(userID, tenantID string) bool {
-			receivedUserID = userID
-			receivedTenantID = tenantID
-			return true
-		},
-	}
-	hub.Register(client)
-
-	// Simulate a pong: the checker should receive both userID and tenantID.
-	if !client.SessionChecker(client.UserID, client.TenantID) {
-		t.Error("SessionChecker returned false for valid session")
-	}
-
-	if receivedUserID != "user-1" {
-		t.Errorf("SessionChecker received userID %q, want user-1", receivedUserID)
-	}
-
-	if receivedTenantID != "tenant-1" {
-		t.Errorf("SessionChecker received tenantID %q, want tenant-1", receivedTenantID)
-	}
-}
