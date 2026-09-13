@@ -214,8 +214,8 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 	// Delete expired snapshots for this tenant.
 	_, err := p.db.Writer.Exec(ctx, `
 		DELETE FROM trending_snapshots
-		WHERE tenant_id = $1 AND expires_at < now()
-	`, tenantID)
+		WHERE expires_at < now()
+	`)
 	if err != nil {
 		return 0, fmt.Errorf("deleting expired snapshots: %w", err)
 	}
@@ -335,7 +335,7 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
 			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
 		)
-		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
+		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			c.tenant_id,
 			'content',
@@ -365,14 +365,12 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 		  AND c.published_at IS NOT NULL
 		  AND c.published_at >= now() - $4::interval
 		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
-		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
+		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
 			computed_at = now(),
 			expires_at = EXCLUDED.expires_at
-	`, tenantID, window, expiresAt, interval,
-		sc.ViewsWeight, sc.CommentsWeight, sc.VotesWeight, sc.BookmarksWeight, sc.SharesWeight,
-		sc.Gravity, geoScope)
+	`, window, expiresAt, interval, sc.ViewsWeight, sc.CommentsWeight, sc.VotesWeight, sc.BookmarksWeight, sc.SharesWeight, sc.Gravity, geoScope)
 	if err != nil {
 		return 0, fmt.Errorf("upserting content trending: %w", err)
 	}
@@ -398,7 +396,7 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
 			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
 		)
-		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
+		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			t.tenant_id,
 			'tag',
@@ -424,13 +422,12 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 			JOIN cgeo gg ON gg.content_id = cc.id AND gg.geo_code = $7
 			WHERE cx.tag_id = t.id))
 		GROUP BY t.id, t.tenant_id, t.follower_count
-		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
+		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
 			computed_at = now(),
 			expires_at = EXCLUDED.expires_at
-	`, tenantID, window, expiresAt, interval,
-		sc.TagFollowerWeight, sc.TagContentWeight, geoScope)
+	`, window, expiresAt, interval, sc.TagFollowerWeight, sc.TagContentWeight, geoScope)
 	if err != nil {
 		return 0, fmt.Errorf("upserting tag trending: %w", err)
 	}
@@ -445,7 +442,7 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 	interval := windowInterval(window)
 
 	result, err := p.db.Writer.Exec(ctx, `
-		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
+		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			s.tenant_id,
 			'space',
@@ -474,13 +471,12 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 		  -- geo's own spaces rather than the full list relabelled.
 		  AND ($8::text IS NULL OR
 			COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $8)
-		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
+		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
 			computed_at = now(),
 			expires_at = EXCLUDED.expires_at
-	`, tenantID, window, expiresAt, interval,
-		sc.SpaceMemberWeight, sc.SpacePostWeight, sc.SpaceRecentWeight, geoScope)
+	`, window, expiresAt, interval, sc.SpaceMemberWeight, sc.SpacePostWeight, sc.SpaceRecentWeight, geoScope)
 	if err != nil {
 		return 0, fmt.Errorf("upserting space trending: %w", err)
 	}
@@ -504,7 +500,7 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
 			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
 		)
-		INSERT INTO trending_snapshots (tenant_id, entity_type, entity_id, score, "window", geo_code, expires_at)
+		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
 			c.tenant_id,
 			'user',
@@ -532,14 +528,12 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
 		  AND EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_id AND au.status = 'active')
 		GROUP BY c.tenant_id, c.author_id
-		ON CONFLICT (tenant_id, entity_type, entity_id, "window", geo_code)
+		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
 			computed_at = now(),
 			expires_at = EXCLUDED.expires_at
-	`, tenantID, window, expiresAt, interval,
-		sc.ViewsWeight, sc.CommentsWeight, sc.VotesWeight, sc.BookmarksWeight, sc.SharesWeight,
-		sc.Gravity, geoScope)
+	`, window, expiresAt, interval, sc.ViewsWeight, sc.CommentsWeight, sc.VotesWeight, sc.BookmarksWeight, sc.SharesWeight, sc.Gravity, geoScope)
 	if err != nil {
 		return 0, fmt.Errorf("upserting user trending: %w", err)
 	}

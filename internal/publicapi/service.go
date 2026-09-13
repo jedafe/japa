@@ -14,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Store provides pgx-backed CRUD for API keys.
@@ -31,17 +30,16 @@ func NewStore(dbPool *pgxpool.Pool) *Store {
 func (s *Store) create(ctx context.Context, params createParams) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	err := s.dbPool.QueryRow(ctx, `
-		INSERT INTO api_keys (tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, params.TenantID, params.UserID, params.Name, params.KeyPrefix, params.KeyHash,
+	`, params.UserID, params.Name, params.KeyPrefix, params.KeyHash,
 		params.Scopes, params.RateLimitTier, params.ExpiresAt).Scan(&id)
 
 	return id, err
 }
 
 type createParams struct {
-	TenantID      pgtype.UUID
 	UserID        pgtype.UUID
 	Name          string
 	KeyPrefix     string
@@ -55,7 +53,7 @@ type createParams struct {
 // Implemented by the tiers package. Used by the public API rate limiter to cap
 // an API key's tier against the key owner's actual user tier.
 type TierResolver interface {
-	ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error)
+	ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error)
 }
 
 // findByHash looks up an API key by its SHA-256 hash.
@@ -63,10 +61,10 @@ func (s *Store) findByHash(ctx context.Context, keyHash string) (*apiKeyRow, err
 	var row apiKeyRow
 
 	err := s.dbPool.QueryRow(ctx, `
-		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
+		SELECT id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
 		WHERE key_hash = $1 AND status = 'active'
-	`, keyHash).Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
+	`, keyHash).Scan(&row.ID, &row.UserID, &row.Name, &row.KeyPrefix,
 		&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
 		&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
@@ -90,7 +88,7 @@ func (s *Store) incrementUsage(ctx context.Context, keyID pgtype.UUID) error {
 // listByUser returns all API keys for a user (without the hash).
 func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow, error) {
 	rows, err := s.dbPool.Query(ctx, `
-		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
+		SELECT id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -104,7 +102,7 @@ func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow
 
 	for rows.Next() {
 		var row apiKeyRow
-		if err := rows.Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
+		if err := rows.Scan(&row.ID, &row.UserID, &row.Name, &row.KeyPrefix,
 			&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
 			&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, err
@@ -118,14 +116,13 @@ func (s *Store) listByUser(ctx context.Context, userID pgtype.UUID) ([]apiKeyRow
 
 // listAll returns all API keys for the current tenant (admin view).
 // Tenant-scoped to prevent cross-tenant data bleed (PUB-005).
-func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]apiKeyRow, error) {
+func (s *Store) listAll(ctx context.Context, limit, offset int32) ([]apiKeyRow, error) {
 	rows, err := s.dbPool.Query(ctx, `
-		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
+		SELECT id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
-		WHERE tenant_id = $3
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
-	`, limit, offset, tenantID)
+	`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +132,7 @@ func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID, limit, offset
 
 	for rows.Next() {
 		var row apiKeyRow
-		if err := rows.Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
+		if err := rows.Scan(&row.ID, &row.UserID, &row.Name, &row.KeyPrefix,
 			&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
 			&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt); err != nil {
 			return nil, err
@@ -149,11 +146,11 @@ func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID, limit, offset
 
 // setStatus updates the status of an API key (active/suspended/revoked).
 // Tenant-scoped to prevent cross-tenant modification (PUB-003).
-func (s *Store) setStatus(ctx context.Context, tenantID, keyID pgtype.UUID, status string) error {
+func (s *Store) setStatus(ctx context.Context, keyID pgtype.UUID, status string) error {
 	_, err := s.dbPool.Exec(ctx, `
 		UPDATE api_keys SET status = $1, updated_at = now()
-		WHERE id = $2 AND tenant_id = $3
-	`, status, keyID, tenantID)
+		WHERE id = $2
+	`, status, keyID)
 
 	return err
 }
@@ -162,12 +159,12 @@ func (s *Store) setStatus(ctx context.Context, tenantID, keyID pgtype.UUID, stat
 // trail (revoked_at + revoked_by). Section 47 schema requires these columns
 // for audit traceability (BUG-006 fix: setStatus only set status, not the
 // audit columns).
-func (s *Store) revokeKey(ctx context.Context, tenantID, keyID, revokedBy pgtype.UUID) error {
+func (s *Store) revokeKey(ctx context.Context, keyID, revokedBy pgtype.UUID) error {
 	_, err := s.dbPool.Exec(ctx, `
 		UPDATE api_keys
 		SET status = 'revoked', revoked_at = now(), revoked_by = $1, updated_at = now()
-		WHERE id = $2 AND tenant_id = $3
-	`, revokedBy, keyID, tenantID)
+		WHERE id = $2
+	`, revokedBy, keyID)
 
 	return err
 }
@@ -175,7 +172,6 @@ func (s *Store) revokeKey(ctx context.Context, tenantID, keyID, revokedBy pgtype
 // apiKeyRow is the internal row type for API key queries.
 type apiKeyRow struct {
 	ID            pgtype.UUID
-	TenantID      pgtype.UUID
 	UserID        pgtype.UUID
 	Name          string
 	KeyPrefix     string
@@ -193,14 +189,7 @@ type apiKeyRow struct {
 func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 	analytics := &APIKeyAnalytics{}
 
-	t := tenant.FromContext(ctx)
-	if t == nil {
-		return nil, errors.New("tenant not available")
-	}
-
-	tenantID := t.ID
-
-	// Total counts by status (tenant-scoped).
+	// Total counts by status.
 	err := s.dbPool.QueryRow(ctx, `
 		SELECT
 			count(*) FILTER (WHERE status = 'active'),
@@ -208,22 +197,21 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 			count(*) FILTER (WHERE status = 'revoked'),
 			coalesce(sum(request_count), 0)
 		FROM api_keys
-		WHERE tenant_id = $1
-	`, tenantID).Scan(&analytics.ActiveKeys, &analytics.SuspendedKeys, &analytics.RevokedKeys, &analytics.TotalRequests)
+	`).Scan(&analytics.ActiveKeys, &analytics.SuspendedKeys, &analytics.RevokedKeys, &analytics.TotalRequests)
 	if err != nil {
 		return nil, fmt.Errorf("get analytics totals: %w", err)
 	}
 
 	analytics.TotalKeys = analytics.ActiveKeys + analytics.SuspendedKeys + analytics.RevokedKeys
 
-	// Top keys by volume (top 10, tenant-scoped).
+	// Top keys by volume (top 10).
 	rows, err := s.dbPool.Query(ctx, `
 		SELECT id, name, key_prefix, request_count, status
 		FROM api_keys
-		WHERE tenant_id = $1 AND request_count > 0
+		WHERE request_count > 0
 		ORDER BY request_count DESC
 		LIMIT 10
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("get top keys: %w", err)
 	}
@@ -245,14 +233,14 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 		return nil, err
 	}
 
-	// Zero usage keys (tenant-scoped).
+	// Zero usage keys.
 	rows2, err := s.dbPool.Query(ctx, `
 		SELECT id, name, key_prefix, request_count, status
 		FROM api_keys
-		WHERE tenant_id = $1 AND request_count = 0 AND status = 'active'
+		WHERE request_count = 0 AND status = 'active'
 		ORDER BY created_at DESC
 		LIMIT 10
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("get zero usage keys: %w", err)
 	}
@@ -274,16 +262,15 @@ func (s *Store) getAnalytics(ctx context.Context) (*APIKeyAnalytics, error) {
 		return nil, err
 	}
 
-	// Recent activity (last 7 days, tenant-scoped).
+	// Recent activity (last 7 days).
 	rows3, err := s.dbPool.Query(ctx, `
 		SELECT key_prefix, last_used_at, request_count
 		FROM api_keys
-		WHERE tenant_id = $1
-		  AND last_used_at IS NOT NULL
+		WHERE last_used_at IS NOT NULL
 		  AND last_used_at > now() - interval '7 days'
 		ORDER BY last_used_at DESC
 		LIMIT 20
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("get recent activity: %w", err)
 	}
@@ -354,12 +341,12 @@ func (s *Service) SetTierResolver(r TierResolver) {
 
 // ResolveUserTier returns the key owner's effective unified tier, falling back
 // to "regular" when no tier resolver is wired.
-func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
+func (s *Service) ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error) {
 	if s.tierResolver == nil {
 		return "regular", nil
 	}
 
-	return s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
+	return s.tierResolver.ResolveUserTier(ctx, userID)
 }
 
 // APIKeyUpdateFields holds the optional fields for a partial API key update.
@@ -392,8 +379,6 @@ var apiKeyUpdateColumns = map[string]string{
 // user-supplied column names ever reach the SQL string.
 // Tenant-scoped to prevent cross-tenant modification (PUB-004).
 func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fields APIKeyUpdateFields) (int64, error) {
-	tenantID := tenant.IDFromContext(ctx)
-
 	provided := map[string]any{
 		"name":            fields.Name,
 		"status":          fields.Status,
@@ -402,8 +387,8 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 	}
 
 	setClauses := []string{"updated_at = now()"}
-	args := []any{keyID, tenantID}
-	argIdx := 3 // $1 is keyID, $2 is tenantID
+	args := []any{keyID}
+	argIdx := 2 // $1 is keyID
 
 	for field, val := range provided {
 		s, ok := val.(string)
@@ -426,7 +411,7 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 		return 0, ErrNoFieldsToUpdate
 	}
 
-	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1 AND tenant_id = $2", strings.Join(setClauses, ", "))
+	query := fmt.Sprintf("UPDATE api_keys SET %s WHERE id = $1", strings.Join(setClauses, ", "))
 
 	tag, err := s.store.dbPool.Exec(ctx, query, args...)
 	if err != nil {
@@ -450,11 +435,11 @@ const maxKeysPerUser = 5
 // the full key exactly once. The caller must save it — it cannot be
 // retrieved later. Enforces the api.keys.max_per_user system setting
 // (Section 47 line 218, PUB-006).
-func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID, input CreateAPIKeyInput) (CreateAPIKeyResponse, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, userID pgtype.UUID, input CreateAPIKeyInput) (CreateAPIKeyResponse, error) {
 	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
 	limit := maxKeysPerUser
 	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, tenantID, "api.keys.max_per_user", maxKeysPerUser)
+		limit = s.keyCountReader.GetIntOr(ctx, pgtype.UUID{}, "api.keys.max_per_user", maxKeysPerUser)
 	}
 
 	var currentCount int
@@ -498,10 +483,9 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID, tenantID pgtype.UUID
 
 	// Cap the requested rate limit tier by the key owner's unified user tier.
 	// regular -> basic, pro -> standard, business -> premium.
-	tier = capRateLimitTier(ctx, s.tierResolver, tenantID, userID, tier)
+	tier = capRateLimitTier(ctx, s.tierResolver, userID, tier)
 
 	id, err := s.store.create(ctx, createParams{
-
 		UserID:        userID,
 		Name:          input.Name,
 		KeyPrefix:     keyPrefix,
@@ -581,12 +565,9 @@ func (s *Service) ListAPIKeys(ctx context.Context, userID pgtype.UUID) ([]APIKey
 	return result, nil
 }
 
-// ListAllAPIKeys returns all API keys for the current tenant (admin view).
-// Tenant-scoped to prevent cross-tenant data bleed (PUB-005).
+// ListAllAPIKeys returns all API keys for the admin view.
 func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]APIKey, error) {
-	tenantID := tenant.IDFromContext(ctx)
-
-	rows, err := s.store.listAll(ctx, tenantID, limit, offset)
+	rows, err := s.store.listAll(ctx, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list all api keys: %w", err)
 	}
@@ -601,17 +582,13 @@ func (s *Service) ListAllAPIKeys(ctx context.Context, limit, offset int32) ([]AP
 
 // RevokeAPIKey soft-deletes an API key by setting status to revoked and
 // recording the revocation audit trail (revoked_at + revoked_by).
-// The ownership check is tenant-scoped to prevent cross-tenant access.
-// Section 47 schema requires revoked_at/revoked_by (BUG-006 fix).
 func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) error {
-	tenantID := tenant.IDFromContext(ctx)
-
-	// Verify the key belongs to the user within this tenant.
+	// Verify the key belongs to the user.
 	var ownerID pgtype.UUID
 
 	err := s.store.dbPool.QueryRow(ctx, `
-		SELECT user_id FROM api_keys WHERE id = $1 AND tenant_id = $2
-	`, keyID, tenantID).Scan(&ownerID)
+		SELECT user_id FROM api_keys WHERE id = $1
+	`, keyID).Scan(&ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return errors.New("api key not found")
@@ -624,27 +601,25 @@ func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID pgtype.UUID) e
 		return errors.New("api key does not belong to user")
 	}
 
-	return s.store.revokeKey(ctx, tenantID, keyID, userID)
+	return s.store.revokeKey(ctx, keyID, userID)
 }
 
 // SuspendAPIKey sets an API key status to suspended (admin action).
-// Tenant-scoped to prevent cross-tenant modification (PUB-003).
 func (s *Service) SuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
-	return s.store.setStatus(ctx, tenant.IDFromContext(ctx), keyID, "suspended")
+	return s.store.setStatus(ctx, keyID, "suspended")
 }
 
 // UnsuspendAPIKey sets an API key status back to active.
-// Tenant-scoped to prevent cross-tenant modification (PUB-003).
 func (s *Service) UnsuspendAPIKey(ctx context.Context, keyID pgtype.UUID) error {
-	return s.store.setStatus(ctx, tenant.IDFromContext(ctx), keyID, "active")
+	return s.store.setStatus(ctx, keyID, "active")
 }
 
 // DeleteAPIKey permanently deletes an API key (super_admin only).
 // Tenant-scoped to prevent cross-tenant destruction (PUB-002).
 func (s *Service) DeleteAPIKey(ctx context.Context, keyID pgtype.UUID) error {
 	tag, err := s.store.dbPool.Exec(ctx, `
-		DELETE FROM api_keys WHERE id = $1 AND tenant_id = $2
-	`, keyID, tenant.IDFromContext(ctx))
+		DELETE FROM api_keys WHERE id = $1
+	`, keyID)
 	if err != nil {
 		return fmt.Errorf("delete api key: %w", err)
 	}
@@ -665,8 +640,8 @@ func (s *Service) DeleteAPIKeys(ctx context.Context, keyIDs []pgtype.UUID) error
 
 	// Build the query with ANY for efficient batch delete.
 	_, err := s.store.dbPool.Exec(ctx, `
-		DELETE FROM api_keys WHERE id = ANY($1) AND tenant_id = $2
-	`, keyIDs, tenant.IDFromContext(ctx))
+		DELETE FROM api_keys WHERE id = ANY($1)
+	`, keyIDs)
 	if err != nil {
 		return fmt.Errorf("delete api keys: %w", err)
 	}
@@ -880,10 +855,10 @@ func (s *Service) verifyKeyOwnership(ctx context.Context, userID, keyID pgtype.U
 // Search (PUB-012 — ILIKE wildcard escaping, moved from handler to service)
 // ---------------------------------------------------------------------------
 
-// SearchContent searches published content by title within a tenant.
+// SearchContent searches published content by title.
 // ILIKE metacharacters (% and _) in the query are escaped to prevent
 // wildcard injection (PUB-012).
-func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query string, limit, offset int32) ([]map[string]any, error) {
+func (s *Service) SearchContent(ctx context.Context, query string, limit, offset int32) ([]map[string]any, error) {
 	// Escape ILIKE metacharacters so user input is treated as a literal
 	// substring, not a wildcard pattern (PUB-012).
 	escaped := strings.ReplaceAll(query, "\\", "\\\\")
@@ -894,10 +869,10 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 	rows, err := s.store.dbPool.Query(ctx, `
 		SELECT id, title, slug, content_type, status, created_at
 		FROM contents
-		WHERE tenant_id = $1 AND status = 'published' AND visibility = 'public' AND deleted_at IS NULL AND title ILIKE $2 ESCAPE '\'
+		WHERE status = 'published' AND visibility = 'public' AND deleted_at IS NULL AND title ILIKE $1 ESCAPE '\'
 		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
-	`, tenantID, pattern, limit, offset)
+		LIMIT $2 OFFSET $3
+	`, pattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search content: %w", err)
 	}
@@ -932,12 +907,12 @@ func (s *Service) SearchContent(ctx context.Context, tenantID pgtype.UUID, query
 	return results, rows.Err()
 }
 
-// ListPublishedContent returns a paginated list of published, public content
-// within a tenant. Only status='published' AND visibility='public' rows are
+// ListPublishedContent returns a paginated list of published, public content.
+// Only status='published' AND visibility='public' rows are
 // returned — the public API must never expose drafts, scheduled, or
 // private/member-only content (Section 47, api.read.content scope).
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
-func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]map[string]any, error) {
+func (s *Service) ListPublishedContent(ctx context.Context, limit, offset int32) ([]map[string]any, error) {
 	rows, err := s.store.dbPool.Query(ctx, `
 		SELECT c.id, c.title, c.slug, c.content_type, c.author_id, c.space_id,
 		       c.view_count, c.comment_count, c.read_time_minutes,
@@ -945,16 +920,15 @@ func (s *Service) ListPublishedContent(ctx context.Context, tenantID pgtype.UUID
 		       u.username AS author_username,
 		       s.name AS space_name
 		FROM contents c
-		LEFT JOIN users u ON u.id = c.author_id AND u.tenant_id = c.tenant_id
-		LEFT JOIN spaces s ON s.id = c.space_id AND s.tenant_id = c.tenant_id
-		WHERE c.tenant_id = $1
-		  AND c.status = 'published'
+		LEFT JOIN users u ON u.id = c.author_id
+		LEFT JOIN spaces s ON s.id = c.space_id
+		WHERE c.status = 'published'
 		  AND c.visibility = 'public'
 		  AND c.deleted_at IS NULL
 		  AND c.auto_hidden = false
 		ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
-		LIMIT $2 OFFSET $3
-	`, tenantID, limit, offset)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list published content: %w", err)
 	}
@@ -1020,10 +994,10 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	var row apiKeyRow
 
 	err := s.store.dbPool.QueryRow(ctx, `
-		SELECT id, tenant_id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
+		SELECT id, user_id, name, key_prefix, scopes, rate_limit_tier, status, last_used_at, request_count, expires_at, created_at, updated_at
 		FROM api_keys
 		WHERE id = $1
-	`, keyID).Scan(&row.ID, &row.TenantID, &row.UserID, &row.Name, &row.KeyPrefix,
+	`, keyID).Scan(&row.ID, &row.UserID, &row.Name, &row.KeyPrefix,
 		&row.Scopes, &row.RateLimitTier, &row.Status, &row.LastUsedAt,
 		&row.RequestCount, &row.ExpiresAt, &row.CreatedAt, &row.UpdatedAt)
 	if err != nil {
@@ -1044,7 +1018,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	// until the grace expiry). The new key adds 1 to the active count.
 	limit := maxKeysPerUser
 	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, row.TenantID, "api.keys.max_per_user", maxKeysPerUser)
+		limit = s.keyCountReader.GetIntOr(ctx, pgtype.UUID{}, "api.keys.max_per_user", maxKeysPerUser)
 	}
 
 	var currentCount int
@@ -1103,10 +1077,10 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	var newID pgtype.UUID
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO api_keys (tenant_id, user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO api_keys (user_id, name, key_prefix, key_hash, scopes, rate_limit_tier, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, row.TenantID, userID, row.Name, keyPrefix, keyHash,
+	`, userID, row.Name, keyPrefix, keyHash,
 		row.Scopes, row.RateLimitTier, row.ExpiresAt).Scan(&newID)
 	if err != nil {
 		return nil, fmt.Errorf("rotate api key: create new key: %w", err)

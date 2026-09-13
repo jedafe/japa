@@ -86,10 +86,10 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targ
 	// For space-scoped delivery the tenant_id is carried in the message so
 	// receiving instances scope local delivery to the correct tenant.
 	msg := PubSubMessage{
-		Type:           event.Type,
+		Type:          event.Type,
 		TargetUserID:  targetUserID,
 		TargetSpaceID: targetSpaceID,
-		Payload:        event.Payload,
+		Payload:       event.Payload,
 	}
 
 	data, err := json.Marshal(msg)

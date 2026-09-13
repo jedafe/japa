@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 func withAuthUser(r *http.Request) *http.Request {
@@ -36,7 +35,11 @@ func withTenant(r *http.Request) *http.Request {
 
 	tid.Scan("11111111-1111-1111-1111-111111111111")
 
-	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{
+	ctx = context.WithValue(ctx, struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{
 		ID: tid,
 	})
 

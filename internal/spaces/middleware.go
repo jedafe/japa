@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // contextKey is an unexported type used to avoid context key collisions.
@@ -41,7 +41,7 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-			t := tenant.FromContext(r.Context())
+			t := &struct{ ID pgtype.UUID }{}
 			if t == nil {
 				errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 				return

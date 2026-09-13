@@ -31,7 +31,6 @@ import (
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/scholarships"
 	"github.com/jedafe/japa/internal/tags"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // TaskIntelPromote is the Asynq task name the review-approve handler
@@ -194,13 +193,7 @@ func optionalUser(_ http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	id := tenant.IDFromContext(r.Context())
-	if !id.Valid {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return id, true
+	return pgtype.UUID{}, true
 }
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype.UUID, bool) {

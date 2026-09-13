@@ -186,11 +186,11 @@ var rateLimitRankToTier = map[int]string{
 // capRateLimitTier resolves the user's unified tier and returns the lower of
 // the API key's rate_limit_tier and the user's cap tier. If the user tier
 // resolver fails, the cap falls back to "basic" for safety.
-func capRateLimitTier(ctx context.Context, tr TierResolver, tenantID, userID pgtype.UUID, keyTier string) string {
+func capRateLimitTier(ctx context.Context, tr TierResolver, userID pgtype.UUID, keyTier string) string {
 	userTier := "regular"
 
 	if tr != nil {
-		resolved, err := tr.ResolveUserTier(ctx, tenantID, userID)
+		resolved, err := tr.ResolveUserTier(ctx, userID)
 		if err == nil && resolved != "" {
 			userTier = resolved
 		}

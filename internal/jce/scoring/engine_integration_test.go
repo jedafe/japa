@@ -78,10 +78,7 @@ func seedComparisonType(t *testing.T, database *db.DB, tenantID pgtype.UUID, cfg
 	ctx := t.Context()
 
 	fieldGroupID := newTestUUID(t)
-	_, err := database.Writer.Exec(ctx,
-		`INSERT INTO custom_field_groups (id, tenant_id, name, slug, description, is_system)
-		 VALUES ($1, $2, 'Test Fields', $3, 'Test field group', false)`,
-		fieldGroupID, tenantID, "test-fields-"+uuid.New().String())
+	_, err := database.Writer.Exec(ctx, `INSERT INTO custom_field_groups (id, name, slug, description, is_system) VALUES ($1, $2, 'Test Fields', $3, 'Test field group', false)`, fieldGroupID, tenantID, "test-fields-"+uuid.New().String())
 	if err != nil {
 		t.Fatalf("seed comparison type: insert custom_field_groups: %v", err)
 	}
@@ -99,10 +96,7 @@ func seedComparisonType(t *testing.T, database *db.DB, tenantID pgtype.UUID, cfg
 		cfgBytes = []byte("{}")
 	}
 
-	_, err = database.Writer.Exec(ctx,
-		`INSERT INTO comparison_type_definitions (id, tenant_id, name, slug, field_group_id, item_label, is_system, config)
-		 VALUES ($1, $2, 'Test Type', $3, $4, 'Item', false, $5)`,
-		typeID, tenantID, slug, fieldGroupID, cfgBytes)
+	_, err = database.Writer.Exec(ctx, `INSERT INTO comparison_type_definitions (id, name, slug, field_group_id, item_label, is_system, config) VALUES ($1, $2, 'Test Type', $3, $4, 'Item', false, $5)`, typeID, tenantID, slug, fieldGroupID, cfgBytes)
 	if err != nil {
 		t.Fatalf("seed comparison type: insert comparison_type_definitions: %v", err)
 	}
@@ -125,12 +119,10 @@ func seedScoreFactor(t *testing.T, database *db.DB, tenantID, typeID pgtype.UUID
 		typeIDArg = typeID
 	}
 
-	_, err = database.Writer.Exec(ctx,
-		`INSERT INTO comparison_score_factors (
-		    id, tenant_id, comparison_type_id, factor_key, label, description,
+	_, err = database.Writer.Exec(ctx, `INSERT INTO comparison_score_factors (
+		    id, comparison_type_id, factor_key, label, description,
 		    data_source, default_weight, config, is_system
-		 ) VALUES ($1, $2, $3, $4, $5, 'test factor', $6, $7, $8, false)`,
-		id, tenantID, typeIDArg, factorKey, factorKey, dataSource, defaultWeight, cfgBytes)
+		) VALUES ($1, $2, $3, $4, $5, 'test factor', $6, $7, $8, false)`, id, tenantID, typeIDArg, factorKey, factorKey, dataSource, defaultWeight, cfgBytes)
 	if err != nil {
 		t.Fatalf("seed score factor %s: %v", factorKey, err)
 	}
@@ -145,18 +137,12 @@ func seedComparison(t *testing.T, database *db.DB, tenantID, authorID, typeID pg
 	contentID := newTestUUID(t)
 	slug := "test-comparison-" + uuid.New().String()
 
-	_, err := database.Writer.Exec(ctx,
-		`INSERT INTO contents (id, tenant_id, author_id, content_type, title, slug, body, body_html, status, visibility)
-		 VALUES ($1, $2, $3, 'comparison', 'Test Comparison', $4, '', '', 'published', $5)`,
-		contentID, tenantID, authorID, slug, visibility)
+	_, err := database.Writer.Exec(ctx, `INSERT INTO contents (id, author_id, content_type, title, slug, body, body_html, status, visibility) VALUES ($1, $2, $3, 'comparison', 'Test Comparison', $4, '', '', 'published', $5)`, contentID, tenantID, authorID, slug, visibility)
 	if err != nil {
 		t.Fatalf("seed comparison: insert contents: %v", err)
 	}
 
-	_, err = database.Writer.Exec(ctx,
-		`INSERT INTO comparison_content_metadata (content_id, tenant_id, depth, score_version, config)
-		 VALUES ($1, $2, 'quick', 1, '{}')`,
-		contentID, tenantID)
+	_, err = database.Writer.Exec(ctx, `INSERT INTO comparison_content_metadata (content_id, depth, score_version, config) VALUES ($1, $2, 'quick', 1, '{}')`, contentID, tenantID)
 	if err != nil {
 		t.Fatalf("seed comparison: insert comparison_content_metadata: %v", err)
 	}
@@ -172,10 +158,7 @@ func seedComparison(t *testing.T, database *db.DB, tenantID, authorID, typeID pg
 
 	var itemIDs []pgtype.UUID
 	for i, it := range items {
-		_, err := database.Writer.Exec(ctx,
-			`INSERT INTO comparison_items (id, content_id, tenant_id, type_id, title, position, item_ref)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-			it.id, contentID, tenantID, typeID, it.title, i, it.ref)
+		_, err := database.Writer.Exec(ctx, `INSERT INTO comparison_items (id, content_id, type_id, title, position, item_ref) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`, it.id, contentID, tenantID, typeID, it.title, i, it.ref)
 		if err != nil {
 			t.Fatalf("seed comparison: insert comparison_items: %v", err)
 		}
@@ -210,11 +193,9 @@ func seedComparisonProfile(t *testing.T, database *db.DB, tenantID, userID pgtyp
 		targetSpaceIDs = append(targetSpaceIDs, u)
 	}
 
-	_, err = database.Writer.Exec(ctx,
-		`INSERT INTO comparison_profiles (
-		    id, tenant_id, user_id, title, target_space_ids, goals, preferences, demographics, is_default, is_template
-		 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, false)`,
-		profileID, tenantID, userID, in.Title, targetSpaceIDs, goals, preferences, demographics)
+	_, err = database.Writer.Exec(ctx, `INSERT INTO comparison_profiles (
+		    id, user_id, title, target_space_ids, goals, preferences, demographics, is_default, is_template
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, false)`, profileID, tenantID, userID, in.Title, targetSpaceIDs, goals, preferences, demographics)
 	if err != nil {
 		t.Fatalf("seed comparison profile: %v", err)
 	}
@@ -404,9 +385,7 @@ func TestEngine_ScoreAndGetScore(t *testing.T) {
 	}
 
 	// Scoring disabled for the type should block Score.
-	_, err = database.Writer.Exec(ctx,
-		`UPDATE comparison_type_definitions SET config = $1 WHERE id = $2 AND tenant_id = $3`,
-		[]byte(`{"scoring_enabled": false}`), typeID, tenantID)
+	_, err = database.Writer.Exec(ctx, `UPDATE comparison_type_definitions SET config = $1 WHERE id = $2`, []byte(`{"scoring_enabled": false}`), typeID)
 	if err != nil {
 		t.Fatalf("disable scoring: %v", err)
 	}

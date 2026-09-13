@@ -79,8 +79,7 @@ func grantPermission(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, permK
 	// Ensure the permission key exists globally.
 	var permID pgtype.UUID
 	if err := d.Writer.QueryRow(ctx, `
-		INSERT INTO permissions (id, key, description)
-		VALUES (gen_random_uuid(), $1, $2)
+		INSERT INTO permissions (id, key, description) VALUES (gen_random_uuid(), $1, $2)
 		ON CONFLICT (key) DO UPDATE SET key=$1
 		RETURNING id
 	`, permKey, fmt.Sprintf("test %s", permKey)).Scan(&permID); err != nil {
@@ -89,13 +88,13 @@ func grantPermission(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, permK
 
 	// Get the tenant's members group.
 	var groupID pgtype.UUID
-	if err := d.Reader.QueryRow(ctx, `SELECT id FROM user_groups WHERE tenant_id=$1 AND slug='members'`, tenantID).Scan(&groupID); err != nil {
+	if err := d.Reader.QueryRow(ctx, `SELECT id FROM user_groups WHERE slug='members'`).Scan(&groupID); err != nil {
 		t.Fatalf("finding members group: %v", err)
 	}
 
 	roleID := pgUUID(t, uuid.New().String())
 	if _, err := d.Writer.Exec(ctx, `
-		INSERT INTO user_roles (id, tenant_id, name, slug) VALUES ($1, $2, $3, $4)
+		INSERT INTO user_roles (id, name, slug) VALUES ($1, $2, $3, $4)
 	`, roleID, tenantID, "test-role", "test-role"); err != nil {
 		t.Fatalf("inserting role: %v", err)
 	}
@@ -113,10 +112,9 @@ func grantPermission(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, permK
 	}
 
 	if _, err := d.Writer.Exec(ctx, `
-		INSERT INTO user_group_memberships (id, tenant_id, user_id, group_id)
-		VALUES (gen_random_uuid(), $1, $2, $3)
-		ON CONFLICT (tenant_id, user_id, group_id) DO NOTHING
-	`, tenantID, userID, groupID); err != nil {
+		INSERT INTO user_group_memberships (id, user_id, group_id) VALUES (gen_random_uuid(), $1, $2, $3)
+		ON CONFLICT (user_id, group_id) DO NOTHING
+	`, userID, groupID); err != nil {
 		t.Fatalf("adding user to members group: %v", err)
 	}
 }

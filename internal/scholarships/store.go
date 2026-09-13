@@ -545,7 +545,7 @@ func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID)
 		}
 	}
 
-	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM scholarships WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM scholarships WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("scholarships: delete: %w", err)
 	}

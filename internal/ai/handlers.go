@@ -43,7 +43,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/honcho"
 	"github.com/jedafe/japa/internal/rag"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -399,14 +398,7 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 // ---------------------------------------------------------------------------
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -575,7 +567,7 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID 
 
 	cacheKey := ""
 	if cacheEnabled && h.cache != nil {
-		cacheKey = aiResponseCacheKey(tenantID, userID, category, req.Payload)
+		cacheKey = aiResponseCacheKey(userID, category, req.Payload)
 		if cached, ok := lookupCachedResponse(ctx, h.cache, cacheKey); ok {
 			// Cache hit: log as a zero-cost, zero-token cached call so the
 			// admin dashboard can still see the volume and the savings.
@@ -2596,7 +2588,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t != nil {
 		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 		if err != nil {
@@ -2665,7 +2657,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t != nil {
 		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
 		if err != nil {

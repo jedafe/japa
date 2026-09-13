@@ -6,7 +6,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // CatalogOption is a single value/label pair returned by the public catalog
@@ -90,11 +89,5 @@ func (h *Handlers) GetCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	id := tenant.IDFromContext(r.Context())
-	if !id.Valid {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return id, true
+	return pgtype.UUID{}, true
 }

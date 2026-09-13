@@ -13,7 +13,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // SpacesService is the subset of spaces.Service the geo hierarchy handlers
@@ -177,7 +176,7 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 //
 // GET /api/v1/geo/countries.
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -202,7 +201,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 //
 // GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -232,7 +231,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 //
 // GET /api/v1/geo/states/{id}/cities.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -266,7 +265,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 //
 // POST /api/v1/geo/states/{id}/cities.
 func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -329,7 +328,7 @@ func (h *Handlers) suggestedSpaces(r *http.Request, geo GeoContext) []SuggestedS
 		return out
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		return out
 	}

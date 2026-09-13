@@ -21,7 +21,6 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 const defaultPageSize int32 = 20
@@ -64,13 +63,7 @@ func parseComparisonItemID(r *http.Request) (pgtype.UUID, error) {
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -1285,7 +1278,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 			positions = append(positions, toInt32(idx))
 		}
 
-		if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, tenantID, ids, positions); err != nil {
+		if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, ids, positions); err != nil {
 			handleServiceError(w, err)
 			return
 		}
@@ -1310,7 +1303,7 @@ func (h *Handlers) ReorderComparisonItems(w http.ResponseWriter, r *http.Request
 		positions = append(positions, item.Position)
 	}
 
-	if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, tenantID, ids, positions); err != nil {
+	if err := h.Service.BatchReorderComparisonItems(r.Context(), comparisonID, ids, positions); err != nil {
 		handleServiceError(w, err)
 		return
 	}

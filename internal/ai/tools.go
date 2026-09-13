@@ -53,12 +53,12 @@ func NewToolRegistry(database *db.DB) *ToolRegistry {
 // ListTools returns all AI tools for the given tenant.
 func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]AITool, error) {
 	rows, err := r.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, name, description, category, config, is_enabled,
+		SELECT id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
 		FROM ai_tools
-		WHERE tenant_id = $1
+		
 		ORDER BY category, name
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing ai tools: %w", err)
 	}
@@ -87,11 +87,11 @@ func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (A
 	var t AITool
 
 	err := r.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, description, category, config, is_enabled,
+		SELECT id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
 		FROM ai_tools
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Description, &t.Category,
 		&t.Config, &t.IsEnabled, &t.RequiredPermission,
 		&t.CreatedAt, &t.UpdatedAt,
@@ -108,11 +108,11 @@ func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, 
 	var t AITool
 
 	err := r.db.Reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, description, category, config, is_enabled,
+		SELECT id, name, description, category, config, is_enabled,
 		       required_permission, created_at, updated_at
 		FROM ai_tools
-		WHERE tenant_id = $1 AND name = $2
-	`, tenantID, name).Scan(
+		WHERE name = $1
+	`, name).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Description, &t.Category,
 		&t.Config, &t.IsEnabled, &t.RequiredPermission,
 		&t.CreatedAt, &t.UpdatedAt,
@@ -156,11 +156,11 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 
 	err = r.db.Writer.QueryRow(ctx, `
 		UPDATE ai_tools
-		SET description = $3, config = $4, is_enabled = $5, required_permission = $6, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2
-		RETURNING id, tenant_id, name, description, category, config, is_enabled,
+		SET description = $2, config = $3, is_enabled = $4, required_permission = $5, updated_at = now()
+		WHERE id = $1
+		RETURNING id, name, description, category, config, is_enabled,
 		          required_permission, created_at, updated_at
-	`, tenantID, id, description, config, isEnabled, requiredPermission).Scan(
+	`, id, description, config, isEnabled, requiredPermission).Scan(
 		&updated.ID, &updated.TenantID, &updated.Name, &updated.Description,
 		&updated.Category, &updated.Config, &updated.IsEnabled,
 		&updated.RequiredPermission, &updated.CreatedAt, &updated.UpdatedAt,
@@ -176,8 +176,8 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 func (r *ToolRegistry) DeleteTool(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := r.db.Writer.Exec(ctx, `
 		DELETE FROM ai_tools
-		WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("deleting ai tool %s: %w", id, err)
 	}
@@ -208,8 +208,8 @@ func (r *ToolRegistry) GetToolUsageStats(ctx context.Context, tenantID, toolID p
 			COUNT(*) as total_calls,
 			COUNT(DISTINCT user_id) as unique_users
 		FROM ai_tool_usage
-		WHERE tenant_id = $1 AND tool_id = $2 AND created_at >= $3
-	`, tenantID, toolID, since).Scan(
+		WHERE tool_id = $1 AND created_at >= $2
+	`, toolID, since).Scan(
 		&stats.TotalTokens, &stats.TotalCostCents,
 		&stats.TotalCalls, &stats.UniqueUsers,
 	)
@@ -231,12 +231,12 @@ type ToolUsageStats struct {
 // ListToolUsage returns recent usage records for a tool.
 func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtype.UUID, limit, offset int32) ([]AIToolUsage, error) {
 	rows, err := r.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, tool_id, user_id, tokens_used, cost_cents, created_at
+		SELECT id, tool_id, user_id, tokens_used, cost_cents, created_at
 		FROM ai_tool_usage
-		WHERE tenant_id = $1 AND tool_id = $2
+		WHERE tool_id = $1
 		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
-	`, tenantID, toolID, limit, offset)
+		LIMIT $2 OFFSET $3
+	`, toolID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing tool usage: %w", err)
 	}
@@ -312,10 +312,9 @@ func (r *ToolRegistry) RecordUsage(ctx context.Context, tenantID, toolID pgtype.
 	var id pgtype.UUID
 
 	err := r.db.Writer.QueryRow(ctx, `
-		INSERT INTO ai_tool_usage (tenant_id, tool_id, user_id, tokens_used, cost_cents)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO ai_tool_usage (tool_id, user_id, tokens_used, cost_cents) VALUES ($1, $2, $3, $4)
 		RETURNING id
-	`, tenantID, toolID, userID, tokensUsed, costCents).Scan(&id)
+	`, toolID, userID, tokensUsed, costCents).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("recording tool usage: %w", err)
 	}
@@ -329,15 +328,13 @@ func (r *ToolRegistry) EnsureTool(ctx context.Context, tenantID pgtype.UUID, too
 	var id pgtype.UUID
 
 	err := r.db.Writer.QueryRow(ctx, `
-		INSERT INTO ai_tools (tenant_id, name, description, category, config, is_enabled, required_permission)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (tenant_id, name) DO UPDATE
+		INSERT INTO ai_tools (name, description, category, config, is_enabled, required_permission) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (name) DO UPDATE
 		SET description = EXCLUDED.description,
 		    category = EXCLUDED.category,
 		    updated_at = now()
 		RETURNING id
-	`, tenantID, tool.Name, tool.Description, tool.Category, tool.Config,
-		tool.IsEnabled, tool.RequiredPermission).Scan(&id)
+	`, tool.Name, tool.Description, tool.Category, tool.Config, tool.IsEnabled, tool.RequiredPermission).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("ensuring ai tool: %w", err)
 	}

@@ -14,25 +14,24 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // sourceItem is a single item in a source's feed. It is intentionally a
 // flattened, UI-ready shape so the source detail page and the tools can render
 // it without domain-specific knowledge.
 type sourceItem struct {
-	ID          string             `json:"id"`
-	ContentID   string             `json:"content_id,omitempty"`
-	EntityType  string             `json:"entity_type"`
-	Title       string             `json:"title"`
-	Excerpt     *string            `json:"excerpt,omitempty"`
-	OriginalURL string             `json:"original_url"`
-	Href        string             `json:"href"`
-	PublishedAt pgtype.Timestamptz `json:"published_at"`
-	ViewCount   int32              `json:"view_count"`
-	CommentCount int32             `json:"comment_count"`
-	ShareCount  int32              `json:"share_count"`
-	VoteScore   int32              `json:"vote_score"`
+	ID           string             `json:"id"`
+	ContentID    string             `json:"content_id,omitempty"`
+	EntityType   string             `json:"entity_type"`
+	Title        string             `json:"title"`
+	Excerpt      *string            `json:"excerpt,omitempty"`
+	OriginalURL  string             `json:"original_url"`
+	Href         string             `json:"href"`
+	PublishedAt  pgtype.Timestamptz `json:"published_at"`
+	ViewCount    int32              `json:"view_count"`
+	CommentCount int32              `json:"comment_count"`
+	ShareCount   int32              `json:"share_count"`
+	VoteScore    int32              `json:"vote_score"`
 }
 
 // sourceItemEnvelope is the response payload for the source item feed.
@@ -54,7 +53,7 @@ func (h *Handlers) HandleListSourceItems(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = h.defaultTenant
 	}

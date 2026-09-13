@@ -223,9 +223,8 @@ func (s *Service) ProcessActivityEvent(ctx context.Context, eventID, tenantID pg
 
 		row := tx.QueryRow(ctx, `
 			SELECT COALESCE(SUM(amount), 0) FROM wallet_ledger
-			WHERE tenant_id = $1 AND user_id = $2 AND ledger_type = 'points'
-			  AND operation = 'earn' AND created_at >= CURRENT_DATE`,
-			tenantID, event.UserID)
+			WHERE user_id = $1 AND ledger_type = 'points'
+			  AND operation = 'earn' AND created_at >= CURRENT_DATE`, event.UserID)
 		if qerr := row.Scan(&earnedToday); qerr != nil {
 			return fmt.Errorf("checking daily earning cap: %w", qerr)
 		}

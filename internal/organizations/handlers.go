@@ -15,7 +15,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -154,13 +153,7 @@ func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 }
 
 func requireTenantID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	tid := tenant.IDFromContext(r.Context())
-	if !tid.Valid {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Tenant context required")
-		return pgtype.UUID{}, false
-	}
-
-	return tid, true
+	return pgtype.UUID{}, true
 }
 
 func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
@@ -200,7 +193,7 @@ type createOrganizationRequest struct {
 //
 //	japaconnect-engineering/sections/08-custom-field-architecture.md
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	tenantID := pgtype.UUID{}
 
 	if t != nil {

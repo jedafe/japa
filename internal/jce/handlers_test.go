@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/features"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // stubFeatureChecker is a feature checker that always returns a fixed value.
@@ -57,7 +56,11 @@ func newRequest(t *testing.T, method, path, body string, tenantID, userID pgtype
 	r.Header.Set("Content-Type", "application/json")
 
 	ctx := r.Context()
-	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
+	ctx = context.WithValue(ctx, struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 		UserID: userID,
 	})
@@ -293,7 +296,11 @@ func newAuthenticatedRequest(t *testing.T, method, path, body string, tenantID, 
 	r.Header.Set("Content-Type", "application/json")
 
 	ctx := r.Context()
-	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
+	ctx = context.WithValue(ctx, struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 		UserID: userID,
 	})

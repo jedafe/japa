@@ -242,9 +242,9 @@ func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pg
 	err := s.store.pool.Reader.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM contents
-			WHERE id = $1 AND tenant_id = $2 AND organization_id = $3
+			WHERE id = $1 AND organization_id = $2
 			  AND content_type = 'job_listing' AND deleted_at IS NULL
-		)`, jobID, tenantID, orgID).Scan(&exists)
+		)`, jobID, orgID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("jobs: job belongs to org: %w", err)
 	}
@@ -280,14 +280,12 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 	// entity_id); filters join through custom_fields to resolve the key.
 	clauses = append(
 		clauses,
-		"c.tenant_id = $1",
 		"c.content_type = 'job_listing'",
 		"c.status = 'published'",
 		"c.deleted_at IS NULL",
 	)
 
-	args = append(args, tenantID)
-	argIdx = 2
+	argIdx = 1
 
 	if filters.Q != "" {
 		clauses = append(clauses, fmt.Sprintf("c.title ILIKE $%d", argIdx))
@@ -304,7 +302,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'country'
+				  AND cf.key = 'country'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
 
@@ -318,7 +316,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'job_type'
+				  AND cf.key = 'job_type'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
 
@@ -332,7 +330,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'location_type'
+				  AND cf.key = 'location_type'
 				  AND cfv.value_text = $%d
 			)`, argIdx))
 
@@ -346,7 +344,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				SELECT 1 FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'visa_sponsorship'
+				  AND cf.key = 'visa_sponsorship'
 				  AND cfv.value_bool = $%d
 			)`, argIdx))
 
@@ -380,7 +378,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'application_deadline'
+				  AND cf.key = 'application_deadline'
 				LIMIT 1
 			) dl ON true`
 	}
@@ -393,7 +391,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				FROM custom_field_values cfv
 				JOIN custom_fields cf ON cf.id = cfv.field_id
 				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				  AND cf.tenant_id = c.tenant_id AND cf.key = 'salary_max'
+				  AND cf.key = 'salary_max'
 				LIMIT 1
 			) sl ON true`
 	}
@@ -419,7 +417,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				    AND cf.tenant_id = c.tenant_id),
+				),
 				'{}'::json
 			) AS field_values,
 			c.published_at
@@ -531,16 +529,15 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				    AND cf.tenant_id = c.tenant_id),
+				),
 				'{}'::json
 			) AS field_values,
 			c.published_at
 		FROM contents c
-		WHERE c.tenant_id = $1
-		  AND c.content_type = 'job_listing'
+		WHERE c.content_type = 'job_listing'
 		  AND c.status = 'published'
 		  AND c.deleted_at IS NULL
-		  AND c.slug = $2
+		  AND c.slug = $1
 		LIMIT 1`
 
 	var (
@@ -554,7 +551,7 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		orgID         pgtype.UUID
 	)
 
-	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, slug).Scan(
+	err := s.store.pool.Reader.QueryRow(ctx, query, slug).Scan(
 		&id, &title, &slugOut, &body, &orgID, &intelRecordID, &fieldValues, &publishedAt,
 	)
 	if err != nil {
@@ -619,7 +616,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 
 	countSQL := `
 		SELECT COUNT(*) FROM contents c
-		WHERE c.tenant_id = $1 AND c.organization_id = $2
+		WHERE c.organization_id = $1
 		  AND c.content_type = 'job_listing' AND c.status = 'published'
 		  AND c.deleted_at IS NULL`
 
@@ -637,21 +634,21 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				    AND cf.tenant_id = c.tenant_id),
+				),
 				'{}'::json
 			) AS field_values,
 			c.published_at
 		FROM contents c
-		WHERE c.tenant_id = $1 AND c.organization_id = $2
+		WHERE c.organization_id = $1
 		  AND c.content_type = 'job_listing' AND c.status = 'published'
 		  AND c.deleted_at IS NULL
 		ORDER BY c.published_at DESC NULLS LAST
-		LIMIT $3 OFFSET $4`
+		LIMIT $2 OFFSET $3`
 
 	pool := s.store.pool.Reader
 
 	var total int64
-	if err := pool.QueryRow(ctx, countSQL, tenantID, orgID).Scan(&total); err != nil {
+	if err := pool.QueryRow(ctx, countSQL, orgID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("jobs: list org jobs: count: %w", err)
 	}
 
@@ -659,7 +656,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 		return []JobResult{}, 0, nil
 	}
 
-	rows, err := pool.Query(ctx, dataSQL, tenantID, orgID, limit, offset)
+	rows, err := pool.Query(ctx, dataSQL, orgID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("jobs: list org jobs: query: %w", err)
 	}
@@ -724,10 +721,10 @@ func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorI
 	var contentID pgtype.UUID
 
 	err := s.store.pool.Writer.QueryRow(ctx, `
-		INSERT INTO contents (tenant_id, organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
-		VALUES ($1, $2, $3, 'job_listing', $4, $5, $6, $7, 'published', now())
+		INSERT INTO contents (organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
+		VALUES ($1, $2, 'job_listing', $3, $4, $5, $6, 'published', now())
 		RETURNING id`,
-		tenantID, orgID, authorID, title, slug, body, contentHash).Scan(&contentID)
+		orgID, authorID, title, slug, body, contentHash).Scan(&contentID)
 	if err != nil {
 		return JobDetail{}, fmt.Errorf("jobs: create listing: insert content: %w", err)
 	}
@@ -767,14 +764,13 @@ func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.
 				) FROM custom_field_values cfv
 				  JOIN custom_fields cf ON cf.id = cfv.field_id
 				  WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
-				    AND cf.tenant_id = c.tenant_id),
+				),
 				'{}'::json
 			) AS field_values,
 			c.published_at
 		FROM contents c
-		WHERE c.tenant_id = $1
-		  AND c.organization_id = $2
-		  AND c.id = $3
+		WHERE c.organization_id = $1
+		  AND c.id = $2
 		  AND c.content_type = 'job_listing'
 		  AND c.deleted_at IS NULL
 		LIMIT 1`
@@ -788,7 +784,7 @@ func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.
 		publishedAt pgtype.Timestamptz
 	)
 
-	err := s.store.pool.Writer.QueryRow(ctx, query, tenantID, orgID, jobID).Scan(
+	err := s.store.pool.Writer.QueryRow(ctx, query, orgID, jobID).Scan(
 		&id, &title, &slugOut, &body, &fieldValues, &publishedAt,
 	)
 	if err != nil {
@@ -890,9 +886,9 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 
 	contentHash := content.ComputeContentHash(body)
 
-	setParts := []string{"updated_at = now()", "title = $3", "slug = $4", "body = $5", "content_hash = $6"}
-	args := []any{tenantID, jobID, title, slug, body, contentHash}
-	argIdx := 7
+	setParts := []string{"updated_at = now()", "title = $2", "slug = $3", "body = $4", "content_hash = $5"}
+	args := []any{jobID, title, slug, body, contentHash}
+	argIdx := 6
 
 	if publishedAt.Valid {
 		setParts = append(setParts, fmt.Sprintf("published_at = $%d", argIdx))
@@ -909,7 +905,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 
 	query := fmt.Sprintf(`
 		UPDATE contents SET %s
-		WHERE id = $2 AND tenant_id = $1 AND organization_id = $%d
+		WHERE id = $1 AND organization_id = $%d
 		  AND content_type = 'job_listing' AND deleted_at IS NULL`,
 		strings.Join(setParts, ", "), orgIdx)
 
@@ -1038,14 +1034,14 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 			INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_bool)
 			SELECT cf.id, 'content', $1, $3
 			FROM custom_fields cf
-			WHERE cf.tenant_id = $4 AND cf.key = $2
+			WHERE cf.key = $2
 			  AND EXISTS (
 				SELECT 1 FROM contents c
-				WHERE c.id = $1 AND c.tenant_id = $4 AND c.content_type = 'job_listing'
+				WHERE c.id = $1 AND c.content_type = 'job_listing'
 			  )
 			ON CONFLICT (field_id, entity_type, entity_id)
 			DO UPDATE SET value_bool = $3, updated_at = now()`,
-			contentID, key, b, tenantID); err != nil {
+			contentID, key, b); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
 		}
 	case fieldTypeNumber:
@@ -1053,14 +1049,14 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 			INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_number)
 			SELECT cf.id, 'content', $1, $3::numeric
 			FROM custom_fields cf
-			WHERE cf.tenant_id = $4 AND cf.key = $2
+			WHERE cf.key = $2
 			  AND EXISTS (
 				SELECT 1 FROM contents c
-				WHERE c.id = $1 AND c.tenant_id = $4 AND c.content_type = 'job_listing'
+				WHERE c.id = $1 AND c.content_type = 'job_listing'
 			  )
 			ON CONFLICT (field_id, entity_type, entity_id)
 			DO UPDATE SET value_number = $3::numeric, updated_at = now()`,
-			contentID, key, value, tenantID); err != nil {
+			contentID, key, value); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
 		}
 	default:
@@ -1068,14 +1064,14 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 			INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text)
 			SELECT cf.id, 'content', $1, $3
 			FROM custom_fields cf
-			WHERE cf.tenant_id = $4 AND cf.key = $2
+			WHERE cf.key = $2
 			  AND EXISTS (
 				SELECT 1 FROM contents c
-				WHERE c.id = $1 AND c.tenant_id = $4 AND c.content_type = 'job_listing'
+				WHERE c.id = $1 AND c.content_type = 'job_listing'
 			  )
 			ON CONFLICT (field_id, entity_type, entity_id)
 			DO UPDATE SET value_text = $3, updated_at = now()`,
-			contentID, key, value, tenantID); err != nil {
+			contentID, key, value); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
 		}
 	}
@@ -1151,8 +1147,8 @@ func (s *Service) UpdateApplicationStatus(ctx context.Context, tenantID, appID p
 			"application_id": app.ID.String(),
 			"applicant_id":   app.ApplicantID.String(),
 			"job_id":         app.JobID.String(),
-			"tenant_id":      tenantID.String(),
-			"status":         status,
+
+			"status": status,
 		})
 		if err != nil {
 			slog.Warn("jobs: marshal notify payload failed", "error", err)
@@ -1285,8 +1281,8 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 	// Build the WHERE clause — always tenant + content_type + not
 	// soft-deleted, optionally status. Admin can see archived listings via
 	// the status filter; soft-deleted rows are excluded entirely.
-	whereClause := "c.tenant_id = $1 AND c.content_type = 'job_listing' AND c.deleted_at IS NULL"
-	args := []any{tenantID}
+	whereClause := "c.content_type = 'job_listing' AND c.deleted_at IS NULL"
+	args := []any{}
 
 	argIdx := 2
 	if status != "" {
@@ -1425,11 +1421,11 @@ func (s *Service) AdminJobStatusDistribution(ctx context.Context, tenantID pgtyp
 	query := `
 		SELECT status, COUNT(*) AS count
 		FROM contents
-		WHERE tenant_id = $1 AND content_type = 'job_listing'
+		WHERE content_type = 'job_listing'
 		GROUP BY status
 		ORDER BY count DESC`
 
-	rows, err := s.store.pool.Reader.Query(ctx, query, tenantID)
+	rows, err := s.store.pool.Reader.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("jobs: admin job status distribution: %w", err)
 	}
@@ -1489,12 +1485,12 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 			 JOIN custom_fields cf ON cf.id = cfv.field_id
 			 JOIN contents c ON c.id = cfv.entity_id
 			 WHERE cfv.entity_type = 'content' AND cfv.entity_id = $1
-			   AND c.tenant_id = $2
+			   
 			   AND c.content_type = 'job_listing'
 			   AND cf.key = 'is_featured'
 			 LIMIT 1),
 			false
-		)`, jobID, tenantID).Scan(&current)
+		)`, jobID).Scan(&current)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: read: %w", err)
 	}
@@ -1507,8 +1503,8 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 
 	err = s.store.pool.Writer.QueryRow(ctx, `
 		SELECT id FROM custom_fields
-		WHERE tenant_id = $2 AND key = 'is_featured'
-		LIMIT 1`, jobID, tenantID).Scan(&fieldID)
+		WHERE key = 'is_featured'
+		LIMIT 1`).Scan(&fieldID)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: resolve field id: %w", err)
 	}
@@ -1518,11 +1514,11 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 		SELECT $1, 'content', $2, $3
 		WHERE EXISTS (
 			SELECT 1 FROM contents c
-			WHERE c.id = $2 AND c.tenant_id = $4 AND c.content_type = 'job_listing'
+			WHERE c.id = $2 AND c.content_type = 'job_listing'
 		)
 		ON CONFLICT (field_id, entity_type, entity_id)
 		DO UPDATE SET value_bool = $3`,
-		fieldID, jobID, newVal, tenantID)
+		fieldID, jobID, newVal)
 	if err != nil {
 		return false, fmt.Errorf("jobs: toggle feature: upsert: %w", err)
 	}
@@ -1538,9 +1534,9 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 	// Build the SET clause dynamically based on which fields are provided.
 	// summary is intentionally ignored — no such column (JOBS-004).
 	setParts := []string{"updated_at = now()"}
-	args := []interface{}{tenantID, jobID}
+	args := []interface{}{jobID}
 
-	argIdx := 3
+	argIdx := 2
 	if title != nil {
 		setParts = append(setParts, fmt.Sprintf("title = $%d", argIdx))
 		args = append(args, *title)
@@ -1564,7 +1560,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 
 	query := fmt.Sprintf(`
 		UPDATE contents SET %s
-		WHERE id = $2 AND tenant_id = $1 AND content_type = 'job_listing'`,
+		WHERE id = $1 AND content_type = 'job_listing'`,
 		strings.Join(setParts, ", "))
 
 	_, err := s.store.pool.Writer.Exec(ctx, query, args...)
@@ -1587,8 +1583,8 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 func (s *Service) AdminDeleteJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
 	_, err := s.store.pool.Writer.Exec(ctx, `
 		UPDATE contents SET deleted_at = now(), updated_at = now()
-		WHERE id = $2 AND tenant_id = $1 AND content_type = 'job_listing'`,
-		tenantID, jobID)
+		WHERE id = $1 AND content_type = 'job_listing'`,
+		jobID)
 	if err != nil {
 		return fmt.Errorf("jobs: admin delete: %w", err)
 	}

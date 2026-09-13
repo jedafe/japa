@@ -25,7 +25,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for webhook admin HTTP handlers.
@@ -58,13 +57,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 }
 
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser extracts the authenticated user ID from the request context.
@@ -409,7 +402,7 @@ func (h *Handlers) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	// system setting (BUG-009). If the setting is empty or invalid, fall
 	// back to the built-in default catalog.
 	if h.Service != nil && h.Service.settings != nil {
-		t := tenant.FromContext(r.Context())
+		t := &struct{ ID pgtype.UUID }{}
 		if t != nil {
 			raw := h.Service.settings.GetStringOr(r.Context(), t.ID, "webhooks.event_catalog", "")
 			if raw != "" {

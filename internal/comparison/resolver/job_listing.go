@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-		"github.com/jedafe/japa/internal/visitor"
-"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/content/visibility"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // JobListingResolver resolves public job listings (contents with

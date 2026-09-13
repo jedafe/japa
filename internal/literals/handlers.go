@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers exposes read-only template-literal endpoints for non-admin
@@ -41,19 +41,13 @@ type literalListItem struct {
 // so no per-request DB query runs. ?q= is a case-insensitive substring match
 // on key and label.
 func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	// Nil catalog (unwired in tests) — degrade to an empty list.
 	if h.catalog == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []literalListItem{}})
 		return
 	}
 
-	lits, err := h.catalog.GetActive(r.Context(), t.ID)
+	lits, err := h.catalog.GetActive(r.Context(), pgtype.UUID{})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list literals")
 		return

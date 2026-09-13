@@ -125,7 +125,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		tier := "regular"
 
 		if s.tierResolver != nil {
-			resolved, err := s.tierResolver.ResolveUserTier(ctx, tenantID, userID)
+			resolved, err := s.tierResolver.ResolveUserTier(ctx, userID)
 			if err == nil && resolved != "" {
 				tier = resolved
 			}

@@ -17,7 +17,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rbac"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -94,13 +93,7 @@ func (h *Handlers) enqueueSearchIndex(pageID, tenantID pgtype.UUID, operation st
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // checkAudienceGate verifies the requester may read the given audience.

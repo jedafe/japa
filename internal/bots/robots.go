@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -91,7 +90,7 @@ func GenerateRobotsTxt(bots []KnownBot) string {
 // cached in Valkey with a 24-hour TTL to avoid regenerating on every request.
 func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		t := tenant.FromContext(r.Context())
+		t := &struct{ ID pgtype.UUID }{}
 		if t == nil {
 			// Serve a permissive robots.txt when tenant is unavailable
 			w.Header().Set("Content-Type", "text/plain")

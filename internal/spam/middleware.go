@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -37,7 +37,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := tenant.FromContext(r.Context())
+			t := &struct{ ID pgtype.UUID }{}
 			if t == nil {
 				next.ServeHTTP(w, r)
 				return
@@ -49,13 +49,13 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			blockType, err := store.GetIPBlockTypeForIP(r.Context(), t.ID, ip)
+			blockType, err := store.GetIPBlockTypeForIP(r.Context(), pgtype.UUID{}, ip)
 			if err != nil {
 				// Log but don't block on check failure — degrade gracefully
 				slog.Warn(
 					"ip block check failed",
 					"ip", ip,
-					"tenant_id", t.ID,
+					"tenant_id", pgtype.UUID{},
 					"error", err,
 				)
 				next.ServeHTTP(w, r)
@@ -74,7 +74,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 				slog.Info(
 					"blocked request from blocked IP",
 					"ip", ip,
-					"tenant_id", t.ID,
+					"tenant_id", pgtype.UUID{},
 					"path", r.URL.Path,
 				)
 				writeSpamError(w, http.StatusForbidden, "ip_blocked", "Your IP address has been blocked")
@@ -145,7 +145,7 @@ var CensorResultKey = contextKey{"censor_result"}
 func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := tenant.FromContext(r.Context())
+			t := &struct{ ID pgtype.UUID }{}
 			if t == nil {
 				next.ServeHTTP(w, r)
 				return
@@ -163,11 +163,11 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			}
 
 			// Get cached censored words (or fetch from DB on miss)
-			words, err := GetCachedCensoredWords(r.Context(), rdb, database, t.ID)
+			words, err := GetCachedCensoredWords(r.Context(), rdb, database)
 			if err != nil {
 				slog.Warn(
 					"failed to load censored words for censor middleware",
-					"tenant_id", t.ID,
+					"tenant_id", pgtype.UUID{},
 					"error", err,
 				)
 				// Degrade gracefully — let the request through
@@ -186,7 +186,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			if result.Blocked {
 				slog.Info(
 					"content blocked by censor middleware",
-					"tenant_id", t.ID,
+					"tenant_id", pgtype.UUID{},
 					"reason", result.FlagReason,
 					"path", r.URL.Path,
 				)
@@ -210,7 +210,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			if result.Flagged {
 				slog.Info(
 					"content flagged by censor middleware",
-					"tenant_id", t.ID,
+					"tenant_id", pgtype.UUID{},
 					"reason", result.FlagReason,
 					"path", r.URL.Path,
 				)

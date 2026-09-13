@@ -19,7 +19,7 @@ type fakeTierResolver struct {
 	tier string
 }
 
-func (f *fakeTierResolver) ResolveUserTier(_ context.Context, _, _ pgtype.UUID) (string, error) {
+func (f *fakeTierResolver) ResolveUserTier(_ context.Context, _ pgtype.UUID) (string, error) {
 	return f.tier, nil
 }
 

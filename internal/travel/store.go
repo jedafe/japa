@@ -47,7 +47,7 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvider
 
 // DeleteProvider deletes a travel provider row by id and tenant.
 func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
-	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM travel_providers WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM travel_providers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("travel: delete provider: %w", err)
 	}

@@ -173,18 +173,14 @@ func NewTenant(t *testing.T, database *db.DB) pgtype.UUID {
 	tenantID := mustUUID()
 	slug := "test-tenant-" + uuid.New().String()
 
-	_, err := database.Writer.Exec(ctx,
-		`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`,
-		tenantID, "Test Tenant", slug)
+	_, err := database.Writer.Exec(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)`, tenantID, "Test Tenant", slug)
 	if err != nil {
 		t.Fatalf("testdb: NewTenant: inserting tenant: %v", err)
 	}
 
 	groupID := mustUUID()
 
-	_, err = database.Writer.Exec(ctx,
-		`INSERT INTO user_groups (id, tenant_id, name, slug, is_system) VALUES ($1, $2, $3, $4, $5)`,
-		groupID, tenantID, "Members", "members", true)
+	_, err = database.Writer.Exec(ctx, `INSERT INTO user_groups (id, name, slug, is_system) VALUES ($1, $2, $3, $4, $5)`, groupID, tenantID, "Members", "members", true)
 	if err != nil {
 		t.Fatalf("testdb: NewTenant: inserting default user_groups row: %v", err)
 	}

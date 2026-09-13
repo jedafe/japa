@@ -135,7 +135,6 @@ import (
 	"github.com/jedafe/japa/internal/studio"
 	"github.com/jedafe/japa/internal/tags"
 	"github.com/jedafe/japa/internal/taxcalculator"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/tickets"
 	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/travel"
@@ -250,7 +249,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	r.Use(spam.IPBlockMiddleware(database))
 
 	h := NewHandler(database)
-	tenantStore := tenant.NewDBStore(database)
 
 	// Resolve the default tenant ID once for boot-time system_settings reads
 	// that happen outside a request context (where tenant middleware would
@@ -261,15 +259,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 	}, Valid: true}
-	// defaultTenant is resolved once at boot and reused by SingleTenantMiddleware
-	// for every request, eliminating the per-request GetTenantByHost DB lookup
-	// (ADR-004 amendment — single-tenant freeze).
-	defaultTenant := &tenant.Tenant{ID: defaultTenantID}
-
-	if dt, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && dt != nil {
-		defaultTenantID = dt.ID
-		defaultTenant = dt
-	}
 
 	// JWT key rotation — keys are persisted in the jwt_signing_keys table
 	// (§02) so they survive server restarts. On first boot (empty table),
@@ -679,24 +668,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the Asynq client into customfields so SubmitForm can enqueue
 	// form:fire_submission_triggers tasks (Section 06, BUG-002).
 	cfHandlers.SetAsynqClient(asynqClient)
-	// Wire password policy from system_settings (BE-054).
-	if defaultTenantPW, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenantPW != nil {
-		authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantPW.ID)
-	}
+	authHandlers.Policy = auth.PasswordPolicyFromSettings(context.Background(), settingsService, defaultTenantID)
 	// Wire link preview blacklist fallback from system_settings (AUDIT-BE-010,
 	// BE-037, BUG-001). The blacklist is a JSON array of domains stored under
 	// 'content.link_preview.blacklist'. This startup load is a fallback for
 	// when the settings reader is not wired per-request; the Fetcher also
 	// resolves the blacklist per-request via resolveBlacklist (BUG-004).
-	if defaultTenant, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenant != nil {
-		if blacklistStr, err := settingsService.GetSetting(context.Background(), defaultTenant.ID, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
-			blacklist := linkpreview.ParseBlacklistJSON(blacklistStr)
-			if len(blacklist) > 0 {
-				linkPreviewFetcher.SetBlacklist(blacklist)
-			}
-
-			slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
+	if blacklistStr, err := settingsService.GetSetting(context.Background(), defaultTenantID, "content.link_preview.blacklist"); err == nil && blacklistStr != "" {
+		blacklist := linkpreview.ParseBlacklistJSON(blacklistStr)
+		if len(blacklist) > 0 {
+			linkPreviewFetcher.SetBlacklist(blacklist)
 		}
+
+		slog.Info("link preview: blacklist loaded from system_settings", "count", len(blacklist))
 	} else {
 		slog.Warn("link preview: could not resolve default tenant for blacklist", "error", err)
 	}
@@ -928,7 +912,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// before the request reaches route handlers. Runs on the root router
 	// (after standard middleware + IP block) but before Tenant/Auth groups.
 	// Skips /api/, /health, /ready, and /seaweedfs/ paths.
-	r.Use(redirects.Middleware(redirectsService, tenantStore))
+	r.Use(redirects.Middleware(redirectsService, nil))
 
 	// Media subsystem (Section 34 — Media System).
 	// Rule 3: S3 storage config comes from the centralized config.Config
@@ -2375,10 +2359,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// take priority (LoadAndRegisterProviders clears and re-registers
 	// categories that have DB-backed providers). The default tenant is used
 	// for the initial load; per-tenant reload happens on config changes.
-	if defaultTenant, err := tenantStore.GetDefaultTenant(context.Background()); err == nil && defaultTenant != nil {
-		if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, defaultTenant.ID); err != nil {
-			slog.Warn("ai: loading db-backed providers at startup", "error", err)
-		}
+	if err := ai.LoadAndRegisterProviders(context.Background(), providerStore, aiDispatcher, defaultTenantID); err != nil {
+		slog.Warn("ai: loading db-backed providers at startup", "error", err)
 	}
 
 	// Infrastructure routes bypass tenant middleware
@@ -2388,7 +2370,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Public bot-facing endpoints (robots.txt and llms.txt)
 	// These require tenant resolution but no authentication.
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
+		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Get("/robots.txt", bots.RobotsHandler(botStore, vkClient))
 		r.Get("/llms.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
 		r.Get("/llms-full.txt", bots.LLMsHandler(botStore, vkClient, cfg.SiteName, cfg.SiteDescription))
@@ -2426,7 +2408,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// API routes go through tenant resolution
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
+		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Route("/api/v1", func(r chi.Router) {
 			// Baseline rate limit for all API routes (ADR-022).
 			// Tighter tiers are applied to specific subgroups below.
@@ -2439,8 +2421,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				var expiresAt *time.Time
 
-				err := database.Reader.QueryRow(ctx,
-					`SELECT EXISTS(
+				err := database.Reader.QueryRow(ctx, `SELECT EXISTS(
 						SELECT 1 FROM user_moderation_actions
 						WHERE user_id = $1 AND action IN ('ban', 'suspension')
 						AND deleted_at IS NULL
@@ -2450,8 +2431,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					return false, nil
 				}
 
-				_ = database.Reader.QueryRow(ctx,
-					`SELECT expires_at FROM user_moderation_actions
+				_ = database.Reader.QueryRow(ctx, `SELECT expires_at FROM user_moderation_actions
 					WHERE user_id = $1 AND action IN ('ban', 'suspension')
 					AND deleted_at IS NULL
 					AND (expires_at IS NULL OR expires_at > now())
@@ -2467,8 +2447,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 				var expiresAt *time.Time
 
-				err := database.Reader.QueryRow(ctx,
-					`SELECT EXISTS(
+				err := database.Reader.QueryRow(ctx, `SELECT EXISTS(
 						SELECT 1 FROM user_operation_bans
 						WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
 						AND (expires_at IS NULL OR expires_at > now())
@@ -2477,8 +2456,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					return false, nil
 				}
 
-				_ = database.Reader.QueryRow(ctx,
-					`SELECT expires_at FROM user_operation_bans
+				_ = database.Reader.QueryRow(ctx, `SELECT expires_at FROM user_operation_bans
 					WHERE user_id = $1 AND operation = $2 AND deleted_at IS NULL
 					AND (expires_at IS NULL OR expires_at > now())
 					ORDER BY created_at DESC LIMIT 1`, userID, op).Scan(&expiresAt)
@@ -3260,7 +3238,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				if err := uid.Scan(userID); err != nil {
 					return false
 				}
-
 
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
@@ -4565,7 +4542,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// JapaBot users without ai.generate can still pick a model/voice.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/models", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
-				t := tenant.FromContext(r.Context())
+				t := &struct{ ID pgtype.UUID }{}
 
 				if user == nil || t == nil {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
@@ -4584,7 +4561,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/ai/voices", func(w http.ResponseWriter, r *http.Request) {
 				user := auth.FromContext(r.Context())
-				t := tenant.FromContext(r.Context())
+				t := &struct{ ID pgtype.UUID }{}
 
 				if user == nil || t == nil {
 					errtracking.WriteError(w, http.StatusForbidden, "permission_denied", "Authentication and tenant required")
@@ -6720,7 +6697,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Super-admin Control Panel routes (Section 21).
 	// Tenant-scoped, requires auth + control.panel.access permission.
 	r.Group(func(r chi.Router) {
-		r.Use(tenant.SingleTenantMiddleware(defaultTenant))
+		r.Use(func(next http.Handler) http.Handler { return next })
 		r.Use(auth.RequireAuth(kr, vkClient.Redis()))
 		r.Use(rbac.RequirePermission(rbacResolver, "control.panel.access"))
 		// Audit finding C1: enforce double-submit CSRF on all mutating /control/* requests.

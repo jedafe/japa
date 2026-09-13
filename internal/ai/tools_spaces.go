@@ -420,8 +420,8 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 // spaceRowToMap converts a gen.GetSpaceByIDRow to a JSON-safe map.
 func spaceRowToMap(s gen.GetSpaceByIDRow) map[string]any {
 	m := map[string]any{
-		"id":              uuidString(s.ID),
-	
+		"id": uuidString(s.ID),
+
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,
@@ -457,8 +457,8 @@ func spaceRowToMap(s gen.GetSpaceByIDRow) map[string]any {
 // spaceByGeoRowToMap converts a gen.GetSpaceByGeoCodeRow to a JSON-safe map.
 func spaceByGeoRowToMap(s gen.GetSpaceByGeoCodeRow) map[string]any {
 	m := map[string]any{
-		"id":              uuidString(s.ID),
-	
+		"id": uuidString(s.ID),
+
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,
@@ -492,8 +492,8 @@ func spaceByGeoRowToMap(s gen.GetSpaceByGeoCodeRow) map[string]any {
 // is a distinct sqlc-generated type.
 func spaceFindByCityRowToMap(s gen.FindCitySpaceByNameRow) map[string]any {
 	m := map[string]any{
-		"id":              uuidString(s.ID),
-	
+		"id": uuidString(s.ID),
+
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,

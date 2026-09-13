@@ -19,7 +19,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/scholarships"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // radarItem is the v1 radar feed item shape. The radar surfaces promoted
@@ -514,7 +513,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}
@@ -818,7 +817,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}

@@ -302,20 +302,18 @@ LIMIT 1
 }
 
 // GetByIDs returns multiple visa routes by their primary keys (used by
-// the compare endpoint). Only rows matching the tenant are returned;
-// missing IDs are silently omitted.
-func (s *Store) GetByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]RouteRow, error) {
+// the compare endpoint). Missing IDs are silently omitted.
+func (s *Store) GetByIDs(ctx context.Context, ids []pgtype.UUID) ([]RouteRow, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
-	args := make([]any, 0, len(ids)+1)
-	args = append(args, tenantID)
+	args := make([]any, 0, len(ids))
 	placeholders := make([]string, 0, len(ids))
 
 	for i, id := range ids {
 		args = append(args, id)
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i+2))
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
 
 	q := fmt.Sprintf(`
@@ -330,7 +328,7 @@ SELECT vr.id, vr.destination_space_id,
        vr.is_japabot_indexed, vr.created_at, vr.updated_at
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
-WHERE vr.tenant_id = $1 AND vr.id IN (%s)
+WHERE vr.id IN (%s)
   AND vr.status = 'published' AND vr.is_active = true
 ORDER BY vr.name ASC
 `, strings.Join(placeholders, ", "))
@@ -738,7 +736,7 @@ WHERE id = $%d
 // Approve sets the HITL review fields: hitl_reviewed_by, hitl_reviewed_at
 // = now(), status = 'published', and optional review notes. Returns the
 // updated row so the caller can return the full record per ADR-088.
-func (s *Store) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) (RouteRow, error) {
+func (s *Store) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) (RouteRow, error) {
 	const q = `
 UPDATE visa_routes
 SET hitl_reviewed_by = $3,
@@ -749,7 +747,7 @@ SET hitl_reviewed_by = $3,
 WHERE id = $1 AND tenant_id = $2
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return RouteRow{}, fmt.Errorf("visaroutes: approve: %w", err)
 	}
@@ -762,14 +760,14 @@ WHERE id = $1 AND tenant_id = $2
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false.
-func (s *Store) Deactivate(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) Deactivate(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE visa_routes
 SET is_active = false, updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("visaroutes: deactivate: %w", err)
 	}

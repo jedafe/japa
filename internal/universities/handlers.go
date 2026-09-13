@@ -28,7 +28,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/spaces"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -165,13 +164,7 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // resolveLogoURL resolves a space's logo_media_id to an imgproxy-signed URL

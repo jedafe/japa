@@ -15,12 +15,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
-	"github.com/jedafe/japa/internal/tenant"
 	vkcache "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/visitor"
 	"github.com/valkey-io/valkey-go"
@@ -117,13 +115,7 @@ func (h *Handlers) resolveFeedLiterals(r *http.Request, tenantID pgtype.UUID, it
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // optionalUser resolves the authenticated user from the request context, if present.
@@ -141,8 +133,8 @@ func (h *Handlers) parsePageSize(r *http.Request) int32 {
 	defaultSize := int32(defaultPageSize)
 
 	if h.settings != nil {
-		if t := tenant.FromContext(r.Context()); t != nil {
-			if v := h.settings.GetIntOr(r.Context(), t.ID, "content.posts_per_page", int(defaultPageSize)); v > 0 {
+		if t := &struct{ ID pgtype.UUID }{}; t != nil {
+			if v := h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.posts_per_page", int(defaultPageSize)); v > 0 {
 				if v > int(MaxPageSize) {
 					v = int(MaxPageSize)
 				}
@@ -538,7 +530,6 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 	}
 
 	ctx := r.Context()
-	t := tenant.FromContext(ctx)
 	user := auth.FromContext(ctx)
 
 	if user != nil {
@@ -553,27 +544,16 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 		return
 	}
 
-	if t != nil {
-		ip := clientip.FromRequest(r)
-		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:ip:%s:%s", t.ID.String(), ip)).Build()).Error()
-		_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:ip:%s:%s", t.ID.String(), ip)).Build()).Error()
-	}
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.
 // Returns the active feed card style from system_settings.
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func (h *Handlers) GetCardStyle(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	raw := ""
 
 	if h.settings != nil {
-		if val, err := h.settings.GetSetting(r.Context(), t.ID, "feed.card_style"); err == nil {
+		if val, err := h.settings.GetSetting(r.Context(), pgtype.UUID{}, "feed.card_style"); err == nil {
 			raw = val
 		}
 	}
@@ -635,19 +615,13 @@ var journeyStageOptions = []journeyOption{
 func (h *Handlers) GetJourneyOptions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	t := tenant.FromContext(ctx)
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	if h.customFields == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "journey_options_unavailable", "Journey options are not configured")
 		return
 	}
 
-	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey, t.ID)
-	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey, t.ID)
+	purpose, _ := h.customFields.GetCustomFieldByKey(ctx, journeyPurposeCustomFieldKey, pgtype.UUID{})
+	visa, _ := h.customFields.GetCustomFieldByKey(ctx, journeyVisaRouteCustomFieldKey, pgtype.UUID{})
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{

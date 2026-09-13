@@ -108,7 +108,7 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "visa_routes":
-		_, err := p.visaRouteSvc.Approve(ctx, targetID, tenantID, reviewerID, visaroutes.ApproveInput{Notes: strPtrOrNil(notes)})
+		_, err := p.visaRouteSvc.Approve(ctx, targetID, reviewerID, visaroutes.ApproveInput{Notes: strPtrOrNil(notes)})
 		return err
 
 	case "calendar_entries":
@@ -137,13 +137,10 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, reviewerID, pageID pgtype.UUID, notes string) error {
 	var revID pgtype.UUID
 
-	err := p.db.Reader.QueryRow(
-		ctx, `
+	err := p.db.Reader.QueryRow(ctx, `
 		SELECT id FROM wiki_revisions
-		WHERE wiki_page_id = $1 AND tenant_id = $2 AND status = 'pending'
-		ORDER BY created_at DESC LIMIT 1`,
-		pageID, tenantID,
-	).Scan(&revID)
+		WHERE wiki_page_id = $1 AND status = 'pending'
+		ORDER BY created_at DESC LIMIT 1`, pageID, ).Scan(&revID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("wiki: no pending revision for page %s", pageID)

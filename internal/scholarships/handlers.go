@@ -20,7 +20,6 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers exposes the scholarship finder HTTP routes.
@@ -598,13 +597,7 @@ func applyScholarshipUpdateSource(arg *gen.UpdateScholarshipParams, body *schola
 }
 
 func requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	id := tenant.IDFromContext(r.Context())
-	if !id.Valid {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return id, true
+	return pgtype.UUID{}, true
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {

@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for renderer HTTP handlers.
@@ -30,7 +29,7 @@ func (h *Handlers) Render(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return

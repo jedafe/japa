@@ -14,7 +14,6 @@ import (
 
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // scholarshipDetail is the full detail shape returned by the scholarship
@@ -105,7 +104,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if !tenantID.Valid {
 		tenantID = defaultIntelTenantID
 	}

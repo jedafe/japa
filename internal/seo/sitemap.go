@@ -17,7 +17,6 @@ import (
 	"github.com/jedafe/japa/internal/bots"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -202,7 +201,7 @@ type sitemapEntry struct {
 // invalidated by the sitemap:generate Asynq task.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "index") {
 		return
 	}
@@ -255,9 +254,7 @@ func (h *SitemapHandler) latestContentLastMod(ctx context.Context, tenantID pgty
 func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context, tenantID pgtype.UUID) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx,
-		`SELECT updated_at FROM spaces WHERE tenant_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1`,
-		tenantID).Scan(&ts)
+	err := h.reader.QueryRow(ctx, `SELECT updated_at FROM spaces WHERE status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1`).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -269,9 +266,7 @@ func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context, tenantID pgtyp
 func (h *SitemapHandler) latestUsersLastMod(ctx context.Context, tenantID pgtype.UUID) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx,
-		`SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.tenant_id = $1 AND u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`,
-		tenantID).Scan(&ts)
+	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.tenant_id = $1 AND u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -285,13 +280,11 @@ func (h *SitemapHandler) latestUsersLastMod(ctx context.Context, tenantID pgtype
 func (h *SitemapHandler) latestImagesLastMod(ctx context.Context, tenantID pgtype.UUID) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx,
-		`SELECT c.updated_at FROM contents c
+	err := h.reader.QueryRow(ctx, `SELECT c.updated_at FROM contents c
 		 WHERE c.tenant_id = $1 AND c.status = 'published'
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
-		 ORDER BY c.updated_at DESC LIMIT 1`,
-		tenantID).Scan(&ts)
+		 ORDER BY c.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -306,7 +299,7 @@ func (h *SitemapHandler) latestImagesLastMod(ctx context.Context, tenantID pgtyp
 // so the on-demand and pre-generated sitemaps agree.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md, sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "content") {
 		return
 	}
@@ -358,15 +351,14 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 // forum_threads joined to the space's content.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "spaces") {
 		return
 	}
 
 	cfg := h.sitemapQualityConfig(r.Context(), t.ID)
 
-	rows, err := h.reader.Query(r.Context(),
-		`SELECT s.slug, s.updated_at, s.member_count, s.post_count,
+	rows, err := h.reader.Query(r.Context(), `SELECT s.slug, s.updated_at, s.member_count, s.post_count,
 		        COALESCE(fc.forum_count, 0), COALESCE(qc.question_count, 0)
 		 FROM spaces s
 		 LEFT JOIN (
@@ -422,13 +414,12 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 
 // ServeTagsSitemap serves tag sitemap entries (P5.6 — Task 31).
 func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "tags") {
 		return
 	}
 
-	rows, err := h.reader.Query(r.Context(),
-		`SELECT slug FROM tags WHERE tenant_id = $1 ORDER BY name`, t.ID)
+	rows, err := h.reader.Query(r.Context(), `SELECT slug FROM tags  ORDER BY name`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -462,13 +453,12 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 // allow_search_indexing = false are excluded.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "users") {
 		return
 	}
 
-	rows, err := h.reader.Query(r.Context(),
-		`SELECT u.username, u.updated_at FROM users u
+	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
 		 JOIN user_groups ug ON u.user_group_id = ug.id
 		 WHERE u.tenant_id = $1 AND u.status = 'active'
 		   AND COALESCE(ug.allow_search_indexing, true) = true
@@ -534,15 +524,14 @@ type imageItem struct {
 // (media.MediaURL) using the media row's storage_bucket/storage_path.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if h.cachedSitemapXML(w, r, t.ID, "images") {
 		return
 	}
 
 	base := h.baseURL(r)
 
-	rows, err := h.reader.Query(r.Context(),
-		`SELECT c.slug, c.updated_at, c.title,
+	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, c.updated_at, c.title,
 		        m.storage_bucket, m.storage_path, COALESCE(m.alt_text, c.title)
 		 FROM contents c
 		 JOIN media m ON c.featured_image_id = m.id AND m.tenant_id = c.tenant_id
@@ -676,7 +665,7 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
 		return

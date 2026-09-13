@@ -21,7 +21,6 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/email"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -206,7 +205,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// Gate registration on the general.registration_open system setting.
 	// Default is true (fail open) — only block when explicitly set to false.
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
-	tenant := tenant.FromContext(r.Context())
+	tenant := &struct{ ID pgtype.UUID }{}
 	if h.Settings != nil && tenant != nil {
 		if open, err := h.Settings.GetSettingBool(r.Context(), tenant.ID, "general.registration_open"); err == nil && !open {
 			errpkg.WriteError(w, http.StatusForbidden, "registration_closed",
@@ -437,7 +436,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenant := tenant.FromContext(r.Context())
+	tenant := &struct{ ID pgtype.UUID }{}
 	if tenant == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1076,9 +1075,8 @@ func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.
 	meta, _ := json.Marshal(map[string]string{"email": email, "ip": ip})
 
 	_, err := h.Database.Writer.Exec(ctx, `
-		INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata, ip_address)
-		VALUES ($1, 'auth.login_failed', 'user', $2::jsonb, $3::inet)
-	`, tenantID, meta, ip)
+		INSERT INTO audit_logs (action_type, target_type, metadata, ip_address) VALUES ('auth.login_failed', 'user', $1::jsonb, $2::inet)
+	`, meta, ip)
 	if err != nil {
 		slog.Warn("failed to write login_failed audit log", "error", err)
 	}
@@ -1145,7 +1143,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1397,9 +1395,8 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		meta, _ := json.Marshal(map[string]string{"user_id": rec.UserID.String()})
 
 		_, err := h.Database.Writer.Exec(r.Context(), `
-			INSERT INTO audit_logs (tenant_id, action_type, target_type, metadata)
-			VALUES ($1, 'user.password_reset', 'user', $2::jsonb)
-		`, rec.TenantID, meta)
+			INSERT INTO audit_logs (action_type, target_type, metadata) VALUES ('user.password_reset', 'user', $1::jsonb)
+		`, meta)
 		if err != nil {
 			slog.Warn("reset-password: failed to write audit log", "error", err)
 		}
@@ -1492,7 +1489,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return

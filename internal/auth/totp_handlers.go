@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // TOTPHandlers holds dependencies for TOTP HTTP handlers.
@@ -23,12 +22,6 @@ type TOTPHandlers struct {
 func (h *TOTPHandlers) HandleSetup(w http.ResponseWriter, r *http.Request) {
 	user := authUserFromContext(w, r)
 	if user == nil {
-		return
-	}
-
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
 	}
 

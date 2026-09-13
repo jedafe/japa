@@ -17,7 +17,6 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 type fakeCalendarUpdater struct {
@@ -54,7 +53,11 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 	}
 
 	ctx := t.Context()
-	ctx = context.WithValue(ctx, tenant.TenantContextKey, &tenant.Tenant{ID: tenantID})
+	ctx = context.WithValue(ctx, struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID})
 
 	if withUser {
 		userID := pgtype.UUID{}

@@ -24,7 +24,6 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/rss/model"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -100,7 +99,7 @@ func (h *Handlers) SetRedis(r CacheClient) {
 // auto-hidden items). Reads from the Valkey cache populated by the
 // rss:regenerate worker task when available; falls back to live DB.
 func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if tenantID == (pgtype.UUID{}) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -194,7 +193,7 @@ func (h *Handlers) HandleSpaceFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if tenantID == (pgtype.UUID{}) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -232,7 +231,7 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if tenantID == (pgtype.UUID{}) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -270,7 +269,7 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := tenant.IDFromContext(r.Context())
+	tenantID := pgtype.UUID{}
 	if tenantID == (pgtype.UUID{}) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return

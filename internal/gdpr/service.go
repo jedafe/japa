@@ -647,8 +647,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE api_keys
 			SET status = 'revoked', revoked_at = now(), revoked_by = user_id, updated_at = now()
-			WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1 AND status = 'active'
+		`, request.UserID); err != nil {
 			slog.Warn("failed to revoke api keys during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -669,8 +669,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE saved_scholarships
 			SET notes = NULL
-			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1 AND notes IS NOT NULL
+		`, request.UserID); err != nil {
 			slog.Warn("failed to scrub saved_scholarships notes during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -686,8 +686,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE content_imports
 			SET source_url = NULL
-			WHERE user_id = $1 AND tenant_id = $2 AND source_url IS NOT NULL
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1 AND source_url IS NOT NULL
+		`, request.UserID); err != nil {
 			slog.Warn("failed to scrub content_imports source_url during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -702,8 +702,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE checklist_progress
 			SET notes = NULL
-			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1 AND notes IS NOT NULL
+		`, request.UserID); err != nil {
 			slog.Warn("failed to scrub checklist_progress notes during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -719,8 +719,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	if step == deletionStepAnonymized {
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM remittance_rate_alerts
-			WHERE user_id = $1 AND tenant_id = $2
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1
+		`, request.UserID); err != nil {
 			slog.Warn("failed to delete remittance_rate_alerts during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -739,8 +739,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE appointment_alerts
 			SET deleted_at = now(), updated_at = now(), status = 'expired'
-			WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-		`, request.UserID, pgtype.UUID{}); err != nil {
+			WHERE user_id = $1 AND deleted_at IS NULL
+		`, request.UserID); err != nil {
 			slog.Warn("failed to soft-delete appointment_alerts during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -1547,9 +1547,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// created_by nullified. Ref: §12; §15 GDPR erasure.
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM webhook_deliveries
-			WHERE tenant_id = $2
-			  AND payload::text LIKE '%' || $1::text || '%'
-		`, userID, tenantID); err != nil {
+			WHERE payload::text LIKE '%' || $1::text || '%'
+		`, userID); err != nil {
 			return fmt.Errorf("deleting webhook_deliveries with user PII: %w", err)
 		}
 
@@ -1587,7 +1586,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// user is no longer attributable.
 		// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-		if _, err := s.db.Writer.Exec(ctx, `UPDATE mutual_aid_posts SET user_id = $3, updated_at = now() WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL`, userID, tenantID, deletedUserPlaceholder); err != nil {
+		if _, err := s.db.Writer.Exec(ctx, `UPDATE mutual_aid_posts SET user_id = $2, updated_at = now() WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
 		}
 
@@ -1600,7 +1599,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// alone — they are already anonymised by the soft-delete pathway.
 		// Ref: japaconnect-engineering/sections/99-language-test-hub.md
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-		if _, err := s.db.Writer.Exec(ctx, `UPDATE language_score_stories SET user_id = $3 WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL`, userID, tenantID, deletedUserPlaceholder); err != nil {
+		if _, err := s.db.Writer.Exec(ctx, `UPDATE language_score_stories SET user_id = $2 WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning language_score_stories user_id: %w", err)
 		}
 
@@ -1615,15 +1614,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE scam_reports
-			SET reporter_id = $3, updated_at = now()
-			WHERE tenant_id = $2 AND reporter_id = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET reporter_id = $2, updated_at = now()
+			WHERE reporter_id = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning scam_reports reporter_id: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM scam_alert_subscriptions
-			WHERE tenant_id = $2 AND user_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1
+		`, userID); err != nil {
 			return fmt.Errorf("deleting scam_alert_subscriptions for user: %w", err)
 		}
 
@@ -1642,15 +1641,15 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE visa_timelines
 			SET user_id = NULL, anonymised_at = now(), updated_at = now()
-			WHERE tenant_id = $2 AND user_id = $1 AND is_shared = TRUE AND deleted_at IS NULL
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1 AND is_shared = TRUE AND deleted_at IS NULL
+		`, userID); err != nil {
 			return fmt.Errorf("anonymising shared visa_timelines: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE visa_timelines
 			SET deleted_at = now(), updated_at = now()
-			WHERE tenant_id = $2 AND user_id = $1 AND is_shared = FALSE AND deleted_at IS NULL
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1 AND is_shared = FALSE AND deleted_at IS NULL
+		`, userID); err != nil {
 			return fmt.Errorf("soft-deleting private visa_timelines: %w", err)
 		}
 
@@ -1663,24 +1662,24 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE community_organisations
-			SET submitted_by = $3
-			WHERE tenant_id = $2 AND submitted_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET submitted_by = $2
+			WHERE submitted_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning community_organisations submitted_by: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE community_organisations
-			SET reviewed_by = $3
-			WHERE tenant_id = $2 AND reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET reviewed_by = $2
+			WHERE reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning community_organisations reviewed_by: %w", err)
 		}
 		// Also reassign hitl_reviewed_by (ADR-088 AI generation column).
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE community_organisations
-			SET hitl_reviewed_by = $3
-			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET hitl_reviewed_by = $2
+			WHERE hitl_reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning community_organisations hitl_reviewed_by: %w", err)
 		}
 
@@ -1695,9 +1694,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE housing_guides
-			SET hitl_reviewed_by = $3
-			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET hitl_reviewed_by = $2
+			WHERE hitl_reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning housing_guides hitl_reviewed_by: %w", err)
 		}
 
@@ -1712,9 +1711,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE tax_obligation_guides
-			SET hitl_reviewed_by = $3
-			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET hitl_reviewed_by = $2
+			WHERE hitl_reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning tax_obligation_guides hitl_reviewed_by: %w", err)
 		}
 
@@ -1729,9 +1728,9 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE visa_routes
-			SET hitl_reviewed_by = $3
-			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET hitl_reviewed_by = $2
+			WHERE hitl_reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning visa_routes hitl_reviewed_by: %w", err)
 		}
 
@@ -1746,8 +1745,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UPDATE cv_format_sessions
 			SET input_text = '[scrubbed]',
 			    output_text = NULL
-			WHERE tenant_id = $2 AND user_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1
+		`, userID); err != nil {
 			slog.Warn("failed to scrub cv_format_sessions PII during deletion",
 				"user_id", userID.String(), "error", err)
 		}
@@ -1783,8 +1782,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM newsletter_subscribers
-			WHERE tenant_id = $2 AND user_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1
+		`, userID); err != nil {
 			return fmt.Errorf("deleting newsletter_subscribers for user: %w", err)
 		}
 
@@ -1798,8 +1797,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM job_applications
-			WHERE tenant_id = $2 AND applicant_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE applicant_id = $1
+		`, userID); err != nil {
 			return fmt.Errorf("deleting job_applications for user: %w", err)
 		}
 
@@ -1817,8 +1816,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM ai_agent_sessions
-			WHERE tenant_id = $2 AND user_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE user_id = $1
+		`, userID); err != nil {
 			return fmt.Errorf("deleting ai_agent_sessions for user: %w", err)
 		}
 
@@ -1834,8 +1833,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 			UPDATE ai_hitl_reviews
 			SET reviewer_id = NULL,
 			    human_feedback = NULL
-			WHERE tenant_id = $2 AND reviewer_id = $1
-		`, userID, tenantID); err != nil {
+			WHERE reviewer_id = $1
+		`, userID); err != nil {
 			return fmt.Errorf("nullifying ai_hitl_reviews reviewer_id: %w", err)
 		}
 
@@ -1851,13 +1850,12 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM content_embeddings
-			WHERE tenant_id = $2
-			  AND entity_type = 'content'
+			WHERE entity_type = 'content'
 			  AND entity_id IN (
 			      SELECT id FROM contents
-			      WHERE tenant_id = $2 AND author_id = $1 AND deleted_at IS NOT NULL
+			      WHERE author_id = $1 AND deleted_at IS NOT NULL
 			  )
-		`, userID, tenantID); err != nil {
+		`, userID); err != nil {
 			return fmt.Errorf("purging content_embeddings for soft-deleted content: %w", err)
 		}
 
@@ -1874,13 +1872,12 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM content_embeddings
-			WHERE tenant_id = $2
-			  AND entity_type = 'forum_thread'
+			WHERE entity_type = 'forum_thread'
 			  AND entity_id IN (
 			      SELECT id FROM forum_threads
-			      WHERE tenant_id = $2 AND author_user_id = $1
+			      WHERE author_user_id = $1
 			  )
-		`, userID, tenantID); err != nil {
+		`, userID); err != nil {
 			return fmt.Errorf("purging content_embeddings for user forum threads: %w", err)
 		}
 
@@ -1935,30 +1932,30 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE wiki_pages
-			SET created_by = $3, updated_at = now()
-			WHERE tenant_id = $2 AND created_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET created_by = $2, updated_at = now()
+			WHERE created_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning wiki_pages created_by: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE wiki_revisions
-			SET submitted_by = $3
-			WHERE tenant_id = $2 AND submitted_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET submitted_by = $2
+			WHERE submitted_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning wiki_revisions submitted_by: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE wiki_revisions
-			SET reviewed_by = $3
-			WHERE tenant_id = $2 AND reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET reviewed_by = $2
+			WHERE reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning wiki_revisions reviewed_by: %w", err)
 		}
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE wiki_revisions
-			SET hitl_reviewed_by = $3
-			WHERE tenant_id = $2 AND hitl_reviewed_by = $1
-		`, userID, tenantID, deletedUserPlaceholder); err != nil {
+			SET hitl_reviewed_by = $2
+			WHERE hitl_reviewed_by = $1
+		`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning wiki_revisions hitl_reviewed_by: %w", err)
 		}
 
@@ -2809,13 +2806,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 
 	// BUG-005: export mutual_aid_posts authored by the user. Ref: §85.
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, post_type, category, title, description,
+		SELECT id, post_type, category, title, description,
 		       destination_space_id, city_space_id, status, is_fulfilled,
 		       expires_at, created_at, updated_at
 		FROM mutual_aid_posts
-		WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -2837,13 +2834,13 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// Ref: japaconnect-engineering/sections/99-language-test-hub.md
 	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, test_id, starting_level, final_score,
+		SELECT id, test_id, starting_level, final_score,
 		       destination_space_id, prep_duration_weeks, resources_used,
 		       advice, status, created_at
 		FROM language_score_stories
-		WHERE tenant_id = $2 AND user_id = $1 AND deleted_at IS NULL
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -2864,15 +2861,15 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// subscriptions so the GDPR data export includes their scam-alert
 	// activity. Ref: japaconnect-engineering/sections/81-scam-alert-board.md
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, scam_type, destination_space_id, origin_space_id,
+		SELECT id, scam_type, destination_space_id, origin_space_id,
 		       origin_community, platform_used, approximate_date, amount_range,
 		       description, reported_to_authorities, status, moderator_note,
 		       is_pinned, pinned_space_id, reviewed_by, reviewed_at,
 		       created_at, updated_at
 		FROM scam_reports
-		WHERE tenant_id = $2 AND reporter_id = $1
+		WHERE reporter_id = $1
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -2890,11 +2887,11 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT user_id, tenant_id, destination_space_id, created_at
+		SELECT user_id, destination_space_id, created_at
 		FROM scam_alert_subscriptions
-		WHERE tenant_id = $2 AND user_id = $1
+		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -2914,12 +2911,12 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// BUG-016: export community_organisations submitted by the user so the
 	// GDPR data export includes community-submitted org entries. Ref: §101.
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, name, slug, org_type, origin_community,
+		SELECT id, name, slug, org_type, origin_community,
 		       destination_space_id, status, claim_status, is_verified,
 		       is_community_submitted, submitted_by, created_at, updated_at
 		FROM community_organisations
-		WHERE tenant_id = $2 AND submitted_by = $1 AND deleted_at IS NULL
-	`, userID, tenantID); err == nil {
+		WHERE submitted_by = $1 AND deleted_at IS NULL
+	`, userID); err == nil {
 		collected := []map[string]interface{}{}
 
 		for rows.Next() {
@@ -2965,12 +2962,12 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// input_text and output_text fields contain the user's CV content.
 	// Ref: §95, ADR-103.
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
+		SELECT id, user_id, origin_space_id, destination_space_id,
 		       input_text, output_text, output_format, status, ai_model,
 		       tokens_used, created_at, expires_at
 		FROM cv_format_sessions
-		WHERE tenant_id = $2 AND user_id = $1
-	`, userID, tenantID); err == nil {
+		WHERE user_id = $1
+	`, userID); err == nil {
 		collected := []map[string]interface{}{}
 
 		for rows.Next() {
@@ -3034,9 +3031,9 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		SELECT id, send_currency, receive_currency, target_rate, direction,
 		       is_active, last_triggered_at, created_at
 		FROM remittance_rate_alerts
-		WHERE user_id = $1 AND tenant_id = $2
+		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		collected := make([]map[string]interface{}, 0)
 
 		for rows.Next() {
@@ -3108,12 +3105,12 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, space_id, slug, title, category,
+		SELECT id, space_id, slug, title, category,
 		       is_active, is_featured, is_locked, created_at, updated_at
 		FROM wiki_pages
-		WHERE tenant_id = $2 AND created_by = $1
+		WHERE created_by = $1
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {
@@ -3131,13 +3128,12 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	if rows, err := s.db.Reader.Query(ctx, `
-		SELECT id, tenant_id, wiki_page_id, summary, status,
+		SELECT id, wiki_page_id, summary, status,
 		       ai_generated, ai_model, created_at
 		FROM wiki_revisions
-		WHERE tenant_id = $2
-		  AND (submitted_by = $1 OR reviewed_by = $1 OR hitl_reviewed_by = $1)
+		WHERE (submitted_by = $1 OR reviewed_by = $1 OR hitl_reviewed_by = $1)
 		ORDER BY created_at DESC
-	`, userID, tenantID); err == nil {
+	`, userID); err == nil {
 		defer rows.Close()
 
 		for rows.Next() {

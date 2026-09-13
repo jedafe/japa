@@ -83,14 +83,12 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 
 	var result HITLReview
 
-	err := s.write.QueryRow(
-		ctx, `
+	err := s.write.QueryRow(ctx, `
 		INSERT INTO ai_hitl_reviews
-			(tenant_id, content_id, content_type, ai_output, status, source, target_table)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
-	`, review.TenantID, review.ContentID, review.ContentType, review.AIOutput, review.Status, source, targetTable,
-	).Scan(&result.ID, &result.TenantID, &result.ContentID, &result.ContentType,
+			(content_id, content_type, ai_output, status, source, target_table)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, content_id, content_type, ai_output, status, source, target_table, created_at
+	`, review.ContentID, review.ContentType, review.AIOutput, review.Status, source, targetTable, ).Scan(&result.ID, &result.TenantID, &result.ContentID, &result.ContentType,
 		&result.AIOutput, &result.Status, &result.Source, &result.TargetTable, &result.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("creating HITL review: %w", err)
@@ -104,9 +102,9 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
-		SET status = 'approved', reviewer_id = $3, reviewed_at = now()
-		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-	`, reviewID, tenantID, reviewerID)
+		SET status = 'approved', reviewer_id = $2, reviewed_at = now()
+		WHERE id = $1 AND status = 'pending'
+	`, reviewID, reviewerID)
 	if err != nil {
 		return fmt.Errorf("approving HITL review: %w", err)
 	}
@@ -123,9 +121,9 @@ func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, revie
 func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
-		SET status = 'rejected', reviewer_id = $3, reviewed_at = now(), reason = $4
-		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-	`, reviewID, tenantID, reviewerID, reason)
+		SET status = 'rejected', reviewer_id = $2, reviewed_at = now(), reason = $3
+		WHERE id = $1 AND status = 'pending'
+	`, reviewID, reviewerID, reason)
 	if err != nil {
 		return fmt.Errorf("rejecting HITL review: %w", err)
 	}
@@ -152,20 +150,20 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 
 	if sourceFilter != "" {
 		rows, err = s.read.Query(ctx, `
-			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
+			SELECT id, content_id, content_type, ai_output, status, source, target_table, created_at
 			FROM ai_hitl_reviews
-			WHERE tenant_id = $1 AND status = 'pending' AND source = $2
-			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, tenantID, sourceFilter, limit, offset)
-	} else {
-		rows, err = s.read.Query(ctx, `
-			SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
-			FROM ai_hitl_reviews
-			WHERE tenant_id = $1 AND status = 'pending'
+			WHERE status = 'pending' AND source = $1
 			ORDER BY created_at DESC
 			LIMIT $2 OFFSET $3
-		`, tenantID, limit, offset)
+		`, sourceFilter, limit, offset)
+	} else {
+		rows, err = s.read.Query(ctx, `
+			SELECT id, content_id, content_type, ai_output, status, source, target_table, created_at
+			FROM ai_hitl_reviews
+			WHERE status = 'pending'
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2
+		`, limit, offset)
 	}
 
 	if err != nil {
@@ -194,13 +192,10 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error) {
 	var r HITLReview
 
-	err := s.read.QueryRow(
-		ctx, `
-		SELECT id, tenant_id, content_id, content_type, ai_output, status, source, target_table, created_at
+	err := s.read.QueryRow(ctx, `
+		SELECT id, content_id, content_type, ai_output, status, source, target_table, created_at
 		FROM ai_hitl_reviews
-		WHERE id = $1 AND tenant_id = $2`,
-		reviewID, tenantID,
-	).Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
+		WHERE id = $1`, reviewID, ).Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
 		&r.AIOutput, &r.Status, &r.Source, &r.TargetTable, &r.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("getting HITL review: %w", err)
@@ -221,16 +216,16 @@ func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUI
 	if sourceFilter != "" {
 		err := s.read.QueryRow(ctx, `
 			SELECT COUNT(*) FROM ai_hitl_reviews
-			WHERE tenant_id = $1 AND status = 'pending' AND source = $2
-		`, tenantID, sourceFilter).Scan(&total)
+			WHERE status = 'pending' AND source = $1
+		`, sourceFilter).Scan(&total)
 		if err != nil {
 			return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
 		}
 	} else {
 		err := s.read.QueryRow(ctx, `
 			SELECT COUNT(*) FROM ai_hitl_reviews
-			WHERE tenant_id = $1 AND status = 'pending'
-		`, tenantID).Scan(&total)
+			WHERE status = 'pending'
+		`).Scan(&total)
 		if err != nil {
 			return 0, fmt.Errorf("counting pending HITL reviews: %w", err)
 		}
@@ -311,10 +306,10 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 		       COALESCE(SUM(cost_usd), 0)     AS total_cost_usd,
 		       COUNT(*)                       AS calls
 		FROM ai_usage_log
-		WHERE tenant_id = $1 AND created_at >= $2
+		WHERE created_at >= $1
 		GROUP BY task_type
 		ORDER BY total_cost_usd DESC
-	`, tenantID, since)
+	`, since)
 	if err != nil {
 		return AIUsageSummary{}, fmt.Errorf("querying ai usage by task type: %w", err)
 	}
@@ -337,10 +332,10 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 		       COALESCE(SUM(cost_usd), 0)     AS total_cost_usd,
 		       COUNT(*)                       AS calls
 		FROM ai_usage_log
-		WHERE tenant_id = $1 AND created_at >= $2
+		WHERE created_at >= $1
 		GROUP BY provider
 		ORDER BY total_cost_usd DESC
-	`, tenantID, since)
+	`, since)
 	if err != nil {
 		return AIUsageSummary{}, fmt.Errorf("querying ai usage by provider: %w", err)
 	}
@@ -371,11 +366,10 @@ func (s *Store) RecordAIUsage(ctx context.Context, tenantID, userID pgtype.UUID,
 
 	_, err := s.write.Exec(ctx, `
 		INSERT INTO ai_usage_log
-			(tenant_id, user_id, provider, model, task_type,
+			(user_id, provider, model, task_type,
 			 prompt_tokens, completion_tokens, total_tokens, cost_usd, request_ref)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, tenantID, userIDArg, provider, model, taskType,
-		promptTokens, completionTokens, totalTokens, costUSD, requestRef)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, userIDArg, provider, model, taskType, promptTokens, completionTokens, totalTokens, costUSD, requestRef)
 	if err != nil {
 		return fmt.Errorf("recording ai usage: %w", err)
 	}
@@ -396,9 +390,8 @@ func (s *Store) RecordToolUsage(ctx context.Context, tenantID, toolID pgtype.UUI
 	}
 
 	_, err := s.write.Exec(ctx, `
-		INSERT INTO ai_tool_usage (tenant_id, tool_id, user_id, tokens_used, cost_cents)
-		VALUES ($1, $2, $3, $4, $5)
-	`, tenantID, toolID, userIDArg, tokensUsed, costCents)
+		INSERT INTO ai_tool_usage (tool_id, user_id, tokens_used, cost_cents) VALUES ($1, $2, $3, $4)
+	`, toolID, userIDArg, tokensUsed, costCents)
 	if err != nil {
 		return fmt.Errorf("recording ai tool usage: %w", err)
 	}
@@ -418,8 +411,8 @@ func (s *Store) UserBelongsToTenant(ctx context.Context, tenantID pgtype.UUID, u
 	var exists bool
 
 	err := s.read.QueryRow(ctx, `
-		SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2)
-	`, uid, tenantID).Scan(&exists)
+		SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)
+	`, uid).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("checking user tenant membership: %w", err)
 	}

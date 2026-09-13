@@ -55,11 +55,8 @@ var tierRanks = map[string]int{
 }
 
 // ResolveUserTier returns the user's effective tier (regular/pro/business).
-func (s *Service) ResolveUserTier(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	rank, err := s.store.read.ResolveUserTier(ctx,
-
-		userID,
-	)
+func (s *Service) ResolveUserTier(ctx context.Context, userID pgtype.UUID) (string, error) {
+	rank, err := s.store.read.ResolveUserTier(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("resolve user tier: %w", err)
 	}
@@ -157,7 +154,7 @@ func (s *Service) SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID,
 // GetTierSetting resolves the user's tier and reads keyPrefix + "." + tier
 // from the settings reader, returning fallback when the per-tier key is unset.
 func (s *Service) GetTierSetting(ctx context.Context, tenantID, userID pgtype.UUID, keyPrefix string, fallback int, sr SettingsReader) (int, error) {
-	tier, err := s.ResolveUserTier(ctx, tenantID, userID)
+	tier, err := s.ResolveUserTier(ctx, userID)
 	if err != nil {
 		return 0, err
 	}

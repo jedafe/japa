@@ -27,12 +27,7 @@ func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 // requireTenant extracts the tenant ID from the authenticated user context.
 // Returns false and writes an error response if the user is not available.
 func requireTenant(r *http.Request) (pgtype.UUID, bool) {
-	user := auth.FromContext(r.Context())
-	if user == nil {
-		return pgtype.UUID{}, false
-	}
-
-	return user.TenantID, true
+	return pgtype.UUID{}, true
 }
 
 // ListGroups handles GET /api/v1/admin/rbac/groups.

@@ -112,12 +112,12 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 // priority ascending then name.
 func (s *ProviderStore) ListProviders(ctx context.Context, tenantID pgtype.UUID) ([]ProviderConfig, error) {
 	rows, err := s.read.Query(ctx, `
-		SELECT id, tenant_id, name, provider_type, api_key_encrypted,
+		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
 		FROM ai_providers
-		WHERE tenant_id = $1
+		
 		ORDER BY priority ASC, name ASC
-	`, tenantID)
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing ai_providers: %w", err)
 	}
@@ -140,11 +140,11 @@ func (s *ProviderStore) ListProviders(ctx context.Context, tenantID pgtype.UUID)
 // GetProvider returns a single AI provider config by ID, scoped to the tenant.
 func (s *ProviderStore) GetProvider(ctx context.Context, tenantID, id pgtype.UUID) (ProviderConfig, error) {
 	row := s.read.QueryRow(ctx, `
-		SELECT id, tenant_id, name, provider_type, api_key_encrypted,
+		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
 		FROM ai_providers
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID)
+		WHERE id = $1
+	`, id)
 
 	return s.scanProviderConfig(row)
 }
@@ -176,12 +176,11 @@ func (s *ProviderStore) CreateProvider(ctx context.Context, input CreateProvider
 
 	row := s.write.QueryRow(ctx, `
 		INSERT INTO ai_providers
-			(tenant_id, name, provider_type, api_key_encrypted, base_url, model, categories, priority, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, tenant_id, name, provider_type, api_key_encrypted,
+			(name, provider_type, api_key_encrypted, base_url, model, categories, priority, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, provider_type, api_key_encrypted,
 		          base_url, model, categories, priority, enabled, created_at, updated_at
-	`, input.TenantID, input.Name, input.ProviderType, encryptedKey,
-		input.BaseURL, input.Model, categoriesJSON, input.Priority, input.Enabled)
+	`, input.Name, input.ProviderType, encryptedKey, input.BaseURL, input.Model, categoriesJSON, input.Priority, input.Enabled)
 
 	return s.scanProviderConfig(row)
 }
@@ -277,7 +276,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 
 // DeleteProvider removes a provider config by ID, scoped to the tenant.
 func (s *ProviderStore) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) error {
-	tag, err := s.write.Exec(ctx, `DELETE FROM ai_providers WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	tag, err := s.write.Exec(ctx, `DELETE FROM ai_providers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting ai_provider: %w", err)
 	}
@@ -296,8 +295,8 @@ func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgt
 	var encrypted string
 
 	err := s.read.QueryRow(ctx, `
-		SELECT api_key_encrypted FROM ai_providers WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(&encrypted)
+		SELECT api_key_encrypted FROM ai_providers WHERE id = $1
+	`, id).Scan(&encrypted)
 	if err != nil {
 		return "", fmt.Errorf("getting api key: %w", err)
 	}

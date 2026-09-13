@@ -292,7 +292,7 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -323,7 +323,7 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 
 	if h.DB != nil {
 		// Reviews entity types.
-		rows, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT entity_type FROM reviews WHERE tenant_id = $1 AND entity_type <> ''`, tenantID)
+		rows, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT entity_type FROM reviews WHERE entity_type <> ''`)
 		if err == nil {
 			defer rows.Close()
 
@@ -342,7 +342,7 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Studio HITL content types.
-		rows2, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT content_type FROM ai_hitl_reviews WHERE tenant_id = $1 AND content_type <> '' AND source = 'studio'`, tenantID)
+		rows2, err := h.DB.Reader.Query(r.Context(), `SELECT DISTINCT content_type FROM ai_hitl_reviews WHERE content_type <> '' AND source = 'studio'`)
 		if err == nil {
 			defer rows2.Close()
 
@@ -1468,12 +1468,8 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	// Check whether this ID is a persona-action content_reviews row.
 	var source, status string
 
-	err := h.DB.Reader.QueryRow(
-		ctx,
-		`SELECT source, status FROM content_reviews
-		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-		id, tenantID,
-	).Scan(&source, &status)
+	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM content_reviews
+		 WHERE id = $1 AND deleted_at IS NULL`, id, ).Scan(&source, &status)
 	if err != nil {
 		return false // not a content_reviews row (or not found) — not a persona action
 	}
@@ -1501,13 +1497,9 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	// migration 000482). Overwriting it with the admin's reason string would
 	// destroy the payload and the approved action would never dispatch
 	// (BUG-001). The reason is logged for audit purposes instead.
-	_, err = h.DB.Writer.Exec(
-		ctx,
-		`UPDATE content_reviews
+	_, err = h.DB.Writer.Exec(ctx, `UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
-		 WHERE id = $3 AND tenant_id = $4 AND source = 'persona_action'`,
-		newCRStatus, reviewerID, id, tenantID,
-	)
+		 WHERE id = $3 AND source = 'persona_action'`, newCRStatus, reviewerID, id, )
 	if err != nil {
 		slog.Error("moderation: persona action review update failed", "id", id, "error", err)
 		return true
@@ -1544,12 +1536,8 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
 	var hitlSource, hitlStatus string
 
-	err := h.DB.Reader.QueryRow(
-		ctx,
-		`SELECT source, status FROM ai_hitl_reviews
-		 WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID,
-	).Scan(&hitlSource, &hitlStatus)
+	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM ai_hitl_reviews
+		 WHERE id = $1`, id, ).Scan(&hitlSource, &hitlStatus)
 	if err == nil && hitlSource == "studio" {
 		if hitlStatus != "pending" {
 			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping",
@@ -1563,12 +1551,8 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	// Fallback to the legacy content_reviews path.
 	var source, status string
 
-	err = h.DB.Reader.QueryRow(
-		ctx,
-		`SELECT source, status FROM content_reviews
-		 WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-		id, tenantID,
-	).Scan(&source, &status)
+	err = h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM content_reviews
+		 WHERE id = $1 AND deleted_at IS NULL`, id, ).Scan(&source, &status)
 	if err != nil {
 		return false, nil // not a content_reviews row (or not found) — not a studio review
 	}
@@ -1597,13 +1581,9 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	}
 
 	// Update the content_reviews row status + reviewer.
-	_, err = h.DB.Writer.Exec(
-		ctx,
-		`UPDATE content_reviews
+	_, err = h.DB.Writer.Exec(ctx, `UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
-		 WHERE id = $3 AND tenant_id = $4 AND source = 'studio'`,
-		newCRStatus, reviewerID, id, tenantID,
-	)
+		 WHERE id = $3 AND source = 'studio'`, newCRStatus, reviewerID, id, )
 	if err != nil {
 		slog.Error("moderation: studio review update failed", "id", id, "error", err)
 		return true, nil
@@ -1642,13 +1622,9 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 		reasonPtr = &reason
 	}
 
-	_, err := h.DB.Writer.Exec(
-		ctx,
-		`UPDATE ai_hitl_reviews
+	_, err := h.DB.Writer.Exec(ctx, `UPDATE ai_hitl_reviews
 		 SET status = $1, reviewer_id = $2, reviewed_at = now(), reason = $3
-		 WHERE id = $4 AND tenant_id = $5 AND source = 'studio' AND status = 'pending'`,
-		newHITLStatus, reviewerID, reasonPtr, id, tenantID,
-	)
+		 WHERE id = $4 AND source = 'studio' AND status = 'pending'`, newHITLStatus, reviewerID, reasonPtr, id, )
 	if err != nil {
 		slog.Error("moderation: studio ai_hitl_reviews update failed", "id", id, "error", err)
 		return true, nil
@@ -1793,8 +1769,7 @@ func (h *Handlers) ListBroadcasts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int32
-	if err := h.DB.Reader.QueryRow(r.Context(),
-		`SELECT COUNT(*)::int FROM admin_broadcasts`).Scan(&total); err != nil {
+	if err := h.DB.Reader.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM admin_broadcasts`).Scan(&total); err != nil {
 		slog.Warn("moderation: counting broadcasts", "error", err)
 	}
 

@@ -94,15 +94,11 @@ type UpdateEditionInput struct {
 func (s *Store) CreateEdition(ctx context.Context, edition DigestEdition) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
-	err := s.pool.Writer.QueryRow(
-		ctx, `
-INSERT INTO digest_editions (tenant_id, space_id, cadence, status, scheduled_for,
-    content, generated_by)
-VALUES ($1, $2, $3, COALESCE($4, 'draft'), $5, $6, $7)
+	err := s.pool.Writer.QueryRow(ctx, `
+INSERT INTO digest_editions (space_id, cadence, status, scheduled_for,
+    content, generated_by) VALUES ($1, $2, COALESCE($3, 'draft'), $5, $6, $7)
 RETURNING id
-`, edition.TenantID, edition.SpaceID, edition.Cadence, edition.Status,
-		edition.ScheduledFor, edition.Content, edition.GeneratedBy,
-	).Scan(&id)
+`, edition.SpaceID, edition.Cadence, edition.Status, edition.ScheduledFor, edition.Content, edition.GeneratedBy, ).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("digest: create edition: %w", err)
 	}
@@ -414,8 +410,8 @@ RETURNING id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
 func (s *Store) DeleteEdition(ctx context.Context, id, tenantID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM digest_editions
-WHERE id = $1 AND tenant_id = $2
-`, id, tenantID)
+WHERE id = $1
+`, id)
 	if err != nil {
 		return fmt.Errorf("digest: delete edition: %w", err)
 	}
@@ -464,9 +460,9 @@ LIMIT 1
 func (s *Store) PublishEdition(ctx context.Context, id, tenantID, reviewerID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
-SET status = 'published', published_at = now(), reviewed_by = $3
-WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'review', 'scheduled')
-`, id, tenantID, reviewerID)
+SET status = 'published', published_at = now(), reviewed_by = $2
+WHERE id = $1 AND status IN ('draft', 'review', 'scheduled')
+`, id, reviewerID)
 	if err != nil {
 		return fmt.Errorf("digest: publish edition: %w", err)
 	}
@@ -497,7 +493,7 @@ func (s *Store) AutoPublishDueEditions(ctx context.Context) ([]PublishedEdition,
 UPDATE digest_editions
 SET status = 'published', published_at = now()
 WHERE status IN ('draft', 'review') AND scheduled_for <= now()
-RETURNING id, tenant_id
+RETURNING id
 `)
 	if err != nil {
 		return nil, fmt.Errorf("digest: auto-publish due editions: %w", err)
@@ -524,8 +520,8 @@ func (s *Store) MarkEmailSent(ctx context.Context, id, tenantID pgtype.UUID) err
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET email_sent = true, email_sent_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'published'
-`, id, tenantID)
+WHERE id = $1 AND status = 'published'
+`, id)
 	if err != nil {
 		return fmt.Errorf("digest: mark email sent: %w", err)
 	}
@@ -654,7 +650,7 @@ WHERE ft.tenant_id = $1
 SELECT u.username, COALESCE(up.display_name, '')
 FROM users u
 JOIN onboarding_state os ON os.user_id = u.id AND os.tenant_id = u.tenant_id
-LEFT JOIN user_profiles up ON up.user_id = u.id AND up.tenant_id = u.tenant_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE u.tenant_id = $1
   AND u.created_at >= now() - interval '7 days'
   AND os.completed = true

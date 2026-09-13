@@ -3,9 +3,9 @@ package linkpreview
 import (
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // Handlers holds dependencies for link preview HTTP handlers.
@@ -27,13 +27,6 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Require tenant
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return
-	}
-
 	// Get URL from query
 	rawURL := r.URL.Query().Get("url")
 	if rawURL == "" {
@@ -42,7 +35,7 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch preview
-	preview, err := h.Fetcher.Fetch(r.Context(), rawURL, t.ID)
+	preview, err := h.Fetcher.Fetch(r.Context(), rawURL, pgtype.UUID{})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "fetch_failed", err.Error())
 		return

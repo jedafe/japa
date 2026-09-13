@@ -33,15 +33,14 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 	}
 
 	rows, err := s.reader.Query(ctx, `
-		SELECT id, tenant_id, name, widget_type,
+		SELECT id, name, widget_type,
 		       COALESCE(config, '{}'::jsonb),
 		       cache_ttl_secs, is_active, created_at, updated_at
 		FROM widget_configurations
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR widget_type ILIKE '%' || $2 || '%')
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR widget_type ILIKE '%' || $1 || '%')
 		ORDER BY created_at DESC
-		LIMIT $3 OFFSET $4
-	`, tenantID, q, limit, offset)
+		LIMIT $2 OFFSET $3
+	`, q, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing widgets: %w", err)
 	}
@@ -69,9 +68,8 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, q string, page, 
 
 	err = s.reader.QueryRow(ctx, `
 		SELECT COUNT(*) FROM widget_configurations
-		WHERE tenant_id = $1
-		  AND ($2 = '' OR name ILIKE '%' || $2 || '%' OR widget_type ILIKE '%' || $2 || '%')
-	`, tenantID, q).Scan(&total)
+		WHERE ($1 = '' OR name ILIKE '%' || $1 || '%' OR widget_type ILIKE '%' || $1 || '%')
+	`, q).Scan(&total)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting widgets: %w", err)
 	}
@@ -84,12 +82,12 @@ func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (Widget, erro
 	var w Widget
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, widget_type,
+		SELECT id, name, widget_type,
 		       COALESCE(config, '{}'::jsonb),
 		       cache_ttl_secs, is_active, created_at, updated_at
 		FROM widget_configurations
-		WHERE id = $1 AND tenant_id = $2
-	`, id, tenantID).Scan(
+		WHERE id = $1
+	`, id).Scan(
 		&w.ID, &w.TenantID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
@@ -106,7 +104,7 @@ func (s *Store) GetPublic(ctx context.Context, id pgtype.UUID) (Widget, error) {
 	var w Widget
 
 	err := s.reader.QueryRow(ctx, `
-		SELECT id, tenant_id, name, widget_type,
+		SELECT id, name, widget_type,
 		       COALESCE(config, '{}'::jsonb),
 		       cache_ttl_secs, is_active, created_at, updated_at
 		FROM widget_configurations
@@ -142,12 +140,11 @@ func (s *Store) Create(ctx context.Context, tenantID pgtype.UUID, input CreateWi
 	var w Widget
 
 	err := s.writer.QueryRow(ctx, `
-		INSERT INTO widget_configurations (tenant_id, name, widget_type, config, cache_ttl_secs, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, tenant_id, name, widget_type,
+		INSERT INTO widget_configurations (name, widget_type, config, cache_ttl_secs, is_active) VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, widget_type,
 		          COALESCE(config, '{}'::jsonb),
 		          cache_ttl_secs, is_active, created_at, updated_at
-	`, tenantID, input.Name, input.WidgetType, config, ttl, active).Scan(
+	`, input.Name, input.WidgetType, config, ttl, active).Scan(
 		&w.ID, &w.TenantID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
@@ -169,17 +166,17 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 
 	err := s.writer.QueryRow(ctx, `
 		UPDATE widget_configurations
-		SET name = COALESCE($3, name),
-		    widget_type = COALESCE($4, widget_type),
-		    config = COALESCE($5::jsonb, config),
-		    cache_ttl_secs = COALESCE($6, cache_ttl_secs),
-		    is_active = COALESCE($7, is_active),
+		SET name = COALESCE($2, name),
+		    widget_type = COALESCE($3, widget_type),
+		    config = COALESCE($4::jsonb, config),
+		    cache_ttl_secs = COALESCE($5, cache_ttl_secs),
+		    is_active = COALESCE($6, is_active),
 		    updated_at = now()
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, name, widget_type,
+		WHERE id = $1
+		RETURNING id, name, widget_type,
 		          COALESCE(config, '{}'::jsonb),
 		          cache_ttl_secs, is_active, created_at, updated_at
-	`, id, tenantID, input.Name, input.WidgetType, configArg, input.CacheTTLSecs, input.IsActive).Scan(
+	`, id, input.Name, input.WidgetType, configArg, input.CacheTTLSecs, input.IsActive).Scan(
 		&w.ID, &w.TenantID, &w.Name, &w.WidgetType,
 		&w.Config, &w.CacheTTLSecs, &w.IsActive, &w.CreatedAt, &w.UpdatedAt,
 	)
@@ -192,7 +189,7 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 
 // Delete removes a widget configuration.
 func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
-	tag, err := s.writer.Exec(ctx, `DELETE FROM widget_configurations WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+	tag, err := s.writer.Exec(ctx, `DELETE FROM widget_configurations WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting widget: %w", err)
 	}

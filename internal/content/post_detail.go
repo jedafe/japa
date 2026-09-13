@@ -19,7 +19,6 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/mentions"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 // GetPost handles GET /api/v1/post/{content_type}/{slug}.
@@ -83,8 +82,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve template literals in the content title, body, and meta fields.
-	t := tenant.FromContext(r.Context())
-	rc := buildRenderContext(r, tenantID, t.Name)
+	rc := buildRenderContext(r, tenantID, "")
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
 		slog.Warn("content: failed to resolve content literals",
 			"error", err, "content_id", content.ID.String())

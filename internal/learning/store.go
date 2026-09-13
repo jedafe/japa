@@ -163,17 +163,17 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 // SearchPublishedTracks searches published tracks by title or slug, tenant-scoped.
 func (s *Store) SearchPublishedTracks(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]Track, error) {
 	const q = `
-SELECT id, tenant_id, title, slug, description, difficulty, cover_media_id,
+SELECT id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
        instructor_id, price_kobo, currency, is_published_to_university,
        category, language, total_enrolled, subscription_eligible
 FROM learning_tracks
-WHERE tenant_id = $1 AND is_published = true AND (title ILIKE $2 OR slug ILIKE $2)
+WHERE is_published = true AND (title ILIKE $1 OR slug ILIKE $1)
 ORDER BY sort_order ASC, created_at DESC
-LIMIT $3
+LIMIT $2
 `
 
-	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)
+	rows, err := s.db.Reader.Query(ctx, q, "%"+query+"%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("search published tracks: %w", err)
 	}
@@ -185,7 +185,6 @@ LIMIT $3
 	for rows.Next() {
 		var r struct {
 			ID                      pgtype.UUID
-			TenantID                pgtype.UUID
 			Title                   string
 			Slug                    string
 			Description             *string
@@ -306,8 +305,8 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 // DeleteTrack soft-deletes a learning track.
 func (s *Store) DeleteTrack(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM learning_tracks WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		DELETE FROM learning_tracks WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("delete track: %w", err)
 	}
@@ -324,8 +323,8 @@ func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPu
 	tag, err := s.db.Writer.Exec(ctx, `
 		UPDATE learning_tracks
 		SET is_published = $1, updated_at = now()
-		WHERE tenant_id = $2 AND id = $3
-	`, isPublished, tenantID, id)
+		WHERE id = $2
+	`, isPublished, id)
 	if err != nil {
 		return fmt.Errorf("publish track: %w", err)
 	}
@@ -746,8 +745,8 @@ func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, inpu
 // DeleteModule soft-deletes a module.
 func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM learning_modules WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		DELETE FROM learning_modules WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("delete module: %w", err)
 	}
@@ -1194,8 +1193,8 @@ func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, inpu
 // DeleteLesson soft-deletes a lesson.
 func (s *Store) DeleteLesson(ctx context.Context, tenantID, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
-		DELETE FROM learning_lessons WHERE tenant_id = $1 AND id = $2
-	`, tenantID, id)
+		DELETE FROM learning_lessons WHERE id = $1
+	`, id)
 	if err != nil {
 		return fmt.Errorf("delete lesson: %w", err)
 	}
@@ -1921,9 +1920,9 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	err := s.db.Reader.QueryRow(ctx, `
 		SELECT plan FROM subscriptions
-		WHERE tenant_id = $1 AND user_id = $2 AND status = 'active' AND current_period_end > now()
+		WHERE user_id = $1 AND status = 'active' AND current_period_end > now()
 		ORDER BY created_at DESC LIMIT 1
-	`, tenantID, userID).Scan(&planText)
+	`, userID).Scan(&planText)
 	if err != nil {
 		return false, ""
 	}
@@ -1939,8 +1938,8 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT id FROM subscription_plans
-		WHERE tenant_id = $1 AND slug = $2
-	`, tenantID, slug).Scan(&planID)
+		WHERE slug = $1
+	`, slug).Scan(&planID)
 	if err != nil {
 		return false, ""
 	}
@@ -1950,8 +1949,8 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT count(*) FROM subscription_plan_tracks
-		WHERE plan_id = $1 AND tenant_id = $2
-	`, planID, tenantID).Scan(&count)
+		WHERE plan_id = $1
+	`, planID).Scan(&count)
 	if err != nil {
 		return false, ""
 	}
@@ -1966,9 +1965,9 @@ func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, t
 
 	err = s.db.Reader.QueryRow(ctx, `
 		SELECT 1 FROM subscription_plan_tracks
-		WHERE plan_id = $1 AND track_id = $2 AND tenant_id = $3
+		WHERE plan_id = $1 AND track_id = $2
 		LIMIT 1
-	`, planID, trackID, tenantID).Scan(&exists)
+	`, planID, trackID).Scan(&exists)
 	if err != nil {
 		return false, slug
 	}

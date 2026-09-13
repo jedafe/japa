@@ -753,8 +753,8 @@ func (s *Service) UpdateAlert(ctx context.Context, tenantID, userID, alertID pgt
 }
 
 // DeleteAlert deletes a rate alert owned by the given user.
-func (s *Service) DeleteAlert(ctx context.Context, tenantID, userID, alertID pgtype.UUID) error {
-	if err := s.store.DeleteAlert(ctx, tenantID, alertID, userID); err != nil {
+func (s *Service) DeleteAlert(ctx context.Context, userID, alertID pgtype.UUID) error {
+	if err := s.store.DeleteAlert(ctx, alertID, userID); err != nil {
 		return fmt.Errorf("remittance: delete alert: %w", err)
 	}
 
@@ -820,8 +820,8 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateRemittancePr
 
 // DeleteProvider removes a remittance provider. It is blocked while the provider
 // still has remittance_rates rows to prevent loss of historical rate data.
-func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteProvider(ctx, tenantID, id); err != nil {
+func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteProvider(ctx, id); err != nil {
 		return fmt.Errorf("remittance: delete provider: %w", err)
 	}
 

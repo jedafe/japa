@@ -16,7 +16,6 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -70,7 +69,7 @@ func NewHandlers(database *db.DB, service *Service, settings *config.Settings, v
 // Supports server-side pagination (page, page_size), search (q), and
 // sort (sort + dir) per the admin list-endpoint spec.
 func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
@@ -188,7 +187,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 // participation.global_daily_cap, BUG-013). The tenant for the counter is
 // taken from the request context.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error": map[string]any{"code": "tenant_unavailable", "message": "No tenant available", "status": 503},
@@ -198,9 +197,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var activePersonas int
-	_ = h.database.Reader.QueryRow(r.Context(),
-		`SELECT count(*) FROM ai_personas WHERE tenant_id = $1 AND status = 'active'`,
-		t.ID).Scan(&activePersonas)
+	_ = h.database.Reader.QueryRow(r.Context(), `SELECT count(*) FROM ai_personas WHERE status = 'active'`).Scan(&activePersonas)
 
 	// Synthetic actions today from the Valkey global daily counter
 	// (jc:persona:global:{tenant_id}:{date}, §76). A SPA cannot query

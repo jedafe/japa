@@ -232,9 +232,8 @@ func (s *Service) auditLog(ctx context.Context, tenantID, adminID pgtype.UUID, i
 	}
 
 	_, err := s.dbPool.Exec(ctx, `
-		INSERT INTO audit_logs (tenant_id, actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address)
-		VALUES ($1, $2, $3, $4, 'user', $3, $5::jsonb, $6::inet)
-	`, tenantID, adminID, impersonatedArg, actionType, metaJSON, ipArg)
+		INSERT INTO audit_logs (actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address) VALUES ($1, $2, $3, 'user', $2, $4::jsonb, $5::inet)
+	`, adminID, impersonatedArg, actionType, metaJSON, ipArg)
 	if err != nil {
 		return fmt.Errorf("audit log insert: %w", err)
 	}
@@ -256,8 +255,8 @@ func (s *Service) GetTargetProfile(ctx context.Context, tenantID, targetUserID p
 	var tp TargetProfile
 
 	err := s.dbPool.QueryRow(ctx, `
-		SELECT id::text, username, email FROM users WHERE id = $1 AND tenant_id = $2
-	`, targetUserID, tenantID).Scan(&tp.ID, &tp.Username, &tp.Email)
+		SELECT id::text, username, email FROM users WHERE id = $1
+	`, targetUserID).Scan(&tp.ID, &tp.Username, &tp.Email)
 	if err != nil {
 		return nil, fmt.Errorf("get target profile: %w", err)
 	}

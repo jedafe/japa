@@ -28,20 +28,14 @@ func seedComparisonType(t *testing.T, d *db.DB, tenantID pgtype.UUID) pgtype.UUI
 	t.Helper()
 
 	fieldGroupID := newTestUUID(t)
-	_, err := d.Writer.Exec(t.Context(),
-		`INSERT INTO custom_field_groups (id, tenant_id, name, slug, is_system)
-		 VALUES ($1, $2, 'Test Fields', 'test-fields', false)`,
-		fieldGroupID, tenantID)
+	_, err := d.Writer.Exec(t.Context(), `INSERT INTO custom_field_groups (id, name, slug, is_system) VALUES ($1, $2, 'Test Fields', 'test-fields', false)`, fieldGroupID, tenantID)
 	if err != nil {
 		t.Fatalf("seed comparison type: insert custom_field_groups: %v", err)
 	}
 
 	typeID := newTestUUID(t)
 	slug := "test-type-" + uuid.New().String()
-	_, err = d.Writer.Exec(t.Context(),
-		`INSERT INTO comparison_type_definitions (id, tenant_id, name, slug, field_group_id, item_label, is_system, config)
-		 VALUES ($1, $2, 'Test Type', $3, $4, 'Item', false, '{}'::jsonb)`,
-		typeID, tenantID, slug, fieldGroupID)
+	_, err = d.Writer.Exec(t.Context(), `INSERT INTO comparison_type_definitions (id, name, slug, field_group_id, item_label, is_system, config) VALUES ($1, $2, 'Test Type', $3, $4, 'Item', false, '{}'::jsonb)`, typeID, tenantID, slug, fieldGroupID)
 	if err != nil {
 		t.Fatalf("seed comparison type: insert comparison_type_definitions: %v", err)
 	}

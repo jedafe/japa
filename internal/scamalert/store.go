@@ -81,21 +81,15 @@ type ScamReportRow struct {
 func (s *Store) CreateReport(ctx context.Context, report ScamReport) (pgtype.UUID, error) {
 	var id pgtype.UUID
 
-	err := s.pool.Writer.QueryRow(
-		ctx, `
+	err := s.pool.Writer.QueryRow(ctx, `
 INSERT INTO scam_reports (
-    tenant_id, reporter_id, scam_type, destination_space_id,
+    reporter_id, scam_type, destination_space_id,
     origin_space_id, origin_community, platform_used,
     approximate_date, amount_range, description, reported_to_authorities,
     status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'under_review')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_review')
 RETURNING id
-`,
-		report.TenantID, report.ReporterID, report.ScamType, report.DestinationSpaceID,
-		report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed,
-		report.ApproximateDate, report.AmountRange, report.Description,
-		report.ReportedToAuthorities,
-	).Scan(&id)
+`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities, ).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("scamalert: create report: %w", err)
 	}
@@ -207,20 +201,18 @@ LIMIT 1
 func (s *Store) UpdateReport(ctx context.Context, id, tenantID pgtype.UUID, report ScamReport) (ScamReportRow, error) {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
-SET scam_type = $3,
-    destination_space_id = $4,
-    origin_space_id = $5,
-    origin_community = $6,
-    platform_used = $7,
-    approximate_date = $8,
-    amount_range = $9,
-    description = $10,
-    reported_to_authorities = $11,
+SET scam_type = $2,
+    destination_space_id = $3,
+    origin_space_id = $4,
+    origin_community = $5,
+    platform_used = $6,
+    approximate_date = $7,
+    amount_range = $8,
+    description = $9,
+    reported_to_authorities = $10,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`, id, tenantID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID,
-		report.OriginCommunity, report.PlatformUsed, report.ApproximateDate,
-		report.AmountRange, report.Description, report.ReportedToAuthorities)
+WHERE id = $1 AND deleted_at IS NULL
+`, id, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities)
 	if err != nil {
 		return ScamReportRow{}, fmt.Errorf("scamalert: update report: %w", err)
 	}
@@ -359,8 +351,7 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 // Subscribe inserts a scam-alert subscription for a user + destination space.
 func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
-INSERT INTO scam_alert_subscriptions (user_id, tenant_id, destination_space_id)
-VALUES ($1, $2, $3)
+INSERT INTO scam_alert_subscriptions (user_id, destination_space_id) VALUES ($1, $2, $3)
 ON CONFLICT (user_id, destination_space_id) DO NOTHING
 `, userID, tenantID, destSpaceID)
 	if err != nil {
@@ -377,9 +368,9 @@ func (s *Store) IsSubscribed(ctx context.Context, userID, tenantID, destSpaceID 
 	err := s.pool.Reader.QueryRow(ctx, `
 SELECT EXISTS (
     SELECT 1 FROM scam_alert_subscriptions
-    WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
+    WHERE user_id = $1 AND destination_space_id = $2
 )
-`, userID, tenantID, destSpaceID).Scan(&exists)
+`, userID, destSpaceID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("scamalert: is subscribed: %w", err)
 	}
@@ -390,8 +381,8 @@ SELECT EXISTS (
 func (s *Store) Unsubscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM scam_alert_subscriptions
-WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
-`, userID, tenantID, destSpaceID)
+WHERE user_id = $1 AND destination_space_id = $2
+`, userID, destSpaceID)
 	if err != nil {
 		return fmt.Errorf("scamalert: unsubscribe: %w", err)
 	}
@@ -405,8 +396,8 @@ WHERE user_id = $1 AND tenant_id = $2 AND destination_space_id = $3
 func (s *Store) ListSubscribersByDestination(ctx context.Context, tenantID, destSpaceID pgtype.UUID) ([]pgtype.UUID, error) {
 	rows, err := s.pool.Reader.Query(ctx, `
 SELECT user_id FROM scam_alert_subscriptions
-WHERE tenant_id = $1 AND destination_space_id = $2
-`, tenantID, destSpaceID)
+WHERE destination_space_id = $1
+`, destSpaceID)
 	if err != nil {
 		return nil, fmt.Errorf("scamalert: list subscribers: %w", err)
 	}
@@ -433,8 +424,8 @@ func (s *Store) GetReportForNotification(ctx context.Context, id, tenantID pgtyp
 	err = s.pool.Reader.QueryRow(ctx, `
 SELECT destination_space_id, reporter_id, scam_type, description
 FROM scam_reports
-WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed'
-`, id, tenantID).Scan(&destSpaceID, &reporterID, &scamType, &description)
+WHERE id = $1 AND status = 'confirmed'
+`, id).Scan(&destSpaceID, &reporterID, &scamType, &description)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, "", "", err
 	}
@@ -616,9 +607,9 @@ func (s *Store) UpdateReportStatus(ctx context.Context, id, tenantID pgtype.UUID
 
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
-SET status = $3, moderator_note = $4, reviewed_by = $5, reviewed_at = now(),
+SET status = $2, moderator_note = $3, reviewed_by = $4, reviewed_at = now(),
     hitl_reviewed_by = CASE
-        WHEN ai_generated AND hitl_reviewed_by IS NULL THEN $5
+        WHEN ai_generated AND hitl_reviewed_by IS NULL THEN $4
         ELSE hitl_reviewed_by
     END,
     hitl_reviewed_at = CASE
@@ -626,8 +617,8 @@ SET status = $3, moderator_note = $4, reviewed_by = $5, reviewed_at = now(),
         ELSE hitl_reviewed_at
     END,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`, id, tenantID, status, notePtr, reviewerID)
+WHERE id = $1 AND deleted_at IS NULL
+`, id, status, notePtr, reviewerID)
 	if err != nil {
 		return fmt.Errorf("scamalert: update report status: %w", err)
 	}
@@ -643,9 +634,9 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 func (s *Store) PinReport(ctx context.Context, id, tenantID, pinnedSpaceID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
-SET is_pinned = true, pinned_space_id = $3, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'confirmed' AND deleted_at IS NULL
-`, id, tenantID, pinnedSpaceID)
+SET is_pinned = true, pinned_space_id = $2, updated_at = now()
+WHERE id = $1 AND status = 'confirmed' AND deleted_at IS NULL
+`, id, pinnedSpaceID)
 	if err != nil {
 		return fmt.Errorf("scamalert: pin report: %w", err)
 	}
@@ -662,8 +653,8 @@ func (s *Store) UnpinReport(ctx context.Context, id, tenantID pgtype.UUID) error
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET is_pinned = false, pinned_space_id = NULL, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-`, id, tenantID)
+WHERE id = $1 AND deleted_at IS NULL
+`, id)
 	if err != nil {
 		return fmt.Errorf("scamalert: unpin report: %w", err)
 	}

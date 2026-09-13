@@ -20,25 +20,20 @@ import (
 )
 
 // aiResponseCacheKey returns the Valkey key for a cached AI response.
-// Format: jc:ai:response:{tenant_id}:{user_id}:{category}:{sha256(payload)}.
+// Format: jc:ai:response:{user_id}:{category}:{sha256(payload)}.
 // The user_id is included so cached responses stay scoped to the caller.
-func aiResponseCacheKey(tenantID, userID pgtype.UUID, category string, payload map[string]any) string {
+func aiResponseCacheKey(userID pgtype.UUID, category string, payload map[string]any) string {
 	// Normalise payload before hashing so equivalent requests share a key.
 	payloadJSON, _ := json.Marshal(payload)
 	h := sha256.Sum256(payloadJSON)
 	hash := hex.EncodeToString(h[:])
-
-	tenantStr := ""
-	if tenantID.Valid {
-		tenantStr = pgUUIDToString(tenantID)
-	}
 
 	userStr := ""
 	if userID.Valid {
 		userStr = pgUUIDToString(userID)
 	}
 
-	return fmt.Sprintf("jc:ai:response:%s:%s:%s:%s", tenantStr, userStr, category, hash)
+	return fmt.Sprintf("jc:ai:response:%s:%s:%s", userStr, category, hash)
 }
 
 // pgUUIDToString returns the standard UUID string form, or a zero UUID string

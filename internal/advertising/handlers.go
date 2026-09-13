@@ -20,7 +20,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -91,13 +90,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 
 // requireTenant resolves the tenant from the request context.
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 // requireUser resolves the authenticated user from the request context.
@@ -1284,15 +1277,7 @@ func (h *Handlers) ListAdNetworkProviders(w http.ResponseWriter, r *http.Request
 func (h *Handlers) GetAdNetworkConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	t := tenant.FromContext(ctx)
-	if t == nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_tenant", "tenant not found")
-		return
-	}
-
-	tenantID := t.ID
-
-	networks, err := h.Service.ListActiveAdNetworks(ctx, tenantID)
+	networks, err := h.Service.ListActiveAdNetworks(ctx, pgtype.UUID{})
 	if err != nil {
 		handleServiceError(w, err)
 		return

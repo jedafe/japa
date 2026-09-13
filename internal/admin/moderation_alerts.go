@@ -22,7 +22,7 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -41,12 +41,8 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 	// Count total matching alerts for pagination metadata.
 	var total int32
 
-	countErr := h.DB.Reader.QueryRow(
-		r.Context(),
-		`SELECT COUNT(*)::int FROM moderation_alerts
-		 WHERE tenant_id = $1 AND (NULLIF($2, '') IS NULL OR status = $2)`,
-		tenantID, status,
-	).Scan(&total)
+	countErr := h.DB.Reader.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM moderation_alerts
+		 WHERE (NULLIF($1, '') IS NULL OR status = $1)`, status, ).Scan(&total)
 	if countErr != nil {
 		slog.Warn("moderation: counting alerts", "error", countErr)
 	}

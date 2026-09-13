@@ -104,20 +104,15 @@ type JobListFilter struct {
 // CreateJob inserts a single studio_jobs row.
 func (s *Store) CreateJob(ctx context.Context, tenantID, createdBy, batchID pgtype.UUID, in CreateJobInput) (Job, error) {
 	var j Job
-	err := s.db.Writer.QueryRow(
-		ctx, `
-		INSERT INTO studio_jobs (tenant_id, batch_id, persona_id, content_type, guide_category,
+	err := s.db.Writer.QueryRow(ctx, `
+		INSERT INTO studio_jobs (batch_id, persona_id, content_type, guide_category,
 		                          topic_prompt, target_space_id, target_tags, intel_record_id,
-		                          ai_model, voice_id, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING id, tenant_id, batch_id, persona_id, content_type, guide_category,
+		                          ai_model, voice_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, batch_id, persona_id, content_type, guide_category,
 		          topic_prompt, target_space_id, target_tags, intel_record_id,
 		          ai_model, voice_id, status, draft_content_id,
 		          review_id, generated_at, reviewed_at, published_at, error_message,
-		          created_by, created_at`,
-		tenantID, batchID, in.PersonaID, in.ContentType, in.GuideCategory,
-		in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, in.AIModel, in.VoiceID, createdBy,
-	).Scan(
+		          created_by, created_at`, batchID, in.PersonaID, in.ContentType, in.GuideCategory, in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, in.AIModel, in.VoiceID, createdBy, ).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
@@ -130,13 +125,9 @@ func (s *Store) CreateJob(ctx context.Context, tenantID, createdBy, batchID pgty
 // CreateBatch inserts a studio_batches row and returns it.
 func (s *Store) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, name string, description *string) (Batch, error) {
 	var b Batch
-	err := s.db.Writer.QueryRow(
-		ctx, `
-		INSERT INTO studio_batches (tenant_id, name, description, created_by)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, tenant_id, name, description, created_by, created_at`,
-		tenantID, name, description, createdBy,
-	).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
+	err := s.db.Writer.QueryRow(ctx, `
+		INSERT INTO studio_batches (name, description, created_by) VALUES ($1, $2, $3)
+		RETURNING id, name, description, created_by, created_at`, name, description, createdBy, ).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
 
 	return b, err
 }
@@ -144,15 +135,13 @@ func (s *Store) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID
 // GetJob fetches a single job by ID within a tenant.
 func (s *Store) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, error) {
 	var j Job
-	err := s.db.Reader.QueryRow(
-		ctx, `
-		SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT id, batch_id, persona_id, content_type, guide_category,
 		       topic_prompt, target_space_id, target_tags, intel_record_id,
 		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
-		FROM studio_jobs WHERE id = $1 AND tenant_id = $2`, id, tenantID,
-	).Scan(
+		FROM studio_jobs WHERE id = $1`, id, ).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
@@ -281,9 +270,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 // the job is in a status that cannot be cancelled (e.g. generating,
 // published, in_review).
 func (s *Store) DeleteJob(ctx context.Context, tenantID, id pgtype.UUID) error {
-	tag, err := s.db.Writer.Exec(ctx,
-		`DELETE FROM studio_jobs WHERE id = $1 AND tenant_id = $2 AND status IN ('queued','failed')`,
-		id, tenantID)
+	tag, err := s.db.Writer.Exec(ctx, `DELETE FROM studio_jobs WHERE id = $1 AND status IN ('queued','failed')`, id)
 	if err != nil {
 		return err
 	}
@@ -303,19 +290,15 @@ func (s *Store) DeleteJob(ctx context.Context, tenantID, id pgtype.UUID) error {
 // HITL review rows that must remain actionable. A no-op (0 rows) is not an
 // error: the job already progressed past the point where the failure matters.
 func (s *Store) MarkJobFailedIfActive(ctx context.Context, tenantID, id pgtype.UUID, errMsg string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET status = 'failed', error_message = $3
-		 WHERE id = $1 AND tenant_id = $2 AND status IN ('queued','generating')`,
-		id, tenantID, errMsg)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET status = 'failed', error_message = $2
+		 WHERE id = $1 AND status IN ('queued','generating')`, id, errMsg)
 
 	return err
 }
 
 // UpdateJobStatus updates the status and optional error message.
 func (s *Store) UpdateJobStatus(ctx context.Context, tenantID, id pgtype.UUID, status string, errMsg *string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET status = $3, error_message = $4 WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, status, errMsg)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET status = $2, error_message = $3 WHERE id = $1`, id, status, errMsg)
 
 	return err
 }
@@ -334,9 +317,7 @@ var ErrJobAlreadyGenerating = errors.New("studio: job already picked up by anoth
 // content:generate_draft tasks both pass the status guard in GenerateJob and
 // both proceed to generate duplicate drafts.
 func (s *Store) MarkJobGeneratingCAS(ctx context.Context, tenantID, id pgtype.UUID) error {
-	tag, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET status = 'generating' WHERE id = $1 AND tenant_id = $2 AND status = 'queued'`,
-		id, tenantID)
+	tag, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET status = 'generating' WHERE id = $1 AND status = 'queued'`, id)
 	if err != nil {
 		return err
 	}
@@ -354,11 +335,9 @@ func (s *Store) MarkJobGeneratingCAS(ctx context.Context, tenantID, id pgtype.UU
 // (UpdateJobRoutedToReview) or auto-published (UpdateJobPublished).
 // Sets ai_generated_at (ADR-088) alongside generated_at.
 func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftContentID pgtype.UUID, aiModel string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET draft_content_id = $3, status = 'draft_ready',
-		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($4, '')
-		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, draftContentID, aiModel)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET draft_content_id = $2, status = 'draft_ready',
+		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($3, '')
+		  WHERE id = $1`, id, draftContentID, aiModel)
 
 	return err
 }
@@ -367,10 +346,8 @@ func (s *Store) UpdateJobGenerated(ctx context.Context, tenantID, id, draftConte
 // the draft has been routed to the content_reviews HITL queue (ADR-076 §2
 // step 8). Called after UpdateJobGenerated once the review row exists.
 func (s *Store) UpdateJobRoutedToReview(ctx context.Context, tenantID, id, reviewID pgtype.UUID) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET review_id = $3, status = 'in_review'
-		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, reviewID)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET review_id = $2, status = 'in_review'
+		  WHERE id = $1`, id, reviewID)
 
 	return err
 }
@@ -380,21 +357,18 @@ func (s *Store) UpdateJobRoutedToReview(ctx context.Context, tenantID, id, revie
 // review_id is written because auto-published types skip the HITL queue.
 // Sets ai_generated_at (ADR-088) alongside generated_at.
 func (s *Store) UpdateJobPublished(ctx context.Context, tenantID, id, draftContentID pgtype.UUID, aiModel string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET draft_content_id = $3, status = 'published',
-		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($4, ''), published_at = now()
-		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, draftContentID, aiModel)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET draft_content_id = $2, status = 'published',
+		          generated_at = now(), ai_generated_at = now(), ai_model = NULLIF($3, ''), published_at = now()
+		  WHERE id = $1`, id, draftContentID, aiModel)
 
 	return err
 }
 
 // ListBatches lists batches for a tenant.
 func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Batch, int64, error) {
-	rows, err := s.db.Reader.Query(ctx,
-		`SELECT id, tenant_id, name, description, created_by, created_at
-		 FROM studio_batches WHERE tenant_id = $1 ORDER BY created_at DESC
-		 LIMIT $2 OFFSET $3`, tenantID, limit, offset)
+	rows, err := s.db.Reader.Query(ctx, `SELECT id, name, description, created_by, created_at
+		 FROM studio_batches  ORDER BY created_at DESC
+		 LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -412,8 +386,7 @@ func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, of
 	}
 
 	var total int64
-	_ = s.db.Reader.QueryRow(ctx,
-		`SELECT count(*) FROM studio_batches WHERE tenant_id = $1`, tenantID).Scan(&total)
+	_ = s.db.Reader.QueryRow(ctx, `SELECT count(*) FROM studio_batches `).Scan(&total)
 
 	return batches, total, rows.Err()
 }
@@ -421,11 +394,8 @@ func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, of
 // GetBatch fetches a single batch by ID within a tenant.
 func (s *Store) GetBatch(ctx context.Context, tenantID, id pgtype.UUID) (Batch, error) {
 	var b Batch
-	err := s.db.Reader.QueryRow(
-		ctx,
-		`SELECT id, tenant_id, name, description, created_by, created_at
-		 FROM studio_batches WHERE id = $1 AND tenant_id = $2`, id, tenantID,
-	).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
+	err := s.db.Reader.QueryRow(ctx, `SELECT id, name, description, created_by, created_at
+		 FROM studio_batches WHERE id = $1`, id, ).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
 
 	return b, err
 }
@@ -447,9 +417,7 @@ type BatchStats struct {
 func (s *Store) GetBatchStats(ctx context.Context, tenantID, batchID pgtype.UUID) (BatchStats, error) {
 	var st BatchStats
 
-	rows, err := s.db.Reader.Query(ctx,
-		`SELECT status, count(*) FROM studio_jobs WHERE tenant_id = $1 AND batch_id = $2 GROUP BY status`,
-		tenantID, batchID)
+	rows, err := s.db.Reader.Query(ctx, `SELECT status, count(*) FROM studio_jobs WHERE batch_id = $1 GROUP BY status`, batchID)
 	if err != nil {
 		return st, err
 	}
@@ -491,13 +459,11 @@ func (s *Store) GetBatchStats(ctx context.Context, tenantID, batchID pgtype.UUID
 
 // ListFailedJobs returns all failed jobs for a batch.
 func (s *Store) ListFailedJobs(ctx context.Context, tenantID, batchID pgtype.UUID) ([]Job, error) {
-	rows, err := s.db.Reader.Query(ctx,
-		`SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
+	rows, err := s.db.Reader.Query(ctx, `SELECT id, batch_id, persona_id, content_type, guide_category,
 		        topic_prompt, target_space_id, target_tags, intel_record_id, status, draft_content_id,
 		        review_id, generated_at, reviewed_at, published_at, error_message,
 		        created_by, created_at
-		 FROM studio_jobs WHERE tenant_id = $1 AND batch_id = $2 AND status = 'failed'`,
-		tenantID, batchID)
+		 FROM studio_jobs WHERE batch_id = $1 AND status = 'failed'`, batchID)
 	if err != nil {
 		return nil, err
 	}
@@ -544,8 +510,7 @@ type StudioStats struct {
 // GetStats returns aggregate studio stats for a tenant.
 func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats, error) {
 	var st StudioStats
-	err := s.db.Reader.QueryRow(
-		ctx, `
+	err := s.db.Reader.QueryRow(ctx, `
 		SELECT count(*),
 		       count(*) FILTER (WHERE status = 'queued'),
 		       count(*) FILTER (WHERE status = 'generating'),
@@ -564,8 +529,7 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 		           FILTER (WHERE reviewed_at IS NOT NULL AND generated_at IS NOT NULL),
 		         0
 		       )
-		FROM studio_jobs WHERE tenant_id = $1`, tenantID,
-	).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
+		FROM studio_jobs `, ).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
 		&st.Published, &st.Rejected, &st.Failed, &st.PublishRate, &st.AvgReviewH)
 
 	return st, err
@@ -575,11 +539,7 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 // for a tenant. Used to enforce studio.max_concurrent_jobs (ADR-076, §75).
 func (s *Store) CountActiveJobs(ctx context.Context, tenantID pgtype.UUID) (int, error) {
 	var count int
-	err := s.db.Reader.QueryRow(
-		ctx,
-		`SELECT count(*) FROM studio_jobs WHERE tenant_id = $1 AND status IN ('queued','generating')`,
-		tenantID,
-	).Scan(&count)
+	err := s.db.Reader.QueryRow(ctx, `SELECT count(*) FROM studio_jobs WHERE status IN ('queued','generating')`, ).Scan(&count)
 
 	return count, err
 }
@@ -590,15 +550,13 @@ func (s *Store) CountActiveJobs(ctx context.Context, tenantID pgtype.UUID) (int,
 // ADR-076 §3).
 func (s *Store) GetJobByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (Job, error) {
 	var j Job
-	err := s.db.Reader.QueryRow(
-		ctx, `
-		SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
+	err := s.db.Reader.QueryRow(ctx, `
+		SELECT id, batch_id, persona_id, content_type, guide_category,
 		       topic_prompt, target_space_id, target_tags, intel_record_id,
 		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
-		FROM studio_jobs WHERE review_id = $1 AND tenant_id = $2`, reviewID, tenantID,
-	).Scan(
+		FROM studio_jobs WHERE review_id = $1`, reviewID, ).Scan(
 		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
@@ -612,11 +570,9 @@ func (s *Store) GetJobByReviewID(ctx context.Context, tenantID, reviewID pgtype.
 // Used by the moderation hook to transition a job to 'published' (approve)
 // or 'rejected' (reject) after HITL review (§75, ADR-076 §3).
 func (s *Store) UpdateJobReviewed(ctx context.Context, tenantID, id pgtype.UUID, status string) error {
-	_, err := s.db.Writer.Exec(ctx,
-		`UPDATE studio_jobs SET status = $3, reviewed_at = now(),
-		          published_at = CASE WHEN $3 = 'published' THEN now() ELSE published_at END
-		  WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID, status)
+	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET status = $2, reviewed_at = now(),
+		          published_at = CASE WHEN $2 = 'published' THEN now() ELSE published_at END
+		  WHERE id = $1`, id, status)
 
 	return err
 }

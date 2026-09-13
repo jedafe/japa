@@ -958,7 +958,7 @@ func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID 
 		return
 	}
 
-	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
+	key := valkey.MustKey("agent:session:%s", sessionID.String())
 	if err := h.cache.Set(ctx, key, "running", int(agentSessionStateTTL.Seconds())); err != nil {
 		slog.Warn("ai: failed to set session state", "error", err)
 	}
@@ -971,7 +971,7 @@ func (h *AgentHandler) isCancelled(ctx context.Context, tenantID, sessionID pgty
 		return false
 	}
 
-	key := valkey.MustKey("agent:session:%s:%s", tenantID.String(), sessionID.String())
+	key := valkey.MustKey("agent:session:%s", sessionID.String())
 
 	val, err := h.cache.Get(ctx, key)
 	if err != nil {

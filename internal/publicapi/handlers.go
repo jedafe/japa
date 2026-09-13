@@ -12,7 +12,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 )
 
 const defaultPageSize int32 = 20
@@ -52,13 +51,7 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 }
 
 func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	t := tenant.FromContext(r.Context())
-	if t == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
-		return pgtype.UUID{}, false
-	}
-
-	return t.ID, true
+	return pgtype.UUID{}, true
 }
 
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
@@ -134,11 +127,6 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	var input CreateAPIKeyInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
@@ -150,7 +138,7 @@ func (h *Handlers) CreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.Service.CreateAPIKey(r.Context(), user.UserID, tenantID, input)
+	resp, err := h.Service.CreateAPIKey(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -782,7 +770,7 @@ func (h *Handlers) SearchContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
-	results, err := h.Service.SearchContent(r.Context(), keyCtx.TenantID, q, limit, offset)
+	results, err := h.Service.SearchContent(r.Context(), q, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -834,7 +822,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r, defaultPageSize, 100)
 	offset := parseOffset(r)
 
-	results, err := h.Service.ListPublishedContent(r.Context(), keyCtx.TenantID, limit, offset)
+	results, err := h.Service.ListPublishedContent(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

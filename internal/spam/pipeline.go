@@ -313,7 +313,7 @@ func (p *SpamPipeline) checkCensoredWords(ctx context.Context, tenantID pgtype.U
 		return name, 0.0, nil
 	}
 
-	words, err := GetCachedCensoredWords(ctx, p.rdb, p.db, tenantID)
+	words, err := GetCachedCensoredWords(ctx, p.rdb, p.db)
 	if err != nil || len(words) == 0 {
 		return name, 0.0, nil
 	}

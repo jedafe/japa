@@ -246,8 +246,8 @@ func (s *Store) GetSpaceLevels(
 
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, level FROM spaces
-		WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
-	`, tenantID, spaceIDs)
+		WHERE id = ANY($1) AND deleted_at IS NULL
+	`, spaceIDs)
 	if err != nil {
 		return nil, err
 	}

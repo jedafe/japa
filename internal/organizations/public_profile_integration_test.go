@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/testdb"
 )
 
@@ -26,7 +25,11 @@ func TestGetPublicOrganization_ActiveLean_NonActive404(t *testing.T) {
 
 	call := func(slug string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/organizations/"+slug, nil)
-		req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+		req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+			ID   pgtype.UUID
+			Name string
+			Slug string
+		}{ID: tenantID}))
 		req = testdb.WithChiURLParam(req, "slug", slug)
 		rec := httptest.NewRecorder()
 		h.GetPublicOrganization(rec, req)
@@ -78,7 +81,11 @@ func TestListPublicMembers_ActiveOnly_Lean(t *testing.T) {
 
 	h := NewHandlers(NewService(database), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/organizations/"+orgID.String()+"/members", nil)
-	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+	req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID}))
 	req = testdb.WithChiURLParam(req, "id", orgID.String())
 	rec := httptest.NewRecorder()
 	h.ListPublicMembers(rec, req)
@@ -121,7 +128,11 @@ func TestListPublicOrganizations_VerifiedActiveOnly(t *testing.T) {
 
 	h := NewHandlers(NewService(database), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/organizations", nil)
-	req = req.WithContext(context.WithValue(req.Context(), tenant.TenantContextKey, &tenant.Tenant{ID: tenantID}))
+	req = req.WithContext(context.WithValue(req.Context(), struct{}{}, &struct {
+		ID   pgtype.UUID
+		Name string
+		Slug string
+	}{ID: tenantID}))
 	rec := httptest.NewRecorder()
 	h.ListPublicOrganizations(rec, req)
 

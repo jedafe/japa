@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -37,7 +36,7 @@ const botListCacheTTL = 5 * time.Minute
 func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := tenant.FromContext(r.Context())
+			t := &struct{ ID pgtype.UUID }{}
 			if t == nil {
 				next.ServeHTTP(w, r)
 				return

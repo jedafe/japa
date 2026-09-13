@@ -20,7 +20,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/tenant"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -170,7 +169,7 @@ func (h *Handlers) enqueueTrackCompletionUpdate(userID, trackID, tenantID pgtype
 
 // ListPublishedTracks returns all published tracks for the current tenant.
 func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -191,7 +190,7 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 // expects a flat object with a `modules` array where each module carries its
 // `lessons` — NOT the legacy `{track, modules}` envelope.
 func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -256,7 +255,7 @@ func trackJSONLDFields(d *TrackDetail) map[string]string {
 
 // GetLesson returns a single lesson by its slug within the track/module hierarchy.
 func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -304,7 +303,7 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 
 // UpdateProgress records or updates a user's progress on a lesson.
 func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -385,7 +384,7 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -404,7 +403,7 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 // certificate badges (social proof). All issued certs are public; non-active
 // users are already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -431,7 +430,7 @@ func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request
 
 // ListAllTracks returns every track for the tenant (admin view).
 func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -448,7 +447,7 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 
 // CreateTrack creates a new learning track.
 func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -497,7 +496,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTrack updates an existing track.
 func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -537,7 +536,7 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTrack removes a track and cascades to its modules and lessons.
 func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -566,7 +565,7 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 
 // CreateModule adds a module to a track.
 func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -614,7 +613,7 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 
 // UpdateModule updates an existing module.
 func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -646,7 +645,7 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 
 // DeleteModule removes a module and cascades to its lessons.
 func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -671,7 +670,7 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 
 // CreateLesson adds a lesson to a module.
 func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -723,7 +722,7 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 
 // UpdateLesson updates an existing lesson.
 func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -755,7 +754,7 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 
 // DeleteLesson removes a lesson.
 func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -801,7 +800,7 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -905,7 +904,7 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -926,7 +925,7 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 
 // GetLessonByID handles GET /learn/lessons/:id.
 func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -962,7 +961,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1024,7 +1023,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 
 // GetQuiz handles GET /learn/quizzes/:id.
 func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1050,7 +1049,7 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 
 // SubmitQuiz handles POST /learn/quizzes/:id/submit.
 func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1280,7 +1279,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 
 // ListTrackEnrollments handles GET /admin/learn/tracks/:id/enrollments.
 func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
@@ -1319,7 +1318,7 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 
 // ListAllModules handles GET /admin/learn/modules.
 func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1336,7 +1335,7 @@ func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
 
 // ListAllLessons handles GET /admin/learn/lessons.
 func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1353,7 +1352,7 @@ func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
 
 // ListModulesByTrack handles GET /admin/learn/tracks/{trackId}/modules.
 func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1379,7 +1378,7 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 
 // PublishTrack handles POST /admin/learn/tracks/:id/publish.
 func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant")
 		return
@@ -1423,7 +1422,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
@@ -1473,7 +1472,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 // ListTrackReviews handles GET /api/v1/learn/tracks/{id}/reviews.
 // Public — no auth required. Returns reviews + aggregate rating.
 func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
-	t := tenant.FromContext(r.Context())
+	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "tenant_unavailable", "No tenant available")
 		return
