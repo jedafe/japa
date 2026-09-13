@@ -83,7 +83,7 @@ type stubSessionStore struct {
 	cancelled *gen.AiAgentSession
 	complete  gen.CompleteAgentSessionParams
 	fail      gen.FailAgentSessionParams
-	cancel    gen.CancelAgentSessionParams
+	cancel    pgtype.UUID
 }
 
 func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error) {
@@ -122,8 +122,8 @@ func (s *stubSessionStore) FailAgentSession(ctx context.Context, arg gen.FailAge
 	return c, nil
 }
 
-func (s *stubSessionStore) CancelAgentSession(ctx context.Context, arg gen.CancelAgentSessionParams) (gen.AiAgentSession, error) {
-	s.cancel = arg
+func (s *stubSessionStore) CancelAgentSession(ctx context.Context, id pgtype.UUID) (gen.AiAgentSession, error) {
+	s.cancel = id
 	c := s.created
 	c.Status = "cancelled"
 	s.cancelled = &c
