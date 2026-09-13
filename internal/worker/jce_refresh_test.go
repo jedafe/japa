@@ -22,9 +22,8 @@ type fakeIngestionService struct {
 	err         error
 }
 
-func (f *fakeIngestionService) ProcessRefreshValues(_ context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error {
+func (f *fakeIngestionService) ProcessRefreshValues(_ context.Context, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error {
 	f.called = true
-	f.tenants = append(f.tenants, tenantID)
 	f.contents = append(f.contents, contentID)
 	f.jobs = append(f.jobs, jobID)
 	f.sourceKinds = append(f.sourceKinds, sourceKind)
@@ -44,7 +43,6 @@ func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 
 	defer RegisterJCEService(nil)
 
-	tenantID := uuid.New().String()
 	contentID := uuid.New().String()
 	jobID := uuid.New().String()
 	userID := uuid.New().String()
@@ -70,10 +68,6 @@ func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 		t.Fatalf("service not called")
 	}
 
-	if fake.tenants[0].String() != tenantID {
-		t.Fatalf("tenant_id mismatch")
-	}
-
 	if fake.contents[0].String() != contentID {
 		t.Fatalf("content_id mismatch")
 	}
@@ -88,38 +82,6 @@ func TestIngestion_JCERefresh_PayloadRoundTrip(t *testing.T) {
 
 	if fake.sourceKinds[0] == nil || *fake.sourceKinds[0] != sk {
 		t.Fatalf("source_kind mismatch")
-	}
-}
-
-func TestIngestion_JCERefresh_UUIDValidation(t *testing.T) {
-	fake := &fakeIngestionService{}
-	RegisterJCEService(fake)
-
-	defer RegisterJCEService(nil)
-
-	badPayload, err := json.Marshal(JceRefreshValuesPayload{
-
-		ContentID:      uuid.New().String(),
-		IngestionJobID: uuid.New().String(),
-		RequestedBy:    uuid.New().String(),
-	})
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-
-	task := asynq.NewTask(TypeJCERefreshValues, badPayload)
-
-	err = HandleJceRefreshValues(t.Context(), task)
-	if err == nil {
-		t.Fatalf("expected error for invalid tenant_id")
-	}
-
-	if !errors.Is(err, asynq.SkipRetry) {
-		t.Fatalf("expected SkipRetry error, got %v", err)
-	}
-
-	if fake.called {
-		t.Fatalf("service should not be called with invalid payload")
 	}
 }
 

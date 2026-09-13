@@ -141,7 +141,6 @@ type AgentDraftProcessor interface {
 // in internal/server can receive it without re-decoding the JSON.
 type AgentDraftPayload struct {
 	AgentSessionID  string `json:"agent_session_id"`
-	TenantID        string `json:"tenant_id"`
 	UserID          string `json:"user_id"`
 	PersonaID       string `json:"persona_id"`
 	ContentType     string `json:"content_type"`

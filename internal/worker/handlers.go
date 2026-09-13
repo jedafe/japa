@@ -2504,12 +2504,6 @@ func HandleAgentCreateDraftRequest(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	if payload.TenantID == "" {
-		slog.Warn("task:agent:create_draft_request: empty tenant_id, skipping",
-			"agent_session_id", payload.AgentSessionID)
-		return nil
-	}
-
 	if payload.ContentType == "" {
 		slog.Warn("task:agent:create_draft_request: empty content_type, skipping",
 			"agent_session_id", payload.AgentSessionID)

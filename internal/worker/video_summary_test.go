@@ -17,7 +17,7 @@ type fakeVideoSummaryProcessor struct {
 	err    error
 }
 
-func (f *fakeVideoSummaryProcessor) GenerateDraft(_ context.Context, _, _, _ pgtype.UUID) (gen.CreateContentRow, error) {
+func (f *fakeVideoSummaryProcessor) GenerateDraft(_ context.Context, _, _ pgtype.UUID) (gen.CreateContentRow, error) {
 	f.called = true
 	return gen.CreateContentRow{}, f.err
 }

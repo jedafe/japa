@@ -550,10 +550,7 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, ten
 //  4. Creates a HITL review with source='agent_draft_request' + the
 //     created content_id.
 func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, payload worker.AgentDraftPayload) error {
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(payload.TenantID); err != nil {
-		return fmt.Errorf("invalid tenant_id: %w", err)
-	}
+	tenantID := pgtype.UUID{}
 
 	var personaID pgtype.UUID
 	if err := personaID.Scan(payload.PersonaID); err != nil {

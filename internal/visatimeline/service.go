@@ -758,7 +758,7 @@ func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	row, err := s.store.CreateProcessingTime(ctx, CreateProcessingTimeInput{
-
+		TenantID:           tenantID,
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       input.VisaCategory,

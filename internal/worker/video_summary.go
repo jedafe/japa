@@ -16,7 +16,7 @@ import (
 // VideoSummaryProcessor generates a content draft from a video source's
 // metadata, title, description, and thumbnail context.
 type VideoSummaryProcessor interface {
-	GenerateDraft(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error)
+	GenerateDraft(ctx context.Context, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error)
 }
 
 var videoSummaryProcessor VideoSummaryProcessor
@@ -29,7 +29,6 @@ func RegisterVideoSummaryProcessor(p VideoSummaryProcessor) {
 
 // GenerateSummaryPayload is the Asynq payload for TypeVideoGenerateSummary.
 type GenerateSummaryPayload struct {
-	TenantID      string `json:"tenant_id"`
 	UserID        string `json:"user_id"`
 	VideoSourceID string `json:"video_source_id"`
 }
@@ -49,11 +48,6 @@ func HandleVideoGenerateSummary(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("video summary processor not registered: %w", asynq.SkipRetry)
 	}
 
-	tenantID, err := scanUUID(p.TenantID)
-	if err != nil {
-		return fmt.Errorf("tenant_id: %w: %w", asynq.SkipRetry, err)
-	}
-
 	userID, err := scanUUID(p.UserID)
 	if err != nil {
 		return fmt.Errorf("user_id: %w: %w", asynq.SkipRetry, err)
@@ -64,7 +58,7 @@ func HandleVideoGenerateSummary(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("video_source_id: %w: %w", asynq.SkipRetry, err)
 	}
 
-	if _, err := videoSummaryProcessor.GenerateDraft(ctx, tenantID, userID, sourceID); err != nil {
+	if _, err := videoSummaryProcessor.GenerateDraft(ctx, userID, sourceID); err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, errpkg.ErrAlreadyExists) {
 			return fmt.Errorf("video generate summary permanent failure: %w: %w", err, asynq.SkipRetry)
 		}

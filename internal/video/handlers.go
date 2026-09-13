@@ -208,7 +208,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 // source in the tenant so the video content single page can render the
 // embed. Non-existent IDs return 404.
 func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -219,7 +219,7 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, err := h.Service.GetSourceByID(r.Context(), tenantID, id)
+	source, err := h.Service.GetSourceByID(r.Context(), id)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

@@ -361,7 +361,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	row, err := s.store.Create(ctx, CreateRoute{
-
+		TenantID:             tenantID,
 		DestinationSpaceID:   destSpaceID,
 		VisaCategory:         input.VisaCategory,
 		Name:                 input.Name,
@@ -594,7 +594,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	isActive := false
 
 	row, err := s.store.Create(ctx, CreateRoute{
-
+		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		Name:               routeName,
