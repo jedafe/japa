@@ -67,7 +67,7 @@ func newStubAgentSessions() *stubAgentSessions {
 
 func (s *stubAgentSessions) GetAgentSessionForUser(_ context.Context, arg gen.GetAgentSessionForUserParams) (gen.AiAgentSession, error) {
 	sess, ok := s.sessions[arg.ID.String()]
-	if !ok || sess.UserID != arg.UserID || sess.TenantID != arg.TenantID {
+	if !ok || sess.UserID != arg.UserID {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
 
@@ -78,7 +78,7 @@ func (s *stubAgentSessions) ListAgentSessionsByUser(_ context.Context, arg gen.L
 	var out []gen.AiAgentSession
 
 	for _, sess := range s.sessions {
-		if sess.UserID == arg.UserID && sess.TenantID == arg.TenantID {
+		if sess.UserID == arg.UserID {
 			out = append(out, sess)
 		}
 	}
@@ -86,22 +86,22 @@ func (s *stubAgentSessions) ListAgentSessionsByUser(_ context.Context, arg gen.L
 	return out, nil
 }
 
-func (s *stubAgentSessions) CountAgentSessionsByUser(_ context.Context, arg gen.CountAgentSessionsByUserParams) (int64, error) {
+func (s *stubAgentSessions) CountAgentSessionsByUser(_ context.Context, userID pgtype.UUID) (int64, error) {
 	rows, _ := s.ListAgentSessionsByUser(context.Background(), gen.ListAgentSessionsByUserParams{
 
-		UserID: arg.UserID,
+		UserID: userID,
 	})
 
 	return int64(len(rows)), nil
 }
 
-func (s *stubAgentSessions) ListAgentToolCallsBySession(_ context.Context, arg gen.ListAgentToolCallsBySessionParams) ([]gen.AiAgentToolCall, error) {
-	return s.toolCalls[arg.SessionID.String()], nil
+func (s *stubAgentSessions) ListAgentToolCallsBySession(_ context.Context, sessionID pgtype.UUID) ([]gen.AiAgentToolCall, error) {
+	return s.toolCalls[sessionID.String()], nil
 }
 
-func (s *stubAgentSessions) CancelAgentSession(_ context.Context, arg gen.CancelAgentSessionParams) (gen.AiAgentSession, error) {
-	sess, ok := s.sessions[arg.ID.String()]
-	if !ok || sess.TenantID != arg.TenantID {
+func (s *stubAgentSessions) CancelAgentSession(_ context.Context, id pgtype.UUID) (gen.AiAgentSession, error) {
+	sess, ok := s.sessions[id.String()]
+	if !ok {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
 
@@ -114,15 +114,15 @@ func (s *stubAgentSessions) CancelAgentSession(_ context.Context, arg gen.Cancel
 	}
 
 	sess.Status = "cancelled"
-	s.sessions[arg.ID.String()] = sess
-	s.cancelledID = &arg.ID
+	s.sessions[id.String()] = sess
+	s.cancelledID = &id
 
 	return sess, nil
 }
 
-func (s *stubAgentSessions) GetAgentSession(_ context.Context, arg gen.GetAgentSessionParams) (gen.AiAgentSession, error) {
-	sess, ok := s.sessions[arg.ID.String()]
-	if !ok || sess.TenantID != arg.TenantID {
+func (s *stubAgentSessions) GetAgentSession(_ context.Context, id pgtype.UUID) (gen.AiAgentSession, error) {
+	sess, ok := s.sessions[id.String()]
+	if !ok {
 		return gen.AiAgentSession{}, pgx.ErrNoRows
 	}
 
@@ -133,11 +133,7 @@ func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen
 	var out []gen.AiAgentSession
 
 	for _, sess := range s.sessions {
-		if sess.TenantID != arg.TenantID {
-			continue
-		}
-
-		if arg.StatusFilter != "" && sess.Status != arg.StatusFilter {
+				if arg.StatusFilter != "" && sess.Status != arg.StatusFilter {
 			continue
 		}
 
@@ -147,10 +143,10 @@ func (s *stubAgentSessions) ListAgentSessionsForAdmin(_ context.Context, arg gen
 	return out, nil
 }
 
-func (s *stubAgentSessions) CountAgentSessionsForAdmin(_ context.Context, arg gen.CountAgentSessionsForAdminParams) (int64, error) {
+func (s *stubAgentSessions) CountAgentSessionsForAdmin(_ context.Context, statusFilter string) (int64, error) {
 	rows, _ := s.ListAgentSessionsForAdmin(context.Background(), gen.ListAgentSessionsForAdminParams{
 
-		StatusFilter: arg.StatusFilter,
+		StatusFilter: statusFilter,
 	})
 
 	return int64(len(rows)), nil
@@ -164,23 +160,26 @@ func (s *stubAgentSessions) GetAgentCostReport(_ context.Context, _ gen.GetAgent
 	return s.costReport, nil
 }
 
-func (s *stubAgentSessions) GetContentAIExempt(_ context.Context, _ gen.GetContentAIExemptParams) (bool, error) {
+func (s *stubAgentSessions) GetContentAIExempt(_ context.Context, id pgtype.UUID) (bool, error) {
+	_ = id
 	return s.contentExempt, nil
 }
 
-func (s *stubAgentSessions) GetCustomFieldValueAIExempt(_ context.Context, _ gen.GetCustomFieldValueAIExemptParams) (bool, error) {
+func (s *stubAgentSessions) GetCustomFieldValueAIExempt(_ context.Context, id pgtype.UUID) (bool, error) {
+	_ = id
 	return s.cfvExempt, nil
 }
 
-func (s *stubAgentSessions) GetCustomFieldValueEntity(_ context.Context, arg gen.GetCustomFieldValueEntityParams) (gen.GetCustomFieldValueEntityRow, error) {
-	if row, ok := s.cfvEntities[arg.ID.String()]; ok {
+func (s *stubAgentSessions) GetCustomFieldValueEntity(_ context.Context, id pgtype.UUID) (gen.GetCustomFieldValueEntityRow, error) {
+	if row, ok := s.cfvEntities[id.String()]; ok {
 		return row, nil
 	}
 
 	return gen.GetCustomFieldValueEntityRow{}, pgx.ErrNoRows
 }
 
-func (s *stubAgentSessions) GetUserAIExempt(_ context.Context, _ gen.GetUserAIExemptParams) (bool, error) {
+func (s *stubAgentSessions) GetUserAIExempt(_ context.Context, id pgtype.UUID) (bool, error) {
+	_ = id
 	return s.userExempt, nil
 }
 
@@ -209,9 +208,9 @@ func newStubContentStore() *stubContentStore {
 	}
 }
 
-func (s *stubContentStore) GetContentByID(_ context.Context, arg gen.GetContentByIDParams) (gen.GetContentByIDRow, error) {
-	row, ok := s.contents[arg.ID.String()]
-	if !ok || row.TenantID != arg.TenantID {
+func (s *stubContentStore) GetContentByID(_ context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+	row, ok := s.contents[id.String()]
+	if !ok {
 		return gen.GetContentByIDRow{}, pgx.ErrNoRows
 	}
 
@@ -229,7 +228,7 @@ func (s *stubContentStore) GetUserByID(_ context.Context, userID pgtype.UUID) (g
 
 func (s *stubContentStore) ReassignSingleContentAuthor(_ context.Context, arg gen.ReassignSingleContentAuthorParams) (gen.ReassignSingleContentAuthorRow, error) {
 	row, ok := s.contents[arg.ID.String()]
-	if !ok || row.TenantID != arg.TenantID {
+	if !ok {
 		return gen.ReassignSingleContentAuthorRow{}, pgx.ErrNoRows
 	}
 
@@ -500,22 +499,22 @@ func TestHandleListSessions_NoAuth(t *testing.T) {
 	}
 }
 
-func TestHandleListSessions_TenantScoping(t *testing.T) {
+func TestHandleListSessions_UserScoping(t *testing.T) {
 	t.Parallel()
 	h, sessions, _, _ := newTestAgentHTTPHandlers(t)
 	user, tn := testUserAndTenant()
+	otherUser := randomUUID()
 
-	// Seed a session for a DIFFERENT tenant.
-	otherTID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
+	// Seed a session for a different user.
 	otherID := randomUUID()
 	sessions.sessions[otherID.String()] = gen.AiAgentSession{
 		ID: otherID,
 
-		UserID: user.UserID,
+		UserID: otherUser,
 		Prompt: "other",
 	}
 
-	// Seed a session for the user's tenant.
+	// Seed a session for the current user.
 	myID := randomUUID()
 	sessions.sessions[myID.String()] = gen.AiAgentSession{
 		ID: myID,
@@ -539,7 +538,7 @@ func TestHandleListSessions_TenantScoping(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp.Meta.Total != 1 {
-		t.Errorf("total = %d, want 1 (tenant scoping failed)", resp.Meta.Total)
+		t.Errorf("total = %d, want 1 (user scoping failed)", resp.Meta.Total)
 	}
 }
 

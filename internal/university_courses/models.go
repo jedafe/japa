@@ -27,7 +27,6 @@ type CourseCatalog struct {
 // per-university details such as tuition and duration.
 type CourseOffering struct {
 	ID                pgtype.UUID
-	TenantID          pgtype.UUID
 	CourseID          pgtype.UUID
 	UniversityID      pgtype.UUID
 	Slug              string
