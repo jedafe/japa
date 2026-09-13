@@ -176,24 +176,24 @@ func exportJSONSliceNoTenant(
 	return decodeJSONSlice(data)
 }
 
-func (s *Store) gdprExportUserProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserProfiles, gen.GdprExportUserProfilesParams{UserID: userID})
+func (s *Store) gdprExportUserProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserProfiles, userID)
 }
 
-func (s *Store) gdprExportUserReactions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserReactions, gen.GdprExportUserReactionsParams{UserID: userID})
+func (s *Store) gdprExportUserReactions(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserReactions, userID)
 }
 
-func (s *Store) gdprExportUserBookmarks(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarks, gen.GdprExportUserBookmarksParams{UserID: userID})
+func (s *Store) gdprExportUserBookmarks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarks, userID)
 }
 
-func (s *Store) gdprExportUserBookmarkFolders(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarkFolders, gen.GdprExportUserBookmarkFoldersParams{UserID: userID})
+func (s *Store) gdprExportUserBookmarkFolders(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserBookmarkFolders, userID)
 }
 
-func (s *Store) gdprExportUserContentShares(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserContentShares, gen.GdprExportUserContentSharesParams{UserID: userID})
+func (s *Store) gdprExportUserContentShares(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserContentShares, userID)
 }
 
 func (s *Store) gdprExportUserContentViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
@@ -637,8 +637,8 @@ func (s *Store) gdprExportAIHITLReviews(ctx context.Context, userID, tenantID pg
 // Data Export Requests
 // ---------------------------------------------------------------------------
 
-func (s *Store) createDataExportRequest(ctx context.Context, p gen.CreateDataExportRequestParams) (gen.DataExportRequest, error) {
-	row, err := s.write.CreateDataExportRequest(ctx, p)
+func (s *Store) createDataExportRequest(ctx context.Context, userID pgtype.UUID) (gen.DataExportRequest, error) {
+	row, err := s.write.CreateDataExportRequest(ctx, userID)
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("creating data export request: %w", err)
 	}
@@ -757,8 +757,8 @@ func (s *Store) listPendingDeletionRequests(ctx context.Context, tenantID pgtype
 	return rows, nil
 }
 
-func (s *Store) anonymizeUser(ctx context.Context, p gen.AnonymizeUserParams) error {
-	if err := s.write.AnonymizeUser(ctx, p); err != nil {
+func (s *Store) anonymizeUser(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeUser(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing user: %w", err)
 	}
 
@@ -770,8 +770,8 @@ func (s *Store) anonymizeUser(ctx context.Context, p gen.AnonymizeUserParams) er
 // avatar/cover URLs) during the GDPR retention window (ADR-014 / ADR-057).
 // Called immediately after anonymizeUser so the profile is scrubbed before
 // the hard-delete phase.
-func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserProfileParams) error {
-	if err := s.write.AnonymizeUserProfile(ctx, p); err != nil {
+func (s *Store) anonymizeUserProfile(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeUserProfile(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing user profile: %w", err)
 	}
 
@@ -783,8 +783,8 @@ func (s *Store) anonymizeUserProfile(ctx context.Context, p gen.AnonymizeUserPro
 // mentee during the GDPR retention window (§102, ADR-014). The connection
 // rows are retained for audit until HardDeleteUser cascades; only the goals
 // text is cleared. Best-effort.
-func (s *Store) anonymizeMentorshipConnections(ctx context.Context, p gen.AnonymizeMentorshipConnectionsParams) error {
-	if err := s.write.AnonymizeMentorshipConnections(ctx, p); err != nil {
+func (s *Store) anonymizeMentorshipConnections(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeMentorshipConnections(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing mentorship connections: %w", err)
 	}
 
@@ -795,8 +795,8 @@ func (s *Store) anonymizeMentorshipConnections(ctx context.Context, p gen.Anonym
 // affiliate_link_events owned by the deleted user's affiliate links (Section
 // 56, ADR-014). Best-effort: callers log a warning on failure but do not
 // abort the erasure.
-func (s *Store) anonymizeAffiliateLinkEvents(ctx context.Context, p gen.AnonymizeAffiliateLinkEventsParams) error {
-	if err := s.write.AnonymizeAffiliateLinkEvents(ctx, p); err != nil {
+func (s *Store) anonymizeAffiliateLinkEvents(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.AnonymizeAffiliateLinkEvents(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing affiliate link events: %w", err)
 	}
 
@@ -816,8 +816,8 @@ func (s *Store) anonymizeCouponEvents(ctx context.Context, userID pgtype.UUID) e
 	return nil
 }
 
-func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensParams) error {
-	if err := s.write.DeleteUserTokens(ctx, p); err != nil {
+func (s *Store) deleteUserTokens(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserTokens(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user tokens: %w", err)
 	}
 
@@ -827,40 +827,40 @@ func (s *Store) deleteUserTokens(ctx context.Context, p gen.DeleteUserTokensPara
 // Auth PII scrub methods (AUDIT-AUTH-008). These delete auth-related PII
 // tables during the GDPR anonymization phase. Ref: sections/02-authentication-sessions.md.
 
-func (s *Store) deleteUserTOTPCredentials(ctx context.Context, p gen.DeleteUserTOTPCredentialsParams) error {
-	if err := s.write.DeleteUserTOTPCredentials(ctx, p); err != nil {
+func (s *Store) deleteUserTOTPCredentials(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserTOTPCredentials(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user TOTP credentials: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) deleteUserOAuthAccounts(ctx context.Context, p gen.DeleteUserOAuthAccountsParams) error {
-	if err := s.write.DeleteUserOAuthAccounts(ctx, p); err != nil {
+func (s *Store) deleteUserOAuthAccounts(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserOAuthAccounts(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user OAuth accounts: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) deleteUserPasswordResetTokens(ctx context.Context, p gen.DeleteUserPasswordResetTokensParams) error {
-	if err := s.write.DeleteUserPasswordResetTokens(ctx, p); err != nil {
+func (s *Store) deleteUserPasswordResetTokens(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserPasswordResetTokens(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user password reset tokens: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) deleteUserEmailVerifications(ctx context.Context, p gen.DeleteUserEmailVerificationsParams) error {
-	if err := s.write.DeleteUserEmailVerifications(ctx, p); err != nil {
+func (s *Store) deleteUserEmailVerifications(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserEmailVerifications(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user email verifications: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) deleteUserPasswordHistory(ctx context.Context, p gen.DeleteUserPasswordHistoryParams) error {
-	if err := s.write.DeleteUserPasswordHistory(ctx, p); err != nil {
+func (s *Store) deleteUserPasswordHistory(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.write.DeleteUserPasswordHistory(ctx, userID); err != nil {
 		return fmt.Errorf("deleting user password history: %w", err)
 	}
 
