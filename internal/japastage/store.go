@@ -70,21 +70,21 @@ type DirectoryRow struct {
 // for a given user_id, joining users + spaces for display fields.
 func (s *Store) GetUserProfile(ctx context.Context, userID, tenantID pgtype.UUID) (ProfileRow, error) {
 	const q = `
-SELECT up.user_id, up.tenant_id, u.username, up.display_name, up.avatar_url,
+SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
-WHERE up.user_id = $1 AND up.tenant_id = $2
+WHERE up.user_id = $1
 LIMIT 1
 `
 
 	var r ProfileRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, userID, tenantID).Scan(
-		&r.UserID, &r.TenantID, &r.Username, &r.DisplayName, &r.AvatarURL,
+		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
@@ -104,21 +104,21 @@ LIMIT 1
 // public view). Joins users + spaces.
 func (s *Store) GetProfileByUsername(ctx context.Context, username string, tenantID pgtype.UUID) (ProfileRow, error) {
 	const q = `
-SELECT up.user_id, up.tenant_id, u.username, up.display_name, up.avatar_url,
+SELECT up.user_id, u.username, up.display_name, up.avatar_url,
        up.japa_stage, up.japa_stage_dest_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        up.japa_stage_is_public, up.japa_stage_history, up.japa_stage_updated_at
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 LEFT JOIN spaces ds ON ds.id = up.japa_stage_dest_space_id
-WHERE u.username = $1 AND up.tenant_id = $2
+WHERE u.username = $1
 LIMIT 1
 `
 
 	var r ProfileRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, username, tenantID).Scan(
-		&r.UserID, &r.TenantID, &r.Username, &r.DisplayName, &r.AvatarURL,
+		&r.UserID, &r.Username, &r.DisplayName, &r.AvatarURL,
 		&r.JapaStage, &r.JapaStageDestID,
 		&r.JapaStageDestName, &r.JapaStageDestCode,
 		&r.JapaStagePublic, &r.JapaStageHistory, &r.JapaStageUpdated,
@@ -151,7 +151,7 @@ LIMIT 1
 // `geo_countries` table exists.
 func (s *Store) UpdateStage(ctx context.Context, userID, tenantID pgtype.UUID, stage string, destSpaceID pgtype.UUID, isPublic *bool) error {
 	const q = `
-INSERT INTO user_profiles (tenant_id, user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
+INSERT INTO user_profiles (user_id, japa_stage, japa_stage_dest_space_id, japa_stage_updated_at, japa_stage_is_public, japa_stage_history)
 VALUES (
     $2, $1, $3, $4, now(),
     COALESCE($5::bool, true),
@@ -163,7 +163,7 @@ VALUES (
         )
     )
 )
-ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
     japa_stage = EXCLUDED.japa_stage,
     japa_stage_dest_space_id = EXCLUDED.japa_stage_dest_space_id,
     japa_stage_updated_at = now(),
@@ -193,8 +193,8 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET
 func (s *Store) SetPublic(ctx context.Context, userID, tenantID pgtype.UUID, isPublic bool) error {
 	const q = `
 UPDATE user_profiles
-SET japa_stage_is_public = $3
-WHERE user_id = $1 AND tenant_id = $2
+SET japa_stage_is_public = $2
+WHERE user_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, userID, tenantID, isPublic)
@@ -227,15 +227,13 @@ func (s *Store) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage str
 	}
 
 	listPredicates := []string{
-		"up.tenant_id = $1",
 		"up.japa_stage_is_public = true",
 	}
 	countPredicates := []string{
-		"tenant_id = $1",
 		"japa_stage_is_public = true",
 	}
-	listArgs := []any{tenantID}
-	countArgs := []any{tenantID}
+	listArgs := []any{}
+	countArgs := []any{}
 
 	if stage != "" {
 		listPredicates = append(listPredicates, fmt.Sprintf("up.japa_stage = $%d", len(listArgs)+1))

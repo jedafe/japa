@@ -498,7 +498,7 @@ func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID
 
 	err := s.db.Reader.QueryRow(
 		ctx,
-		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1 AND tenant_id = $2) AS exists", table),
+		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1) AS exists", table),
 		entityID, tenantID,
 	).Scan(&exists)
 	if err != nil {

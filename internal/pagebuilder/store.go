@@ -129,7 +129,7 @@ func (s *Store) CreateBlock(ctx context.Context, tenantID pgtype.UUID, input Cre
 		          COALESCE(default_config, '{}'::jsonb),
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
-	`, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled, ).Scan(
+	`, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled).Scan(
 		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
@@ -165,7 +165,7 @@ func (s *Store) UpdateBlock(ctx context.Context, id, tenantID pgtype.UUID, input
 		          COALESCE(default_config, '{}'::jsonb),
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
-	`, id, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled, ).Scan(
+	`, id, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled).Scan(
 		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
@@ -289,7 +289,7 @@ func (s *Store) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, input 
 		RETURNING id, name, slug, description, page_type,
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
-	`, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, input.CreatedBy, ).Scan(
+	`, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, input.CreatedBy).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -320,7 +320,7 @@ func (s *Store) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, in
 		RETURNING id, name, slug, description, page_type,
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
-	`, id, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, ).Scan(
+	`, id, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -458,7 +458,7 @@ func (s *Store) CreateTheme(ctx context.Context, tenantID pgtype.UUID, input Cre
 		          COALESCE(typography, '{}'::jsonb),
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
-	`, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault, ).Scan(
+	`, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
@@ -499,7 +499,7 @@ func (s *Store) UpdateTheme(ctx context.Context, id, tenantID pgtype.UUID, input
 		          COALESCE(typography, '{}'::jsonb),
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
-	`, id, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault, ).Scan(
+	`, id, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault).Scan(
 		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
@@ -759,7 +759,7 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID,
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, status, pageType, createdBy, ).Scan(
+	`, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, status, pageType, createdBy).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
@@ -808,7 +808,7 @@ func (s *Store) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input 
 		          COALESCE(blocks, '[]'::jsonb),
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
-	`, id, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, input.Status, input.PageType, ).Scan(
+	`, id, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, input.Status, input.PageType).Scan(
 		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,

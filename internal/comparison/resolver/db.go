@@ -16,7 +16,7 @@ import (
 
 // DBConfig describes a simple table that can be resolved and searched with a
 // small set of known columns. It is intended for tool tables that carry a
-// tenant_id and a human-readable title/name.
+// human-readable title/name.
 type DBConfig struct {
 	Entity       string // human name for error messages
 	Table        string
@@ -26,7 +26,7 @@ type DBConfig struct {
 	DescColumn   string // optional; empty means no description
 	TenantColumn string // optional; empty means no tenant filter
 	TenantJoin   string // optional JOIN clause (e.g. "JOIN contents c ON c.id = t.guide_id")
-	TenantWhere  string // optional tenant predicate when TenantJoin is used (e.g. "c.tenant_id = $1")
+	TenantWhere  string // optional predicate when TenantJoin is used
 	ActiveWhere  string // optional SQL predicate (e.g. "t.is_active = true" or "t.status = 'published'")
 
 	// Optional personalization metadata columns for Sub-spec 2 Smart Compare.
@@ -376,21 +376,9 @@ func (r *DBResolver) Search(ctx context.Context, query string, filters map[strin
 	return out, nil
 }
 
-// whereClause returns the tenant predicate and its arguments.
+// whereClause is a no-op now that tenant scoping has been removed. It keeps
+// the function shape so existing callers still compile.
 func (r *DBResolver) whereClause(tenantID pgtype.UUID) (string, []any, error) {
-	if r.cfg.TenantColumn != "" {
-		c, err := quoteIdent(r.cfg.TenantColumn)
-		if err != nil {
-			return "", nil, err
-		}
-
-		return fmt.Sprintf("t.%s = $1", c), []any{tenantID}, nil
-	}
-
-	if r.cfg.TenantWhere != "" {
-		return r.cfg.TenantWhere, []any{tenantID}, nil
-	}
-
 	return "", nil, nil
 }
 

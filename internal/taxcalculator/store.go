@@ -119,10 +119,6 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("g.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
@@ -163,8 +159,7 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT g.id, g.tenant_id,
-       g.origin_space_id, os.name AS origin_space_name,
+SELECT g.id, g.origin_space_id, os.name AS origin_space_name,
        g.destination_space_id, ds.name AS destination_space_name,
        g.employment_status, g.residency_trigger, g.worldwide_income_taxed,
        g.first_year_obligations, g.action_checklist,
@@ -192,8 +187,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID,
-			&r.OriginSpaceID, &r.OriginSpaceName,
+			&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 			&r.DestinationSpaceID, &r.DestinationSpaceName,
 			&r.EmploymentStatus, &r.ResidencyTrigger, &r.WorldwideIncomeTaxed,
 			&r.FirstYearObligations, &r.ActionChecklist,
@@ -229,8 +223,7 @@ WHERE %s
 // GetGuideByID returns a single tax obligation guide by its primary key.
 func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
 	const q = `
-SELECT g.id, g.tenant_id,
-       g.origin_space_id, os.name AS origin_space_name,
+SELECT g.id, g.origin_space_id, os.name AS origin_space_name,
        g.destination_space_id, ds.name AS destination_space_name,
        g.employment_status, g.residency_trigger, g.worldwide_income_taxed,
        g.first_year_obligations, g.action_checklist,
@@ -240,15 +233,14 @@ SELECT g.id, g.tenant_id,
 FROM tax_obligation_guides g
 LEFT JOIN spaces os ON os.id = g.origin_space_id
 LEFT JOIN spaces ds ON ds.id = g.destination_space_id
-WHERE g.id = $1 AND g.tenant_id = $2
+WHERE g.id = $1
 LIMIT 1
 `
 
 	var r GuideRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID,
-		&r.OriginSpaceID, &r.OriginSpaceName,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 		&r.DestinationSpaceID, &r.DestinationSpaceName,
 		&r.EmploymentStatus, &r.ResidencyTrigger, &r.WorldwideIncomeTaxed,
 		&r.FirstYearObligations, &r.ActionChecklist,
@@ -271,23 +263,21 @@ LIMIT 1
 // origin/destination space pair within a tenant.
 func (s *Store) GetTreatyByPair(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID) (TreatyRow, error) {
 	const q = `
-SELECT t.id, t.tenant_id,
-       t.origin_space_id, os.name AS origin_space_name,
+SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
        t.destination_space_id, ds.name AS destination_space_name,
        t.treaty_exists, t.treaty_summary, t.treaty_source_url,
        t.created_at, t.updated_at
 FROM tax_treaty_pairs t
 LEFT JOIN spaces os ON os.id = t.origin_space_id
 LEFT JOIN spaces ds ON ds.id = t.destination_space_id
-WHERE t.tenant_id = $1 AND t.origin_space_id = $2 AND t.destination_space_id = $3
+WHERE t.origin_space_id = $1 AND t.destination_space_id = $2
 LIMIT 1
 `
 
 	var r TreatyRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, originSpaceID, destSpaceID).Scan(
-		&r.ID, &r.TenantID,
-		&r.OriginSpaceID, &r.OriginSpaceName,
+		&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 		&r.DestinationSpaceID, &r.DestinationSpaceName,
 		&r.TreatyExists, &r.TreatySummary, &r.TreatySourceURL,
 		&r.CreatedAt, &r.UpdatedAt,
@@ -338,7 +328,7 @@ func (s *Store) CreateGuide(ctx context.Context, in CreateGuideInput) (GuideRow,
 
 	const q = `
 INSERT INTO tax_obligation_guides (
-    tenant_id, origin_space_id, destination_space_id, employment_status,
+    origin_space_id, destination_space_id, employment_status,
     residency_trigger, worldwide_income_taxed, first_year_obligations,
     action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -436,10 +426,10 @@ func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in Up
 	q := fmt.Sprintf(`
 UPDATE tax_obligation_guides
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -457,7 +447,7 @@ WHERE id = $%d AND tenant_id = $%d
 func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_obligation_guides
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -478,12 +468,12 @@ WHERE id = $1 AND tenant_id = $2
 func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE tax_obligation_guides
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'published',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
@@ -515,10 +505,10 @@ type TreatyUpsertInput struct {
 func (s *Store) CreateOrUpdateTreaty(ctx context.Context, in TreatyUpsertInput) (TreatyRow, error) {
 	const q = `
 INSERT INTO tax_treaty_pairs (
-    tenant_id, origin_space_id, destination_space_id,
+    origin_space_id, destination_space_id,
     treaty_exists, treaty_summary, treaty_source_url
 ) VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (tenant_id, origin_space_id, destination_space_id)
+ON CONFLICT (origin_space_id, destination_space_id)
 DO UPDATE SET
     treaty_exists     = EXCLUDED.treaty_exists,
     treaty_summary    = EXCLUDED.treaty_summary,
@@ -554,25 +544,23 @@ type UpdateTreatyInput struct {
 
 // getTreatyByID returns a tax_treaty_pairs row by its primary key and
 // tenant_id, joined with spaces for origin/destination names.
-func (s *Store) getTreatyByID(ctx context.Context, id, tenantID pgtype.UUID) (TreatyRow, error) {
+func (s *Store) getTreatyByID(ctx context.Context, id pgtype.UUID) (TreatyRow, error) {
 	const q = `
-SELECT t.id, t.tenant_id,
-       t.origin_space_id, os.name AS origin_space_name,
+SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
        t.destination_space_id, ds.name AS destination_space_name,
        t.treaty_exists, t.treaty_summary, t.treaty_source_url,
        t.created_at, t.updated_at
 FROM tax_treaty_pairs t
 LEFT JOIN spaces os ON os.id = t.origin_space_id
 LEFT JOIN spaces ds ON ds.id = t.destination_space_id
-WHERE t.id = $1 AND t.tenant_id = $2
+WHERE t.id = $1
 LIMIT 1
 `
 
 	var r TreatyRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID,
-		&r.OriginSpaceID, &r.OriginSpaceName,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 		&r.DestinationSpaceID, &r.DestinationSpaceName,
 		&r.TreatyExists, &r.TreatySummary, &r.TreatySourceURL,
 		&r.CreatedAt, &r.UpdatedAt,
@@ -616,7 +604,7 @@ func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in U
 	}
 
 	if len(sets) == 0 {
-		return s.getTreatyByID(ctx, id, tenantID)
+		return s.getTreatyByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
@@ -624,10 +612,10 @@ func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in U
 	q := fmt.Sprintf(`
 UPDATE tax_treaty_pairs
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -638,14 +626,14 @@ WHERE id = $%d AND tenant_id = $%d
 		return TreatyRow{}, pgx.ErrNoRows
 	}
 
-	return s.getTreatyByID(ctx, id, tenantID)
+	return s.getTreatyByID(ctx, id)
 }
 
 // DeleteTreaty deletes a tax_treaty_pairs row by id and tenant_id.
 func (s *Store) DeleteTreaty(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_treaty_pairs
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -679,10 +667,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, [
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("g.status = $%d", argIdx))
@@ -731,8 +715,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, [
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT g.id, g.tenant_id,
-       g.origin_space_id, os.name AS origin_space_name,
+SELECT g.id, g.origin_space_id, os.name AS origin_space_name,
        g.destination_space_id, ds.name AS destination_space_name,
        g.employment_status, g.residency_trigger, g.worldwide_income_taxed,
        g.first_year_obligations, g.action_checklist,
@@ -760,8 +743,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID,
-			&r.OriginSpaceID, &r.OriginSpaceName,
+			&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 			&r.DestinationSpaceID, &r.DestinationSpaceName,
 			&r.EmploymentStatus, &r.ResidencyTrigger, &r.WorldwideIncomeTaxed,
 			&r.FirstYearObligations, &r.ActionChecklist,
@@ -794,15 +776,14 @@ WHERE %s
 	// Fetch all treaty pairs for the tenant so the admin view can show
 	// them alongside guides without a second paginated request.
 	treatyQuery := `
-SELECT t.id, t.tenant_id,
-       t.origin_space_id, os.name AS origin_space_name,
+SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
        t.destination_space_id, ds.name AS destination_space_name,
        t.treaty_exists, t.treaty_summary, t.treaty_source_url,
        t.created_at, t.updated_at
 FROM tax_treaty_pairs t
 LEFT JOIN spaces os ON os.id = t.origin_space_id
 LEFT JOIN spaces ds ON ds.id = t.destination_space_id
-WHERE t.tenant_id = $1
+
 ORDER BY t.updated_at DESC
 `
 
@@ -818,8 +799,7 @@ ORDER BY t.updated_at DESC
 	for tRows.Next() {
 		var r TreatyRow
 		if err := tRows.Scan(
-			&r.ID, &r.TenantID,
-			&r.OriginSpaceID, &r.OriginSpaceName,
+			&r.ID, &r.OriginSpaceID, &r.OriginSpaceName,
 			&r.DestinationSpaceID, &r.DestinationSpaceName,
 			&r.TreatyExists, &r.TreatySummary, &r.TreatySourceURL,
 			&r.CreatedAt, &r.UpdatedAt,

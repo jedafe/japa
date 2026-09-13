@@ -54,7 +54,7 @@ func main() {
 	var sources []sourceRow
 	for rows.Next() {
 		var s sourceRow
-		if err := rows.Scan(&s.ID, &s.TenantID); err != nil {
+		if err := rows.Scan(&s.ID); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}

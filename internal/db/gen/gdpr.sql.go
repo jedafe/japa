@@ -1951,7 +1951,7 @@ func (q *Queries) GdprExportUserMedia(ctx context.Context, userID pgtype.UUID) (
 
 const gdprExportUserMentorProfiles = `-- name: GdprExportUserMentorProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, user_id, bio, skills, goals, is_mentor, is_available, rating_avg, session_count, created_at, updated_at FROM mentorship_profiles WHERE user_id = $1) t
+FROM (SELECT id, user_id, bio, skills, goals, is_mentor, is_available, rating_avg, session_count, created_at, updated_at FROM mentorship_profiles WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserMentorProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -1975,7 +1975,7 @@ func (q *Queries) GdprExportUserMentorReviews(ctx context.Context, userID pgtype
 
 const gdprExportUserMentorSessions = `-- name: GdprExportUserMentorSessions :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, tenant_id, mentor_id, mentee_id, status, scheduled_at, started_at, completed_at, notes, created_at FROM mentor_sessions WHERE mentee_id = $1) t
+FROM (SELECT id, mentor_id, mentee_id, status, scheduled_at, started_at, completed_at, notes, created_at FROM mentor_sessions WHERE mentee_id = $1) t
 `
 
 func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

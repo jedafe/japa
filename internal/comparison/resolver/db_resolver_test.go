@@ -169,7 +169,7 @@ func TestDBResolverResolveByID(t *testing.T) {
 	}
 
 	q := db.queryRowQueries[0]
-	if !strContains(q, "remittance_providers") || !strContains(q, "tenant_id = $1") || !strContains(q, "is_active = true") {
+	if !strContains(q, "remittance_providers") || !strContains(q, "is_active = true") {
 		t.Fatalf("unexpected query: %s", q)
 	}
 }

@@ -88,7 +88,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 			(content_id, content_type, ai_output, status, source, target_table)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, content_id, content_type, ai_output, status, source, target_table, created_at
-	`, review.ContentID, review.ContentType, review.AIOutput, review.Status, source, targetTable, ).Scan(&result.ID, &result.TenantID, &result.ContentID, &result.ContentType,
+	`, review.ContentID, review.ContentType, review.AIOutput, review.Status, source, targetTable).Scan(&result.ID, &result.ContentID, &result.ContentType,
 		&result.AIOutput, &result.Status, &result.Source, &result.TargetTable, &result.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("creating HITL review: %w", err)
@@ -176,7 +176,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 
 	for rows.Next() {
 		var r HITLReview
-		if err := rows.Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
+		if err := rows.Scan(&r.ID, &r.ContentID, &r.ContentType,
 			&r.AIOutput, &r.Status, &r.Source, &r.TargetTable, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning HITL review: %w", err)
 		}
@@ -195,7 +195,7 @@ func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUI
 	err := s.read.QueryRow(ctx, `
 		SELECT id, content_id, content_type, ai_output, status, source, target_table, created_at
 		FROM ai_hitl_reviews
-		WHERE id = $1`, reviewID, ).Scan(&r.ID, &r.TenantID, &r.ContentID, &r.ContentType,
+		WHERE id = $1`, reviewID).Scan(&r.ID, &r.ContentID, &r.ContentType,
 		&r.AIOutput, &r.Status, &r.Source, &r.TargetTable, &r.CreatedAt)
 	if err != nil {
 		return HITLReview{}, fmt.Errorf("getting HITL review: %w", err)
@@ -283,12 +283,12 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 	totalsQuery := `
 		SELECT COALESCE(SUM(total_tokens), 0), COALESCE(SUM(cost_usd), 0), COUNT(*)
 		FROM ai_usage_log
-		WHERE tenant_id = $1 AND created_at >= $2
+		WHERE created_at >= $1
 	`
 	totalsArgs := []any{tenantID, since}
 
 	if provider != "" {
-		totalsQuery += ` AND provider = $3`
+		totalsQuery += ` AND provider = $1`
 
 		totalsArgs = append(totalsArgs, provider)
 	}

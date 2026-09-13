@@ -662,8 +662,7 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 	query := fmt.Sprintf(`
 		SELECT s.id, s.name, s.slug, s.description
 		FROM spaces s
-		WHERE s.tenant_id = $1
-		  AND s.status = 'active'
+		WHERE s.status = 'active'
 		  AND (%s)
 		ORDER BY s.follower_count DESC
 		LIMIT 10
@@ -778,8 +777,7 @@ func (s *Service) getPopularItems(ctx context.Context, tenantID pgtype.UUID) ([]
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT s.id, s.name, s.slug
 		FROM spaces s
-		WHERE s.tenant_id = $1
-		  AND s.status = 'active'
+		WHERE s.status = 'active'
 		ORDER BY s.follower_count DESC
 		LIMIT 6
 	`, tenantID)

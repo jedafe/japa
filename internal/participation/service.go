@@ -327,11 +327,11 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		payload    []byte
 	)
 
-	err := s.db.Reader.QueryRow(ctx, `SELECT cr.tenant_id, cr.content_id, cr.reviewer_user_id, cr.status,
+	err := s.db.Reader.QueryRow(ctx, `SELECT cr.content_id, cr.reviewer_user_id, cr.status,
 		        c.author_id, COALESCE(cr.persona_payload::text, cr.feedback)::bytea
 		 FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
-		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID, ).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID, &payload)
+		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID, &payload)
 	if err != nil {
 		return fmt.Errorf("participation: load action: %w", err)
 	}
@@ -452,7 +452,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 		// Look up the forum thread by the target content's content_id.
 		var threadID pgtype.UUID
 
-		err := s.db.Reader.QueryRow(ctx, `SELECT id FROM forum_threads WHERE content_id = $1`, targetContentID, ).Scan(&threadID)
+		err := s.db.Reader.QueryRow(ctx, `SELECT id FROM forum_threads WHERE content_id = $1`, targetContentID).Scan(&threadID)
 		if err != nil {
 			return fmt.Errorf("participation: find forum thread for answer: %w", err)
 		}
@@ -593,7 +593,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	err := s.db.Reader.QueryRow(ctx, `SELECT id, user_id, profile_id, disclosure_mode,
 		        autonomy_mode, voice_prompt, activity_policy, status, created_by,
 		        created_at, updated_at
-		 FROM ai_personas WHERE id = $1`, personaID, ).Scan(&p.ID, &tenantID, &userID, &profileID, &p.DisclosureMode,
+		 FROM ai_personas WHERE id = $1`, personaID).Scan(&p.ID, &tenantID, &userID, &profileID, &p.DisclosureMode,
 		&p.AutonomyMode, &voicePrompt, &activityPolicy, &p.Status, &createdBy,
 		&createdAt, &updatedAt)
 	if err != nil {
@@ -645,10 +645,9 @@ func (s *Service) findEligibleContent(ctx context.Context, persona personas.Pers
 	          ) AS tags,
 	          c.author_id, c.created_at
 	          FROM contents c
-	          WHERE c.tenant_id = $1
-	            AND c.status = 'published'
+	          WHERE c.status = 'published'
 	            AND c.deleted_at IS NULL
-	            AND c.created_at >= $2`
+	            AND c.created_at >= $1`
 	args := []interface{}{tenantID, minAge}
 	argIdx := 3
 
@@ -873,7 +872,7 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 
 	err = s.db.Writer.QueryRow(ctx, `INSERT INTO contents (author_id, author_profile_id, content_type,
 		                       title, slug, body, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, 'draft', now())
-		 RETURNING id`, userID, profileID, contentType, title, slug, `{"type":"doc"}`, ).Scan(&contentID)
+		 RETURNING id`, userID, profileID, contentType, title, slug, `{"type":"doc"}`).Scan(&contentID)
 	if err != nil {
 		return reviewID, contentID, payload, fmt.Errorf("create draft: %w", err)
 	}
@@ -894,7 +893,7 @@ func (s *Service) createPersonaAction(ctx context.Context, persona personas.Pers
 	// action to the correct existing endpoint (BUG-010). The feedback column
 	// remains reserved for editorial free-text.
 	err = s.db.Writer.QueryRow(ctx, `INSERT INTO content_reviews (content_id, reviewer_user_id, status, source, persona_payload) VALUES ($1, $2, $3, 'persona_action', $4)
-		 RETURNING id`, contentID, reviewerID, status, payloadJSON, ).Scan(&reviewID)
+		 RETURNING id`, contentID, reviewerID, status, payloadJSON).Scan(&reviewID)
 	if err != nil {
 		return reviewID, contentID, payload, fmt.Errorf("create review: %w", err)
 	}

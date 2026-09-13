@@ -43,11 +43,11 @@ func (s *TOTPStoreImpl) GetTOTPSecret(ctx context.Context, userID pgtype.UUID) (
 // The secret is stored encrypted; enabled_at is left NULL until EnableTOTP.
 func (s *TOTPStoreImpl) UpsertTOTPSecret(ctx context.Context, userID pgtype.UUID, secretEncrypted string) error {
 	query := `
-		INSERT INTO totp_credentials (tenant_id, user_id, secret_encrypted)
-		SELECT tenant_id, $1, $2
+		INSERT INTO totp_credentials (user_id, secret_encrypted)
+		SELECT $1, $2
 		FROM users
 		WHERE id = $1
-		ON CONFLICT (tenant_id, user_id) DO UPDATE
+		ON CONFLICT (user_id) DO UPDATE
 		SET secret_encrypted = EXCLUDED.secret_encrypted,
 		    updated_at = now()
 	`
@@ -127,7 +127,7 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 		return fmt.Errorf("encoding backup codes: %w", err)
 	}
 
-	_, err = s.db.Writer.Exec(ctx, `UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`, encoded, userID, )
+	_, err = s.db.Writer.Exec(ctx, `UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`, encoded, userID)
 	if err != nil {
 		return fmt.Errorf("saving backup codes: %w", err)
 	}
@@ -140,7 +140,7 @@ func (s *TOTPStoreImpl) SaveBackupCodes(ctx context.Context, userID pgtype.UUID,
 func (s *TOTPStoreImpl) GetUserEmail(ctx context.Context, userID pgtype.UUID) (string, error) {
 	var email string
 
-	err := s.db.Reader.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, userID, ).Scan(&email)
+	err := s.db.Reader.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, userID).Scan(&email)
 	if err != nil {
 		return "", fmt.Errorf("querying user email: %w", err)
 	}
@@ -163,7 +163,7 @@ func (s *OAuthStoreImpl) GetOAuthAccount(ctx context.Context, tenantID pgtype.UU
 	query := `
 		SELECT id, user_id, provider, provider_user_id
 		FROM oauth_accounts
-		WHERE tenant_id = $1 AND provider = $2 AND provider_user_id = $3
+		WHERE provider = $1 AND provider_user_id = $2
 		LIMIT 1
 	`
 
@@ -184,7 +184,7 @@ func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, us
 	query := `
 		SELECT id, user_id, provider, provider_user_id
 		FROM oauth_accounts
-		WHERE tenant_id = $1 AND user_id = $2 AND provider = $3
+		WHERE user_id = $1 AND provider = $2
 		LIMIT 1
 	`
 
@@ -203,7 +203,7 @@ func (s *OAuthStoreImpl) GetOAuthAccountByUser(ctx context.Context, tenantID, us
 // LinkOAuthAccount creates a new OAuth account linkage.
 func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider, providerUserID string) error {
 	query := `
-		INSERT INTO oauth_accounts (tenant_id, user_id, provider, provider_user_id)
+		INSERT INTO oauth_accounts (user_id, provider, provider_user_id)
 		VALUES ($1, $2, $3, $4)
 	`
 
@@ -219,9 +219,9 @@ func (s *OAuthStoreImpl) LinkOAuthAccount(ctx context.Context, tenantID, userID 
 // Delegates to the auth DBStore query pattern.
 func (s *OAuthStoreImpl) GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error) {
 	query := `
-		SELECT id, tenant_id, email, password_hash, username, profile_type, status, email_verified_at, is_bot
+		SELECT id, email, password_hash, username, profile_type, status, email_verified_at, is_bot
 		FROM users
-		WHERE tenant_id = $1 AND email = $2
+		WHERE email = $1
 		LIMIT 1
 	`
 

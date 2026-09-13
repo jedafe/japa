@@ -266,7 +266,7 @@ func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context, tenantID pgtyp
 func (h *SitemapHandler) latestUsersLastMod(ctx context.Context, tenantID pgtype.UUID) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.tenant_id = $1 AND u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
+	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -281,7 +281,7 @@ func (h *SitemapHandler) latestImagesLastMod(ctx context.Context, tenantID pgtyp
 	var ts time.Time
 
 	err := h.reader.QueryRow(ctx, `SELECT c.updated_at FROM contents c
-		 WHERE c.tenant_id = $1 AND c.status = 'published'
+		 WHERE c.status = 'published'
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
 		 ORDER BY c.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
@@ -374,7 +374,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		       AND ft.solved = true
 		     GROUP BY c.space_id
 		 ) qc ON qc.space_id = s.id
-		 WHERE s.tenant_id = $1 AND s.status = 'active' AND s.deleted_at IS NULL
+		 WHERE s.status = 'active' AND s.deleted_at IS NULL
 		 ORDER BY s.updated_at DESC`, t.ID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
@@ -460,7 +460,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 
 	rows, err := h.reader.Query(r.Context(), `SELECT u.username, u.updated_at FROM users u
 		 JOIN user_groups ug ON u.user_group_id = ug.id
-		 WHERE u.tenant_id = $1 AND u.status = 'active'
+		 WHERE u.status = 'active'
 		   AND COALESCE(ug.allow_search_indexing, true) = true
 		 ORDER BY u.updated_at DESC`, t.ID)
 	if err != nil {
@@ -534,8 +534,8 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, c.updated_at, c.title,
 		        m.storage_bucket, m.storage_path, COALESCE(m.alt_text, c.title)
 		 FROM contents c
-		 JOIN media m ON c.featured_image_id = m.id AND m.tenant_id = c.tenant_id
-		 WHERE c.tenant_id = $1 AND c.status = 'published'
+		 JOIN media m ON c.featured_image_id = m.id
+		 WHERE c.status = 'published'
 		   AND c.deleted_at IS NULL
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
@@ -689,7 +689,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		       ON jt.content_type = c.content_type
 		      AND jt.tenant_id = c.tenant_id
 		      AND jt.is_active = true
-		WHERE c.id = $1 AND c.tenant_id = $2`
+		WHERE c.id = $1`
 
 	var (
 		contentID      string

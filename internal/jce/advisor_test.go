@@ -47,7 +47,7 @@ func enableAdvisorFeatures(t *testing.T, d *db.DB, tenantID pgtype.UUID) {
 	ctx := t.Context()
 	_, err := d.Writer.Exec(ctx, `
 		INSERT INTO feature_flags (key, enabled, config) VALUES ($1, $2, true, '{}')
-		ON CONFLICT (key, tenant_id) DO UPDATE SET enabled = true, updated_at = now()
+		ON CONFLICT (key) DO UPDATE SET enabled = true, updated_at = now()
 	`, "feature.jce.ai_advisor", tenantID)
 	if err != nil {
 		t.Fatalf("enableAdvisorFeatures: %v", err)

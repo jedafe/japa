@@ -96,9 +96,9 @@ func (s *Store) CreateEdition(ctx context.Context, edition DigestEdition) (pgtyp
 
 	err := s.pool.Writer.QueryRow(ctx, `
 INSERT INTO digest_editions (space_id, cadence, status, scheduled_for,
-    content, generated_by) VALUES ($1, $2, COALESCE($3, 'draft'), $5, $6, $7)
+    content, generated_by) VALUES ($1, $2, COALESCE($3, 'draft'), $4, $5, $6)
 RETURNING id
-`, edition.SpaceID, edition.Cadence, edition.Status, edition.ScheduledFor, edition.Content, edition.GeneratedBy, ).Scan(&id)
+`, edition.SpaceID, edition.Cadence, edition.Status, edition.ScheduledFor, edition.Content, edition.GeneratedBy).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("digest: create edition: %w", err)
 	}
@@ -109,17 +109,17 @@ RETURNING id
 // GetEdition returns a single digest edition by id within a tenant.
 func (s *Store) GetEdition(ctx context.Context, id, tenantID pgtype.UUID) (DigestEdition, error) {
 	const q = `
-SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+SELECT id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 LIMIT 1
 `
 
 	var e DigestEdition
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&e.ID, &e.TenantID, &e.SpaceID, &e.Cadence, &e.Status,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&e.ID, &e.SpaceID, &e.Cadence, &e.Status,
 		&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 		&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
 	)
@@ -144,10 +144,10 @@ func (s *Store) GetLatestPublished(ctx context.Context, tenantID, spaceID pgtype
 	)
 
 	q.WriteString(`
-SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+SELECT id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
-WHERE tenant_id = $1 AND status = 'published'
+WHERE status = 'published'
 `)
 
 	args = append(args, tenantID)
@@ -165,7 +165,7 @@ WHERE tenant_id = $1 AND status = 'published'
 	var e DigestEdition
 
 	err := s.pool.Reader.QueryRow(ctx, q.String(), args...).Scan(
-		&e.ID, &e.TenantID, &e.SpaceID, &e.Cadence, &e.Status,
+		&e.ID, &e.SpaceID, &e.Cadence, &e.Status,
 		&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 		&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
 	)
@@ -208,10 +208,6 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.SpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("space_id = $%d", argIdx))
 		args = append(args, f.SpaceID)
@@ -252,7 +248,7 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+SELECT id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
 WHERE %s
@@ -273,7 +269,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var e DigestEdition
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.SpaceID, &e.Cadence, &e.Status,
+			&e.ID, &e.SpaceID, &e.Cadence, &e.Status,
 			&e.ScheduledFor, &e.PublishedAt, &e.Content, &e.EmailSent,
 			&e.EmailSentAt, &e.GeneratedBy, &e.ReviewedBy, &e.CreatedAt,
 		); err != nil {
@@ -371,24 +367,24 @@ func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, in 
 	}
 
 	if len(sets) == 0 {
-		return s.GetEditionRow(ctx, id, tenantID)
+		return s.GetEditionRow(ctx, id)
 	}
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	q := fmt.Sprintf(`
 UPDATE digest_editions
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-RETURNING id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+WHERE id = $%d
+RETURNING id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+`, strings.Join(sets, ", "), argIdx)
 
 	var r EditionRow
 
 	var content []byte
 
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
+		&r.ID, &r.SpaceID, &r.Cadence, &r.Status,
 		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
 		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
 	)
@@ -424,12 +420,12 @@ WHERE id = $1
 }
 
 // GetEditionRow returns a single digest edition row for tool read-backs.
-func (s *Store) GetEditionRow(ctx context.Context, id, tenantID pgtype.UUID) (EditionRow, error) {
+func (s *Store) GetEditionRow(ctx context.Context, id pgtype.UUID) (EditionRow, error) {
 	const q = `
-SELECT id, tenant_id, space_id, cadence, status, scheduled_for, published_at,
+SELECT id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
 FROM digest_editions
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 LIMIT 1
 `
 
@@ -437,8 +433,8 @@ LIMIT 1
 
 	var content []byte
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.SpaceID, &r.Cadence, &r.Status,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.SpaceID, &r.Cadence, &r.Status,
 		&r.ScheduledFor, &r.PublishedAt, &content, &r.EmailSent,
 		&r.EmailSentAt, &r.GeneratedBy, &r.ReviewedBy, &r.CreatedAt,
 	)
@@ -504,7 +500,7 @@ RETURNING id
 
 	for rows.Next() {
 		var e PublishedEdition
-		if err := rows.Scan(&e.ID, &e.TenantID); err != nil {
+		if err := rows.Scan(&e.ID); err != nil {
 			return nil, fmt.Errorf("digest: auto-publish due editions: scan: %w", err)
 		}
 
@@ -605,8 +601,7 @@ func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgt
 	threadsQ.WriteString(`
 SELECT ft.title, ft.slug, ft.vote_score, ft.reply_count
 FROM forum_threads ft
-WHERE ft.tenant_id = $1
-  AND ft.deleted_at IS NULL
+WHERE ft.deleted_at IS NULL
   AND ft.created_at >= now() - interval '7 days'
 `)
 
@@ -649,10 +644,9 @@ WHERE ft.tenant_id = $1
 	mrows, err := s.pool.Reader.Query(ctx, `
 SELECT u.username, COALESCE(up.display_name, '')
 FROM users u
-JOIN onboarding_state os ON os.user_id = u.id AND os.tenant_id = u.tenant_id
+JOIN onboarding_state os ON os.user_id = u.id
 LEFT JOIN user_profiles up ON up.user_id = u.id
-WHERE u.tenant_id = $1
-  AND u.created_at >= now() - interval '7 days'
+WHERE u.created_at >= now() - interval '7 days'
   AND os.completed = true
 ORDER BY u.created_at DESC
 LIMIT 10
@@ -687,8 +681,7 @@ LIMIT 10
 	eventsQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.content_type = 'event'
+WHERE c.content_type = 'event'
   AND c.status = 'published'
   AND c.publish_at IS NOT NULL
   AND c.publish_at >= now()
@@ -739,8 +732,7 @@ WHERE c.tenant_id = $1
 	storyQ.WriteString(`
 SELECT c.title, c.slug
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.content_type = 'story'
+WHERE c.content_type = 'story'
   AND c.status = 'published'
   AND c.created_at >= now() - interval '30 days'
 `)

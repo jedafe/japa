@@ -2487,8 +2487,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf(`SELECT al.id, al.created_at, al.actor_user_id, u.username,
-		al.action_type, al.target_type, al.target_id::text, al.tenant_id,
-		al.ip_address::text, al.impersonated_user_id::text, al.metadata
+		al.action_type, al.target_type, al.target_id::text, al.ip_address::text, al.impersonated_user_id::text, al.metadata
 		FROM audit_logs al
 		LEFT JOIN users u ON u.id = al.actor_user_id
 		WHERE 1=1%s
@@ -2513,8 +2512,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 		var actorID, username sql.NullString
 		if err := rows.Scan(&l.ID, &l.Timestamp, &actorID, &username,
-			&l.ActionType, &l.EntityType, &l.EntityID, &l.TenantID,
-			&l.IPAddress, &l.ImpersonatedUserID, &l.Metadata); err != nil {
+			&l.ActionType, &l.EntityType, &l.EntityID, &l.IPAddress, &l.ImpersonatedUserID, &l.Metadata); err != nil {
 			slog.Error("control: scan audit log", "error", err)
 			continue
 		}

@@ -544,10 +544,10 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 
 		conflict := "ON CONFLICT (tenant_id, username) DO NOTHING"
 		if mode == ModeUpsert {
-			conflict = "ON CONFLICT (tenant_id, username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
+			conflict = "ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
 		}
 
-		return "\n\t\t\tINSERT INTO users (tenant_id, username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)\n\t\t\t" + conflict,
+		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)\n\t\t\t" + conflict,
 			[]any{tenantID, username, email, row["profile_type"], row["status"], passwordHash},
 			nil
 
@@ -558,9 +558,9 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		contentHash := computeContentHash(body)
 
 		return `
-			INSERT INTO contents (tenant_id, author_id, content_type, title, body, status, visibility, slug, canonical_url, content_hash)
+			INSERT INTO contents (author_id, content_type, title, body, status, visibility, slug, canonical_url, content_hash)
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'blog_post'), $4, $5, COALESCE(NULLIF($6, ''), 'draft'), COALESCE(NULLIF($7, ''), 'public'), $8, $9, $10
-			FROM users u WHERE u.username = $2 AND u.tenant_id = $1
+			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["author"], row["content_type"], row["title"], body, row["status"], row["visibility"], row["slug"], row["canonical_url"], contentHash},
 			nil
@@ -569,10 +569,10 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		// Comments: insert into comments table, resolving content by title.
 		// comments uses author_user_id (not user_id) and has no status column.
 		return `
-			INSERT INTO comments (tenant_id, content_id, author_user_id, body)
+			INSERT INTO comments (content_id, author_user_id, body)
 			SELECT $1, c.id, u.id, $4
 			FROM contents c, users u
-			WHERE c.title = $2 AND c.tenant_id = $1 AND u.username = $3 AND u.tenant_id = $1
+			WHERE c.title = $2 AND u.username = $3
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["content_title"], row["author"], row["body"]},
 			nil
@@ -586,9 +586,9 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		}
 
 		return `
-			INSERT INTO payments (tenant_id, user_id, provider, purpose_type, amount, currency, status)
+			INSERT INTO payments (user_id, provider, purpose_type, amount, currency, status)
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'manual_transfer'), COALESCE(NULLIF($4, ''), 'donation'), $5, COALESCE(NULLIF($6, ''), 'NGN'), COALESCE(NULLIF($7, ''), 'pending')
-			FROM users u WHERE u.username = $2 AND u.tenant_id = $1
+			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["buyer"], row["provider"], row["purpose_type"], amount, row["currency"], row["status"]},
 			nil
@@ -630,9 +630,9 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		}
 
 		return `
-			INSERT INTO wallet_ledger (tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, reason)
+			INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
 			SELECT $1, u.id, $3, $4, $5, $6, $7, $8
-			FROM users u WHERE u.username = $2 AND u.tenant_id = $1
+			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
 			nil
@@ -656,7 +656,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		}
 
 		return `
-			INSERT INTO platform_events (tenant_id, event_type, entity_type, entity_id)
+			INSERT INTO platform_events (event_type, entity_type, entity_id)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["event_type"], row["entity_type"], entityIDArg},
@@ -689,9 +689,9 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		}
 
 		return `
-			INSERT INTO content_reports (tenant_id, reporter_user_id, entity_type, entity_id, reason, status)
+			INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, status)
 			SELECT $1, u.id, $3, $4, $5, COALESCE(NULLIF($6, ''), 'pending')
-			FROM users u WHERE u.username = $2 AND u.tenant_id = $1
+			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
 			[]any{tenantID, row["reporter"], entityType, entityID, reason, row["status"]},
 			nil

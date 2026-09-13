@@ -1138,7 +1138,7 @@ WHERE id = $1
 
 // DeleteProcessingTime deletes a visa_processing_stats row within a tenant.
 func (s *Store) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
-	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM visa_processing_stats WHERE id = $1`, id, )
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM visa_processing_stats WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)
 	}

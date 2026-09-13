@@ -69,7 +69,7 @@ func (r *ToolRegistry) ListTools(ctx context.Context, tenantID pgtype.UUID) ([]A
 	for rows.Next() {
 		var t AITool
 		if err := rows.Scan(
-			&t.ID, &t.TenantID, &t.Name, &t.Description, &t.Category,
+			&t.ID, &t.Name, &t.Description, &t.Category,
 			&t.Config, &t.IsEnabled, &t.RequiredPermission,
 			&t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
@@ -92,7 +92,7 @@ func (r *ToolRegistry) GetTool(ctx context.Context, tenantID, id pgtype.UUID) (A
 		FROM ai_tools
 		WHERE id = $1
 	`, id).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Description, &t.Category,
+		&t.ID, &t.Name, &t.Description, &t.Category,
 		&t.Config, &t.IsEnabled, &t.RequiredPermission,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
@@ -113,7 +113,7 @@ func (r *ToolRegistry) GetToolByName(ctx context.Context, tenantID pgtype.UUID, 
 		FROM ai_tools
 		WHERE name = $1
 	`, name).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Description, &t.Category,
+		&t.ID, &t.Name, &t.Description, &t.Category,
 		&t.Config, &t.IsEnabled, &t.RequiredPermission,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
@@ -161,7 +161,7 @@ func (r *ToolRegistry) UpdateTool(ctx context.Context, tenantID, id pgtype.UUID,
 		RETURNING id, name, description, category, config, is_enabled,
 		          required_permission, created_at, updated_at
 	`, id, description, config, isEnabled, requiredPermission).Scan(
-		&updated.ID, &updated.TenantID, &updated.Name, &updated.Description,
+		&updated.ID, &updated.Name, &updated.Description,
 		&updated.Category, &updated.Config, &updated.IsEnabled,
 		&updated.RequiredPermission, &updated.CreatedAt, &updated.UpdatedAt,
 	)
@@ -247,7 +247,7 @@ func (r *ToolRegistry) ListToolUsage(ctx context.Context, tenantID, toolID pgtyp
 	for rows.Next() {
 		var u AIToolUsage
 		if err := rows.Scan(
-			&u.ID, &u.TenantID, &u.ToolID, &u.UserID,
+			&u.ID, &u.ToolID, &u.UserID,
 			&u.TokensUsed, &u.CostCents, &u.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning tool usage: %w", err)
@@ -280,8 +280,8 @@ func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype
 			COALESCE(SUM(u.tokens_used), 0) AS tokens_used,
 			COALESCE(SUM(u.cost_cents), 0) AS total_cost_cents
 		FROM ai_tools t
-		LEFT JOIN ai_tool_usage u ON u.tool_id = t.id AND u.tenant_id = $1 AND u.created_at >= $2
-		WHERE t.tenant_id = $1
+		LEFT JOIN ai_tool_usage u ON u.tool_id = t.id AND u.created_at >= $1
+		
 		GROUP BY t.id, t.name
 		ORDER BY invocations DESC
 	`, tenantID, since)

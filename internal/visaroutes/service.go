@@ -27,7 +27,7 @@ import (
 // RouteDTO is the API response shape for a single visa route.
 type RouteDTO struct {
 	ID                   string `json:"id"`
-	TenantID             string `json:"tenant_id,omitempty"`
+	TenantID             string `json:"omitempty"`
 	DestinationSpaceID   string `json:"destination_space_id"`
 	DestinationSpaceName string `json:"destination_space_name,omitempty"`
 	DestinationSpaceCode string `json:"destination_space_code,omitempty"`

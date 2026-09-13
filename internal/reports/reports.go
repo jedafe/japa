@@ -165,7 +165,7 @@ func (s *Service) ListMyReports(ctx context.Context, tenantID, reporterUserID pg
 func (s *Service) CountReports(ctx context.Context, tenantID pgtype.UUID, status, entityType, q *string) (int32, error) {
 	var total int32
 
-	query := `SELECT COUNT(*)::int FROM content_reports WHERE tenant_id = $1`
+	query := `SELECT COUNT(*)::int FROM content_reports `
 
 	args := []any{tenantID}
 	if status != nil {

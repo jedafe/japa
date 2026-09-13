@@ -227,8 +227,8 @@ func (a *ImportAdapter) lookupImport(ctx context.Context, id pgtype.UUID) (impor
 
 	err := a.db.Reader.QueryRow(
 		ctx,
-		"SELECT tenant_id, source_type, source_url FROM content_imports WHERE id = $1", id,
-	).Scan(&r.TenantID, &r.SourceType, &r.SourceURL)
+		"SELECT source_type, source_url FROM content_imports WHERE id = $1", id,
+	).Scan(&r.SourceType, &r.SourceURL)
 	if err != nil {
 		return importRow{}, fmt.Errorf("looking up content_import: %w", err)
 	}
@@ -284,7 +284,7 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 
 	err := a.db.Reader.QueryRow(
 		ctx,
-		"SELECT user_id, field_values FROM form_submissions WHERE id = $1 AND tenant_id = $2",
+		"SELECT user_id, field_values FROM form_submissions WHERE id = $1",
 		submissionID, tenantID,
 	).Scan(&userID, &fieldValues)
 	if err != nil {
@@ -654,7 +654,7 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 
 	err := a.db.Reader.QueryRow(
 		ctx,
-		"SELECT tenant_id, user_id FROM device_tokens WHERE id = $1", deviceTokenID,
+		"SELECT user_id FROM device_tokens WHERE id = $1", deviceTokenID,
 	).Scan(&tenantID, &userID)
 	if err != nil {
 		return fmt.Errorf("looking up device token: %w", err)
@@ -665,7 +665,7 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 
 	err = a.db.Reader.QueryRow(
 		ctx,
-		"SELECT title, body FROM notifications WHERE id = $1 AND tenant_id = $2",
+		"SELECT title, body FROM notifications WHERE id = $1",
 		notificationID, tenantID,
 	).Scan(&title, &body)
 	if err != nil {

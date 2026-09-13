@@ -398,8 +398,8 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		return `SELECT u.username, u.email, u.profile_type, u.status,
 			p.display_name, p.bio` + meta + `
 			FROM users u
-			LEFT JOIN user_profiles p ON p.user_id = u.id AND p.tenant_id = u.tenant_id
-			WHERE u.tenant_id = $1 ORDER BY u.created_at DESC`, []any{tenantID}
+			LEFT JOIN user_profiles p ON p.user_id = u.id
+			 ORDER BY u.created_at DESC`, []any{tenantID}
 
 	case TypePosts:
 		meta := ""
@@ -411,7 +411,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			c.slug, c.canonical_url` + meta + `, u.username AS author
 			FROM contents c
 			JOIN users u ON u.id = c.author_id
-			WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+			WHERE c.deleted_at IS NULL
 			ORDER BY c.created_at DESC`, []any{tenantID}
 
 	case TypeComments:
@@ -426,7 +426,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM comments cm
 			JOIN users u ON u.id = cm.author_user_id
 			JOIN contents c ON c.id = cm.content_id
-			WHERE cm.tenant_id = $1 AND cm.deleted_at IS NULL
+			WHERE cm.deleted_at IS NULL
 			ORDER BY cm.created_at DESC`, []any{tenantID}
 
 	case TypeOrders:
@@ -440,7 +440,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			u.username AS buyer
 			FROM payments p
 			JOIN users u ON u.id = p.user_id
-			WHERE p.tenant_id = $1
+			
 			ORDER BY p.created_at DESC`, []any{tenantID}
 
 	case TypeTransactions:
@@ -455,7 +455,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			u.username AS user
 			FROM wallet_ledger w
 			JOIN users u ON u.id = w.user_id
-			WHERE w.tenant_id = $1
+			
 			ORDER BY w.created_at DESC`, []any{tenantID}
 
 	case TypeAnalytics:
@@ -470,7 +470,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 		return `SELECT event_type, entity_type, entity_id, count(*) AS event_count,
 			date_trunc('day', created_at) AS day` + meta + `
 			FROM platform_events
-			WHERE tenant_id = $1
+			
 			GROUP BY event_type, entity_type, entity_id, day
 			ORDER BY day DESC`, []any{tenantID}
 
@@ -486,7 +486,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			u.username AS reporter
 			FROM content_reports cr
 			LEFT JOIN users u ON u.id = cr.reporter_user_id
-			WHERE cr.tenant_id = $1
+			
 			ORDER BY cr.created_at DESC`, []any{tenantID}
 	}
 

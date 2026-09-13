@@ -202,7 +202,7 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	          FROM contents c
 	          LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id)
 	            AND m.deleted_at IS NULL
-	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'`
 	args := []any{w.TenantID}
 	argIdx := 2
@@ -281,10 +281,10 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 		SELECT t.id, t.name, t.slug, COUNT(ct.content_id) AS usage_count
 		FROM tags t
 		LEFT JOIN content_tags ct ON ct.tag_id = t.id
-		WHERE t.tenant_id = $1
+		
 		GROUP BY t.id, t.name, t.slug
 		ORDER BY usage_count DESC, t.name ASC
-		LIMIT $2
+		LIMIT $1
 	`, w.TenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering trending_tags: %w", err)
@@ -380,11 +380,11 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 		FROM wallet_ledger wl
 		JOIN users u ON u.id = wl.user_id
 		LEFT JOIN user_profiles up ON up.user_id = u.id
-		WHERE wl.tenant_id = $1 AND wl.ledger_type = 'points'
+		WHERE wl.ledger_type = 'points'
 		  AND u.is_bot = false AND u.status = 'active'
 		GROUP BY u.id, u.username, up.display_name, up.avatar_url
 		ORDER BY points DESC
-		LIMIT $2
+		LIMIT $1
 	`, w.TenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering user_leaderboard: %w", err)
@@ -468,9 +468,9 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 		       m.storage_path AS logo_storage_path
 		FROM spaces s
 		LEFT JOIN media m ON m.id = s.logo_media_id AND m.deleted_at IS NULL
-		WHERE s.tenant_id = $1 AND s.deleted_at IS NULL
+		WHERE s.deleted_at IS NULL
 		ORDER BY s.created_at DESC
-		LIMIT $2
+		LIMIT $1
 	`, w.TenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering featured_spaces: %w", err)
@@ -565,8 +565,7 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 	          JOIN contents c ON c.id = cf.content_id
 	          LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id)
 	            AND m.deleted_at IS NULL
-	          WHERE cf.tenant_id = $1
-	            AND c.deleted_at IS NULL
+	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'
 	            AND (cf.featured_until IS NULL OR cf.featured_until > now())`
 	args := []any{w.TenantID}
@@ -667,7 +666,7 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	          FROM contents c
 	          LEFT JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL
 	          LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
-	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'blog_post'`
 	args := []any{w.TenantID}
 
@@ -752,7 +751,7 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 	                 ft.solved, ft.vote_score, ft.reply_count, ft.view_count,
 	                 ft.created_at
 	          FROM forum_threads ft
-	          WHERE ft.tenant_id = $1 AND ft.deleted_at IS NULL`
+	          WHERE ft.deleted_at IS NULL`
 	if sortBy == "unanswered" {
 		query += " AND ft.solved = false AND ft.reply_count = 0"
 	}
@@ -824,7 +823,7 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 	          FROM contents c
 	          LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id)
 	            AND m.deleted_at IS NULL
-	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'job_listing'`
 	args := []any{w.TenantID}
 
@@ -902,7 +901,7 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 	          JOIN achievement_meta am ON am.content_id = c.id
 	          LEFT JOIN media m ON m.id = COALESCE(c.featured_image_id, c.header_image_id)
 	            AND m.deleted_at IS NULL
-	          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'achievement'`
 	args := []any{w.TenantID}
 
@@ -975,7 +974,7 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	                 m.storage_path AS cover_storage_path
 	          FROM learning_tracks lt
 	          LEFT JOIN media m ON m.id = lt.cover_media_id AND m.deleted_at IS NULL
-	          WHERE lt.tenant_id = $1 AND lt.is_published = true`
+	          WHERE lt.is_published = true`
 	args := []any{w.TenantID}
 
 	argIdx := 2
@@ -1043,7 +1042,7 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	query := `SELECT id, space_id, cadence, status, scheduled_for, published_at,
 	                 content, email_sent
 	          FROM digest_editions
-	          WHERE tenant_id = $1 AND status = 'published'`
+	          WHERE status = 'published'`
 	args := []any{w.TenantID}
 
 	argIdx := 2
@@ -1114,7 +1113,7 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	                 u.username AS reviewer_username
 	          FROM reviews r
 	          LEFT JOIN users u ON u.id = r.reviewer_user_id AND u.deleted_at IS NULL
-	          WHERE r.tenant_id = $1 AND r.status = 'published'`
+	          WHERE r.status = 'published'`
 	args := []any{w.TenantID}
 
 	argIdx := 2
@@ -1180,9 +1179,9 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 		       m.storage_path AS image_storage_path
 		FROM comparison_items ci
 		LEFT JOIN media m ON m.id = ci.image_id AND m.deleted_at IS NULL
-		WHERE ci.tenant_id = $1
+		
 		ORDER BY ci.created_at DESC
-		LIMIT $2
+		LIMIT $1
 	`, w.TenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering comparisons: %w", err)
@@ -1241,7 +1240,7 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 	                 destination_space_id, city_space_id, address,
 	                 website_url, is_verified, is_active
 	          FROM community_organisations
-	          WHERE tenant_id = $1 AND is_active = true`
+	          WHERE is_active = true`
 	args := []any{w.TenantID}
 
 	argIdx := 2
@@ -1314,11 +1313,10 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 		       u.username, u.display_name
 		FROM mentorship_profiles mp
 		JOIN users u ON u.id = mp.user_id AND u.deleted_at IS NULL
-		WHERE mp.tenant_id = $1
-		  AND mp.is_mentor = true
+		WHERE mp.is_mentor = true
 		  AND mp.is_available = true
 		ORDER BY mp.rating_avg DESC, mp.session_count DESC
-		LIMIT $2
+		LIMIT $1
 	`, w.TenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering mentor_spotlight: %w", err)

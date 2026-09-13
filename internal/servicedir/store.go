@@ -171,7 +171,7 @@ type ServiceRow struct {
 func (s *Store) CreateMeta(ctx context.Context, meta ServiceMeta) error {
 	const q = `
 INSERT INTO service_listing_meta (
-    tenant_id, content_id, org_id, service_category, destination_space_id,
+    content_id, org_id, service_category, destination_space_id,
     city_space_id, origin_communities, is_remote, website_url, booking_url,
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -205,13 +205,13 @@ INSERT INTO service_listing_meta (
 // GetMeta retrieves the service_listing_meta row for a given content_id.
 func (s *Store) GetMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (ServiceMeta, error) {
 	const q = `
-SELECT id, tenant_id, content_id, org_id, service_category, destination_space_id,
+SELECT id, content_id, org_id, service_category, destination_space_id,
        city_space_id, origin_communities, is_remote, website_url, booking_url,
        price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
        verified_by, verified_at,
        created_at, updated_at
 FROM service_listing_meta
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	var m ServiceMeta
@@ -245,17 +245,17 @@ func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID,
 
 	const q = `
 UPDATE service_listing_meta
-SET org_id = $3,
-    service_category = $4,
-    destination_space_id = $5,
-    city_space_id = $6,
-    origin_communities = $7,
-    is_remote = $8,
-    website_url = $9,
-    booking_url = $10,
-    price_range = $11,
+SET org_id = $2,
+    service_category = $3,
+    destination_space_id = $4,
+    city_space_id = $5,
+    origin_communities = $6,
+    is_remote = $7,
+    website_url = $8,
+    booking_url = $9,
+    price_range = $10,
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	_, err := s.pool.Writer.Exec(
@@ -297,10 +297,6 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "service_listing")
@@ -369,7 +365,7 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
@@ -382,7 +378,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
 LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN spaces cs ON cs.id = sm.city_space_id
@@ -432,7 +428,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN service_listing_meta sm ON sm.content_id = c.id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
@@ -450,7 +446,7 @@ WHERE %s
 // service_listing_meta + spaces + organizations + users.
 func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (ServiceRow, error) {
 	const q = `
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
@@ -463,14 +459,14 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
 LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'service_listing'
+WHERE c.slug = $1 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
@@ -523,10 +519,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "service_listing")
@@ -587,7 +579,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]ServiceRow,
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
@@ -600,7 +592,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
 LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN spaces cs ON cs.id = sm.city_space_id
@@ -650,7 +642,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN service_listing_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN service_listing_meta sm ON sm.content_id = c.id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]
@@ -671,11 +663,11 @@ func (s *Store) VerifyService(ctx context.Context, contentID, tenantID, verified
 	const q = `
 UPDATE service_listing_meta
 SET is_verified = true,
-    verification_type = $4,
-    verified_by = $3,
+    verification_type = $3,
+    verified_by = $2,
     verified_at = now(),
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, verifiedBy, verificationType)
@@ -700,7 +692,7 @@ SET is_verified = false,
     verified_by = null,
     verified_at = null,
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
@@ -721,8 +713,8 @@ WHERE content_id = $1 AND tenant_id = $2
 func (s *Store) UpdateClaimStatus(ctx context.Context, contentID, tenantID pgtype.UUID, claimStatus string, orgID pgtype.UUID) error {
 	const q = `
 UPDATE service_listing_meta
-SET claim_status = $3, claimed_by_org_id = $4, updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+SET claim_status = $2, claimed_by_org_id = $3, updated_at = now()
+WHERE content_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, orgID)
@@ -763,8 +755,8 @@ SELECT EXISTS (
 func (s *Store) ClaimIfUnclaimed(ctx context.Context, contentID, tenantID, orgID pgtype.UUID) error {
 	const q = `
 UPDATE service_listing_meta
-SET claim_status = 'pending', claimed_by_org_id = $3, updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'unclaimed'
+SET claim_status = 'pending', claimed_by_org_id = $2, updated_at = now()
+WHERE content_id = $1 AND claim_status = 'unclaimed'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, orgID)
@@ -796,8 +788,8 @@ func (s *Store) ResolveClaimIfPending(ctx context.Context, contentID, tenantID, 
 
 	const q = `
 UPDATE service_listing_meta
-SET claim_status = $3, claimed_by_org_id = $4, updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2 AND claim_status = 'pending'
+SET claim_status = $2, claimed_by_org_id = $3, updated_at = now()
+WHERE content_id = $1 AND claim_status = 'pending'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, claimStatus, claimedByOrgID)

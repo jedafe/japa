@@ -739,12 +739,12 @@ WHERE id = $%d
 func (s *Store) Approve(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) (RouteRow, error) {
 	const q = `
 UPDATE visa_routes
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'published',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)

@@ -7381,8 +7381,7 @@ func lookupSystemUserID(ctx context.Context, database *db.DB) (pgtype.UUID, erro
 
 	err := database.Reader.QueryRow(ctx, `
 		SELECT id FROM users
-		WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
-		  AND email = 'jedafeglobal@gmail.com'
+		WHERE email = 'jedafeglobal@gmail.com'
 		LIMIT 1
 	`).Scan(&id)
 	if err != nil {

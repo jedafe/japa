@@ -815,12 +815,12 @@ func (ix *Indexer) fetchLanguageTestRequirement(ctx context.Context, reqID, tena
 	var visaCategory *string
 
 	err = conn.QueryRow(ctx, `
-		SELECT r.id, r.tenant_id, lt.slug, lt.name,
+		SELECT r.id, lt.slug, lt.name,
 		       r.minimum_score, r.destination_space_id,
 		       r.visa_category, r.status, r.is_japabot_indexed
 		FROM language_test_requirements r
 		JOIN language_tests lt ON lt.id = r.test_id
-		WHERE r.id = $1 AND r.tenant_id = $2
+		WHERE r.id = $1
 	`, reqID, tenantID).Scan(
 		&r.id, &r.tenantID, &r.testSlug, &r.testName,
 		&r.minimumScore, &r.destinationSpaceID,

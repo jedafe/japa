@@ -112,8 +112,8 @@ func (s *Store) CreateJob(ctx context.Context, tenantID, createdBy, batchID pgty
 		          topic_prompt, target_space_id, target_tags, intel_record_id,
 		          ai_model, voice_id, status, draft_content_id,
 		          review_id, generated_at, reviewed_at, published_at, error_message,
-		          created_by, created_at`, batchID, in.PersonaID, in.ContentType, in.GuideCategory, in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, in.AIModel, in.VoiceID, createdBy, ).Scan(
-		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+		          created_by, created_at`, batchID, in.PersonaID, in.ContentType, in.GuideCategory, in.TopicPrompt, in.TargetSpaceID, in.TargetTags, in.IntelRecordID, in.AIModel, in.VoiceID, createdBy).Scan(
+		&j.ID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,
@@ -127,7 +127,7 @@ func (s *Store) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID
 	var b Batch
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO studio_batches (name, description, created_by) VALUES ($1, $2, $3)
-		RETURNING id, name, description, created_by, created_at`, name, description, createdBy, ).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
+		RETURNING id, name, description, created_by, created_at`, name, description, createdBy).Scan(&b.ID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
 
 	return b, err
 }
@@ -141,8 +141,8 @@ func (s *Store) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, erro
 		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
-		FROM studio_jobs WHERE id = $1`, id, ).Scan(
-		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+		FROM studio_jobs WHERE id = $1`, id).Scan(
+		&j.ID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,
@@ -153,12 +153,12 @@ func (s *Store) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, erro
 
 // ListJobs lists jobs with optional filters.
 func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFilter) ([]Job, int64, error) {
-	query := `SELECT id, tenant_id, batch_id, persona_id, content_type, guide_category,
+	query := `SELECT id, batch_id, persona_id, content_type, guide_category,
 	            topic_prompt, target_space_id, target_tags, intel_record_id,
 	            ai_model, voice_id, status, draft_content_id,
 	            review_id, generated_at, reviewed_at, published_at, error_message,
 	            created_by, created_at
-	         FROM studio_jobs WHERE tenant_id = $1`
+	         FROM studio_jobs `
 	args := []interface{}{tenantID}
 
 	argIdx := 2
@@ -215,7 +215,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 	for rows.Next() {
 		var j Job
 		if err := rows.Scan(
-			&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+			&j.ID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 			&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 			&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 			&j.CreatedBy, &j.CreatedAt,
@@ -230,7 +230,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 	var total int64
 
 	countArgs := []interface{}{tenantID}
-	countQuery := `SELECT count(*) FROM studio_jobs WHERE tenant_id = $1`
+	countQuery := `SELECT count(*) FROM studio_jobs `
 	cIdx := 2
 
 	if f.Status != nil {
@@ -378,7 +378,7 @@ func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, of
 
 	for rows.Next() {
 		var b Batch
-		if err := rows.Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 
@@ -395,7 +395,7 @@ func (s *Store) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, of
 func (s *Store) GetBatch(ctx context.Context, tenantID, id pgtype.UUID) (Batch, error) {
 	var b Batch
 	err := s.db.Reader.QueryRow(ctx, `SELECT id, name, description, created_by, created_at
-		 FROM studio_batches WHERE id = $1`, id, ).Scan(&b.ID, &b.TenantID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
+		 FROM studio_batches WHERE id = $1`, id).Scan(&b.ID, &b.Name, &b.Description, &b.CreatedBy, &b.CreatedAt)
 
 	return b, err
 }
@@ -474,7 +474,7 @@ func (s *Store) ListFailedJobs(ctx context.Context, tenantID, batchID pgtype.UUI
 	for rows.Next() {
 		var j Job
 		if err := rows.Scan(
-			&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+			&j.ID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 			&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.Status, &j.DraftContentID,
 			&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 			&j.CreatedBy, &j.CreatedAt,
@@ -529,7 +529,7 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 		           FILTER (WHERE reviewed_at IS NOT NULL AND generated_at IS NOT NULL),
 		         0
 		       )
-		FROM studio_jobs `, ).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
+		FROM studio_jobs `).Scan(&st.TotalJobs, &st.Queued, &st.Generating, &st.DraftReady, &st.InReview,
 		&st.Published, &st.Rejected, &st.Failed, &st.PublishRate, &st.AvgReviewH)
 
 	return st, err
@@ -539,7 +539,7 @@ func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats
 // for a tenant. Used to enforce studio.max_concurrent_jobs (ADR-076, §75).
 func (s *Store) CountActiveJobs(ctx context.Context, tenantID pgtype.UUID) (int, error) {
 	var count int
-	err := s.db.Reader.QueryRow(ctx, `SELECT count(*) FROM studio_jobs WHERE status IN ('queued','generating')`, ).Scan(&count)
+	err := s.db.Reader.QueryRow(ctx, `SELECT count(*) FROM studio_jobs WHERE status IN ('queued','generating')`).Scan(&count)
 
 	return count, err
 }
@@ -556,8 +556,8 @@ func (s *Store) GetJobByReviewID(ctx context.Context, tenantID, reviewID pgtype.
 		       ai_model, voice_id, status, draft_content_id,
 		       review_id, generated_at, reviewed_at, published_at, error_message,
 		       created_by, created_at
-		FROM studio_jobs WHERE review_id = $1`, reviewID, ).Scan(
-		&j.ID, &j.TenantID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
+		FROM studio_jobs WHERE review_id = $1`, reviewID).Scan(
+		&j.ID, &j.BatchID, &j.PersonaID, &j.ContentType, &j.GuideCategory,
 		&j.TopicPrompt, &j.TargetSpaceID, &j.TargetTags, &j.IntelRecordID, &j.AIModel, &j.VoiceID, &j.Status, &j.DraftContentID,
 		&j.ReviewID, &j.GeneratedAt, &j.ReviewedAt, &j.PublishedAt, &j.ErrorMessage,
 		&j.CreatedBy, &j.CreatedAt,

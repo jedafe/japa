@@ -1120,7 +1120,7 @@ type emailSendPayload struct {
 	Body             string            `json:"body"`
 	HTML             bool              `json:"html"`
 	TemplateSlug     string            `json:"template_slug,omitempty"`
-	TenantID         string            `json:"tenant_id,omitempty"`
+	TenantID         string            `json:"omitempty"`
 	TemplateData     map[string]string `json:"template_data,omitempty"`
 	TemplateSiteName string            `json:"template_site_name,omitempty"`
 }
