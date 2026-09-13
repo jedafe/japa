@@ -1305,7 +1305,7 @@ func verifyStripeSignature(payload []byte, header, secret string) error {
 
 // UpdateDiscountCode handles PATCH /admin/discount-codes/:id.
 func (h *Handlers) UpdateDiscountCode(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1629,7 +1629,7 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 
 // ListAdminPlans handles GET /api/v1/admin/plans.
 func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1650,7 +1650,7 @@ func (h *Handlers) ListAdminPlans(w http.ResponseWriter, r *http.Request) {
 
 // CreateAdminPlan handles POST /api/v1/admin/plans.
 func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1706,7 +1706,7 @@ func (h *Handlers) CreateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAdminPlan handles PATCH /api/v1/admin/plans/{id}.
 func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1756,7 +1756,7 @@ func (h *Handlers) UpdateAdminPlan(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAdminPlan handles DELETE /api/v1/admin/plans/{id}.
 func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1782,7 +1782,7 @@ func (h *Handlers) DeleteAdminPlan(w http.ResponseWriter, r *http.Request) {
 // Lists all payments across the platform with optional filters (JEOS §17
 // "Admin Payment Routes"). Gated by payments.refund permission (admin-only).
 func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1870,7 +1870,7 @@ type PlanTrackResponse struct {
 
 // AdminListPlanTracks handles GET /api/v1/admin/plans/{id}/tracks.
 func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1900,7 +1900,7 @@ func (h *Handlers) AdminListPlanTracks(w http.ResponseWriter, r *http.Request) {
 // AdminSetPlanTracks handles PUT /api/v1/admin/plans/{id}/tracks.
 // Replaces the entire track list for a plan.
 func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1969,7 +1969,7 @@ func (h *Handlers) AdminSetPlanTracks(w http.ResponseWriter, r *http.Request) {
 
 // AdminAddTrackToPlan handles POST /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1999,7 +1999,7 @@ func (h *Handlers) AdminAddTrackToPlan(w http.ResponseWriter, r *http.Request) {
 
 // AdminRemoveTrackFromPlan handles DELETE /api/v1/admin/plans/{id}/tracks/{trackId}.
 func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2030,7 +2030,7 @@ func (h *Handlers) AdminRemoveTrackFromPlan(w http.ResponseWriter, r *http.Reque
 // PublicListPlanTracks handles GET /api/v1/pricing/plans/{slug}/tracks.
 // Returns the track IDs included in a plan (empty = all tracks).
 func (h *Handlers) PublicListPlanTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

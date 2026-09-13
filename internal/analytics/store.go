@@ -81,8 +81,8 @@ func (s *Store) GetDailySpaceStats(ctx context.Context, tenantID pgtype.UUID, st
 // operational tables (contents, reactions, comments, user_content_views).
 // Bypasses the materialized view so the dashboard works without waiting for
 // the hourly refresh or the platform_events pipeline.
-func (s *Store) GetUserEngagementStats(ctx context.Context, tenantID pgtype.UUID, startDate, endDate *pgtype.Timestamptz, userID pgtype.UUID) ([]gen.GetUserEngagementStatsRow, error) {
-	return s.read.GetUserEngagementStats(ctx, gen.GetUserEngagementStatsParams{Column1: tenantID, Column2: nullableTimestamptzPtr(startDate), Column3: nullableTimestamptzPtr(endDate)})
+func (s *Store) GetUserEngagementStats(ctx context.Context, userID pgtype.UUID, startDate, endDate *pgtype.Timestamptz) ([]gen.GetUserEngagementStatsRow, error) {
+	return s.read.GetUserEngagementStats(ctx, gen.GetUserEngagementStatsParams{Column1: nullableTimestamptzPtr(startDate), Column2: nullableTimestamptzPtr(endDate), Column3: userID})
 }
 
 // GetUserGrowthOverTime returns new user registrations over time.

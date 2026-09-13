@@ -34,7 +34,7 @@ RETURNING *;
 -- =====================================================================
 
 -- name: ListChecklistProgressByUserGuide :many
-SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = @user_id AND guide_id = @guide_id
  AND list_type = 'visa'
 ORDER BY item_key;
@@ -45,7 +45,7 @@ ORDER BY item_key;
 -- =====================================================================
 
 -- name: GetSingleChecklistProgress :one
-SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = @user_id AND guide_id = @guide_id
  AND item_key = @item_key AND list_type = 'visa'
 LIMIT 1;

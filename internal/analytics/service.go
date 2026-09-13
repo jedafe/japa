@@ -293,7 +293,7 @@ func (s *Service) GetUserDashboardData(ctx context.Context, tenantID, userID pgt
 	})
 	g.Go(func() error {
 		var err error
-		engagement, err = s.store.GetUserEngagementStats(ctx, tenantID, startTZ, endTZ, userID)
+		engagement, err = s.store.GetUserEngagementStats(ctx, userID, startTZ, endTZ)
 
 		return err
 	})

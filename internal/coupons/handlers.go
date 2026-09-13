@@ -562,7 +562,7 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 // ListAffiliateScanResults handles GET /admin/affiliate/scan-results
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -598,7 +598,7 @@ func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Reque
 // ReviewAffiliateScanResult handles PATCH /admin/affiliate/scan-results/{id}
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -652,7 +652,7 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 // ListAffiliateCommissions handles GET /admin/affiliate/commissions
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -710,7 +710,7 @@ func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Reque
 // UpdateProviderAuthorCommission handles PATCH /admin/affiliate/providers/{id}/author-commission
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) UpdateProviderAuthorCommission(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

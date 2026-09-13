@@ -200,7 +200,7 @@ func (q *Queries) DeleteChecklistProgressByUserGuide(ctx context.Context, arg De
 
 const getSingleChecklistProgress = `-- name: GetSingleChecklistProgress :one
 
-SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = $1 AND guide_id = $2
  AND item_key = $3 AND list_type = 'visa'
 LIMIT 1
@@ -212,28 +212,16 @@ type GetSingleChecklistProgressParams struct {
 	ItemKey string      `json:"item_key"`
 }
 
-type GetSingleChecklistProgressRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	GuideID     pgtype.UUID        `json:"guide_id"`
-	ItemKey     string             `json:"item_key"`
-	Completed   bool               `json:"completed"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	Notes       *string            `json:"notes"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	ListType    string             `json:"list_type"`
-}
-
 // =====================================================================
 // Get a single progress item for a user + guide + item_key. Used by the
 // service to resolve the existing completed state for a note-only PATCH.
 // =====================================================================
-func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleChecklistProgressParams) (GetSingleChecklistProgressRow, error) {
+func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleChecklistProgressParams) (ChecklistProgress, error) {
 	row := q.db.QueryRow(ctx, getSingleChecklistProgress, arg.UserID, arg.GuideID, arg.ItemKey)
-	var i GetSingleChecklistProgressRow
+	var i ChecklistProgress
 	err := row.Scan(
 		&i.ID,
+		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.ItemKey,
@@ -249,7 +237,7 @@ func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleC
 
 const listChecklistProgressByUserGuide = `-- name: ListChecklistProgressByUserGuide :many
 
-SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = $1 AND guide_id = $2
  AND list_type = 'visa'
 ORDER BY item_key
@@ -260,33 +248,21 @@ type ListChecklistProgressByUserGuideParams struct {
 	GuideID pgtype.UUID `json:"guide_id"`
 }
 
-type ListChecklistProgressByUserGuideRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	GuideID     pgtype.UUID        `json:"guide_id"`
-	ItemKey     string             `json:"item_key"`
-	Completed   bool               `json:"completed"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	Notes       *string            `json:"notes"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	ListType    string             `json:"list_type"`
-}
-
 // =====================================================================
 // Get all progress items for a user + guide.
 // =====================================================================
-func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg ListChecklistProgressByUserGuideParams) ([]ListChecklistProgressByUserGuideRow, error) {
+func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg ListChecklistProgressByUserGuideParams) ([]ChecklistProgress, error) {
 	rows, err := q.db.Query(ctx, listChecklistProgressByUserGuide, arg.UserID, arg.GuideID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListChecklistProgressByUserGuideRow
+	var items []ChecklistProgress
 	for rows.Next() {
-		var i ListChecklistProgressByUserGuideRow
+		var i ChecklistProgress
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.UserID,
 			&i.GuideID,
 			&i.ItemKey,

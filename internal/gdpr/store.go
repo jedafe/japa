@@ -52,7 +52,7 @@ func (s *Store) getUserConsents(ctx context.Context, userID pgtype.UUID, consent
 // GDPR Data Export Queries
 // ---------------------------------------------------------------------------
 
-func (s *Store) gdprExportUserContent(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserContentRow, error) {
+func (s *Store) gdprExportUserContent(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserContentRow, error) {
 	return s.read.GdprExportUserContent(ctx,
 		userID,
 	)
@@ -61,19 +61,19 @@ func (s *Store) gdprExportUserContent(ctx context.Context, userID, tenantID pgty
 // gdprExportUserServiceListings exports the user's service_listing_meta rows
 // joined to their content rows (§98 BUG-008). The base content row is already
 // exported by gdprExportUserContent; this adds the structured service fields.
-func (s *Store) gdprExportUserServiceListings(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserServiceListingsRow, error) {
+func (s *Store) gdprExportUserServiceListings(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserServiceListingsRow, error) {
 	return s.read.GdprExportUserServiceListings(ctx,
 		userID,
 	)
 }
 
-func (s *Store) gdprExportUserComments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserCommentsRow, error) {
+func (s *Store) gdprExportUserComments(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserCommentsRow, error) {
 	return s.read.GdprExportUserComments(ctx,
 		userID,
 	)
 }
 
-func (s *Store) gdprExportUserSpaces(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserSpacesRow, error) {
+func (s *Store) gdprExportUserSpaces(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserSpacesRow, error) {
 	return s.read.GdprExportUserSpaces(ctx,
 		userID,
 	)
@@ -81,7 +81,7 @@ func (s *Store) gdprExportUserSpaces(ctx context.Context, userID, tenantID pgtyp
 
 // gdprExportOwnedSpaceParents returns parent space links for spaces owned by
 // the user (BUG-004: GDPR export completeness for space_parent_spaces).
-func (s *Store) gdprExportOwnedSpaceParents(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportOwnedSpaceParentsRow, error) {
+func (s *Store) gdprExportOwnedSpaceParents(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportOwnedSpaceParentsRow, error) {
 	return s.read.GdprExportOwnedSpaceParents(ctx,
 		userID,
 	)
@@ -89,19 +89,19 @@ func (s *Store) gdprExportOwnedSpaceParents(ctx context.Context, userID, tenantI
 
 // gdprExportOwnedSpaceRules returns rules for spaces owned by the user
 // (BUG-004: GDPR export completeness for space_rules).
-func (s *Store) gdprExportOwnedSpaceRules(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportOwnedSpaceRulesRow, error) {
+func (s *Store) gdprExportOwnedSpaceRules(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportOwnedSpaceRulesRow, error) {
 	return s.read.GdprExportOwnedSpaceRules(ctx,
 		userID,
 	)
 }
 
-func (s *Store) gdprExportUserPayments(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserPaymentsRow, error) {
+func (s *Store) gdprExportUserPayments(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserPaymentsRow, error) {
 	return s.read.GdprExportUserPayments(ctx,
 		userID,
 	)
 }
 
-func (s *Store) gdprExportUserNotifications(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GdprExportUserNotificationsRow, error) {
+func (s *Store) gdprExportUserNotifications(ctx context.Context, userID pgtype.UUID) ([]gen.GdprExportUserNotificationsRow, error) {
 	return s.read.GdprExportUserNotifications(ctx,
 		userID,
 	)
@@ -206,24 +206,24 @@ func (s *Store) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.UU
 	return s.write.GdprDeleteUserContentViews(ctx, userID)
 }
 
-func (s *Store) gdprExportUserFollows(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserFollows, gen.GdprExportUserFollowsParams{UserID: userID})
+func (s *Store) gdprExportUserFollows(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserFollows, userID)
 }
 
-func (s *Store) gdprExportUserForumThreads(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreads, gen.GdprExportUserForumThreadsParams{UserID: userID})
+func (s *Store) gdprExportUserForumThreads(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreads, userID)
 }
 
-func (s *Store) gdprExportUserForumReplies(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserForumReplies, gen.GdprExportUserForumRepliesParams{UserID: userID})
+func (s *Store) gdprExportUserForumReplies(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumReplies, userID)
 }
 
-func (s *Store) gdprExportUserForumVotes(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserForumVotes, gen.GdprExportUserForumVotesParams{UserID: userID})
+func (s *Store) gdprExportUserForumVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumVotes, userID)
 }
 
-func (s *Store) gdprExportUserForumBookmarks(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserForumBookmarks, gen.GdprExportUserForumBookmarksParams{UserID: userID})
+func (s *Store) gdprExportUserForumBookmarks(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumBookmarks, userID)
 }
 
 // BUG-022: the following three export wrappers cover forum tables that were
@@ -249,70 +249,70 @@ func (s *Store) gdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID
 	return decodeJSONSlice(data)
 }
 
-func (s *Store) gdprExportUserForumThreadTags(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreadTags, gen.GdprExportUserForumThreadTagsParams{UserID: userID})
+func (s *Store) gdprExportUserForumThreadTags(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserForumThreadTags, userID)
 }
 
-func (s *Store) gdprExportUserMedia(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMedia, gen.GdprExportUserMediaParams{UserID: userID})
+func (s *Store) gdprExportUserMedia(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMedia, userID)
 }
 
-func (s *Store) gdprExportUserReviews(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserReviews, gen.GdprExportUserReviewsParams{UserID: userID})
+func (s *Store) gdprExportUserReviews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserReviews, userID)
 }
 
-func (s *Store) gdprExportUserSpaceMembers(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceMembers, gen.GdprExportUserSpaceMembersParams{UserID: userID})
+func (s *Store) gdprExportUserSpaceMembers(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceMembers, userID)
 }
 
-func (s *Store) gdprExportUserSpaceModerators(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceModerators, gen.GdprExportUserSpaceModeratorsParams{UserID: userID})
+func (s *Store) gdprExportUserSpaceModerators(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceModerators, userID)
 }
 
-func (s *Store) gdprExportUserTagModerators(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserTagModerators, gen.GdprExportUserTagModeratorsParams{UserID: userID})
+func (s *Store) gdprExportUserTagModerators(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserTagModerators, userID)
 }
 
-func (s *Store) gdprExportUserConsentRecords(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserConsentRecords, gen.GdprExportUserConsentRecordsParams{UserID: userID})
+func (s *Store) gdprExportUserConsentRecords(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserConsentRecords, userID)
 }
 
-func (s *Store) gdprExportUserWalletLedger(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserWalletLedger, gen.GdprExportUserWalletLedgerParams{UserID: userID})
+func (s *Store) gdprExportUserWalletLedger(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserWalletLedger, userID)
 }
 
-func (s *Store) gdprExportUserActivityEvents(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserActivityEvents, gen.GdprExportUserActivityEventsParams{UserID: userID})
+func (s *Store) gdprExportUserActivityEvents(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserActivityEvents, userID)
 }
 
-func (s *Store) gdprExportUserLessonProgress(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserLessonProgress, gen.GdprExportUserLessonProgressParams{UserID: userID})
+func (s *Store) gdprExportUserLessonProgress(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserLessonProgress, userID)
 }
 
-func (s *Store) gdprExportUserLearningCertificates(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserLearningCertificates, gen.GdprExportUserLearningCertificatesParams{UserID: userID})
+func (s *Store) gdprExportUserLearningCertificates(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserLearningCertificates, userID)
 }
 
-func (s *Store) gdprExportUserMentorshipMatches(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipMatches, gen.GdprExportUserMentorshipMatchesParams{UserID: userID})
+func (s *Store) gdprExportUserMentorshipMatches(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipMatches, userID)
 }
 
 // gdprExportUserMentorshipConnections exports §102 mentorship_connections
 // rows where the user is mentor or mentee (ADR-110).
-func (s *Store) gdprExportUserMentorshipConnections(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipConnections, gen.GdprExportUserMentorshipConnectionsParams{UserID: userID})
+func (s *Store) gdprExportUserMentorshipConnections(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipConnections, userID)
 }
 
 // gdprExportUserMentorProfiles exports §102 mentor_profiles rows for the
 // user (ADR-110).
-func (s *Store) gdprExportUserMentorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMentorProfiles, gen.GdprExportUserMentorProfilesParams{UserID: userID})
+func (s *Store) gdprExportUserMentorProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorProfiles, userID)
 }
 
 // gdprExportUserMentorSessions exports §102 mentor_sessions rows where the
 // user is the mentee (ADR-110).
-func (s *Store) gdprExportUserMentorSessions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMentorSessions, gen.GdprExportUserMentorSessionsParams{UserID: userID})
+func (s *Store) gdprExportUserMentorSessions(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMentorSessions, userID)
 }
 
 // gdprExportUserMentorReviews exports §102 mentor_reviews rows written by
@@ -322,31 +322,31 @@ func (s *Store) gdprExportUserMentorReviews(ctx context.Context, userID pgtype.U
 	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserMentorReviews, userID)
 }
 
-func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserOrganizations, gen.GdprExportUserOrganizationsParams{UserID: userID})
+func (s *Store) gdprExportUserOrganizations(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserOrganizations, userID)
 }
 
 // gdprExportAttestationCommunityUpdates exports §97 attestation_community_updates
 // rows authored by the user (BUG-015).
-func (s *Store) gdprExportAttestationCommunityUpdates(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportAttestationCommunityUpdates, gen.GdprExportAttestationCommunityUpdatesParams{UserID: userID})
+func (s *Store) gdprExportAttestationCommunityUpdates(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAttestationCommunityUpdates, userID)
 }
 
 // gdprExportUserCalendarEntries exports §86 calendar_entries submitted by
 // the user (BUG-025).
-func (s *Store) gdprExportUserCalendarEntries(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarEntries, gen.GdprExportUserCalendarEntriesParams{UserID: userID})
+func (s *Store) gdprExportUserCalendarEntries(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarEntries, userID)
 }
 
 // gdprExportUserCalendarSaves exports §86 calendar_saves for the user (BUG-025).
-func (s *Store) gdprExportUserCalendarSaves(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSaves, gen.GdprExportUserCalendarSavesParams{UserID: userID})
+func (s *Store) gdprExportUserCalendarSaves(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSaves, userID)
 }
 
 // gdprExportUserCalendarSubscriptions exports §86 calendar_subscriptions for
 // the user (BUG-025).
-func (s *Store) gdprExportUserCalendarSubscriptions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSubscriptions, gen.GdprExportUserCalendarSubscriptionsParams{UserID: userID})
+func (s *Store) gdprExportUserCalendarSubscriptions(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserCalendarSubscriptions, userID)
 }
 
 // softDeleteAttestationCommunityUpdatesByUser soft-deletes §97
@@ -364,25 +364,24 @@ func (s *Store) softDeleteCredentialCommunityNotesByUser(ctx context.Context, us
 	return s.write.SoftDeleteCredentialCommunityNotesByUser(ctx, userID)
 }
 
-func (s *Store) gdprExportUserApiKeys(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserApiKeys, gen.GdprExportUserApiKeysParams{UserID: userID})
+func (s *Store) gdprExportUserApiKeys(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserApiKeys, userID)
 }
 
-func (s *Store) gdprExportUserPreferences(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserPreferences, gen.GdprExportUserPreferencesParams{UserID: userID})
+func (s *Store) gdprExportUserPreferences(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserPreferences, userID)
 }
 
-func (s *Store) gdprExportUserMutes(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserMutes, gen.GdprExportUserMutesParams{UserID: userID})
+func (s *Store) gdprExportUserMutes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserMutes, userID)
 }
 
-func (s *Store) gdprExportUserSpaceMutes(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceMutes, gen.GdprExportUserSpaceMutesParams{UserID: userID})
+func (s *Store) gdprExportUserSpaceMutes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserSpaceMutes, userID)
 }
 
-func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
+func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	// ticket_comments has no tenant_id column; the generated query takes only user_id.
-	_ = tenantID
 
 	data, err := s.read.GdprExportUserTicketComments(ctx, userID)
 	if err != nil {
@@ -394,36 +393,36 @@ func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID, tenant
 
 // Comparison GDPR export helpers (BUG-004). These export the linked
 // comparison_items/dimensions/values for content authored by the user.
-func (s *Store) gdprExportUserComparisonItems(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonItems, gen.GdprExportUserComparisonItemsParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonItems(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonItems, userID)
 }
 
-func (s *Store) gdprExportUserComparisonDimensions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDimensions, gen.GdprExportUserComparisonDimensionsParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonDimensions(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDimensions, userID)
 }
 
-func (s *Store) gdprExportUserComparisonValues(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonValues, gen.GdprExportUserComparisonValuesParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonValues(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonValues, userID)
 }
 
-func (s *Store) gdprExportUserComparisonProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonProfiles, gen.GdprExportUserComparisonProfilesParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonProfiles, userID)
 }
 
-func (s *Store) gdprExportUserComparisonScores(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonScores, gen.GdprExportUserComparisonScoresParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonScores(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonScores, userID)
 }
 
-func (s *Store) gdprExportUserComparisonRecommendations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonRecommendations, gen.GdprExportUserComparisonRecommendationsParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonRecommendations(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonRecommendations, userID)
 }
 
-func (s *Store) gdprExportUserComparisonDataIngestionJobs(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataIngestionJobs, gen.GdprExportUserComparisonDataIngestionJobsParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonDataIngestionJobs(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataIngestionJobs, userID)
 }
 
-func (s *Store) gdprExportUserComparisonDataSources(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataSources, gen.GdprExportUserComparisonDataSourcesParams{UserID: userID})
+func (s *Store) gdprExportUserComparisonDataSources(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataSources, userID)
 }
 
 func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
@@ -467,16 +466,16 @@ func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID, t
 }
 
 // Japa University GDPR export helpers (ADR-063 / audit C2).
-func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, gen.GdprExportInstructorProfilesParams{UserID: userID})
+func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, userID)
 }
 
-func (s *Store) gdprExportRevenueSplits(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportRevenueSplits, gen.GdprExportRevenueSplitsParams{UserID: userID})
+func (s *Store) gdprExportRevenueSplits(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportRevenueSplits, userID)
 }
 
-func (s *Store) gdprExportInstructorPayouts(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportInstructorPayouts, gen.GdprExportInstructorPayoutsParams{UserID: userID})
+func (s *Store) gdprExportInstructorPayouts(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportInstructorPayouts, userID)
 }
 
 // gdprExportCustomFieldValues exports custom_field_values for the user's
@@ -489,38 +488,28 @@ func (s *Store) gdprExportCustomFieldValues(ctx context.Context, userID pgtype.U
 
 // gdprExportPushTokens exports push_tokens for the user (BUG-014).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md.
-func (s *Store) gdprExportPushTokens(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportPushTokens, gen.GdprExportPushTokensParams{
-		UserID: userID,
-	})
+func (s *Store) gdprExportPushTokens(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportPushTokens, userID)
 }
 
 // BUG-022: GDPR export wrappers for DM tables. Each query returns a JSON
 // array; decodeJSONSlice normalizes the pgx-decoded value.
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 
-func (s *Store) gdprExportUserDMConversations(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserDMConversations, gen.GdprExportUserDMConversationsParams{
-		UserID: userID,
-	})
+func (s *Store) gdprExportUserDMConversations(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMConversations, userID)
 }
 
-func (s *Store) gdprExportUserDMMessages(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserDMMessages, gen.GdprExportUserDMMessagesParams{
-		UserID: userID,
-	})
+func (s *Store) gdprExportUserDMMessages(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMMessages, userID)
 }
 
-func (s *Store) gdprExportUserDMRequests(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserDMRequests, gen.GdprExportUserDMRequestsParams{
-		UserID: userID,
-	})
+func (s *Store) gdprExportUserDMRequests(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMRequests, userID)
 }
 
-func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserDMSettings, gen.GdprExportUserDMSettingsParams{
-		UserID: userID,
-	})
+func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportUserDMSettings, userID)
 }
 
 // gdprExportUserBlocks exports user_blocks where the user is blocker or
@@ -617,20 +606,20 @@ func qPtr(s string) *string {
 // value into []map[string]interface{}.
 // ---------------------------------------------------------------------------
 
-func (s *Store) gdprExportAIUsageLog(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportAIUsageLog, gen.GdprExportAIUsageLogParams{UserID: userID})
+func (s *Store) gdprExportAIUsageLog(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIUsageLog, userID)
 }
 
-func (s *Store) gdprExportAIAgentSessions(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportAIAgentSessions, gen.GdprExportAIAgentSessionsParams{UserID: userID})
+func (s *Store) gdprExportAIAgentSessions(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIAgentSessions, userID)
 }
 
-func (s *Store) gdprExportAIAgentToolCalls(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportAIAgentToolCalls, gen.GdprExportAIAgentToolCallsParams{UserID: userID})
+func (s *Store) gdprExportAIAgentToolCalls(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIAgentToolCalls, userID)
 }
 
-func (s *Store) gdprExportAIHITLReviews(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportAIHITLReviews, gen.GdprExportAIHITLReviewsParams{UserID: userID})
+func (s *Store) gdprExportAIHITLReviews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportAIHITLReviews, userID)
 }
 
 // ---------------------------------------------------------------------------
@@ -900,14 +889,14 @@ func (s *Store) listAuditLogs(ctx context.Context, p gen.ListAuditLogsParams) ([
 // BUG-013: GDPR export wrappers for referral tables (§60).
 // Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 
-func (s *Store) gdprExportReferralCodes(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportReferralCodes, gen.GdprExportReferralCodesParams{UserID: userID})
+func (s *Store) gdprExportReferralCodes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportReferralCodes, userID)
 }
 
-func (s *Store) gdprExportReferralsAsReferrer(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportReferralsAsReferrer, gen.GdprExportReferralsAsReferrerParams{UserID: userID})
+func (s *Store) gdprExportReferralsAsReferrer(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportReferralsAsReferrer, userID)
 }
 
-func (s *Store) gdprExportReferralsAsReferee(ctx context.Context, userID, tenantID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportReferralsAsReferee, gen.GdprExportReferralsAsRefereeParams{UserID: userID})
+func (s *Store) gdprExportReferralsAsReferee(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
+	return exportJSONSlice(ctx, s.read.GdprExportReferralsAsReferee, userID)
 }

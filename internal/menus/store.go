@@ -240,7 +240,6 @@ func genMenuItemToJSON[T menuItemFields](row T) MenuItem {
 func menuItemRowToJSON(row any) MenuItem {
 	type fields struct {
 		ID               pgtype.UUID
-		TenantID         pgtype.UUID
 		MenuID           pgtype.UUID
 		ParentID         pgtype.UUID
 		Label            string
@@ -261,25 +260,25 @@ func menuItemRowToJSON(row any) MenuItem {
 	switch r := row.(type) {
 	case gen.ListMenuItemsRow:
 		f = fields{
-			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.ID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
 			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
 		}
 	case gen.GetMenuItemRow:
 		f = fields{
-			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.ID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
 			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
 		}
 	case gen.CreateMenuItemRow:
 		f = fields{
-			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.ID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
 			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
 		}
 	case gen.UpdateMenuItemRow:
 		f = fields{
-			r.ID, r.TenantID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
+			r.ID, r.MenuID, r.ParentID, r.Label, r.Url, r.Icon,
 			r.SortOrder, r.PermissionNode, r.Visibility, r.Target, r.IsAdSlot,
 			r.AdSlotConfig, r.Status, r.RequiredGroupIds, r.FeatureFlag,
 		}

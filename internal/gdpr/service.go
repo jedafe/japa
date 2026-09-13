@@ -2267,7 +2267,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Collect user's published content.
-	if contentRows, err := s.store.gdprExportUserContent(ctx, userID, tenantID); err == nil {
+	if contentRows, err := s.store.gdprExportUserContent(ctx, userID); err == nil {
 		for _, c := range contentRows {
 			export.Content = append(export.Content, map[string]interface{}{
 				"id":           c.ID.String(),
@@ -2285,7 +2285,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// Collect user's service listings (§98 BUG-008). The base content row is
 	// already in export.Content above; this adds the service_listing_meta
 	// structured fields (category, destination, origin communities, etc.).
-	if serviceRows, err := s.store.gdprExportUserServiceListings(ctx, userID, tenantID); err == nil {
+	if serviceRows, err := s.store.gdprExportUserServiceListings(ctx, userID); err == nil {
 		for _, r := range serviceRows {
 			entry := map[string]interface{}{
 				"content_id":         r.ContentID.String(),
@@ -2321,7 +2321,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Collect user's comments.
-	if commentRows, err := s.store.gdprExportUserComments(ctx, userID, tenantID); err == nil {
+	if commentRows, err := s.store.gdprExportUserComments(ctx, userID); err == nil {
 		for _, c := range commentRows {
 			export.Comments = append(export.Comments, map[string]interface{}{
 				"id":         c.ID.String(),
@@ -2335,7 +2335,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Collect user's space memberships.
-	if spaceRows, err := s.store.gdprExportUserSpaces(ctx, userID, tenantID); err == nil {
+	if spaceRows, err := s.store.gdprExportUserSpaces(ctx, userID); err == nil {
 		for _, sp := range spaceRows {
 			export.Spaces = append(export.Spaces, map[string]interface{}{
 				"id":        sp.ID.String(),
@@ -2352,7 +2352,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 
 	// BUG-004: Collect parent space links and rules for spaces owned by the
 	// user (space_parent_spaces, space_rules).
-	if parentRows, err := s.store.gdprExportOwnedSpaceParents(ctx, userID, tenantID); err == nil {
+	if parentRows, err := s.store.gdprExportOwnedSpaceParents(ctx, userID); err == nil {
 		for _, p := range parentRows {
 			export.SpaceParentSpaces = append(export.SpaceParentSpaces, map[string]interface{}{
 				"space_id":        p.SpaceID.String(),
@@ -2363,7 +2363,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect space_parent_spaces for export", "user_id", userID.String(), "error", err)
 	}
 
-	if ruleRows, err := s.store.gdprExportOwnedSpaceRules(ctx, userID, tenantID); err == nil {
+	if ruleRows, err := s.store.gdprExportOwnedSpaceRules(ctx, userID); err == nil {
 		for _, r := range ruleRows {
 			export.SpaceRules = append(export.SpaceRules, map[string]interface{}{
 				"id":       r.ID.String(),
@@ -2378,7 +2378,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Collect user's payment history.
-	if paymentRows, err := s.store.gdprExportUserPayments(ctx, userID, tenantID); err == nil {
+	if paymentRows, err := s.store.gdprExportUserPayments(ctx, userID); err == nil {
 		for _, p := range paymentRows {
 			export.Payments = append(export.Payments, map[string]interface{}{
 				"id":         p.ID.String(),
@@ -2394,7 +2394,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Collect user's notifications.
-	if notifRows, err := s.store.gdprExportUserNotifications(ctx, userID, tenantID); err == nil {
+	if notifRows, err := s.store.gdprExportUserNotifications(ctx, userID); err == nil {
 		for _, n := range notifRows {
 			export.Notifications = append(export.Notifications, map[string]interface{}{
 				"id":                n.ID.String(),
@@ -2414,35 +2414,35 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// with the tables that could be collected, matching the existing pattern.
 
 	// User profile detail row.
-	if rows, err := s.store.gdprExportUserProfiles(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserProfiles(ctx, userID); err == nil {
 		export.UserProfiles = rows
 	} else {
 		slog.Warn("failed to collect user_profiles for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Reactions the user placed on content.
-	if rows, err := s.store.gdprExportUserReactions(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserReactions(ctx, userID); err == nil {
 		export.Reactions = rows
 	} else {
 		slog.Warn("failed to collect reactions for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Bookmarks the user saved.
-	if rows, err := s.store.gdprExportUserBookmarks(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserBookmarks(ctx, userID); err == nil {
 		export.Bookmarks = rows
 	} else {
 		slog.Warn("failed to collect bookmarks for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Bookmark folders the user created (BL-005).
-	if rows, err := s.store.gdprExportUserBookmarkFolders(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserBookmarkFolders(ctx, userID); err == nil {
 		export.BookmarkFolders = rows
 	} else {
 		slog.Warn("failed to collect bookmark_folders for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Content shares the user created.
-	if rows, err := s.store.gdprExportUserContentShares(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserContentShares(ctx, userID); err == nil {
 		export.ContentShares = rows
 	} else {
 		slog.Warn("failed to collect content_shares for export", "user_id", userID.String(), "error", err)
@@ -2456,35 +2456,35 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Follow relationships initiated by the user.
-	if rows, err := s.store.gdprExportUserFollows(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserFollows(ctx, userID); err == nil {
 		export.Follows = rows
 	} else {
 		slog.Warn("failed to collect follows for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Forum threads authored by the user.
-	if rows, err := s.store.gdprExportUserForumThreads(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserForumThreads(ctx, userID); err == nil {
 		export.ForumThreads = rows
 	} else {
 		slog.Warn("failed to collect forum_threads for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Forum replies authored by the user.
-	if rows, err := s.store.gdprExportUserForumReplies(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserForumReplies(ctx, userID); err == nil {
 		export.ForumReplies = rows
 	} else {
 		slog.Warn("failed to collect forum_replies for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Forum votes cast by the user.
-	if rows, err := s.store.gdprExportUserForumVotes(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserForumVotes(ctx, userID); err == nil {
 		export.ForumVotes = rows
 	} else {
 		slog.Warn("failed to collect forum_votes for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Forum bookmarks the user saved.
-	if rows, err := s.store.gdprExportUserForumBookmarks(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserForumBookmarks(ctx, userID); err == nil {
 		export.ForumBookmarks = rows
 	} else {
 		slog.Warn("failed to collect forum_bookmarks for export", "user_id", userID.String(), "error", err)
@@ -2499,7 +2499,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 		slog.Warn("failed to collect forum_poll_votes for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserForumThreadTags(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserForumThreadTags(ctx, userID); err == nil {
 		export.ForumThreadTags = rows
 	} else {
 		slog.Warn("failed to collect forum_thread_tags for export", "user_id", userID.String(), "error", err)
@@ -2512,98 +2512,98 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Media uploaded by the user.
-	if rows, err := s.store.gdprExportUserMedia(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMedia(ctx, userID); err == nil {
 		export.Media = rows
 	} else {
 		slog.Warn("failed to collect media for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Reviews the user wrote.
-	if rows, err := s.store.gdprExportUserReviews(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserReviews(ctx, userID); err == nil {
 		export.Reviews = rows
 	} else {
 		slog.Warn("failed to collect reviews for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Space membership records.
-	if rows, err := s.store.gdprExportUserSpaceMembers(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserSpaceMembers(ctx, userID); err == nil {
 		export.SpaceMembers = rows
 	} else {
 		slog.Warn("failed to collect space_members for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Space moderator assignments (space_moderators table).
-	if rows, err := s.store.gdprExportUserSpaceModerators(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserSpaceModerators(ctx, userID); err == nil {
 		export.SpaceModerators = rows
 	} else {
 		slog.Warn("failed to collect space_moderators for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Tag moderator assignments (tag_moderators table — Section 08/49).
-	if rows, err := s.store.gdprExportUserTagModerators(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserTagModerators(ctx, userID); err == nil {
 		export.TagModerators = rows
 	} else {
 		slog.Warn("failed to collect tag_moderators for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Consent records (full rows, complementing the summarized Consents block).
-	if rows, err := s.store.gdprExportUserConsentRecords(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserConsentRecords(ctx, userID); err == nil {
 		export.ConsentRecords = rows
 	} else {
 		slog.Warn("failed to collect consent_records for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Wallet ledger entries for the user.
-	if rows, err := s.store.gdprExportUserWalletLedger(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserWalletLedger(ctx, userID); err == nil {
 		export.WalletLedger = rows
 	} else {
 		slog.Warn("failed to collect wallet_ledger for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Activity events for the user (BUG-008 — previously missing from export).
-	if rows, err := s.store.gdprExportUserActivityEvents(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserActivityEvents(ctx, userID); err == nil {
 		export.ActivityEvents = rows
 	} else {
 		slog.Warn("failed to collect activity_events for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Learning lesson progress.
-	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID); err == nil {
 		export.LessonProgress = rows
 	} else {
 		slog.Warn("failed to collect lesson_progress for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Issued learning certificates.
-	if rows, err := s.store.gdprExportUserLearningCertificates(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserLearningCertificates(ctx, userID); err == nil {
 		export.LearningCertificates = rows
 	} else {
 		slog.Warn("failed to collect learning_certificates for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Mentorship matches where the user is mentor or mentee.
-	if rows, err := s.store.gdprExportUserMentorshipMatches(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMentorshipMatches(ctx, userID); err == nil {
 		export.MentorshipMatches = rows
 	} else {
 		slog.Warn("failed to collect mentorship_matches for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §102 Mentorship connections where the user is mentor or mentee (ADR-110).
-	if rows, err := s.store.gdprExportUserMentorshipConnections(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMentorshipConnections(ctx, userID); err == nil {
 		export.MentorshipConnections = rows
 	} else {
 		slog.Warn("failed to collect mentorship_connections for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §102 Mentor profiles owned by the user (ADR-110).
-	if rows, err := s.store.gdprExportUserMentorProfiles(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMentorProfiles(ctx, userID); err == nil {
 		export.MentorProfiles = rows
 	} else {
 		slog.Warn("failed to collect mentor_profiles for export", "user_id", userID.String(), "error", err)
 	}
 
 	// §102 Mentor sessions where the user is the mentee (ADR-110).
-	if rows, err := s.store.gdprExportUserMentorSessions(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMentorSessions(ctx, userID); err == nil {
 		export.MentorSessions = rows
 	} else {
 		slog.Warn("failed to collect mentor_sessions for export", "user_id", userID.String(), "error", err)
@@ -2617,42 +2617,42 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	}
 
 	// Organizations owned by the user.
-	if rows, err := s.store.gdprExportUserOrganizations(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserOrganizations(ctx, userID); err == nil {
 		export.Organizations = rows
 	} else {
 		slog.Warn("failed to collect organizations for export", "user_id", userID.String(), "error", err)
 	}
 
 	// API keys issued by the user.
-	if rows, err := s.store.gdprExportUserApiKeys(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserApiKeys(ctx, userID); err == nil {
 		export.ApiKeys = rows
 	} else {
 		slog.Warn("failed to collect api_keys for export", "user_id", userID.String(), "error", err)
 	}
 
 	// User preference settings.
-	if rows, err := s.store.gdprExportUserPreferences(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserPreferences(ctx, userID); err == nil {
 		export.UserPreferences = rows
 	} else {
 		slog.Warn("failed to collect user_preferences for export", "user_id", userID.String(), "error", err)
 	}
 
 	// User-initiated mutes of other users.
-	if rows, err := s.store.gdprExportUserMutes(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserMutes(ctx, userID); err == nil {
 		export.UserMutes = rows
 	} else {
 		slog.Warn("failed to collect user_mutes for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Spaces the user muted.
-	if rows, err := s.store.gdprExportUserSpaceMutes(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserSpaceMutes(ctx, userID); err == nil {
 		export.SpaceMutes = rows
 	} else {
 		slog.Warn("failed to collect space_mutes for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Comments the user posted on support tickets.
-	if rows, err := s.store.gdprExportUserTicketComments(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserTicketComments(ctx, userID); err == nil {
 		export.TicketComments = rows
 	} else {
 		slog.Warn("failed to collect ticket_comments for export", "user_id", userID.String(), "error", err)
@@ -2661,68 +2661,68 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// Comparison data authored by the user (BUG-004). The parent content rows
 	// are exported above via GdprExportUserContent; these export the linked
 	// comparison_items/dimensions/values so the user receives the full set.
-	if rows, err := s.store.gdprExportUserComparisonItems(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonItems(ctx, userID); err == nil {
 		export.ComparisonItems = rows
 	} else {
 		slog.Warn("failed to collect comparison_items for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonDimensions(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonDimensions(ctx, userID); err == nil {
 		export.ComparisonDimensions = rows
 	} else {
 		slog.Warn("failed to collect comparison_dimensions for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonValues(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonValues(ctx, userID); err == nil {
 		export.ComparisonValues = rows
 	} else {
 		slog.Warn("failed to collect comparison_values for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonProfiles(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonProfiles(ctx, userID); err == nil {
 		export.ComparisonProfiles = rows
 	} else {
 		slog.Warn("failed to collect comparison_profiles for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonScores(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonScores(ctx, userID); err == nil {
 		export.ComparisonScores = rows
 	} else {
 		slog.Warn("failed to collect comparison_scores for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonRecommendations(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonRecommendations(ctx, userID); err == nil {
 		export.ComparisonRecommendations = rows
 	} else {
 		slog.Warn("failed to collect comparison_recommendations for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonDataIngestionJobs(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonDataIngestionJobs(ctx, userID); err == nil {
 		export.ComparisonDataIngestionJobs = rows
 	} else {
 		slog.Warn("failed to collect comparison_data_ingestion_jobs for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserComparisonDataSources(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserComparisonDataSources(ctx, userID); err == nil {
 		export.ComparisonDataSources = rows
 	} else {
 		slog.Warn("failed to collect comparison_data_sources for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Japa University creator-economy data (ADR-063 / audit C2).
-	if rows, err := s.store.gdprExportInstructorProfiles(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportInstructorProfiles(ctx, userID); err == nil {
 		export.InstructorProfiles = rows
 	} else {
 		slog.Warn("failed to collect instructor_profiles for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportRevenueSplits(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportRevenueSplits(ctx, userID); err == nil {
 		export.RevenueSplits = rows
 	} else {
 		slog.Warn("failed to collect revenue_splits for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportInstructorPayouts(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportInstructorPayouts(ctx, userID); err == nil {
 		export.InstructorPayouts = rows
 	} else {
 		slog.Warn("failed to collect instructor_payouts for export", "user_id", userID.String(), "error", err)
@@ -2739,7 +2739,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// BUG-014: export push_tokens (device push notification tokens) so the
 	// GDPR data export includes PII-adjacent device identifiers.
 	// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-	if rows, err := s.store.gdprExportPushTokens(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportPushTokens(ctx, userID); err == nil {
 		export.PushTokens = rows
 	} else {
 		slog.Warn("failed to collect push_tokens for export", "user_id", userID.String(), "error", err)
@@ -2748,25 +2748,25 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// BUG-022: export DM tables so the GDPR data export includes DM
 	// conversations, messages, requests, privacy settings, and block
 	// relationships. Ref: Section 19 + ADR-014.
-	if rows, err := s.store.gdprExportUserDMConversations(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserDMConversations(ctx, userID); err == nil {
 		export.DMConversations = rows
 	} else {
 		slog.Warn("failed to collect dm_conversations for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserDMMessages(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserDMMessages(ctx, userID); err == nil {
 		export.DMMessages = rows
 	} else {
 		slog.Warn("failed to collect dm_messages for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserDMRequests(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserDMRequests(ctx, userID); err == nil {
 		export.DMRequests = rows
 	} else {
 		slog.Warn("failed to collect dm_requests for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserDMSettings(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserDMSettings(ctx, userID); err == nil {
 		export.DMSettings = rows
 	} else {
 		slog.Warn("failed to collect user_dm_settings for export", "user_id", userID.String(), "error", err)
@@ -2781,7 +2781,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// BUG-015: export attestation_community_updates authored by the user
 	// so the GDPR data export includes community-submitted attestation
 	// pathway updates. Ref: §97, ADR-105.
-	if rows, err := s.store.gdprExportAttestationCommunityUpdates(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportAttestationCommunityUpdates(ctx, userID); err == nil {
 		export.AttestationCommunityUpdates = rows
 	} else {
 		slog.Warn("failed to collect attestation_community_updates for export", "user_id", userID.String(), "error", err)
@@ -2789,19 +2789,19 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 
 	// BUG-025: export calendar_entries submitted by the user, calendar_saves,
 	// and calendar_subscriptions. Ref: §86, ADR-094.
-	if rows, err := s.store.gdprExportUserCalendarEntries(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserCalendarEntries(ctx, userID); err == nil {
 		export.CalendarEntries = rows
 	} else {
 		slog.Warn("failed to collect calendar_entries for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserCalendarSaves(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserCalendarSaves(ctx, userID); err == nil {
 		export.CalendarSaves = rows
 	} else {
 		slog.Warn("failed to collect calendar_saves for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportUserCalendarSubscriptions(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportUserCalendarSubscriptions(ctx, userID); err == nil {
 		export.CalendarSubscriptions = rows
 	} else {
 		slog.Warn("failed to collect calendar_subscriptions for export", "user_id", userID.String(), "error", err)
@@ -3084,19 +3084,19 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// §60 BUG-013: referral data — referral_codes owned by the user, referrals
 	// where they are the referrer, and referrals where they are the referee.
 	// Referee/referrer PII is excluded from the opposite-side export per §60.
-	if rows, err := s.store.gdprExportReferralCodes(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportReferralCodes(ctx, userID); err == nil {
 		export.ReferralCodes = rows
 	} else {
 		slog.Warn("failed to collect referral_codes for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportReferralsAsReferrer(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportReferralsAsReferrer(ctx, userID); err == nil {
 		export.ReferralsAsReferrer = rows
 	} else {
 		slog.Warn("failed to collect referrals_as_referrer for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportReferralsAsReferee(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportReferralsAsReferee(ctx, userID); err == nil {
 		export.ReferralsAsReferee = rows
 	} else {
 		slog.Warn("failed to collect referrals_as_referee for export", "user_id", userID.String(), "error", err)
@@ -3159,25 +3159,25 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// and the user's Honcho AI context. Each call is best-effort (logs on
 	// failure) so a failing external Honcho call does not break the export.
 	// Ref: japaconnect-engineering/sections/20-ai-core.md
-	if rows, err := s.store.gdprExportAIUsageLog(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportAIUsageLog(ctx, userID); err == nil {
 		export.AIUsageLog = rows
 	} else {
 		slog.Warn("failed to collect ai_usage_log for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportAIAgentSessions(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportAIAgentSessions(ctx, userID); err == nil {
 		export.AIAgentSessions = rows
 	} else {
 		slog.Warn("failed to collect ai_agent_sessions for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportAIAgentToolCalls(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportAIAgentToolCalls(ctx, userID); err == nil {
 		export.AIAgentToolCalls = rows
 	} else {
 		slog.Warn("failed to collect ai_agent_tool_calls for export", "user_id", userID.String(), "error", err)
 	}
 
-	if rows, err := s.store.gdprExportAIHITLReviews(ctx, userID, tenantID); err == nil {
+	if rows, err := s.store.gdprExportAIHITLReviews(ctx, userID); err == nil {
 		export.AIHITLReviews = rows
 	} else {
 		slog.Warn("failed to collect ai_hitl_reviews for export", "user_id", userID.String(), "error", err)

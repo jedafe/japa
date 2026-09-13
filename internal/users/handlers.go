@@ -976,7 +976,7 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

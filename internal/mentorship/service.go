@@ -95,7 +95,17 @@ func (s *Service) ListPrograms(ctx context.Context, tenantID pgtype.UUID, limit,
 
 	programs := make([]ProgramWithCounts, len(rows))
 	for i, r := range rows {
-		programs[i] = ProgramWithCounts(r)
+		programs[i] = ProgramWithCounts{
+			ID:          r.ID,
+			Name:        r.Name,
+			Description: r.Description,
+			IsActive:    r.IsActive,
+			CreatedAt:   r.CreatedAt,
+			UpdatedAt:   r.UpdatedAt,
+			MentorCount: r.MentorCount,
+			MenteeCount: r.MenteeCount,
+			MatchCount:  r.MatchCount,
+		}
 	}
 
 	return programs, nil
@@ -179,7 +189,18 @@ func (s *Service) ListMatches(ctx context.Context, tenantID pgtype.UUID, limit, 
 
 	matches := make([]Match, len(rows))
 	for i, r := range rows {
-		matches[i] = Match(r)
+		matches[i] = Match{
+			ID:             r.ID,
+			ProgramID:      r.ProgramID,
+			MentorID:       r.MentorID,
+			MenteeID:       r.MenteeID,
+			Status:         r.Status,
+			CreatedAt:      r.CreatedAt,
+			UpdatedAt:      r.UpdatedAt,
+			ProgramName:    r.ProgramName,
+			MentorUsername: r.MentorUsername,
+			MenteeUsername: r.MenteeUsername,
+		}
 	}
 
 	return matches, nil

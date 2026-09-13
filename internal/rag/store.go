@@ -172,7 +172,7 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID: row.ID,
+			ID: row,
 		})
 	}
 
@@ -194,7 +194,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID: row.ID,
+			ID: row,
 		})
 	}
 
@@ -216,7 +216,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID: row.ID,
+			ID: row,
 		})
 	}
 
@@ -238,7 +238,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 	results := make([]PublishedContentID, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, PublishedContentID{
-			ID: row.ID,
+			ID: row,
 		})
 	}
 
