@@ -243,10 +243,7 @@ func (s *Service) ListConsentsByTenant(ctx context.Context, tenantID pgtype.UUID
 
 // RequestDataExport creates a data export request and enqueues a background job.
 func (s *Service) RequestDataExport(ctx context.Context, tenantID, userID pgtype.UUID) (gen.DataExportRequest, error) {
-	request, err := s.store.createDataExportRequest(ctx, gen.CreateDataExportRequestParams{
-
-		UserID: userID,
-	})
+	request, err := s.store.createDataExportRequest(ctx, userID)
 	if err != nil {
 		return gen.DataExportRequest{}, fmt.Errorf("creating data export request: %w", err)
 	}
@@ -429,19 +426,19 @@ func (s *Service) CleanupExpiredExports(ctx context.Context) error {
 		// Delete the file from storage (best-effort). The LocalStorage
 		// GetPath resolves the on-disk file; we remove it via os.Remove.
 		if s.storage != nil {
-			if path, pathErr := s.storage.GetPath(e.TenantID, e.ID); pathErr == nil {
+			if path, pathErr := s.storage.GetPath(pgtype.UUID{}, e); pathErr == nil {
 				if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
 					slog.Warn("gdpr: failed to delete expired export file",
-						"request_id", e.ID.String(), "error", rmErr)
+						"request_id", e.String(), "error", rmErr)
 				}
 			}
 		}
 
 		// Null out the download URL and set status to 'expired' so the
 		// download handler returns 404 and the row is not re-cleaned.
-		if err := s.store.write.ExpireDataExport(ctx, gen.ExpireDataExportParams(e)); err != nil {
+		if err := s.store.write.ExpireDataExport(ctx, e); err != nil {
 			slog.Warn("gdpr: failed to expire data export row",
-				"request_id", e.ID.String(), "error", err)
+				"request_id", e.String(), "error", err)
 		}
 	}
 
@@ -557,9 +554,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	// 1. Anonymize user row + user_profile PII.
 	if step < deletionStepAnonymized {
-		if err := s.store.anonymizeUser(ctx, gen.AnonymizeUserParams{
-			UserID: request.UserID,
-		}); err != nil {
+		if err := s.store.anonymizeUser(ctx, request.UserID); err != nil {
 			s.markDeletionFailed(ctx, requestID)
 			return fmt.Errorf("anonymizing user: %w", err)
 		}
@@ -568,9 +563,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// so it is scrubbed during the retention window, not just at hard
 		// delete (ADR-014 / ADR-057). Best-effort: a failure logs a warning
 		// but does not abort — the user row is already anonymized.
-		if err := s.store.anonymizeUserProfile(ctx, gen.AnonymizeUserProfileParams{
-			UserID: request.UserID,
-		}); err != nil {
+		if err := s.store.anonymizeUserProfile(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize user profile during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -579,9 +572,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// for audit until HardDeleteUser cascades; only the goals text is
 		// cleared so it is not recoverable during the retention window.
 		// Best-effort: a failure logs a warning but does not abort.
-		if err := s.store.anonymizeMentorshipConnections(ctx, gen.AnonymizeMentorshipConnectionsParams{
-			UserID: request.UserID,
-		}); err != nil {
+		if err := s.store.anonymizeMentorshipConnections(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize mentorship connections during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -589,9 +580,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// owned by the user's affiliate links (Section 56, ADR-014). The
 		// events are retained for commission audit; only tracking hashes are
 		// cleared. Best-effort: a failure logs a warning but does not abort.
-		if err := s.store.anonymizeAffiliateLinkEvents(ctx, gen.AnonymizeAffiliateLinkEventsParams{
-			UserID: request.UserID,
-		}); err != nil {
+		if err := s.store.anonymizeAffiliateLinkEvents(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize affiliate link events during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -627,29 +616,19 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			fn   func() error
 		}{
 			{"totp_credentials", func() error {
-				return s.store.deleteUserTOTPCredentials(ctx, gen.DeleteUserTOTPCredentialsParams{
-					UserID: request.UserID,
-				})
+				return s.store.deleteUserTOTPCredentials(ctx, request.UserID)
 			}},
 			{"oauth_accounts", func() error {
-				return s.store.deleteUserOAuthAccounts(ctx, gen.DeleteUserOAuthAccountsParams{
-					UserID: request.UserID,
-				})
+				return s.store.deleteUserOAuthAccounts(ctx, request.UserID)
 			}},
 			{"password_reset_tokens", func() error {
-				return s.store.deleteUserPasswordResetTokens(ctx, gen.DeleteUserPasswordResetTokensParams{
-					UserID: request.UserID,
-				})
+				return s.store.deleteUserPasswordResetTokens(ctx, request.UserID)
 			}},
 			{"email_verifications", func() error {
-				return s.store.deleteUserEmailVerifications(ctx, gen.DeleteUserEmailVerificationsParams{
-					UserID: request.UserID,
-				})
+				return s.store.deleteUserEmailVerifications(ctx, request.UserID)
 			}},
 			{"password_history", func() error {
-				return s.store.deleteUserPasswordHistory(ctx, gen.DeleteUserPasswordHistoryParams{
-					UserID: request.UserID,
-				})
+				return s.store.deleteUserPasswordHistory(ctx, request.UserID)
 			}},
 		}
 		for _, t := range authPIITables {
@@ -769,9 +748,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	// 2. Revoke all refresh tokens (best-effort).
 	if step < deletionStepTokensRevoked {
-		if err := s.store.deleteUserTokens(ctx, gen.DeleteUserTokensParams{
-			UserID: request.UserID,
-		}); err != nil {
+		if err := s.store.deleteUserTokens(ctx, request.UserID); err != nil {
 			slog.Warn("failed to revoke user tokens during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
