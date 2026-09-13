@@ -491,7 +491,7 @@ func (s *Service) GetMentorByUsername(ctx context.Context, tenantID pgtype.UUID,
 	s.trackEvent(ctx, tenantID, row.UserID, "mentor_view", "user", row.UserID,
 		map[string]any{"mentor_username": row.Username})
 
-	return mentorSummaryFromRow(row.UserID, row.TenantID, row.IsMentor, row.MentorCapacity,
+	return mentorSummaryFromRow(row.UserID, row.IsMentor, row.MentorCapacity,
 		row.ActiveMenteeCount, row.MentorAreas, row.MentorBio, row.MentorSince,
 		row.DisplayName, row.AvatarUrl, row.Username, 0), nil
 }
@@ -524,7 +524,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 			if i == 0 {
 				total = int(r.TotalCount)
 			}
-			mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+			mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 				r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 				r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 		}
@@ -552,7 +552,7 @@ func (s *Service) ListMentors(ctx context.Context, tenantID, destSpaceID pgtype.
 		if i == 0 {
 			total = int(r.TotalCount)
 		}
-		mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 	}
@@ -611,7 +611,7 @@ LIMIT $3
 		}
 
 		if err := rows.Scan(
-			&r.UserID, &r.TenantID, &r.IsMentor, &r.MentorCapacity,
+			&r.UserID, &r.IsMentor, &r.MentorCapacity,
 			&r.ActiveMenteeCount, &r.MentorAreas, &r.MentorBio, &r.MentorSince,
 			&r.DisplayName, &r.AvatarUrl, &r.Username, &r.AvailableSlots,
 		); err != nil {
@@ -619,7 +619,7 @@ LIMIT $3
 		}
 
 		out = append(out, mentorSummaryFromRow(
-			r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+			r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
 		))
@@ -679,7 +679,7 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, tenantID pgtype.UUID, use
 
 	mentors := make([]MentorSummary, len(rows))
 	for i, r := range rows {
-		mentors[i] = mentorSummaryFromRow(r.UserID, r.TenantID, r.IsMentor, r.MentorCapacity,
+		mentors[i] = mentorSummaryFromRow(r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots)
 	}
@@ -1130,7 +1130,7 @@ func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, tenantID, mentor
 }
 
 // mentorSummaryFromRow builds a MentorSummary from common field values.
-func mentorSummaryFromRow(userID, tenantID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32) MentorSummary {
+func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32) MentorSummary {
 	return MentorSummary{
 		UserID:            userID,
 		Username:          username,
