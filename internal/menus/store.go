@@ -81,7 +81,7 @@ func (s *Store) getMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug st
 func (s *Store) createMenu(ctx context.Context, p gen.CreateMenuParams) (gen.Menu, error) {
 	row, err := s.write.CreateMenu(ctx, p)
 	if err != nil {
-		// Map unique violation on (tenant_id, slug) to ErrDuplicateSlug so
+		// Map unique violation on (, slug) to ErrDuplicateSlug so
 		// the handler returns 409 already_exists instead of 500 (Rule 5).
 		// Ref: ADR-054; matches the pattern in internal/sidebars/store.go.
 		var pgErr *pgconn.PgError
@@ -194,7 +194,7 @@ func (s *Store) getUserGroupIDs(ctx context.Context, tenantID, userID pgtype.UUI
 // MenuItem is the JSON-safe representation of a menu item with children.
 type MenuItem struct {
 	ID               string         `json:"id"`
-	TenantID         string         `json:"tenant_id"`
+	TenantID         string         
 	MenuID           string         `json:"menu_id"`
 	ParentID         *string        `json:"parent_id,omitempty"`
 	Label            string         `json:"label"`
@@ -215,7 +215,7 @@ type MenuItem struct {
 // MenuResponse is the JSON response for a menu with resolved items.
 type MenuResponse struct {
 	ID        string     `json:"id"`
-	TenantID  string     `json:"tenant_id"`
+	TenantID  string     
 	Slug      string     `json:"slug"`
 	Name      string     `json:"name"`
 	Placement string     `json:"placement"`

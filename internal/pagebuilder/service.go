@@ -34,7 +34,7 @@ func NewService(database *db.DB) *Service {
 
 // SetRedis allows late binding of the Valkey client (matching the pattern used
 // by other services constructed before the Valkey client is ready). Used for
-// the published-page cache (jc:page:{tenant_id}:{slug}).
+// the published-page cache (jc:page:{}:{slug}).
 func (s *Service) SetRedis(r valkeycompat.Cmdable) {
 	s.redis = r
 }
@@ -222,10 +222,10 @@ func (s *Service) GetPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, 
 }
 
 // GetPageBySlug returns a published page by slug for public consumption.
-// Results are Valkey-cached under jc:page:{tenant_id}:{slug} with a TTL from
+// Results are Valkey-cached under jc:page:{}:{slug} with a TTL from
 // the page.cache_ttl_secs system setting (default 300s). The cache is
 // invalidated on any page write (update/delete/publish/archive).
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
 func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Page, error) {
 	cacheKey := pageCacheKey(tenantID, slug)
 
@@ -486,7 +486,7 @@ func (s *Service) ReorderBlocks(ctx context.Context, id, tenantID pgtype.UUID, b
 }
 
 // invalidatePageCache deletes the Valkey cache entry for a published page.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
 func (s *Service) invalidatePageCache(ctx context.Context, tenantID pgtype.UUID, slug string) {
 	if s.redis == nil || slug == "" {
 		return
@@ -496,7 +496,7 @@ func (s *Service) invalidatePageCache(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // pageCacheKey returns the Valkey key for a published page's cached data.
-// Ref: conventions/valkey-keys-catalog.md — jc:page:{tenant_id}:{slug}.
+// Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
 func pageCacheKey(tenantID pgtype.UUID, slug string) string {
 	return "jc:page:" + tenantID.String() + ":" + slug
 }

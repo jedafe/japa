@@ -1,7 +1,6 @@
 // Package desktopauth provides authentication support for the JapaConnect
 // desktop studio client.
-//
-// Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md
+// // Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md
 package desktopauth
 
 import (
@@ -56,8 +55,7 @@ type ExchangeKeyResponse struct {
 // ExchangeKey swaps a valid API key for a JWT access/refresh token pair.
 // This allows the desktop studio client to authenticate against admin routes
 // that require a Bearer JWT.
-//
-// Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md.
+// // Ref: japaconnect-engineering/sections/105-japa-content-studio-desktop.md.
 func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

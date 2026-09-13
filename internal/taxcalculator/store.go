@@ -1,7 +1,6 @@
 // Package taxcalculator implements the Tax & Financial Obligations
 // Calculator (§100, ADR-108).
-//
-// The package exposes two domain tables. tax_treaty_pairs records whether
+// // The package exposes two domain tables. tax_treaty_pairs records whether
 // a double-taxation treaty exists between an origin and destination space
 // (country-level spaces per ADR-053). tax_obligation_guides stores
 // per-employment-status tax obligation guides — including residency
@@ -10,10 +9,8 @@
 // provides public lookup (by destination/origin/employment), public
 // treaty-status lookup, admin CRUD, a Content Agent draft placeholder,
 // and HITL approval.
-//
-// Ref: japaconnect-engineering/sections/100-tax-calculator.md
-//
-//	japaconnect-engineering/adr/ADR-108-tax-calculator.md
+// // Ref: japaconnect-engineering/sections/100-tax-calculator.md
+// //	japaconnect-engineering/adr/ADR-108-tax-calculator.md
 package taxcalculator
 
 import (
@@ -443,7 +440,7 @@ WHERE id = $%d
 	return nil
 }
 
-// DeleteGuide deletes a tax_obligation_guides row by id and tenant_id.
+// DeleteGuide deletes a tax_obligation_guides row by id and .
 func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_obligation_guides
@@ -500,7 +497,7 @@ type TreatyUpsertInput struct {
 }
 
 // CreateOrUpdateTreaty upserts a tax_treaty_pairs row keyed by
-// (tenant_id, origin_space_id, destination_space_id). On conflict it
+// (, origin_space_id, destination_space_id). On conflict it
 // updates the mutable fields and returns the resulting row.
 func (s *Store) CreateOrUpdateTreaty(ctx context.Context, in TreatyUpsertInput) (TreatyRow, error) {
 	const q = `
@@ -543,7 +540,7 @@ type UpdateTreatyInput struct {
 }
 
 // getTreatyByID returns a tax_treaty_pairs row by its primary key and
-// tenant_id, joined with spaces for origin/destination names.
+// , joined with spaces for origin/destination names.
 func (s *Store) getTreatyByID(ctx context.Context, id pgtype.UUID) (TreatyRow, error) {
 	const q = `
 SELECT t.id, t.origin_space_id, os.name AS origin_space_name,
@@ -577,7 +574,7 @@ LIMIT 1
 }
 
 // UpdateTreaty updates the mutable fields on a tax_treaty_pairs row
-// identified by id and tenant_id, returning the updated row.
+// identified by id and , returning the updated row.
 func (s *Store) UpdateTreaty(ctx context.Context, id, tenantID pgtype.UUID, in UpdateTreatyInput) (TreatyRow, error) {
 	var (
 		sets   []string
@@ -629,7 +626,7 @@ WHERE id = $%d
 	return s.getTreatyByID(ctx, id)
 }
 
-// DeleteTreaty deletes a tax_treaty_pairs row by id and tenant_id.
+// DeleteTreaty deletes a tax_treaty_pairs row by id and .
 func (s *Store) DeleteTreaty(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM tax_treaty_pairs

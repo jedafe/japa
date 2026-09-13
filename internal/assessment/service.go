@@ -3,10 +3,8 @@
 // engine, roadmap generation, and admin stats. It reads assessment.* system
 // settings via the hot-reloadable config.Settings and enqueues Asynq tasks
 // (assessment:score_submission, wallet:award_points) fire-and-forget.
-//
-// Ref: japaconnect-engineering/sections/71-readiness-assessment.md
-//
-//	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
+// // Ref: japaconnect-engineering/sections/71-readiness-assessment.md
+// //	japaconnect-engineering/adr/ADR-071-japa-readiness-assessment.md
 package assessment
 
 import (
@@ -136,11 +134,9 @@ type RoadmapStep struct {
 // assessment. It drives destination-specific roadmap selection, RAG grounding,
 // and post-submission visitor profile enrichment.
 // Ref: sections/71-readiness-assessment.md §2.2
-//
-//	docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
-//	docs/superpowers/plans/2026-08-31-geo-aware-readiness-roadmap.md
-//
-// Exported fields are persisted with the score for audit and read-time
+// //	docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md
+// docs/superpowers/plans/2026-08-31-geo-aware-readiness-roadmap.md
+// // Exported fields are persisted with the score for audit and read-time
 // personalization; GeoSpaceID is resolved only at score time and is not stored.
 type JourneyContext struct {
 	OriginCountry      string      `json:"origin_country,omitempty"`
@@ -163,11 +159,10 @@ type ScoreResult struct {
 
 // AssessmentFormDTO is the active assessment form with its scoring_config and
 // fields, ready for the scoring engine or for public display.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AssessmentFormDTO struct {
 	ID            string            `json:"id"`
-	TenantID      string            `json:"tenant_id"`
+	TenantID      string            
 	Name          string            `json:"name"`
 	Slug          string            `json:"slug"`
 	Description   string            `json:"description"`
@@ -211,8 +206,7 @@ func assessmentDimensions(form *AssessmentFormDTO) []string {
 // config resolved from the config JSONB column. Options (for select/multiselect
 // fields) and Placeholder are exposed so the frontend can render the form
 // controls without a second round-trip (Rule 16 — no hardcoded option lists).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AssessmentField struct {
 	ID          string             `json:"id"`
 	Label       string             `json:"label"`
@@ -352,8 +346,7 @@ type ScoreSubmissionInput struct {
 // (option_scores map + weight), aggregates dimension scores, classifies
 // against scoring_config.thresholds, generates roadmap_content, and writes
 // the assessment_results row. This is called by the worker task handler.
-//
-// The caller provides the submission's field_values and user_id via
+// // The caller provides the submission's field_values and user_id via
 // ScoreSubmissionInput. The worker handler fetches the submission row from
 // the shared form_submissions store and passes its field_values here.
 func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, input ScoreSubmissionInput) (pgtype.UUID, error) {
@@ -992,8 +985,7 @@ func extractStringValue(raw map[string]any, keys ...string) string {
 // scoring dimensions. Dimensions are sorted ascending by score; the weakest
 // dimensions get the highest-priority roadmap steps. Each step links to a
 // platform content slug.
-//
-// The curated step library is sourced from scoring_config.curated_roadmap when
+// // The curated step library is sourced from scoring_config.curated_roadmap when
 // the admin has configured it (ADR-071 §3 — curated steps are
 // admin-configurable, stored in scoring_config). When that field is empty,
 // GenerateRoadmap falls back to the built-in default library returned by
@@ -1072,8 +1064,7 @@ func GenerateRoadmap(dimensionScores map[string]int, scoringConfig ScoringConfig
 // pickBestRoadmapContent selects the highest-scoring, unused published guide for a
 // roadmap step. It does not restrict candidates to the original step's slug family,
 // so any guide with the same dimension and a better journey match can win.
-//
-// Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
+// // Ref: docs/superpowers/specs/2026-09-09-readiness-roadmap-content-journey-design.md
 func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base string, used map[string]bool, journeyCtx JourneyContext) (gen.FindRoadmapContentByDimensionRow, int) {
 	best := gen.FindRoadmapContentByDimensionRow{}
 	bestScore := 0
@@ -1125,8 +1116,7 @@ func pickBestRoadmapContent(rows []gen.FindRoadmapContentByDimensionRow, base st
 // published content for the visitor's journey context when
 // assessment.geo_content_resolution_enabled is true. It mutates the provided
 // steps in place and returns the same slice.
-//
-// A step whose content_slug is empty (e.g. AI-generated prose without a link)
+// // A step whose content_slug is empty (e.g. AI-generated prose without a link)
 // is skipped. The original curated step is kept when no candidate is specific.
 func (s *Service) resolveRoadmapContent(ctx context.Context, tenantID pgtype.UUID, steps []RoadmapStep, journeyCtx JourneyContext) []RoadmapStep {
 	if s.store == nil || s.settings == nil {
@@ -1264,8 +1254,7 @@ func stepMatchesJourney(step RoadmapStep, journeyCtx JourneyContext) bool {
 // personalized supplementary roadmap steps as prose, grounded via the RAG
 // layer (§69, ADR-069). Falls back gracefully to no AI steps if the AI
 // gateway or RAG retrieval fails — curated steps are always present.
-//
-// The prompt includes the user's dimension scores and threshold label so
+// // The prompt includes the user's dimension scores and threshold label so
 // the AI can target its recommendations to the user's weakest areas.
 // RAG grounding (when available) injects relevant platform content passages
 // so the AI's recommendations reference real JapaConnect resources.
@@ -1430,8 +1419,7 @@ func (s *Service) CleanupAnonymousResults(ctx context.Context, retentionHours in
 // to recommended roadmap steps. Each step links to a platform content slug.
 // This is the default fallback library used when scoring_config.curated_roadmap
 // is not set; admins can override it via scoring_config (ADR-071 §3).
-//
-// The library covers both the default seeded form dimensions (financial,
+// // The library covers both the default seeded form dimensions (financial,
 // logistical, professional, personal — see migration 000279) and the
 // ADR-071 §1 example dimensions (language, qualifications,
 // visa_eligibility, destination_knowledge) so the roadmap is populated

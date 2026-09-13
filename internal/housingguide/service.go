@@ -2,10 +2,8 @@
 // retrieval, admin CRUD, Content Agent draft generation, and HITL
 // approval. Feature-flagged via housing_guide.enabled system_setting
 // (§96, ADR-104).
-//
-// Ref: japaconnect-engineering/sections/96-housing-guide.md
-//
-//	japaconnect-engineering/adr/ADR-104-housing-guide.md
+// // Ref: japaconnect-engineering/sections/96-housing-guide.md
+// //	japaconnect-engineering/adr/ADR-104-housing-guide.md
 package housingguide
 
 import (
@@ -520,7 +518,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 	// `housing_guide` entity type in the search indexer and no housing_guides
 	// Meilisearch index. When ADR-088 RAG indexing is extended to housing
 	// guides, enqueue `search:index_entity` here with payload
-	// {"entity_id": id, "entity_type": "housing_guide", "tenant_id": ...}
+	// {"entity_id": id, "entity_type": "housing_guide", "": ...}
 	// and add a `housing_guide` case to worker.HandleSearchIndexSync.
 	// (fire-and-forget, Rule 8 — never block the request on fan-out.)
 
@@ -595,8 +593,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, a
 // ai_generated=true, ai_model='content_agent_v1', and
 // ai_prompt_hash=SHA256(prompt). It requires HITL approval (ApproveGuide)
 // before publication. Admin-only (housing_guide.manage permission).
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil
 // or the call fails, the draft is still created with the prompt as tips so
 // a reviewer can fill it manually (graceful degradation).

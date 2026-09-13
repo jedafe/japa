@@ -507,8 +507,7 @@ func (s *Service) Resolve(ctx context.Context, tenantID pgtype.UUID, app, positi
 	// permission pruning) rather than 500'ing the whole sidebar render — a
 	// missing widget is preferable to a blank sidebar. The RBAC resolver is
 	// cached, so this path is cheap. Guests skip permission pruning.
-	//
-	// cacheable tracks whether the resolved result is safe to cache. If perm
+	// // cacheable tracks whether the resolved result is safe to cache. If perm
 	// resolution failed for an authenticated user, the cache key collapses to
 	// a shared "auth::" entry and the degraded (permission-gated widgets
 	// missing) result could be served to other authenticated users who DO hold
@@ -655,7 +654,7 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, use
 }
 
 // sidebarResolveCacheKey builds the Valkey cache key for a resolve request.
-// Format: jc:sidebar:resolve:{tenant_id}:{app}:{position}:{path_hash}:{auth_state}:{group_hash}:{perm_hash}
+// Format: jc:sidebar:resolve:{}:{app}:{position}:{path_hash}:{auth_state}:{group_hash}:{perm_hash}
 // Ref: Section 59 §5, valkey-keys-catalog. The perm_hash ensures two users
 // with the same groups but different roles do not share a cache entry —
 // permission-gated widgets must not leak across users with different perms.
@@ -830,8 +829,7 @@ func filterWidgets(widgets []gen.SidebarWidget, userGroupIDs map[string]bool, is
 // frontend renders these fields with {@html}, so stored XSS must be blocked
 // at the storage boundary. Uses the shared content.SanitizeHTML allowlist
 // (the same sanitizer used for content posts in internal/renderer).
-//
-// Unknown widget types and non-HTML props pass through unchanged.
+// // Unknown widget types and non-HTML props pass through unchanged.
 func sanitizeWidgetProps(widgetType string, raw json.RawMessage) []byte {
 	if len(raw) == 0 {
 		return []byte("{}")

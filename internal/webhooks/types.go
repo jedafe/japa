@@ -63,7 +63,7 @@ type WebhookEndpointWithSecret struct {
 // The secret is never included (§12: "secret shown once" — only on create).
 type WebhookEndpointResponse struct {
 	ID         string     `json:"id"`
-	TenantID   string     `json:"tenant_id"`
+	TenantID   string     
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	EventTypes []string   `json:"event_types"`

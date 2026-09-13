@@ -1,6 +1,5 @@
 // Package auth provides authentication and session management for JapaConnect.
-//
-// jwt.go implements JWT access token minting and validation with multi-kid
+// // jwt.go implements JWT access token minting and validation with multi-kid
 // rotation support. Multiple signing secrets can be active simultaneously,
 // identified by a kid (key ID) header. This allows zero-disruption secret
 // rotation: a new secret is added, old tokens validate against the old kid,

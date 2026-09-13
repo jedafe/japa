@@ -90,7 +90,7 @@ func TestLiveEngine(t *testing.T) {
 		Text:     "smoke",
 		Limit:    10,
 		Filter: andAll(
-			Eq{Field: "tenant_id", Value: "tenant-smoke"},
+			
 			orAny(
 				IsEmpty{Field: "relevant_countries"},
 				Eq{Field: "relevant_countries", Value: "NG"},
@@ -114,7 +114,7 @@ func TestLiveEngine(t *testing.T) {
 		IndexUID: idx,
 		Text:     "smoke",
 		Filter: andAll(
-			Eq{Field: "tenant_id", Value: "tenant-smoke"},
+			
 			orAny(
 				IsEmpty{Field: "relevant_countries"},
 				Eq{Field: "relevant_countries", Value: "JP"},
@@ -134,7 +134,7 @@ func TestLiveEngine(t *testing.T) {
 			IndexUID: idx,
 			Text:     "smoke",
 			Filter: andAll(
-				Eq{Field: "tenant_id", Value: "tenant-smoke"},
+				
 				Eq{Field: "review_status", Value: "published"},
 				In{Field: "audience", Values: []string{"member", "public"}},
 			),
@@ -142,7 +142,7 @@ func TestLiveEngine(t *testing.T) {
 		{
 			IndexUID: idx,
 			Text:     "smoke",
-			Filter:   Eq{Field: "tenant_id", Value: "other-tenant"},
+			Filter:   
 		},
 	})
 	if err != nil {
@@ -170,14 +170,14 @@ func TestLiveEngine(t *testing.T) {
 	}
 	// Deletion is async — poll until the document is gone.
 	for range 50 {
-		r, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: Eq{Field: "tenant_id", Value: "tenant-smoke"}})
+		r, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: })
 		if err == nil && len(r.Hits) == 0 {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	res3, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: Eq{Field: "tenant_id", Value: "tenant-smoke"}})
+	res3, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: })
 	if err != nil {
 		t.Fatalf("post-delete Search: %v", err)
 	}

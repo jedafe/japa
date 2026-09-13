@@ -34,8 +34,8 @@ func NewService(database *db.DB) *Service {
 }
 
 // SetValkey wires the Valkey client for mute SET caching (Section 52 /
-// VALKEY-001). Keys: jc:muted_users:{tenant_id}:{user_id},
-// jc:muted_spaces:{tenant_id}:{user_id}.
+// VALKEY-001). Keys: jc:muted_users:{}:{user_id},
+// jc:muted_spaces:{}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // mutedUsersKey returns the tenant-scoped Valkey key for a user's muted-users

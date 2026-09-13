@@ -174,8 +174,7 @@ type reviewLogWriter interface {
 // produced the changed-field list + JSON for the review log. This helper then
 // applies the update atomically: a bare re-stamp when nothing changed, or
 // update + auto_update review log in one transaction (BUG-02, §6.2).
-//
-// P is the domain's UpdateXIntelParams type and T its TxStore; update is the
+// // P is the domain's UpdateXIntelParams type and T its TxStore; update is the
 // domain's UpdateXIntel method expression and withTx wraps p.store.WithTx.
 func domainUpdateTx[P any, T reviewLogWriter](
 	ctx context.Context,

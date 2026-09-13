@@ -1,10 +1,8 @@
 // Package digest — service.go orchestrates digest edition browsing, draft
 // editing, publication, and generation triggers. Feature-flagged via
 // digest.enabled (feature_flags gate) and digest.email system_setting (§84).
-//
-// Ref: japaconnect-engineering/sections/84-community-digest.md
-//
-//	japaconnect-engineering/adr/ADR-092-community-digest.md
+// // Ref: japaconnect-engineering/sections/84-community-digest.md
+// //	japaconnect-engineering/adr/ADR-092-community-digest.md
 package digest
 
 import (
@@ -58,8 +56,7 @@ type FeatureChecker interface {
 }
 
 // DigestEditionDTO is the API response shape for a digest edition (listing).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestEditionDTO struct {
 	ID           string `json:"id"`
 	SpaceID      string `json:"space_id,omitempty"`
@@ -74,8 +71,7 @@ type DigestEditionDTO struct {
 }
 
 // DigestEditionDetailDTO is the full digest edition with content.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestEditionDetailDTO struct {
 	DigestEditionDTO
 	Content json.RawMessage `json:"content"`
@@ -321,13 +317,11 @@ func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (stri
 // for the admin review window. When tenantID is the zero UUID (cron mode),
 // it iterates all active tenants. When spaceID is valid, the edition is
 // scoped to that Space; otherwise it is tenant-wide.
-//
-// This method satisfies the worker.DigestProcessor interface. It is
-// idempotent per (tenant_id, space_id, cadence, week) — a duplicate
+// // This method satisfies the worker.DigestProcessor interface. It is
+// idempotent per (, space_id, cadence, week) — a duplicate
 // generate within the same week overwrites the existing draft rather than
 // creating a second one (the admin review window handles the rest).
-//
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
+// // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
 	// Cron mode: zero tenantID → iterate all active tenants.
 	if !tenantID.Valid {
@@ -399,12 +393,10 @@ func (s *Service) generateForTenant(ctx context.Context, tenantID, spaceID pgtyp
 // ADR-092). It publishes every draft/review edition whose 1-hour admin review
 // window has elapsed (scheduled_for <= now()), clears each edition's draft
 // lock, and enqueues digest:send_email fire-and-forget per edition (Rule 8).
-//
-// This method satisfies the worker.DigestProcessor interface. It is
+// // This method satisfies the worker.DigestProcessor interface. It is
 // idempotent: the store UPDATE only matches rows still in draft/review, so a
 // duplicate cron run publishes nothing and enqueues nothing.
-//
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
+// // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 	published, err := s.store.AutoPublishDueEditions(ctx)
 	if err != nil {
@@ -439,10 +431,8 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 // provider. One-click unsubscribe headers are generated per recipient
 // (reusing §62 Newsletter unsubscribe token infrastructure). After
 // dispatch, the edition's email_sent flag is stamped.
-//
-// This method satisfies the worker.DigestProcessor interface.
-//
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
+// // This method satisfies the worker.DigestProcessor interface.
+// // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error {
 	if !tenantID.Valid || !editionID.Valid {
 		return errors.New("digest: send_email: edition_id and tenant_id are required")
@@ -615,7 +605,7 @@ func appendUnsubscribeLinkToHTML(htmlBody, unsubURL string) string {
 	return htmlBody + footer
 }
 
-// setDraftLock sets jc:digest_draft:{tenant_id}:{edition_id} with a 2h TTL
+// setDraftLock sets jc:digest_draft:{}:{edition_id} with a 2h TTL
 // marking the edition as pending admin review (§84, valkey-keys-catalog.md).
 func (s *Service) setDraftLock(ctx context.Context, tenantID, editionID pgtype.UUID) {
 	if s.vk == nil || !tenantID.Valid || !editionID.Valid {

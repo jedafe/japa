@@ -46,7 +46,7 @@ type ProgramWithCounts struct {
 // Match represents a mentor-mentee match with resolved names.
 type Match struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
+	TenantID       pgtype.UUID        
 	ProgramID      pgtype.UUID        `json:"program_id"`
 	MentorID       pgtype.UUID        `json:"mentor_id"`
 	MenteeID       pgtype.UUID        `json:"mentee_id"`
@@ -290,7 +290,7 @@ type EventTracker interface {
 // MentorProfile is the current user's mentor settings.
 type MentorProfile struct {
 	UserID            pgtype.UUID        `json:"user_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
+	TenantID          pgtype.UUID        
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	MentorMaxCapacity int32              `json:"mentor_max_capacity"`
@@ -319,7 +319,7 @@ type MentorSummary struct {
 // Connection is a mentorship connection with resolved user names.
 type Connection struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
+	TenantID           pgtype.UUID        
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`

@@ -135,7 +135,7 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 }
 
 // DeleteGroupByID deletes a user group by its UUID. System groups cannot be
-// deleted (the sqlc query enforces is_system = false). The tenant_id filter
+// deleted (the sqlc query enforces is_system = false). The filter
 // prevents cross-tenant deletion. After deletion, it invalidates the
 // permission cache for all former members (Rule 6).
 func (s *Store) DeleteGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) error {
@@ -654,7 +654,7 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 }
 
 // UpdateGroup updates a group's name, slug, and description (P5.6).
-// The tenant_id filter prevents cross-tenant updates.
+// The filter prevents cross-tenant updates.
 func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, name, slug, description string) error {
 	var descPtr *string
 	if description != "" {
@@ -690,7 +690,7 @@ func (s *Store) IsSystemGroupByID(ctx context.Context, tenantID, groupID pgtype.
 
 // GetGroupByID returns the user group with the given ID, including its
 // current slug, is_system flag, and description. Used by handlers that need
-// to preserve the slug of system groups during updates. The tenant_id filter
+// to preserve the slug of system groups during updates. The filter
 // prevents cross-tenant reads.
 func (s *Store) GetGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) (Group, error) {
 	g, err := s.read.GetUserGroupByID(ctx,

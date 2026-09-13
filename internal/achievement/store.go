@@ -1,15 +1,12 @@
 // Package achievement implements the Community Achievement Feed (§89, ADR-097).
-//
-// Achievements are records in the contents table with
+// // Achievements are records in the contents table with
 // content_type = 'achievement', extended by the achievement_meta companion
 // table for structured fields (milestone type, destination/origin space,
 // anonymity flag). The package provides CRUD, filtered listing, a Space
 // widget, and admin moderation — inheriting reactions, comments, bookmarks,
 // space filing, and analytics from the Content Type System (§14).
-//
-// Ref: japaconnect-engineering/sections/89-community-achievement-feed.md
-//
-//	japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
+// // Ref: japaconnect-engineering/sections/89-community-achievement-feed.md
+// //	japaconnect-engineering/adr/ADR-097-community-achievement-feed.md
 package achievement
 
 import (
@@ -37,8 +34,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // AchievementMeta holds the structured fields for a single achievement.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AchievementMeta struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
@@ -52,8 +48,7 @@ type AchievementMeta struct {
 
 // AchievementRow is the joined result of contents + achievement_meta + spaces
 // + users, returned by list and get-by-slug queries.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AchievementRow struct {
 	ID              pgtype.UUID
 	TenantID        pgtype.UUID

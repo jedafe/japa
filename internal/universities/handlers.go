@@ -1,6 +1,5 @@
 // Package universities — HTTP handlers for the University catalog (Section 39).
-//
-// A university is a Space of the "University" space-type; university-specific
+// // A university is a Space of the "University" space-type; university-specific
 // data (ranking, tuition, programs, etc.) lives in custom_field_values from
 // the University Field Group attached to that space-type — there is no
 // dedicated universities table. Handlers compose the existing spaces and
@@ -857,7 +856,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	// U-4 fix: actually update the slug when a new one is supplied. UpdateSpace
 	// does not touch slug (no slug column in its SET clause), so a separate
-	// UpdateSpaceSlug call is required. A collision on UNIQUE(tenant_id, slug)
+	// UpdateSpaceSlug call is required. A collision on UNIQUE(, slug)
 	// surfaces as a 409.
 	if input.Slug != nil {
 		newSlug := strings.TrimSpace(*input.Slug)

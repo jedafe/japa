@@ -2,10 +2,8 @@
 // deletion, fulfillment, renewal, filtered listing, and admin moderation
 // for the Mutual Aid Board (§85, ADR-093). Feature-flagged via the
 // mutual_aid.enabled system_setting.
-//
-// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-//
-//	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
+// // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+// //	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
 package mutualaid
 
 import (

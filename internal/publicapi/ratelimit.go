@@ -30,13 +30,11 @@ type rateLimitSettingsReader interface {
 // they are already covered by the loose tier on /api/v1. Keys with an
 // "unlimited" tier bypass the limiter entirely. When Valkey is unreachable
 // the middleware degrades gracefully and allows the request through.
-//
-// The sorted set approach avoids the boundary-burst problem of fixed-window
+// // The sorted set approach avoids the boundary-burst problem of fixed-window
 // counters: a client cannot send N requests at the end of one window and
 // N more at the start of the next and get 2N requests through in under
 // 2×window time.
-//
-// Per-tier limits use compiled-in defaults. Use SlidingWindowRateLimitWithSettings
+// // Per-tier limits use compiled-in defaults. Use SlidingWindowRateLimitWithSettings
 // to read limits from system_settings (SEC-012).
 func SlidingWindowRateLimit(rdb valkeycompat.Cmdable) func(http.Handler) http.Handler {
 	return SlidingWindowRateLimitWithSettings(rdb, nil, nil)

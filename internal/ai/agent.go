@@ -1,28 +1,24 @@
 // Package ai — agent.go implements the AI Agent loop (Section 103, ADR-111).
-//
-// The AgentHandler is the orchestration layer that ties together the Phase 1
+// // The AgentHandler is the orchestration layer that ties together the Phase 1
 // gateway function-calling extension, the Phase 3 tool executor, the Phase 4
 // tool catalog, and the Phase 5 pre-search step. It is the entry point for
 // POST /api/v1/ai/agent (wired in Phase 6).
-//
-// The flow per §103 "Agent Loop":
-//
-//  1. Pre-checks: agent.enabled toggle, agent.use RBAC permission, daily
-//     rate limit (jc:agent:rate:{user_id}:{date}).
-//  2. Resolve the user's geo context from users.current_geo_space_id.
-//  3. Run the pre-search (content + RAG, privacy-filtered, classified).
-//  4. Create an ai_agent_sessions row with the pre-search level.
-//  5. Build the tool catalog filtered by the user's RBAC grants (cached in
-//     jc:agent:tools:{user_id} for 10 minutes).
-//  6. Build the system prompt with behavior rules + geo context + pre-search.
-//  7. LLM function-calling loop via gateway.ChatWithTools, dispatching each
-//     tool call through the Executor. Enforced guardrails: max tool calls
-//     (agent.max_tool_calls), timeout (agent.timeout_seconds), per-request
-//     cost limit (agent.cost_limit_per_request_usd).
-//  8. Emit AgentEvents to a channel for SSE streaming.
-//  9. Complete or fail the ai_agent_sessions row at the end.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Agent Loop, System Prompt Behavior Rules)
+// // The flow per §103 "Agent Loop":
+// // 1. Pre-checks: agent.enabled toggle, agent.use RBAC permission, daily
+// rate limit (jc:agent:rate:{user_id}:{date}).
+// 2. Resolve the user's geo context from users.current_geo_space_id.
+// 3. Run the pre-search (content + RAG, privacy-filtered, classified).
+// 4. Create an ai_agent_sessions row with the pre-search level.
+// 5. Build the tool catalog filtered by the user's RBAC grants (cached in
+// jc:agent:tools:{user_id} for 10 minutes).
+// 6. Build the system prompt with behavior rules + geo context + pre-search.
+// 7. LLM function-calling loop via gateway.ChatWithTools, dispatching each
+// tool call through the Executor. Enforced guardrails: max tool calls
+// (agent.max_tool_calls), timeout (agent.timeout_seconds), per-request
+// cost limit (agent.cost_limit_per_request_usd).
+// 8. Emit AgentEvents to a channel for SSE streaming.
+// 9. Complete or fail the ai_agent_sessions row at the end.
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Agent Loop, System Prompt Behavior Rules)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 5, tasks 5.04-5.12)
 package ai
 
@@ -249,8 +245,7 @@ const (
 // resolves geo context, runs the pre-search, creates the session record,
 // and returns a channel of AgentEvents. The LLM loop runs in a goroutine
 // that emits events to the channel and closes it when the loop finishes.
-//
-// The returned error is non-nil only for pre-check failures (agent disabled,
+// // The returned error is non-nil only for pre-check failures (agent disabled,
 // no permission, rate limited, pre-search failure, session creation
 // failure). Errors that occur during the LLM loop are emitted as
 // EventError events on the channel, not returned here.
@@ -343,14 +338,13 @@ type draftRequestContext struct {
 // resolveDraftRequestContext determines whether the current request is on
 // the Phase 8 draft-request path (§103 Content Request Flow). The path is
 // active when ALL of the following hold:
-//   - pre-search level is NONE (no existing content covers the request)
-//   - the user has agent.draft_request permission
-//   - the user does NOT have content.create permission (users with
-//     content.create use the normal content.create tool with themselves as
-//     author)
-//   - agent.default_persona_id is configured and resolves to a persona
-//
-// When active, the persona's backing users.id is resolved and returned so
+// - pre-search level is NONE (no existing content covers the request)
+// - the user has agent.draft_request permission
+// - the user does NOT have content.create permission (users with
+// content.create use the normal content.create tool with themselves as
+// author)
+// - agent.default_persona_id is configured and resolves to a persona
+// // When active, the persona's backing users.id is resolved and returned so
 // the system prompt can instruct the LLM to pass it to content.create_draft
 // as the author_id. Resolution failures (no persona configured, persona not
 // found) degrade gracefully — the path stays inactive and the LLM falls
@@ -492,7 +486,7 @@ func (h *AgentHandler) runLoop(
 	)
 
 	for iteration := range maxToolCalls {
-		// Check for user-initiated cancellation (jc:agent:session:{tenant_id}:{id} = "cancelled").
+		// Check for user-initiated cancellation (jc:agent:session:{}:{id} = "cancelled").
 		if h.isCancelled(loopCtx, tenantID, session.ID) {
 			cancelled = true
 			break
@@ -949,7 +943,7 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 }
 
 // setSessionState writes the session state to Valkey for cancellation
-// checks. The key jc:agent:session:{tenant_id}:{session_id} is set to
+// checks. The key jc:agent:session:{}:{session_id} is set to
 // "running" with a 5-minute TTL. The cancel endpoint (Phase 6) sets it to
 // "cancelled". Tenant-scoping prevents cross-tenant session cancellation
 // (Rule 4 defense-in-depth, complementing the DB ownership check).
@@ -965,7 +959,7 @@ func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID 
 }
 
 // isCancelled checks whether the session has been cancelled via the
-// jc:agent:session:{tenant_id}:{session_id} Valkey key.
+// jc:agent:session:{}:{session_id} Valkey key.
 func (h *AgentHandler) isCancelled(ctx context.Context, tenantID, sessionID pgtype.UUID) bool {
 	if h.cache == nil {
 		return false
@@ -1020,8 +1014,7 @@ func buildSystemPrompt(geoSummary string, preSearch *PreSearchResult, tools []To
 // the resolved persona user_id as the author_id, and to never use
 // content.create (which the user lacks permission for anyway, but the
 // explicit instruction prevents the LLM from attempting it).
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.01).
 func buildDraftRequestPromptSection(d draftRequestContext) string {
 	return fmt.Sprintf(`

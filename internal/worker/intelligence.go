@@ -44,20 +44,16 @@ var defaultIntelTenantID = func() pgtype.UUID {
 // Intelligence System (Section INTEL) — Asynq task handlers for the
 // ingestion spine. The 11 handlers below implement the task chain defined in
 // Section 4 of the intelligence-system design spec:
-//
-//	schedule_crawls → fetch_source → detect_changes → extract → dedup
-//	                → publish_gate → promote → post_publish → notify_discoveries
-//
-// plus the two maintenance tasks refresh_freshness (cron) and
+// //	schedule_crawls → fetch_source → detect_changes → extract → dedup
+// → publish_gate → promote → post_publish → notify_discoveries
+// // plus the two maintenance tasks refresh_freshness (cron) and
 // retry_failed_source (manual control-panel trigger).
-//
-// Dependency injection follows the existing worker pattern: package-level
+// // Dependency injection follows the existing worker pattern: package-level
 // variables are set once at startup via RegisterIntelDependencies (called from
 // server.go in Task 23) and each handler is nil-safe — when a dependency is
 // not wired it logs a warning and returns nil so the worker still boots in
 // development and tests.
-//
-// Import-cycle note: the extractor and promoter packages cannot be imported
+// // Import-cycle note: the extractor and promoter packages cannot be imported
 // here because they transitively pull internal/ai → internal/auth →
 // internal/worker (auth/handlers.go enqueues email tasks via worker constants).
 // To break that cycle the extractor and promoter dependencies are declared as
@@ -65,14 +61,12 @@ var defaultIntelTenantID = func() pgtype.UUID {
 // types are mirrored locally. Task 23's server.go registers thin adapters
 // that wrap the concrete *extractor.Extractor and *promoter.ScholarshipPromoter
 // so the cycle is confined to the wiring layer.
-//
-// The service-call bodies are intentionally stubbed where the concrete wiring
+// // The service-call bodies are intentionally stubbed where the concrete wiring
 // (Meilisearch indexing, RAG embedding, gate classification, freshness decay)
 // is completed in Task 23's server.go alongside the DI registration. The task
 // chain enqueue logic is in place so the spine is end-to-end runnable once the
 // dependencies are injected.
-//
-// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
+// // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 // ---------------------------------------------------------------------------
 
 // IntelPromoterPort mirrors the subset of promoter.Promoter the worker needs,
@@ -131,8 +125,7 @@ var ErrIntelExtractionRetriesExhausted = errors.New("intel: extraction retries e
 // auto-creates Studio jobs for high-confidence extracted records (ADR-076
 // Amendment 1). Declared locally to avoid the worker → studio import cycle.
 // server.go registers an adapter wrapping *studio.Service.
-//
-// Ref: japaconnect-engineering/sections/75-ai-content-studio.md.
+// // Ref: japaconnect-engineering/sections/75-ai-content-studio.md.
 type IntelStudioAutoPromoter interface {
 	// AutoPromoteIntelRecord creates a Studio job grounded by the given
 	// intel_record_id. extractedJSON is the raw intel_records.extracted
@@ -161,8 +154,7 @@ var (
 // worker package. Called once from server.go before the Asynq server starts
 // processing tasks. Any nil argument leaves that dependency unwired, in which
 // case the relevant handler logs a warning and skips.
-//
-// The extractor argument is the local port interface; server.go constructs an
+// // The extractor argument is the local port interface; server.go constructs an
 // adapter around the concrete *extractor.Extractor to break the import cycle.
 // promoters is a map keyed by entity_type → promoter port adapter; server.go
 // registers one adapter per domain (scholarship, job, visa, fx, remittance,
@@ -256,7 +248,7 @@ const intelPayloadVersion = "v1"
 type intelSourcePayload struct {
 	Version  string `json:"version"`
 	SourceID string `json:"source_id"`
-	TenantID string `json:"tenant_id"`
+	TenantID string 
 }
 
 type intelDetectChangesPayload struct {
@@ -264,20 +256,20 @@ type intelDetectChangesPayload struct {
 	SourceID  string `json:"source_id"`
 	RawDocID  string `json:"raw_doc_id"`
 	PriorHash string `json:"prior_hash"`
-	TenantID  string `json:"tenant_id"`
+	TenantID  string 
 }
 
 type intelExtractPayload struct {
 	Version  string `json:"version"`
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
-	TenantID string `json:"tenant_id"`
+	TenantID string 
 }
 
 type intelRecordPayload struct {
 	Version        string `json:"version"`
 	RecordID       string `json:"record_id"`
-	TenantID       string `json:"tenant_id"`
+	TenantID       string 
 	ReviewerUserID string `json:"reviewer_user_id,omitempty"` // INTEL-026: set on approve, empty on auto-publish
 }
 
@@ -286,14 +278,14 @@ type intelPostPublishPayload struct {
 	RecordID   string `json:"record_id"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string `json:"tenant_id"`
+	TenantID   string 
 }
 
 type intelNotifyPayload struct {
 	Version    string `json:"version"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string `json:"tenant_id"`
+	TenantID   string 
 }
 
 // ---------------------------------------------------------------------------
@@ -301,10 +293,10 @@ type intelNotifyPayload struct {
 // ---------------------------------------------------------------------------
 
 // parseTenantID parses a tenant UUID from a payload string field. When the
-// payload does not carry a tenant_id (e.g. a legacy enqueued task), the
+// payload does not carry a (e.g. a legacy enqueued task), the
 // default system tenant is returned so the spine remains runnable during
 // the migration window. Per ADR-112 Amendment 2 all intelligence data is
-// tenant-scoped; new enqueues always include tenant_id.
+// tenant-scoped; new enqueues always include .
 func parseTenantID(raw string) pgtype.UUID {
 	if raw == "" {
 		return defaultIntelTenantID
@@ -321,13 +313,11 @@ func parseTenantID(raw string) pgtype.UUID {
 // HandleIntelScheduleCrawls is the cron entry point for the ingestion spine.
 // It selects due sources via the scheduler and enqueues a fetch_source task
 // per due source (Section 4, step 1).
-//
-// BUG-11/12 fix: the batch size is read from system_settings
+// // BUG-11/12 fix: the batch size is read from system_settings
 // (intel.schedule_batch_size, default 50) instead of being hardcoded to 100.
 // The intel.enabled toggle is checked before any work — when false, the
 // handler returns nil immediately.
-//
-// BUG-13 fix: a distributed leader lock (jc:intel:scheduler_leader, SET NX
+// // BUG-13 fix: a distributed leader lock (jc:intel:scheduler_leader, SET NX
 // EX) prevents duplicate cron runs across multiple worker instances. Only
 // the instance that acquires the lock proceeds; others skip. The lock TTL
 // (5 minutes) is longer than the cron interval (15 minutes is the spec
@@ -500,7 +490,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 }
 
 // resolveIntelFetchSource resolves the source row for a fetch task: parses
-// the payload's source_id + tenant_id, loads the source, and reports
+// the payload's source_id + , loads the source, and reports
 // proceed=false for the soft-skip cases (source deleted or disabled).
 func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceID, tenantID pgtype.UUID, src gen.IntelSource, proceed bool, err error) {
 	sourceID, err = scanUUID(p.SourceID)
@@ -689,8 +679,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 
 // HandleIntelExtract runs AI extraction over the raw document and enqueues
 // dedup once a validated intel_record exists (Section 4, step 4).
-//
-// If the extractor returns ErrIntelExtractionRetriesExhausted (malformed
+// // If the extractor returns ErrIntelExtractionRetriesExhausted (malformed
 // JSON on every attempt), the record is routed to REVIEW_REQUIRED status
 // and the task chain stops — the task returns nil (success) so Asynq does
 // not retry it and waste tokens. The record is visible in the review queue
@@ -932,13 +921,11 @@ func intelHandleCrossSourceConflict(ctx context.Context, tenantID, recordID pgty
 // decision. Auto-publish records enqueue promote; review-bound records get
 // their status set to 'review_required' and stop here; rejected records get
 // their status set to 'rejected' and stop here (Section 4, step 6).
-//
-// The confidence thresholds are read from system_settings per Rule 3:
-//   - intel.extraction_confidence_auto (default 0.85)
-//   - intel.extraction_confidence_review (default 0.50)
-//   - intel.extraction_confidence_reject (default 0.50)
-//
-// The trust tier comes from the intel_source associated with the record.
+// // The confidence thresholds are read from system_settings per Rule 3:
+// - intel.extraction_confidence_auto (default 0.85)
+// - intel.extraction_confidence_review (default 0.50)
+// - intel.extraction_confidence_reject (default 0.50)
+// // The trust tier comes from the intel_source associated with the record.
 func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	defer recoverPanic("TypeIntelPublishGate")
 	slog.Info("task:intel:publish_gate")
@@ -1336,8 +1323,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 // It decays freshness scores for stale intel records based on their
 // last_verified_at timestamp and re-enqueues fetch_source for sources
 // whose content is overdue (Section 4, maintenance).
-//
-// The freshness score is computed via services.FreshnessScore based on the
+// // The freshness score is computed via services.FreshnessScore based on the
 // record's last_verified_at age. When the score drops to 40 or below, the
 // record is marked stale and the source is re-enqueued for a re-crawl.
 func HandleIntelRefreshFreshness(ctx context.Context, _ *asynq.Task) error {

@@ -2380,7 +2380,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		ActionType         string          `json:"action_type"`
 		EntityType         *string         `json:"entity_type"`
 		EntityID           *string         `json:"entity_id"`
-		TenantID           pgtype.UUID     `json:"tenant_id"`
+		TenantID           pgtype.UUID     
 		IPAddress          *string         `json:"ip_address"`
 		ImpersonatedUserID *string         `json:"impersonated_user_id"`
 		Metadata           json.RawMessage `json:"metadata"`

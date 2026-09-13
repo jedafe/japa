@@ -342,8 +342,7 @@ func (s *Service) GetAdminPayment(ctx context.Context, id, tenantID pgtype.UUID)
 // ProcessWebhook processes a webhook event from a payment provider.
 // Status indicates the event outcome ("succeeded", "failed", "refunded") and is extracted
 // from the provider-specific payload by each HTTP handler before calling this method.
-//
-// The idempotency check + insert + mark are performed atomically using
+// // The idempotency check + insert + mark are performed atomically using
 // INSERT ... ON CONFLICT DO NOTHING RETURNING to prevent the race where two
 // concurrent webhook deliveries both pass the read check and both enqueue
 // the worker task (Guide §13 — "Webhook replay processed twice → duplicate
@@ -422,8 +421,7 @@ type CreateSubscriptionInput struct {
 }
 
 // CreateSubscription creates a new subscription.
-//
-// JEOS §17 requires recurring Pro billing to go through Stripe or Paystack
+// // JEOS §17 requires recurring Pro billing to go through Stripe or Paystack
 // with a real provider subscription created (provider_sub_id stored) and
 // activation deferred to the provider webhook. The previous implementation
 // inserted a local row with status='active' and no provider call, granting
@@ -713,8 +711,7 @@ type CreateRefundInput struct {
 }
 
 // CreateRefund creates a new refund for a payment.
-//
-// In addition to recording the refund row, this finalizes the payment's
+// // In addition to recording the refund row, this finalizes the payment's
 // status transition to "refunded" and enqueues the webhook processor with
 // status="refunded" so the worker runs reversePaymentSideEffects (course
 // access revocation, org boost expiry, wallet credit reversal) per JEOS §17.

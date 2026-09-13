@@ -67,7 +67,7 @@ func (s *Store) UpdateVideoSourceStatus(ctx context.Context, tenantID, id pgtype
 	}, nil
 }
 
-// CreateOrUpdateSource upserts a video source keyed by (tenant_id, source_url).
+// CreateOrUpdateSource upserts a video source keyed by (, source_url).
 func (s *Store) CreateOrUpdateSource(ctx context.Context, arg gen.CreateOrUpdateVideoSourceParams) (gen.VideoSource, error) {
 	row, err := s.write.CreateOrUpdateVideoSource(ctx, arg)
 	if err != nil {

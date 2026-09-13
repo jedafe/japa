@@ -1,6 +1,5 @@
 // Package blog — HTTP handlers for the Blog Extension system.
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission
@@ -180,8 +179,7 @@ func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
 // body (TipTap JSON) and fires a mention.content notification to each via
 // the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
 // errors are logged but never propagated to the caller.
-//
-// Self-mentions (mentioning the author) are skipped.
+// // Self-mentions (mentioning the author) are skipped.
 // Privacy filtering (blocks, erased users, private-space membership) is
 // applied via mentions.FilterMentions when checkers are wired (Section 15).
 func (h *Handlers) dispatchMentionNotifications(
@@ -379,12 +377,11 @@ func stringValue(v any) string {
 // excerptFromBody returns a plain-text excerpt from the post body, used as
 // a fallback when no explicit excerpt is stored. It handles three body
 // formats:
-//   - Tiptap/ProseMirror JSON (starts with `{`) — recursively extracts text
-//     from "text" nodes.
-//   - HTML (starts with `<`) — strips tags via a simple scanner.
-//   - Plain text — used as-is.
-//
-// The result is trimmed and truncated to excerptMaxLen characters with an
+// - Tiptap/ProseMirror JSON (starts with `{`) — recursively extracts text
+// from "text" nodes.
+// - HTML (starts with `<`) — strips tags via a simple scanner.
+// - Plain text — used as-is.
+// // The result is trimmed and truncated to excerptMaxLen characters with an
 // ellipsis. Empty/whitespace-only input returns "".
 func excerptFromBody(body string) string {
 	plain := plainTextFromContent(body)
@@ -1431,7 +1428,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // GetRSSFeed handles GET /api/v1/blog/feed.xml (public, no auth required).
-// C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:{tenant_id})
+// C6: serves the live feed from the Valkey cache (jc:cache:feed:rss:{})
 // populated by the rss:regenerate worker task. Falls back to live DB generation
 // when the cache is empty or Redis is unavailable.
 // BUG-006: respects X-Forwarded-Host to generate public-facing URLs instead
@@ -1454,7 +1451,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	siteURL := clientip.ForwardedBaseURL(r, h.siteURL)
 
 	// RSS-001: use a blog-specific cache key. The universal feed cache
-	// (jc:cache:feed:rss:{tenant_id}) is populated by the worker from
+	// (jc:cache:feed:rss:{}) is populated by the worker from
 	// ListRSSFeedItems (all content types). Reading from it here would
 	// serve non-blog content (forum posts, etc.) as the blog feed.
 	cacheKey := valkey.MustKey("cache:feed:rss:blog:%s", tenantID.String())

@@ -31,8 +31,7 @@ const (
 // HandleAffiliateCreditAuthorCommission credits an author's revenue share from
 // an external affiliate commission to the author's wallet via the immutable
 // credits ledger (Section 28). Idempotent on the commission row ID.
-//
-// AUDIT-BE-FIN-001: the previous implementation mutated a non-existent
+// // AUDIT-BE-FIN-001: the previous implementation mutated a non-existent
 // `users.credits_balance` column with a direct UPDATE, violating the
 // immutable-ledger requirement. It now appends a wallet_ledger entry inside a
 // transaction holding pg_advisory_xact_lock(user_id), matching the
@@ -173,7 +172,7 @@ var affScanDomains = []string{
 func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 	}
 
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {

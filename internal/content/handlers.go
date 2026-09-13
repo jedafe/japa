@@ -1,6 +1,5 @@
 // Package content — HTTP handlers for the Content Type System.
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission
@@ -450,7 +449,7 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 
 // enqueueScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide Asynq
 // task when a guide is in the 'scholarship' category. It is a no-op for other
-// content types and is idempotent by (tenant_id, content_id). Fire-and-forget.
+// content types and is idempotent by (, content_id). Fire-and-forget.
 func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UUID, guideCategory *string) {
 	if h.AsynqClient == nil {
 		return
@@ -504,13 +503,12 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 
 // enqueueFeedFanOut enqueues content:fan_out_to_feeds tasks for published
 // content (BL-005). Per Section 32, fan-out fires:
-//  1. To the author's followers (always).
-//  2. To each assigned space's members (once per space in content_spaces,
-//     Section 14). If the content has no content_spaces rows, falls back to
-//     the primary contents.space_id.
-//  3. Bubble fan-out to parent spaces for each assigned space.
-//
-// The worker decides push vs pull per space based on feed.fanout_threshold.
+// 1. To the author's followers (always).
+// 2. To each assigned space's members (once per space in content_spaces,
+// Section 14). If the content has no content_spaces rows, falls back to
+// the primary contents.space_id.
+// 3. Bubble fan-out to parent spaces for each assigned space.
+// // The worker decides push vs pull per space based on feed.fanout_threshold.
 // Fire-and-forget per Rule 8.
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, authorID, primarySpaceID pgtype.UUID, contentType string) {
@@ -522,8 +520,8 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 	h.enqueueFanOutTask(contentID, tenantID, authorID, pgtype.UUID{}, contentType, "followers")
 
 	// 2. Fan out to each assigned space via content_spaces (Section 14).
-	//    Falls back to the primary contents.space_id if no content_spaces rows
-	//    exist (backwards compatibility with pre-content_spaces content).
+	// Falls back to the primary contents.space_id if no content_spaces rows
+	// exist (backwards compatibility with pre-content_spaces content).
 	spaceIDs := []pgtype.UUID{}
 
 	if h.Service != nil && h.Service.read != nil {
@@ -574,8 +572,7 @@ func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgty
 // enqueueRSSRegenerate enqueues the rss:regenerate task for a tenant so the
 // universal + blog RSS feeds reflect newly published content without waiting
 // for the hourly cron. Fire-and-forget per Rule 8 (RSS-013).
-//
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// // Ref: japaconnect-engineering/sections/26-seo-performance.md
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
 func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 	if h.AsynqClient == nil {
@@ -602,8 +599,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 // body (TipTap JSON) and fires a mention.content notification to each via
 // the batch system (Section 35 — BL-002). Fire-and-forget per Rule 8:
 // errors are logged but never propagated to the caller.
-//
-// Self-mentions (mentioning the content author) are skipped.
+// // Self-mentions (mentioning the content author) are skipped.
 // Privacy filtering (blocks, erased users, private-space membership) is
 // applied via mentions.FilterMentions when checkers are wired (Section 15).
 func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, authorID, contentID, spaceID pgtype.UUID, body string) {
@@ -1190,12 +1186,12 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Visibility/status gate (§5.3 RBAC / §14 public content SSR):
-	//   - Published public content is visible to everyone (authed or not).
-	//   - Published members-only content requires an authenticated user.
-	//   - Published private content requires the author or a user holding
-	//     content.edit_any (admins/moderators).
-	//   - Non-published content (draft, scheduled, archived, in_review) is
-	//     only visible to the author or a user holding content.edit_any.
+	// - Published public content is visible to everyone (authed or not).
+	// - Published members-only content requires an authenticated user.
+	// - Published private content requires the author or a user holding
+	// content.edit_any (admins/moderators).
+	// - Non-published content (draft, scheduled, archived, in_review) is
+	// only visible to the author or a user holding content.edit_any.
 	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
 		if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
@@ -2601,7 +2597,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 // §3.3 contract drift).
 type jsonldTemplateResponse struct {
 	ID          string          `json:"id"`
-	TenantID    string          `json:"tenant_id"`
+	TenantID    string          
 	ContentType string          `json:"content_type"`
 	Template    json.RawMessage `json:"template"`
 	IsActive    bool            `json:"is_active"`
@@ -3235,8 +3231,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 // the evergreen guide categories (Visa, Travel, Scholarship, etc.) loaded from
 // custom_field_entity_types (value prefix 'guide_category:'). Admins can add
 // new categories from the admin panel — no code change required.
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md.
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := h.requireTenant(w, r)
 

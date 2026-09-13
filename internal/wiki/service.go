@@ -1,10 +1,8 @@
 // Package wiki — service.go orchestrates wiki page browsing, revision
 // submission, HITL review, and admin management. Feature-flagged via
 // wiki.enabled system_setting (§80).
-//
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//
-//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
+// // Ref: japaconnect-engineering/sections/80-destination-wiki.md
+// //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -29,8 +27,7 @@ import (
 )
 
 // WikiPageDTO is the API response shape for a wiki page (index listing).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiPageDTO struct {
 	ID         string `json:"id"`
 	SpaceID    string `json:"space_id"`
@@ -56,8 +53,7 @@ type AdminWikiPageDTO struct {
 }
 
 // WikiPageDetailDTO is the full wiki page with current approved revision.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiPageDetailDTO struct {
 	WikiPageDTO
 	SpaceSlug       string          `json:"space_slug"`
@@ -68,8 +64,7 @@ type WikiPageDetailDTO struct {
 }
 
 // WikiDestinationDTO is the API response shape for a destination with wikis.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiDestinationDTO struct {
 	SpaceID   string `json:"space_id"`
 	Slug      string `json:"slug"`
@@ -81,8 +76,7 @@ type WikiDestinationDTO struct {
 }
 
 // WikiRevisionDTO is the API response shape for a revision.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiRevisionDTO struct {
 	ID          string          `json:"id"`
 	Status      string          `json:"status"`
@@ -388,8 +382,7 @@ func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, 
 // SubmitRevision creates a new pending revision for a wiki page. The
 // caller must have the wiki.edit permission and meet the reputation
 // threshold (checked by the handler before calling this method).
-//
-// B6: acquires the jc:wiki_edit_lock:{page_id}:{user_id} Valkey lock before
+// // B6: acquires the jc:wiki_edit_lock:{page_id}:{user_id} Valkey lock before
 // inserting to prevent the same user from double-submitting concurrently.
 // The lock is released on success or failure; a 5-minute TTL auto-expires
 // if the process crashes mid-request.
@@ -432,7 +425,7 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
-	// Tenant-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{tenant_id}:{page_id}:{user_id}
+	// Tenant-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{}:{page_id}:{user_id}
 	lockKey := valkey.MustKey("wiki_edit_lock:%s:%s:%s", tenantID.String(), page.ID.String(), userID.String())
 	if s.vk != nil {
 		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
@@ -695,8 +688,7 @@ func slugify(s string) string {
 // The draft page + pending revision are created with ai_generated=true,
 // ai_model='content_agent_v1', and ai_prompt_hash=SHA256(prompt). It
 // requires HITL approval (ApproveRevision) before publication.
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as content so a reviewer can
 // fill it manually (graceful degradation).
@@ -802,13 +794,11 @@ var defaultStubPages = []stubPageSpec{
 }
 
 // SeedStubPages creates the 7 default wiki sub-pages for a Country Space.
-// Idempotent: pages that already exist (matched by tenant_id + space_id +
+// Idempotent: pages that already exist (matched by + space_id +
 // slug) are skipped via the store's ON CONFLICT DO NOTHING. Used by the
 // wiki:seed_stub_pages Asynq task handler.
-//
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//
-//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
+// // Ref: japaconnect-engineering/sections/80-destination-wiki.md
+// //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 func (s *Service) SeedStubPages(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
 	if !tenantID.Valid || !spaceID.Valid {
 		return errors.New("wiki: seed stub pages: tenant_id and space_id are required")
@@ -831,14 +821,11 @@ func (s *Service) SeedStubPages(ctx context.Context, tenantID, spaceID pgtype.UU
 // normalizeWikiContent ensures wiki revision content is always stored as a
 // valid TipTap JSON document, never as raw HTML. This prevents stored XSS
 // when the frontend renders content with {@html}.
-//
-// If the content is a JSON string (e.g. "some text"), it is treated as plain
+// // If the content is a JSON string (e.g. "some text"), it is treated as plain
 // text, sanitized, and wrapped in a TipTap doc. If it is a JSON object, it
 // is validated as a TipTap doc and the text nodes are sanitized.
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md
-//
-//	japaconnect-engineering/sections/05-authentication-sessions.md (XSS)
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md
+// //	japaconnect-engineering/sections/05-authentication-sessions.md (XSS)
 func normalizeWikiContent(raw json.RawMessage) (json.RawMessage, error) {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {

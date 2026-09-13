@@ -1,7 +1,6 @@
 // Package adsselfserve implements the Self-Serve Advertising surface
 // (Section 61, ADR-079).
-//
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md
+// // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
 package adsselfserve
 
 import (

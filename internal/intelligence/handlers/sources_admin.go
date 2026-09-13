@@ -45,10 +45,8 @@ type handleSourceCreateBody struct {
 // HandleCreateSource creates a new intel source. The body carries the
 // configurable fields; robots_policy and provider_config default to empty
 // JSON objects (the fetcher populates robots_policy on first crawl).
-//
-// POST /api/v1/intel/sources
-//
-// Requires: intel.sources.manage.
+// // POST /api/v1/intel/sources
+// // Requires: intel.sources.manage.
 func (h *Handlers) HandleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -188,10 +186,8 @@ func resolveSourceDefaults(body handleSourceCreateBody) (enabled bool, freqMins 
 // HandleUpdateSource updates an existing intel source. The body carries the
 // editable fields; the enabled toggle can be flipped via this endpoint or the
 // dedicated enable/disable routes. Returns the updated source.
-//
-// PATCH /api/v1/intel/sources/{id}
-//
-// Requires: intel.sources.manage.
+// // PATCH /api/v1/intel/sources/{id}
+// // Requires: intel.sources.manage.
 func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -367,8 +363,7 @@ func patchStrField(dst *string, v string) {
 }
 
 // HandleDeleteSource removes an intel source from the registry.
-//
-// BUG-004 fix: the spine tables cascade on delete
+// // BUG-004 fix: the spine tables cascade on delete
 // (intel_sources → intel_raw_documents → intel_records → scholarships →
 // contents), so a naive delete wipes published scholarship content,
 // comments, SEO, and RAG embeddings — violating spec §650 / route-catalog
@@ -377,10 +372,8 @@ func patchStrField(dst *string, v string) {
 // pointer to the disable endpoint). To remove a source with promoted data,
 // admins disable it (PATCH enabled=false); the source row stays and
 // promoted records are preserved.
-//
-// DELETE /api/v1/intel/sources/{id}
-//
-// Requires: intel.sources.manage.
+// // DELETE /api/v1/intel/sources/{id}
+// // Requires: intel.sources.manage.
 func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -432,10 +425,8 @@ func (h *Handlers) HandleDeleteSource(w http.ResponseWriter, r *http.Request) {
 // control panel moderation surface uses this to render the raw content pane
 // (HTML rendered, JSON pretty-printed, PDF via embedded viewer). The body is
 // returned as base64 to preserve binary content (PDF bytes, etc.).
-//
-// GET /api/v1/intel/raw-documents/{id}
-//
-// Requires: intel.review.view.
+// // GET /api/v1/intel/raw-documents/{id}
+// // Requires: intel.review.view.
 func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -493,10 +484,8 @@ func (h *Handlers) HandleGetRawDocument(w http.ResponseWriter, r *http.Request) 
 // override_source is flipped to 'editorial' (or 'mixed'). An audit entry is
 // written to intel_review_log. The record is then ready for promotion via
 // intel:promote (triggered by the subsequent approve action or automatically).
-//
-// PATCH /api/v1/intel/review/{record_id}/edit
-//
-// Requires: intel.review.edit.
+// // PATCH /api/v1/intel/review/{record_id}/edit
+// // Requires: intel.review.edit.
 func (h *Handlers) HandleReviewEdit(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -679,10 +668,8 @@ func base64Encode(b []byte) string {
 // HandleCrawlNow triggers an immediate crawl of a source by enqueuing an
 // intel:fetch_source Asynq task (fire-and-forget per Rule 8). The handler
 // verifies the source exists and is enabled before enqueuing.
-//
-// POST /api/v1/intel/sources/{id}/crawl-now
-//
-// Requires: intel.sources.crawl_now
+// // POST /api/v1/intel/sources/{id}/crawl-now
+// // Requires: intel.sources.crawl_now
 // Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2226.
 func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil || h.asynqClient == nil {
@@ -754,10 +741,8 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 // HandleListProposedSources returns the sources with status='proposed' for
 // admin review. These are sources discovered by the agent (source.discover)
 // that have not yet been approved.
-//
-// GET /api/v1/intel/sources/proposed
-//
-// Requires: intel.sources.manage
+// // GET /api/v1/intel/sources/proposed
+// // Requires: intel.sources.manage
 // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
 func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
@@ -803,10 +788,8 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 
 // HandleApproveProposedSource approves a proposed source: sets
 // status='active', enabled=true, and records the approver.
-//
-// POST /api/v1/intel/sources/{id}/approve
-//
-// Requires: intel.sources.manage
+// // POST /api/v1/intel/sources/{id}/approve
+// // Requires: intel.sources.manage
 // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
 func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
@@ -855,10 +838,8 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 // This is the review-side counterpart to PATCH enabled=false: it sets
 // enabled=false so future crawls stop, but existing promoted records are
 // preserved (spec §650). An audit entry is written to intel_review_log.
-//
-// POST /api/v1/intel/sources/{id}/disable
-//
-// Requires: intel.review.disable_source
+// // POST /api/v1/intel/sources/{id}/disable
+// // Requires: intel.review.disable_source
 // Ref: INTEL-011 fix, §26 RBAC CRUD completeness, route catalog §2228.
 func (h *Handlers) HandleDisableSource(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {

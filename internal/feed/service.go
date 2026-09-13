@@ -672,13 +672,13 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 
 	// Apply the original pagination window.
 	start := offset
-	//nolint:gosec // G115: bounded
+	// nolint:gosec // G115: bounded
 	if start >= int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
 		return []FeedItem{}, nil
 	}
 
 	end := start + limit
-	//nolint:gosec // G115: bounded
+	// nolint:gosec // G115: bounded
 	if end > int32(len(out)) { // #nosec //nolint:gosec // G115: bounded
 		end = int32(len(out)) // #nosec
 	}
@@ -948,10 +948,8 @@ func profileRowsToItems(rows []gen.GetProfileFeedRow) []FeedItem {
 // This Go helper mirrors the SQL formula in feeds.sql (UpdateVelocityScores)
 // so the cron-written content_scores.velocity_score and any in-process
 // computation agree. Formula:
-//
-//	(reaction_count*2 + comment_count + view_count/100) / hours^gravity
-//
-// Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
+// //	(reaction_count*2 + comment_count + view_count/100) / hours^gravity
+// // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
 func ComputeVelocity(reactionCount, commentCount, viewCount, bookmarkCount int32, hoursOld float64) float64 {
 	// Match the SQL formula: reactions*2 + comment + view/100.
 	// bookmark_count is not in the SQL formula; kept as a param for API compat.

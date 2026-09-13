@@ -1,14 +1,11 @@
 // Package scamalert implements the Scam Alert Board (§81, ADR-089).
-//
-// Community-driven scam reports filed against a destination space. Reports
+// // Community-driven scam reports filed against a destination space. Reports
 // enter a pending moderation queue; moderators confirm or reject them.
 // Confirmed reports are publicly browsable and can be pinned to a space.
 // Users can subscribe to a destination space to receive notifications when
 // new confirmed scam alerts are posted.
-//
-// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-//
-//	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
+// // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+// //	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
 package scamalert
 
 import (

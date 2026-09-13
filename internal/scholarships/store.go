@@ -2,10 +2,8 @@
 // (Section 73, ADR-073). Filterable scholarship finder built on the
 // `scholarship` guide category, with a per-user saved scholarships tracker
 // and deadline reminder pipeline.
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
-//
-//	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+// //	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
 package scholarships
 
 import (

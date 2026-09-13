@@ -19,8 +19,7 @@ import (
 // scholarshipDetail is the full detail shape returned by the scholarship
 // detail endpoint. It includes the promotion metadata (confidence, trust
 // level, freshness, verification status) that the radar UI surfaces.
-//
-// BUG-009 fix: Funding and LanguageRequirements are JSONB columns. The prior
+// // BUG-009 fix: Funding and LanguageRequirements are JSONB columns. The prior
 // []byte Go type caused json.Encoder to base64-encode them, so the frontend
 // received base64 strings instead of JSON objects (§24 wrong Go type for a
 // column). json.RawMessage serializes as inline JSON.
@@ -84,15 +83,11 @@ func scholarshipToDetail(s gen.Scholarship) scholarshipDetail {
 // scholarships projection. Supports country, eligible_country, degree_level,
 // deadline range, fields_of_study, funding_tuition, min_confidence, and q
 // (text search) filters with keyset cursor pagination.
-//
-// GET /api/v1/intel/scholarships
-//
-// Query params (per api-routes-catalog.md Section INTEL):
-//
-//	country, eligible_country, degree_level, deadline_after, deadline_before,
-//	fields_of_study (CSV), funding_tuition, min_confidence, q, cursor, limit
-//
-// Deprecated aliases (backward compat): deadline_from→deadline_after,
+// // GET /api/v1/intel/scholarships
+// // Query params (per api-routes-catalog.md Section INTEL):
+// //	country, eligible_country, degree_level, deadline_after, deadline_before,
+// fields_of_study (CSV), funding_tuition, min_confidence, q, cursor, limit
+// // Deprecated aliases (backward compat): deadline_from→deadline_after,
 // deadline_to→deadline_before, field_of_study→fields_of_study.
 func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
@@ -175,8 +170,7 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 // degree_level→Column3, deadline_after→Column4, deadline_before→Column5,
 // fields_of_study→Column6). It returns the params and the resolved
 // fields_of_study CSV for the post-query filter.
-//
-// Deprecated aliases are honoured for backward compatibility:
+// // Deprecated aliases are honoured for backward compatibility:
 // deadline_from→deadline_after, deadline_to→deadline_before,
 // field_of_study→fields_of_study.
 func buildSearchScholarshipsParams(q url.Values, limit int, offset int32) (gen.SearchScholarshipsParams, string) {
@@ -313,8 +307,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 }
 
 // HandleScholarshipDetail returns a single scholarship projection row by id.
-//
-// GET /api/v1/intel/scholarships/{id}.
+// // GET /api/v1/intel/scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Scholarship not found", "scholarship",
 		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {

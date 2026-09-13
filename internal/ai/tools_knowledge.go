@@ -1,25 +1,20 @@
 // Package ai — tools_knowledge.go implements the knowledge tool handlers for
 // the AI Agent Executor core tool catalog (Section 103, ADR-111).
-//
-// Tools implemented here (Phase 4, tasks 4.09-4.10):
-//
-//   - rag.search       — vector retrieval from content_embeddings (geo-filtered)
-//   - external.search  — web search via Tavily/Brave/Perplexity API (configurable), cached
-//
-// Privacy: the RAG retrieval queries (SearchContentEmbeddings,
+// // Tools implemented here (Phase 4, tasks 4.09-4.10):
+// // - rag.search — vector retrieval from content_embeddings (geo-filtered)
+// - external.search — web search via Tavily/Brave/Perplexity API (configurable), cached
+// // Privacy: the RAG retrieval queries (SearchContentEmbeddings,
 // SearchContentEmbeddingsGeoFiltered) do not filter ai_exempt at the SQL
 // layer. The rag.search handler filters exempt content post-retrieval using
 // the PrivacyExemptionChecker — chunks whose source content is ai_exempt
 // are stripped from the result set before returning to the LLM. When
 // deps.Privacy is nil, no filtering is applied. No PrivacyTargetFunc is
 // registered because rag.search returns a result set, not a single entity.
-//
-// external.search hits an external API and caches results in
+// // external.search hits an external API and caches results in
 // jc:agent:external:{hash} (30-min TTL per the Valkey keys catalog); it
 // never touches user data directly. Perplexity search returns a synthesized
 // answer with a citations array instead of raw result snippets.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion — Knowledge tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion — Knowledge tools)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 4, tasks 4.09-4.10)
 package ai
 
@@ -60,8 +55,7 @@ type ragSearchArgs struct {
 // via vector retrieval. When geo_space_id is provided, retrieval is
 // geo-filtered to content scoped to that space or its children (§103
 // Geo-Filtered RAG amendment to §69).
-//
-// Privacy: the RAG retrieval queries do not filter ai_exempt at the SQL
+// // Privacy: the RAG retrieval queries do not filter ai_exempt at the SQL
 // layer. The handler filters exempt content post-retrieval: chunks whose
 // entity_type is "content" and whose entity_id resolves to an ai_exempt
 // content row are stripped from the result set. When deps.Privacy is nil,
@@ -105,7 +99,7 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 		chunks = filterExemptRAGChunks(ctx, deps.Privacy, tenantID, chunks)
 
 		// Apply the limit if the RAG service returned more than requested.
-		//nolint:gosec // G115: bounded
+		// nolint:gosec // G115: bounded
 		if a.Limit > 0 && int32(len(chunks)) > a.Limit { // #nosec G115 -- len() of a RAG result slice //nolint:gosec // G115: bounded
 			chunks = chunks[:a.Limit]
 		}
@@ -190,8 +184,7 @@ const externalSearchCacheTTL = 30 * time.Minute
 // Results are cached in jc:agent:external:{hash} for 30 minutes per the Valkey
 // keys catalog. The API key comes from agent.external_search_api_key (Rule 3 —
 // no hardcoded keys).
-//
-// The handler requires the agent.external_search RBAC permission, which is
+// // The handler requires the agent.external_search RBAC permission, which is
 // checked by the executor's RBAC gate before dispatch. The handler itself
 // only verifies the provider + key are configured.
 func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
@@ -262,7 +255,7 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 }
 
 // externalSearchCacheKey builds jc:agent:external:{hash} where hash is the
-// SHA-256 of the tenant_id + query + limit. Tenant-scoping prevents
+// SHA-256 of the + query + limit. Tenant-scoping prevents
 // cross-tenant cache sharing of external search results (Rule 4, §4.2).
 // Per the Valkey keys catalog (Rule 4).
 func externalSearchCacheKey(tenantID pgtype.UUID, query string, limit int32) string {

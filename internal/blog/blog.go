@@ -1,6 +1,5 @@
 // Package blog implements the Blog Extension system (Section 24).
-//
-// Blog series for multi-part posts, content review workflow for editorial
+// // Blog series for multi-part posts, content review workflow for editorial
 // review, featured/curated posts, and RSS feed generation. Tags-only model
 // (no categories) with granular permission nodes through dynamic RBAC.
 package blog
@@ -34,14 +33,12 @@ const (
 // BlogListFilter carries the §24-mandated GET /blog query filters. All
 // fields are optional — a zero value (pgtype.UUID{} or nil) means "no
 // filter on this field". Sort defaults to "latest" when empty.
-//
-// BUG-011: Section 24 mandates GET /api/v1/blog accept ?space_id, ?tag
+// // BUG-011: Section 24 mandates GET /api/v1/blog accept ?space_id, ?tag
 // (tag slug), ?series_id, ?sort=latest|top|featured, and ?author_id. The
 // sort=featured case is handled by the separate /blog/featured endpoint,
 // so callers should map sort=featured to that endpoint before reaching
 // the listing query.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type BlogListFilter struct {
 	TenantID pgtype.UUID
 	SpaceID  pgtype.UUID // zero → no filter
@@ -56,7 +53,7 @@ type BlogListFilter struct {
 // built from the linked media storage bucket/path (Section 34).
 type Series struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
+	TenantID      pgtype.UUID        
 	Title         string             `json:"title"`
 	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`

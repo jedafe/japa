@@ -15,8 +15,7 @@ import (
 // NewServer creates a new Asynq server configured with all three task tiers.
 // The returned server is ready to have handlers registered via NewMux and then
 // be started with srv.Run().
-//
-// The default retry policy uses exponential backoff (asynq.DefaultRetryDelayFunc)
+// // The default retry policy uses exponential backoff (asynq.DefaultRetryDelayFunc)
 // with up to 25 retries per task. Individual tasks can override MaxRetry via
 // the asynq.MaxRetry option when enqueued.
 func NewServer(cfg *Config) *asynq.Server {
@@ -284,7 +283,7 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Japa University — monthly payout aggregation sweep (ADR-063 §6).
 	// Runs on the 1st of each month at 00:00 UTC. The handler tolerates an
-	// empty tenant_id (cron-mode) and iterates all active tenants, rolling
+	// empty (cron-mode) and iterates all active tenants, rolling
 	// open revenue_splits into instructor_payouts rows for the previous
 	// calendar month. The cadence matches the university.payout_schedule
 	// system_setting default ("monthly"); a future weekly cadence would add

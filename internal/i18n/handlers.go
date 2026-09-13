@@ -1,10 +1,8 @@
 // Package i18n — HTTP handlers for the translation system.
-//
-// Two route groups:
-//   - Admin: CRUD operations behind auth + RBAC permission "i18n.manage"
-//   - Public: locale-scoped translation map for frontend apps (no auth)
-//
-// Responses follow the JapaConnect API envelope: {"data": ...} for success,
+// // Two route groups:
+// - Admin: CRUD operations behind auth + RBAC permission "i18n.manage"
+// - Public: locale-scoped translation map for frontend apps (no auth)
+// // Responses follow the JapaConnect API envelope: {"data": ...} for success,
 // {"error":{"code":"...","message":"..."}} for errors.
 package i18n
 

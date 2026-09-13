@@ -59,7 +59,7 @@ func (s *Service) resolveValue(ctx context.Context, rv reflect.Value, tokens []l
 		rv = rv.Elem()
 	}
 
-	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
+	// nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch rv.Kind() {
 	case reflect.Struct:
 		return s.resolveStruct(ctx, rv, tokens, rc)
@@ -164,8 +164,7 @@ func (s *Service) loadTemplateLiterals(ctx context.Context, tenantID pgtype.UUID
 // metadata is applied. Priority: source_country/target_country columns, then
 // field_values (origin_country / destination_country / country keys — ISO
 // code or name). A post with no geo renders the literal's fallback.
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md
 // (Global Template Literals)
 func applyContentGeo(rv reflect.Value, rc *literals.RenderContext) {
 	rc.SourceCountry, rc.SourceCode = "", ""
@@ -276,7 +275,7 @@ func toCountryCode(v string) string {
 }
 
 func stringFieldValue(fv reflect.Value) (string, bool) {
-	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
+	// nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {
 	case reflect.String:
 		return fv.String(), true
@@ -294,7 +293,7 @@ func stringFieldValue(fv reflect.Value) (string, bool) {
 }
 
 func setStringField(fv reflect.Value, value string, isMeta bool) {
-	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
+	// nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {
 	case reflect.String:
 		if fv.CanSet() {

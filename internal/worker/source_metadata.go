@@ -16,7 +16,7 @@ import (
 
 type sourceMetadataPayload struct {
 	SourceID string `json:"source_id"`
-	TenantID string `json:"tenant_id"`
+	TenantID string 
 }
 
 // Preview is the subset of public-site metadata needed by the source

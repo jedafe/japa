@@ -10,8 +10,7 @@ import (
 // ScanProcessor implements worker.MediaScanProcessor. It reads the media
 // record from the database, fetches the file from object storage, sends
 // it to ClamAV, and updates the media status based on the result.
-//
-// When ClamAV reports a virus, the media item is soft-deleted and the
+// // When ClamAV reports a virus, the media item is soft-deleted and the
 // incident is logged. When the scan is clean, the item is confirmed.
 // If ClamAV is unreachable, the scan is logged and the item is confirmed
 // (graceful degradation — missing antivirus should not block uploads).
@@ -42,9 +41,9 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		return fmt.Errorf("media:scan: invalid media_id %q: %w", mediaID, err)
 	}
 
-	// Fetch media record including tenant_id for scoped writes.
+	// Fetch media record including for scoped writes.
 	// The Asynq payload only carries media_id, but GetMediaForScan returns
-	// the tenant_id from the row, which is then threaded into confirm/reject
+	// the from the row, which is then threaded into confirm/reject
 	// operations to prevent cross-tenant modification.
 	m, err := p.svc.getMediaForScan(ctx, mid[:])
 	if err != nil {

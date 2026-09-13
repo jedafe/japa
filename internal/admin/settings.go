@@ -1,6 +1,5 @@
 // Package admin — HTTP handlers for admin-only platform management endpoints.
-//
-// Settings handlers manage the system_settings table, providing a structured
+// // Settings handlers manage the system_settings table, providing a structured
 // API for reading and writing platform-wide configuration organized by category.
 package admin
 
@@ -218,12 +217,12 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "max_login_attempts", Label: "Max Login Attempts", Type: "number"},
 			{Key: "fail_window_minutes", Label: "Fail Window (min)", Type: "number", Description: "Lockout window in minutes"},
 			// Removed: cors.allowed_origins (CORS is env-only via JC_CORS_ORIGINS;
-			//   stored under the wrong key and no consumer read it).
+			// stored under the wrong key and no consumer read it).
 			// Removed: lockout_duration_minutes (dead — bruteforce backoff is
-			//   computed from max_login_attempts + fail_window_minutes).
+			// computed from max_login_attempts + fail_window_minutes).
 			// Removed: require_email_verification (duplicate of
-			//   auth.email.verify_required in the Authentication category, which
-			//   is the consumed key).
+			// auth.email.verify_required in the Authentication category, which
+			// is the consumed key).
 		},
 	},
 	"appearance": {
@@ -327,11 +326,11 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "sitemap.question_min_answers", Label: "Sitemap: Min Question Answers", Type: "number", Description: "Minimum answer count for questions (solved threads). Set 0 to include unsolved."},
 			{Key: "sitemap.discussion_min_comments", Label: "Sitemap: Min Discussion Comments", Type: "number", Description: "Minimum comment count for discussions to be indexed."},
 			// Removed: enable_sitemap / enable_robots_txt / enable_json_ld —
-			//   sitemap & robots.txt are always served (robots.txt is generated
-			//   from the bot registry per ADR-043, not a system_settings toggle),
-			//   and JSON-LD is emitted by the SSR shell. These toggles had no
-			//   consumer and misled admins into thinking they could disable SEO
-			//   endpoints. Bot policy is managed in the Bot Management page.
+			// sitemap & robots.txt are always served (robots.txt is generated
+			// from the bot registry per ADR-043, not a system_settings toggle),
+			// and JSON-LD is emitted by the SSR shell. These toggles had no
+			// consumer and misled admins into thinking they could disable SEO
+			// endpoints. Bot policy is managed in the Bot Management page.
 		},
 	},
 	// NOTE: The "integrations" category was removed. Meilisearch/Honcho endpoints
@@ -342,9 +341,9 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "AI",
 		Settings: []SettingDef{
 			// Removed: ai_assist_enabled (duplicate of ai.content_assist_enabled),
-			//   ai_model / ai_max_tokens (provider config, env-only per Rule 3),
-			//   ai_content_moderation (use moderation.ai_auto_flag_threshold in
-			//   the Moderation category). None had a backend consumer.
+			// ai_model / ai_max_tokens (provider config, env-only per Rule 3),
+			// ai_content_moderation (use moderation.ai_auto_flag_threshold in
+			// the Moderation category). None had a backend consumer.
 			{Key: "monthly_budget_usd", Label: "Monthly Budget (USD)", Type: "number", Description: "Alert threshold for AI spend"},
 			{Key: "japabot_enabled", Label: "JapaBot Enabled", Type: "toggle"},
 			{Key: "content_assist_enabled", Label: "Content Assist Enabled", Type: "toggle"},

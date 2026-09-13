@@ -77,7 +77,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 }
 
 // ReplyCard is the lean public shape for the profile Replies tab: the reply plus
-// the parent content's title/slug for context. It omits the internal tenant_id
+// the parent content's title/slug for context. It omits the internal
 // the raw gen row carries, so a public endpoint never echoes it.
 type ReplyCard struct {
 	ID           pgtype.UUID        `json:"id"`

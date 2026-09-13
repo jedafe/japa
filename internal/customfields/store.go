@@ -333,7 +333,7 @@ func (s *Service) GetFieldValue(ctx context.Context, fieldID pgtype.UUID, entity
 
 // ListFieldValuesByEntity returns every stored field value for a given entity.
 // tenantID is required — the underlying query enforces tenant scoping at the
-// SQL layer via a JOIN to custom_fields.tenant_id (BUG-014). Passing a
+// SQL layer via a JOIN to custom_fields. (BUG-014). Passing a
 // zero-value UUID would yield no rows.
 func (s *Service) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	values, err := s.read.ListCustomFieldValuesByEntity(ctx, gen.ListCustomFieldValuesByEntityParams{
@@ -353,8 +353,7 @@ func (s *Service) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.U
 // field-level RBAC (Section 06). When visibleFieldIDs is empty, no values are
 // returned (fail-closed). Super-admins should bypass this method by calling
 // ListFieldValuesByEntity directly.
-//
-// BUG-017: the visible-field-ID filter is pushed into SQL via
+// // BUG-017: the visible-field-ID filter is pushed into SQL via
 // ListCustomFieldValuesByEntityForUser (field_id = ANY(visible_field_ids))
 // instead of fetching all values and filtering in Go.
 func (s *Service) ListFieldValuesByEntityForUser(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, visibleFieldIDs []pgtype.UUID) ([]gen.CustomFieldValue, error) {

@@ -1,7 +1,6 @@
 // Package organizations implements the Organization Profiles system for
 // JapaConnect (Section 07).
-//
-// Organizations represent structured entities — businesses, NGOs, government
+// // Organizations represent structured entities — businesses, NGOs, government
 // bodies, embassies, universities, media, or communities — that users own
 // and manage. Members can be invited with specific roles, and unclaimed
 // listings can be claimed via the ownership claim flow.
@@ -222,12 +221,12 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 		"invitee_email", inviteeEmail, "org_name", orgName)
 }
 
-// orgProfileCacheKey builds jc:org:profile:{tenant_id}:{slug}.
+// orgProfileCacheKey builds jc:org:profile:{}:{slug}.
 func orgProfileCacheKey(tenantID pgtype.UUID, slug string) string {
 	return valkey.MustKey("org:profile:%s:%s", tenantID.String(), slug)
 }
 
-// orgListCacheKey builds jc:org:list:{tenant_id}:{page}.
+// orgListCacheKey builds jc:org:list:{}:{page}.
 func orgListCacheKey(tenantID pgtype.UUID, page int32) string {
 	return valkey.MustKey("org:list:%s:%d", tenantID.String(), page)
 }

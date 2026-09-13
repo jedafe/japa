@@ -23,7 +23,7 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 }
 
 // TestToReplyCards_LeanAndCorrect verifies the profile Replies tab mapper copies
-// the card fields correctly and drops the internal tenant_id the raw gen row
+// the card fields correctly and drops the internal the raw gen row
 // carries.
 func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 	row := gen.ListCommentsByAuthorRow{

@@ -499,22 +499,20 @@ func (s *Service) GetAccountDeletionRequest(ctx context.Context, id, tenantID pg
 
 // ProcessAccountDeletion performs the full account deletion workflow.
 // This is called by the Asynq worker.
-//
-// Resumability (AUDIT-FRESH-GDPR-003): each phase checkpoints a progress_step
+// // Resumability (AUDIT-FRESH-GDPR-003): each phase checkpoints a progress_step
 // on the request row. If the job crashes or is retried by Asynq, the next run
 // reads progress_step and skips phases already completed, so partial work is
 // not re-executed from the top. The step map is mirrored in migration
 // 000173_account_deletion_progress_step.up.sql.
-//
-//	retention_wait flow (AUDIT-FRESH-GDPR-006): when gdpr.hard_delete_enabled
-//	is true but the gdpr.retention_days window has not elapsed since the
-//	request was created, the request is marked retention_wait instead of
-//	completed. The anonymization + token/session/Honcho erasure has already
-//	happened (steps 1-4), so the user is functionally erased from the
-//	platform; only the physical row deletion is deferred. A periodic sweep
-//	(ListRetentionWaitElapsed, run by the maintenance scheduler) re-invokes
-//	this handler once the window elapses, at which point step 5 performs the
-//	hard delete and step 6 marks the request completed.
+// //	retention_wait flow (AUDIT-FRESH-GDPR-006): when gdpr.hard_delete_enabled
+// is true but the gdpr.retention_days window has not elapsed since the
+// request was created, the request is marked retention_wait instead of
+// completed. The anonymization + token/session/Honcho erasure has already
+// happened (steps 1-4), so the user is functionally erased from the
+// platform; only the physical row deletion is deferred. A periodic sweep
+// (ListRetentionWaitElapsed, run by the maintenance scheduler) re-invokes
+// this handler once the window elapses, at which point step 5 performs the
+// hard delete and step 6 marks the request completed.
 func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.UUID) error {
 	request, err := s.store.getAccountDeletionRequest(ctx, requestID, pgtype.UUID{})
 	if err != nil {
@@ -757,8 +755,8 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	}
 
 	// 4. Delete Honcho AI context — mandatory, not best-effort. If the Honcho
-	//    client is configured and the call fails, mark the deletion as failed
-	//    and return the error so Asynq retries from this step.
+	// client is configured and the call fails, mark the deletion as failed
+	// and return the error so Asynq retries from this step.
 	if step < deletionStepHonchoDeleted {
 		if s.honchoEraser != nil {
 			if err := s.honchoEraser.DeleteUser(ctx, request.UserID.String()); err != nil {
@@ -783,7 +781,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 	}
 
 	// 5. Hard delete — optional physical erasure phase (ADR-057).
-	//    See the retention_wait flow documented in the function comment above.
+	// See the retention_wait flow documented in the function comment above.
 	retentionWait := false
 
 	if step < deletionStepHardDeleted {
@@ -981,8 +979,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// 2. Nullify payment user references (financial audit trail survives).
-		//    Errors are fatal inside the tx — a leftover reference would block
-		//    the final DELETE on its foreign key anyway.
+		// Errors are fatal inside the tx — a leftover reference would block
+		// the final DELETE on its foreign key anyway.
 		if err := q.NullifyPaymentUserRefs(ctx,
 			userID,
 		); err != nil {
@@ -1103,8 +1101,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// 4. AUDIT-FRESH-GDPR-001: explicit cleanup for tables whose FK to
-		//    users(id) has no ON DELETE CASCADE/SET NULL. Without these the
-		//    final HardDeleteUser would block on a residual foreign key.
+		// users(id) has no ON DELETE CASCADE/SET NULL. Without these the
+		// final HardDeleteUser would block on a residual foreign key.
 
 		// content_revisions.edited_by has no CASCADE; drop the user's edit history.
 		if err := q.DeleteContentRevisionsByEditor(ctx, userID); err != nil {
@@ -1413,13 +1411,13 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		}
 
 		// Japa University GDPR cascade (ADR-063 / audit C2):
-		//   - Clear sensitive payout_method jsonb on the user's instructor
-		//     profile(s) before the profile is cascade-deleted.
-		//   - Anonymize revenue_splits and instructor_payouts: sever the
-		//     instructor_id reference (SET NULL) so the financial audit
-		//     records survive for regulatory retention. The FKs were changed
-		//     from ON DELETE CASCADE to ON DELETE SET NULL in migration
-		//     000181 to enforce this at the schema level.
+		// - Clear sensitive payout_method jsonb on the user's instructor
+		// profile(s) before the profile is cascade-deleted.
+		// - Anonymize revenue_splits and instructor_payouts: sever the
+		// instructor_id reference (SET NULL) so the financial audit
+		// records survive for regulatory retention. The FKs were changed
+		// from ON DELETE CASCADE to ON DELETE SET NULL in migration
+		// 000181 to enforce this at the schema level.
 		if _, err := q.ClearInstructorPayoutMethod(ctx,
 			userID,
 		); err != nil {
@@ -1531,7 +1529,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// user PII). calendar_saves and calendar_subscriptions are user-owned
 		// config — delete them to prevent re-identification.
 		// Ref: japaconnect-engineering/sections/86-community-calendar.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.GdprReassignCalendarEntriesSubmittedBy(ctx, gen.GdprReassignCalendarEntriesSubmittedByParams{
 			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
@@ -1557,7 +1555,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// placeholder so posts survive (they are community content) but the
 		// user is no longer attributable.
 		// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `UPDATE mutual_aid_posts SET user_id = $2, updated_at = now() WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning mutual_aid_posts user_id: %w", err)
 		}
@@ -1570,7 +1568,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// pattern. Soft-deleted stories (deleted_at IS NOT NULL) are left
 		// alone — they are already anonymised by the soft-delete pathway.
 		// Ref: japaconnect-engineering/sections/99-language-test-hub.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `UPDATE language_score_stories SET user_id = $2 WHERE user_id = $1 AND deleted_at IS NULL`, userID, deletedUserPlaceholder); err != nil {
 			return fmt.Errorf("reassigning language_score_stories user_id: %w", err)
 		}
@@ -1583,7 +1581,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// matching the mutual_aid_posts pattern. scam_alert_subscriptions is
 		// pure user PII (subscription preferences) and is deleted outright.
 		// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE scam_reports
 			SET reporter_id = $2, updated_at = now()
@@ -1609,7 +1607,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// anonymisation. visa_timeline_milestones cascade with their
 		// parent timeline (ON DELETE CASCADE).
 		// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE visa_timelines
 			SET user_id = NULL, anonymised_at = now(), updated_at = now()
@@ -1631,7 +1629,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// the entries survive (they are community content, not user PII) and
 		// attribution is preserved rather than silently lost.
 		// Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE community_organisations
 			SET submitted_by = $2
@@ -1662,8 +1660,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// platform-wide erasure convention (ADR-014) and the
 		// community_organisations pattern above.
 		// Ref: japaconnect-engineering/sections/96-housing-guide.md
-		//      japaconnect-engineering/adr/ADR-104-housing-guide.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/adr/ADR-104-housing-guide.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE housing_guides
 			SET hitl_reviewed_by = $2
@@ -1679,8 +1677,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// platform-wide erasure convention (ADR-014) and the
 		// housing_guides / community_organisations pattern above.
 		// Ref: japaconnect-engineering/sections/100-tax-calculator.md
-		//      japaconnect-engineering/adr/ADR-108-tax-calculator.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/adr/ADR-108-tax-calculator.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE tax_obligation_guides
 			SET hitl_reviewed_by = $2
@@ -1696,8 +1694,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// platform-wide erasure convention (ADR-014) and the
 		// housing_guides / community_organisations pattern above.
 		// Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
-		//      japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE visa_routes
 			SET hitl_reviewed_by = $2
@@ -1730,7 +1728,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// stable "deleted user" attribution rather than an anonymous NULL,
 		// matching the platform-wide erasure convention (ADR-014).
 		// Ref: japaconnect-engineering/sections/67-platform-data-portability.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if err := q.ReassignPlatformDataExportCreatedBy(ctx, gen.ReassignPlatformDataExportCreatedByParams{
 			UserID: userID, TargetUserID: deletedUserPlaceholder,
 		}); err != nil {
@@ -1749,8 +1747,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// Delete the user's subscriber row explicitly so the PII email is
 		// removed. newsletter_unsubscribe_tokens cascade via subscriber_id.
 		// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-		//      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM newsletter_subscribers
 			WHERE user_id = $1
@@ -1765,7 +1763,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// the anonymization phase so the PII is gone before the retention window
 		// closes. submission_id → form_submissions PII is handled separately
 		// (BUG-019). Ref: japaconnect-engineering/sections/63-jobs-board.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM job_applications
 			WHERE applicant_id = $1
@@ -1784,7 +1782,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// once the user is erased. ai_agent_tool_calls cascades from
 		// ai_agent_sessions via ON DELETE CASCADE on session_id.
 		// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM ai_agent_sessions
 			WHERE user_id = $1
@@ -1799,7 +1797,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// The review records themselves are retained for audit traceability —
 		// only the reviewer attribution is anonymized.
 		// Ref: japaconnect-engineering/sections/20-ai-core.md (HITL)
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE ai_hitl_reviews
 			SET reviewer_id = NULL,
@@ -1818,7 +1816,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// content_embeddings has no FK to contents (polymorphic entity_type/
 		// entity_id), so ON DELETE CASCADE does not fire.
 		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM content_embeddings
 			WHERE entity_type = 'content'
@@ -1840,7 +1838,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// tenant-owned content (no author_user_id column) and are not
 		// purged here — they are not user PII.
 		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM content_embeddings
 			WHERE entity_type = 'forum_thread'
@@ -1855,26 +1853,26 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// 5. Physical deletion — ON DELETE CASCADE handles all child tables.
 		// The following feed-related tables are cascade-purged here (no
 		// explicit step needed, documented for GDPR traceability — BUG-014):
-		//   - feeds (ON DELETE CASCADE from feeds.user_id → users(id) and
-		//     feeds.content_id → contents(id); the user's feed rows and any
-		//     feed rows pointing to their reassigned content are removed)
-		//   - content_scores (ON DELETE CASCADE from
-		//     content_scores.content_id → contents(id); scores for the
-		//     user's content are removed when the content is cascade-deleted
-		//     or retained when content is reassigned to the placeholder)
-		//   - story_meta (ON DELETE CASCADE from story_meta.content_id →
-		//     contents(id); the user's story metadata is removed when the
-		//     story content is cascade-deleted or retained when reassigned
-		//     to the placeholder. story_meta.hitl_reviewed_by → users(id)
-		//     ON DELETE SET NULL, so the admin reviewer reference is
-		//     nullified. Ref: §79 Community Story Wall, ADR-087.)
-		//   - achievement_meta (ON DELETE CASCADE from
-		//     achievement_meta.content_id → contents(id); the user's
-		//     achievement metadata is removed when the achievement content
-		//     is cascade-deleted or retained when reassigned to the
-		//     placeholder. achievement_meta has no user_id FK — the author
-		//     is on the contents row — so no additional nullification is
-		//     needed. Ref: §89 Community Achievement Feed, ADR-097.)
+		// - feeds (ON DELETE CASCADE from feeds.user_id → users(id) and
+		// feeds.content_id → contents(id); the user's feed rows and any
+		// feed rows pointing to their reassigned content are removed)
+		// - content_scores (ON DELETE CASCADE from
+		// content_scores.content_id → contents(id); scores for the
+		// user's content are removed when the content is cascade-deleted
+		// or retained when content is reassigned to the placeholder)
+		// - story_meta (ON DELETE CASCADE from story_meta.content_id →
+		// contents(id); the user's story metadata is removed when the
+		// story content is cascade-deleted or retained when reassigned
+		// to the placeholder. story_meta.hitl_reviewed_by → users(id)
+		// ON DELETE SET NULL, so the admin reviewer reference is
+		// nullified. Ref: §79 Community Story Wall, ADR-087.)
+		// - achievement_meta (ON DELETE CASCADE from
+		// achievement_meta.content_id → contents(id); the user's
+		// achievement metadata is removed when the achievement content
+		// is cascade-deleted or retained when reassigned to the
+		// placeholder. achievement_meta has no user_id FK — the author
+		// is on the contents row — so no additional nullification is
+		// needed. Ref: §89 Community Achievement Feed, ADR-097.)
 		// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 
 		// Intelligence System (§INTEL, ADR-112) — delete the user's review
@@ -1899,8 +1897,8 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UU
 		// content is collaborative and long-lived; nullifying authorship would
 		// break the revision history audit trail.
 		// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-		//      japaconnect-engineering/adr/ADR-088-destination-wiki.md
-		//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+		// japaconnect-engineering/adr/ADR-088-destination-wiki.md
+		// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 		if _, err := s.db.Writer.Exec(ctx, `
 			UPDATE wiki_pages
 			SET created_by = $2, updated_at = now()
@@ -2800,7 +2798,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// BUG-004: export language_score_stories authored by the user so the
 	// GDPR data export includes their community score-story contributions.
 	// Ref: japaconnect-engineering/sections/99-language-test-hub.md
-	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	if rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, test_id, starting_level, final_score,
 		       destination_space_id, prep_duration_weeks, resources_used,
@@ -3070,7 +3068,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 	// submitted/reviewed by the user so the GDPR data export includes their
 	// Destination Wiki contributions (§80, ADR-088).
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-	//      japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
+	// japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
 	if rows, err := s.db.Reader.Query(ctx, `
 		SELECT id, space_id, slug, title, category,
 		       is_active, is_featured, is_locked, created_at, updated_at

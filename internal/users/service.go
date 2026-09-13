@@ -256,8 +256,7 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 // GetPublicProfileByUsername returns the lean, PII-safe public profile for
 // the given username within a tenant, restricted to active users. It never
 // exposes email, status, last_login_at, or groups (Section 19 / ADR-014).
-//
-// When the user has opted in via show_points_publicly (Section 28) and a
+// // When the user has opted in via show_points_publicly (Section 28) and a
 // PointsProvider is wired, the response includes the user's Points balance.
 // Credits are never included.
 func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*PublicProfileResponse, error) {
@@ -520,8 +519,7 @@ func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UU
 
 // UpdatePreferences upserts user preferences. Only non-nil fields are
 // overwritten; nil fields are left unchanged via a read-then-merge strategy.
-//
-// BUG-003: The read-merge-upsert is wrapped in a transaction with a FOR
+// // BUG-003: The read-merge-upsert is wrapped in a transaction with a FOR
 // UPDATE lock on the user_preferences row so two concurrent PUT
 // /me/preferences calls cannot both read the same baseline and the second
 // write overwrite the first (lost update).
@@ -581,8 +579,7 @@ func (s *Service) SetCurrentGeoSpace(ctx context.Context, tenantID, userID, spac
 // BUG-021). These are platform constants sourced from the schema CHECK
 // constraints and the moderation subsystem's canonical value sets.
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
-//
-//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
 func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationConfig, error) {
 	return &UserModerationConfig{
 		// User statuses — mirrors the values used by the users.status column
@@ -693,8 +690,7 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, s
 // are ordered by follower_count DESC so the directory surfaces prominent
 // users first. Returns items + pagination metadata (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//
-//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20
@@ -818,8 +814,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 }
 
 // UpdatePrivacySettings updates the user's privacy settings.
-//
-// BUG-004: The read-merge-upsert is wrapped in a transaction with a FOR
+// // BUG-004: The read-merge-upsert is wrapped in a transaction with a FOR
 // UPDATE lock on the user_privacy_settings row so two concurrent PATCH
 // /me/privacy calls cannot both read the same baseline and the second
 // write overwrite the first (lost update).
@@ -1601,8 +1596,7 @@ type UpdateAccountResult struct {
 // display_name) per Section 50. Username changes are rate-limited to once
 // per 30 days; email changes reset email_verified_at to NULL (triggering
 // re-verification). All fields are optional (partial update).
-//
-// BUG-001: The entire update is wrapped in a single transaction so the
+// // BUG-001: The entire update is wrapped in a single transaction so the
 // FOR UPDATE row lock acquired by getUserAccountForUpdateTx is held until
 // commit. This prevents two concurrent PATCH /me/account requests from
 // both passing the uniqueness check and both writing, which would create

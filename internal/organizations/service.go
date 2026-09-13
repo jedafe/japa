@@ -487,7 +487,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 		return "", fmt.Errorf("finding invitation: %w", err)
 	}
 
-	// Fetch the org to get its tenant_id for the tenant-scoped member-count update.
+	// Fetch the org to get its for the tenant-scoped member-count update.
 	org, err := s.store.GetOrganizationByIDOnly(ctx, inv.OrganizationID)
 	if err != nil {
 		return "", fmt.Errorf("finding organization: %w", err)
@@ -960,7 +960,7 @@ func (s *Service) ActiveOrgExists(ctx context.Context, tenantID, id pgtype.UUID)
 }
 
 // GetPublicOrganizationBySlug returns an active org for the public profile header.
-// Uses read-through Valkey cache (jc:org:profile:{tenant_id}:{slug}) when
+// Uses read-through Valkey cache (jc:org:profile:{}:{slug}) when
 // a Valkey client is configured; falls back to direct DB on cache miss or
 // when caching is disabled.
 func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {

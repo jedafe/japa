@@ -251,9 +251,9 @@ func (s *Store) deleteNotificationType(ctx context.Context, key string) error {
 }
 
 // getUserDisplayName returns a user's display_name (nil when unset).
-// BUG-003: previously passed a zero UUID as tenant_id, which caused
+// BUG-003: previously passed a zero UUID as , which caused
 // GetUserProfile to return ErrNoRows for every user. Now requires the
-// correct tenant_id so the tenant-scoped WHERE clause matches.
+// correct so the tenant-scoped WHERE clause matches.
 func (s *Store) getUserDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) (*string, error) {
 	user, err := s.read.GetUserProfile(ctx,
 

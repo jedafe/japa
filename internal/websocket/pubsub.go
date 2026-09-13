@@ -83,7 +83,7 @@ func (b *PubSubBridge) Start(ctx context.Context) {
 // here — callers invoke BroadcastToUser/BroadcastToSpace/BroadcastToAll
 // for local delivery and call Publish separately for cross-instance.
 func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targetSpaceID string) {
-	// For space-scoped delivery the tenant_id is carried in the message so
+	// For space-scoped delivery the is carried in the message so
 	// receiving instances scope local delivery to the correct tenant.
 	msg := PubSubMessage{
 		Type:          event.Type,

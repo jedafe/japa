@@ -21,44 +21,44 @@ func TestRenderMeiliFilter(t *testing.T) {
 		},
 		{
 			name: "tenant scoping (content adapter shape)",
-			in:   Eq{Field: "tenant_id", Value: "00000000-0000-0000-0000-000000000001"},
-			want: `tenant_id = "00000000-0000-0000-0000-000000000001"`,
+			in:   
+			want: ``,
 		},
 		{
 			name: "space-scoped content search",
 			in: andAll(
-				Eq{Field: "tenant_id", Value: "t1"},
+				
 				Eq{Field: "space_id", Value: "s1"},
 			),
-			want: `(tenant_id = "t1") AND (space_id = "s1")`,
+			want: `(space_id = "s1")`,
 		},
 		{
 			name: "geo boost (ADR-064)",
 			in: andAll(
-				Eq{Field: "tenant_id", Value: "t1"},
+				
 				orAny(
 					IsEmpty{Field: "relevant_countries"},
 					Eq{Field: "relevant_countries", Value: "NG"},
 				),
 			),
-			want: `(tenant_id = "t1") AND ((relevant_countries IS EMPTY) OR (relevant_countries = "NG"))`,
+			want: `((relevant_countries IS EMPTY) OR (relevant_countries = "NG"))`,
 		},
 		{
 			name: "posts extra filter via buildPostFilter",
 			in: andAll(
-				Eq{Field: "tenant_id", Value: "t1"},
+				
 				buildPostFilter("post", "s1", "visa"),
 			),
-			want: `(tenant_id = "t1") AND ((content_type = "post") AND (space_id = "s1") AND (tag_slugs = "visa"))`,
+			want: `((content_type = "post") AND (space_id = "s1") AND (tag_slugs = "visa"))`,
 		},
 		{
 			name: "doc pages tenant+status+audience",
 			in: andAll(
-				Eq{Field: "tenant_id", Value: "t1"},
+				
 				Eq{Field: "review_status", Value: "published"},
 				In{Field: "audience", Values: []string{"member", "public"}},
 			),
-			want: `(tenant_id = "t1") AND (review_status = "published") AND (audience IN ["member", "public"])`,
+			want: `(review_status = "published") AND (audience IN ["member", "public"])`,
 		},
 		{
 			name: "empty In renders empty",
@@ -82,7 +82,7 @@ func TestRenderMeiliFilter(t *testing.T) {
 		},
 		{
 			name: "andAll collapses to nil when empty",
-			in:   andAll(),
+			in:   ,
 			want: "",
 		},
 		{

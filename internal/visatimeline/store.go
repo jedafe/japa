@@ -1,15 +1,12 @@
 // Package visatimeline implements the Visa Timeline Tracker (§83, ADR-091).
-//
-// Members record their visa application journey as a timeline of milestones
+// // Members record their visa application journey as a timeline of milestones
 // (application submitted, biometrics, interview, decision, etc.). Aggregated,
 // anonymised statistics feed a public processing-time dashboard so others can
 // gauge realistic timelines for a given origin → destination → visa category
 // → consulate combination. Each member controls the visibility (shared vs
 // private) of their own timeline.
-//
-// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
-//
-//	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
+// // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+// //	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
 package visatimeline
 
 import (
@@ -726,15 +723,14 @@ LIMIT $%d OFFSET $%d
 
 // RefreshStats recomputes the visa_processing_stats aggregate table from
 // shared, non-deleted visa_timelines and their milestones. For each
-// (tenant_id, origin_space_id, destination_space_id, visa_category,
+// (, origin_space_id, destination_space_id, visa_category,
 // consulate, month) bucket, computes sample_count, avg_days, median_days,
 // p10_days, p90_days of the processing span (decision or visa_issued
 // milestone occurred_at minus the earliest applied/submitted milestone
 // occurred_at). Timelines without a decision/visa_issued milestone are
 // excluded (still in progress). Called nightly by the
 // visa_timeline:refresh_stats Asynq task (§83, ADR-091).
-//
-// The aggregate is computed fresh each run: existing rows for the affected
+// // The aggregate is computed fresh each run: existing rows for the affected
 // period are deleted then re-inserted in a single transaction.
 func (s *Store) RefreshStats(ctx context.Context) (int64, error) {
 	// Compute processing spans per timeline. A span is the number of days
@@ -815,7 +811,7 @@ DO UPDATE SET
 	return cmd.RowsAffected(), nil
 }
 
-// InProgressTimelineOwners — InProgressTimelineOwner identifies (user_id, tenant_id) pairs whose shared
+// InProgressTimelineOwners — InProgressTimelineOwner identifies (user_id, ) pairs whose shared
 // timeline has no decision/visa_issued milestone yet, for the weekly
 // visa_timeline:prompt_update nudge (§83, ADR-091). Only timelines updated
 // more than 7 days ago are returned so the prompt is not spammy.
@@ -919,7 +915,7 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 
 	var raws []struct {
 		ID            string  `json:"id"`
-		TenantID      string  `json:"tenant_id"`
+		TenantID      string  
 		TimelineID    string  `json:"timeline_id"`
 		MilestoneType string  `json:"milestone_type"`
 		OccurredAt    string  `json:"occurred_at"`

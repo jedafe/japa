@@ -265,8 +265,8 @@ func (s *Service) RenderSlot(ctx context.Context, tenantID, userID pgtype.UUID, 
 				return nil, fmt.Errorf("checking frequency cap: %w", err)
 			}
 
-			//nolint:gosec // G115: bounded
-			//nolint:gosec // G115: cap is bounded by caller
+			// nolint:gosec // G115: bounded
+			// nolint:gosec // G115: cap is bounded by caller
 			if count >= int32(cap) {
 				continue
 			}
@@ -546,7 +546,7 @@ func maskAPIKey(key string) string {
 // version is derived for admin display.
 type AdNetworkDTO struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
+	TenantID     pgtype.UUID        
 	Provider     string             `json:"provider"`
 	Name         string             `json:"name"`
 	ClientID     *string            `json:"client_id"`

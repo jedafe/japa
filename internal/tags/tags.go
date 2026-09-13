@@ -1,10 +1,8 @@
 // Package tags — general cross-domain tags (Sections 08, 49).
-//
-// Distinct from forum_tags (forum-scoped, internal/forum): this package
+// // Distinct from forum_tags (forum-scoped, internal/forum): this package
 // backs the tags table content is tagged against via content_tags, and
 // followed via the follows package (entity_type="tag").
-//
-// Tag moderation model: all tag mutations (create/update/delete) require
+// // Tag moderation model: all tag mutations (create/update/delete) require
 // the tags.manage permission, held by admins and super_admins. The
 // tag_moderators table records designated moderators per tag for display
 // and audit purposes, but does not grant a separate runtime permission
@@ -133,8 +131,7 @@ func (s *Service) ResolveTagSlugMap(ctx context.Context, tenantID pgtype.UUID, s
 // This backs the spec-compliant POST /content/{id}/tags { tag_slugs: [] }
 // flow where the composer sends user-typed tag names that may not exist yet
 // (Section 14). Returns a slug→tagID map covering every input slug.
-//
-// Concurrent calls for the same slug are safe: if CreateTag fails with a
+// // Concurrent calls for the same slug are safe: if CreateTag fails with a
 // unique-violation (the tag was just created by a parallel request), the
 // slug is re-resolved instead of returning an error.
 func (s *Service) GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error) {

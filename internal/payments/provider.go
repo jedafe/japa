@@ -282,7 +282,7 @@ func (p *StripeProvider) VerifyWebhookSignature(payload []byte, signature string
 		return errors.New("missing stripe webhook signature")
 	}
 
-	// Stripe-Signature header format: t=<timestamp>,v1=<signature>[,v1=<signature>...]
+	// Stripe-Signature header format: t=<timestamp>,v1=<signature>[v1=<signature>...]
 	timestamp, sig, err := parseStripeSignatureHeader(signature)
 	if err != nil {
 		return fmt.Errorf("parsing stripe signature: %w", err)

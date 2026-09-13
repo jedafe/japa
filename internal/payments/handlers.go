@@ -1,6 +1,5 @@
 // Package payments — HTTP handlers for the Payment Core system.
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission
@@ -663,8 +662,7 @@ func resolveNOWPaymentsStatus(event WebhookEvent) string {
 
 // extractPaystackEventID extracts the event ID from a Paystack webhook payload.
 // Paystack events carry "event" (type) and a "data.reference" (transaction ref).
-//
-// The event ID is the dedup key for payment_webhook_events
+// // The event ID is the dedup key for payment_webhook_events
 // (UNIQUE(provider, event_id)), so it MUST be unique per logical event.
 // Falling back to the bare event type (e.g. "charge.success") is unsafe —
 // every charge.success in the tenant would collide and the second payment
@@ -730,8 +728,7 @@ func extractStripeProviderRef(payload map[string]interface{}) string {
 }
 
 // extractNOWPaymentsEventID extracts the event ID from a NOWPayments IPN payload.
-//
-// NOWPayments sends multiple IPN events for the same payment as it
+// // NOWPayments sends multiple IPN events for the same payment as it
 // transitions waiting → confirming → finished, all sharing the same
 // payment_id. Because payment_webhook_events dedups on
 // UNIQUE(provider, event_id), using the bare payment_id would collapse
@@ -1234,7 +1231,7 @@ func verifyHMACSHA256(payload []byte, signature, secret string) error {
 }
 
 // verifyStripeSignature verifies a Stripe webhook signature.
-// Header format: t=<timestamp>,v1=<signature>[,v1=<signature>...]
+// Header format: t=<timestamp>,v1=<signature>[v1=<signature>...]
 // Rejects payloads older than 5 minutes to prevent replay attacks.
 func verifyStripeSignature(payload []byte, header, secret string) error {
 	if secret == "" {
@@ -1564,7 +1561,7 @@ type AdminPlanInput struct {
 // frontend receives a usable array.
 type AdminPlanResponse struct {
 	ID            string             `json:"id"`
-	TenantID      string             `json:"tenant_id"`
+	TenantID      string             
 	Slug          string             `json:"slug"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`

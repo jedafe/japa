@@ -1,26 +1,22 @@
 // Package ai — privacy.go implements the AI privacy-exemption layer for the
 // Agent Executor (Section 103, ADR-111).
-//
-// The PrivacyChecker answers two questions for every tool call that targets
+// // The PrivacyChecker answers two questions for every tool call that targets
 // a piece of user data:
-//
-//  1. IsExempt — is the target entity marked ai_exempt? When true, the AI
-//     may neither read nor write that entity. The flag is user-settable on
-//     a user's own contents, custom_field_values, and profile (users row);
-//     admins may set it on any entity. The check runs at three points per
-//     §103: context building (pre-search / RAG exclude exempt content),
-//     tool execution (tools targeting exempt entities are blocked), and
-//     field reading (custom_field_values.read filters exempt values).
-//
-//  2. IsBlockedOperation — is the requested operation on the hardcoded
-//     blocklist that no user may ever perform through the AI agent, regardless
-//     of RBAC? This is a defense-in-depth layer on top of the per-tool
-//     is_blocked flag in the ai_tools config JSONB. The blocklist covers
-//     RBAC/permission management, AI provider configuration, AI exemption
-//     management itself, user deletion, reading other users' private data,
-//     and security settings modification.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Privacy Exemption Columns, Tool Executor step 3-4)
+// // 1. IsExempt — is the target entity marked ai_exempt? When true, the AI
+// may neither read nor write that entity. The flag is user-settable on
+// a user's own contents, custom_field_values, and profile (users row);
+// admins may set it on any entity. The check runs at three points per
+// §103: context building (pre-search / RAG exclude exempt content),
+// tool execution (tools targeting exempt entities are blocked), and
+// field reading (custom_field_values.read filters exempt values).
+// // 2. IsBlockedOperation — is the requested operation on the hardcoded
+// blocklist that no user may ever perform through the AI agent, regardless
+// of RBAC? This is a defense-in-depth layer on top of the per-tool
+// is_blocked flag in the ai_tools config JSONB. The blocklist covers
+// RBAC/permission management, AI provider configuration, AI exemption
+// management itself, user deletion, reading other users' private data,
+// and security settings modification.
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Privacy Exemption Columns, Tool Executor step 3-4)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 3, tasks 3.01-3.02)
 package ai
 
@@ -56,8 +52,8 @@ var ErrPrivacyBlocked = errors.New("ai: target entity is marked ai_exempt and no
 
 // PrivacyChecker resolves the ai_exempt flag for a given entity within a
 // tenant. All lookups are tenant-scoped at the SQL layer for defense-in-depth
-// (BUG-014 pattern): contents and users filter directly on tenant_id;
-// custom_field_values (no tenant_id column) JOINs custom_fields to enforce
+// (BUG-014 pattern): contents and users filter directly on ;
+// custom_field_values (no column) JOINs custom_fields to enforce
 // tenancy transitively. A missing row is treated as non-exempt — the agent
 // proceeds — because exemption is an opt-in flag with a NOT NULL DEFAULT false.
 type PrivacyChecker struct {
@@ -75,8 +71,7 @@ func NewPrivacyChecker(read *gen.Queries) *PrivacyChecker {
 // IsExempt reports whether the given entity is marked ai_exempt for the
 // tenant. entityType selects which lookup to run. An unknown entity type
 // returns false (no exemption table to consult) and a nil error.
-//
-// A pgx.ErrNoRows result is translated to (false, nil): a non-existent
+// // A pgx.ErrNoRows result is translated to (false, nil): a non-existent
 // entity has no exemption flag set, and the caller (tool handler) will
 // surface the not-found condition through its own lookup.
 func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
@@ -166,8 +161,7 @@ var blockedExact = map[string]struct{}{
 // defense-in-depth layer on top of the per-tool is_blocked flag in the
 // ai_tools config JSONB: even if a row were misconfigured with is_blocked =
 // false, the executor still refuses to dispatch.
-//
-// The check normalizes the tool name (trim + lowercase) before matching so
+// // The check normalizes the tool name (trim + lowercase) before matching so
 // an LLM cannot bypass the blocklist via casing or whitespace (Phase 11.03a).
 func IsBlockedOperation(toolName string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(toolName))

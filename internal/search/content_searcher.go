@@ -46,7 +46,6 @@ func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, tenantID pg
 	resp, err := a.engine.Search(ctx, IndexPosts, Query{
 		IndexUID: IndexPosts,
 		Text:     query,
-		Filter:   Eq{Field: "tenant_id", Value: tenantID.String()},
 		Limit:    limit,
 	})
 	if err != nil {

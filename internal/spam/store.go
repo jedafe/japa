@@ -1,18 +1,15 @@
 // Package spam provides spam prevention and content safety for JapaConnect.
-//
-// This package implements four subsystems that work together to protect
+// // This package implements four subsystems that work together to protect
 // the platform from abuse:
-//
-//   - IP blocking: block malicious IPs by CIDR range, with per-block-type
-//     granularity (full, registration, posting, api) and optional expiry.
-//   - User blocking: let users block other users so their content is
-//     excluded from the blocker's feed and search results.
-//   - Censored words: admin-configurable word list that can block, replace,
-//     or flag content containing matched patterns.
-//   - Content deduplication: SHA-256 hash of normalized content stored in
-//     the contents table to detect near-duplicate spam.
-//
-// The censored words list is cached in Valkey (jc:spam:censored:{tenant_id})
+// // - IP blocking: block malicious IPs by CIDR range, with per-block-type
+// granularity (full, registration, posting, api) and optional expiry.
+// - User blocking: let users block other users so their content is
+// excluded from the blocker's feed and search results.
+// - Censored words: admin-configurable word list that can block, replace,
+// or flag content containing matched patterns.
+// - Content deduplication: SHA-256 hash of normalized content stored in
+// the contents table to detect near-duplicate spam.
+// // The censored words list is cached in Valkey (jc:spam:censored:{})
 // with a 1-hour TTL. Cache misses fall back to a database read and repopulate
 // the cache. The IP block list is loaded into a Chi middleware that runs on
 // every request, blocking matched IPs before they reach any handler.

@@ -1,7 +1,6 @@
 // Package communitylocator implements the Diaspora Community Locator
 // (§101, ADR-109).
-//
-// Community organisations are records in the community_organisations table
+// // Community organisations are records in the community_organisations table
 // — a standalone table (not part of the Content Type System) tracking
 // diaspora groups (cultural associations, churches, mosques, professional
 // networks, student unions, informal groups) by origin community and
@@ -9,10 +8,8 @@
 // geo bounding-box search, public detail by slug, community submission
 // (status='pending'), admin moderation (publish/archive), verification,
 // and an organization claim workflow.
-//
-// Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//
-//	japaconnect-engineering/adr/ADR-109-community-locator.md
+// // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
+// //	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (
@@ -114,7 +111,7 @@ type OrgRow struct {
 // CreateOrgInput holds the fields for inserting a new community
 // organisation row.
 type CreateOrgInput struct {
-	TenantID             pgtype.UUID `json:"tenant_id"`
+	TenantID             pgtype.UUID 
 	Name                 string      `json:"name"`
 	Slug                 string      `json:"slug"`
 	OrgType              string      `json:"org_type"`

@@ -25,8 +25,7 @@ import (
 )
 
 // MediaResponse is the API response shape for media items, matching frontend expectations.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type MediaResponse struct {
 	ID           string   `json:"id"`
 	Filename     string   `json:"filename"`
@@ -1244,7 +1243,7 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//nolint:gosec // G301: bounded
+	// nolint:gosec // G301: bounded
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
 		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")

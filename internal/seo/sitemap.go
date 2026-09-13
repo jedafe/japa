@@ -59,7 +59,7 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 }
 
 // sitemapCacheKey builds the tenant-scoped Valkey cache key for a sitemap
-// sub-file. Pattern: jc:cache:sitemap:{tenant_id}:{type}
+// sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
 // "images", or "index".
 func sitemapCacheKey(tenantID pgtype.UUID, sitemapType string) string {
@@ -197,7 +197,7 @@ type sitemapEntry struct {
 // (content, spaces, tags, users, images), NOT a flat <urlset>. The lastmod
 // for each sub-sitemap is the most recent updated_at among the entries it
 // would contain, so crawlers can skip unchanged chunks. The rendered XML is
-// cached in Valkey (jc:cache:sitemap:{tenant_id}:index, TTL 1h) and
+// cached in Valkey (jc:cache:sitemap:{}:index, TTL 1h) and
 // invalidated by the sitemap:generate Asynq task.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
@@ -638,29 +638,25 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 
 // ValidateSEO handles GET /admin/seo/validate/:id — validates SEO metadata for
 // a content item (Section 26: "validate JSON-LD output for a content item").
-//
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
-//
-// The route validates a CONTENT item, not a pagebuilder page: the canonical
+// // Ref: japaconnect-engineering/sections/26-seo-performance.md
+// // The route validates a CONTENT item, not a pagebuilder page: the canonical
 // SEO metadata (meta_title, meta_description, og_image_url, canonical_url,
 // seo_indexable) lives on the `contents` table (migration 000165), and the
 // JSON-LD template is keyed by content_type via content_type_jsonld_templates.
 // The previous implementation queried the `pages` table and returned only
 // {id, valid, issues}, which did not match the admin SPA contract
 // (SeoValidationResult: type, title, slug, all meta fields, issues, score).
-//
-// Render-time resolution follows Section 26's ResolveMetadata:
-//   - meta_title  -> coalesce(meta_title, title)
-//   - og_title    -> coalesce(meta_title, title)   (no og_title column; falls back to title)
-//   - meta_description / og_description -> meta_description (or body excerpt)
-//   - og_image_url -> og_image_url (caller may resolve featured_image fallback)
-//   - canonical_url -> canonical_url (self-referencing fallback handled by caller)
-//   - robots_meta  -> "noindex,nofollow" for private visibility,
-//     "noindex,follow" when seo_indexable = false,
-//     "index,follow" otherwise
-//   - json_ld_type -> @type extracted from the active content_type_jsonld_templates row
-//
-// Score: 100 minus 12 points per issue (floor 0). The admin SPA renders the
+// // Render-time resolution follows Section 26's ResolveMetadata:
+// - meta_title -> coalesce(meta_title, title)
+// - og_title -> coalesce(meta_title, title) (no og_title column; falls back to title)
+// - meta_description / og_description -> meta_description (or body excerpt)
+// - og_image_url -> og_image_url (caller may resolve featured_image fallback)
+// - canonical_url -> canonical_url (self-referencing fallback handled by caller)
+// - robots_meta -> "noindex,nofollow" for private visibility,
+// "noindex,follow" when seo_indexable = false,
+// "index,follow" otherwise
+// - json_ld_type -> @type extracted from the active content_type_jsonld_templates row
+// // Score: 100 minus 12 points per issue (floor 0). The admin SPA renders the
 // score as a circular progress indicator and lists each issue.
 func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

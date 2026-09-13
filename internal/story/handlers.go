@@ -1,19 +1,15 @@
 // Package story — handlers.go provides the HTTP handlers for the Community
 // Story Wall routes (§79, ADR-087).
-//
-// Routes:
-//
-//	GET    /api/v1/stories                     — list ?origin=&dest=&visa=&profession=&sort=top|latest
-//	GET    /api/v1/stories/:slug               — single story
-//	POST   /api/v1/stories                     — submit story (auth, story.create)
-//	PATCH  /api/v1/stories/:id                 — edit own story (auth, story.edit_own)
-//	DELETE /api/v1/stories/:id                 — delete own story (auth, story.delete_own)
-//	POST   /api/v1/admin/stories/:id/verify    — mark verified (auth, story.verify)
-//	GET    /api/v1/admin/stories               — moderation queue (auth, story.verify)
-//
-// Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//
-//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
+// // Routes:
+// //	GET /api/v1/stories — list ?origin=&dest=&visa=&profession=&sort=top|latest
+// GET /api/v1/stories/:slug — single story
+// POST /api/v1/stories — submit story (auth, story.create)
+// PATCH /api/v1/stories/:id — edit own story (auth, story.edit_own)
+// DELETE /api/v1/stories/:id — delete own story (auth, story.delete_own)
+// POST /api/v1/admin/stories/:id/verify — mark verified (auth, story.verify)
+// GET /api/v1/admin/stories — moderation queue (auth, story.verify)
+// // Ref: japaconnect-engineering/sections/79-community-story-wall.md
+// //	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (

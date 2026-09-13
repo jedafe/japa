@@ -1,6 +1,5 @@
 // Package forum implements the Forum Q&A / Solved system (Section 08).
-//
-// Nested threads with per-thread solved status, upvote/downvote voting,
+// // Nested threads with per-thread solved status, upvote/downvote voting,
 // tag system with moderators, polls, anonymous posting, bookmarks,
 // and reply view tracking. Solved threads are eligible for Google's
 // Q&A rich-result structured-data treatment (Section 26).
@@ -289,7 +288,7 @@ func (s *Service) drainViewIncrements() {
 }
 
 // runViewCountFlusher periodically flushes batched view counts from Valkey to
-// the database (valkey-keys-catalog.md: jc:forum:views:{tenant_id}:{thread_id}).
+// the database (valkey-keys-catalog.md: jc:forum:views:{}:{thread_id}).
 func (s *Service) runViewCountFlusher() {
 	ticker := time.NewTicker(viewFlushInterval)
 	defer ticker.Stop()
@@ -357,7 +356,7 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 			continue
 		}
 
-		// Key pattern: jc:forum:views:{tenant_id}:{thread_id}
+		// Key pattern: jc:forum:views:{}:{thread_id}
 		parts := strings.Split(key, ":")
 		if len(parts) != 5 {
 			continue

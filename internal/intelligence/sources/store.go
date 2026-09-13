@@ -14,8 +14,7 @@ import (
 // It follows the same pattern as internal/scholarships/store.go: a thin
 // adapter that wraps each generated call with the "sources: <op>: %w"
 // error prefix so callers get a consistent, traceable error chain.
-//
-// All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// // All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
 // takes a tenantID pgtype.UUID as its first argument (after ctx) and stamps it
 // into the sqlc query params, guaranteeing data isolation across tenants
 // regardless of what the caller populated in the params struct.

@@ -39,7 +39,7 @@ func (s *Store) GetOrganizationByID(ctx context.Context, id, tenantID pgtype.UUI
 }
 
 // GetOrganizationByIDOnly returns an organization by ID without tenant scoping.
-// Used by invitation acceptance where tenant_id is not yet known.
+// Used by invitation acceptance where is not yet known.
 func (s *Store) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (gen.Organization, error) {
 	return s.read.GetOrganizationByIDOnly(ctx, id)
 }

@@ -1,17 +1,14 @@
 // Package university implements the Japa University creator economy backend
 // (ADR-063): instructor profiles, marketplace track publishing, paid/Pro
 // enrollment revenue splits, and instructor payouts.
-//
-// The package follows the layered architecture: Handlers parse/validate input
+// // The package follows the layered architecture: Handlers parse/validate input
 // and render responses; Service holds business logic and transaction
 // boundaries; Store wraps the sqlc-generated queries with read/write pool
 // separation. Asynq tasks (enrollment processing, payout calculation/execution,
 // notifications) are defined in the worker package and delegated here via the
 // Processor interface.
-//
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
-//
-//	japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
+// // Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa University)
+// //	japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
 package university
 
 import (
@@ -28,7 +25,7 @@ import (
 // Store wraps the sqlc-generated queries with read/write pool separation.
 // All writes go through the write pool; all reads through the read pool.
 // Tenant scoping is enforced at the query level (every query filters on
-// tenant_id).
+// ).
 type Store struct {
 	read  *gen.Queries
 	write *gen.Queries
@@ -54,7 +51,7 @@ func (s *Store) DB() *db.DB { return s.db }
 // InstructorProfile is the API-facing instructor profile record.
 type InstructorProfile struct {
 	ID              string          `json:"id"`
-	TenantID        string          `json:"tenant_id"`
+	TenantID        string          
 	UserID          string          `json:"user_id"`
 	DisplayName     string          `json:"display_name"`
 	Headline        *string         `json:"headline,omitempty"`
@@ -268,7 +265,7 @@ type Track struct {
 	Description *string `json:"description,omitempty"`
 	Difficulty  string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
-	 *  contract (ADR-060). Always equal to Difficulty. */
+	 * contract (ADR-060). Always equal to Difficulty. */
 	Level                   string     `json:"level"`
 	CoverMediaID            *string    `json:"cover_media_id,omitempty"`
 	InstructorID            *string    `json:"instructor_id,omitempty"`
@@ -346,7 +343,7 @@ type CatalogTrack struct {
 	Description *string `json:"description,omitempty"`
 	Difficulty  string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
-	 *  contract (ADR-060). Always equal to Difficulty. */
+	 * contract (ADR-060). Always equal to Difficulty. */
 	Level                string  `json:"level"`
 	PriceKobo            *int64  `json:"price_kobo,omitempty"`
 	Currency             string  `json:"currency"`
@@ -472,7 +469,7 @@ func (s *Store) GetCatalogTrackBySlug(ctx context.Context, tenantID pgtype.UUID,
 // it through this struct in the handler.
 type CatalogTrackDetail struct {
 	ID                      pgtype.UUID        `json:"id"`
-	TenantID                pgtype.UUID        `json:"tenant_id"`
+	TenantID                pgtype.UUID        
 	Title                   string             `json:"title"`
 	Slug                    string             `json:"slug"`
 	Description             *string            `json:"description,omitempty"`

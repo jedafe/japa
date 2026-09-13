@@ -3,10 +3,8 @@
 // moderation. Pathways are curated guides for document
 // legalization/apostille across jurisdictions. Feature-flagged via the
 // attestation_guide.enabled system_setting (§97, ADR-105).
-//
-// Ref: japaconnect-engineering/sections/97-attestation-guide.md
-//
-//	japaconnect-engineering/adr/ADR-105-attestation-guide.md
+// // Ref: japaconnect-engineering/sections/97-attestation-guide.md
+// //	japaconnect-engineering/adr/ADR-105-attestation-guide.md
 package attestationguide
 
 import (

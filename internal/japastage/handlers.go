@@ -1,21 +1,16 @@
 // Package japastage — handlers.go provides the HTTP handlers for the Japa
 // Stage Progress Profile routes (§87, ADR-095).
-//
-// Routes:
-//
-//	GET   /api/v1/users/:username/japa-stage — public stage view
-//	GET   /api/v1/me/japa-stage              — own stage (auth, profile.japa_stage.edit)
-//	PATCH /api/v1/me/japa-stage              — update own stage (auth, profile.japa_stage.edit)
-//	GET   /api/v1/members/by-stage           — directory ?stage=&dest=&page= (public profiles only)
-//
-// On a successful PATCH, the handler enqueues a fire-and-forget
+// // Routes:
+// //	GET /api/v1/users/:username/japa-stage — public stage view
+// GET /api/v1/me/japa-stage — own stage (auth, profile.japa_stage.edit)
+// PATCH /api/v1/me/japa-stage — update own stage (auth, profile.japa_stage.edit)
+// GET /api/v1/members/by-stage — directory ?stage=&dest=&page= (public profiles only)
+// // On a successful PATCH, the handler enqueues a fire-and-forget
 // japa_stage:recommend Asynq task (Rule 8) so the worker can dispatch tool
 // recommendations, update the JapaBot peer card, and prompt a Readiness
 // Assessment (§87 Stage-Based Recommendations).
-//
-// Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
-//
-//	japaconnect-engineering/adr/ADR-095-japa-stage-profiles.md
+// // Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
+// //	japaconnect-engineering/adr/ADR-095-japa-stage-profiles.md
 package japastage
 
 import (

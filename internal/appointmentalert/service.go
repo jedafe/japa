@@ -3,10 +3,8 @@
 // enforces ownership (a user may only manage their own alerts), and
 // converts Store rows into API DTOs. Feature-flagged via the
 // appointment_alert.enabled system_setting (§91, ADR-099).
-//
-// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-//
-//	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
+// // Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
+// //	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
 package appointmentalert
 
 import (
@@ -565,8 +563,7 @@ func (s *Service) DispatchAlerts(ctx context.Context, embassySlug string, tenant
 // Called by the recurring poll scheduler (every 5 minutes) so each embassy
 // is polled at its own effective interval (§91, ADR-099). Fire-and-forget
 // per Rule 8.
-//
-// The effective interval is LEAST(embassy.poll_interval_seconds,
+// // The effective interval is LEAST(embassy.poll_interval_seconds,
 // appointment_alert.premium_poll_interval) for embassies that have at least
 // one active alert from a premium-tier user; otherwise the embassy's
 // configured poll_interval_seconds. This gives premium users faster polling

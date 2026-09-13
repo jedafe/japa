@@ -1,13 +1,11 @@
 // Package spaces implements the Geo-First Space System for JapaConnect
 // (Section 05).
-//
-// Spaces are the primary organizational unit for content. They form a
+// // Spaces are the primary organizational unit for content. They form a
 // hierarchy: country -> state -> city, with custom spaces for non-geo
 // communities. Each space has five permission axes (visibility, posting,
 // replying, commenting, joining) that control who can do what. Seven
 // default permission presets are seeded and admin-editable.
-//
-// Space types (Country, City, University, Community) optionally link to
+// // Space types (Country, City, University, Community) optionally link to
 // custom field groups from Section 06 for type-specific fields.
 package spaces
 
@@ -163,7 +161,7 @@ type Service struct {
 
 // SetValkey wires the Valkey client for mute SET cache invalidation
 // (Section 52 / VALKEY-001, BUG-003: tenant-scoped). Key:
-// jc:muted_spaces:{tenant_id}:{user_id}.
+// jc:muted_spaces:{}:{user_id}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // SetSourceManager links the space service to the canonical source registry

@@ -3,10 +3,8 @@
 // requirements by destination/visa, listing resources and score stories,
 // submitting stories, and admin requirement management with HITL review.
 // Feature-flagged via language_test_hub.enabled system_setting (§99).
-//
-// Ref: japaconnect-engineering/sections/99-language-test-hub.md
-//
-//	japaconnect-engineering/adr/ADR-107-language-test-hub.md
+// // Ref: japaconnect-engineering/sections/99-language-test-hub.md
+// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 package languagetesthub
 
 import (
@@ -388,7 +386,7 @@ func (s *Service) CreateStory(ctx context.Context, tenantID, userID pgtype.UUID,
 }
 
 // CreateLanguageTest creates a new language test. language_tests is a
-// global table and ignores the supplied tenant_id.
+// global table and ignores the supplied .
 func (s *Service) CreateLanguageTest(ctx context.Context, tenantID pgtype.UUID, input CreateLanguageTestInput) (TestDTO, error) {
 	if input.Slug == "" {
 		return TestDTO{}, errors.New("slug is required")

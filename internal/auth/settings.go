@@ -103,8 +103,7 @@ type TOTPEnrollmentChecker interface {
 // 'totp_required'. Non-admin users and non-admin routes pass through
 // unchanged. The middleware is a no-op when the setting is disabled or when
 // any dependency is nil (graceful degradation).
-//
-// Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
+// // Ref: japaconnect-engineering/sections/02-authentication-sessions.md.
 func RequireTOTPForAdmin(
 	settings SettingsReader,
 	rbac AdminCapabilityChecker,

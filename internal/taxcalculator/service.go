@@ -2,10 +2,8 @@
 // CRUD, the Content Agent draft placeholder, and Human-in-the-Loop
 // approval for tax obligation guides and treaty pairs. Feature-flagged
 // via tax_calculator.enabled system_setting (§100).
-//
-// Ref: japaconnect-engineering/sections/100-tax-calculator.md
-//
-//	japaconnect-engineering/adr/ADR-108-tax-calculator.md
+// // Ref: japaconnect-engineering/sections/100-tax-calculator.md
+// //	japaconnect-engineering/adr/ADR-108-tax-calculator.md
 package taxcalculator
 
 import (
@@ -292,7 +290,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 	return guideRowToDTO(row), nil
 }
 
-// DeleteGuide deletes a tax obligation guide by id and tenant_id (admin).
+// DeleteGuide deletes a tax obligation guide by id and (admin).
 func (s *Service) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	if err := s.store.DeleteGuide(ctx, id, tenantID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

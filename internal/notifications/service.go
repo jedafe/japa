@@ -86,7 +86,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 	if s.settings != nil {
 		batchWindowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
-	// BUG-001: pass tenant_id so the batch window carries tenant context
+	// BUG-001: pass so the batch window carries tenant context
 	// through to DispatchBatch, which needs it for the notifications insert.
 	if err := s.store.createBatchWindow(ctx, gen.CreateBatchWindowParams{
 
@@ -161,7 +161,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	action := notificationAction(window.NotificationType)
 
 	// Get the last actor's display name for the batch title.
-	// BUG-003: pass the batch window's tenant_id so the profile lookup
+	// BUG-003: pass the batch window's so the profile lookup
 	// resolves correctly (previously always returned "Someone").
 	actorName := s.resolveActorDisplayName(ctx, pgtype.UUID{}, window.LastActorID)
 
@@ -192,8 +192,8 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	}
 
 	// Insert the aggregated notification.
-	// BUG-001: use the batch window's tenant_id (previously zero UUID, which
-	// violated the NOT NULL FK constraint on notifications.tenant_id).
+	// BUG-001: use the batch window's (previously zero UUID, which
+	// violated the NOT NULL FK constraint on notifications.).
 	// BUG-005: capture the returned ID for the WebSocket broadcast.
 	var bodyPtr *string
 
@@ -285,7 +285,7 @@ func notificationAction(ntype string) string {
 
 // resolveActorDisplayName returns the display_name of a user, or "Someone" on
 // error. Routed through the store rather than constructing gen.Queries inline.
-// BUG-003: previously passed a zero UUID as tenant_id, which caused
+// BUG-003: previously passed a zero UUID as , which caused
 // GetUserProfile to return ErrNoRows for every user — batch notification
 // titles were always "Someone and N others reacted".
 func (s *Service) resolveActorDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) string {

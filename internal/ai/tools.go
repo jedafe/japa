@@ -1,6 +1,5 @@
 // Package ai — tools.go defines the tool registry for AI-powered tools.
-//
-// The tool registry manages configuration, enablement, and usage tracking
+// // The tool registry manages configuration, enablement, and usage tracking
 // for AI tools available to tenants. Each tool has a name, description,
 // category, optional configuration schema, and an enable/disable toggle.
 package ai
@@ -18,7 +17,7 @@ import (
 // AITool represents a registered AI tool in the system.
 type AITool struct { //nolint:revive // stuttering type name preserved for API compatibility
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
+	TenantID           pgtype.UUID        
 	Name               string             `json:"name"`
 	Description        string             `json:"description"`
 	Category           string             `json:"category"`
@@ -32,7 +31,7 @@ type AITool struct { //nolint:revive // stuttering type name preserved for API c
 // AIToolUsage tracks usage statistics for an AI tool.
 type AIToolUsage struct { //nolint:revive // stuttering type name preserved for API compatibility
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
+	TenantID   pgtype.UUID        
 	ToolID     pgtype.UUID        `json:"tool_id"`
 	UserID     *pgtype.UUID       `json:"user_id,omitempty"`
 	TokensUsed int32              `json:"tokens_used"`

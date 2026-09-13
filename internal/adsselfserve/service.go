@@ -3,10 +3,8 @@
 // ad campaigns without admin involvement. Campaigns are paid upfront via
 // credits, then enter the admin moderation queue via status = 'pending_review'
 // for admin creative approval before going live.
-//
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md
-//
-//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md
+// // Ref: japaconnect-engineering/sections/61-self-serve-ads.md
+// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md
 package adsselfserve
 
 import (
@@ -42,8 +40,7 @@ const (
 
 // Sentinel errors for typed failure modes. These are compared with errors.Is
 // in the handler layer to produce the correct HTTP status and error code.
-//
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md.
+// // Ref: japaconnect-engineering/sections/61-self-serve-ads.md.
 var (
 	ErrFeatureDisabled         = errors.New("adsselfserve: feature disabled")
 	ErrOrganizationNotVerified = errors.New("adsselfserve: organization_not_verified")
@@ -173,10 +170,8 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 // CreateCampaign creates a self-serve ad campaign with upfront payment.
 // Steps: verify org, verify member, check min days, calculate cost,
 // create campaign, deduct credits, enqueue notification, enter review queue.
-//
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
-//
-//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
+// // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
+// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
 	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "ads.self_serve_enabled")
 	if err == nil && !enabled {
@@ -457,10 +452,8 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 // NotifyCampaignStatus sends a notification to the campaign creator when the
 // review decision is made (approved or rejected). Called by the
 // ads:notify_campaign_status worker task.
-//
-// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
-//
-//	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
+// // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
+// //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
 func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
 	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
 	if err != nil {

@@ -1,9 +1,7 @@
 // Package mcp implements the JapaConnect Model Context Protocol (MCP) bridge.
-//
-// Ref: japaconnect-engineering/sections/119-mcp-server.md
+// // Ref: japaconnect-engineering/sections/119-mcp-server.md
 // Ref: japaconnect-engineering/adr/ADR-116-mcp-server.md
-//
-// The bridge is a deterministic, LLM-free tool surface. Clients send JSON-RPC
+// // The bridge is a deterministic, LLM-free tool surface. Clients send JSON-RPC
 // 2.0 requests to POST /api/v1/mcp or open an SSE stream via GET /api/v1/mcp;
 // the server maps tools/list and tools/call onto the existing ai.Executor
 // (Section 103), preserving RBAC, privacy, HITL, and the

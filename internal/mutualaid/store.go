@@ -1,14 +1,11 @@
 // Package mutualaid implements the Mutual Aid Board (§85, ADR-093).
-//
-// Members post needs, offers, and skill swaps scoped to a destination
+// // Members post needs, offers, and skill swaps scoped to a destination
 // space (country) and optional city space. Posts expire after 30 days
 // and can be renewed, marked fulfilled, or soft-deleted by the author.
 // Admins moderate via the status field (active, expired, moderated,
 // fulfilled).
-//
-// Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
-//
-//	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
+// // Ref: japaconnect-engineering/sections/85-mutual-aid-board.md
+// //	japaconnect-engineering/adr/ADR-093-mutual-aid-board.md
 package mutualaid
 
 import (

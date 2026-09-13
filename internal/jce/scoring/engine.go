@@ -1,6 +1,5 @@
 // Package scoring implements the JapaScore engine for the Japa Comparison Engine.
-//
-// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5
+// // Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5
 package scoring
 
 import (
@@ -136,8 +135,7 @@ type scoreRunResult struct {
 }
 
 // Score computes and persists JapaScores and recommendations for a comparison.
-//
-// Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5.
+// // Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5.
 func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResult, error) {
 	tenantID := stringToUUID(input.TenantID)
 
@@ -1238,16 +1236,14 @@ func (e *Engine) resolveProfile(ctx context.Context, tenantID pgtype.UUID, userI
 // canScoreContent performs a content-visibility and permission check.
 // It is not an RBAC check itself: the service/handler layer (Task 5)
 // populates input.PermissionChecker with a callback against internal/rbac.
-//
-//   - the comparison owner is always allowed;
-//   - callers with comparison.edit_any are always allowed;
-//   - public content may be scored/viewed by authenticated callers with the
-//     supplied public permission (jce.score.recalculate for Score,
-//     jce.score.view for GetScore and PreviewScoreForItems);
-//   - members and private content require the caller to be the author or have
-//     comparison.edit_any.
-//
-// A nil PermissionChecker is treated as a deny-all fallback for non-owners.
+// // - the comparison owner is always allowed;
+// - callers with comparison.edit_any are always allowed;
+// - public content may be scored/viewed by authenticated callers with the
+// supplied public permission (jce.score.recalculate for Score,
+// jce.score.view for GetScore and PreviewScoreForItems);
+// - members and private content require the caller to be the author or have
+// comparison.edit_any.
+// // A nil PermissionChecker is treated as a deny-all fallback for non-owners.
 func (e *Engine) canScoreContent(ctx context.Context, cmp gen.GetComparisonBySlugOrIDRow, userID *string, check func(string) bool, publicPerm string) bool {
 	if userID == nil || *userID == "" {
 		return false

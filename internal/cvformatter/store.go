@@ -1,17 +1,14 @@
 // Package cvformatter implements the International CV / Resume Formatter
 // (§95, ADR-103).
-//
-// The package manages two tables created by migration 000333:
+// // The package manages two tables created by migration 000333:
 // cv_standards (per-destination-space formatting guidance) and
 // cv_format_sessions (individual CV formatting requests submitted by
 // users). Standards are public; sessions are owner-scoped. The actual
 // AI formatting is performed by an Asynq task — this package creates
 // the session row, returns 202 Accepted, and exposes a poll/download
 // endpoint.
-//
-// Ref: japaconnect-engineering/sections/95-cv-formatter.md
-//
-//	japaconnect-engineering/adr/ADR-103-cv-formatter.md
+// // Ref: japaconnect-engineering/sections/95-cv-formatter.md
+// //	japaconnect-engineering/adr/ADR-103-cv-formatter.md
 package cvformatter
 
 import (
@@ -256,7 +253,7 @@ WHERE destination_space_id = $1
 }
 
 // DeleteStandard deletes a cv_standards row by id, scoped to the space's
-// tenant. Because cv_standards has no tenant_id column, tenant isolation is
+// tenant. Because cv_standards has no column, tenant isolation is
 // enforced by joining spaces on destination_space_id. Returns pgx.ErrNoRows
 // if the row does not exist or does not belong to the tenant.
 func (s *Store) DeleteStandard(ctx context.Context, id, tenantID pgtype.UUID) error {

@@ -1,25 +1,21 @@
 // Package ai — executor.go implements the Agent Tool Executor pipeline
 // (Section 103, ADR-111).
-//
-// Every tool call the LLM emits during the agent loop is routed through
+// // Every tool call the LLM emits during the agent loop is routed through
 // Executor.Execute before it reaches an internal service function. The
 // pipeline enforces the §103 Tool Executor checks in an order that is
 // strictly safer than the spec's textual listing — the security blocklist
 // runs before RBAC and privacy so a blocked operation never consumes a
 // cache lookup or DB query:
-//
-//  1. Schema validation — are the arguments valid per the tool's JSON schema?
-//  2. Security boundary — is this a blocked operation? (§103 step 4, moved first)
-//  3. RBAC check — can THIS user perform THIS operation? (§103 step 2)
-//  4. Privacy check — is the target data AI-exempt? (§103 step 3)
-//  5. Execute — dispatch to the registered handler. (§103 step 5)
-//  6. HITL — if requires_hitl is true, create an ai_hitl_reviews record. (§103 step 7)
-//  7. Log — record in ai_agent_tool_calls with status + latency_ms. (§103 step 6, deferred)
-//
-// The executor never holds a database transaction open across an external
+// // 1. Schema validation — are the arguments valid per the tool's JSON schema?
+// 2. Security boundary — is this a blocked operation? (§103 step 4, moved first)
+// 3. RBAC check — can THIS user perform THIS operation? (§103 step 2)
+// 4. Privacy check — is the target data AI-exempt? (§103 step 3)
+// 5. Execute — dispatch to the registered handler. (§103 step 5)
+// 6. HITL — if requires_hitl is true, create an ai_hitl_reviews record. (§103 step 7)
+// 7. Log — record in ai_agent_tool_calls with status + latency_ms. (§103 step 6, deferred)
+// // The executor never holds a database transaction open across an external
 // call. Each step that needs the DB uses a short, scoped query.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Executor)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Executor)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 3, tasks 3.03-3.08)
 package ai
 
@@ -69,8 +65,7 @@ const (
 // args is the raw JSON the LLM produced (already validated against the
 // tool's required fields by the executor). The handler returns a ToolResult
 // whose Content is relayed to the LLM.
-//
-// Handlers perform their own entity-level privacy checks via the injected
+// // Handlers perform their own entity-level privacy checks via the injected
 // PrivacyChecker when they target a specific content/cfv/user row that the
 // executor-level PrivacyTargetFunc hook did not cover.
 type ToolHandler func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error)
@@ -144,8 +139,7 @@ func (c ToolConfig) requiredFields() []string {
 // table stores the declarative catalog (function schema, behavioral flags,
 // required_permission), and the registry binds each function_name to the
 // Go function that implements it.
-//
-// required_permission lives on the ai_tools row itself (not the config JSONB)
+// // required_permission lives on the ai_tools row itself (not the config JSONB)
 // and is loaded alongside the config so CatalogForUser can filter by the
 // calling user's RBAC grants.
 type ToolHandlerRegistry struct {
@@ -426,8 +420,7 @@ type ExecuteParams struct {
 // and returns the handler's result. Every outcome — success, error,
 // unauthorized, privacy_blocked, hitl_queued — is recorded as an
 // ai_agent_tool_calls row with status and latency_ms.
-//
-// The method never panics: a handler panic is recovered and recorded as an
+// // The method never panics: a handler panic is recovered and recorded as an
 // error result so one bad tool cannot crash the agent loop. The return
 // values are named so the recovery defer can set them before the logging
 // defer persists the final status.
@@ -589,12 +582,10 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	// persona context the executor does not have) and surface the review ID
 	// via hres.Metadata["hitl_review_id"]. When present, the executor honors
 	// it and skips its own createHITL — avoiding a duplicate review row.
-	//
-	// Phase 11.02a: a handler may set hres.ForceHITL=true to unconditionally
+	// // Phase 11.02a: a handler may set hres.ForceHITL=true to unconditionally
 	// request HITL even when the tool config's requires_hitl flag is false
 	// (e.g. high-stakes guide categories like visa/banking/grants).
-	//
-	// agent.skip_hitl: actors holding the permission (super_admin via the '*'
+	// // agent.skip_hitl: actors holding the permission (super_admin via the '*'
 	// wildcard, plus any role/group granted the node) bypass the review queue
 	// entirely — the action still executes and is logged in
 	// ai_agent_tool_calls, but no ai_hitl_reviews row is created.
@@ -637,8 +628,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 // namespace (e.g. "content.create" → "content"); ai_output is the tool
 // result JSON. content_id is left null — the agent may create a HITL review
 // for an operation that has no backing content row (e.g. a bulk field set).
-//
-// The source is set to 'agent_tool' (migration 000395) so the admin panel
+// // The source is set to 'agent_tool' (migration 000395) so the admin panel
 // can filter tool-triggered HITL reviews from agent draft requests
 // ('agent_draft_request') and manual/admin reviews ('manual'). The
 // content.create_draft tool sets its own source='agent_draft_request'
@@ -743,8 +733,7 @@ func errorJSON(err error) string {
 // end. When no writer is configured (unit tests), logging is a no-op. All
 // logging errors are warned, never propagated — a logging failure must not
 // mask the tool's actual result.
-//
-// The logging context is derived from the request context via
+// // The logging context is derived from the request context via
 // context.WithoutCancel so that audit records are persisted even when the
 // agent request times out or the client disconnects. A 5-second timeout
 // bounds the write so a stuck DB connection does not leak a goroutine.

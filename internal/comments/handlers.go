@@ -585,8 +585,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteComment handles DELETE /api/v1/comments/{id}.
-//
-// Section 49 — soft-delete own comment (comments.delete_own) or any comment
+// // Section 49 — soft-delete own comment (comments.delete_own) or any comment
 // as a moderator (comments.delete_any). The route is wired with RequireAuth
 // only; the own-vs-any decision is made here at request time so a moderator
 // holding only comments.delete_any is not blocked by a delete_own middleware
@@ -657,8 +656,7 @@ func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // VoteComment handles POST /api/v1/comments/{id}/vote.
-//
-// Section 49 — all comments support upvote/downvote.
+// // Section 49 — all comments support upvote/downvote.
 func (h *Handlers) VoteComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -720,8 +718,7 @@ func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
 }
 
 // PinComment handles POST /api/v1/comments/{id}/pin.
-//
-// Section 49 — pinning is allowed for moderators (comments.pin) OR the content
+// // Section 49 — pinning is allowed for moderators (comments.pin) OR the content
 // author. The route is wired with RequireAuth only; the own-vs-moderator
 // decision is made here at request time so a content author who doesn't hold
 // comments.pin can still pin comments on their own content (BL-003).
@@ -756,8 +753,7 @@ func (h *Handlers) PinComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // UnpinComment handles DELETE /api/v1/comments/{id}/pin.
-//
-// Same author-or-moderator gate as PinComment (BL-003).
+// // Same author-or-moderator gate as PinComment (BL-003).
 func (h *Handlers) UnpinComment(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -806,8 +802,7 @@ func (h *Handlers) canPinComment(r *http.Request, userID, tenantID, commentID pg
 }
 
 // RemoveComment handles POST /api/v1/admin/comments/{id}/remove.
-//
-// Section 49 — moderator removal-by-status. Sets status='removed' +
+// // Section 49 — moderator removal-by-status. Sets status='removed' +
 // removed_by + removed_reason, leaving the row visible for audit (unlike a
 // soft-delete). The route is gated by comments.delete_any (BUG-010).
 func (h *Handlers) RemoveComment(w http.ResponseWriter, r *http.Request) {

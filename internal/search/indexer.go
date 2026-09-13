@@ -1,7 +1,6 @@
 // Package search — indexer.go owns the document sync path: fetching entity
 // rows from PostgreSQL and upserting them into the search engine indexes.
-//
-// The Indexer implements the worker.SearchIndexer interface so the Asynq
+// // The Indexer implements the worker.SearchIndexer interface so the Asynq
 // search_index_sync task can stay thin — it parses the payload and delegates
 // here. Keeping the DB fetch and document shaping in the search package means
 // the index schema lives in one place next to the query code that reads it
@@ -56,7 +55,7 @@ func (i *Indexer) HasPool() bool { return i.pool != nil }
 // the engine's searchable/filterable attributes.
 type contentDocument struct {
 	ID                string   `json:"id"`
-	TenantID          string   `json:"tenant_id"`
+	TenantID          string   
 	Title             string   `json:"title"`
 	Slug              string   `json:"slug"`
 	Excerpt           string   `json:"excerpt"`
@@ -202,10 +201,9 @@ func buildExcerpt(body string) string {
 // tiptapPlainText extracts readable text from a content body that may be
 // Tiptap/ProseMirror JSON, HTML, or plain text. It handles the two Tiptap
 // shapes stored in JapaConnect:
-//   - A full document object: {"type":"doc","content":[...]}
-//   - A bare array of nodes:  [{"type":"paragraph","content":[...]}]
-//
-// HTML bodies are tag-stripped; anything else is returned as-is so a plain
+// - A full document object: {"type":"doc","content":[...]}
+// - A bare array of nodes: [{"type":"paragraph","content":[...]}]
+// // HTML bodies are tag-stripped; anything else is returned as-is so a plain
 // text body still works.
 func tiptapPlainText(body string) string {
 	trimmed := strings.TrimSpace(body)
@@ -337,7 +335,7 @@ func contentURL(contentType, slug string) string {
 // forumThreadDocument is the shape stored in the forum_threads index.
 type forumThreadDocument struct {
 	ID           string `json:"id"`
-	TenantID     string `json:"tenant_id"`
+	TenantID     string 
 	Title        string `json:"title"`
 	Slug         string `json:"slug"`
 	BodyPreview  string `json:"excerpt"`
@@ -394,7 +392,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 // spaceDocument is the shape stored in the spaces index.
 type spaceDocument struct {
 	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
+	TenantID    string 
 	Name        string `json:"title"`
 	Slug        string `json:"slug"`
 	Description string `json:"excerpt"`
@@ -454,7 +452,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 // userDocument is the shape stored in the users index.
 type userDocument struct {
 	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
+	TenantID    string 
 	Username    string `json:"title"`
 	DisplayName string `json:"excerpt"`
 	Bio         string `json:"bio"`
@@ -543,7 +541,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 // tagDocument is the shape stored in the tags index.
 type tagDocument struct {
 	ID           string `json:"id"`
-	TenantID     string `json:"tenant_id"`
+	TenantID     string 
 	Name         string `json:"title"`
 	Slug         string `json:"slug"`
 	Description  string `json:"excerpt"`
@@ -643,7 +641,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]by
 // list so the multi-search result mapper works uniformly across indexes.
 type organizationDocument struct {
 	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
+	TenantID    string 
 	Name        string `json:"title"`
 	Slug        string `json:"slug"`
 	Description string `json:"excerpt"`
@@ -722,7 +720,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 // indexed so JapaBot RAG retrieval never surfaces unreviewed content.
 type languageTestRequirementDocument struct {
 	ID                 string `json:"id"`
-	TenantID           string `json:"tenant_id"`
+	TenantID           string 
 	TestSlug           string `json:"test_slug"`
 	TestName           string `json:"title"`
 	MinimumScore       string `json:"excerpt"`
@@ -738,8 +736,7 @@ type languageTestRequirementDocument struct {
 // not JapaBot-indexable (is_japabot_indexed = false) are deleted from the
 // index so stale drafts/rejected rows do not surface in RAG retrieval.
 // Ref: japaconnect-engineering/sections/99-language-test-hub.md
-//
-//	japaconnect-engineering/adr/ADR-107-language-test-hub.md
+// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 func (ix *Indexer) IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
@@ -873,7 +870,7 @@ func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]
 // relevant to Nigeria.
 type learningTrackDocument struct {
 	ID                string   `json:"id"`
-	TenantID          string   `json:"tenant_id"`
+	TenantID          string   
 	Title             string   `json:"title"`
 	Slug              string   `json:"slug"`
 	Description       string   `json:"description"`
@@ -963,7 +960,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 // docPageDocument is the shape stored in the doc_pages index.
 type docPageDocument struct {
 	ID           string `json:"id"`
-	TenantID     string `json:"tenant_id"`
+	TenantID     string 
 	Title        string `json:"title"`
 	Slug         string `json:"slug"`
 	Audience     string `json:"audience"`
@@ -1039,8 +1036,7 @@ type ReindexSummary struct {
 // for indexes that were provisioned after data already existed — the
 // per-entity IndexXxx methods only fire on create/update events, so rows
 // that predate the indexer wiring are never indexed without this sweep.
-//
-// Each entity type is fetched in offset/cursor batches and delegated to the
+// // Each entity type is fetched in offset/cursor batches and delegated to the
 // existing per-entity IndexXxx method, which reuses the document-shaping
 // logic (excerpt, URL, relevant_countries, etc.).
 func (ix *Indexer) ReindexAll(ctx context.Context, tenantID pgtype.UUID) (*ReindexSummary, error) {

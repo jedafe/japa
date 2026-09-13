@@ -1,10 +1,8 @@
 // Package visatimeline — service.go orchestrates timeline creation, milestone
 // editing, ownership-gated updates/deletes, public statistics, and admin
 // moderation. Feature-flagged via visa_timeline.enabled system_setting (§83).
-//
-// Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
-//
-//	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
+// // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md
+// //	japaconnect-engineering/adr/ADR-091-visa-timeline-tracker.md
 package visatimeline
 
 import (
@@ -322,8 +320,8 @@ func (s *Service) AddMilestone(ctx context.Context, timelineID, tenantID, userID
 	// existing milestones and verify the new milestone's type-order and
 	// date are consistent with the canonical order. A milestone is
 	// implausible if:
-	//   - a later-stage milestone already exists with an earlier date, OR
-	//   - an earlier-stage milestone already exists with a later date.
+	// - a later-stage milestone already exists with an earlier date, OR
+	// - an earlier-stage milestone already exists with a later date.
 	existingMilestones, err := s.store.ListMilestones(ctx, timelineID, tenantID)
 	if err != nil {
 		return MilestoneDTO{}, fmt.Errorf("visatimeline: add milestone: list existing: %w", err)
@@ -643,8 +641,7 @@ func (s *Service) RefreshStats(ctx context.Context) (int64, error) {
 // timelines (no decision/visa_issued milestone). Called weekly by the
 // visa_timeline:prompt_update Asynq task (§83, ADR-091).
 // Implements worker.VisaTimelineProcessor.
-//
-// Each eligible owner receives a visa_timeline.prompt_update notification
+// // Each eligible owner receives a visa_timeline.prompt_update notification
 // with an action URL back to /visa-timelines/my. Mirrors the
 // planning_group:checkin_reminder dispatch pattern (§82). If no notifier is
 // wired, the method logs a warning and returns 0 so the task does not

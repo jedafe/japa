@@ -1,22 +1,18 @@
 // Package languagetesthub — handlers.go provides the HTTP handlers for
 // the Language Test Preparation Hub routes (§99, ADR-107).
-//
-// Routes:
-//
-//	GET   /api/v1/language-tests                          — list tests (public)
-//	GET   /api/v1/language-tests/requirements             — ?dest=&visa= required tests + scores (public)
-//	GET   /api/v1/language-tests/:test_slug               — test hub page: resources + stories summary (public)
-//	GET   /api/v1/language-tests/:test_slug/resources     — resources for a test (public)
-//	GET   /api/v1/language-tests/:test_slug/stories       — score stories ?dest= (public)
-//	POST  /api/v1/language-tests/:test_slug/stories       — submit score story (auth, language_test_hub.story)
-//	GET   /api/v1/admin/language-tests/requirements       — manage requirements (admin, language_test_hub.manage)
-//	POST  /api/v1/admin/language-tests/requirements       — create requirement (admin, language_test_hub.manage)
-//	POST  /api/v1/admin/language-tests/requirements/generate — Content Agent draft placeholder (admin, language_test_hub.manage)
-//	PATCH /api/v1/admin/language-tests/requirements/:id/approve — HITL approve (admin, language_test_hub.manage)
-//
-// Ref: japaconnect-engineering/sections/99-language-test-hub.md
-//
-//	japaconnect-engineering/adr/ADR-107-language-test-hub.md
+// // Routes:
+// //	GET /api/v1/language-tests — list tests (public)
+// GET /api/v1/language-tests/requirements — ?dest=&visa= required tests + scores (public)
+// GET /api/v1/language-tests/:test_slug — test hub page: resources + stories summary (public)
+// GET /api/v1/language-tests/:test_slug/resources — resources for a test (public)
+// GET /api/v1/language-tests/:test_slug/stories — score stories ?dest= (public)
+// POST /api/v1/language-tests/:test_slug/stories — submit score story (auth, language_test_hub.story)
+// GET /api/v1/admin/language-tests/requirements — manage requirements (admin, language_test_hub.manage)
+// POST /api/v1/admin/language-tests/requirements — create requirement (admin, language_test_hub.manage)
+// POST /api/v1/admin/language-tests/requirements/generate — Content Agent draft placeholder (admin, language_test_hub.manage)
+// PATCH /api/v1/admin/language-tests/requirements/:id/approve — HITL approve (admin, language_test_hub.manage)
+// // Ref: japaconnect-engineering/sections/99-language-test-hub.md
+// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 package languagetesthub
 
 import (

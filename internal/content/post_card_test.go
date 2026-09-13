@@ -13,7 +13,7 @@ import (
 
 // TestToPostCards_LeanAndCorrect verifies the profile Posts tab mapper copies
 // the card fields correctly and drops the internal columns the raw gen row
-// carries (tenant_id, raw body, field_values, content_hash, etc.).
+// carries (, raw body, field_values, content_hash, etc.).
 func TestToPostCards_LeanAndCorrect(t *testing.T) {
 	hash := "deadbeef"
 	canonical := "https://example.com/x"

@@ -3,11 +3,9 @@
 // configured affiliate travel provider API, injects affiliate tracking
 // parameters at render time (ADR-009), and caches identical queries in Valkey
 // (jc:travel:search:{hash}, configurable TTL, default 5 min).
-//
-// Ref: japaconnect-engineering/sections/67-travel-search.md
-//
-//	japaconnect-engineering/adr/ADR-085-travel-search.md
-//	japaconnect-engineering/adr/ADR-009-render-time-affiliate-processing.md
+// // Ref: japaconnect-engineering/sections/67-travel-search.md
+// //	japaconnect-engineering/adr/ADR-085-travel-search.md
+// japaconnect-engineering/adr/ADR-009-render-time-affiliate-processing.md
 package travel
 
 import (
@@ -150,8 +148,7 @@ type PublicProviderInfo struct {
 // The default implementation (DefaultAPIClient) makes real HTTP calls via
 // net/http; tests inject a fake implementation so the service can be exercised
 // without network access.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type TravelAPIClient interface {
 	SearchFlights(ctx context.Context, apiConfig json.RawMessage, params FlightSearchParams) ([]FlightResult, error)
 	SearchHotels(ctx context.Context, apiConfig json.RawMessage, params HotelSearchParams) ([]HotelResult, error)
@@ -407,7 +404,7 @@ func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
 	}
 
 	return HashSearchQuery(struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		Params   any    `json:"params"`
 	}{Params: params})
 }
@@ -499,8 +496,7 @@ func sortJSONValue(v interface{}) []byte {
 // affiliate_config column — an object of key/value query params (e.g.
 // {"aid": "12345", "utm_source": "japaconnect"}). The params are appended to
 // the booking URL's query string; existing params are preserved.
-//
-// Per ADR-009, affiliate processing happens at render time, never at storage
+// // Per ADR-009, affiliate processing happens at render time, never at storage
 // time — the provider API returns a clean booking URL and JapaConnect stamps
 // its tracking params on the way out to the client.
 func InjectAffiliateParams(bookingURL string, affiliateConfig json.RawMessage) string {

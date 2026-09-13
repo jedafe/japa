@@ -1,6 +1,5 @@
 // Package servicedir implements the Service Directory (§98, ADR-106).
-//
-// Service listings are records in the contents table with
+// // Service listings are records in the contents table with
 // content_type = 'service_listing', extended by the
 // service_listing_meta companion table for structured fields
 // (service category, destination/city spaces, origin communities,
@@ -9,10 +8,8 @@
 // filtered listing, admin verification, and claim workflow —
 // inheriting reactions, comments, bookmarks, space filing, and
 // analytics from the Content Type System (§14).
-//
-// Ref: japaconnect-engineering/sections/98-service-directory.md
-//
-//	japaconnect-engineering/adr/ADR-106-service-directory.md
+// // Ref: japaconnect-engineering/sections/98-service-directory.md
+// //	japaconnect-engineering/adr/ADR-106-service-directory.md
 package servicedir
 
 import (

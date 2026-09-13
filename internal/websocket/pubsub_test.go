@@ -248,8 +248,7 @@ func TestDispatchEmptyTargetBroadcastsToAll(t *testing.T) {
 // ---------------------------------------------------------------------------
 // dispatch must NOT re-publish (infinite-loop prevention)
 // ---------------------------------------------------------------------------
-//
-// When a PubSubMessage arrives over Valkey, dispatch must deliver it locally
+// // When a PubSubMessage arrives over Valkey, dispatch must deliver it locally
 // only. If it called the public Broadcast* methods, those would re-publish to
 // Valkey, and every instance (including the originator) would receive and
 // re-publish the same message forever — an infinite fan-out loop. These

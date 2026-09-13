@@ -34,7 +34,7 @@ func TestCacheKey(t *testing.T) {
 
 	key := r.cacheKey(tenantID, contentID, updatedAt)
 
-	// Key should start with the jc:render:{tenant_id}: prefix
+	// Key should start with the jc:render:{}: prefix
 	if len(key) < 10 {
 		t.Fatalf("cache key too short: %s", key)
 	}

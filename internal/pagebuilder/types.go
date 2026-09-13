@@ -1,6 +1,5 @@
 // Package pagebuilder implements the Page Builder admin CRUD system (Section 16).
-//
-// Provides database-backed management of blocks, templates, themes, and pages
+// // Provides database-backed management of blocks, templates, themes, and pages
 // for the drag-and-drop page builder. The static BlockTemplateRegistry in
 // content/block_templates.go supplies the built-in block types; this package
 // manages tenant-customizable blocks, page templates, visual themes, and
@@ -33,7 +32,7 @@ const (
 // Block represents a pagebuilder_blocks row.
 type Block struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
+	TenantID      pgtype.UUID        
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
 	Category      string             `json:"category"`
@@ -78,7 +77,7 @@ type UpdateBlockInput struct {
 // Template represents a pagebuilder_templates row.
 type Template struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
+	TenantID         pgtype.UUID        
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
 	Description      *string            `json:"description"`
@@ -123,7 +122,7 @@ type UpdateTemplateInput struct {
 // Theme represents a pagebuilder_themes row.
 type Theme struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
+	TenantID    pgtype.UUID        
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -164,7 +163,7 @@ type UpdateThemeInput struct {
 // Page represents a pages row.
 type Page struct {
 	ID          pgtype.UUID         `json:"id"`
-	TenantID    pgtype.UUID         `json:"tenant_id"`
+	TenantID    pgtype.UUID         
 	Title       string              `json:"title"`
 	Slug        string              `json:"slug"`
 	Description *string             `json:"description"`

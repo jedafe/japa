@@ -779,16 +779,16 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 
 // EnrollInTrack handles POST /learn/university/tracks/:id/enroll (and legacy
 // POST /learn/tracks/:id/enroll). Enrollment logic:
-//   - Free tracks (price_kobo = 0/null, not subscription_eligible): immediate
-//     enrollment with access_type="free".
-//   - Subscription-eligible tracks: check the user's active subscription plan.
-//     If the plan covers the track (either explicitly via
-//     subscription_plan_tracks or implicitly because the plan has no entries =
-//     all tracks), enroll with access_type="subscription" and enqueue a
-//     pro_stream revenue split for the creator. If no active subscription or
-//     the plan doesn't cover it, fall through to the paid check.
-//   - Paid tracks (price_kobo > 0): return 402 payment_required so the
-//     frontend can show the checkout modal.
+// - Free tracks (price_kobo = 0/null, not subscription_eligible): immediate
+// enrollment with access_type="free".
+// - Subscription-eligible tracks: check the user's active subscription plan.
+// If the plan covers the track (either explicitly via
+// subscription_plan_tracks or implicitly because the plan has no entries =
+// all tracks), enroll with access_type="subscription" and enqueue a
+// pro_stream revenue split for the creator. If no active subscription or
+// the plan doesn't cover it, fall through to the paid check.
+// - Paid tracks (price_kobo > 0): return 402 payment_required so the
+// frontend can show the checkout modal.
 func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {

@@ -1,20 +1,16 @@
 // Package participation implements the Participation Orchestration Engine
 // (Section 76, ADR-077).
-//
-// The orchestration engine selects eligible content, generates action content
+// // The orchestration engine selects eligible content, generates action content
 // via the AI gateway (RAG-grounded, §69), and dispatches actions as the
 // persona's is_bot backing account — or routes them to the §22 review queue
 // in queued mode. No new action endpoints are created; the engine reuses
 // existing action endpoints.
-//
-// High-stakes gate: parent content in guide categories visa, banking, grants,
+// // High-stakes gate: parent content in guide categories visa, banking, grants,
 // health_insurance, or tagged immigration-advice/financial-advice always
 // routes to content_reviews regardless of autonomy_mode. Hardcoded in task,
 // not a setting.
-//
-// Ref: japaconnect-engineering/sections/76-participation-orchestration.md
-//
-//	japaconnect-engineering/adr/ADR-077-participation-orchestration.md
+// // Ref: japaconnect-engineering/sections/76-participation-orchestration.md
+// //	japaconnect-engineering/adr/ADR-077-participation-orchestration.md
 package participation
 
 import (
@@ -57,8 +53,7 @@ type EventTracker interface {
 // forum, or customfields packages — instead the server wiring injects a
 // concrete adapter that calls those services directly. This keeps the
 // participation dependency graph narrow (BUG-010).
-//
-// Each method is called as the persona's backing user (is_bot=true) and
+// // Each method is called as the persona's backing user (is_bot=true) and
 // receives the tenant ID, the persona's backing user_id, and the action
 // payload. The methods return the created entity ID (when applicable) and
 // an error. Implementations must tenant-scope every write.
@@ -133,8 +128,7 @@ var highStakesTags = map[string]bool{
 // IsHighStakesContent returns true if the parent content's guide category or
 // tags require mandatory human review. This is the unconditional gate from
 // §76 — it cannot be overridden by autonomy_mode or any setting.
-//
-// Exported so the personas package and studio package can reuse the same gate.
+// // Exported so the personas package and studio package can reuse the same gate.
 func IsHighStakesContent(guideCategory string, tags []string) bool {
 	if highStakesCategories[strings.ToLower(guideCategory)] {
 		return true
@@ -151,8 +145,7 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 
 // ActivityPolicy is the per-persona policy that governs autonomous actions.
 // Stored as jsonb in ai_personas.activity_policy.
-//
-// EligibleSpaces and AvoidRecentAuthors use []string (space slugs / user
+// // EligibleSpaces and AvoidRecentAuthors use []string (space slugs / user
 // slugs) to match the personas package's ActivityPolicy type (BUG-006).
 // The §68 spec defines eligible_spaces as a string array; using pgtype.UUID
 // here caused a JSON unmarshal mismatch when the participation engine read
@@ -302,8 +295,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 // the persona:dispatch_action task. It reads the action payload from
 // content_reviews.persona_payload and routes the action to the correct existing
 // endpoint via the ActionDispatcher (ADR-077 §5, BUG-010).
-//
-// Content-type actions (forum_question, blog_post, discussion) are published
+// // Content-type actions (forum_question, blog_post, discussion) are published
 // directly via the contents table. Non-content actions (comment, forum_answer,
 // follow, react, bookmark, form_submit) are dispatched through the existing
 // action services via the injected ActionDispatcher.
@@ -785,15 +777,15 @@ func (s *Service) selectAction(ctx context.Context, personaID pgtype.UUID, today
 // actionPayload is the JSON blob stored in content_reviews.persona_payload when a
 // persona action is queued. It carries everything DispatchAction needs to
 // route the action to the correct existing endpoint (ADR-077 §5, BUG-010):
-//   - action_type: the orchestration verb (comment, follow, react, ...)
-//   - target_content_id: the content the persona is engaging with
-//   - target_space_id: the space for forum_question thread creation
-//   - target_thread_id: the forum thread for forum_answer replies
-//   - target_entity_type: the polymorphic entity type for follow/react/bookmark
-//   - target_entity_id: the polymorphic entity ID for follow/react/bookmark
-//   - target_form_id: the form ID for form_submit
-//   - reaction_key: the reaction key for react
-//   - body: the AI-generated TipTap JSON body for content-bearing actions
+// - action_type: the orchestration verb (comment, follow, react, ...)
+// - target_content_id: the content the persona is engaging with
+// - target_space_id: the space for forum_question thread creation
+// - target_thread_id: the forum thread for forum_answer replies
+// - target_entity_type: the polymorphic entity type for follow/react/bookmark
+// - target_entity_id: the polymorphic entity ID for follow/react/bookmark
+// - target_form_id: the form ID for form_submit
+// - reaction_key: the reaction key for react
+// - body: the AI-generated TipTap JSON body for content-bearing actions
 type actionPayload struct {
 	ActionType       string          `json:"action_type"`
 	TargetContentID  string          `json:"target_content_id,omitempty"`

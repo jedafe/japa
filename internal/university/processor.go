@@ -23,7 +23,7 @@ func NewProcessor(service *Service) *Processor {
 }
 
 // ProcessEnrollment handles university:process_enrollment.
-// Payload: { tenant_id, user_id, track_id, payment_id, source, gross_kobo }.
+// Payload: { , user_id, track_id, payment_id, source, gross_kobo }.
 func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID, source string, grossKobo int64) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
@@ -51,7 +51,7 @@ func (p *Processor) ProcessEnrollment(ctx context.Context, tenantID, userID, tra
 }
 
 // CalculatePeriodPayouts handles university:calculate_period_payouts.
-// Payload: { tenant_id, period_start, period_end }.
+// Payload: { , period_start, period_end }.
 func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, periodStart, periodEnd string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
@@ -72,7 +72,7 @@ func (p *Processor) CalculatePeriodPayouts(ctx context.Context, tenantID, period
 }
 
 // SendInstructorPayout handles university:send_instructor_payout.
-// Payload: { tenant_id, payout_id }.
+// Payload: { , payout_id }.
 func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID string) error {
 	tID, err := scanUUID(tenantID)
 	if err != nil {
@@ -88,7 +88,7 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 }
 
 // NotifyInstructorApproved handles university:notify_instructor_approved.
-// Payload: { tenant_id, instructor_id }
+// Payload: { , instructor_id }
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
@@ -107,7 +107,7 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, inst
 }
 
 // NotifyCourseApproved handles university:notify_course_approved.
-// Payload: { tenant_id, track_id }
+// Payload: { , track_id }
 // Dispatches an in-app notification to the creator via the notifications
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
@@ -128,7 +128,7 @@ func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID 
 // FetchLogo handles university:fetch_logo (Section 39, low tier).
 // Downloads a university logo from a remote URL, stores it to SeaweedFS,
 // and updates the space's logo_media_id.
-// Payload: { tenant_id, space_id, logo_url, uploaded_by }. uploaded_by (the
+// Payload: { , space_id, logo_url, uploaded_by }. uploaded_by (the
 // acting admin's user ID) is attributed as the media uploader; there is no
 // generic "system user" row so an invalid/missing uploaded_by is passed
 // through as an invalid pgtype.UUID and Service.FetchLogo skips gracefully.

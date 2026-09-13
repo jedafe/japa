@@ -369,8 +369,7 @@ func (s *Service) collectData(ctx context.Context, tenantID pgtype.UUID, exportT
 // buildExportQuery returns the SQL query and args for the given export type.
 // Each query is tenant-scoped. When includeMetadata is false, only the
 // business-data columns are selected (no timestamps/IDs).
-//
-// Metadata columns are table-prefixed per export type because every JOIN
+// // Metadata columns are table-prefixed per export type because every JOIN
 // query touches two tables that both have id/created_at/updated_at — a bare
 // `id` would be ambiguous (PostgreSQL error 42702). Metadata columns are only
 // appended for tables that actually have them: wallet_ledger, platform_events,

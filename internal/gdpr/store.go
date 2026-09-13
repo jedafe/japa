@@ -162,7 +162,7 @@ func exportJSONSlice[P any](
 }
 
 // exportJSONSliceNoTenant is like exportJSONSlice but for queries that
-// take only a userID (no tenant_id column on the target table).
+// take only a userID (no column on the target table).
 func exportJSONSliceNoTenant(
 	ctx context.Context,
 	query func(context.Context, pgtype.UUID) (interface{}, error),
@@ -230,7 +230,7 @@ func (s *Store) gdprExportUserForumBookmarks(ctx context.Context, userID pgtype.
 // missing from the original GDPR export. Ref: Section 08 + GDPR erasure model.
 
 func (s *Store) gdprExportUserForumPollVotes(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	// forum_poll_votes has no tenant_id column; the query takes only user_id.
+	// forum_poll_votes has no column; the query takes only user_id.
 	data, err := s.read.GdprExportUserForumPollVotes(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func (s *Store) gdprExportUserForumPollVotes(ctx context.Context, userID pgtype.
 }
 
 func (s *Store) gdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	// reply_views has no tenant_id column; the query takes only user_id.
+	// reply_views has no column; the query takes only user_id.
 	data, err := s.read.GdprExportUserReplyViews(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -316,7 +316,7 @@ func (s *Store) gdprExportUserMentorSessions(ctx context.Context, userID pgtype.
 }
 
 // gdprExportUserMentorReviews exports §102 mentor_reviews rows written by
-// the user (ADR-110). mentor_reviews has no tenant_id column, so this uses
+// the user (ADR-110). mentor_reviews has no column, so this uses
 // the no-tenant variant.
 func (s *Store) gdprExportUserMentorReviews(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSliceNoTenant(ctx, s.read.GdprExportUserMentorReviews, userID)
@@ -381,7 +381,7 @@ func (s *Store) gdprExportUserSpaceMutes(ctx context.Context, userID pgtype.UUID
 }
 
 func (s *Store) gdprExportUserTicketComments(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	// ticket_comments has no tenant_id column; the generated query takes only user_id.
+	// ticket_comments has no column; the generated query takes only user_id.
 
 	data, err := s.read.GdprExportUserTicketComments(ctx, userID)
 	if err != nil {
@@ -513,7 +513,7 @@ func (s *Store) gdprExportUserDMSettings(ctx context.Context, userID pgtype.UUID
 }
 
 // gdprExportUserBlocks exports user_blocks where the user is blocker or
-// blocked. The user_blocks table gained a tenant_id column in migration
+// blocked. The user_blocks table gained a column in migration
 // 000293 (BUG-006), but the export query takes only user_id because user
 // IDs are globally unique UUIDs and the export is user-scoped, not
 // tenant-scoped.

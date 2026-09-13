@@ -1,7 +1,6 @@
 // Package attestationguide implements the Document Attestation &
 // Apostille Guide (§97, ADR-105).
-//
-// The guide publishes curated attestation pathways for documents that
+// // The guide publishes curated attestation pathways for documents that
 // must be legalized/apostilled before use in a destination jurisdiction
 // (e.g. a Jamaican birth certificate attested for use in the UAE). Each
 // pathway records the issuing space, destination space, document type,
@@ -11,10 +10,8 @@
 // through a pending/approved/rejected moderation queue. AI-drafted
 // pathways are supported via the Content Agent and gated by a
 // human-in-the-loop (HITL) approval step before publication.
-//
-// Ref: japaconnect-engineering/sections/97-attestation-guide.md
-//
-//	japaconnect-engineering/adr/ADR-105-attestation-guide.md
+// // Ref: japaconnect-engineering/sections/97-attestation-guide.md
+// //	japaconnect-engineering/adr/ADR-105-attestation-guide.md
 package attestationguide
 
 import (

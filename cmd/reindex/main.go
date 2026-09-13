@@ -1,15 +1,11 @@
 // Command reindex bulk-syncs all tenant entities into the search engine.
-//
-// The per-entity IndexXxx methods only fire on create/update events, so rows
+// // The per-entity IndexXxx methods only fire on create/update events, so rows
 // that predate the indexer wiring are never indexed without this sweep. Run
 // it after provisioning a fresh search engine instance or after schema/index
 // changes that require a full re-index:
-//
-//	source .env && go run ./cmd/reindex/
-//
-// An optional tenant ID argument overrides the default tenant:
-//
-//	go run ./cmd/reindex/ <tenant-uuid>
+// //	source .env && go run ./cmd/reindex/
+// // An optional tenant ID argument overrides the default tenant:
+// //	go run ./cmd/reindex/ <tenant-uuid>
 package main
 
 import (

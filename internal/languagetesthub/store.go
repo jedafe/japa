@@ -1,7 +1,6 @@
 // Package languagetesthub implements the Language Test Preparation Hub
 // (§99, ADR-107).
-//
-// The package manages four tables created by migration 000339:
+// // The package manages four tables created by migration 000339:
 // language_tests (the canonical list of tests: IELTS, OET, TOEFL, PTE,
 // CELPIP, Goethe, DELF, other), language_test_requirements (per-tenant
 // minimum-score requirements keyed by destination space + visa category +
@@ -9,10 +8,8 @@
 // language_score_stories (user-submitted score stories). It uses direct
 // pgx queries because these are new tables without sqlc-generated queries
 // yet. Tenancy uses tenants(id); geo entities use spaces(id) per ADR-053.
-//
-// Ref: japaconnect-engineering/sections/99-language-test-hub.md
-//
-//	japaconnect-engineering/adr/ADR-107-language-test-hub.md
+// // Ref: japaconnect-engineering/sections/99-language-test-hub.md
+// //	japaconnect-engineering/adr/ADR-107-language-test-hub.md
 package languagetesthub
 
 import (

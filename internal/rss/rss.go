@@ -1,14 +1,11 @@
 // Package rss provides RSS feed handlers for JapaConnect content.
-//
-// The handlers query published content from the database and render
+// // The handlers query published content from the database and render
 // standard RSS 2.0 XML. All feeds are public (no auth required) and
 // tenant-scoped via the tenant middleware.
-//
-// The shared RSS 2.0 XML model lives in internal/rss/model — imported by
+// // The shared RSS 2.0 XML model lives in internal/rss/model — imported by
 // this package, internal/blog, and internal/worker so all three render
 // feeds identically (RSS-011).
-//
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// // Ref: japaconnect-engineering/sections/26-seo-performance.md
 package rss
 
 import (
@@ -107,7 +104,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 
 	siteURL := resolveSiteURL(r, h.siteURL)
 
-	// Try the Valkey cache first (jc:cache:feed:rss:{tenant_id}).
+	// Try the Valkey cache first (jc:cache:feed:rss:{}).
 	cacheKey := valkey.MustKey("cache:feed:rss:%s", tenantID.String())
 	if h.redis != nil {
 		if cached, err := h.redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
@@ -140,8 +137,7 @@ func (h *Handlers) HandleFeed(w http.ResponseWriter, r *http.Request) {
 // serveCachedOrLive handles the space/tag/user feed pattern: try the
 // Valkey cache for the given key, serve on hit; on miss, run the query,
 // render, write the rendered XML back to the cache, and serve. RSS-005.
-//
-// The render callback is only invoked on a cache miss and returns the
+// // The render callback is only invoked on a cache miss and returns the
 // items or an error (in which case a 500 is written and no caching occurs).
 func (h *Handlers) serveCachedOrLive(
 	w http.ResponseWriter,

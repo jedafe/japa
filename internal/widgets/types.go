@@ -3,8 +3,7 @@
 // configuration references a widget_type (latest_content, trending_tags, etc.)
 // and a config JSON blob. The public GET /widgets/:id endpoint returns
 // rendered widget data, Valkey-cached by the widget's cache_ttl_secs.
-//
-// Ref: japaconnect-engineering/sections/16-page-builder.md
+// // Ref: japaconnect-engineering/sections/16-page-builder.md
 package widgets
 
 import (
@@ -17,7 +16,7 @@ import (
 // Widget is a widget_configurations row.
 type Widget struct {
 	ID           pgtype.UUID     `json:"id"`
-	TenantID     pgtype.UUID     `json:"tenant_id"`
+	TenantID     pgtype.UUID     
 	Name         string          `json:"name"`
 	WidgetType   string          `json:"widget_type"`
 	Config       json.RawMessage `json:"config"`

@@ -1,10 +1,8 @@
 // Package personas — service.go holds the business logic for the AI Persona
 // System: transactional mass provisioning, CRUD, activity-log retrieval, and
 // the high-stakes content gate (ADR-068 §5).
-//
-// Ref: japaconnect-engineering/sections/68-ai-personas.md
-//
-//	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
+// // Ref: japaconnect-engineering/sections/68-ai-personas.md
+// //	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
 package personas
 
 import (
@@ -45,8 +43,7 @@ type TaskEnqueuer interface {
 
 // ActivityPolicy is the JSON config stored in ai_personas.activity_policy.
 // It governs how the orchestration engine schedules persona actions.
-//
-// Ref: japaconnect-engineering/sections/68-ai-personas.md.
+// // Ref: japaconnect-engineering/sections/68-ai-personas.md.
 type ActivityPolicy struct {
 	ActionsPerDay        int            `json:"actions_per_day"`
 	ActionBudget         map[string]int `json:"action_budget"`
@@ -74,7 +71,7 @@ type PersonaInput struct {
 // personaEmail builds a deterministic, tenant-scoped internal email for a
 // persona backing account. These accounts never log in (is_bot = true), so
 // the email is an internal identifier, not a deliverable address. The
-// tenant_id is embedded to avoid UNIQUE(tenant_id, email) collisions when
+// is embedded to avoid UNIQUE(, email) collisions when
 // two tenants create personas with the same slug (BUG-008).
 func personaEmail(slug string, tenantID pgtype.UUID) string {
 	return fmt.Sprintf("persona+%s+%s@bot.internal", slug, tenantID.String())
@@ -85,7 +82,7 @@ func personaEmail(slug string, tenantID pgtype.UUID) string {
 // "persona detail + activity_policy + recent actions").
 type PersonaDetail struct {
 	ID                  string          `json:"id"`
-	TenantID            string          `json:"tenant_id"`
+	TenantID            string          
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -112,7 +109,7 @@ type PersonaDetail struct {
 // ("list all personas + activity stats").
 type PersonaListItem struct {
 	ID                  string          `json:"id"`
-	TenantID            string          `json:"tenant_id"`
+	TenantID            string          
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -179,10 +176,8 @@ type ProvisionResult struct {
 // create the user profile byline, create the ai_personas config row.
 // If any step fails for any persona, the whole transaction rolls back —
 // partial provision is a data integrity failure (ADR-068 §7).
-//
-// The admin user ID is recorded as created_by on every ai_personas row.
-//
-// The batch size is capped by the persona.max_batch_size system setting
+// // The admin user ID is recorded as created_by on every ai_personas row.
+// // The batch size is capped by the persona.max_batch_size system setting
 // (BUG-006: an unbounded batch holds a long write transaction and can DoS
 // the writer pool). Default cap is 100 when the setting is unset.
 func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, inputs []PersonaInput) ([]ProvisionResult, error) {
@@ -230,7 +225,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	}
 
 	// Pre-validate duplicate slugs within the batch (BUG-013). Without this,
-	// the second CreatePersonaUser hits a UNIQUE(tenant_id, email) constraint
+	// the second CreatePersonaUser hits a UNIQUE(, email) constraint
 	// violation inside the tx and the admin gets a generic "provisioning
 	// failed" error with no indication of which slug collided.
 	seenSlugs := make(map[string]int, len(inputs))
@@ -540,8 +535,7 @@ type UpdatePersonaInput struct {
 // voice_prompt). Nil/empty fields are left unchanged. Mode and status values
 // are validated up front so invalid input returns a clean 400 validation_error
 // instead of a raw CHECK-constraint 500 (BUG-001, Rule 5).
-//
-// Returns a PersonaDetail (with joined user + profile names) so the response
+// // Returns a PersonaDetail (with joined user + profile names) so the response
 // shape matches HandleGet (BUG-004: previously returned the raw
 // gen.AiPersona row, inconsistent with the rest of the API).
 func (s *Service) UpdatePersona(ctx context.Context, tenantID, id pgtype.UUID, in UpdatePersonaInput) (PersonaDetail, error) {
@@ -657,8 +651,7 @@ func (s *Service) GetPersonaActivity(ctx context.Context, tenantID, personaID pg
 // configurable via system_settings (ADR-068 §5). A persona acting on
 // high-stakes content must route through the human-approval queue regardless
 // of its autonomy_mode.
-//
-// The canonical implementation lives in the participation package
+// // The canonical implementation lives in the participation package
 // (internal/participation/service.go) and lowercases inputs for case-
 // insensitive matching. This wrapper delegates to it so there is a single
 // source of truth for the high-stakes gate (BUG-015). We use a function
@@ -703,7 +696,7 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 // PersonaVoice is the API-facing shared persona voice / tone record.
 type PersonaVoice struct {
 	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
+	TenantID    string 
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
 	Description string `json:"description,omitempty"`

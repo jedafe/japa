@@ -1,7 +1,6 @@
 // Package participation — handlers.go implements the HTTP handlers for the
 // Participation Orchestration admin API (Section 76).
-//
-// Ref: japaconnect-engineering/sections/76-participation-orchestration.md
+// // Ref: japaconnect-engineering/sections/76-participation-orchestration.md
 package participation
 
 import (
@@ -114,7 +113,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	offset := (page - 1) * pageSize
-	// Build args starting with tenant_id only. pageSize and offset are
+	// Build args starting with only. pageSize and offset are
 	// appended at the end after all WHERE-clause params, so placeholder
 	// indices for LIMIT/OFFSET are correct regardless of whether search
 	// is present (BUG-002 — previously pageSize/offset were in the initial
@@ -200,7 +199,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	_ = h.database.Reader.QueryRow(r.Context(), `SELECT count(*) FROM ai_personas WHERE status = 'active'`).Scan(&activePersonas)
 
 	// Synthetic actions today from the Valkey global daily counter
-	// (jc:persona:global:{tenant_id}:{date}, §76). A SPA cannot query
+	// (jc:persona:global:{}:{date}, §76). A SPA cannot query
 	// Valkey directly (Rule 16), so the backend must return this value.
 	syntheticToday := 0
 

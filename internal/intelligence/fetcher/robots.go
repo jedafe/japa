@@ -15,7 +15,7 @@ import (
 )
 
 // RobotsPolicy is the parsed robots.txt policy for a domain, cached in
-// Valkey under jc:intel:robots:{tenant_id}:{domain} (1hr TTL per
+// Valkey under jc:intel:robots:{}:{domain} (1hr TTL per
 // valkey-keys-catalog, tenant-scoped per ADR-112 Amendment 2).
 type RobotsPolicy struct {
 	Allowed         bool     `json:"allowed"`
@@ -25,7 +25,7 @@ type RobotsPolicy struct {
 
 // RobotsChecker fetches and caches robots.txt policies per domain. It
 // respects the crawl-delay directive and disallow rules. The cache is
-// stored in Valkey under jc:intel:robots:{tenant_id}:{domain} with a
+// stored in Valkey under jc:intel:robots:{}:{domain} with a
 // 1-hour TTL (BUG-19 fix, valkey-keys-catalog Section INTEL, tenant-scoped
 // per ADR-112 Amendment 2).
 type RobotsChecker struct {

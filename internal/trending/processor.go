@@ -1,6 +1,5 @@
 // Package trending — background processor for computing trending snapshots.
-//
-// The Processor computes velocity-based trending scores for content, tags,
+// // The Processor computes velocity-based trending scores for content, tags,
 // spaces, and users using raw SQL. It runs as an Asynq periodic task.
 package trending
 
@@ -140,8 +139,7 @@ func (p *Processor) SetSettings(s *config.Settings) {
 // scores for content, tags, spaces, and users across three time windows.
 // BUG-001: computes both global (NULL geo_code) and per-country snapshots so
 // that geo-filtered reads (ADR-064) return results.
-//
-// BUG-012: The per-tenant loop is sequential. For large tenant counts this
+// // BUG-012: The per-tenant loop is sequential. For large tenant counts this
 // could be parallelized by fanning out per-tenant as separate Asynq tasks
 // (low tier). The current implementation is acceptable for V1 tenant counts
 // because each query is time-bounded (published_at >= now() - interval) and
@@ -311,10 +309,8 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 
 // computeContentTrending computes velocity scores for published content.
 // BUG-002: uses the Section 32 HN gravity formula:
-//
-//	velocity = engagement / (hours_old + 2)^gravity
-//
-// where gravity comes from system_settings (default 1.8, ADR-032).
+// //	velocity = engagement / (hours_old + 2)^gravity
+// // where gravity comes from system_settings (default 1.8, ADR-032).
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.
 func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {

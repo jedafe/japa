@@ -455,7 +455,7 @@ func (h *Handlers) ListByMemberUser(w http.ResponseWriter, r *http.Request) {
 
 // SpaceCard is the lean public shape for the profile Spaces tab — only the
 // fields the profile card renders. It deliberately omits the internal columns
-// the raw gen.Space row carries (tenant_id, parent_id, space_type_id,
+// the raw gen.Space row carries (, parent_id, space_type_id,
 // wiki_content, the *_perm governance fields, geo_code, level, status, and
 // counts the card doesn't show), so a public endpoint never echoes them.
 type SpaceCard struct {

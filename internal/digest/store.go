@@ -1,14 +1,11 @@
 // Package digest implements the Community Digest Widget (§84, ADR-092).
-//
-// Periodic round-ups of community activity (new posts, trending threads,
+// // Periodic round-ups of community activity (new posts, trending threads,
 // upcoming events, notable wiki edits) surfaced as a widget on the space
 // home and optionally delivered via email. Editions move through a
 // draft → scheduled → published lifecycle and are reviewed by a moderator+
 // before publication.
-//
-// Ref: japaconnect-engineering/sections/84-community-digest.md
-//
-//	japaconnect-engineering/adr/ADR-092-community-digest.md
+// // Ref: japaconnect-engineering/sections/84-community-digest.md
+// //	japaconnect-engineering/adr/ADR-092-community-digest.md
 package digest
 
 import (
@@ -38,8 +35,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // DigestEdition represents a single digest_editions row.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestEdition struct {
 	ID           pgtype.UUID
 	TenantID     pgtype.UUID
@@ -60,7 +56,7 @@ type DigestEdition struct {
 // and read-back operations. JSON tags keep AI tool payloads snake_case.
 type EditionRow struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
+	TenantID     pgtype.UUID        
 	SpaceID      pgtype.UUID        `json:"space_id,omitempty"`
 	Cadence      string             `json:"cadence"`
 	Status       string             `json:"status"`
@@ -481,7 +477,7 @@ type PublishedEdition struct {
 // 1-hour admin review window has elapsed (scheduled_for <= now()). This is
 // the digest:auto_publish cron body (§84: "A 1-hour review window opens after
 // generation before auto-publish"). The UPDATE is atomic and returns the
-// (id, tenant_id) pairs it transitioned to 'published' so the caller can fire
+// (id, ) pairs it transitioned to 'published' so the caller can fire
 // digest:send_email per edition. Idempotent: once status='published' the row
 // no longer matches the WHERE clause, so a duplicate cron run is a no-op.
 func (s *Store) AutoPublishDueEditions(ctx context.Context) ([]PublishedEdition, error) {
@@ -537,8 +533,7 @@ func (s *Store) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) 
 
 // DigestContent is the JSON shape stored in digest_editions.content. Each
 // section is assembled by AssembleDigestContent per §84 generation logic.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestContent struct {
 	TopThreads     []DigestThread `json:"top_threads"`
 	NewMembers     []DigestMember `json:"new_members"`
@@ -547,8 +542,7 @@ type DigestContent struct {
 }
 
 // DigestThread is a top forum thread summary.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestThread struct {
 	Title      string `json:"title"`
 	Slug       string `json:"slug"`
@@ -557,24 +551,21 @@ type DigestThread struct {
 }
 
 // DigestMember is a new-member summary (display_name only — no PII leak).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestMember struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name,omitempty"`
 }
 
 // DigestEvent is an upcoming event summary.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestEvent struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
 }
 
 // DigestStory is the featured story summary.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type DigestStory struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
@@ -586,8 +577,7 @@ type DigestStory struct {
 // requires admin-seeded poll questions and is deferred to a future phase).
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // tenant-wide digest is assembled.
-//
-// Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
+// // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgtype.UUID) (json.RawMessage, error) {
 	content := DigestContent{}
 

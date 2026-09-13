@@ -1,18 +1,15 @@
 // Package stores provides sqlc-backed CRUD for the intelligence spine
 // tables not owned by the sources sub-package: intel_raw_documents,
 // intel_records, intel_review_log, and the scholarships projection table.
-//
-// It follows the same adapter pattern as internal/scholarships/store.go and
+// // It follows the same adapter pattern as internal/scholarships/store.go and
 // internal/intelligence/sources/store.go: a thin wrapper around gen.Queries
 // that stamps each error with the "stores: <op>: %w" prefix so callers get a
 // consistent, traceable error chain.
-//
-// All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
+// // All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
 // takes a tenantID pgtype.UUID as its first argument (after ctx) and stamps it
 // into the sqlc query params, guaranteeing data isolation across tenants
 // regardless of what the caller populated in the params struct.
-//
-// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
+// // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 package stores
 
 import (
@@ -54,8 +51,7 @@ func NewStore(database *db.DB) *Store {
 // the transaction rolls back; otherwise it commits. The fn callback receives
 // a transactional *Store whose queries run against the transaction, so all
 // writes inside fn are atomic (BUG-01/02 fix: §6.2 transaction boundary).
-//
-// The transactional Store does not carry tenantID itself: the caller passes
+// // The transactional Store does not carry tenantID itself: the caller passes
 // tenantID to each method invoked inside fn, preserving the explicit
 // per-call tenant-scoping contract (ADR-112 Amendment 2).
 func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
@@ -976,7 +972,7 @@ func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID
 
 // GetLanguageTestByName resolves the language_tests(id) FK from a test name
 // extracted as free text. language_tests is a global reference table (no
-// tenant_id), so the tenantID is accepted for interface consistency with the
+// ), so the tenantID is accepted for interface consistency with the
 // promoter store contract but is not used in the query filter.
 func (s *Store) GetLanguageTestByName(ctx context.Context, _ pgtype.UUID, name string) (gen.LanguageTest, error) {
 	row, err := s.queries.GetLanguageTestByName(ctx, name)

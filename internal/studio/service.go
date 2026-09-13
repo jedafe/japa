@@ -1,8 +1,7 @@
 // Package studio — service.go holds the business logic for the AI Content
 // Studio: job/batch creation, generation pipeline orchestration, review
 // routing, and the high-stakes content gate.
-//
-// Ref: japaconnect-engineering/sections/75-ai-content-studio.md
+// // Ref: japaconnect-engineering/sections/75-ai-content-studio.md
 package studio
 
 import (

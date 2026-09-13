@@ -2,14 +2,12 @@
 // engine (ADR-064a). It combines the VisitorContext (archetype, japa_stage,
 // origin/destination/current country) with a config-driven stage_tool_matrix
 // to produce ranked tool, feature, content, and space recommendations.
-//
-// The endpoint GET /api/v1/recommendations is public (OptionalAuth) — it
+// // The endpoint GET /api/v1/recommendations is public (OptionalAuth) — it
 // works for both guests (using GeoIP-based VisitorContext) and authenticated
 // users (using profile-enriched VisitorContext). Results are cached in
-// Valkey at jc:recommendations:{session_id} or jc:recommendations:ip:{tenant_id}:{ip}
+// Valkey at jc:recommendations:{session_id} or jc:recommendations:ip:{}:{ip}
 // with a configurable TTL (default 15 minutes).
-//
-// Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
+// // Ref: japaconnect-engineering/adr/ADR-064a-geo-awareness-extension.md
 package recommendations
 
 import (
@@ -215,10 +213,8 @@ var featureSlugs = map[string]bool{
 // the VisitorContext. Works for both guests (GeoIP-based) and authenticated
 // users (profile-enriched). Results are cached in Valkey for a configurable
 // TTL (default 15 minutes).
-//
-// Query params:
-//
-//	limit — max number of tools/features to return (default 10, max configurable)
+// // Query params:
+// //	limit — max number of tools/features to return (default 10, max configurable)
 func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
@@ -236,7 +232,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	// Build cache key. The key does NOT include the limit — the full result
 	// set is cached and sliced to the requested limit after a cache hit. This
 	// keeps the key aligned with the Valkey catalog pattern
-	// (jc:recommendations:{session_id} / jc:recommendations:ip:{tenant_id}:{ip})
+	// (jc:recommendations:{session_id} / jc:recommendations:ip:{}:{ip})
 	// and ensures invalidateVisitorCache (users/handlers.go) can evict the
 	// exact key after a profile/stage/location update. On hit, the cached
 	// VisitorContextSummary is compared to the current VisitorContext; if the

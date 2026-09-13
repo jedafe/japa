@@ -389,7 +389,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 
 	// Feature flag checker — uses Valkey L2 cache for cross-instance
-	// consistency (Section 42: jc:flags:{tenant_id}:{flag_key}, TTL 5min).
+	// consistency (Section 42: jc:flags:{}:{flag_key}, TTL 5min).
 	featureChecker := features.New(database, vkClient.Redis())
 	closers = append(closers, featureChecker.Close)
 
@@ -465,7 +465,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wire the ProcessorAdapter for university enrichment (Section 39):
 	// - customfields service: upserts founded_year, student_population,
-	//   official_website_url from Wikidata data
+	// official_website_url from Wikidata data
 	// - enqueuer: triggers university:fetch_logo when Wikidata returns a logo URL
 	// - system user ID: attributes downloaded logos to the super admin
 	spaceAutoPopulateAdapter.SetCustomFieldsEnricher(cfService)
@@ -717,7 +717,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	blogHandlers.SetMentionCheckers(mentionCheckers)
 	// Wire RSS cache + on-publish regeneration (Section 24 — rss:regenerate
 	// task is enqueued on publish and the live /feed.xml route reads the
-	// cached XML from jc:cache:feed:rss:{tenant_id}). Without these the
+	// cached XML from jc:cache:feed:rss:{}). Without these the
 	// handler's AsynqClient/Redis are nil, so enqueue is a no-op and every
 	// feed request hits the database.
 	blogHandlers.SetAsynqClient(asynqClient)
@@ -783,7 +783,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Wire the Valkey cache invalidator for the currency cache
 	// (Section 58, Rule 4). After any currency CRUD operation, the
-	// jc:wallet:currencies:{tenant_id} key is flushed.
+	// jc:wallet:currencies:{} key is flushed.
 	walletService.SetCacheInvalidator(&walletCacheInvalidator{vk: vkClient.Redis()})
 
 	// Register wallet processor with worker for background tasks.
@@ -1078,7 +1078,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Spam Prevention & Content Safety admin handlers (Section 41).
 	// Wired with the Valkey client so censored-word mutations invalidate the
-	// jc:spam:censored:{tenant_id} cache immediately (BUG-002).
+	// jc:spam:censored:{} cache immediately (BUG-002).
 	spamHandlers := spam.NewHandlersWithCache(spamStore, vkClient)
 
 	// Platform Analytics & Site Reports subsystem (Section 40).
@@ -2478,8 +2478,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// submissions, the latter authenticates via webhook signatures, not
 			// cookies. Admin form CRUD (PATCH/DELETE /forms/{id}) is NOT exempt.
 			// Safe GET/OPTIONS pass through.
-			//
-			// WithOriginCheck adds Origin header validation as defense-in-depth:
+			// // WithOriginCheck adds Origin header validation as defense-in-depth:
 			// a cross-site request carries a foreign Origin that is rejected
 			// even if the double-submit cookie was forged via subdomain
 			// injection. Same-origin SPA requests and exempt API clients
@@ -4235,8 +4234,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public API resource endpoints (Section 47 — api.japaconnect.com).
 			// Gated by API key auth via X-API-Key header. These are read-only
 			// endpoints for external integrations.
-			//
-			// Mounted under /public/ to avoid chi radix-tree shadowing: the main
+			// // Mounted under /public/ to avoid chi radix-tree shadowing: the main
 			// API registers /content/{slug}, /spaces, /spaces/{slug}, /tags,
 			// /users/{id}, /search, and /me on the same router. Chi v5 treats
 			// {slug} and {id} as the same wildcard pattern, so registering both
@@ -4361,8 +4359,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// from that group's authed members (guests always pass through).
 			// Admin listing stays at GET /admin/users with admin.users.list.
 			// Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-			//      japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
-			//      japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+			// japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes)
+			// japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "directory.users.view")).Get("/users", usersHandlers.ListPublicUsers)
 			// Public per Section 32:12 (profile timeline audience = "Anyone").
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).Get("/users/{username}", usersHandlers.GetUserByUsername)
@@ -4424,7 +4422,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Template literals picker — public read of active tenant tokens for
 			// the composer `{{` trigger. Returns key/label/description metadata
 			// only (never the raw expression value). Served from the cached
-			// catalog (jc:literals:{tenant_id}). Ref: §14 + template-literals ADR.
+			// catalog (jc:literals:{}). Ref: §14 + template-literals ADR.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/literals", literalsHandlers.List)
 
 			// General Tags (Sections 08, 49) — distinct from forum tags.
@@ -6785,9 +6783,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// API Keys (moved from /admin/api-keys)
 			// Granular RBAC per Section 47 lines 233–238 (PUB-007):
-			//   api.keys.view.all     — list/get any key
-			//   api.keys.manage       — create/suspend/revoke/delete/update tier
-			//   api.keys.analytics.view — usage analytics
+			// api.keys.view.all — list/get any key
+			// api.keys.manage — create/suspend/revoke/delete/update tier
+			// api.keys.analytics.view — usage analytics
 			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
 				Get("/api-keys", publicAPIHandlers.ListAllKeys)
 			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
@@ -7124,8 +7122,7 @@ func (a guideCategoryListerAdapter) ListGuideCategories(ctx context.Context, ten
 // (type follow.received, Section 35) are fire-and-forget per Rule 8 — the
 // adapter discards both the DispatchResult and any error.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
-//
-//	japaconnect-engineering/sections/35-notification-system.md
+// //	japaconnect-engineering/sections/35-notification-system.md
 type followNotificationAdapter struct {
 	svc *notifications.Service
 }
@@ -7207,7 +7204,7 @@ func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, tenantID, mediaI
 }
 
 // walletCacheInvalidator adapts the Valkey client to the wallet.Service's
-// CacheInvalidator interface. It deletes the jc:wallet:currencies:{tenant_id}
+// CacheInvalidator interface. It deletes the jc:wallet:currencies:{}
 // key after any currency CRUD operation (Section 58, Rule 4).
 type walletCacheInvalidator struct {
 	vk valkeycompat.Cmdable
@@ -7259,8 +7256,7 @@ func csrfExempt(r *http.Request) bool {
 // aiDispatcherAdapter adapts *ai.Dispatcher to the narrow aiDispatcher
 // interface expected by *jce.Service so the jce package does not depend on
 // the full ai package.
-//
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10
+// // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10
 // Calls use ai.Dispatcher.Dispatch with prompt/context/max_tokens, not the
 // function-calling ChatWithTools path.
 type aiDispatcherAdapter struct {

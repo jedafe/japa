@@ -3,10 +3,8 @@
 // guide item retrieval. It manages the arrival_checklist_guides and
 // arrival_checklist_items tables via the local Store. Feature-flagged via
 // the arrival_checklist.enabled system_setting (§92, ADR-100).
-//
-// Ref: japaconnect-engineering/sections/92-arrival-checklist.md
-//
-//	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+// // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
+// //	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
 package arrivalchecklist
 
 import (
@@ -540,8 +538,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 // status. The draft is marked ai_generated=true with ai_model='content_agent_v1'
 // and requires HITL approval (ApproveGuide) before publication. Admin-only
 // (arrival_checklist.manage permission checked at route level).
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category to draft checklist content
 // from the destination, visa category, applicant type, and optional custom
 // prompt. The SHA-256 of the prompt is stored as ai_prompt_hash for audit.

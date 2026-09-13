@@ -100,9 +100,9 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> {user_id, tenant_id}, TTL 60s.
+	// Store in Valkey for fast lookup: jc:ws_ticket:{ticket_id} -> {user_id, }, TTL 60s.
 	// The upgrade handler resolves tickets from Valkey only, so a failed write
-	// would hand the client a ticket that can never be redeemed. The tenant_id
+	// would hand the client a ticket that can never be redeemed. The
 	// is cached alongside the user_id so the upgrade handler does not fall back
 	// to a hardcoded default tenant (Rule 4: Valkey keys must be tenant-scoped).
 	if h.vkClient != nil {
@@ -177,7 +177,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fallback to DB if Valkey didn't have it. This resolves the user_id and
-	// tenant_id from the persistent ticket record so a Valkey eviction does not
+	// from the persistent ticket record so a Valkey eviction does not
 	// make a valid ticket unredeemable.
 	if !userID.Valid {
 		ticket, err := h.service.store.GetWSTicketForRedemption(ctx, ticketID)
@@ -190,7 +190,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		tenantID = pgtype.UUID{}
 	}
 
-	// Mark ticket as used in DB, validating tenant_id alongside user_id so a
+	// Mark ticket as used in DB, validating alongside user_id so a
 	// ticket minted in tenant A cannot be consumed in tenant B (BUG-019).
 	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID, tenantID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")

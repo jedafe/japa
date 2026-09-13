@@ -189,8 +189,7 @@ type createOrganizationRequest struct {
 // to the organization_fields group). When the custom field lookup is not
 // injected or the field doesn't exist, hardcoded constants are used as fallback.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md
-//
-//	japaconnect-engineering/sections/08-custom-field-architecture.md
+// //	japaconnect-engineering/sections/08-custom-field-architecture.md
 func (h *Handlers) GetOrganizationMeta(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	tenantID := pgtype.UUID{}

@@ -1,9 +1,7 @@
 // Package scholarships implements the Scholarship Finder surface
 // (Section 73, ADR-073).
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md
-//
-//	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md
+// //	japaconnect-engineering/adr/ADR-073-scholarship-finder.md
 package scholarships
 
 import (
@@ -76,8 +74,7 @@ type ScholarshipFilters struct {
 // custom_field_values map so the tools/main app contracts receive a stable
 // flat shape. The raw FieldValues map is also returned for the main app
 // which renders arbitrary fields.
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 // SourceAttribution is a lightweight source snapshot attached to scholarship,
 // job, and remittance results so the UI can link back to /sources/[slug].
 type SourceAttribution struct {
@@ -842,7 +839,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		RemindBeforeDays: defaultReminderDays,
 	})
 	if err != nil {
-		// ON CONFLICT (tenant_id, user_id, guide_id) DO NOTHING returns no
+		// ON CONFLICT (, user_id, guide_id) DO NOTHING returns no
 		// row when the tracker entry already exists; surface the existing
 		// row so a repeat save is idempotent rather than a 400.
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1238,8 +1235,7 @@ func (s *Service) AdminReminderLog(ctx context.Context, tenantID pgtype.UUID, pa
 
 // FindNeedingReminders returns saved scholarships needing deadline reminders.
 // Called by the scholarship:check_deadlines worker task.
-//
-// The store query returns every saved scholarship with a non-null deadline
+// // The store query returns every saved scholarship with a non-null deadline
 // and no recent reminder; this method additionally enforces the
 // remind_before_days window so reminders are only dispatched for deadlines
 // that are still ahead and within the user's configured lead time. Without

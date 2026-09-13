@@ -1,9 +1,7 @@
 // Package advancedanalytics implements the Advanced Analytics Dashboard
 // (Section 66, ADR-084).
-//
-// Ref: japaconnect-engineering/sections/66-advanced-analytics.md
-//
-//	japaconnect-engineering/adr/ADR-084-advanced-analytics.md
+// // Ref: japaconnect-engineering/sections/66-advanced-analytics.md
+// //	japaconnect-engineering/adr/ADR-084-advanced-analytics.md
 package advancedanalytics
 
 import (

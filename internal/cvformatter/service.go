@@ -4,10 +4,8 @@
 // cv_formatter.enabled system_setting. The actual AI formatting is
 // dispatched as the cv_format:process Asynq task; this service creates the
 // session row, enqueues the task, and returns the session for polling.
-//
-// Ref: japaconnect-engineering/sections/95-cv-formatter.md
-//
-//	japaconnect-engineering/adr/ADR-103-cv-formatter.md
+// // Ref: japaconnect-engineering/sections/95-cv-formatter.md
+// //	japaconnect-engineering/adr/ADR-103-cv-formatter.md
 package cvformatter
 
 import (
@@ -68,7 +66,7 @@ type StandardDTO struct {
 // SessionDTO is the API response shape for a single CV format session.
 type SessionDTO struct {
 	ID                 string `json:"id"`
-	TenantID           string `json:"tenant_id"`
+	TenantID           string 
 	UserID             string `json:"user_id"`
 	OriginSpaceID      string `json:"origin_space_id,omitempty"`
 	DestinationSpaceID string `json:"destination_space_id"`
@@ -413,8 +411,7 @@ func (s *Service) GetSession(ctx context.Context, id pgtype.UUID) (SessionRow, e
 // a system prompt, calls the AI Gateway, stores the output, and marks
 // the session complete. Re-processing a completed/failed session is a
 // no-op. Called by the cv_format:process Asynq task handler.
-//
-// The AI dispatcher is optional — when nil (development/tests), the
+// // The AI dispatcher is optional — when nil (development/tests), the
 // session is marked failed with a descriptive error.
 func (s *Service) ProcessSession(ctx context.Context, sessionID pgtype.UUID) error {
 	row, err := s.store.GetSessionByID(ctx, sessionID)

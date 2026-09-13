@@ -1,21 +1,16 @@
 // Package contentimport — handlers.go provides the HTTP handlers for the
 // content import routes (Section 65, ADR-083).
-//
-// Routes:
-//
-//	POST   /api/v1/me/imports              — start import { source_type, source_url }
-//	GET    /api/v1/me/imports              — list user's imports (paginated)
-//	GET    /api/v1/me/imports/sources      — list allowed source types
-//	GET    /api/v1/me/imports/:id          — import detail
-//	GET    /api/v1/admin/imports           — all imports (admin oversight)
-//	POST   /api/v1/admin/imports/:id/retry — retry failed import
-//
-// RBAC: import.use (all authenticated), import.manage (admin). Permission
+// // Routes:
+// //	POST /api/v1/me/imports — start import { source_type, source_url }
+// GET /api/v1/me/imports — list user's imports (paginated)
+// GET /api/v1/me/imports/sources — list allowed source types
+// GET /api/v1/me/imports/:id — import detail
+// GET /api/v1/admin/imports — all imports (admin oversight)
+// POST /api/v1/admin/imports/:id/retry — retry failed import
+// // RBAC: import.use (all authenticated), import.manage (admin). Permission
 // checks are applied by the RBAC middleware at the route registration site.
-//
-// Ref: japaconnect-engineering/sections/65-content-import.md
-//
-//	japaconnect-engineering/adr/ADR-083-content-import.md
+// // Ref: japaconnect-engineering/sections/65-content-import.md
+// //	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (
@@ -462,7 +457,7 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 // importResponse is the JSON representation of a content_imports row.
 type importResponse struct {
 	ID            string          `json:"id"`
-	TenantID      string          `json:"tenant_id"`
+	TenantID      string          
 	UserID        string          `json:"user_id"`
 	SourceType    string          `json:"source_type"`
 	SourceURL     *string         `json:"source_url"`

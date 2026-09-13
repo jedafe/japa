@@ -1,13 +1,11 @@
 // Package server — agent_tools_registry.go adapts the per-tool services
 // into the ai.ToolsRegistryService interface for the AI Agent Executor's
 // tools.list / tools.read handlers (Section 103, Phase 9).
-//
-// The adapter queries record counts from each tool table and reads
+// // The adapter queries record counts from each tool table and reads
 // individual records by ID, returning them as map[string]any so the ai
 // package does not import internal/scholarships, internal/visaroutes,
 // etc.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tools app tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tools app tools)
 // Ref: japaconnect-engineering/sections/78-tools-web-surface.md
 package server
 
@@ -67,7 +65,7 @@ type toolCatalogDef struct {
 
 // toolCatalog is the static catalog of Japa tools. Each entry maps a
 // tool_type to its backing table and the SQL needed to count and read
-// records. The readSQL selects a single row by id + tenant_id.
+// records. The readSQL selects a single row by id + .
 var toolCatalog = []toolCatalogDef{
 	{
 		toolType: "scholarship",

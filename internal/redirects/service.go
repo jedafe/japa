@@ -52,18 +52,15 @@ func (s *Service) SetEnqueuer(e Enqueuer) {
 }
 
 // validateTargetURL validates a redirect target_url per ADR-056.
-//
-// Allowed forms:
-//   - Absolute http/https URLs (e.g., "https://example.com/path")
-//   - Root-relative paths (e.g., "/new-path")
-//
-// Rejected:
-//   - Protocol-relative URLs ("//evil.com")
-//   - Schemes other than http/https (e.g., "javascript:", "data:", "file:")
-//   - Relative paths without a leading slash ("new-path")
-//   - Malformed URLs
-//
-// This prevents open-redirect attacks where a malicious target_url could
+// // Allowed forms:
+// - Absolute http/https URLs (e.g., "https://example.com/path")
+// - Root-relative paths (e.g., "/new-path")
+// // Rejected:
+// - Protocol-relative URLs ("//evil.com")
+// - Schemes other than http/https (e.g., "javascript:", "data:", "file:")
+// - Relative paths without a leading slash ("new-path")
+// - Malformed URLs
+// // This prevents open-redirect attacks where a malicious target_url could
 // redirect users to attacker-controlled domains or trigger dangerous
 // schemes via the redirect endpoint.
 func validateTargetURL(targetURL string) error {
