@@ -437,7 +437,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	}
 
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
-
+		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		ApplicantType:      req.ApplicantType,

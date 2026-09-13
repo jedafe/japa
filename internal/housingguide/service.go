@@ -402,7 +402,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	storeInput := CreateGuideInput{
-
+		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		SearchPlatforms:    searchPlatforms,
@@ -701,7 +701,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	tipsPtr := &tips
 
 	id, err := s.store.CreateGuide(ctx, CreateGuideInput{
-
+		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		CitySpaceID:        citySpaceID,
 		AccommodationType:  accomTypePtr,

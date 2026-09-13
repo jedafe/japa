@@ -14,7 +14,7 @@ import (
 // RegisterJCEService. Keeping the interface in the worker package avoids an
 // import cycle with the jce package (which imports comparison → content → ...).
 type IngestionService interface {
-	ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
+	ProcessRefreshValues(ctx context.Context, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) error
 	ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error)
 }
 
@@ -31,7 +31,6 @@ func RegisterJCEService(svc IngestionService) {
 
 // JceRefreshValuesPayload is the Asynq payload for TypeJCERefreshValues.
 type JceRefreshValuesPayload struct {
-	TenantID       string  `json:"tenant_id"`
 	ContentID      string  `json:"content_id"`
 	SourceKind     *string `json:"source_kind,omitempty"`
 	IngestionJobID string  `json:"ingestion_job_id"`
@@ -52,11 +51,6 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("jce ingestion service not registered: %w", asynq.SkipRetry)
 	}
 
-	tenantID, err := scanUUID(p.TenantID)
-	if err != nil {
-		return fmt.Errorf("tenant_id: %w: %w", asynq.SkipRetry, err)
-	}
-
 	contentID, err := scanUUID(p.ContentID)
 	if err != nil {
 		return fmt.Errorf("content_id: %w: %w", asynq.SkipRetry, err)
@@ -72,7 +66,7 @@ func HandleJceRefreshValues(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("requested_by_user_id: %w: %w", asynq.SkipRetry, err)
 	}
 
-	return jceIngestionSvc.ProcessRefreshValues(ctx, tenantID, contentID, jobID, p.SourceKind, userID)
+	return jceIngestionSvc.ProcessRefreshValues(ctx, contentID, jobID, p.SourceKind, userID)
 }
 
 // HandleJceRefreshStale is the periodic sweep handler that enqueues refresh

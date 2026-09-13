@@ -302,8 +302,10 @@ func (s *Service) enqueueRefresh(ctx context.Context, tenantID, contentID, userI
 // ProcessRefreshValues is the worker-side refresh implementation. It loads the
 // comparison matrix, finds missing or stale values, resolves the best data
 // source, fills values with provenance metadata, and finalizes the job.
-func (s *Service) ProcessRefreshValues(ctx context.Context, tenantID, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) (err error) {
+func (s *Service) ProcessRefreshValues(ctx context.Context, contentID, jobID pgtype.UUID, sourceKind *string, userID pgtype.UUID) (err error) {
 	_ = userID
+
+	tenantID := pgtype.UUID{}
 
 	job, err := s.ingestion.get(ctx, jobID, tenantID)
 	if err != nil {

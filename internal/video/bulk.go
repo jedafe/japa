@@ -179,17 +179,17 @@ func (s *Service) enqueueBulkImport(_ context.Context, job gen.VideoImportJob, t
 // videos, creates a source (and optionally a content row) for each, and
 // updates the job with progress and final status.
 func (s *Service) ProcessBulkImport(ctx context.Context, payload BulkImportPayload) error {
-	importJobID, tenantID, userID, err := parseBulkImportPayload(payload)
+	importJobID, userID, err := parseBulkImportPayload(payload)
 	if err != nil {
 		return err
 	}
 
-	job, err := s.startBulkImportJob(ctx, importJobID, tenantID)
+	job, err := s.startBulkImportJob(ctx, importJobID)
 	if err != nil {
 		return err
 	}
 
-	apiKey, err := s.getYouTubeAPIKey(ctx, tenantID)
+	apiKey, err := s.getYouTubeAPIKey(ctx)
 	if err != nil {
 		_ = s.failJob(ctx, job, "no YouTube Data API key configured")
 		return fmt.Errorf("video import %s: %w", job.ID.String(), ErrYouTubeAPIKeyMissing)
@@ -197,7 +197,7 @@ func (s *Service) ProcessBulkImport(ctx context.Context, payload BulkImportPaylo
 
 	provider := s.bulkYouTubeProvider(apiKey)
 
-	urls, total, err := s.resolveAndCapBulkURLs(ctx, tenantID, provider, job)
+	urls, total, err := s.resolveAndCapBulkURLs(ctx, provider, job)
 	if err != nil {
 		_ = s.failJob(ctx, job, err.Error())
 		return fmt.Errorf("resolving bulk urls: %w", err)
@@ -209,31 +209,27 @@ func (s *Service) ProcessBulkImport(ctx context.Context, payload BulkImportPaylo
 		slog.WarnContext(ctx, "failed to update import total", "job_id", job.ID, "error", err)
 	}
 
-	imported, failed, errorLog := s.importBulkURLs(ctx, tenantID, userID, job, startedAt, total, urls, provider)
+	imported, failed, errorLog := s.importBulkURLs(ctx, userID, job, startedAt, total, urls, provider)
 
 	return s.finalizeBulkImportJob(ctx, job, startedAt, total, imported, failed, errorLog)
 }
 
 // parseBulkImportPayload validates and parses the worker payload IDs.
-func parseBulkImportPayload(payload BulkImportPayload) (importJobID, tenantID, userID pgtype.UUID, err error) {
+func parseBulkImportPayload(payload BulkImportPayload) (importJobID, userID pgtype.UUID, err error) {
 	if err := importJobID.Scan(payload.ImportJobID); err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("invalid import_job_id: %w", err)
-	}
-
-	if err := tenantID.Scan(payload.TenantID); err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("invalid tenant_id: %w", err)
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("invalid import_job_id: %w", err)
 	}
 
 	if err := userID.Scan(payload.UserID); err != nil {
-		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("invalid user_id: %w", err)
+		return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	return importJobID, tenantID, userID, nil
+	return importJobID, userID, nil
 }
 
 // startBulkImportJob loads the import job and marks it running.
-func (s *Service) startBulkImportJob(ctx context.Context, importJobID, tenantID pgtype.UUID) (gen.VideoImportJob, error) {
-	job, err := s.store.GetImportJobByID(ctx, tenantID, importJobID)
+func (s *Service) startBulkImportJob(ctx context.Context, importJobID pgtype.UUID) (gen.VideoImportJob, error) {
+	job, err := s.store.GetImportJobByID(ctx, importJobID)
 	if err != nil {
 		return gen.VideoImportJob{}, fmt.Errorf("loading import job: %w", err)
 	}
@@ -254,13 +250,13 @@ func (s *Service) startBulkImportJob(ctx context.Context, importJobID, tenantID 
 }
 
 // resolveAndCapBulkURLs resolves the URLs for a bulk import and clamps them to limits.
-func (s *Service) resolveAndCapBulkURLs(ctx context.Context, tenantID pgtype.UUID, provider *YouTubeProvider, job gen.VideoImportJob) ([]string, int32, error) {
+func (s *Service) resolveAndCapBulkURLs(ctx context.Context, provider *YouTubeProvider, job gen.VideoImportJob) ([]string, int32, error) {
 	urls, err := s.resolveBulkURLs(ctx, provider, job)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	maxItems := s.maxItemsPerRun(ctx, tenantID)
+	maxItems := s.maxItemsPerRun(ctx)
 	if len(urls) > maxItems {
 		urls = urls[:maxItems]
 	}
@@ -291,7 +287,7 @@ func (s *Service) upsertImportJobTotal(ctx context.Context, job gen.VideoImportJ
 }
 
 // importBulkURLs processes each URL and updates the job with incremental progress.
-func (s *Service) importBulkURLs(ctx context.Context, tenantID, userID pgtype.UUID, job gen.VideoImportJob, startedAt pgtype.Timestamptz, total int32, urls []string, provider *YouTubeProvider) (imported, failed int32, errorLog []bulkErrorLogEntry) {
+func (s *Service) importBulkURLs(ctx context.Context, userID pgtype.UUID, job gen.VideoImportJob, startedAt pgtype.Timestamptz, total int32, urls []string, provider *YouTubeProvider) (imported, failed int32, errorLog []bulkErrorLogEntry) {
 	if len(job.ErrorLog) > 0 {
 		_ = json.Unmarshal(job.ErrorLog, &errorLog)
 	}
@@ -307,7 +303,7 @@ func (s *Service) importBulkURLs(ctx context.Context, tenantID, userID pgtype.UU
 			continue
 		}
 
-		result, err := s.createSourceFromMetadata(ctx, tenantID, meta)
+		result, err := s.createSourceFromMetadata(ctx, pgtype.UUID{}, meta)
 		if err != nil {
 			failed++
 
@@ -320,7 +316,7 @@ func (s *Service) importBulkURLs(ctx context.Context, tenantID, userID pgtype.UU
 		imported++
 
 		if s.content != nil {
-			if err := s.createVideoContent(ctx, tenantID, userID, job, result.Source); err != nil {
+			if err := s.createVideoContent(ctx, pgtype.UUID{}, userID, job, result.Source); err != nil {
 				errorLog = append(errorLog, bulkErrorLogEntry{URL: rawURL, Message: "content: " + err.Error()})
 				slog.WarnContext(ctx, "failed to create content for bulk video", "url", rawURL, "error", err)
 			}
@@ -401,7 +397,7 @@ func (s *Service) PreviewBulkImport(ctx context.Context, tenantID, _ pgtype.UUID
 		return BulkImportPreview{}, err
 	}
 
-	apiKey, err := s.getYouTubeAPIKey(ctx, tenantID)
+	apiKey, err := s.getYouTubeAPIKey(ctx)
 	if err != nil {
 		return BulkImportPreview{}, err
 	}
@@ -419,7 +415,7 @@ func (s *Service) PreviewBulkImport(ctx context.Context, tenantID, _ pgtype.UUID
 		return BulkImportPreview{}, err
 	}
 
-	limit := s.maxItemsPerRun(ctx, tenantID)
+	limit := s.maxItemsPerRun(ctx)
 	if len(urls) > limit {
 		urls = urls[:limit]
 	}
@@ -483,7 +479,7 @@ func (s *Service) GetImportJob(ctx context.Context, tenantID, userID, id pgtype.
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
-	job, err := s.store.GetImportJobByID(ctx, tenantID, id)
+	job, err := s.store.GetImportJobByID(ctx, id)
 	if err != nil {
 		return gen.VideoImportJob{}, err
 	}
@@ -520,22 +516,22 @@ func (s *Service) resolveBulkURLs(ctx context.Context, p *YouTubeProvider, job g
 	}
 }
 
-func (s *Service) maxItemsPerRun(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) maxItemsPerRun(ctx context.Context) int {
 	if s.settings == nil {
 		return 50
 	}
 
-	return s.settings.GetIntOr(ctx, tenantID, "video.import.max_items_per_run", 50)
+	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "video.import.max_items_per_run", 50)
 }
 
-func (s *Service) getYouTubeAPIKey(ctx context.Context, tenantID pgtype.UUID) (string, error) {
+func (s *Service) getYouTubeAPIKey(ctx context.Context) (string, error) {
 	key := ""
 	if s.settings != nil {
 		// Canonical key is video.import.youtube_api_key (§106). Fallback to the
 		// legacy youtube.data_api_key key for compatibility with earlier installs.
-		key = s.settings.GetStringOr(ctx, tenantID, "video.import.youtube_api_key", "")
+		key = s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.youtube_api_key", "")
 		if key == "" {
-			key = s.settings.GetStringOr(ctx, tenantID, "youtube.data_api_key", "")
+			key = s.settings.GetStringOr(ctx, pgtype.UUID{}, "youtube.data_api_key", "")
 		}
 	}
 

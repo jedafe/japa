@@ -249,10 +249,6 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 		t.Errorf("payload.import_job_id = %q, want %q", payload.ImportJobID, jobID.String())
 	}
 
-	if payload.TenantID != tenantID.String() {
-		t.Errorf("payload.tenant_id = %q, want %q", payload.TenantID, tenantID.String())
-	}
-
 	if payload.UserID != userID.String() {
 		t.Errorf("payload.user_id = %q, want %q", payload.UserID, userID.String())
 	}

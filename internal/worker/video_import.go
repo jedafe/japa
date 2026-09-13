@@ -10,7 +10,6 @@ import (
 // BulkImportPayload is the Asynq payload for TypeVideoImportBulk.
 type BulkImportPayload struct {
 	ImportJobID string `json:"import_job_id"`
-	TenantID    string `json:"tenant_id"`
 	UserID      string `json:"user_id"`
 }
 
@@ -27,10 +26,6 @@ func HandleVideoImportBulk(ctx context.Context, t *asynq.Task) error {
 
 	if _, err := scanUUID(p.ImportJobID); err != nil {
 		return fmt.Errorf("import_job_id: %w: %w", asynq.SkipRetry, err)
-	}
-
-	if _, err := scanUUID(p.TenantID); err != nil {
-		return fmt.Errorf("tenant_id: %w: %w", asynq.SkipRetry, err)
 	}
 
 	if _, err := scanUUID(p.UserID); err != nil {

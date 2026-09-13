@@ -365,8 +365,8 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 }
 
 // GetSourceByID returns a single active video source in the tenant.
-func (s *Service) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
-	return s.store.GetSourceByID(ctx, tenantID, id)
+func (s *Service) GetSourceByID(ctx context.Context, id pgtype.UUID) (gen.VideoSource, error) {
+	return s.store.GetSourceByID(ctx, id)
 }
 
 // MaxUploadBytes returns the tenant's configured upload size cap in bytes.
@@ -503,7 +503,7 @@ func (s *Service) resolveClaimTarget(ctx context.Context, tenantID pgtype.UUID, 
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("%w: invalid video_source_id", errpkg.ErrInvalid)
 		}
 
-		source, err := s.store.GetSourceByID(ctx, tenantID, sourceID)
+		source, err := s.store.GetSourceByID(ctx, sourceID)
 		if err != nil {
 			return pgtype.UUID{}, pgtype.UUID{}, fmt.Errorf("resolving video source: %w", err)
 		}
@@ -714,7 +714,7 @@ func (s *Service) ListSourcesForAdmin(ctx context.Context, tenantID pgtype.UUID,
 
 // GetSourceForAdmin returns a single video source for admin review.
 func (s *Service) GetSourceForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
-	return s.store.GetSourceByID(ctx, tenantID, id)
+	return s.store.GetSourceByID(ctx, id)
 }
 
 // UpdateSourceStatus sets a video source status (active/removed). Used by
@@ -730,7 +730,7 @@ func (s *Service) UpdateSourceStatus(ctx context.Context, tenantID, id pgtype.UU
 
 // GetImportJobForAdmin returns a single video import job by id without user scoping.
 func (s *Service) GetImportJobForAdmin(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	return s.store.GetImportJobByID(ctx, tenantID, id)
+	return s.store.GetImportJobByID(ctx, id)
 }
 
 // ListImportJobsForAdmin returns the video import job admin queue with pagination.
@@ -764,7 +764,7 @@ func (s *Service) ListImportJobsForAdmin(ctx context.Context, tenantID pgtype.UU
 
 // RetryImportJob re-enqueues a failed or completed video import job from the admin queue.
 func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtype.UUID) (gen.VideoImportJob, error) {
-	job, err := s.store.GetImportJobByID(ctx, tenantID, id)
+	job, err := s.store.GetImportJobByID(ctx, id)
 	if err != nil {
 		return gen.VideoImportJob{}, err
 	}
@@ -806,18 +806,18 @@ func (s *Service) RetryImportJob(ctx context.Context, tenantID, id, userID pgtyp
 	}
 
 	// Reload after reset.
-	return s.store.GetImportJobByID(ctx, tenantID, id)
+	return s.store.GetImportJobByID(ctx, id)
 }
 
 // GenerateDraft uses the AI Gateway to generate a title and body from a
 // video source's metadata, then stores the result as a contents row in
 // 'in_review' status with ai_generated=true (§106, ADR-117 HITL gate).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error) {
+func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtype.UUID) (gen.CreateContentRow, error) {
 	if !videoSourceID.Valid {
 		return gen.CreateContentRow{}, fmt.Errorf("%w: video_source_id is required", errpkg.ErrRequired)
 	}
 
-	source, err := s.store.GetSourceByID(ctx, tenantID, videoSourceID)
+	source, err := s.store.GetSourceByID(ctx, videoSourceID)
 	if err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("loading video source: %w", err)
 	}
@@ -827,6 +827,8 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, userID, videoSour
 	}
 
 	prompt := s.buildSummaryPrompt(source)
+
+	tenantID := pgtype.UUID{}
 
 	// ai_prompt_hash for audit traceability (ADR-088).
 	sum := sha256.Sum256([]byte(prompt))

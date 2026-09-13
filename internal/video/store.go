@@ -127,7 +127,7 @@ func (s *Store) GetSourceByURL(ctx context.Context, tenantID pgtype.UUID, source
 }
 
 // GetSourceByID returns a single video source.
-func (s *Store) GetSourceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoSource, error) {
+func (s *Store) GetSourceByID(ctx context.Context, id pgtype.UUID) (gen.VideoSource, error) {
 	row, err := s.read.GetVideoSourceByID(ctx,
 		id,
 	)
@@ -448,7 +448,7 @@ func (s *Store) GetChannelClaimByID(ctx context.Context, tenantID, id pgtype.UUI
 }
 
 // GetImportJobByID returns a single import job.
-func (s *Store) GetImportJobByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.VideoImportJob, error) {
+func (s *Store) GetImportJobByID(ctx context.Context, id pgtype.UUID) (gen.VideoImportJob, error) {
 	row, err := s.read.GetVideoImportJobByID(ctx,
 
 		id,

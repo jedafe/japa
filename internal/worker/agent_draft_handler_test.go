@@ -90,29 +90,6 @@ func TestHandleAgentCreateDraftRequest_EmptyPersonaID_Skips(t *testing.T) {
 	}
 }
 
-func TestHandleAgentCreateDraftRequest_EmptyTenantID_Skips(t *testing.T) {
-	orig := agentDraftProcessor
-
-	t.Cleanup(func() { agentDraftProcessor = orig })
-
-	stub := &stubAgentDraftProcessor{}
-	agentDraftProcessor = stub
-
-	err := HandleAgentCreateDraftRequest(t.Context(), makeDraftTask(t, AgentDraftPayload{
-		PersonaID:   "00000000-0000-0000-0000-000000000002",
-		ContentType: "article",
-		TopicPrompt: "Tell me about Nigerian visas",
-		// TenantID intentionally empty
-	}))
-	if err != nil {
-		t.Fatalf("expected nil (skip), got %v", err)
-	}
-
-	if stub.called {
-		t.Error("processor should not be called for empty tenant_id")
-	}
-}
-
 func TestHandleAgentCreateDraftRequest_EmptyContentType_Skips(t *testing.T) {
 	orig := agentDraftProcessor
 
