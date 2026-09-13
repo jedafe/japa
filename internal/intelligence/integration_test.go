@@ -128,11 +128,11 @@ func (m *mockPromoterStore) GetContentByID(_ context.Context, tenantID, id pgtyp
 	}, nil
 }
 
-func (m *mockPromoterStore) GetContentBySlug(_ context.Context, _ pgtype.UUID, _ string) (gen.GetContentBySlugRow, error) {
+func (m *mockPromoterStore) GetContentBySlug(_ context.Context, _ string) (gen.GetContentBySlugRow, error) {
 	return gen.GetContentBySlugRow{}, errors.New("pgx: no rows in result set")
 }
 
-func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ pgtype.UUID, _ string) (bool, error) {
+func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
 

@@ -113,10 +113,10 @@ func TestExchangeKey_InvalidKey(t *testing.T) {
 
 func TestExchangeKey_InsufficientScope(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
 		KeyID:  uid,
 		UserID: uid,
+		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.read.content"},
 	}
@@ -136,10 +136,10 @@ func TestExchangeKey_InsufficientScope(t *testing.T) {
 
 func TestExchangeKey_IPNotAllowed(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
 		KeyID:  uid,
 		UserID: uid,
+		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -160,10 +160,10 @@ func TestExchangeKey_IPNotAllowed(t *testing.T) {
 
 func TestExchangeKey_Success(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
 		KeyID:  uid,
 		UserID: uid,
+		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}
@@ -215,9 +215,6 @@ func TestExchangeKey_Success(t *testing.T) {
 		t.Fatal("refresh token user ID mismatch")
 	}
 
-	if created.TenantID != tid {
-		t.Fatal("refresh token tenant ID mismatch")
-	}
 
 	if created.DeviceName == nil || *created.DeviceName != "my-device" {
 		t.Fatalf("expected device name my-device, got %v", created.DeviceName)
@@ -234,7 +231,6 @@ func TestExchangeKey_Success(t *testing.T) {
 
 func TestExchangeKey_WildcardScope(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 
 	for _, scopes := range [][]string{
 		{"*"},
@@ -244,6 +240,7 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 		ctx := &publicapi.APIKeyContext{
 			KeyID:  uid,
 			UserID: uid,
+		TenantID: pgtype.UUID{Valid: true},
 
 			Scopes: scopes,
 		}
@@ -267,10 +264,10 @@ func TestExchangeKey_WildcardScope(t *testing.T) {
 
 func TestExchangeKey_BodyFallback(t *testing.T) {
 	uid := mustUUID(t, "11111111-1111-1111-1111-111111111111")
-	tid := mustUUID(t, "22222222-2222-2222-2222-222222222222")
 	ctx := &publicapi.APIKeyContext{
 		KeyID:  uid,
 		UserID: uid,
+		TenantID: pgtype.UUID{Valid: true},
 
 		Scopes: []string{"api.write.content"},
 	}

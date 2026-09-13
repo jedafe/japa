@@ -14,7 +14,7 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 
 	token, err := kr.MintAccessToken(userID, tenantID)
 	if err != nil {
@@ -34,9 +34,6 @@ func TestMintAndValidateAccessToken(t *testing.T) {
 		t.Errorf("UserID = %s, want %s", claims.UserID, userID.String())
 	}
 
-	if claims.TenantID != tenantID.String() {
-		t.Errorf("TenantID = %s, want %s", claims.TenantID, tenantID.String())
-	}
 }
 
 func TestMintAccessToken_JTIIsPresent(t *testing.T) {
@@ -45,7 +42,7 @@ func TestMintAccessToken_JTIIsPresent(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 
 	token, err := kr.MintAccessToken(userID, tenantID)
 	if err != nil {
@@ -72,7 +69,7 @@ func TestMintAccessToken_UniqueJTIs(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 
 	token1, _ := kr.MintAccessToken(userID, tenantID)
 	token2, _ := kr.MintAccessToken(userID, tenantID)
@@ -116,7 +113,6 @@ func TestValidateAccessToken_ExpiredToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
 
 	// Create an already-expired token
 	claims := JWTClaims{
@@ -151,7 +147,7 @@ func TestKeyRotation_AddAndRemoveKey(t *testing.T) {
 
 	// Token signed with old key should still validate
 	userID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 	token, _ := kr.MintAccessToken(userID, tenantID)
 
 	// Switch to new key
@@ -195,7 +191,7 @@ func TestMintAccessToken_InvalidUUID(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	invalidID := pgtype.UUID{Valid: false}
 
-	_, err := kr.MintAccessToken(invalidID, invalidID)
+	_, err := kr.MintAccessToken(invalidID, pgtype.UUID{})
 	if err == nil {
 		t.Error("expected error for invalid UUID")
 	}
@@ -216,7 +212,7 @@ func TestValidateAccessToken_RejectsTOTPChallengeToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 
 	challenge, err := kr.MintTOTPChallengeToken(userID, tenantID)
 	if err != nil {
@@ -238,7 +234,7 @@ func TestValidateChallengeToken_RejectsAccessToken(t *testing.T) {
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
-	tenantID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+	tenantID := pgtype.UUID{Valid: true}
 
 	access, err := kr.MintAccessToken(userID, tenantID)
 	if err != nil {

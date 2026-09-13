@@ -36,15 +36,14 @@ func mustNumeric(t *testing.T, s string) pgtype.Numeric {
 
 // rowFields returns the common field values used for all three generated row
 // types so conversion tests focus on type wiring, not data differences.
-func sampleRowFields(t *testing.T) (pgtype.UUID, pgtype.UUID, pgtype.UUID, pgtype.UUID, string, pgtype.Numeric, *string, pgtype.Numeric, *string, []string, *string, *string, bool, pgtype.Timestamptz, pgtype.Timestamptz, string, string, *string, *string, *string, *string, string, pgtype.Numeric, string, string) {
+func sampleRowFields(t *testing.T) (pgtype.UUID, pgtype.UUID, pgtype.UUID, string, pgtype.Numeric, *string, pgtype.Numeric, *string, []string, *string, *string, bool, pgtype.Timestamptz, pgtype.Timestamptz, string, string, *string, *string, *string, *string, string, pgtype.Numeric, string, string) {
 	t.Helper()
 	id := mustUUID(t, "00000000-0000-0000-0000-000000000601")
-	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 	courseID := mustUUID(t, "00000000-0000-0000-0000-000000000501")
 	universityID := mustUUID(t, "00000000-0000-0000-0000-000000000401")
 	now := pgtype.Timestamptz{Time: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Valid: true}
 
-	return id, tenantID, courseID, universityID,
+	return id, courseID, universityID,
 		"unilag-bsc-computer-science",
 		mustNumeric(t, "2500"), ptr("USD"), mustNumeric(t, "4"), ptr("Full-time"),
 		[]string{"September"}, ptr("SSCE / equivalent"), ptr("NUC accredited"), true,
@@ -55,7 +54,7 @@ func sampleRowFields(t *testing.T) (pgtype.UUID, pgtype.UUID, pgtype.UUID, pgtyp
 }
 
 func TestToCourseOffering_ListRow(t *testing.T) {
-	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
+	id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.ListCourseOfferingsByUniversityRow{
 		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
@@ -73,11 +72,11 @@ func TestToCourseOffering_ListRow(t *testing.T) {
 		t.Fatalf("toCourseOffering(ListRow) error: %v", err)
 	}
 
-	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
+	assertCourseOffering(t, o, id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
 func TestToCourseOffering_GetByIDRow(t *testing.T) {
-	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
+	id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.GetCourseOfferingByIDRow{
 		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
@@ -95,11 +94,11 @@ func TestToCourseOffering_GetByIDRow(t *testing.T) {
 		t.Fatalf("toCourseOffering(GetByIDRow) error: %v", err)
 	}
 
-	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
+	assertCourseOffering(t, o, id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
 func TestToCourseOffering_GetBySlugRow(t *testing.T) {
-	id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
+	id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug := sampleRowFields(t)
 
 	row := gen.GetCourseOfferingBySlugRow{
 		ID: id, CourseID: cid, UniversityID: uid, Slug: slug,
@@ -117,7 +116,7 @@ func TestToCourseOffering_GetBySlugRow(t *testing.T) {
 		t.Fatalf("toCourseOffering(GetBySlugRow) error: %v", err)
 	}
 
-	assertCourseOffering(t, o, id, tid, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
+	assertCourseOffering(t, o, id, cid, uid, slug, tuition, currency, duration, studyMode, intake, entryReq, accreditation, published, created, updated, courseTitle, courseSlug, courseDesc, degree, department, fieldOfStudy, language, defaultDuration, uniName, uniSlug)
 }
 
 func TestToCourseOffering_UnknownType(t *testing.T) {
@@ -127,15 +126,11 @@ func TestToCourseOffering_UnknownType(t *testing.T) {
 	}
 }
 
-func assertCourseOffering(t *testing.T, o CourseOffering, id, tid, cid, uid pgtype.UUID, slug string, tuition pgtype.Numeric, currency *string, duration pgtype.Numeric, studyMode *string, intake []string, entryReq, accreditation *string, published bool, created, updated pgtype.Timestamptz, courseTitle, courseSlug string, courseDesc, degree, department, fieldOfStudy *string, language string, defaultDuration pgtype.Numeric, uniName, uniSlug string) {
+func assertCourseOffering(t *testing.T, o CourseOffering, id, cid, uid pgtype.UUID, slug string, tuition pgtype.Numeric, currency *string, duration pgtype.Numeric, studyMode *string, intake []string, entryReq, accreditation *string, published bool, created, updated pgtype.Timestamptz, courseTitle, courseSlug string, courseDesc, degree, department, fieldOfStudy *string, language string, defaultDuration pgtype.Numeric, uniName, uniSlug string) {
 	t.Helper()
 
 	if o.ID != id {
 		t.Errorf("ID = %v, want %v", o.ID, id)
-	}
-
-	if o.TenantID != tid {
-		t.Errorf("TenantID = %v, want %v", o.TenantID, tid)
 	}
 
 	if o.CourseID != cid {
@@ -226,10 +221,6 @@ func TestParamTypeAliasesCompile(t *testing.T) {
 	var (
 		_ gen.ListCourseOfferingsByUniversityParams
 		_ gen.ListCourseOfferingsByUniversityRow
-		_ gen.GetCourseOfferingByIDParams
-		_ gen.GetCourseOfferingByIDRow
-		_ gen.GetCourseOfferingBySlugParams
-		_ gen.GetCourseOfferingBySlugRow
 		_ pgtype.UUID
 	)
 }

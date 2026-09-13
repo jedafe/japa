@@ -33,7 +33,7 @@ type stubIntelQuerier struct {
 	err    error
 }
 
-func (s *stubIntelQuerier) GetIntelSource(ctx context.Context, arg gen.GetIntelSourceParams) (gen.IntelSource, error) {
+func (s *stubIntelQuerier) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
 	if s.err != nil {
 		return gen.IntelSource{}, s.err
 	}
@@ -41,7 +41,7 @@ func (s *stubIntelQuerier) GetIntelSource(ctx context.Context, arg gen.GetIntelS
 	return s.source, nil
 }
 
-func (s *stubIntelQuerier) GetIntelRecord(ctx context.Context, arg gen.GetIntelRecordParams) (gen.IntelRecord, error) {
+func (s *stubIntelQuerier) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
 	if s.err != nil {
 		return gen.IntelRecord{}, s.err
 	}
@@ -49,7 +49,7 @@ func (s *stubIntelQuerier) GetIntelRecord(ctx context.Context, arg gen.GetIntelR
 	return s.record, nil
 }
 
-func (s *stubIntelQuerier) GetIntelSourceByURL(ctx context.Context, arg gen.GetIntelSourceByURLParams) (gen.IntelSource, error) {
+func (s *stubIntelQuerier) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (gen.IntelSource, error) {
 	if s.err != nil {
 		return gen.IntelSource{}, s.err
 	}
