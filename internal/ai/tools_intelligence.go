@@ -22,7 +22,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -57,7 +56,7 @@ func SourceCrawlNowHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		if deps.IntelQuerier != nil {
-			src, err := deps.IntelQuerier.GetIntelSource(ctx, gen.GetIntelSourceParams{ID: sourceID})
+			src, err := deps.IntelQuerier.GetIntelSource(ctx, sourceID)
 			if err != nil {
 				return errorToolResult("source_not_found", "source not found"), nil
 			}
@@ -132,7 +131,7 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("intel_unavailable", "intel querier is not configured"), nil
 			}
 
-			record, err := deps.IntelQuerier.GetIntelRecord(ctx, gen.GetIntelRecordParams{ID: recordID})
+			record, err := deps.IntelQuerier.GetIntelRecord(ctx, recordID)
 			if err != nil {
 				return errorToolResult("record_not_found", "intel record not found"), nil
 			}
@@ -145,7 +144,7 @@ func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		if deps.IntelQuerier != nil {
-			src, err := deps.IntelQuerier.GetIntelSource(ctx, gen.GetIntelSourceParams{ID: sourceID})
+			src, err := deps.IntelQuerier.GetIntelSource(ctx, sourceID)
 			if err != nil {
 				return errorToolResult("source_not_found", "source not found"), nil
 			}
@@ -213,7 +212,7 @@ func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		if deps.IntelQuerier != nil {
-			if _, err := deps.IntelQuerier.GetIntelRecord(ctx, gen.GetIntelRecordParams{ID: intelRecordID}); err != nil {
+			if _, err := deps.IntelQuerier.GetIntelRecord(ctx, intelRecordID); err != nil {
 				return errorToolResult("record_not_found", "intel record not found"), nil
 			}
 		}

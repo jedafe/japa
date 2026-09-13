@@ -771,9 +771,9 @@ type TaskEnqueuer interface {
 //
 // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelQuerier interface {
-	GetIntelSource(ctx context.Context, arg gen.GetIntelSourceParams) (gen.IntelSource, error)
-	GetIntelRecord(ctx context.Context, arg gen.GetIntelRecordParams) (gen.IntelRecord, error)
-	GetIntelSourceByURL(ctx context.Context, arg gen.GetIntelSourceByURLParams) (gen.IntelSource, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSourceByURL(ctx context.Context, sourceUrl string) (gen.IntelSource, error)
 }
 
 // IntelSourceManager creates and looks up sources for the source.discover

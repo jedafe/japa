@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -24,7 +23,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -111,7 +110,7 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}

@@ -112,7 +112,6 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// Same public detail DTO as GET /content/{slug}, with reaction_count included.
 	dto := map[string]any{
 		"id":                content.ID,
-		"tenant_id":         content.TenantID,
 		"author_id":         content.AuthorID,
 		"space_id":          content.SpaceID,
 		"organization_id":   content.OrganizationID,

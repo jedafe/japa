@@ -421,7 +421,7 @@ func SpacesUpdateHandler(deps *ToolDeps) ToolHandler {
 func spaceRowToMap(s gen.GetSpaceByIDRow) map[string]any {
 	m := map[string]any{
 		"id":              uuidString(s.ID),
-		"tenant_id":       uuidString(s.TenantID),
+	
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,
@@ -458,7 +458,7 @@ func spaceRowToMap(s gen.GetSpaceByIDRow) map[string]any {
 func spaceByGeoRowToMap(s gen.GetSpaceByGeoCodeRow) map[string]any {
 	m := map[string]any{
 		"id":              uuidString(s.ID),
-		"tenant_id":       uuidString(s.TenantID),
+	
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,
@@ -493,7 +493,7 @@ func spaceByGeoRowToMap(s gen.GetSpaceByGeoCodeRow) map[string]any {
 func spaceFindByCityRowToMap(s gen.FindCitySpaceByNameRow) map[string]any {
 	m := map[string]any{
 		"id":              uuidString(s.ID),
-		"tenant_id":       uuidString(s.TenantID),
+	
 		"parent_id":       uuidString(s.ParentID),
 		"space_type_id":   uuidString(s.SpaceTypeID),
 		"name":            s.Name,

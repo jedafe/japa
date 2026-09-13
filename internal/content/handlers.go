@@ -1292,7 +1292,6 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// shared /content/[slug] page can render every CPT single the same way.
 	dto := map[string]any{
 		"id":                content.ID,
-		"tenant_id":         content.TenantID,
 		"author_id":         content.AuthorID,
 		"space_id":          content.SpaceID,
 		"organization_id":   content.OrganizationID,

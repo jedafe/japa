@@ -800,7 +800,7 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 		return
 	}
 
-	st, err := s.GetSpaceType(ctx, space.SpaceTypeID, space.TenantID)
+	st, err := s.GetSpaceType(ctx, space.SpaceTypeID, pgtype.UUID{})
 	if err != nil {
 		slog.Warn("spaces: failed to resolve space type for source creation", "space_id", space.ID, "error", err)
 		return
@@ -812,7 +812,7 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 	}
 
 	if s.settings != nil {
-		enabled, err := s.settings.GetSettingBool(ctx, space.TenantID, "sources.auto_create_for_universities")
+		enabled, err := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "sources.auto_create_for_universities")
 		if err != nil || !enabled {
 			return
 		}
@@ -825,7 +825,7 @@ func (s *Service) maybeCreateSourceForSpace(ctx context.Context, space gen.Creat
 		sourceURL = fmt.Sprintf("%s/spaces/%s", s.siteURL, space.Slug)
 	}
 
-	source, sErr := s.sources.CreateSourceFromEntity(ctx, space.TenantID, space.ID, creatorUserID, "space", space.Name, space.Slug, sourceURL, category)
+	source, sErr := s.sources.CreateSourceFromEntity(ctx, pgtype.UUID{}, space.ID, creatorUserID, "space", space.Name, space.Slug, sourceURL, category)
 	if sErr != nil {
 		slog.Warn("spaces: failed to create source for space", "space_id", space.ID, "error", sErr)
 		return
