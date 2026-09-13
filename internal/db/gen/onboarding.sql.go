@@ -39,7 +39,7 @@ func (q *Queries) CompleteOnboarding(ctx context.Context, userID pgtype.UUID) er
 const createOnboardingTemplate = `-- name: CreateOnboardingTemplate :one
 INSERT INTO onboarding_templates (name, description, steps, is_active, is_system) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+RETURNING id, name, description, steps, is_active, is_system, created_at, updated_at
 `
 
 type CreateOnboardingTemplateParams struct {
@@ -61,7 +61,6 @@ func (q *Queries) CreateOnboardingTemplate(ctx context.Context, arg CreateOnboar
 	var i OnboardingTemplate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.Steps,
@@ -95,7 +94,7 @@ func (q *Queries) DismissTour(ctx context.Context, userID pgtype.UUID) error {
 }
 
 const getOnboardingState = `-- name: GetOnboardingState :one
-SELECT id, tenant_id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
+SELECT id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
 FROM onboarding_state
 WHERE user_id = $1
 `
@@ -105,7 +104,6 @@ func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (O
 	var i OnboardingState
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.CurrentStep,
 		&i.Completed,
@@ -118,7 +116,7 @@ func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (O
 }
 
 const getOnboardingTemplate = `-- name: GetOnboardingTemplate :one
-SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 WHERE id = $1
 `
@@ -128,7 +126,6 @@ func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (On
 	var i OnboardingTemplate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.Steps,
@@ -141,7 +138,7 @@ func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (On
 }
 
 const listOnboardingTemplates = `-- name: ListOnboardingTemplates :many
-SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 
 ORDER BY created_at DESC
@@ -158,7 +155,6 @@ func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]OnboardingTemp
 		var i OnboardingTemplate
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.Steps,

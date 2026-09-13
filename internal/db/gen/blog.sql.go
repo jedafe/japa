@@ -154,8 +154,8 @@ func (q *Queries) CountPublishedBlogPosts(ctx context.Context, arg CountPublishe
 
 const createBlogSeries = `-- name: CreateBlogSeries :one
 INSERT INTO blog_series (title, slug, description, cover_image_id, author_user_id) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at, deleted_at
+RETURNING id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type CreateBlogSeriesParams struct {
@@ -177,7 +177,6 @@ func (q *Queries) CreateBlogSeries(ctx context.Context, arg CreateBlogSeriesPara
 	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -292,7 +291,7 @@ INSERT INTO content_featured (content_id, featured_order, featured_until) VALUES
 ON CONFLICT (content_id) DO UPDATE
  SET featured_order = $2,
  featured_until = $3
-RETURNING id, tenant_id, content_id, featured_order, featured_until, created_at
+RETURNING id, content_id, featured_order, featured_until, created_at
 `
 
 type FeatureContentParams struct {
@@ -309,7 +308,6 @@ func (q *Queries) FeatureContent(ctx context.Context, arg FeatureContentParams) 
 	var i ContentFeatured
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.FeaturedOrder,
 		&i.FeaturedUntil,
@@ -508,8 +506,8 @@ func (q *Queries) GetBlogPostDetail(ctx context.Context, arg GetBlogPostDetailPa
 }
 
 const getBlogSeriesByID = `-- name: GetBlogSeriesByID :one
-SELECT id, tenant_id, title, slug, description, cover_image_id,
-       author_user_id, status, created_at, updated_at, deleted_at
+SELECT id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 FROM blog_series
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -519,7 +517,6 @@ func (q *Queries) GetBlogSeriesByID(ctx context.Context, id pgtype.UUID) (BlogSe
 	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,
@@ -610,18 +607,6 @@ func (q *Queries) GetContentReviewByID(ctx context.Context, id pgtype.UUID) (Get
 		&i.DeletedAt,
 	)
 	return i, err
-}
-
-const getContentTenantID = `-- name: GetContentTenantID :one
-SELECT tenant_id FROM contents WHERE id = $1 AND deleted_at IS NULL
-`
-
-// H7: verify a content_id belongs to the same tenant before linking to a series.
-func (q *Queries) GetContentTenantID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getContentTenantID, id)
-	var tenant_id pgtype.UUID
-	err := row.Scan(&tenant_id)
-	return tenant_id, err
 }
 
 const getSeriesForContent = `-- name: GetSeriesForContent :one
@@ -1101,8 +1086,8 @@ func (q *Queries) ListFeaturedBlogPostCards(ctx context.Context, arg ListFeature
 }
 
 const listFeaturedPosts = `-- name: ListFeaturedPosts :many
-SELECT cf.id, cf.tenant_id, cf.content_id, cf.featured_order,
-       cf.featured_until, cf.created_at
+SELECT cf.id, cf.content_id, cf.featured_order,
+ cf.featured_until, cf.created_at
 FROM content_featured cf
 WHERE (cf.featured_until IS NULL OR cf.featured_until > now())
 ORDER BY cf.featured_order ASC
@@ -1125,7 +1110,6 @@ func (q *Queries) ListFeaturedPosts(ctx context.Context, arg ListFeaturedPostsPa
 		var i ContentFeatured
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.FeaturedOrder,
 			&i.FeaturedUntil,
@@ -1613,8 +1597,8 @@ SET title = $1, slug = $2, description = $3,
  cover_image_id = $4, status = $5,
  updated_at = now()
 WHERE id = $6 AND deleted_at IS NULL
-RETURNING id, tenant_id, title, slug, description, cover_image_id,
-          author_user_id, status, created_at, updated_at, deleted_at
+RETURNING id, title, slug, description, cover_image_id,
+ author_user_id, status, created_at, updated_at, deleted_at
 `
 
 type UpdateBlogSeriesParams struct {
@@ -1638,7 +1622,6 @@ func (q *Queries) UpdateBlogSeries(ctx context.Context, arg UpdateBlogSeriesPara
 	var i BlogSeries
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Title,
 		&i.Slug,
 		&i.Description,

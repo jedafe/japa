@@ -26,7 +26,7 @@ func (q *Queries) CountPlatformDataExports(ctx context.Context, status interface
 const createPlatformDataExport = `-- name: CreatePlatformDataExport :one
 
 INSERT INTO platform_data_exports (name, export_type, format, include_metadata, created_by) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
+RETURNING id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
 `
 
 type CreatePlatformDataExportParams struct {
@@ -50,7 +50,6 @@ func (q *Queries) CreatePlatformDataExport(ctx context.Context, arg CreatePlatfo
 	var i PlatformDataExport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ExportType,
 		&i.Format,
@@ -77,7 +76,7 @@ func (q *Queries) DeletePlatformDataExport(ctx context.Context, id pgtype.UUID) 
 }
 
 const getPlatformDataExport = `-- name: GetPlatformDataExport :one
-SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
+SELECT id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
 WHERE id = $1
 `
 
@@ -86,7 +85,6 @@ func (q *Queries) GetPlatformDataExport(ctx context.Context, id pgtype.UUID) (Pl
 	var i PlatformDataExport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ExportType,
 		&i.Format,
@@ -103,7 +101,7 @@ func (q *Queries) GetPlatformDataExport(ctx context.Context, id pgtype.UUID) (Pl
 }
 
 const getPlatformDataExportByID = `-- name: GetPlatformDataExportByID :one
-SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
+SELECT id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
 WHERE id = $1
 `
 
@@ -113,7 +111,6 @@ func (q *Queries) GetPlatformDataExportByID(ctx context.Context, id pgtype.UUID)
 	var i PlatformDataExport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ExportType,
 		&i.Format,
@@ -130,7 +127,7 @@ func (q *Queries) GetPlatformDataExportByID(ctx context.Context, id pgtype.UUID)
 }
 
 const listPendingPlatformDataExports = `-- name: ListPendingPlatformDataExports :many
-SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
+SELECT id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT $1
@@ -147,7 +144,6 @@ func (q *Queries) ListPendingPlatformDataExports(ctx context.Context, limitVal i
 		var i PlatformDataExport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.ExportType,
 			&i.Format,
@@ -171,7 +167,7 @@ func (q *Queries) ListPendingPlatformDataExports(ctx context.Context, limitVal i
 }
 
 const listPlatformDataExports = `-- name: ListPlatformDataExports :many
-SELECT id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
+SELECT id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at FROM platform_data_exports
 WHERE ($1 = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -194,7 +190,6 @@ func (q *Queries) ListPlatformDataExports(ctx context.Context, arg ListPlatformD
 		var i PlatformDataExport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.ExportType,
 			&i.Format,
@@ -244,7 +239,7 @@ SET status = $1,
  error_message = $4,
  completed_at = $5
 WHERE id = $6
-RETURNING id, tenant_id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
+RETURNING id, name, export_type, format, status, file_url, file_size, include_metadata, error_message, created_by, completed_at, created_at
 `
 
 type UpdatePlatformDataExportStatusParams struct {
@@ -268,7 +263,6 @@ func (q *Queries) UpdatePlatformDataExportStatus(ctx context.Context, arg Update
 	var i PlatformDataExport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ExportType,
 		&i.Format,

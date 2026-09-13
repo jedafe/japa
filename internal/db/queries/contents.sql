@@ -756,12 +756,12 @@ SELECT EXISTS(SELECT 1 FROM space_pinned_posts WHERE space_id = @space_id AND co
 -- =====================
 
 -- name: GetJSONLDTemplate :one
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE content_type = @content_type AND is_active = true;
 
 -- name: ListJSONLDTemplates :many
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE (@q::text = '' OR content_type ILIKE '%' || @q || '%' OR template::text ILIKE '%' || @q || '%')
 ORDER BY created_at ASC, id ASC;
@@ -771,7 +771,7 @@ INSERT INTO content_type_jsonld_templates (content_type, template, is_active) VA
 
 ON CONFLICT (content_type) DO UPDATE
 SET template = EXCLUDED.template, is_active = EXCLUDED.is_active, updated_at = now()
-RETURNING id, tenant_id, content_type, template, is_active, created_at, updated_at;
+RETURNING id, content_type, template, is_active, created_at, updated_at;
 
 -- name: DeleteJSONLDTemplate :exec
 DELETE FROM content_type_jsonld_templates WHERE id = @id;
@@ -970,7 +970,7 @@ LIMIT @page_limit;
 -- name: CreateContentShare :one
 INSERT INTO content_shares (content_id, user_id, platform) VALUES (@content_id, @user_id, @platform)
 
-RETURNING id, tenant_id, content_id, user_id, platform, created_at;
+RETURNING id, content_id, user_id, platform, created_at;
 
 -- name: CountContentShares :one
 SELECT COUNT(*)::int AS count

@@ -30,7 +30,7 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 			return ResolvedItem{}, false, err
 		}
 
-		route, err := r.svc.GetByID(ctx, id, tenantID)
+		route, err := r.svc.GetByID(ctx, id)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
@@ -43,7 +43,7 @@ func (r *visaRouteResolver) Resolve(ctx context.Context, ref map[string]any, ten
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
-		route, err := r.svc.GetBySlug(ctx, slug, tenantID)
+		route, err := r.svc.GetBySlug(ctx, slug)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil

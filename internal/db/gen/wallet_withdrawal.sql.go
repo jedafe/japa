@@ -55,7 +55,7 @@ const deleteWithdrawalFeeTier = `-- name: DeleteWithdrawalFeeTier :one
 UPDATE wallet_withdrawal_fee_tiers
 SET is_active = false, updated_at = now()
 WHERE id = $1
-RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
+RETURNING id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
 func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, id pgtype.UUID) (WalletWithdrawalFeeTier, error) {
@@ -63,7 +63,6 @@ func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, id pgtype.UUID) (
 	var i WalletWithdrawalFeeTier
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MinAmount,
 		&i.MaxAmount,
 		&i.FeeType,
@@ -78,7 +77,7 @@ func (q *Queries) DeleteWithdrawalFeeTier(ctx context.Context, id pgtype.UUID) (
 }
 
 const getPayoutProviderByType = `-- name: GetPayoutProviderByType :one
-SELECT id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
+SELECT id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
 WHERE type = $1
 `
 
@@ -87,7 +86,6 @@ func (q *Queries) GetPayoutProviderByType(ctx context.Context, type_ string) (Pa
 	var i PayoutProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.IsActive,
@@ -140,7 +138,7 @@ func (q *Queries) GetUserGroupByUserID(ctx context.Context, userID pgtype.UUID) 
 }
 
 const getWithdrawalByID = `-- name: GetWithdrawalByID :one
-SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
+SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
 WHERE id = $1
 `
 
@@ -149,7 +147,6 @@ func (q *Queries) GetWithdrawalByID(ctx context.Context, id pgtype.UUID) (Wallet
 	var i WalletWithdrawal
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.CreditAmount,
 		&i.CurrencyCode,
@@ -174,7 +171,7 @@ func (q *Queries) GetWithdrawalByID(ctx context.Context, id pgtype.UUID) (Wallet
 }
 
 const getWithdrawalMethodByID = `-- name: GetWithdrawalMethodByID :one
-SELECT id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
+SELECT id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
 WHERE id = $1 AND user_id = $2
 `
 
@@ -188,7 +185,6 @@ func (q *Queries) GetWithdrawalMethodByID(ctx context.Context, arg GetWithdrawal
 	var i WalletWithdrawalMethod
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.Label,
@@ -206,7 +202,7 @@ func (q *Queries) GetWithdrawalMethodByID(ctx context.Context, arg GetWithdrawal
 
 const insertWithdrawal = `-- name: InsertWithdrawal :one
 INSERT INTO wallet_withdrawals (user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-RETURNING id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
+RETURNING id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
 `
 
 type InsertWithdrawalParams struct {
@@ -252,7 +248,6 @@ func (q *Queries) InsertWithdrawal(ctx context.Context, arg InsertWithdrawalPara
 	var i WalletWithdrawal
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.CreditAmount,
 		&i.CurrencyCode,
@@ -278,7 +273,7 @@ func (q *Queries) InsertWithdrawal(ctx context.Context, arg InsertWithdrawalPara
 
 const insertWithdrawalFeeTier = `-- name: InsertWithdrawalFeeTier :one
 INSERT INTO wallet_withdrawal_fee_tiers (min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
+RETURNING id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
 type InsertWithdrawalFeeTierParams struct {
@@ -304,7 +299,6 @@ func (q *Queries) InsertWithdrawalFeeTier(ctx context.Context, arg InsertWithdra
 	var i WalletWithdrawalFeeTier
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MinAmount,
 		&i.MaxAmount,
 		&i.FeeType,
@@ -320,7 +314,7 @@ func (q *Queries) InsertWithdrawalFeeTier(ctx context.Context, arg InsertWithdra
 
 const insertWithdrawalMethod = `-- name: InsertWithdrawalMethod :one
 INSERT INTO wallet_withdrawal_methods (user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
+RETURNING id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
 `
 
 type InsertWithdrawalMethodParams struct {
@@ -350,7 +344,6 @@ func (q *Queries) InsertWithdrawalMethod(ctx context.Context, arg InsertWithdraw
 	var i WalletWithdrawalMethod
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.Label,
@@ -367,7 +360,7 @@ func (q *Queries) InsertWithdrawalMethod(ctx context.Context, arg InsertWithdraw
 }
 
 const listPayoutProvidersByTenant = `-- name: ListPayoutProvidersByTenant :many
-SELECT id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
+SELECT id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at FROM payout_providers
 
 ORDER BY is_default DESC, name
 `
@@ -383,7 +376,6 @@ func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context) ([]PayoutProv
 		var i PayoutProvider
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Type,
 			&i.Name,
 			&i.IsActive,
@@ -404,7 +396,7 @@ func (q *Queries) ListPayoutProvidersByTenant(ctx context.Context) ([]PayoutProv
 }
 
 const listWithdrawalFeeTiersByTenant = `-- name: ListWithdrawalFeeTiersByTenant :many
-SELECT id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at FROM wallet_withdrawal_fee_tiers
+SELECT id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at FROM wallet_withdrawal_fee_tiers
 WHERE is_active = true
 ORDER BY position, min_amount
 `
@@ -420,7 +412,6 @@ func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context) ([]WalletW
 		var i WalletWithdrawalFeeTier
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.MinAmount,
 			&i.MaxAmount,
 			&i.FeeType,
@@ -442,7 +433,7 @@ func (q *Queries) ListWithdrawalFeeTiersByTenant(ctx context.Context) ([]WalletW
 }
 
 const listWithdrawalMethodsByUser = `-- name: ListWithdrawalMethodsByUser :many
-SELECT id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
+SELECT id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at FROM wallet_withdrawal_methods
 WHERE user_id = $1 AND is_active = true
 ORDER BY is_default DESC, created_at DESC
 `
@@ -458,7 +449,6 @@ func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, userID pgtype
 		var i WalletWithdrawalMethod
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Provider,
 			&i.Label,
@@ -482,7 +472,7 @@ func (q *Queries) ListWithdrawalMethodsByUser(ctx context.Context, userID pgtype
 }
 
 const listWithdrawalsByTenant = `-- name: ListWithdrawalsByTenant :many
-SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
+SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
 WHERE ($1::text IS NULL OR status = $1)
  AND ($2::uuid IS NULL OR user_id = $2)
 ORDER BY created_at DESC
@@ -512,7 +502,6 @@ func (q *Queries) ListWithdrawalsByTenant(ctx context.Context, arg ListWithdrawa
 		var i WalletWithdrawal
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.CreditAmount,
 			&i.CurrencyCode,
@@ -544,7 +533,7 @@ func (q *Queries) ListWithdrawalsByTenant(ctx context.Context, arg ListWithdrawa
 }
 
 const listWithdrawalsByUser = `-- name: ListWithdrawalsByUser :many
-SELECT id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
+SELECT id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at FROM wallet_withdrawals
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -567,7 +556,6 @@ func (q *Queries) ListWithdrawalsByUser(ctx context.Context, arg ListWithdrawals
 		var i WalletWithdrawal
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.CreditAmount,
 			&i.CurrencyCode,
@@ -609,7 +597,7 @@ SET min_amount = $1,
  position = $7,
  updated_at = now()
 WHERE id = $8
-RETURNING id, tenant_id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
+RETURNING id, min_amount, max_amount, fee_type, fee_value, tier_mode, is_active, position, created_at, updated_at
 `
 
 type UpdateWithdrawalFeeTierParams struct {
@@ -637,7 +625,6 @@ func (q *Queries) UpdateWithdrawalFeeTier(ctx context.Context, arg UpdateWithdra
 	var i WalletWithdrawalFeeTier
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MinAmount,
 		&i.MaxAmount,
 		&i.FeeType,
@@ -657,7 +644,7 @@ SET is_default = $1,
  is_active = $2,
  updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
+RETURNING id, user_id, provider, label, account, currency_code, is_verified, is_default, is_active, metadata, created_at, updated_at
 `
 
 type UpdateWithdrawalMethodParams struct {
@@ -671,7 +658,6 @@ func (q *Queries) UpdateWithdrawalMethod(ctx context.Context, arg UpdateWithdraw
 	var i WalletWithdrawalMethod
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.Label,
@@ -707,7 +693,7 @@ SET status = $1,
  reviewed_at = COALESCE($5, reviewed_at),
  updated_at = now()
 WHERE id = $6
-RETURNING id, tenant_id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
+RETURNING id, user_id, credit_amount, currency_code, credits_per_unit, fiat_amount, fee_amount, fee_basis, fee_rate, net_amount, status, payout_method_id, payout_provider, provider_ref, admin_note, reviewed_by, reviewed_at, idempotency_key, created_at, updated_at
 `
 
 type UpdateWithdrawalStatusParams struct {
@@ -731,7 +717,6 @@ func (q *Queries) UpdateWithdrawalStatus(ctx context.Context, arg UpdateWithdraw
 	var i WalletWithdrawal
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.CreditAmount,
 		&i.CurrencyCode,
@@ -764,7 +749,7 @@ ON CONFLICT (type) DO UPDATE SET
  config = EXCLUDED.config,
  supported_currencies = EXCLUDED.supported_currencies,
  updated_at = now()
-RETURNING id, tenant_id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at
+RETURNING id, type, name, is_active, is_default, config, supported_currencies, created_at, updated_at
 `
 
 type UpsertPayoutProviderParams struct {
@@ -788,7 +773,6 @@ func (q *Queries) UpsertPayoutProvider(ctx context.Context, arg UpsertPayoutProv
 	var i PayoutProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Type,
 		&i.Name,
 		&i.IsActive,

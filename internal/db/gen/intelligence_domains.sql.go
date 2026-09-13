@@ -13,7 +13,7 @@ import (
 
 const createCommunityOrganisationIntel = `-- name: CreateCommunityOrganisationIntel :one
 
-INSERT INTO community_organisations (name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO community_organisations (name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateCommunityOrganisationIntelParams struct {
@@ -70,7 +70,6 @@ func (q *Queries) CreateCommunityOrganisationIntel(ctx context.Context, arg Crea
 	var i CommunityOrganisation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.OrgType,
@@ -116,7 +115,7 @@ func (q *Queries) CreateCommunityOrganisationIntel(ctx context.Context, arg Crea
 
 const createComparisonItemIntel = `-- name: CreateComparisonItemIntel :one
 
-INSERT INTO comparison_items (title, geo_space_id, type_id, position, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref
+INSERT INTO comparison_items (title, geo_space_id, type_id, position, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref
 `
 
 type CreateComparisonItemIntelParams struct {
@@ -154,7 +153,6 @@ func (q *Queries) CreateComparisonItemIntel(ctx context.Context, arg CreateCompa
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.ImageID,
@@ -179,7 +177,7 @@ func (q *Queries) CreateComparisonItemIntel(ctx context.Context, arg CreateCompa
 
 const createCredentialPathwayIntel = `-- name: CreateCredentialPathwayIntel :one
 
-INSERT INTO credential_pathways (profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO credential_pathways (profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateCredentialPathwayIntelParams struct {
@@ -246,7 +244,6 @@ func (q *Queries) CreateCredentialPathwayIntel(ctx context.Context, arg CreateCr
 	var i CredentialPathway
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProfessionID,
 		&i.IssuingSpaceID,
 		&i.DestinationSpaceID,
@@ -282,7 +279,7 @@ func (q *Queries) CreateCredentialPathwayIntel(ctx context.Context, arg CreateCr
 
 const createHousingGuideIntel = `-- name: CreateHousingGuideIntel :one
 
-INSERT INTO housing_guides (destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
+INSERT INTO housing_guides (destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
 `
 
 type CreateHousingGuideIntelParams struct {
@@ -331,7 +328,6 @@ func (q *Queries) CreateHousingGuideIntel(ctx context.Context, arg CreateHousing
 	var i HousingGuide
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.CitySpaceID,
 		&i.AccommodationType,
@@ -366,7 +362,7 @@ func (q *Queries) CreateHousingGuideIntel(ctx context.Context, arg CreateHousing
 const createIntelJob = `-- name: CreateIntelJob :one
 
 
-INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at
+INSERT INTO intel_jobs (intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at
 `
 
 type CreateIntelJobParams struct {
@@ -445,7 +441,6 @@ func (q *Queries) CreateIntelJob(ctx context.Context, arg CreateIntelJobParams) 
 	var i IntelJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.IntelRecordID,
 		&i.GuideID,
 		&i.SourceUrl,
@@ -480,7 +475,7 @@ func (q *Queries) CreateIntelJob(ctx context.Context, arg CreateIntelJobParams) 
 
 const createLanguageTestRequirementIntel = `-- name: CreateLanguageTestRequirementIntel :one
 
-INSERT INTO language_test_requirements (destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO language_test_requirements (destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateLanguageTestRequirementIntelParams struct {
@@ -527,7 +522,6 @@ func (q *Queries) CreateLanguageTestRequirementIntel(ctx context.Context, arg Cr
 	var i LanguageTestRequirement
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.VisaCategory,
 		&i.TestID,
@@ -559,7 +553,7 @@ func (q *Queries) CreateLanguageTestRequirementIntel(ctx context.Context, arg Cr
 
 const createRemittanceRateIntel = `-- name: CreateRemittanceRateIntel :one
 
-INSERT INTO remittance_rates (provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO remittance_rates (provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateRemittanceRateIntelParams struct {
@@ -602,7 +596,6 @@ func (q *Queries) CreateRemittanceRateIntel(ctx context.Context, arg CreateRemit
 	var i RemittanceRate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -625,7 +618,7 @@ func (q *Queries) CreateRemittanceRateIntel(ctx context.Context, arg CreateRemit
 
 const createTaxObligationGuideIntel = `-- name: CreateTaxObligationGuideIntel :one
 
-INSERT INTO tax_obligation_guides (origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO tax_obligation_guides (origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateTaxObligationGuideIntelParams struct {
@@ -672,7 +665,6 @@ func (q *Queries) CreateTaxObligationGuideIntel(ctx context.Context, arg CreateT
 	var i TaxObligationGuide
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OriginSpaceID,
 		&i.DestinationSpaceID,
 		&i.EmploymentStatus,
@@ -703,7 +695,7 @@ func (q *Queries) CreateTaxObligationGuideIntel(ctx context.Context, arg CreateT
 
 const createVisaRouteIntel = `-- name: CreateVisaRouteIntel :one
 
-INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
+INSERT INTO visa_routes (destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, status, is_active, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id
 `
 
 type CreateVisaRouteIntelParams struct {
@@ -758,7 +750,6 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 	var i VisaRoute
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.VisaCategory,
 		&i.Name,
@@ -795,7 +786,7 @@ func (q *Queries) CreateVisaRouteIntel(ctx context.Context, arg CreateVisaRouteI
 
 const createWikiPageIntel = `-- name: CreateWikiPageIntel :one
 
-INSERT INTO wiki_pages (space_id, slug, title, category, is_active, is_featured, is_locked, created_by, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO wiki_pages (space_id, slug, title, category, is_active, is_featured, is_locked, created_by, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type CreateWikiPageIntelParams struct {
@@ -840,7 +831,6 @@ func (q *Queries) CreateWikiPageIntel(ctx context.Context, arg CreateWikiPageInt
 	var i WikiPage
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SpaceID,
 		&i.Slug,
 		&i.Title,
@@ -864,7 +854,7 @@ func (q *Queries) CreateWikiPageIntel(ctx context.Context, arg CreateWikiPageInt
 }
 
 const getCommunityOrganisationByIntelRecord = `-- name: GetCommunityOrganisationByIntelRecord :one
-SELECT id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations WHERE intel_record_id = $1
+SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (CommunityOrganisation, error) {
@@ -872,7 +862,6 @@ func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, int
 	var i CommunityOrganisation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.OrgType,
@@ -917,7 +906,7 @@ func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, int
 }
 
 const getComparisonItemByIntelRecord = `-- name: GetComparisonItemByIntelRecord :one
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items WHERE intel_record_id = $1
+SELECT id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (ComparisonItem, error) {
@@ -926,7 +915,6 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, intelRecor
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.ImageID,
@@ -950,7 +938,7 @@ func (q *Queries) GetComparisonItemByIntelRecord(ctx context.Context, intelRecor
 }
 
 const getCredentialPathwayByIntelRecord = `-- name: GetCredentialPathwayByIntelRecord :one
-SELECT id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways WHERE intel_record_id = $1
+SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetCredentialPathwayByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (CredentialPathway, error) {
@@ -958,7 +946,6 @@ func (q *Queries) GetCredentialPathwayByIntelRecord(ctx context.Context, intelRe
 	var i CredentialPathway
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProfessionID,
 		&i.IssuingSpaceID,
 		&i.DestinationSpaceID,
@@ -1029,7 +1016,7 @@ func (q *Queries) GetCredentialProfessionBySlug(ctx context.Context, slug string
 }
 
 const getHousingGuideByIntelRecord = `-- name: GetHousingGuideByIntelRecord :one
-SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides WHERE intel_record_id = $1
+SELECT id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetHousingGuideByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (HousingGuide, error) {
@@ -1037,7 +1024,6 @@ func (q *Queries) GetHousingGuideByIntelRecord(ctx context.Context, intelRecordI
 	var i HousingGuide
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.CitySpaceID,
 		&i.AccommodationType,
@@ -1070,7 +1056,7 @@ func (q *Queries) GetHousingGuideByIntelRecord(ctx context.Context, intelRecordI
 }
 
 const getIntelJob = `-- name: GetIntelJob :one
-SELECT id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE id = $1
 `
 
 func (q *Queries) GetIntelJob(ctx context.Context, id pgtype.UUID) (IntelJob, error) {
@@ -1078,7 +1064,6 @@ func (q *Queries) GetIntelJob(ctx context.Context, id pgtype.UUID) (IntelJob, er
 	var i IntelJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.IntelRecordID,
 		&i.GuideID,
 		&i.SourceUrl,
@@ -1112,7 +1097,7 @@ func (q *Queries) GetIntelJob(ctx context.Context, id pgtype.UUID) (IntelJob, er
 }
 
 const getIntelJobByIntelRecord = `-- name: GetIntelJobByIntelRecord :one
-SELECT id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE intel_record_id = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (IntelJob, error) {
@@ -1120,7 +1105,6 @@ func (q *Queries) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pg
 	var i IntelJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.IntelRecordID,
 		&i.GuideID,
 		&i.SourceUrl,
@@ -1154,7 +1138,7 @@ func (q *Queries) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pg
 }
 
 const getIntelJobBySourceURL = `-- name: GetIntelJobBySourceURL :one
-SELECT id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE source_url = $1
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs WHERE source_url = $1
 `
 
 func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, sourceUrl string) (IntelJob, error) {
@@ -1162,7 +1146,6 @@ func (q *Queries) GetIntelJobBySourceURL(ctx context.Context, sourceUrl string) 
 	var i IntelJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.IntelRecordID,
 		&i.GuideID,
 		&i.SourceUrl,
@@ -1219,7 +1202,7 @@ func (q *Queries) GetLanguageTestByName(ctx context.Context, name string) (Langu
 }
 
 const getLanguageTestRequirementByIntelRecord = `-- name: GetLanguageTestRequirementByIntelRecord :one
-SELECT id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements WHERE intel_record_id = $1
+SELECT id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetLanguageTestRequirementByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (LanguageTestRequirement, error) {
@@ -1227,7 +1210,6 @@ func (q *Queries) GetLanguageTestRequirementByIntelRecord(ctx context.Context, i
 	var i LanguageTestRequirement
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.VisaCategory,
 		&i.TestID,
@@ -1258,7 +1240,7 @@ func (q *Queries) GetLanguageTestRequirementByIntelRecord(ctx context.Context, i
 }
 
 const getRemittanceRateByIntelRecord = `-- name: GetRemittanceRateByIntelRecord :one
-SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates WHERE intel_record_id = $1
+SELECT id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetRemittanceRateByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (RemittanceRate, error) {
@@ -1266,7 +1248,6 @@ func (q *Queries) GetRemittanceRateByIntelRecord(ctx context.Context, intelRecor
 	var i RemittanceRate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -1288,7 +1269,7 @@ func (q *Queries) GetRemittanceRateByIntelRecord(ctx context.Context, intelRecor
 }
 
 const getTaxObligationGuideByIntelRecord = `-- name: GetTaxObligationGuideByIntelRecord :one
-SELECT id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides WHERE intel_record_id = $1
+SELECT id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetTaxObligationGuideByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (TaxObligationGuide, error) {
@@ -1296,7 +1277,6 @@ func (q *Queries) GetTaxObligationGuideByIntelRecord(ctx context.Context, intelR
 	var i TaxObligationGuide
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OriginSpaceID,
 		&i.DestinationSpaceID,
 		&i.EmploymentStatus,
@@ -1326,7 +1306,7 @@ func (q *Queries) GetTaxObligationGuideByIntelRecord(ctx context.Context, intelR
 }
 
 const getVisaRouteByIntelRecord = `-- name: GetVisaRouteByIntelRecord :one
-SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes WHERE intel_record_id = $1
+SELECT id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (VisaRoute, error) {
@@ -1334,7 +1314,6 @@ func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, intelRecordID p
 	var i VisaRoute
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.DestinationSpaceID,
 		&i.VisaCategory,
 		&i.Name,
@@ -1370,7 +1349,7 @@ func (q *Queries) GetVisaRouteByIntelRecord(ctx context.Context, intelRecordID p
 }
 
 const getWikiPageByIntelRecord = `-- name: GetWikiPageByIntelRecord :one
-SELECT id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages WHERE intel_record_id = $1
+SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (WikiPage, error) {
@@ -1378,7 +1357,6 @@ func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pg
 	var i WikiPage
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SpaceID,
 		&i.Slug,
 		&i.Title,
@@ -1402,7 +1380,7 @@ func (q *Queries) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pg
 }
 
 const getWikiPageByIntelRecordWithSpace = `-- name: GetWikiPageByIntelRecordWithSpace :one
-SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category, wp.is_active, wp.is_featured, wp.is_locked, wp.created_by, wp.created_at, wp.updated_at, wp.is_japabot_indexed, wp.intel_record_id, wp.guide_id, wp.confidence_overall, wp.verification_status, wp.freshness_score, wp.override_source, wp.editorial_overrides, s.slug AS space_slug
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category, wp.is_active, wp.is_featured, wp.is_locked, wp.created_by, wp.created_at, wp.updated_at, wp.is_japabot_indexed, wp.intel_record_id, wp.guide_id, wp.confidence_overall, wp.verification_status, wp.freshness_score, wp.override_source, wp.editorial_overrides, s.slug AS space_slug
 FROM wiki_pages wp
 JOIN spaces s ON s.id = wp.space_id
 WHERE wp.intel_record_id = $1
@@ -1410,7 +1388,6 @@ WHERE wp.intel_record_id = $1
 
 type GetWikiPageByIntelRecordWithSpaceRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	SpaceID            pgtype.UUID        `json:"space_id"`
 	Slug               string             `json:"slug"`
 	Title              string             `json:"title"`
@@ -1437,7 +1414,6 @@ func (q *Queries) GetWikiPageByIntelRecordWithSpace(ctx context.Context, intelRe
 	var i GetWikiPageByIntelRecordWithSpaceRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SpaceID,
 		&i.Slug,
 		&i.Title,
@@ -1462,7 +1438,7 @@ func (q *Queries) GetWikiPageByIntelRecordWithSpace(ctx context.Context, intelRe
 }
 
 const listCommunityOrganisationsIntelKeyset = `-- name: ListCommunityOrganisationsIntelKeyset :many
-SELECT id, tenant_id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations
+SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1488,7 +1464,6 @@ func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg
 		var i CommunityOrganisation
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.OrgType,
@@ -1540,7 +1515,7 @@ func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg
 }
 
 const listComparisonItemsIntelKeyset = `-- name: ListComparisonItemsIntelKeyset :many
-SELECT id, content_id, tenant_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items
+SELECT id, content_id, title, description, image_id, geo_space_id, position, created_at, type_id, deleted_at, is_baseline, last_updated_at, intel_record_id, intel_cost_data, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, item_ref FROM comparison_items
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1567,7 +1542,6 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 		if err := rows.Scan(
 			&i.ID,
 			&i.ContentID,
-			&i.TenantID,
 			&i.Title,
 			&i.Description,
 			&i.ImageID,
@@ -1598,7 +1572,7 @@ func (q *Queries) ListComparisonItemsIntelKeyset(ctx context.Context, arg ListCo
 }
 
 const listCredentialPathwaysIntelKeyset = `-- name: ListCredentialPathwaysIntelKeyset :many
-SELECT id, tenant_id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways
+SELECT id, profession_id, issuing_space_id, destination_space_id, regulatory_body, regulatory_body_url, pathway_type, timeline_estimate, cost_estimate_usd, pathway_description, official_application_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, guide_id, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM credential_pathways
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1624,7 +1598,6 @@ func (q *Queries) ListCredentialPathwaysIntelKeyset(ctx context.Context, arg Lis
 		var i CredentialPathway
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProfessionID,
 			&i.IssuingSpaceID,
 			&i.DestinationSpaceID,
@@ -1666,7 +1639,7 @@ func (q *Queries) ListCredentialPathwaysIntelKeyset(ctx context.Context, arg Lis
 }
 
 const listHousingGuidesIntelKeyset = `-- name: ListHousingGuidesIntelKeyset :many
-SELECT id, tenant_id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides
+SELECT id, destination_space_id, city_space_id, accommodation_type, search_platforms, landlord_requirements, rent_ranges, scam_categories, tips, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, last_verified_at, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM housing_guides
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1692,7 +1665,6 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 		var i HousingGuide
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.DestinationSpaceID,
 			&i.CitySpaceID,
 			&i.AccommodationType,
@@ -1732,7 +1704,7 @@ func (q *Queries) ListHousingGuidesIntelKeyset(ctx context.Context, arg ListHous
 }
 
 const listIntelJobsBySpaces = `-- name: ListIntelJobsBySpaces :many
-SELECT id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
 WHERE country_space_id = ANY($1::uuid[])
 ORDER BY created_at DESC
 LIMIT $2
@@ -1754,7 +1726,6 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 		var i IntelJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.IntelRecordID,
 			&i.GuideID,
 			&i.SourceUrl,
@@ -1795,7 +1766,7 @@ func (q *Queries) ListIntelJobsBySpaces(ctx context.Context, arg ListIntelJobsBy
 }
 
 const listIntelJobsKeyset = `-- name: ListIntelJobsKeyset :many
-SELECT id, tenant_id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
+SELECT id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, city, employer, job_type, experience_level, salary_min, salary_max, currency, skills, application_url, deadline, remote, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at FROM intel_jobs
 WHERE ($1::timestamptz IS NULL
  OR created_at < $1
  OR (created_at = $1 AND id < $2))
@@ -1820,7 +1791,6 @@ func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeys
 		var i IntelJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.IntelRecordID,
 			&i.GuideID,
 			&i.SourceUrl,
@@ -1861,7 +1831,7 @@ func (q *Queries) ListIntelJobsKeyset(ctx context.Context, arg ListIntelJobsKeys
 }
 
 const listLanguageTestRequirementsIntelKeyset = `-- name: ListLanguageTestRequirementsIntelKeyset :many
-SELECT id, tenant_id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements
+SELECT id, destination_space_id, visa_category, test_id, minimum_score, score_breakdown, notes, source_url, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM language_test_requirements
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1887,7 +1857,6 @@ func (q *Queries) ListLanguageTestRequirementsIntelKeyset(ctx context.Context, a
 		var i LanguageTestRequirement
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.DestinationSpaceID,
 			&i.VisaCategory,
 			&i.TestID,
@@ -1925,7 +1894,7 @@ func (q *Queries) ListLanguageTestRequirementsIntelKeyset(ctx context.Context, a
 }
 
 const listRemittanceRatesIntelKeyset = `-- name: ListRemittanceRatesIntelKeyset :many
-SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates
+SELECT id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM remittance_rates
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1951,7 +1920,6 @@ func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRe
 		var i RemittanceRate
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProviderID,
 			&i.SendCurrency,
 			&i.ReceiveCurrency,
@@ -1980,7 +1948,7 @@ func (q *Queries) ListRemittanceRatesIntelKeyset(ctx context.Context, arg ListRe
 }
 
 const listTaxObligationGuidesIntelKeyset = `-- name: ListTaxObligationGuidesIntelKeyset :many
-SELECT id, tenant_id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides
+SELECT id, origin_space_id, destination_space_id, employment_status, residency_trigger, worldwide_income_taxed, first_year_obligations, action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM tax_obligation_guides
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -2006,7 +1974,6 @@ func (q *Queries) ListTaxObligationGuidesIntelKeyset(ctx context.Context, arg Li
 		var i TaxObligationGuide
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.OriginSpaceID,
 			&i.DestinationSpaceID,
 			&i.EmploymentStatus,
@@ -2043,7 +2010,7 @@ func (q *Queries) ListTaxObligationGuidesIntelKeyset(ctx context.Context, arg Li
 }
 
 const listVisaRoutesIntelKeyset = `-- name: ListVisaRoutesIntelKeyset :many
-SELECT id, tenant_id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes
+SELECT id, destination_space_id, visa_category, name, slug, eligibility_summary, requirements_json, typical_fee_usd, path_to_pr, renewal_terms, restrictions, gov_source_url, source_url_last_checked, status, is_active, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, created_at, updated_at, is_japabot_indexed, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, guide_id FROM visa_routes
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -2069,7 +2036,6 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 		var i VisaRoute
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.DestinationSpaceID,
 			&i.VisaCategory,
 			&i.Name,
@@ -2112,7 +2078,7 @@ func (q *Queries) ListVisaRoutesIntelKeyset(ctx context.Context, arg ListVisaRou
 }
 
 const listWikiPagesIntelKeyset = `-- name: ListWikiPagesIntelKeyset :many
-SELECT id, tenant_id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages
+SELECT id, space_id, slug, title, category, is_active, is_featured, is_locked, created_by, created_at, updated_at, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM wiki_pages
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -2138,7 +2104,6 @@ func (q *Queries) ListWikiPagesIntelKeyset(ctx context.Context, arg ListWikiPage
 		var i WikiPage
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SpaceID,
 			&i.Slug,
 			&i.Title,

@@ -424,7 +424,7 @@ const createContentShare = `-- name: CreateContentShare :one
 
 INSERT INTO content_shares (content_id, user_id, platform) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, content_id, user_id, platform, created_at
+RETURNING id, content_id, user_id, platform, created_at
 `
 
 type CreateContentShareParams struct {
@@ -441,7 +441,6 @@ func (q *Queries) CreateContentShare(ctx context.Context, arg CreateContentShare
 	var i ContentShare
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.UserID,
 		&i.Platform,
@@ -1572,7 +1571,7 @@ func (q *Queries) GetContentTitleAndBody(ctx context.Context, id pgtype.UUID) (G
 
 const getJSONLDTemplate = `-- name: GetJSONLDTemplate :one
 
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE content_type = $1 AND is_active = true
 `
@@ -1585,7 +1584,6 @@ func (q *Queries) GetJSONLDTemplate(ctx context.Context, contentType string) (Co
 	var i ContentTypeJsonldTemplate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentType,
 		&i.Template,
 		&i.IsActive,
@@ -3453,7 +3451,7 @@ func (q *Queries) ListFeaturedContentsByType(ctx context.Context, arg ListFeatur
 }
 
 const listJSONLDTemplates = `-- name: ListJSONLDTemplates :many
-SELECT id, tenant_id, content_type, template, is_active, created_at, updated_at
+SELECT id, content_type, template, is_active, created_at, updated_at
 FROM content_type_jsonld_templates
 WHERE ($1::text = '' OR content_type ILIKE '%' || $1 || '%' OR template::text ILIKE '%' || $1 || '%')
 ORDER BY created_at ASC, id ASC
@@ -3470,7 +3468,6 @@ func (q *Queries) ListJSONLDTemplates(ctx context.Context, q_ string) ([]Content
 		var i ContentTypeJsonldTemplate
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentType,
 			&i.Template,
 			&i.IsActive,
@@ -3494,24 +3491,15 @@ WHERE spp.space_id = $1
 ORDER BY spp.position ASC, spp.created_at ASC
 `
 
-type ListPinnedContentRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	SpaceID   pgtype.UUID        `json:"space_id"`
-	ContentID pgtype.UUID        `json:"content_id"`
-	PinnedBy  pgtype.UUID        `json:"pinned_by"`
-	Position  int32              `json:"position"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]ListPinnedContentRow, error) {
+func (q *Queries) ListPinnedContent(ctx context.Context, spaceID pgtype.UUID) ([]SpacePinnedPost, error) {
 	rows, err := q.db.Query(ctx, listPinnedContent, spaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPinnedContentRow
+	var items []SpacePinnedPost
 	for rows.Next() {
-		var i ListPinnedContentRow
+		var i SpacePinnedPost
 		if err := rows.Scan(
 			&i.ID,
 			&i.SpaceID,
@@ -4165,26 +4153,17 @@ type PinContentToSpaceParams struct {
 	Position  int32       `json:"position"`
 }
 
-type PinContentToSpaceRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	SpaceID   pgtype.UUID        `json:"space_id"`
-	ContentID pgtype.UUID        `json:"content_id"`
-	PinnedBy  pgtype.UUID        `json:"pinned_by"`
-	Position  int32              `json:"position"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
 // =====================
 // Space Pinned Posts
 // =====================
-func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpaceParams) (PinContentToSpaceRow, error) {
+func (q *Queries) PinContentToSpace(ctx context.Context, arg PinContentToSpaceParams) (SpacePinnedPost, error) {
 	row := q.db.QueryRow(ctx, pinContentToSpace,
 		arg.SpaceID,
 		arg.ContentID,
 		arg.PinnedBy,
 		arg.Position,
 	)
-	var i PinContentToSpaceRow
+	var i SpacePinnedPost
 	err := row.Scan(
 		&i.ID,
 		&i.SpaceID,
@@ -5226,7 +5205,7 @@ INSERT INTO content_type_jsonld_templates (content_type, template, is_active) VA
 
 ON CONFLICT (content_type) DO UPDATE
 SET template = EXCLUDED.template, is_active = EXCLUDED.is_active, updated_at = now()
-RETURNING id, tenant_id, content_type, template, is_active, created_at, updated_at
+RETURNING id, content_type, template, is_active, created_at, updated_at
 `
 
 type UpsertJSONLDTemplateParams struct {
@@ -5240,7 +5219,6 @@ func (q *Queries) UpsertJSONLDTemplate(ctx context.Context, arg UpsertJSONLDTemp
 	var i ContentTypeJsonldTemplate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentType,
 		&i.Template,
 		&i.IsActive,

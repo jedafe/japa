@@ -724,7 +724,7 @@ func (q *Queries) CreateSpaceRule(ctx context.Context, arg CreateSpaceRuleParams
 const createSpaceType = `-- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type CreateSpaceTypeParams struct {
@@ -750,7 +750,6 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 	var i SpaceType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1253,7 +1252,7 @@ func (q *Queries) GetParentSpacesBySpaceID(ctx context.Context, spaceID pgtype.U
 }
 
 const getPermissionPresetByName = `-- name: GetPermissionPresetByName :one
-SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 WHERE name = $1
 `
@@ -1263,7 +1262,6 @@ func (q *Queries) GetPermissionPresetByName(ctx context.Context, name string) (S
 	var i SpacePermissionPreset
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Visibility,
 		&i.PostingPerm,
@@ -1573,7 +1571,7 @@ func (q *Queries) GetSpaceKeywords(ctx context.Context, id pgtype.UUID) ([]strin
 }
 
 const getSpaceModerator = `-- name: GetSpaceModerator :one
-SELECT id, tenant_id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
+SELECT id, space_id, user_id, assigned_by, assigned_by_user_id, created_at
 FROM space_moderators
 WHERE space_id = $1 AND user_id = $2
 `
@@ -1589,7 +1587,6 @@ func (q *Queries) GetSpaceModerator(ctx context.Context, arg GetSpaceModeratorPa
 	var i SpaceModerator
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SpaceID,
 		&i.UserID,
 		&i.AssignedBy,
@@ -1648,7 +1645,7 @@ func (q *Queries) GetSpaceRegionByGeoCode(ctx context.Context, geoCode *string) 
 }
 
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE id = $1
 `
@@ -1658,7 +1655,6 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (SpaceTy
 	var i SpaceType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -1673,7 +1669,7 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (SpaceTy
 }
 
 const getSpaceTypeBySlug = `-- name: GetSpaceTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE slug = $1
 `
@@ -1683,7 +1679,6 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, slug string) (SpaceTyp
 	var i SpaceType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -2137,7 +2132,7 @@ func (q *Queries) ListDistinctSubregions(ctx context.Context, region *string) ([
 }
 
 const listPermissionPresetsByTenant = `-- name: ListPermissionPresetsByTenant :many
-SELECT id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+SELECT id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 FROM space_permission_presets
 
 ORDER BY created_at ASC, id ASC
@@ -2154,7 +2149,6 @@ func (q *Queries) ListPermissionPresetsByTenant(ctx context.Context) ([]SpacePer
 		var i SpacePermissionPreset
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Visibility,
 			&i.PostingPerm,
@@ -2504,7 +2498,7 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 
 const listSpaceTypesByTenant = `-- name: ListSpaceTypesByTenant :many
 
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 
 ORDER BY created_at ASC, id ASC
@@ -2524,7 +2518,6 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]SpaceType, erro
 		var i SpaceType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -2546,7 +2539,7 @@ func (q *Queries) ListSpaceTypesByTenant(ctx context.Context) ([]SpaceType, erro
 }
 
 const listSpaceTypesByTenantFiltered = `-- name: ListSpaceTypesByTenantFiltered :many
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR category = $2)
@@ -2574,7 +2567,6 @@ func (q *Queries) ListSpaceTypesByTenantFiltered(ctx context.Context, arg ListSp
 		var i SpaceType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -4005,7 +3997,7 @@ UPDATE space_permission_presets
 SET visibility = $1, posting_perm = $2, replying_perm = $3,
  commenting_perm = $4, joining_perm = $5
 WHERE id = $6 AND is_system = true
-RETURNING id, tenant_id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
+RETURNING id, name, visibility, posting_perm, replying_perm, commenting_perm, joining_perm, is_system, created_at, updated_at
 `
 
 type UpdatePermissionPresetParams struct {
@@ -4029,7 +4021,6 @@ func (q *Queries) UpdatePermissionPreset(ctx context.Context, arg UpdatePermissi
 	var i SpacePermissionPreset
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Visibility,
 		&i.PostingPerm,
@@ -4512,7 +4503,7 @@ UPDATE space_types
 SET name = $1, description = $2, icon = $3,
  field_group_id = $4, category = $5
 WHERE id = $6 AND is_system = false
-RETURNING id, tenant_id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
 `
 
 type UpdateSpaceTypeParams struct {
@@ -4536,7 +4527,6 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 	var i SpaceType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

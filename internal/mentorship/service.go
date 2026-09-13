@@ -23,7 +23,6 @@ var ErrProgramNotFound = errors.New("mentorship program not found")
 // Program represents a mentorship program.
 type Program struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
 	IsActive    bool               `json:"is_active"`
@@ -34,7 +33,6 @@ type Program struct {
 // ProgramWithCounts is a mentorship program with aggregate mentor/mentee/match counts.
 type ProgramWithCounts struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
 	IsActive    bool               `json:"is_active"`

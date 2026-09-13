@@ -340,12 +340,12 @@ ON CONFLICT (user_id, track_id) DO UPDATE
 SET payment_id = COALESCE(EXCLUDED.payment_id, enrollments.payment_id),
  access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
  ELSE EXCLUDED.access_type END
-RETURNING id, tenant_id, user_id, track_id, access_type, progress_pct,
-          enrolled_at, completed_at, payment_id;
+RETURNING id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id;
 
 -- name: GetEnrollmentByID :one
-SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
-       enrolled_at, completed_at, payment_id
+SELECT id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id
 FROM enrollments
 WHERE id = @id;
 

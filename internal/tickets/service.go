@@ -667,7 +667,6 @@ func (s *Service) ListEvents(ctx context.Context, ticketID pgtype.UUID) ([]gen.T
 func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 	payload, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
-		"tenant_id": ticket.TenantID.String(),
 	})
 	if err != nil {
 		return
@@ -681,7 +680,6 @@ func (s *Service) enqueueTicketConfirmation(ticket gen.Ticket) {
 func (s *Service) enqueueTicketStatusUpdate(ticket gen.Ticket, oldStatus string) {
 	payload, err := json.Marshal(map[string]any{
 		"ticket_id":  ticket.ID.String(),
-		"tenant_id":  ticket.TenantID.String(),
 		"old_status": oldStatus,
 		"new_status": ticket.Status,
 	})

@@ -25,8 +25,8 @@ func (q *Queries) CountSpacesByCurrency(ctx context.Context, currencyCode *strin
 const createCreditPack = `-- name: CreateCreditPack :one
 INSERT INTO credit_packs (name, description, credit_amount, bonus_credits, min_user_level, position) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
-          is_active, position, created_at, updated_at
+RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
+ is_active, position, created_at, updated_at
 `
 
 type CreateCreditPackParams struct {
@@ -50,7 +50,6 @@ func (q *Queries) CreateCreditPack(ctx context.Context, arg CreateCreditPackPara
 	var i CreditPack
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,
@@ -121,8 +120,8 @@ func (q *Queries) DeactivateCurrency(ctx context.Context, code string) error {
 }
 
 const getCreditPackByID = `-- name: GetCreditPackByID :one
-SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
-       is_active, position, created_at, updated_at
+SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
+ is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE id = $1
 `
@@ -132,7 +131,6 @@ func (q *Queries) GetCreditPackByID(ctx context.Context, id pgtype.UUID) (Credit
 	var i CreditPack
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,
@@ -213,8 +211,8 @@ func (q *Queries) GetUserPreferredCurrency(ctx context.Context, userID pgtype.UU
 
 const listActiveCreditPacks = `-- name: ListActiveCreditPacks :many
 
-SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
-       is_active, position, created_at, updated_at
+SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
+ is_active, position, created_at, updated_at
 FROM credit_packs
 WHERE is_active = true
 ORDER BY position ASC, created_at ASC
@@ -234,7 +232,6 @@ func (q *Queries) ListActiveCreditPacks(ctx context.Context) ([]CreditPack, erro
 		var i CreditPack
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.CreditAmount,
@@ -292,8 +289,8 @@ func (q *Queries) ListActiveCurrencies(ctx context.Context) ([]Currency, error) 
 }
 
 const listAllCreditPacks = `-- name: ListAllCreditPacks :many
-SELECT id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
-       is_active, position, created_at, updated_at
+SELECT id, name, description, credit_amount, bonus_credits, min_user_level,
+ is_active, position, created_at, updated_at
 FROM credit_packs
 
 ORDER BY position ASC, created_at ASC
@@ -310,7 +307,6 @@ func (q *Queries) ListAllCreditPacks(ctx context.Context) ([]CreditPack, error) 
 		var i CreditPack
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.CreditAmount,
@@ -467,8 +463,8 @@ SET name = $1, description = $2, credit_amount = $3,
  bonus_credits = $4, min_user_level = $5,
  is_active = $6, position = $7, updated_at = now()
 WHERE id = $8
-RETURNING id, tenant_id, name, description, credit_amount, bonus_credits, min_user_level,
-          is_active, position, created_at, updated_at
+RETURNING id, name, description, credit_amount, bonus_credits, min_user_level,
+ is_active, position, created_at, updated_at
 `
 
 type UpdateCreditPackParams struct {
@@ -496,7 +492,6 @@ func (q *Queries) UpdateCreditPack(ctx context.Context, arg UpdateCreditPackPara
 	var i CreditPack
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.CreditAmount,

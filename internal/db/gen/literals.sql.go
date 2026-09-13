@@ -35,7 +35,7 @@ func (q *Queries) CountTemplateLiterals(ctx context.Context, arg CountTemplateLi
 const createTemplateLiteral = `-- name: CreateTemplateLiteral :one
 INSERT INTO template_literals (key, kind, value, fallback, label, description, category, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
-RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 `
 
 type CreateTemplateLiteralParams struct {
@@ -63,7 +63,6 @@ func (q *Queries) CreateTemplateLiteral(ctx context.Context, arg CreateTemplateL
 	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -93,7 +92,7 @@ func (q *Queries) DeleteTemplateLiteral(ctx context.Context, id pgtype.UUID) err
 }
 
 const getTemplateLiteral = `-- name: GetTemplateLiteral :one
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE id = $1
  AND deleted_at IS NULL
@@ -104,7 +103,6 @@ func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (Templ
 	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -122,7 +120,7 @@ func (q *Queries) GetTemplateLiteral(ctx context.Context, id pgtype.UUID) (Templ
 }
 
 const getTemplateLiteralByKey = `-- name: GetTemplateLiteralByKey :one
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE key = $1
  AND deleted_at IS NULL
@@ -133,7 +131,6 @@ func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (Temp
 	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,
@@ -151,7 +148,7 @@ func (q *Queries) GetTemplateLiteralByKey(ctx context.Context, key string) (Temp
 }
 
 const listTemplateLiterals = `-- name: ListTemplateLiterals :many
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE deleted_at IS NULL
  AND ($1::text = '' OR key ILIKE '%' || $1 || '%' OR label ILIKE '%' || $1 || '%')
@@ -196,7 +193,6 @@ func (q *Queries) ListTemplateLiterals(ctx context.Context, arg ListTemplateLite
 		var i TemplateLiteral
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Key,
 			&i.Kind,
 			&i.Value,
@@ -232,7 +228,7 @@ SET kind = $1,
  updated_at = now()
 WHERE id = $8
  AND deleted_at IS NULL
-RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 `
 
 type UpdateTemplateLiteralParams struct {
@@ -260,7 +256,6 @@ func (q *Queries) UpdateTemplateLiteral(ctx context.Context, arg UpdateTemplateL
 	var i TemplateLiteral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Kind,
 		&i.Value,

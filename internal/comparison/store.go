@@ -207,7 +207,7 @@ func (s *Store) listComparisonDimensionsByContent(ctx context.Context, contentID
 	return rows, nil
 }
 
-func (s *Store) getComparisonDimensionByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonDimensionByIDRow, error) {
+func (s *Store) getComparisonDimensionByID(ctx context.Context, id pgtype.UUID) (gen.GetComparisonDimensionByIDRow, error) {
 	row, err := s.read.GetComparisonDimensionByID(ctx, id)
 	if err != nil {
 		return gen.GetComparisonDimensionByIDRow{}, fmt.Errorf("getting comparison dimension: %w", err)

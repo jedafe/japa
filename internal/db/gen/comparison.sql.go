@@ -480,7 +480,7 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 }
 
 const getComparisonContentMetadata = `-- name: GetComparisonContentMetadata :one
-SELECT content_id, tenant_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
 FROM comparison_content_metadata
 WHERE content_id = $1
 `
@@ -490,7 +490,6 @@ func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pg
 	var i ComparisonContentMetadatum
 	err := row.Scan(
 		&i.ContentID,
-		&i.TenantID,
 		&i.Depth,
 		&i.PromotedFromID,
 		&i.PromotedAt,
@@ -650,7 +649,7 @@ func (q *Queries) GetComparisonTypeBySlug(ctx context.Context, slug string) (Get
 }
 
 const getComparisonValue = `-- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+SELECT dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
 WHERE dimension_id = $1 AND item_id = $2
 `
@@ -666,7 +665,6 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -679,8 +677,8 @@ func (q *Queries) GetComparisonValue(ctx context.Context, arg GetComparisonValue
 }
 
 const getComparisonValuesByContent = `-- name: GetComparisonValuesByContent :many
-SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
+SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
+ cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
@@ -700,7 +698,6 @@ func (q *Queries) GetComparisonValuesByContent(ctx context.Context, contentID pg
 		if err := rows.Scan(
 			&i.DimensionID,
 			&i.ItemID,
-			&i.TenantID,
 			&i.Value,
 			&i.ValueRating,
 			&i.ValueBoolean,
@@ -1801,7 +1798,7 @@ SET value = EXCLUDED.value,
  value_boolean = EXCLUDED.value_boolean,
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueParams struct {
@@ -1829,7 +1826,6 @@ func (q *Queries) UpsertComparisonValue(ctx context.Context, arg UpsertCompariso
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,
@@ -1850,7 +1846,7 @@ SET value = EXCLUDED.value,
  metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 `
 
 type UpsertComparisonValueWithMetadataParams struct {
@@ -1882,7 +1878,6 @@ func (q *Queries) UpsertComparisonValueWithMetadata(ctx context.Context, arg Ups
 	err := row.Scan(
 		&i.DimensionID,
 		&i.ItemID,
-		&i.TenantID,
 		&i.Value,
 		&i.ValueRating,
 		&i.ValueBoolean,

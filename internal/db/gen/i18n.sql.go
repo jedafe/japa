@@ -75,19 +75,9 @@ type GetTranslationParams struct {
 	Key    string `json:"key"`
 }
 
-type GetTranslationRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Locale    string             `json:"locale"`
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	Context   *string            `json:"context"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetTranslation(ctx context.Context, arg GetTranslationParams) (GetTranslationRow, error) {
+func (q *Queries) GetTranslation(ctx context.Context, arg GetTranslationParams) (Translation, error) {
 	row := q.db.QueryRow(ctx, getTranslation, arg.Locale, arg.Key)
-	var i GetTranslationRow
+	var i Translation
 	err := row.Scan(
 		&i.ID,
 		&i.Locale,
@@ -106,19 +96,9 @@ FROM translations
 WHERE id = $1
 `
 
-type GetTranslationByIDRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Locale    string             `json:"locale"`
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	Context   *string            `json:"context"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetTranslationByID(ctx context.Context, id pgtype.UUID) (GetTranslationByIDRow, error) {
+func (q *Queries) GetTranslationByID(ctx context.Context, id pgtype.UUID) (Translation, error) {
 	row := q.db.QueryRow(ctx, getTranslationByID, id)
-	var i GetTranslationByIDRow
+	var i Translation
 	err := row.Scan(
 		&i.ID,
 		&i.Locale,
@@ -165,25 +145,15 @@ WHERE "key" LIKE $1 || '%'
 ORDER BY "key"
 `
 
-type ListTranslationsByKeyPrefixRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Locale    string             `json:"locale"`
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	Context   *string            `json:"context"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListTranslationsByKeyPrefix(ctx context.Context, prefix *string) ([]ListTranslationsByKeyPrefixRow, error) {
+func (q *Queries) ListTranslationsByKeyPrefix(ctx context.Context, prefix *string) ([]Translation, error) {
 	rows, err := q.db.Query(ctx, listTranslationsByKeyPrefix, prefix)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTranslationsByKeyPrefixRow
+	var items []Translation
 	for rows.Next() {
-		var i ListTranslationsByKeyPrefixRow
+		var i Translation
 		if err := rows.Scan(
 			&i.ID,
 			&i.Locale,
@@ -211,26 +181,16 @@ WHERE locale = $1
 ORDER BY "key"
 `
 
-type ListTranslationsByLocaleRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Locale    string             `json:"locale"`
-	Key       string             `json:"key"`
-	Value     string             `json:"value"`
-	Context   *string            `json:"context"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Internationalization (i18n) translation system
-func (q *Queries) ListTranslationsByLocale(ctx context.Context, locale string) ([]ListTranslationsByLocaleRow, error) {
+func (q *Queries) ListTranslationsByLocale(ctx context.Context, locale string) ([]Translation, error) {
 	rows, err := q.db.Query(ctx, listTranslationsByLocale, locale)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTranslationsByLocaleRow
+	var items []Translation
 	for rows.Next() {
-		var i ListTranslationsByLocaleRow
+		var i Translation
 		if err := rows.Scan(
 			&i.ID,
 			&i.Locale,

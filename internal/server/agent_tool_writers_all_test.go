@@ -51,11 +51,6 @@ func TestToolWriterCreateAll(t *testing.T) {
 	database := &db.DB{Writer: pool, Reader: pool}
 	settings := config.NewSettings(database, nil)
 
-	var tenantID pgtype.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM tenants LIMIT 1").Scan(&tenantID); err != nil {
-		t.Fatalf("get tenant: %v", err)
-	}
-
 	var userID pgtype.UUID
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japaconnect.com' LIMIT 1").Scan(&userID); err != nil {
 		t.Fatalf("get user: %v", err)
@@ -113,7 +108,7 @@ func TestToolWriterCreateAll(t *testing.T) {
 			"rent_ranges":          map[string]any{},
 			"scam_categories":      []string{},
 		}
-		_, err := reg.CreateTool(ctx, tenantID, userID, toolType, payload)
+		_, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, toolType, payload)
 		results[toolType] = err
 	}
 

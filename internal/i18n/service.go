@@ -246,7 +246,7 @@ func (s *Service) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, loca
 }
 
 // GetByID returns a single translation by its primary key.
-func (s *Service) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetTranslationByIDRow, error) {
+func (s *Service) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Translation, error) {
 	return s.store.GetByID(ctx, tenantID, id)
 }
 

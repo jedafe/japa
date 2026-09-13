@@ -1098,7 +1098,7 @@ func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID p
 		// the conflict triggers (no row returned). Detect that and re-query
 		// to return the existing application with ErrDuplicateApplication.
 		if errors.Is(err, pgx.ErrNoRows) {
-			existing, qerr := s.findExistingApplication(ctx, tenantID, jobID, applicantID)
+			existing, qerr := s.findExistingApplication(ctx, jobID, applicantID)
 			if qerr != nil {
 				return gen.JobApplication{}, ErrDuplicateApplication
 			}
@@ -1113,17 +1113,17 @@ func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID p
 }
 
 // findExistingApplication looks up an existing application for the user+job.
-func (s *Service) findExistingApplication(ctx context.Context, tenantID, jobID, applicantID pgtype.UUID) (gen.JobApplication, error) {
+func (s *Service) findExistingApplication(ctx context.Context, jobID, applicantID pgtype.UUID) (gen.JobApplication, error) {
 	query := `
-		SELECT id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
+		SELECT id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
 		FROM job_applications
-		WHERE tenant_id = $1 AND job_id = $2 AND applicant_id = $3
+		WHERE job_id = $1 AND applicant_id = $2
 		LIMIT 1`
 
 	var app gen.JobApplication
 
-	err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, jobID, applicantID).Scan(
-		&app.ID, &app.TenantID, &app.JobID, &app.ApplicantID, &app.SubmissionID,
+	err := s.store.pool.Reader.QueryRow(ctx, query, jobID, applicantID).Scan(
+		&app.ID, &app.JobID, &app.ApplicantID, &app.SubmissionID,
 		&app.Status, &app.EmployerNotes, &app.AppliedAt, &app.StatusUpdatedAt,
 	)
 	if err != nil {

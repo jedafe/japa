@@ -1,11 +1,11 @@
 -- name: RecordConsent :one
 INSERT INTO consent_records (user_id, consent_type, granted, policy_version, ip_address, user_agent) VALUES (sqlc.narg(user_id), @consent_type, @granted, @policy_version, sqlc.narg(ip_address), sqlc.narg(user_agent))
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at;
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at;
 
 -- name: GetUserConsents :many
-SELECT id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at
+SELECT id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at
 FROM consent_records
 WHERE user_id = @user_id
  AND (@consent_type = '' OR consent_type = @consent_type)
@@ -36,8 +36,8 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: DeleteConsent :one
 DELETE FROM consent_records
 WHERE id = @id
-RETURNING id, tenant_id, user_id, consent_type, granted, policy_version,
-    ip_address, user_agent, created_at;
+RETURNING id, user_id, consent_type, granted, policy_version,
+ ip_address, user_agent, created_at;
 
 -- =====================
 -- GDPR Data Export Queries
@@ -121,18 +121,18 @@ ORDER BY created_at DESC;
 
 -- name: CreateDataExportRequest :one
 INSERT INTO data_export_requests (user_id, status) VALUES (@user_id, 'pending')
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at;
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at;
 
 -- name: GetDataExportRequest :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
 WHERE id = @id;
 
 -- name: GetLatestDataExportRequestByUser :one
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
 WHERE user_id = @user_id
 ORDER BY created_at DESC
@@ -145,14 +145,14 @@ SET status = @status,
  expires_at = sqlc.narg(expires_at),
  completed_at = sqlc.narg(completed_at)
 WHERE id = @id
-RETURNING id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at;
+RETURNING id, user_id, status, download_url, expires_at,
+ completed_at, created_at;
 
 -- name: ListPendingDataExportRequests :many
 -- BUG-GDPR-002: scoped to the caller's tenant so an admin in tenant A
 -- cannot see tenant B's pending export requests (§5.3 cross-tenant bleed).
-SELECT id, tenant_id, user_id, status, download_url, expires_at,
-    completed_at, created_at
+SELECT id, user_id, status, download_url, expires_at,
+ completed_at, created_at
 FROM data_export_requests
 WHERE status = 'pending'
 ORDER BY created_at ASC
@@ -164,10 +164,10 @@ LIMIT @page_limit;
 
 -- name: CreateAccountDeletionRequest :one
 INSERT INTO account_deletion_requests (user_id, status, reason) VALUES (@user_id, 'pending', sqlc.narg(reason))
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step;
 
 -- name: GetAccountDeletionRequest :one
-SELECT id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step
+SELECT id, user_id, status, reason, completed_at, created_at, progress_step
 FROM account_deletion_requests
 WHERE id = @id;
 
@@ -176,7 +176,7 @@ UPDATE account_deletion_requests
 SET status = @status,
  completed_at = sqlc.narg(completed_at)
 WHERE id = @id
-RETURNING id, tenant_id, user_id, status, reason, completed_at, created_at, progress_step;
+RETURNING id, user_id, status, reason, completed_at, created_at, progress_step;
 
 -- name: UpdateAccountDeletionRequestProgress :exec
 -- AUDIT-FRESH-GDPR-003: checkpoints the erasure flow so a retried job resumes
@@ -400,12 +400,12 @@ WHERE submitter_user_id = @user_id;
 
 -- name: CreateAuditLog :one
 INSERT INTO audit_logs (actor_user_id, impersonated_user_id, action_type, target_type, target_id, metadata, ip_address) VALUES (sqlc.narg(actor_user_id), sqlc.narg(impersonated_user_id), @action_type, sqlc.narg(target_type), sqlc.narg(target_id), @metadata, sqlc.narg(ip_address))
-RETURNING id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at;
+RETURNING id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at;
 
 -- name: ListAuditLogs :many
-SELECT id, tenant_id, actor_user_id, impersonated_user_id, action_type,
-    target_type, target_id, metadata, ip_address, created_at
+SELECT id, actor_user_id, impersonated_user_id, action_type,
+ target_type, target_id, metadata, ip_address, created_at
 FROM audit_logs
 WHERE (@actor_user_id = '00000000-0000-0000-0000-000000000000'::uuid OR actor_user_id = @actor_user_id)
  AND (@action_type = '' OR action_type = @action_type)

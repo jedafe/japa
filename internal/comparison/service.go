@@ -900,7 +900,7 @@ func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimens
 		return nil
 	}
 
-	dim, err := s.store.getComparisonDimensionByID(ctx, dimensionID, tenantID)
+	dim, err := s.store.getComparisonDimensionByID(ctx, dimensionID)
 	if err != nil {
 		return fmt.Errorf("getting comparison dimension for ownership check: %w", err)
 	}
@@ -1258,26 +1258,26 @@ func (s *Service) UpsertComparisonValue(ctx context.Context, tenantID pgtype.UUI
 // BatchUpsertComparisonValues upserts multiple values for a single dimension in
 // one round-trip using pgx.Batch (BUG-027). This replaces the per-value loop
 // in the handler and avoids N round-trips for a large matrix.
-func (s *Service) BatchUpsertComparisonValues(ctx context.Context, tenantID, dimensionID pgtype.UUID, inputs []UpsertComparisonValueInput) ([]gen.ComparisonValue, error) {
+func (s *Service) BatchUpsertComparisonValues(ctx context.Context, dimensionID pgtype.UUID, inputs []UpsertComparisonValueInput) ([]gen.ComparisonValue, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
 
-	dim, err := s.store.getComparisonDimensionByID(ctx, dimensionID, tenantID)
+	dim, err := s.store.getComparisonDimensionByID(ctx, dimensionID)
 	if err != nil {
 		return nil, fmt.Errorf("getting comparison dimension: %w", err)
 	}
 
 	const upsertSQL = `INSERT INTO comparison_values (
-    dimension_id, item_id, tenant_id, value, value_rating, value_boolean, data_source_id, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+    dimension_id, item_id, value, value_rating, value_boolean, data_source_id, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (dimension_id, item_id) DO UPDATE
 SET value = EXCLUDED.value,
     value_rating = EXCLUDED.value_rating,
     value_boolean = EXCLUDED.value_boolean,
     data_source_id = EXCLUDED.data_source_id,
     updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id`
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id`
 
 	batch := &pgx.Batch{}
 
@@ -1294,7 +1294,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 			}
 		}
 
-		batch.Queue(upsertSQL, dimensionID, input.ItemID, tenantID, value, valueRating, input.ValueBoolean, derefUUID(input.DataSourceID))
+		batch.Queue(upsertSQL, dimensionID, input.ItemID, value, valueRating, input.ValueBoolean, derefUUID(input.DataSourceID))
 	}
 
 	results := make([]gen.ComparisonValue, 0, len(inputs))
@@ -1316,7 +1316,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 
 		var v gen.ComparisonValue
 		if err := rows.Scan(
-			&v.DimensionID, &v.ItemID, &v.TenantID, &v.Value,
+			&v.DimensionID, &v.ItemID, &v.Value,
 			&v.ValueRating, &v.ValueBoolean, &v.CreatedAt,
 			&v.Metadata, &v.UpdatedAt, &v.DataSourceID,
 		); err != nil {
@@ -1335,7 +1335,7 @@ RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, 
 		return nil, fmt.Errorf("closing upsert batch: %w", err)
 	}
 
-	s.DeleteJCEComparisonCaches(ctx, dim.ContentID, tenantID)
+	s.DeleteJCEComparisonCaches(ctx, dim.ContentID, pgtype.UUID{})
 
 	return results, nil
 }

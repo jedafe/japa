@@ -119,7 +119,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 
 // enqueueBatchDispatch schedules a notification:dispatch_batch Asynq task
 // to fire when the batch window closes.
-func (s *Service) enqueueBatchDispatch(window gen.GetOpenBatchWindowRow) {
+func (s *Service) enqueueBatchDispatch(window gen.NotificationBatchWindow) {
 	if s.client == nil {
 		return
 	}

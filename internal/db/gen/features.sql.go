@@ -28,18 +28,10 @@ FROM feature_flags
 WHERE key = $1
 `
 
-type GetFeatureFlagRow struct {
-	Key       string             `json:"key"`
-	Enabled   bool               `json:"enabled"`
-	Config    []byte             `json:"config"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	UpdatedBy pgtype.UUID        `json:"updated_by"`
-}
-
 // features.sql — Feature Flags queries (global scope after multi-tenancy removal).
-func (q *Queries) GetFeatureFlag(ctx context.Context, key string) (GetFeatureFlagRow, error) {
+func (q *Queries) GetFeatureFlag(ctx context.Context, key string) (FeatureFlag, error) {
 	row := q.db.QueryRow(ctx, getFeatureFlag, key)
-	var i GetFeatureFlagRow
+	var i FeatureFlag
 	err := row.Scan(
 		&i.Key,
 		&i.Enabled,
@@ -56,23 +48,15 @@ FROM feature_flags
 ORDER BY key
 `
 
-type ListFeatureFlagsRow struct {
-	Key       string             `json:"key"`
-	Enabled   bool               `json:"enabled"`
-	Config    []byte             `json:"config"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	UpdatedBy pgtype.UUID        `json:"updated_by"`
-}
-
-func (q *Queries) ListFeatureFlags(ctx context.Context) ([]ListFeatureFlagsRow, error) {
+func (q *Queries) ListFeatureFlags(ctx context.Context) ([]FeatureFlag, error) {
 	rows, err := q.db.Query(ctx, listFeatureFlags)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListFeatureFlagsRow
+	var items []FeatureFlag
 	for rows.Next() {
-		var i ListFeatureFlagsRow
+		var i FeatureFlag
 		if err := rows.Scan(
 			&i.Key,
 			&i.Enabled,

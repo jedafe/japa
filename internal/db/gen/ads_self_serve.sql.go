@@ -34,7 +34,7 @@ const createSelfServeAdCampaign = `-- name: CreateSelfServeAdCampaign :one
 
 INSERT INTO ad_campaigns (organization_id, name, slot_type_id, content, target_url, budget_credits, flat_rate, status, priority, frequency_cap_per_user, start_date, end_date, target_geo, target_space_ids, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_review', 0, $8, $9, $10, $11, $12, $13)
 
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type CreateSelfServeAdCampaignParams struct {
@@ -75,7 +75,6 @@ func (q *Queries) CreateSelfServeAdCampaign(ctx context.Context, arg CreateSelfS
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,
@@ -141,7 +140,7 @@ func (q *Queries) GetAdCampaignStats(ctx context.Context, arg GetAdCampaignStats
 
 const getCampaignForRefund = `-- name: GetCampaignForRefund :one
 
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE id = $1 AND organization_id IS NOT NULL
 `
 
@@ -153,7 +152,6 @@ func (q *Queries) GetCampaignForRefund(ctx context.Context, id pgtype.UUID) (AdC
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,
@@ -179,7 +177,7 @@ func (q *Queries) GetCampaignForRefund(ctx context.Context, id pgtype.UUID) (AdC
 
 const getSelfServeAdCampaign = `-- name: GetSelfServeAdCampaign :one
 
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE id = $1 AND organization_id = $2
 `
 
@@ -196,7 +194,6 @@ func (q *Queries) GetSelfServeAdCampaign(ctx context.Context, arg GetSelfServeAd
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,
@@ -262,7 +259,7 @@ func (q *Queries) IsOrgVerified(ctx context.Context, id pgtype.UUID) (bool, erro
 const listAdSlotTypesForSelfServe = `-- name: ListAdSlotTypesForSelfServe :many
 
 
-SELECT id, tenant_id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
+SELECT id, slot_name, description, max_display_per_page, is_active, created_at, flat_rate FROM ad_slot_types
 WHERE is_active = true
 ORDER BY slot_name ASC
 `
@@ -287,7 +284,6 @@ func (q *Queries) ListAdSlotTypesForSelfServe(ctx context.Context) ([]AdSlotType
 		var i AdSlotType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SlotName,
 			&i.Description,
 			&i.MaxDisplayPerPage,
@@ -307,7 +303,7 @@ func (q *Queries) ListAdSlotTypesForSelfServe(ctx context.Context) ([]AdSlotType
 
 const listOrgAdCampaigns = `-- name: ListOrgAdCampaigns :many
 
-SELECT id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
 WHERE organization_id = $1
  AND ($2::text = '' OR status = $2)
 ORDER BY created_at DESC
@@ -340,7 +336,6 @@ func (q *Queries) ListOrgAdCampaigns(ctx context.Context, arg ListOrgAdCampaigns
 		var i AdCampaign
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.SlotTypeID,
 			&i.Content,
@@ -388,7 +383,7 @@ UPDATE ad_campaigns
 SET status = 'paused', updated_at = now()
 WHERE id = $1 AND organization_id = $2
  AND status = 'active'
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type PauseAdCampaignParams struct {
@@ -404,7 +399,6 @@ func (q *Queries) PauseAdCampaign(ctx context.Context, arg PauseAdCampaignParams
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,
@@ -434,7 +428,7 @@ UPDATE ad_campaigns
 SET status = 'active', updated_at = now()
 WHERE id = $1 AND organization_id = $2
  AND status = 'paused'
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type ResumeAdCampaignParams struct {
@@ -450,7 +444,6 @@ func (q *Queries) ResumeAdCampaign(ctx context.Context, arg ResumeAdCampaignPara
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,
@@ -483,7 +476,7 @@ SET
  updated_at = now()
 WHERE id = $3 AND organization_id = $4
  AND status IN ('pending_review', 'paused')
-RETURNING id, tenant_id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
 `
 
 type UpdateSelfServeAdCampaignCreativeParams struct {
@@ -506,7 +499,6 @@ func (q *Queries) UpdateSelfServeAdCampaignCreative(ctx context.Context, arg Upd
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.SlotTypeID,
 		&i.Content,

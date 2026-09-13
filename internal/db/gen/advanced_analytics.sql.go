@@ -254,7 +254,7 @@ func (q *Queries) AdvancedAnalyticsRetentionCohorts(ctx context.Context, arg Adv
 
 const advancedAnalyticsRevenueStreams = `-- name: AdvancedAnalyticsRevenueStreams :many
 
-SELECT month, tenant_id, subscription_revenue, course_revenue, ad_revenue, credit_revenue FROM mv_revenue_streams
+SELECT month, subscription_revenue, course_revenue, ad_revenue, credit_revenue FROM mv_revenue_streams
 WHERE month >= $1
 ORDER BY month DESC
 `
@@ -273,7 +273,6 @@ func (q *Queries) AdvancedAnalyticsRevenueStreams(ctx context.Context, fromMonth
 		var i MvRevenueStream
 		if err := rows.Scan(
 			&i.Month,
-			&i.TenantID,
 			&i.SubscriptionRevenue,
 			&i.CourseRevenue,
 			&i.AdRevenue,

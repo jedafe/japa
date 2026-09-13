@@ -127,7 +127,7 @@ ORDER BY tm.created_at ASC;
 INSERT INTO tag_moderators (tag_id, user_id, assigned_by, assigned_by_user_id) VALUES (@tag_id, @user_id, @assigned_by, @assigned_by_user_id)
 
 ON CONFLICT (tag_id, user_id) DO UPDATE SET created_at = now()
-RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
+RETURNING id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at;
 
 -- name: RemoveTagModerator :exec
 DELETE FROM tag_moderators

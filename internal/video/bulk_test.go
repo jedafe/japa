@@ -142,7 +142,6 @@ func importJobRowValues(_ *testing.T, tenantID, userID, jobID pgtype.UUID) []any
 
 	return []any{
 		jobID,             // id
-		tenantID,          // tenant_id
 		userID,            // user_id
 		"youtube_channel", // source_type
 		&sourceURL,        // source_url

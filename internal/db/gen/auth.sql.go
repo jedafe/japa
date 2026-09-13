@@ -169,7 +169,7 @@ ON CONFLICT (user_id) DO UPDATE SET
  secret_encrypted = EXCLUDED.secret_encrypted,
  backup_codes = EXCLUDED.backup_codes,
  updated_at = now()
-RETURNING id, tenant_id, user_id, secret_encrypted, enabled_at, backup_codes, created_at, updated_at
+RETURNING id, user_id, secret_encrypted, enabled_at, backup_codes, created_at, updated_at
 `
 
 type CreateTOTPCredentialsParams struct {
@@ -183,7 +183,6 @@ func (q *Queries) CreateTOTPCredentials(ctx context.Context, arg CreateTOTPCrede
 	var i TotpCredential
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SecretEncrypted,
 		&i.EnabledAt,
@@ -299,7 +298,7 @@ func (q *Queries) GetAPIKeyByHash(ctx context.Context, keyHash string) (GetAPIKe
 }
 
 const getEmailVerificationByHash = `-- name: GetEmailVerificationByHash :one
-SELECT id, tenant_id, user_id, email, token_hash, expires_at, verified_at, created_at
+SELECT id, user_id, email, token_hash, expires_at, verified_at, created_at
 FROM email_verifications
 WHERE token_hash = $1
 `
@@ -309,7 +308,6 @@ func (q *Queries) GetEmailVerificationByHash(ctx context.Context, tokenHash stri
 	var i EmailVerification
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Email,
 		&i.TokenHash,
@@ -342,7 +340,7 @@ func (q *Queries) GetEmailVerificationByHashGlobal(ctx context.Context, tokenHas
 
 const getOAuthAccountByProvider = `-- name: GetOAuthAccountByProvider :one
 
-SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
+SELECT id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE provider = $1 AND provider_user_id = $2
 `
@@ -360,7 +358,6 @@ func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAcc
 	var i OauthAccount
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.ProviderUserID,
@@ -370,7 +367,7 @@ func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAcc
 }
 
 const getOAuthAccountsByUser = `-- name: GetOAuthAccountsByUser :many
-SELECT id, tenant_id, user_id, provider, provider_user_id, created_at
+SELECT id, user_id, provider, provider_user_id, created_at
 FROM oauth_accounts
 WHERE user_id = $1
 `
@@ -386,7 +383,6 @@ func (q *Queries) GetOAuthAccountsByUser(ctx context.Context, userID pgtype.UUID
 		var i OauthAccount
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Provider,
 			&i.ProviderUserID,
@@ -403,7 +399,7 @@ func (q *Queries) GetOAuthAccountsByUser(ctx context.Context, userID pgtype.UUID
 }
 
 const getPasswordResetTokenByHash = `-- name: GetPasswordResetTokenByHash :one
-SELECT id, tenant_id, user_id, token_hash, expires_at, used_at, created_at
+SELECT id, user_id, token_hash, expires_at, used_at, created_at
 FROM password_reset_tokens
 WHERE token_hash = $1
 `
@@ -413,7 +409,6 @@ func (q *Queries) GetPasswordResetTokenByHash(ctx context.Context, tokenHash str
 	var i PasswordResetToken
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.TokenHash,
 		&i.ExpiresAt,
@@ -541,7 +536,7 @@ func (q *Queries) GetRefreshTokenByHashGlobal(ctx context.Context, tokenHash str
 
 const getTOTPCredentials = `-- name: GetTOTPCredentials :one
 
-SELECT id, tenant_id, user_id, secret_encrypted, enabled_at, backup_codes, created_at, updated_at FROM totp_credentials
+SELECT id, user_id, secret_encrypted, enabled_at, backup_codes, created_at, updated_at FROM totp_credentials
 WHERE user_id = $1
 `
 
@@ -553,7 +548,6 @@ func (q *Queries) GetTOTPCredentials(ctx context.Context, userID pgtype.UUID) (T
 	var i TotpCredential
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SecretEncrypted,
 		&i.EnabledAt,
@@ -654,7 +648,7 @@ INSERT INTO oauth_accounts (user_id, provider, provider_user_id) VALUES ($1, $2,
 
 ON CONFLICT (provider, provider_user_id) DO UPDATE SET
  user_id = EXCLUDED.user_id
-RETURNING id, tenant_id, user_id, provider, provider_user_id, created_at
+RETURNING id, user_id, provider, provider_user_id, created_at
 `
 
 type LinkOAuthAccountParams struct {
@@ -668,7 +662,6 @@ func (q *Queries) LinkOAuthAccount(ctx context.Context, arg LinkOAuthAccountPara
 	var i OauthAccount
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Provider,
 		&i.ProviderUserID,

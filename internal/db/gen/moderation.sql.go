@@ -18,7 +18,7 @@ SET status = 'acknowledged',
  acknowledged_by = $1,
  updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
+RETURNING id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type AcknowledgeModerationAlertParams struct {
@@ -31,7 +31,6 @@ func (q *Queries) AcknowledgeModerationAlert(ctx context.Context, arg Acknowledg
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AlertType,
 		&i.Severity,
 		&i.Title,
@@ -69,7 +68,7 @@ func (q *Queries) CountPendingReportsByEntity(ctx context.Context, arg CountPend
 const createModerationAlert = `-- name: CreateModerationAlert :one
 
 INSERT INTO moderation_alerts (alert_type, severity, title, description, meta) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
+RETURNING id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type CreateModerationAlertParams struct {
@@ -92,7 +91,6 @@ func (q *Queries) CreateModerationAlert(ctx context.Context, arg CreateModeratio
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AlertType,
 		&i.Severity,
 		&i.Title,
@@ -123,7 +121,7 @@ func (q *Queries) ExpireModerationBans(ctx context.Context) error {
 }
 
 const getModerationAlert = `-- name: GetModerationAlert :one
-SELECT id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
+SELECT id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
 WHERE id = $1
 `
 
@@ -132,7 +130,6 @@ func (q *Queries) GetModerationAlert(ctx context.Context, id pgtype.UUID) (Moder
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AlertType,
 		&i.Severity,
 		&i.Title,
@@ -150,7 +147,7 @@ func (q *Queries) GetModerationAlert(ctx context.Context, id pgtype.UUID) (Moder
 }
 
 const listModerationAlerts = `-- name: ListModerationAlerts :many
-SELECT id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
+SELECT id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by FROM moderation_alerts
 WHERE (NULLIF($1, '') IS NULL OR status = $1)
 ORDER BY
  CASE WHEN status = 'open' THEN 0 ELSE 1 END,
@@ -168,7 +165,6 @@ func (q *Queries) ListModerationAlerts(ctx context.Context, status interface{}) 
 		var i ModerationAlert
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AlertType,
 			&i.Severity,
 			&i.Title,
@@ -199,7 +195,7 @@ SET status = 'resolved',
  resolved_by = $1,
  updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
+RETURNING id, alert_type, severity, title, description, status, meta, created_at, updated_at, acknowledged_at, resolved_at, acknowledged_by, resolved_by
 `
 
 type ResolveModerationAlertParams struct {
@@ -212,7 +208,6 @@ func (q *Queries) ResolveModerationAlert(ctx context.Context, arg ResolveModerat
 	var i ModerationAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AlertType,
 		&i.Severity,
 		&i.Title,

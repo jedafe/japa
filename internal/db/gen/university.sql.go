@@ -20,7 +20,7 @@ SET status = 'approved',
  commission_pct_override = $3,
  updated_at = now()
 WHERE id = $4 AND status = 'pending'
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type ApproveInstructorApplicationParams struct {
@@ -40,7 +40,6 @@ func (q *Queries) ApproveInstructorApplication(ctx context.Context, arg ApproveI
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -334,7 +333,7 @@ const createInstructorPayout = `-- name: CreateInstructorPayout :one
 INSERT INTO instructor_payouts (instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'NGN'), 'pending')
 
 ON CONFLICT (instructor_id, period_start, period_end) DO NOTHING
-RETURNING id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
+RETURNING id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
 `
 
 type CreateInstructorPayoutParams struct {
@@ -363,7 +362,6 @@ func (q *Queries) CreateInstructorPayout(ctx context.Context, arg CreateInstruct
 	var i InstructorPayout
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.InstructorID,
 		&i.PeriodStart,
 		&i.PeriodEnd,
@@ -481,7 +479,7 @@ const createUniversityTrackCategory = `-- name: CreateUniversityTrackCategory :o
 
 INSERT INTO university_track_categories (slug, name, sort_order, is_active) VALUES ($1, $2, $3, $4)
 
-RETURNING id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at
+RETURNING id, slug, name, sort_order, is_active, created_at, updated_at
 `
 
 type CreateUniversityTrackCategoryParams struct {
@@ -505,7 +503,6 @@ func (q *Queries) CreateUniversityTrackCategory(ctx context.Context, arg CreateU
 	var i UniversityTrackCategory
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.SortOrder,
@@ -550,8 +547,8 @@ func (q *Queries) DeleteUniversityTrackCategory(ctx context.Context, id pgtype.U
 }
 
 const getEnrollmentByID = `-- name: GetEnrollmentByID :one
-SELECT id, tenant_id, user_id, track_id, access_type, progress_pct,
-       enrolled_at, completed_at, payment_id
+SELECT id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id
 FROM enrollments
 WHERE id = $1
 `
@@ -561,7 +558,6 @@ func (q *Queries) GetEnrollmentByID(ctx context.Context, id pgtype.UUID) (Enroll
 	var i Enrollment
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -625,7 +621,7 @@ func (q *Queries) GetInstructorEarningsSummary(ctx context.Context, instructorID
 }
 
 const getInstructorPayoutByID = `-- name: GetInstructorPayoutByID :one
-SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
+SELECT id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
 WHERE id = $1
 `
 
@@ -634,7 +630,6 @@ func (q *Queries) GetInstructorPayoutByID(ctx context.Context, id pgtype.UUID) (
 	var i InstructorPayout
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.InstructorID,
 		&i.PeriodStart,
 		&i.PeriodEnd,
@@ -652,7 +647,7 @@ func (q *Queries) GetInstructorPayoutByID(ctx context.Context, id pgtype.UUID) (
 }
 
 const getInstructorProfileByID = `-- name: GetInstructorProfileByID :one
-SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
+SELECT id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
 WHERE id = $1
 `
 
@@ -661,7 +656,6 @@ func (q *Queries) GetInstructorProfileByID(ctx context.Context, id pgtype.UUID) 
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -682,7 +676,7 @@ func (q *Queries) GetInstructorProfileByID(ctx context.Context, id pgtype.UUID) 
 }
 
 const getInstructorProfileByUser = `-- name: GetInstructorProfileByUser :one
-SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
+SELECT id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles
 WHERE user_id = $1
 `
 
@@ -691,7 +685,6 @@ func (q *Queries) GetInstructorProfileByUser(ctx context.Context, userID pgtype.
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -788,7 +781,7 @@ func (q *Queries) GetPublicInstructorProfile(ctx context.Context, id pgtype.UUID
 }
 
 const getRevenueSplitByID = `-- name: GetRevenueSplitByID :one
-SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
+SELECT id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
 WHERE id = $1
 `
 
@@ -798,7 +791,6 @@ func (q *Queries) GetRevenueSplitByID(ctx context.Context, id pgtype.UUID) (Reve
 	var i RevenueSplit
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.InstructorID,
 		&i.TrackID,
 		&i.EnrollmentID,
@@ -1055,7 +1047,7 @@ func (q *Queries) GetUniversityTrackBySlug(ctx context.Context, slug string) (Ge
 }
 
 const getUniversityTrackCategory = `-- name: GetUniversityTrackCategory :one
-SELECT id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
+SELECT id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
 WHERE id = $1
 `
 
@@ -1064,7 +1056,6 @@ func (q *Queries) GetUniversityTrackCategory(ctx context.Context, id pgtype.UUID
 	var i UniversityTrackCategory
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.SortOrder,
@@ -1212,7 +1203,7 @@ const insertRevenueSplit = `-- name: InsertRevenueSplit :one
 
 INSERT INTO revenue_splits (instructor_id, track_id, enrollment_id, payment_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'NGN'))
 
-RETURNING id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at
+RETURNING id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at
 `
 
 type InsertRevenueSplitParams struct {
@@ -1249,7 +1240,6 @@ func (q *Queries) InsertRevenueSplit(ctx context.Context, arg InsertRevenueSplit
 	var i RevenueSplit
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.InstructorID,
 		&i.TrackID,
 		&i.EnrollmentID,
@@ -1414,7 +1404,7 @@ func (q *Queries) ListAllUniversityTracks(ctx context.Context, arg ListAllUniver
 }
 
 const listInstructorPayoutsByInstructor = `-- name: ListInstructorPayoutsByInstructor :many
-SELECT id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
+SELECT id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at FROM instructor_payouts
 WHERE instructor_id = $1
 ORDER BY period_start DESC
 LIMIT $3 OFFSET $2
@@ -1437,7 +1427,6 @@ func (q *Queries) ListInstructorPayoutsByInstructor(ctx context.Context, arg Lis
 		var i InstructorPayout
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.InstructorID,
 			&i.PeriodStart,
 			&i.PeriodEnd,
@@ -1462,7 +1451,7 @@ func (q *Queries) ListInstructorPayoutsByInstructor(ctx context.Context, arg Lis
 }
 
 const listInstructorPayoutsByStatus = `-- name: ListInstructorPayoutsByStatus :many
-SELECT p.id, p.tenant_id, p.instructor_id, p.period_start, p.period_end, p.gross_kobo, p.platform_commission_kobo, p.net_kobo, p.currency, p.status, p.payout_reference, p.failure_reason, p.processed_at, p.created_at, ip.display_name AS instructor_name
+SELECT p.id, p.instructor_id, p.period_start, p.period_end, p.gross_kobo, p.platform_commission_kobo, p.net_kobo, p.currency, p.status, p.payout_reference, p.failure_reason, p.processed_at, p.created_at, ip.display_name AS instructor_name
 FROM instructor_payouts p
 LEFT JOIN instructor_profiles ip ON ip.id = p.instructor_id
 WHERE ($1::text = '' OR p.status = $1)
@@ -1483,7 +1472,6 @@ type ListInstructorPayoutsByStatusParams struct {
 
 type ListInstructorPayoutsByStatusRow struct {
 	ID                     pgtype.UUID        `json:"id"`
-	TenantID               pgtype.UUID        `json:"tenant_id"`
 	InstructorID           pgtype.UUID        `json:"instructor_id"`
 	PeriodStart            pgtype.Date        `json:"period_start"`
 	PeriodEnd              pgtype.Date        `json:"period_end"`
@@ -1517,7 +1505,6 @@ func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListIns
 		var i ListInstructorPayoutsByStatusRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.InstructorID,
 			&i.PeriodStart,
 			&i.PeriodEnd,
@@ -1543,7 +1530,7 @@ func (q *Queries) ListInstructorPayoutsByStatus(ctx context.Context, arg ListIns
 }
 
 const listInstructorProfilesByStatus = `-- name: ListInstructorProfilesByStatus :many
-SELECT id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles ip
+SELECT id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at FROM instructor_profiles ip
 WHERE ($1::text = '' OR ip.status = $1)
  AND ($2::uuid IS NULL OR EXISTS (
  SELECT 1 FROM learning_tracks lt
@@ -1578,7 +1565,6 @@ func (q *Queries) ListInstructorProfilesByStatus(ctx context.Context, arg ListIn
 		var i InstructorProfile
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.DisplayName,
 			&i.Headline,
@@ -1606,7 +1592,7 @@ func (q *Queries) ListInstructorProfilesByStatus(ctx context.Context, arg ListIn
 }
 
 const listOpenRevenueSplitsByInstructor = `-- name: ListOpenRevenueSplitsByInstructor :many
-SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
+SELECT id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
 WHERE instructor_id = $1 AND payout_id IS NULL
 ORDER BY created_at ASC
 `
@@ -1622,7 +1608,6 @@ func (q *Queries) ListOpenRevenueSplitsByInstructor(ctx context.Context, instruc
 		var i RevenueSplit
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.InstructorID,
 			&i.TrackID,
 			&i.EnrollmentID,
@@ -1839,7 +1824,7 @@ func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, instructo
 }
 
 const listRevenueSplits = `-- name: ListRevenueSplits :many
-SELECT rs.id, rs.tenant_id, rs.instructor_id, rs.track_id, rs.enrollment_id, rs.payment_id, rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct, rs.platform_pct, rs.creator_kobo, rs.platform_kobo, rs.currency, rs.created_at, ip.display_name AS instructor_name
+SELECT rs.id, rs.instructor_id, rs.track_id, rs.enrollment_id, rs.payment_id, rs.payout_id, rs.source, rs.gross_kobo, rs.creator_pct, rs.platform_pct, rs.creator_kobo, rs.platform_kobo, rs.currency, rs.created_at, ip.display_name AS instructor_name
 FROM revenue_splits rs
 LEFT JOIN instructor_profiles ip ON ip.id = rs.instructor_id
 WHERE ($1::uuid IS NULL OR rs.instructor_id = $1)
@@ -1870,7 +1855,6 @@ type ListRevenueSplitsParams struct {
 
 type ListRevenueSplitsRow struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	InstructorID   pgtype.UUID        `json:"instructor_id"`
 	TrackID        pgtype.UUID        `json:"track_id"`
 	EnrollmentID   pgtype.UUID        `json:"enrollment_id"`
@@ -1912,7 +1896,6 @@ func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsPa
 		var i ListRevenueSplitsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.InstructorID,
 			&i.TrackID,
 			&i.EnrollmentID,
@@ -1939,7 +1922,7 @@ func (q *Queries) ListRevenueSplits(ctx context.Context, arg ListRevenueSplitsPa
 }
 
 const listRevenueSplitsByInstructor = `-- name: ListRevenueSplitsByInstructor :many
-SELECT id, tenant_id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
+SELECT id, instructor_id, track_id, enrollment_id, payment_id, payout_id, source, gross_kobo, creator_pct, platform_pct, creator_kobo, platform_kobo, currency, created_at FROM revenue_splits
 WHERE instructor_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -1962,7 +1945,6 @@ func (q *Queries) ListRevenueSplitsByInstructor(ctx context.Context, arg ListRev
 		var i RevenueSplit
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.InstructorID,
 			&i.TrackID,
 			&i.EnrollmentID,
@@ -2112,7 +2094,7 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 }
 
 const listUniversityTrackCategories = `-- name: ListUniversityTrackCategories :many
-SELECT id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
+SELECT id, slug, name, sort_order, is_active, created_at, updated_at FROM university_track_categories
 WHERE ($1::text = '' OR is_active = ($1::text = 'true'))
  AND ($2::text = '' OR name ILIKE '%' || $2 || '%' OR slug ILIKE '%' || $2 || '%')
 ORDER BY sort_order ASC, name ASC
@@ -2142,7 +2124,6 @@ func (q *Queries) ListUniversityTrackCategories(ctx context.Context, arg ListUni
 		var i UniversityTrackCategory
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Slug,
 			&i.Name,
 			&i.SortOrder,
@@ -2264,7 +2245,7 @@ SET status = 'approved',
  reviewed_at = now(),
  updated_at = now()
 WHERE id = $2 AND status = 'suspended'
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type ReinstateInstructorParams struct {
@@ -2278,7 +2259,6 @@ func (q *Queries) ReinstateInstructor(ctx context.Context, arg ReinstateInstruct
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -2305,7 +2285,7 @@ SET status = 'rejected',
  reviewed_at = now(),
  updated_at = now()
 WHERE id = $2 AND status = 'pending'
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type RejectInstructorApplicationParams struct {
@@ -2318,7 +2298,6 @@ func (q *Queries) RejectInstructorApplication(ctx context.Context, arg RejectIns
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -2691,7 +2670,7 @@ SET status = 'suspended',
  reviewed_at = now(),
  updated_at = now()
 WHERE id = $2 AND status = 'approved'
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type SuspendInstructorParams struct {
@@ -2704,7 +2683,6 @@ func (q *Queries) SuspendInstructor(ctx context.Context, arg SuspendInstructorPa
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -2731,7 +2709,7 @@ SET tier = COALESCE($1, tier),
  updated_at = now()
 WHERE id = $3
  AND status IN ('approved','suspended')
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type UpdateInstructorProfileAdminParams struct {
@@ -2747,7 +2725,6 @@ func (q *Queries) UpdateInstructorProfileAdmin(ctx context.Context, arg UpdateIn
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -2777,7 +2754,7 @@ SET display_name = COALESCE($1, display_name),
  updated_at = now()
 WHERE user_id = $6
  AND status IN ('pending','approved')
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type UpdateInstructorProfileSelfParams struct {
@@ -2802,7 +2779,6 @@ func (q *Queries) UpdateInstructorProfileSelf(ctx context.Context, arg UpdateIns
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,
@@ -2829,7 +2805,7 @@ SET status = $1,
  failure_reason = COALESCE($3, failure_reason),
  processed_at = CASE WHEN $1 IN ('paid','failed') THEN now() ELSE processed_at END
 WHERE id = $4
-RETURNING id, tenant_id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
+RETURNING id, instructor_id, period_start, period_end, gross_kobo, platform_commission_kobo, net_kobo, currency, status, payout_reference, failure_reason, processed_at, created_at
 `
 
 type UpdatePayoutStatusParams struct {
@@ -2849,7 +2825,6 @@ func (q *Queries) UpdatePayoutStatus(ctx context.Context, arg UpdatePayoutStatus
 	var i InstructorPayout
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.InstructorID,
 		&i.PeriodStart,
 		&i.PeriodEnd,
@@ -2984,7 +2959,7 @@ SET name = COALESCE($1, name),
  is_active = COALESCE($4, is_active),
  updated_at = now()
 WHERE id = $5
-RETURNING id, tenant_id, slug, name, sort_order, is_active, created_at, updated_at
+RETURNING id, slug, name, sort_order, is_active, created_at, updated_at
 `
 
 type UpdateUniversityTrackCategoryParams struct {
@@ -3006,7 +2981,6 @@ func (q *Queries) UpdateUniversityTrackCategory(ctx context.Context, arg UpdateU
 	var i UniversityTrackCategory
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.SortOrder,
@@ -3025,8 +2999,8 @@ ON CONFLICT (user_id, track_id) DO UPDATE
 SET payment_id = COALESCE(EXCLUDED.payment_id, enrollments.payment_id),
  access_type = CASE WHEN enrollments.access_type = 'purchase' THEN enrollments.access_type
  ELSE EXCLUDED.access_type END
-RETURNING id, tenant_id, user_id, track_id, access_type, progress_pct,
-          enrolled_at, completed_at, payment_id
+RETURNING id, user_id, track_id, access_type, progress_pct,
+ enrolled_at, completed_at, payment_id
 `
 
 type UpsertEnrollmentWithPaymentParams struct {
@@ -3051,7 +3025,6 @@ func (q *Queries) UpsertEnrollmentWithPayment(ctx context.Context, arg UpsertEnr
 	var i Enrollment
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.TrackID,
 		&i.AccessType,
@@ -3075,7 +3048,7 @@ SET display_name = EXCLUDED.display_name,
  status = CASE WHEN instructor_profiles.status IN ('pending','rejected')
  THEN 'pending' ELSE instructor_profiles.status END,
  updated_at = now()
-RETURNING id, tenant_id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
+RETURNING id, user_id, display_name, headline, bio, social_links, tier, status, commission_pct_override, payout_method, kyc_status, application_note, reviewed_by, reviewed_at, created_at, updated_at
 `
 
 type UpsertInstructorApplicationParams struct {
@@ -3101,7 +3074,6 @@ func (q *Queries) UpsertInstructorApplication(ctx context.Context, arg UpsertIns
 	var i InstructorProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DisplayName,
 		&i.Headline,

@@ -60,7 +60,6 @@ func (ns NullBanOperation) Value() (driver.Value, error) {
 
 type AccountDeletionRequest struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	Status       string             `json:"status"`
 	Reason       *string            `json:"reason"`
@@ -71,7 +70,6 @@ type AccountDeletionRequest struct {
 
 type AchievementMetum struct {
 	ID        pgtype.UUID `json:"id"`
-	TenantID  pgtype.UUID `json:"tenant_id"`
 	ContentID pgtype.UUID `json:"content_id"`
 	// visa_approved|job_offer|university_accepted|arrived|one_year|citizenship|other
 	MilestoneType      string             `json:"milestone_type"`
@@ -83,7 +81,6 @@ type AchievementMetum struct {
 
 type ActivityEvent struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	ActivityKey string             `json:"activity_key"`
 	Reference   string             `json:"reference"`
@@ -95,7 +92,6 @@ type ActivityEvent struct {
 
 type ActivityPointRule struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	ActivityKey string             `json:"activity_key"`
 	PointValue  int32              `json:"point_value"`
 	IsEnabled   *bool              `json:"is_enabled"`
@@ -109,7 +105,6 @@ type ActivityPointRule struct {
 
 type AdAnalyticsDaily struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	CampaignID  pgtype.UUID        `json:"campaign_id"`
 	SlotTypeID  pgtype.UUID        `json:"slot_type_id"`
 	Date        pgtype.Date        `json:"date"`
@@ -121,7 +116,6 @@ type AdAnalyticsDaily struct {
 
 type AdCampaign struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Name                string             `json:"name"`
 	SlotTypeID          pgtype.UUID        `json:"slot_type_id"`
 	Content             []byte             `json:"content"`
@@ -147,7 +141,6 @@ type AdCampaign struct {
 
 type AdEvent struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
 	CampaignID pgtype.UUID `json:"campaign_id"`
 	// The user who triggered the event. NULL for anonymous/guest events (public /ads/events endpoint).
 	UserID     pgtype.UUID        `json:"user_id"`
@@ -158,7 +151,6 @@ type AdEvent struct {
 
 type AdNetwork struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Provider        string             `json:"provider"`
 	Name            string             `json:"name"`
 	ClientID        *string            `json:"client_id"`
@@ -173,7 +165,6 @@ type AdNetwork struct {
 
 type AdSlotType struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	SlotName          string             `json:"slot_name"`
 	Description       *string            `json:"description"`
 	MaxDisplayPerPage int32              `json:"max_display_per_page"`
@@ -194,7 +185,6 @@ type AdminBroadcast struct {
 // Tracks external affiliate commissions earned from content with affiliate links, and the author revenue share.
 type AffiliateContentCommission struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ContentID           pgtype.UUID        `json:"content_id"`
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	AuthorUserID        pgtype.UUID        `json:"author_user_id"`
@@ -209,7 +199,6 @@ type AffiliateContentCommission struct {
 
 type AffiliateLinkEvent struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	LinkID             pgtype.UUID        `json:"link_id"`
 	EventType          string             `json:"event_type"`
 	ReferrerUrl        *string            `json:"referrer_url"`
@@ -222,7 +211,6 @@ type AffiliateLinkEvent struct {
 
 type AffiliateProgramMember struct {
 	UserID             pgtype.UUID        `json:"user_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	EnrolledAt         pgtype.Timestamptz `json:"enrolled_at"`
 	Status             string             `json:"status"`
 	TotalClicks        int32              `json:"total_clicks"`
@@ -233,14 +221,12 @@ type AffiliateProgramMember struct {
 }
 
 type AffiliateProgramSetting struct {
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	CommissionRates []byte             `json:"commission_rates"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type AffiliateProvider struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Name           string             `json:"name"`
 	Slug           string             `json:"slug"`
 	Description    *string            `json:"description"`
@@ -260,7 +246,6 @@ type AffiliateProvider struct {
 
 type AiAgentSession struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	Prompt         string             `json:"prompt"`
 	GeoSpaceID     pgtype.UUID        `json:"geo_space_id"`
@@ -278,7 +263,6 @@ type AiAgentSession struct {
 
 type AiAgentToolCall struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	SessionID      pgtype.UUID        `json:"session_id"`
 	ToolName       string             `json:"tool_name"`
 	Arguments      []byte             `json:"arguments"`
@@ -294,7 +278,6 @@ type AiAgentToolCall struct {
 
 type AiHitlReview struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
 	ContentType   string             `json:"content_type"`
 	AiOutput      []byte             `json:"ai_output"`
@@ -310,7 +293,6 @@ type AiHitlReview struct {
 
 type AiPersona struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	ProfileID      pgtype.UUID        `json:"profile_id"`
 	DisclosureMode string             `json:"disclosure_mode"`
@@ -326,7 +308,6 @@ type AiPersona struct {
 
 type AiProvider struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Name            string             `json:"name"`
 	ProviderType    string             `json:"provider_type"`
 	ApiKeyEncrypted string             `json:"api_key_encrypted"`
@@ -341,7 +322,6 @@ type AiProvider struct {
 
 type AiTool struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Name               string             `json:"name"`
 	Description        string             `json:"description"`
 	Category           string             `json:"category"`
@@ -354,7 +334,6 @@ type AiTool struct {
 
 type AiToolUsage struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	ToolID     pgtype.UUID        `json:"tool_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	TokensUsed int32              `json:"tokens_used"`
@@ -364,7 +343,6 @@ type AiToolUsage struct {
 
 type AiUsageLog struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	Provider         string             `json:"provider"`
 	Model            string             `json:"model"`
@@ -379,7 +357,6 @@ type AiUsageLog struct {
 
 type ApiKey struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	Name          string             `json:"name"`
 	KeyPrefix     string             `json:"key_prefix"`
@@ -408,7 +385,6 @@ type ApiKeyIpAllowlist struct {
 
 type AppointmentAlert struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	UserID               pgtype.UUID        `json:"user_id"`
 	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
 	EmbassySlug          string             `json:"embassy_slug"`
@@ -427,7 +403,6 @@ type AppointmentAlert struct {
 
 type ArrivalChecklistGuide struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	VisaCategory       *string            `json:"visa_category"`
 	ApplicantType      string             `json:"applicant_type"`
@@ -460,7 +435,6 @@ type ArrivalChecklistItem struct {
 
 type AssessmentResult struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	UserID          pgtype.UUID        `json:"user_id"`
 	SubmissionID    pgtype.UUID        `json:"submission_id"`
 	TotalScore      int32              `json:"total_score"`
@@ -486,7 +460,6 @@ type AttestationCommunityUpdate struct {
 
 type AttestationPathway struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	DocumentType          string             `json:"document_type"`
 	IssuingSpaceID        pgtype.UUID        `json:"issuing_space_id"`
 	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
@@ -508,7 +481,6 @@ type AttestationPathway struct {
 
 type AuditLog struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ActorUserID        pgtype.UUID        `json:"actor_user_id"`
 	ImpersonatedUserID pgtype.UUID        `json:"impersonated_user_id"`
 	ActionType         string             `json:"action_type"`
@@ -521,7 +493,6 @@ type AuditLog struct {
 
 type BadgeDefinition struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Slug               string             `json:"slug"`
 	Name               string             `json:"name"`
 	Description        *string            `json:"description"`
@@ -537,7 +508,6 @@ type BadgeDefinition struct {
 
 type BlogSeries struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Title        string             `json:"title"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -579,7 +549,6 @@ type BookingSlot struct {
 
 type Bookmark struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -590,7 +559,6 @@ type Bookmark struct {
 
 type BookmarkFolder struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Name      string             `json:"name"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -600,7 +568,6 @@ type BookmarkFolder struct {
 
 type CalendarEntry struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	Category           string             `json:"category"`
@@ -629,15 +596,13 @@ type CalendarEntry struct {
 }
 
 type CalendarSafe struct {
-	UserID   pgtype.UUID        `json:"user_id"`
-	EntryID  pgtype.UUID        `json:"entry_id"`
-	TenantID pgtype.UUID        `json:"tenant_id"`
-	SavedAt  pgtype.Timestamptz `json:"saved_at"`
+	UserID  pgtype.UUID        `json:"user_id"`
+	EntryID pgtype.UUID        `json:"entry_id"`
+	SavedAt pgtype.Timestamptz `json:"saved_at"`
 }
 
 type CalendarSubscription struct {
 	UserID             pgtype.UUID        `json:"user_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	Category           *string            `json:"category"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
@@ -645,7 +610,6 @@ type CalendarSubscription struct {
 
 type CensoredWord struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Pattern     string             `json:"pattern"`
 	Action      string             `json:"action"`
 	Replacement *string            `json:"replacement"`
@@ -654,7 +618,6 @@ type CensoredWord struct {
 
 type ChallengeDefinition struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Slug          string             `json:"slug"`
 	Name          string             `json:"name"`
 	Description   *string            `json:"description"`
@@ -671,7 +634,6 @@ type ChallengeDefinition struct {
 
 type ChecklistProgress struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	GuideID     pgtype.UUID        `json:"guide_id"`
 	ItemKey     string             `json:"item_key"`
@@ -685,7 +647,6 @@ type ChecklistProgress struct {
 
 type Comment struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
 	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
 	ParentID      pgtype.UUID        `json:"parent_id"`
@@ -715,7 +676,6 @@ type CommentView struct {
 }
 
 type CommentVote struct {
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	CommentID pgtype.UUID        `json:"comment_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Value     int16              `json:"value"`
@@ -724,7 +684,6 @@ type CommentVote struct {
 
 type CommunityOrganisation struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	Name                 string             `json:"name"`
 	Slug                 string             `json:"slug"`
 	OrgType              string             `json:"org_type"`
@@ -768,7 +727,6 @@ type CommunityOrganisation struct {
 
 type ComparisonContentMetadatum struct {
 	ContentID      pgtype.UUID        `json:"content_id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Depth          string             `json:"depth"`
 	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
@@ -781,7 +739,6 @@ type ComparisonContentMetadatum struct {
 
 type ComparisonDataIngestionJob struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	Status         string             `json:"status"`
 	SourceKind     *string            `json:"source_kind"`
@@ -795,7 +752,6 @@ type ComparisonDataIngestionJob struct {
 
 type ComparisonDataSource struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	EntityType      *string            `json:"entity_type"`
 	EntityID        pgtype.UUID        `json:"entity_id"`
 	DimensionSlug   *string            `json:"dimension_slug"`
@@ -815,7 +771,6 @@ type ComparisonDataSource struct {
 type ComparisonDimension struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Label         string             `json:"label"`
 	DimensionType string             `json:"dimension_type"`
 	Position      int32              `json:"position"`
@@ -828,7 +783,6 @@ type ComparisonDimension struct {
 type ComparisonItem struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	ImageID            pgtype.UUID        `json:"image_id"`
@@ -851,7 +805,6 @@ type ComparisonItem struct {
 
 type ComparisonProfile struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	Title          string             `json:"title"`
 	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
@@ -868,7 +821,6 @@ type ComparisonProfile struct {
 
 type ComparisonRecommendation struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	ContentID  pgtype.UUID        `json:"content_id"`
 	ItemID     pgtype.UUID        `json:"item_id"`
 	ProfileID  pgtype.UUID        `json:"profile_id"`
@@ -883,7 +835,6 @@ type ComparisonRecommendation struct {
 
 type ComparisonScore struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ItemID         pgtype.UUID        `json:"item_id"`
 	FactorID       pgtype.UUID        `json:"factor_id"`
@@ -899,7 +850,6 @@ type ComparisonScore struct {
 
 type ComparisonScoreFactor struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
 	FactorKey        string             `json:"factor_key"`
 	Label            string             `json:"label"`
@@ -925,7 +875,6 @@ type ComparisonTypeAccess struct {
 
 type ComparisonTypeDefinition struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -940,7 +889,6 @@ type ComparisonTypeDefinition struct {
 type ComparisonValue struct {
 	DimensionID  pgtype.UUID        `json:"dimension_id"`
 	ItemID       pgtype.UUID        `json:"item_id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Value        *string            `json:"value"`
 	ValueRating  pgtype.Numeric     `json:"value_rating"`
 	ValueBoolean *bool              `json:"value_boolean"`
@@ -952,7 +900,6 @@ type ComparisonValue struct {
 
 type ConsentRecord struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	ConsentType   string             `json:"consent_type"`
 	Granted       bool               `json:"granted"`
@@ -964,7 +911,6 @@ type ConsentRecord struct {
 
 type Content struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	AuthorID        pgtype.UUID        `json:"author_id"`
 	SpaceID         pgtype.UUID        `json:"space_id"`
 	ContentType     string             `json:"content_type"`
@@ -1018,7 +964,6 @@ type Content struct {
 // Tracks affiliate links found in content that are not registered in affiliate_providers. Used for moderation and revenue tracking.
 type ContentAffiliateScanResult struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	Url               string             `json:"url"`
 	Domain            string             `json:"domain"`
@@ -1033,7 +978,6 @@ type ContentAffiliateScanResult struct {
 
 type ContentCampaign struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	Name                  string             `json:"name"`
 	Prompt                string             `json:"prompt"`
 	Status                string             `json:"status"`
@@ -1052,7 +996,6 @@ type ContentCampaign struct {
 
 type ContentCampaignItem struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	CampaignID    pgtype.UUID        `json:"campaign_id"`
 	SortOrder     int32              `json:"sort_order"`
 	PersonaID     pgtype.UUID        `json:"persona_id"`
@@ -1071,7 +1014,6 @@ type ContentCampaignItem struct {
 
 type ContentEmbedding struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	ChunkIndex int32              `json:"chunk_index"`
@@ -1096,7 +1038,6 @@ type ContentEngagement struct {
 
 type ContentFeatured struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
 	FeaturedOrder int32              `json:"featured_order"`
 	FeaturedUntil pgtype.Timestamptz `json:"featured_until"`
@@ -1105,7 +1046,6 @@ type ContentFeatured struct {
 
 type ContentImport struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	SourceType    string             `json:"source_type"`
 	SourceUrl     *string            `json:"source_url"`
@@ -1120,7 +1060,6 @@ type ContentImport struct {
 
 type ContentReport struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ReporterUserID pgtype.UUID        `json:"reporter_user_id"`
 	EntityType     string             `json:"entity_type"`
 	EntityID       pgtype.UUID        `json:"entity_id"`
@@ -1136,7 +1075,6 @@ type ContentReport struct {
 
 type ContentReview struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
 	Status         string             `json:"status"`
@@ -1173,7 +1111,6 @@ type ContentScore struct {
 
 type ContentShare struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	ContentID pgtype.UUID        `json:"content_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Platform  string             `json:"platform"`
@@ -1196,7 +1133,6 @@ type ContentTag struct {
 
 type ContentThreadLink struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	ContentID pgtype.UUID        `json:"content_id"`
 	ThreadID  pgtype.UUID        `json:"thread_id"`
 	LinkCount int32              `json:"link_count"`
@@ -1205,7 +1141,6 @@ type ContentThreadLink struct {
 
 type ContentTypeJsonldTemplate struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	ContentType string             `json:"content_type"`
 	Template    []byte             `json:"template"`
 	IsActive    bool               `json:"is_active"`
@@ -1215,7 +1150,6 @@ type ContentTypeJsonldTemplate struct {
 
 type ContentView struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	ContentID pgtype.UUID        `json:"content_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	SpaceID   pgtype.UUID        `json:"space_id"`
@@ -1225,7 +1159,6 @@ type ContentView struct {
 
 type Coupon struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ProviderID    pgtype.UUID        `json:"provider_id"`
 	CouponType    string             `json:"coupon_type"`
 	Title         string             `json:"title"`
@@ -1279,7 +1212,6 @@ type CredentialCommunityNote struct {
 
 type CredentialPathway struct {
 	ID                     pgtype.UUID        `json:"id"`
-	TenantID               pgtype.UUID        `json:"tenant_id"`
 	ProfessionID           pgtype.UUID        `json:"profession_id"`
 	IssuingSpaceID         pgtype.UUID        `json:"issuing_space_id"`
 	DestinationSpaceID     pgtype.UUID        `json:"destination_space_id"`
@@ -1322,7 +1254,6 @@ type CredentialProfession struct {
 
 type CreditPack struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Description  *string            `json:"description"`
 	CreditAmount int32              `json:"credit_amount"`
@@ -1346,10 +1277,9 @@ type Currency struct {
 }
 
 type CustomField struct {
-	ID       pgtype.UUID `json:"id"`
-	GroupID  pgtype.UUID `json:"group_id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	Label    string      `json:"label"`
+	ID      pgtype.UUID `json:"id"`
+	GroupID pgtype.UUID `json:"group_id"`
+	Label   string      `json:"label"`
 	// destination_country: ISO 3166-1 alpha-2 code of the country the user is relocating to (ADR-064 VisitorContext).
 	Key            string             `json:"key"`
 	FieldType      string             `json:"field_type"`
@@ -1370,7 +1300,6 @@ type CustomField struct {
 
 type CustomFieldEntityType struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Value     string             `json:"value"`
 	Label     string             `json:"label"`
 	IsSystem  bool               `json:"is_system"`
@@ -1381,7 +1310,6 @@ type CustomFieldEntityType struct {
 
 type CustomFieldGroup struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -1407,7 +1335,6 @@ type CustomFieldPermission struct {
 
 type CustomFieldTemplate struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Description  *string            `json:"description"`
 	FieldGroupID pgtype.UUID        `json:"field_group_id"`
@@ -1432,7 +1359,6 @@ type CustomFieldValue struct {
 
 type CvFormatSession struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
@@ -1474,7 +1400,6 @@ type CvStandard struct {
 
 type DataExportRequest struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	Status      string             `json:"status"`
 	DownloadUrl *string            `json:"download_url"`
@@ -1485,7 +1410,6 @@ type DataExportRequest struct {
 
 type DeviceToken struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	DeviceID   string             `json:"device_id"`
 	Token      string             `json:"token"`
@@ -1498,10 +1422,9 @@ type DeviceToken struct {
 }
 
 type DigestEdition struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
-	SpaceID  pgtype.UUID `json:"space_id"`
-	Cadence  string      `json:"cadence"`
+	ID      pgtype.UUID `json:"id"`
+	SpaceID pgtype.UUID `json:"space_id"`
+	Cadence string      `json:"cadence"`
 	// draft|review|published|cancelled (§84)
 	Status       string             `json:"status"`
 	ScheduledFor pgtype.Timestamptz `json:"scheduled_for"`
@@ -1516,7 +1439,6 @@ type DigestEdition struct {
 
 type DiscountCode struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Code          string             `json:"code"`
 	DiscountType  string             `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
@@ -1539,7 +1461,6 @@ type DiscountCodeUse struct {
 
 type DmConversation struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Participant1ID     pgtype.UUID        `json:"participant_1_id"`
 	Participant2ID     pgtype.UUID        `json:"participant_2_id"`
 	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
@@ -1559,12 +1480,10 @@ type DmMessage struct {
 	ReadAt         pgtype.Timestamptz `json:"read_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt       pgtype.Timestamptz `json:"edited_at"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 }
 
 type DmRequest struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	RequesterID    pgtype.UUID        `json:"requester_id"`
 	RecipientID    pgtype.UUID        `json:"recipient_id"`
 	ConversationID pgtype.UUID        `json:"conversation_id"`
@@ -1577,7 +1496,6 @@ type DmRequest struct {
 
 type DocPage struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Title          string             `json:"title"`
 	Slug           string             `json:"slug"`
 	Audience       string             `json:"audience"`
@@ -1596,7 +1514,6 @@ type DocPage struct {
 
 type EditorBlockPermission struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	BlockType   string             `json:"block_type"`
 	UserGroupID pgtype.UUID        `json:"user_group_id"`
 	Enabled     bool               `json:"enabled"`
@@ -1605,7 +1522,6 @@ type EditorBlockPermission struct {
 
 type EmailTemplate struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Type          string             `json:"type"`
 	Name          string             `json:"name"`
 	Subject       string             `json:"subject"`
@@ -1621,7 +1537,6 @@ type EmailTemplate struct {
 
 type EmailVerification struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	Email      string             `json:"email"`
 	TokenHash  string             `json:"token_hash"`
@@ -1632,7 +1547,6 @@ type EmailVerification struct {
 
 type Enrollment struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	TrackID     pgtype.UUID        `json:"track_id"`
 	AccessType  string             `json:"access_type"`
@@ -1657,7 +1571,6 @@ type ExternalDataSource struct {
 
 type FeatureFlag struct {
 	Key       string             `json:"key"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Enabled   bool               `json:"enabled"`
 	Config    []byte             `json:"config"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
@@ -1666,7 +1579,6 @@ type FeatureFlag struct {
 
 type Feed struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	ContentID   pgtype.UUID        `json:"content_id"`
 	SpaceID     pgtype.UUID        `json:"space_id"`
@@ -1677,7 +1589,6 @@ type Feed struct {
 
 type Follow struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	FollowerID pgtype.UUID        `json:"follower_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -1686,7 +1597,6 @@ type Follow struct {
 
 type Form struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	Name                 string             `json:"name"`
 	Slug                 string             `json:"slug"`
 	Description          *string            `json:"description"`
@@ -1712,7 +1622,6 @@ type FormStep struct {
 type FormSubmission struct {
 	ID          pgtype.UUID        `json:"id"`
 	FormID      pgtype.UUID        `json:"form_id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	IpAddress   *netip.Prefix      `json:"ip_address"`
 	FieldValues []byte             `json:"field_values"`
@@ -1731,7 +1640,6 @@ type FormSubmissionTrigger struct {
 
 type ForumBookmark struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -1765,7 +1673,6 @@ type ForumPollVote struct {
 
 type ForumReply struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	ThreadID      pgtype.UUID        `json:"thread_id"`
 	ParentReplyID pgtype.UUID        `json:"parent_reply_id"`
 	AuthorUserID  pgtype.UUID        `json:"author_user_id"`
@@ -1783,7 +1690,6 @@ type ForumReply struct {
 
 type ForumTag struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Name            string             `json:"name"`
 	Slug            string             `json:"slug"`
 	Description     *string            `json:"description"`
@@ -1797,7 +1703,6 @@ type ForumTag struct {
 
 type ForumThread struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ContentID         pgtype.UUID        `json:"content_id"`
 	SpaceID           pgtype.UUID        `json:"space_id"`
 	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
@@ -1828,7 +1733,6 @@ type ForumThreadTag struct {
 
 type ForumVote struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
@@ -1844,7 +1748,6 @@ type GroupRole struct {
 
 type HousingGuide struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
 	CitySpaceID          pgtype.UUID        `json:"city_space_id"`
 	AccommodationType    *string            `json:"accommodation_type"`
@@ -1876,8 +1779,7 @@ type HousingGuide struct {
 
 // Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
 type InstructorPayout struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ID pgtype.UUID `json:"id"`
 	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
 	InstructorID           pgtype.UUID        `json:"instructor_id"`
 	PeriodStart            pgtype.Date        `json:"period_start"`
@@ -1896,7 +1798,6 @@ type InstructorPayout struct {
 // Japa University creator identity; gated application/approval (ADR-063).
 type InstructorProfile struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	DisplayName string      `json:"display_name"`
 	Headline    *string     `json:"headline"`
@@ -1917,7 +1818,6 @@ type InstructorProfile struct {
 
 type IntelJob struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
 	GuideID            pgtype.UUID        `json:"guide_id"`
 	SourceUrl          string             `json:"source_url"`
@@ -1958,7 +1858,6 @@ type IntelRawDocument struct {
 	Body        []byte             `json:"body"`
 	ContentHash string             `json:"content_hash"`
 	RetrievedAt pgtype.Timestamptz `json:"retrieved_at"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelRecord struct {
@@ -1977,7 +1876,6 @@ type IntelRecord struct {
 	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
 	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
 	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelReviewLog struct {
@@ -1988,7 +1886,6 @@ type IntelReviewLog struct {
 	FieldChanges  []byte             `json:"field_changes"`
 	Note          *string            `json:"note"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 }
 
 type IntelSource struct {
@@ -2016,7 +1913,6 @@ type IntelSource struct {
 	ConsecutiveFailures int32              `json:"consecutive_failures"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	PersonaID           pgtype.UUID        `json:"persona_id"`
 	// active | proposed | disabled | rejected
 	Status        string             `json:"status"`
@@ -2035,7 +1931,6 @@ type IntelSource struct {
 
 type IpBlock struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Cidr      netip.Prefix       `json:"cidr"`
 	BlockType string             `json:"block_type"`
 	Reason    *string            `json:"reason"`
@@ -2046,7 +1941,6 @@ type IpBlock struct {
 
 type JobApplication struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	JobID           pgtype.UUID        `json:"job_id"`
 	ApplicantID     pgtype.UUID        `json:"applicant_id"`
 	SubmissionID    pgtype.UUID        `json:"submission_id"`
@@ -2066,7 +1960,6 @@ type JwtSigningKey struct {
 
 type KnownBot struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	Name             string             `json:"name"`
 	UserAgentPattern string             `json:"user_agent_pattern"`
 	BotType          string             `json:"bot_type"`
@@ -2079,7 +1972,6 @@ type KnownBot struct {
 
 type LanguageScoreStory struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	TestID             pgtype.UUID        `json:"test_id"`
 	StartingLevel      *string            `json:"starting_level"`
@@ -2105,7 +1997,6 @@ type LanguageTest struct {
 
 type LanguageTestRequirement struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	VisaCategory       *string            `json:"visa_category"`
 	TestID             pgtype.UUID        `json:"test_id"`
@@ -2135,7 +2026,6 @@ type LanguageTestRequirement struct {
 
 type LanguageTestResource struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	TestID          pgtype.UUID        `json:"test_id"`
 	Title           string             `json:"title"`
 	ResourceUrl     string             `json:"resource_url"`
@@ -2147,7 +2037,6 @@ type LanguageTestResource struct {
 
 type LearningCertificate struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	UserID            pgtype.UUID        `json:"user_id"`
 	TrackID           pgtype.UUID        `json:"track_id"`
 	CertificateNumber string             `json:"certificate_number"`
@@ -2157,7 +2046,6 @@ type LearningCertificate struct {
 
 type LearningLesson struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	ModuleID        pgtype.UUID        `json:"module_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
@@ -2175,7 +2063,6 @@ type LearningLesson struct {
 
 type LearningModule struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	TrackID     pgtype.UUID        `json:"track_id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
@@ -2187,7 +2074,6 @@ type LearningModule struct {
 
 type LearningTrack struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Title        string             `json:"title"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -2220,7 +2106,6 @@ type LearningTrack struct {
 
 type LessonProgress struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	LessonID    pgtype.UUID        `json:"lesson_id"`
 	Status      string             `json:"status"`
@@ -2230,7 +2115,6 @@ type LessonProgress struct {
 
 type LessonQuiz struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	LessonID    pgtype.UUID        `json:"lesson_id"`
 	Question    string             `json:"question"`
 	Options     string             `json:"options"`
@@ -2242,7 +2126,6 @@ type LessonQuiz struct {
 
 type Medium struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
 	OriginalFilename string             `json:"original_filename"`
 	MimeType         string             `json:"mime_type"`
@@ -2302,7 +2185,6 @@ type MentorSession struct {
 
 type MentorshipConnection struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`
@@ -2318,7 +2200,6 @@ type MentorshipConnection struct {
 
 type MentorshipMatch struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	ProgramID pgtype.UUID        `json:"program_id"`
 	MentorID  pgtype.UUID        `json:"mentor_id"`
 	MenteeID  pgtype.UUID        `json:"mentee_id"`
@@ -2344,7 +2225,6 @@ type MentorshipProfile struct {
 
 type MentorshipProgram struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
 	IsActive    bool               `json:"is_active"`
@@ -2354,7 +2234,6 @@ type MentorshipProgram struct {
 
 type Menu struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Slug      string             `json:"slug"`
 	Name      string             `json:"name"`
 	Placement string             `json:"placement"`
@@ -2365,7 +2244,6 @@ type Menu struct {
 
 type MenuItem struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	MenuID           pgtype.UUID        `json:"menu_id"`
 	ParentID         pgtype.UUID        `json:"parent_id"`
 	Label            string             `json:"label"`
@@ -2387,7 +2265,6 @@ type MenuItem struct {
 
 type ModerationAlert struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	AlertType      string             `json:"alert_type"`
 	Severity       string             `json:"severity"`
 	Title          string             `json:"title"`
@@ -2415,7 +2292,6 @@ type ModerationAppeal struct {
 
 type MonitoredEmbassy struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID  pgtype.UUID        `json:"destination_space_id"`
 	Slug                string             `json:"slug"`
 	Name                string             `json:"name"`
@@ -2429,7 +2305,6 @@ type MonitoredEmbassy struct {
 
 type MutualAidPost struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	PostType           string             `json:"post_type"`
 	Category           string             `json:"category"`
@@ -2447,7 +2322,6 @@ type MutualAidPost struct {
 
 type MvDailyContentStat struct {
 	Day           pgtype.Date `json:"day"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
 	ContentID     pgtype.UUID `json:"content_id"`
 	Views         int64       `json:"views"`
 	Reactions     int64       `json:"reactions"`
@@ -2457,7 +2331,6 @@ type MvDailyContentStat struct {
 
 type MvDailySpaceStat struct {
 	Day         pgtype.Date `json:"day"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	SpaceID     pgtype.UUID `json:"space_id"`
 	Joins       int64       `json:"joins"`
 	Posts       int64       `json:"posts"`
@@ -2466,7 +2339,6 @@ type MvDailySpaceStat struct {
 
 type MvRevenueStream struct {
 	Month               pgtype.Date `json:"month"`
-	TenantID            pgtype.UUID `json:"tenant_id"`
 	SubscriptionRevenue int64       `json:"subscription_revenue"`
 	CourseRevenue       int64       `json:"course_revenue"`
 	AdRevenue           int64       `json:"ad_revenue"`
@@ -2475,7 +2347,6 @@ type MvRevenueStream struct {
 
 type MvTopContent30d struct {
 	ContentID       pgtype.UUID `json:"content_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	TotalViews      int64       `json:"total_views"`
 	TotalReactions  int64       `json:"total_reactions"`
 	TotalComments   int64       `json:"total_comments"`
@@ -2484,7 +2355,6 @@ type MvTopContent30d struct {
 
 type MvTopContent7d struct {
 	ContentID       pgtype.UUID `json:"content_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	TotalViews      int64       `json:"total_views"`
 	TotalReactions  int64       `json:"total_reactions"`
 	TotalComments   int64       `json:"total_comments"`
@@ -2493,7 +2363,6 @@ type MvTopContent7d struct {
 
 type MvTopContent90d struct {
 	ContentID       pgtype.UUID `json:"content_id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
 	TotalViews      int64       `json:"total_views"`
 	TotalReactions  int64       `json:"total_reactions"`
 	TotalComments   int64       `json:"total_comments"`
@@ -2502,7 +2371,6 @@ type MvTopContent90d struct {
 
 type MvUserEngagementStat struct {
 	Day            pgtype.Date `json:"day"`
-	TenantID       pgtype.UUID `json:"tenant_id"`
 	UserID         pgtype.UUID `json:"user_id"`
 	PostsCreated   int64       `json:"posts_created"`
 	ReactionsGiven int64       `json:"reactions_given"`
@@ -2512,7 +2380,6 @@ type MvUserEngagementStat struct {
 
 type NewsletterCampaign struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Name           string             `json:"name"`
 	Subject        string             `json:"subject"`
 	Html           string             `json:"html"`
@@ -2556,7 +2423,6 @@ type NewsletterSendState struct {
 
 type NewsletterSubscriber struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Email           string             `json:"email"`
 	UserID          pgtype.UUID        `json:"user_id"`
 	Status          string             `json:"status"`
@@ -2576,7 +2442,6 @@ type NewsletterUnsubscribeToken struct {
 
 type Notification struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	RecipientID      pgtype.UUID        `json:"recipient_id"`
 	NotificationType string             `json:"notification_type"`
 	ActorType        *string            `json:"actor_type"`
@@ -2602,7 +2467,6 @@ type NotificationBatchWindow struct {
 	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
 	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
 	Dispatched       bool               `json:"dispatched"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 }
 
 type NotificationPreference struct {
@@ -2626,7 +2490,6 @@ type NotificationType struct {
 
 type OauthAccount struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	Provider       string             `json:"provider"`
 	ProviderUserID string             `json:"provider_user_id"`
@@ -2635,7 +2498,6 @@ type OauthAccount struct {
 
 type OnboardingState struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	CurrentStep   int32              `json:"current_step"`
 	Completed     bool               `json:"completed"`
@@ -2647,7 +2509,6 @@ type OnboardingState struct {
 
 type OnboardingTemplate struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description *string            `json:"description"`
 	Steps       []byte             `json:"steps"`
@@ -2659,7 +2520,6 @@ type OnboardingTemplate struct {
 
 type Organization struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
@@ -2685,7 +2545,6 @@ type Organization struct {
 
 type OrganizationBoost struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	CampaignID     pgtype.UUID        `json:"campaign_id"`
 	BoostType      string             `json:"boost_type"`
@@ -2717,7 +2576,6 @@ type OrganizationMember struct {
 
 type OwnershipClaim struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
 	OrganizationID   pgtype.UUID        `json:"organization_id"`
 	EvidenceUrl      *string            `json:"evidence_url"`
@@ -2732,7 +2590,6 @@ type OwnershipClaim struct {
 
 type Page struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -2750,7 +2607,6 @@ type Page struct {
 
 type PageBuilderPage struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -2763,7 +2619,6 @@ type PageBuilderPage struct {
 
 type PagebuilderBlock struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
 	Category      string             `json:"category"`
@@ -2779,7 +2634,6 @@ type PagebuilderBlock struct {
 
 type PagebuilderTemplate struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
 	Description      *string            `json:"description"`
@@ -2796,7 +2650,6 @@ type PagebuilderTemplate struct {
 
 type PagebuilderTheme struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -2810,7 +2663,6 @@ type PagebuilderTheme struct {
 
 type PasswordHistory struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	PasswordHash string             `json:"password_hash"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
@@ -2818,7 +2670,6 @@ type PasswordHistory struct {
 
 type PasswordResetToken struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	TokenHash string             `json:"token_hash"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
@@ -2828,7 +2679,6 @@ type PasswordResetToken struct {
 
 type Payment struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	Provider       string             `json:"provider"`
 	ProviderRef    *string            `json:"provider_ref"`
@@ -2858,7 +2708,6 @@ type PaymentRefund struct {
 
 type PaymentWebhookEvent struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Provider    string             `json:"provider"`
 	EventID     string             `json:"event_id"`
 	RawPayload  []byte             `json:"raw_payload"`
@@ -2869,7 +2718,6 @@ type PaymentWebhookEvent struct {
 
 type PayoutProvider struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Type                string             `json:"type"`
 	Name                string             `json:"name"`
 	IsActive            bool               `json:"is_active"`
@@ -2889,7 +2737,6 @@ type Permission struct {
 
 type PersonaVoice struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -2902,7 +2749,6 @@ type PersonaVoice struct {
 
 type PlanningGroup struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	Name                  string             `json:"name"`
 	Description           *string            `json:"description"`
 	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
@@ -2920,7 +2766,6 @@ type PlanningGroup struct {
 
 type PlanningGroupCheckin struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	GroupID   pgtype.UUID        `json:"group_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Note      *string            `json:"note"`
@@ -2930,14 +2775,12 @@ type PlanningGroupCheckin struct {
 type PlanningGroupMember struct {
 	GroupID       pgtype.UUID        `json:"group_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	DepartureDate pgtype.Date        `json:"departure_date"`
 	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
 }
 
 type PlanningGroupMilestone struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	GroupID     pgtype.UUID        `json:"group_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	Title       string             `json:"title"`
@@ -2948,7 +2791,6 @@ type PlanningGroupMilestone struct {
 
 type PlatformDataExport struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Name            string             `json:"name"`
 	ExportType      string             `json:"export_type"`
 	Format          string             `json:"format"`
@@ -2964,7 +2806,6 @@ type PlatformDataExport struct {
 
 type PlatformDataImport struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	ImportType   string             `json:"import_type"`
 	Format       string             `json:"format"`
@@ -2982,7 +2823,6 @@ type PlatformDataImport struct {
 
 type PlatformEvent struct {
 	ID          int64              `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EventType   string             `json:"event_type"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	EntityType  *string            `json:"entity_type"`
@@ -2996,7 +2836,6 @@ type PlatformEvent struct {
 
 type ProfessionalDocument struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Title        string             `json:"title"`
 	DocumentType string             `json:"document_type"`
 	Description  *string            `json:"description"`
@@ -3008,7 +2847,6 @@ type ProfessionalDocument struct {
 
 type ProfessionalRelocation struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Country     string             `json:"country"`
 	City        *string            `json:"city"`
 	Status      string             `json:"status"`
@@ -3020,7 +2858,6 @@ type ProfessionalRelocation struct {
 
 type ProfessionalVerifier struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	Role      *string            `json:"role"`
 	Status    string             `json:"status"`
@@ -3040,7 +2877,6 @@ type PushSubscription struct {
 type PushToken struct {
 	ID         pgtype.UUID        `json:"id"`
 	UserID     pgtype.UUID        `json:"user_id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	Token      string             `json:"token"`
 	Platform   string             `json:"platform"`
 	DeviceName *string            `json:"device_name"`
@@ -3049,7 +2885,6 @@ type PushToken struct {
 }
 
 type Reaction struct {
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -3058,7 +2893,6 @@ type Reaction struct {
 }
 
 type ReactionType struct {
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Key       string             `json:"key"`
 	Emoji     string             `json:"emoji"`
 	Label     string             `json:"label"`
@@ -3070,7 +2904,6 @@ type ReactionType struct {
 
 type Redirect struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	SourcePath string             `json:"source_path"`
 	TargetUrl  string             `json:"target_url"`
 	HttpStatus int16              `json:"http_status"`
@@ -3084,7 +2917,6 @@ type Redirect struct {
 
 type Referral struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ReferrerID         pgtype.UUID        `json:"referrer_id"`
 	RefereeID          pgtype.UUID        `json:"referee_id"`
 	ReferralCode       string             `json:"referral_code"`
@@ -3100,7 +2932,6 @@ type Referral struct {
 
 type ReferralCode struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	Code       string             `json:"code"`
 	ClickCount int32              `json:"click_count"`
@@ -3109,7 +2940,6 @@ type ReferralCode struct {
 
 type ReferralProgram struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	ReferrerRewardCents int32              `json:"referrer_reward_cents"`
 	RefereeRewardCents  int32              `json:"referee_reward_cents"`
 	MaxReferrals        int32              `json:"max_referrals"`
@@ -3122,7 +2952,6 @@ type ReferralProgram struct {
 
 type RefreshToken struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
 	TokenHash  string             `json:"token_hash"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
@@ -3136,7 +2965,6 @@ type RefreshToken struct {
 
 type RemittanceProvider struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	LogoMediaID  pgtype.UUID        `json:"logo_media_id"`
@@ -3150,7 +2978,6 @@ type RemittanceProvider struct {
 
 type RemittanceRate struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ProviderID         pgtype.UUID        `json:"provider_id"`
 	SendCurrency       string             `json:"send_currency"`
 	ReceiveCurrency    string             `json:"receive_currency"`
@@ -3171,7 +2998,6 @@ type RemittanceRate struct {
 
 type RemittanceRateAlert struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	UserID          pgtype.UUID        `json:"user_id"`
 	SendCurrency    string             `json:"send_currency"`
 	ReceiveCurrency string             `json:"receive_currency"`
@@ -3190,8 +3016,7 @@ type ReplyView struct {
 
 // Immutable per-event revenue split record; aggregated into instructor_payouts (ADR-063).
 type RevenueSplit struct {
-	ID       pgtype.UUID `json:"id"`
-	TenantID pgtype.UUID `json:"tenant_id"`
+	ID pgtype.UUID `json:"id"`
 	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
 	InstructorID pgtype.UUID        `json:"instructor_id"`
 	TrackID      pgtype.UUID        `json:"track_id"`
@@ -3210,7 +3035,6 @@ type RevenueSplit struct {
 
 type Review struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	EntityType     string             `json:"entity_type"`
 	EntityID       pgtype.UUID        `json:"entity_id"`
 	ReviewerUserID pgtype.UUID        `json:"reviewer_user_id"`
@@ -3224,7 +3048,6 @@ type Review struct {
 }
 
 type ReviewAggregate struct {
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	EntityType    string             `json:"entity_type"`
 	EntityID      pgtype.UUID        `json:"entity_id"`
 	ReviewCount   int32              `json:"review_count"`
@@ -3240,7 +3063,6 @@ type RolePermission struct {
 
 type SavedScholarship struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	GuideID          pgtype.UUID        `json:"guide_id"`
 	Status           string             `json:"status"`
@@ -3253,14 +3075,12 @@ type SavedScholarship struct {
 
 type ScamAlertSubscription struct {
 	UserID             pgtype.UUID        `json:"user_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
 type ScamReport struct {
 	ID                    pgtype.UUID        `json:"id"`
-	TenantID              pgtype.UUID        `json:"tenant_id"`
 	ReporterID            pgtype.UUID        `json:"reporter_id"`
 	ScamType              string             `json:"scam_type"`
 	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
@@ -3316,12 +3136,10 @@ type Scholarship struct {
 	LastVerifiedAt       pgtype.Timestamptz `json:"last_verified_at"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 }
 
 type SearchAnalytic struct {
 	ID           int64              `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Query        string             `json:"query"`
 	ResultsCount int32              `json:"results_count"`
 	UserID       pgtype.UUID        `json:"user_id"`
@@ -3331,7 +3149,6 @@ type SearchAnalytic struct {
 
 type SecurityScanResult struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	ScanType   string             `json:"scan_type"`
 	Severity   string             `json:"severity"`
 	Finding    string             `json:"finding"`
@@ -3342,7 +3159,6 @@ type SecurityScanResult struct {
 
 type ServiceListingMetum struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
 	OrgID              pgtype.UUID        `json:"org_id"`
 	ServiceCategory    string             `json:"service_category"`
@@ -3365,7 +3181,6 @@ type ServiceListingMetum struct {
 
 type SharePlatform struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Key         string             `json:"key"`
 	Label       string             `json:"label"`
 	Icon        string             `json:"icon"`
@@ -3379,7 +3194,6 @@ type SharePlatform struct {
 
 type Sidebar struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	App              string             `json:"app"`
 	Position         string             `json:"position"`
 	Slug             string             `json:"slug"`
@@ -3394,7 +3208,6 @@ type Sidebar struct {
 
 type SidebarWidget struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	SidebarID        pgtype.UUID        `json:"sidebar_id"`
 	WidgetType       string             `json:"widget_type"`
 	Label            string             `json:"label"`
@@ -3419,7 +3232,6 @@ type SlugHistory struct {
 
 type SourceCollection struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Slug           string             `json:"slug"`
 	Name           string             `json:"name"`
 	Description    *string            `json:"description"`
@@ -3439,7 +3251,6 @@ type SourceCollectionItem struct {
 
 type Space struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	ParentID       pgtype.UUID        `json:"parent_id"`
 	SpaceTypeID    pgtype.UUID        `json:"space_type_id"`
 	Name           string             `json:"name"`
@@ -3474,7 +3285,6 @@ type SpaceMember struct {
 	ID       pgtype.UUID        `json:"id"`
 	SpaceID  pgtype.UUID        `json:"space_id"`
 	UserID   pgtype.UUID        `json:"user_id"`
-	TenantID pgtype.UUID        `json:"tenant_id"`
 	Role     string             `json:"role"`
 	JoinedAt pgtype.Timestamptz `json:"joined_at"`
 	Status   string             `json:"status"`
@@ -3482,7 +3292,6 @@ type SpaceMember struct {
 
 type SpaceModerator struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	SpaceID          pgtype.UUID        `json:"space_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	AssignedBy       string             `json:"assigned_by"`
@@ -3492,7 +3301,6 @@ type SpaceModerator struct {
 
 type SpaceMute struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	SpaceID   pgtype.UUID        `json:"space_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -3506,7 +3314,6 @@ type SpaceParentSpace struct {
 
 type SpacePermissionPreset struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Name           string             `json:"name"`
 	Visibility     string             `json:"visibility"`
 	PostingPerm    string             `json:"posting_perm"`
@@ -3525,7 +3332,6 @@ type SpacePinnedPost struct {
 	PinnedBy  pgtype.UUID        `json:"pinned_by"`
 	Position  int32              `json:"position"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type SpaceRule struct {
@@ -3540,7 +3346,6 @@ type SpaceRule struct {
 
 type SpaceType struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	Slug         string             `json:"slug"`
 	Description  *string            `json:"description"`
@@ -3562,7 +3367,6 @@ type StockProvider struct {
 
 type StoryMetum struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
@@ -3587,7 +3391,6 @@ type StoryMetum struct {
 
 type StudioBatch struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Name        string             `json:"name"`
 	Description *string            `json:"description"`
 	CreatedBy   pgtype.UUID        `json:"created_by"`
@@ -3596,7 +3399,6 @@ type StudioBatch struct {
 
 type StudioJob struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	BatchID        pgtype.UUID        `json:"batch_id"`
 	PersonaID      pgtype.UUID        `json:"persona_id"`
 	ContentType    string             `json:"content_type"`
@@ -3624,7 +3426,6 @@ type StudioJob struct {
 
 type Subscription struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	Plan               string             `json:"plan"`
 	Provider           string             `json:"provider"`
@@ -3642,7 +3443,6 @@ type Subscription struct {
 
 type SubscriptionPlan struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Slug          string             `json:"slug"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`
@@ -3661,13 +3461,11 @@ type SubscriptionPlan struct {
 type SubscriptionPlanTrack struct {
 	PlanID    pgtype.UUID        `json:"plan_id"`
 	TrackID   pgtype.UUID        `json:"track_id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type SystemSetting struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Key       string             `json:"key"`
 	Value     []byte             `json:"value"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -3677,7 +3475,6 @@ type SystemSetting struct {
 
 type Tag struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`
@@ -3695,7 +3492,6 @@ type Tag struct {
 
 type TagModerator struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	TagID            pgtype.UUID        `json:"tag_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	AssignedBy       string             `json:"assigned_by"`
@@ -3705,7 +3501,6 @@ type TagModerator struct {
 
 type TaxObligationGuide struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	OriginSpaceID        pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
 	EmploymentStatus     string             `json:"employment_status"`
@@ -3734,7 +3529,6 @@ type TaxObligationGuide struct {
 
 type TaxTreatyPair struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	TreatyExists       bool               `json:"treaty_exists"`
@@ -3746,7 +3540,6 @@ type TaxTreatyPair struct {
 
 type TemplateLiteral struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	Key         string             `json:"key"`
 	Kind        string             `json:"kind"`
 	Value       string             `json:"value"`
@@ -3761,20 +3554,8 @@ type TemplateLiteral struct {
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 }
 
-type Tenant struct {
-	ID        pgtype.UUID        `json:"id"`
-	Name      string             `json:"name"`
-	Slug      string             `json:"slug"`
-	Domain    *string            `json:"domain"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	Status    string             `json:"status"`
-	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-}
-
 type Ticket struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	TypeID          pgtype.UUID        `json:"type_id"`
 	Subject         string             `json:"subject"`
 	Description     string             `json:"description"`
@@ -3823,7 +3604,6 @@ type TicketEvent struct {
 
 type TicketType struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	Name              string             `json:"name"`
 	Slug              string             `json:"slug"`
 	Description       *string            `json:"description"`
@@ -3839,7 +3619,6 @@ type TicketType struct {
 
 type TotpCredential struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	UserID          pgtype.UUID        `json:"user_id"`
 	SecretEncrypted string             `json:"secret_encrypted"`
 	EnabledAt       pgtype.Timestamptz `json:"enabled_at"`
@@ -3850,7 +3629,6 @@ type TotpCredential struct {
 
 type Translation struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Locale    string             `json:"locale"`
 	Key       string             `json:"key"`
 	Value     string             `json:"value"`
@@ -3861,7 +3639,6 @@ type Translation struct {
 
 type TravelProvider struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	Name            string             `json:"name"`
 	Slug            string             `json:"slug"`
 	ProviderType    string             `json:"provider_type"`
@@ -3873,7 +3650,6 @@ type TravelProvider struct {
 
 type TrendingSnapshot struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	EntityType string             `json:"entity_type"`
 	EntityID   pgtype.UUID        `json:"entity_id"`
 	Score      float64            `json:"score"`
@@ -3886,7 +3662,6 @@ type TrendingSnapshot struct {
 
 type UniversityCourseCatalog struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	Title                string             `json:"title"`
 	Slug                 string             `json:"slug"`
 	Description          *string            `json:"description"`
@@ -3903,7 +3678,6 @@ type UniversityCourseCatalog struct {
 
 type UniversityCourseOffering struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	CourseID          pgtype.UUID        `json:"course_id"`
 	UniversityID      pgtype.UUID        `json:"university_id"`
 	Slug              string             `json:"slug"`
@@ -3922,7 +3696,6 @@ type UniversityCourseOffering struct {
 
 type UniversityTrackCategory struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Slug      string             `json:"slug"`
 	Name      string             `json:"name"`
 	SortOrder int32              `json:"sort_order"`
@@ -3933,7 +3706,6 @@ type UniversityTrackCategory struct {
 
 type User struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	Email               string             `json:"email"`
 	EmailVerifiedAt     pgtype.Timestamptz `json:"email_verified_at"`
 	PasswordHash        *string            `json:"password_hash"`
@@ -3957,7 +3729,6 @@ type User struct {
 
 type UserAffiliateLink struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	UserID          pgtype.UUID        `json:"user_id"`
 	ProductType     string             `json:"product_type"`
 	ProductID       pgtype.UUID        `json:"product_id"`
@@ -3973,7 +3744,6 @@ type UserAffiliateLink struct {
 
 type UserBadge struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	BadgeID   pgtype.UUID        `json:"badge_id"`
 	AwardedAt pgtype.Timestamptz `json:"awarded_at"`
@@ -3984,12 +3754,10 @@ type UserBlock struct {
 	BlockerID pgtype.UUID        `json:"blocker_id"`
 	BlockedID pgtype.UUID        `json:"blocked_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserChallengeProgress struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	ChallengeID   pgtype.UUID        `json:"challenge_id"`
 	CurrentCount  int32              `json:"current_count"`
@@ -4011,12 +3779,10 @@ type UserDmSetting struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	DmPrivacy string             `json:"dm_privacy"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 }
 
 type UserGroup struct {
 	ID                         pgtype.UUID        `json:"id"`
-	TenantID                   pgtype.UUID        `json:"tenant_id"`
 	Name                       string             `json:"name"`
 	Slug                       string             `json:"slug"`
 	IsSystem                   bool               `json:"is_system"`
@@ -4031,7 +3797,6 @@ type UserGroup struct {
 
 type UserGroupMembership struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	GroupID   pgtype.UUID        `json:"group_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -4039,7 +3804,6 @@ type UserGroupMembership struct {
 
 type UserGroupPromotion struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	SourceGroupID pgtype.UUID        `json:"source_group_id"`
 	TargetGroupID pgtype.UUID        `json:"target_group_id"`
 	TriggerType   string             `json:"trigger_type"`
@@ -4051,7 +3815,6 @@ type UserGroupPromotion struct {
 type UserModerationAction struct {
 	ID            pgtype.UUID        `json:"id"`
 	UserID        pgtype.UUID        `json:"user_id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	Action        string             `json:"action"`
 	Reason        *string            `json:"reason"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
@@ -4062,7 +3825,6 @@ type UserModerationAction struct {
 
 type UserMute struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	MutedUserID pgtype.UUID        `json:"muted_user_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -4071,7 +3833,6 @@ type UserMute struct {
 type UserOperationBan struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Operation BanOperation       `json:"operation"`
 	Reason    *string            `json:"reason"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
@@ -4082,7 +3843,6 @@ type UserOperationBan struct {
 
 type UserPreference struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	UserID    pgtype.UUID        `json:"user_id"`
 	DarkMode  string             `json:"dark_mode"`
 	Language  string             `json:"language"`
@@ -4099,13 +3859,11 @@ type UserPrivacySetting struct {
 	ShowActivity       bool               `json:"show_activity"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ShowPointsPublicly bool               `json:"show_points_publicly"`
 }
 
 type UserProfile struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	DisplayName        *string            `json:"display_name"`
 	AvatarUrl          *string            `json:"avatar_url"`
@@ -4140,7 +3898,6 @@ type UserProfile struct {
 
 type UserRole struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Name      string             `json:"name"`
 	Slug      string             `json:"slug"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -4149,7 +3906,6 @@ type UserRole struct {
 
 type UserSourceBlock struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	BlockerID pgtype.UUID        `json:"blocker_id"`
 	SourceID  pgtype.UUID        `json:"source_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
@@ -4157,7 +3913,6 @@ type UserSourceBlock struct {
 
 type VideoChannelClaim struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	ClaimantUserID    pgtype.UUID        `json:"claimant_user_id"`
 	VideoAuthorUserID pgtype.UUID        `json:"video_author_user_id"`
 	ClaimType         string             `json:"claim_type"`
@@ -4173,7 +3928,6 @@ type VideoChannelClaim struct {
 
 type VideoImportJob struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	SourceType         string             `json:"source_type"`
 	SourceUrl          *string            `json:"source_url"`
@@ -4192,7 +3946,6 @@ type VideoImportJob struct {
 
 type VideoSource struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	AuthorUserID     pgtype.UUID        `json:"author_user_id"`
 	SourceType       string             `json:"source_type"`
 	SourceUrl        string             `json:"source_url"`
@@ -4212,7 +3965,6 @@ type VideoSource struct {
 
 type VisaProcessingStat struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
 	VisaCategory       string             `json:"visa_category"`
@@ -4228,7 +3980,6 @@ type VisaProcessingStat struct {
 
 type VisaRoute struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
 	VisaCategory         string             `json:"visa_category"`
 	Name                 string             `json:"name"`
@@ -4263,7 +4014,6 @@ type VisaRoute struct {
 
 type VisaTimeline struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	UserID             pgtype.UUID        `json:"user_id"`
 	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
 	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
@@ -4280,7 +4030,6 @@ type VisaTimeline struct {
 
 type VisaTimelineMilestone struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	TimelineID    pgtype.UUID        `json:"timeline_id"`
 	MilestoneType string             `json:"milestone_type"`
 	OccurredAt    pgtype.Date        `json:"occurred_at"`
@@ -4290,7 +4039,6 @@ type VisaTimelineMilestone struct {
 
 type WalletLedger struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	LedgerType       string             `json:"ledger_type"`
 	Operation        string             `json:"operation"`
@@ -4306,7 +4054,6 @@ type WalletLedger struct {
 
 type WalletSetting struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
 	PointsToCreditsRate *int32             `json:"points_to_credits_rate"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
@@ -4316,7 +4063,6 @@ type WalletSetting struct {
 
 type WalletWithdrawal struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
 	UserID         pgtype.UUID        `json:"user_id"`
 	CreditAmount   int64              `json:"credit_amount"`
 	CurrencyCode   string             `json:"currency_code"`
@@ -4340,7 +4086,6 @@ type WalletWithdrawal struct {
 
 type WalletWithdrawalFeeTier struct {
 	ID        pgtype.UUID        `json:"id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	MinAmount int32              `json:"min_amount"`
 	MaxAmount *int32             `json:"max_amount"`
 	FeeType   string             `json:"fee_type"`
@@ -4354,7 +4099,6 @@ type WalletWithdrawalFeeTier struct {
 
 type WalletWithdrawalMethod struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	Provider     string             `json:"provider"`
 	Label        *string            `json:"label"`
@@ -4370,7 +4114,6 @@ type WalletWithdrawalMethod struct {
 
 type WebhookDelivery struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	EndpointID       pgtype.UUID        `json:"endpoint_id"`
 	EventID          pgtype.UUID        `json:"event_id"`
 	EventType        string             `json:"event_type"`
@@ -4387,7 +4130,6 @@ type WebhookDelivery struct {
 
 type WebhookEndpoint struct {
 	ID         pgtype.UUID        `json:"id"`
-	TenantID   pgtype.UUID        `json:"tenant_id"`
 	Url        string             `json:"url"`
 	Secret     string             `json:"secret"`
 	EventTypes []string           `json:"event_types"`
@@ -4402,7 +4144,6 @@ type WebhookEndpoint struct {
 
 type WidgetConfiguration struct {
 	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        `json:"tenant_id"`
 	Name         string             `json:"name"`
 	WidgetType   string             `json:"widget_type"`
 	Config       []byte             `json:"config"`
@@ -4414,7 +4155,6 @@ type WidgetConfiguration struct {
 
 type WikiPage struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	SpaceID            pgtype.UUID        `json:"space_id"`
 	Slug               string             `json:"slug"`
 	Title              string             `json:"title"`
@@ -4437,7 +4177,6 @@ type WikiPage struct {
 
 type WikiRevision struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	WikiPageID      pgtype.UUID        `json:"wiki_page_id"`
 	Content         []byte             `json:"content"`
 	Summary         *string            `json:"summary"`
@@ -4458,7 +4197,6 @@ type WikiRevision struct {
 type WsTicket struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
-	TenantID  pgtype.UUID        `json:"tenant_id"`
 	Used      bool               `json:"used"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`

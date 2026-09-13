@@ -241,7 +241,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := h.service.GetByID(r.Context(), id, tenantID)
+	route, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")
@@ -387,11 +387,6 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
-	if !ok {
-		return
-	}
-
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
@@ -408,7 +403,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := h.service.Update(r.Context(), id, tenantID, input)
+	route, err := h.service.Update(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "route_not_found", "Visa route not found")

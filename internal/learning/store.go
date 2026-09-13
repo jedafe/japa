@@ -39,7 +39,6 @@ func NewStore(database *db.DB) *Store {
 // Track represents track.
 type Track struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	Title       string      `json:"title"`
 	Slug        string      `json:"slug"`
 	Description *string     `json:"description,omitempty"`
@@ -94,7 +93,7 @@ type UpdateTrackInput struct {
 // gen.LearningTrack model; all these row types share the same columns, so
 // callers extract the fields and pass them here.
 func trackFromFields(
-	id, tenantID pgtype.UUID,
+	id pgtype.UUID,
 	title, slug string,
 	description *string,
 	difficulty string,
@@ -155,7 +154,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
+		tracks = append(tracks, trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
 	}
 
 	return tracks, nil
@@ -207,7 +206,7 @@ LIMIT $3
 		}
 
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.Title, &r.Slug, &r.Description, &r.Difficulty, &r.CoverMediaID,
+			&r.ID, &r.Title, &r.Slug, &r.Description, &r.Difficulty, &r.CoverMediaID,
 			&r.IsPublished, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt, &r.InstructorID, &r.PriceKobo,
 			&r.Currency, &r.IsPublishedToUniversity, &r.Category, &r.Language, &r.TotalEnrolled, &r.SubscriptionEligible,
 		); err != nil {
@@ -215,7 +214,7 @@ LIMIT $3
 		}
 
 		tracks = append(tracks, trackFromFields(
-			r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID,
+			r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID,
 			r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo,
 			r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible,
 		))
@@ -238,7 +237,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 		return nil, fmt.Errorf("get track by slug: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+	t := trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 
 	return &t, nil
 }
@@ -253,7 +252,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 		return nil, fmt.Errorf("get track by id: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+	t := trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 
 	return &t, nil
 }
@@ -276,7 +275,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 		return nil, fmt.Errorf("create track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+	t := trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 
 	return &t, nil
 }
@@ -299,7 +298,7 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 		return nil, fmt.Errorf("update track: %w", err)
 	}
 
-	t := trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
+	t := trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible)
 
 	return &t, nil
 }
@@ -348,7 +347,7 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 	tracks := make([]Track, 0, len(rows))
 
 	for _, r := range rows {
-		tracks = append(tracks, trackFromFields(r.ID, r.TenantID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
+		tracks = append(tracks, trackFromFields(r.ID, r.Title, r.Slug, r.Description, r.Difficulty, r.CoverMediaID, r.IsPublished, r.SortOrder, r.CreatedAt, r.UpdatedAt, r.InstructorID, r.PriceKobo, r.Currency, r.IsPublishedToUniversity, r.Category, r.Language, r.TotalEnrolled, r.SubscriptionEligible))
 	}
 
 	return tracks, nil
@@ -361,7 +360,6 @@ func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Trac
 // Module represents module.
 type Module struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	TrackID     pgtype.UUID `json:"track_id"`
 	Title       string      `json:"title"`
 	Slug        string      `json:"slug"`
@@ -425,7 +423,6 @@ type InstructorRef struct {
 // stable; they serialize as null/omitted until the corresponding migrations land.
 type TrackDetail struct {
 	ID           pgtype.UUID         `json:"id"`
-	TenantID     pgtype.UUID         `json:"tenant_id"`
 	Title        string              `json:"title"`
 	Slug         string              `json:"slug"`
 	Description  *string             `json:"description,omitempty"`
@@ -519,7 +516,7 @@ func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 		return nil, fmt.Errorf("get track detail by slug: %w", err)
 	}
 
-	track := trackFromFields(row.ID, row.TenantID, row.Title, row.Slug, row.Description,
+	track := trackFromFields(row.ID, row.Title, row.Slug, row.Description,
 		row.Difficulty, row.CoverMediaID, row.IsPublished, row.SortOrder, row.CreatedAt, row.UpdatedAt,
 		row.InstructorID, row.PriceKobo, row.Currency, row.IsPublishedToUniversity, row.Category,
 		row.Language, row.TotalEnrolled, row.SubscriptionEligible)
@@ -801,7 +798,6 @@ func (s *Store) ListAllLessons(ctx context.Context, tenantID pgtype.UUID) ([]Les
 // Lesson represents lesson.
 type Lesson struct {
 	ID              pgtype.UUID  `json:"id"`
-	TenantID        pgtype.UUID  `json:"tenant_id"`
 	ModuleID        pgtype.UUID  `json:"module_id"`
 	ModuleTitle     *string      `json:"module_title,omitempty"`
 	Title           string       `json:"title"`
@@ -851,7 +847,7 @@ type UpdateLessonInput struct {
 // drift. mediaID is the raw pgtype.UUID (nullable); a valid zero value is
 // treated as no media.
 func buildLesson(
-	id, tenantID, moduleID pgtype.UUID,
+	id, moduleID pgtype.UUID,
 	title, slug, lessonType string,
 	content *string,
 	mediaID pgtype.UUID,
@@ -891,17 +887,17 @@ func buildLesson(
 func lessonFromRow(r any) Lesson {
 	switch r := r.(type) {
 	case gen.LearningLesson:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	case gen.ListLearningLessonsByModuleRow:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	case gen.GetLearningLessonBySlugRow:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	case gen.GetLearningLessonByIDRow:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	case gen.CreateLearningLessonRow:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	case gen.UpdateLearningLessonRow:
-		return buildLesson(r.ID, r.TenantID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
+		return buildLesson(r.ID, r.ModuleID, r.Title, r.Slug, r.LessonType, r.Content, r.MediaID, r.DurationMinutes, r.SortOrder, r.IsPublished, r.IsPreview, r.CreatedAt, r.UpdatedAt)
 	}
 
 	return Lesson{}
@@ -1218,7 +1214,6 @@ func (s *Store) DeleteLesson(ctx context.Context, tenantID, id pgtype.UUID) erro
 // Progress represents progress.
 type Progress struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
 	UserID      pgtype.UUID `json:"user_id"`
 	LessonID    pgtype.UUID `json:"lesson_id"`
 	Status      string      `json:"status"`
@@ -1323,7 +1318,6 @@ func (s *Store) ListCompletedLessonIDsByUserAndTrack(ctx context.Context, userID
 // Certificate represents certificate.
 type Certificate struct {
 	ID                pgtype.UUID  `json:"id"`
-	TenantID          pgtype.UUID  `json:"-"` // internal multi-tenancy key; never serialized (public + /me responses)
 	UserID            pgtype.UUID  `json:"user_id"`
 	TrackID           pgtype.UUID  `json:"track_id"`
 	CertificateNumber string       `json:"certificate_number"`
@@ -1653,7 +1647,6 @@ func (s *Store) UpdateEnrollmentProgress(ctx context.Context, userID, trackID pg
 // EnrollmentRow holds an enrollment with joined user info.
 type EnrollmentRow struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	TrackID     pgtype.UUID        `json:"track_id"`
 	AccessType  string             `json:"access_type"`

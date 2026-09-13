@@ -159,9 +159,9 @@ func (q *Queries) CreateForumPoll(ctx context.Context, arg CreateForumPollParams
 const createForumReply = `-- name: CreateForumReply :one
 
 INSERT INTO forum_replies (thread_id, parent_reply_id, author_user_id, body, is_anonymous) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, tenant_id, thread_id, parent_reply_id, author_user_id,
-          body, vote_score, view_count, is_anonymous, is_edited,
-          created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+RETURNING id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 `
 
 type CreateForumReplyParams struct {
@@ -186,7 +186,6 @@ func (q *Queries) CreateForumReply(ctx context.Context, arg CreateForumReplyPara
 	var i ForumReply
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -208,8 +207,8 @@ const createForumTag = `-- name: CreateForumTag :one
 
 INSERT INTO forum_tags (name, slug, description, rules, cover_image_id, moderator_user_id) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at, deleted_at
+RETURNING id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type CreateForumTagParams struct {
@@ -236,7 +235,6 @@ func (q *Queries) CreateForumTag(ctx context.Context, arg CreateForumTagParams) 
 	var i ForumTag
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -590,9 +588,9 @@ func (q *Queries) GetForumPollResults(ctx context.Context, pollID pgtype.UUID) (
 }
 
 const getForumReplyByID = `-- name: GetForumReplyByID :one
-SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
-       body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -602,7 +600,6 @@ func (q *Queries) GetForumReplyByID(ctx context.Context, id pgtype.UUID) (ForumR
 	var i ForumReply
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -678,8 +675,8 @@ func (q *Queries) GetForumReplyByIDWithAuthor(ctx context.Context, id pgtype.UUI
 }
 
 const getForumTagByID = `-- name: GetForumTagByID :one
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -689,7 +686,6 @@ func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (ForumTag
 	var i ForumTag
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -704,8 +700,8 @@ func (q *Queries) GetForumTagByID(ctx context.Context, id pgtype.UUID) (ForumTag
 }
 
 const getForumTagBySlug = `-- name: GetForumTagBySlug :one
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE slug = $1 AND deleted_at IS NULL
 `
@@ -715,7 +711,6 @@ func (q *Queries) GetForumTagBySlug(ctx context.Context, slug string) (ForumTag,
 	var i ForumTag
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -983,7 +978,7 @@ func (q *Queries) GetForumThreadTenantAndSpaceByID(ctx context.Context, id pgtyp
 }
 
 const getForumVote = `-- name: GetForumVote :one
-SELECT id, tenant_id, user_id, entity_type, entity_id, value, created_at
+SELECT id, user_id, entity_type, entity_id, value, created_at
 FROM forum_votes
 WHERE user_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -999,7 +994,6 @@ func (q *Queries) GetForumVote(ctx context.Context, arg GetForumVoteParams) (For
 	var i ForumVote
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -1277,9 +1271,9 @@ func (q *Queries) ListForumPollUserVotes(ctx context.Context, arg ListForumPollU
 }
 
 const listForumRepliesByThread = `-- name: ListForumRepliesByThread :many
-SELECT id, tenant_id, thread_id, parent_reply_id, author_user_id,
-       body, vote_score, view_count, is_anonymous, is_edited,
-       created_at, updated_at, deleted_at, ama_pending, ama_approved_at
+SELECT id, thread_id, parent_reply_id, author_user_id,
+ body, vote_score, view_count, is_anonymous, is_edited,
+ created_at, updated_at, deleted_at, ama_pending, ama_approved_at
 FROM forum_replies
 WHERE thread_id = $1
  AND deleted_at IS NULL
@@ -1297,7 +1291,6 @@ func (q *Queries) ListForumRepliesByThread(ctx context.Context, threadID pgtype.
 		var i ForumReply
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ThreadID,
 			&i.ParentReplyID,
 			&i.AuthorUserID,
@@ -1396,8 +1389,8 @@ func (q *Queries) ListForumRepliesByThreadWithAuthor(ctx context.Context, thread
 }
 
 const listForumTags = `-- name: ListForumTags :many
-SELECT id, tenant_id, name, slug, description, rules, cover_image_id,
-       follower_count, moderator_user_id, created_at, deleted_at
+SELECT id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 FROM forum_tags
 WHERE deleted_at IS NULL
 ORDER BY follower_count DESC, name ASC
@@ -1420,7 +1413,6 @@ func (q *Queries) ListForumTags(ctx context.Context, arg ListForumTagsParams) ([
 		var i ForumTag
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -2544,9 +2536,9 @@ SET body = $1,
 FROM forum_threads ft
 WHERE fr.id = $2 AND fr.deleted_at IS NULL
  AND ft.id = fr.thread_id
-RETURNING fr.id, fr.tenant_id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
-          fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
-          fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
+RETURNING fr.id, fr.thread_id, fr.parent_reply_id, fr.author_user_id,
+ fr.body, fr.vote_score, fr.view_count, fr.is_anonymous, fr.is_edited,
+ fr.created_at, fr.updated_at, fr.deleted_at, fr.ama_pending, fr.ama_approved_at
 `
 
 type UpdateForumReplyParams struct {
@@ -2559,7 +2551,6 @@ func (q *Queries) UpdateForumReply(ctx context.Context, arg UpdateForumReplyPara
 	var i ForumReply
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ThreadID,
 		&i.ParentReplyID,
 		&i.AuthorUserID,
@@ -2586,8 +2577,8 @@ SET name = $1,
  cover_image_id = $5,
  moderator_user_id = $6
 WHERE id = $7 AND deleted_at IS NULL
-RETURNING id, tenant_id, name, slug, description, rules, cover_image_id,
-          follower_count, moderator_user_id, created_at, deleted_at
+RETURNING id, name, slug, description, rules, cover_image_id,
+ follower_count, moderator_user_id, created_at, deleted_at
 `
 
 type UpdateForumTagParams struct {
@@ -2613,7 +2604,6 @@ func (q *Queries) UpdateForumTag(ctx context.Context, arg UpdateForumTagParams) 
 	var i ForumTag
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -2752,7 +2742,7 @@ INSERT INTO forum_votes (user_id, entity_type, entity_id, value) VALUES ($1, $2,
 
 ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
  SET value = $4
-RETURNING id, tenant_id, user_id, entity_type, entity_id, value, created_at
+RETURNING id, user_id, entity_type, entity_id, value, created_at
 `
 
 type UpsertForumVoteParams struct {
@@ -2775,7 +2765,6 @@ func (q *Queries) UpsertForumVote(ctx context.Context, arg UpsertForumVoteParams
 	var i ForumVote
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.EntityType,
 		&i.EntityID,

@@ -1352,18 +1352,9 @@ FROM user_preferences
 WHERE user_id = $1
 `
 
-type GetUserPreferencesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	DarkMode  string             `json:"dark_mode"`
-	Language  string             `json:"language"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserPreferences(ctx context.Context, userID pgtype.UUID) (GetUserPreferencesRow, error) {
+func (q *Queries) GetUserPreferences(ctx context.Context, userID pgtype.UUID) (UserPreference, error) {
 	row := q.db.QueryRow(ctx, getUserPreferences, userID)
-	var i GetUserPreferencesRow
+	var i UserPreference
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -1382,22 +1373,13 @@ WHERE user_id = $1
 FOR UPDATE
 `
 
-type GetUserPreferencesForUpdateRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	DarkMode  string             `json:"dark_mode"`
-	Language  string             `json:"language"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 // Row-locks the user_preferences row for the read-merge-upsert pattern in
 // UpdatePreferences (BUG-003). The FOR UPDATE lock is held until the
 // transaction commits or rolls back, preventing concurrent preference
 // edits from racing on the merge step.
-func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, userID pgtype.UUID) (GetUserPreferencesForUpdateRow, error) {
+func (q *Queries) GetUserPreferencesForUpdate(ctx context.Context, userID pgtype.UUID) (UserPreference, error) {
 	row := q.db.QueryRow(ctx, getUserPreferencesForUpdate, userID)
-	var i GetUserPreferencesForUpdateRow
+	var i UserPreference
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,

@@ -1,11 +1,11 @@
 -- name: ListCustomFieldGroupsByTenant :many
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListCustomFieldGroupsByTenantAndEntityClass :many
-SELECT DISTINCT cfg.id, cfg.tenant_id, cfg.name, cfg.slug, cfg.description,
+SELECT DISTINCT cfg.id, cfg.name, cfg.slug, cfg.description,
  cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
 JOIN custom_field_group_assignments cfga ON cfg.id = cfga.group_id
@@ -13,25 +13,25 @@ WHERE cfga.entity_class = @entity_class
 ORDER BY cfg.created_at DESC, cfg.id DESC;
 
 -- name: GetCustomFieldGroupByID :one
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE id = @id;
 
 -- name: GetCustomFieldGroupBySlug :one
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE slug = @slug;
 
 -- name: CreateCustomFieldGroup :one
 INSERT INTO custom_field_groups (name, slug, description, is_system) VALUES (@name, @slug, @description, @is_system)
 
-RETURNING id, tenant_id, name, slug, description, is_system, created_at;
+RETURNING id, name, slug, description, is_system, created_at;
 
 -- name: UpdateCustomFieldGroup :one
 UPDATE custom_field_groups
 SET name = @name, description = @description
 WHERE id = @id AND is_system = false
-RETURNING id, tenant_id, name, slug, description, is_system, created_at;
+RETURNING id, name, slug, description, is_system, created_at;
 
 -- name: DeleteCustomFieldGroup :exec
 DELETE FROM custom_field_groups

@@ -150,7 +150,7 @@ func (q *Queries) CountPublicOrganizations(ctx context.Context, arg CountPublicO
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (owner_user_id, name, slug, tagline, description, website_url, country_code, geo_space_id, org_type) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id
+RETURNING id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id
 `
 
 type CreateOrganizationParams struct {
@@ -180,7 +180,6 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	var i Organization
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Slug,
@@ -246,7 +245,7 @@ func (q *Queries) CreateOrganizationInvitation(ctx context.Context, arg CreateOr
 const createOwnershipClaim = `-- name: CreateOwnershipClaim :one
 INSERT INTO ownership_claims (claimant_user_id, organization_id, evidence_url, notes, form_submission_id) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, tenant_id, claimant_user_id, organization_id, evidence_url, notes, status, reviewed_by, resolution_note, created_at, reviewed_at, form_submission_id
+RETURNING id, claimant_user_id, organization_id, evidence_url, notes, status, reviewed_by, resolution_note, created_at, reviewed_at, form_submission_id
 `
 
 type CreateOwnershipClaimParams struct {
@@ -268,7 +267,6 @@ func (q *Queries) CreateOwnershipClaim(ctx context.Context, arg CreateOwnershipC
 	var i OwnershipClaim
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ClaimantUserID,
 		&i.OrganizationID,
 		&i.EvidenceUrl,
@@ -371,7 +369,7 @@ func (q *Queries) GetOrganizationAnalytics(ctx context.Context, arg GetOrganizat
 }
 
 const getOrganizationByID = `-- name: GetOrganizationByID :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
+SELECT id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -380,7 +378,6 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Orga
 	var i Organization
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Slug,
@@ -407,7 +404,7 @@ func (q *Queries) GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Orga
 }
 
 const getOrganizationByIDOnly = `-- name: GetOrganizationByIDOnly :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
+SELECT id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -418,7 +415,6 @@ func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (
 	var i Organization
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Slug,
@@ -445,7 +441,7 @@ func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (
 }
 
 const getOrganizationBySlug = `-- name: GetOrganizationBySlug :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
+SELECT id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE slug = $1 AND deleted_at IS NULL
 `
 
@@ -454,7 +450,6 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 	var i Organization
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Slug,
@@ -520,7 +515,7 @@ func (q *Queries) GetOrganizationMemberRole(ctx context.Context, arg GetOrganiza
 }
 
 const getOwnershipClaimByID = `-- name: GetOwnershipClaimByID :one
-SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
@@ -529,7 +524,6 @@ WHERE oc.id = $1
 
 type GetOwnershipClaimByIDRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
 	OrganizationID   pgtype.UUID        `json:"organization_id"`
 	EvidenceUrl      *string            `json:"evidence_url"`
@@ -551,7 +545,6 @@ func (q *Queries) GetOwnershipClaimByID(ctx context.Context, id pgtype.UUID) (Ge
 	var i GetOwnershipClaimByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ClaimantUserID,
 		&i.OrganizationID,
 		&i.EvidenceUrl,
@@ -679,7 +672,7 @@ func (q *Queries) GetPendingOwnershipClaims(ctx context.Context) ([]GetPendingOw
 }
 
 const getPublicOrganizationBySlug = `-- name: GetPublicOrganizationBySlug :one
-SELECT id, tenant_id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
+SELECT id, owner_user_id, name, slug, tagline, description, logo_media_id, header_media_id, website_url, country_code, geo_space_id, org_type, verified, verification_type, follower_count, member_count, status, field_values, created_at, updated_at, deleted_at, source_id FROM organizations
 WHERE slug = $1
  AND status = 'active' AND deleted_at IS NULL
 `
@@ -691,7 +684,6 @@ func (q *Queries) GetPublicOrganizationBySlug(ctx context.Context, slug string) 
 	var i Organization
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.OwnerUserID,
 		&i.Name,
 		&i.Slug,
@@ -842,7 +834,7 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID pg
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
+SELECT o.id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, u.username AS owner_username
 FROM organizations o
 LEFT JOIN users u ON u.id = o.owner_user_id
 WHERE o.deleted_at IS NULL
@@ -865,7 +857,6 @@ type ListOrganizationsParams struct {
 
 type ListOrganizationsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
@@ -908,7 +899,6 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 		var i ListOrganizationsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.OwnerUserID,
 			&i.Name,
 			&i.Slug,
@@ -943,7 +933,7 @@ func (q *Queries) ListOrganizations(ctx context.Context, arg ListOrganizationsPa
 }
 
 const listOrganizationsByMember = `-- name: ListOrganizationsByMember :many
-SELECT o.id, o.tenant_id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, om.role AS member_role
+SELECT o.id, o.owner_user_id, o.name, o.slug, o.tagline, o.description, o.logo_media_id, o.header_media_id, o.website_url, o.country_code, o.geo_space_id, o.org_type, o.verified, o.verification_type, o.follower_count, o.member_count, o.status, o.field_values, o.created_at, o.updated_at, o.deleted_at, o.source_id, om.role AS member_role
 FROM organizations o
 JOIN organization_members om ON om.organization_id = o.id AND om.user_id = $1
 WHERE o.deleted_at IS NULL
@@ -959,7 +949,6 @@ type ListOrganizationsByMemberParams struct {
 
 type ListOrganizationsByMemberRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	OwnerUserID      pgtype.UUID        `json:"owner_user_id"`
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
@@ -997,7 +986,6 @@ func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganiz
 		var i ListOrganizationsByMemberRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.OwnerUserID,
 			&i.Name,
 			&i.Slug,
@@ -1032,7 +1020,7 @@ func (q *Queries) ListOrganizationsByMember(ctx context.Context, arg ListOrganiz
 }
 
 const listOwnershipClaims = `-- name: ListOwnershipClaims :many
-SELECT oc.id, oc.tenant_id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
+SELECT oc.id, oc.claimant_user_id, oc.organization_id, oc.evidence_url, oc.notes, oc.status, oc.reviewed_by, oc.resolution_note, oc.created_at, oc.reviewed_at, oc.form_submission_id, u.username AS claimant_username, o.name AS org_name
 FROM ownership_claims oc
 JOIN users u ON u.id = oc.claimant_user_id
 JOIN organizations o ON o.id = oc.organization_id
@@ -1049,7 +1037,6 @@ type ListOwnershipClaimsParams struct {
 
 type ListOwnershipClaimsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	ClaimantUserID   pgtype.UUID        `json:"claimant_user_id"`
 	OrganizationID   pgtype.UUID        `json:"organization_id"`
 	EvidenceUrl      *string            `json:"evidence_url"`
@@ -1075,7 +1062,6 @@ func (q *Queries) ListOwnershipClaims(ctx context.Context, arg ListOwnershipClai
 		var i ListOwnershipClaimsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ClaimantUserID,
 			&i.OrganizationID,
 			&i.EvidenceUrl,

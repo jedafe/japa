@@ -29,11 +29,6 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 
 	database := &db.DB{Writer: pool, Reader: pool}
 
-	var tenantID pgtype.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM tenants LIMIT 1").Scan(&tenantID); err != nil {
-		t.Fatalf("get tenant: %v", err)
-	}
-
 	var userID pgtype.UUID
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japaconnect.com' LIMIT 1").Scan(&userID); err != nil {
 		t.Fatalf("get user: %v", err)
@@ -93,7 +88,7 @@ func TestToolWriterCreateSmoke(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record, err := reg.CreateTool(ctx, tenantID, userID, tt.toolType, tt.payload)
+			record, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, tt.toolType, tt.payload)
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}

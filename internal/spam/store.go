@@ -250,7 +250,7 @@ func (s *Store) DeleteUserBlock(ctx context.Context, tenantID, blockerID, blocke
 }
 
 // GetUserBlocks returns all users blocked by the given user.
-func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen.GetUserBlocksRow, error) {
+func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen.UserBlock, error) {
 	return s.queries.GetUserBlocks(ctx, blockerID)
 }
 

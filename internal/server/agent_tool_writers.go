@@ -341,16 +341,24 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 		var args []reflect.Value
 
 		switch mt.NumIn() {
-		case 3:
-			// (ctx, id, tenantID)
+		case 2:
+			// (ctx, id)
 			var idUUID pgtype.UUID
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)
 			}
 
-			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(tenantID)}
+			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID)}
+		case 3:
+			// (ctx, id, userID)
+			var idUUID pgtype.UUID
+			if err := idUUID.Scan(id); err != nil {
+				return fmt.Errorf("invalid tool_id: %w", err)
+			}
+
+			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 		case 4:
-			// (ctx, id, tenantID, userID)
+			// (ctx, id, tenantID, userID) — legacy tenant-aware signature
 			var idUUID pgtype.UUID
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)
@@ -398,11 +406,12 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		create3 = isCreate && nIn == 3
 		create4 = isCreate && nIn == 4
 		update2 = isUpdate && nIn == 2
+		update3 = isUpdate && nIn == 3
 		update4 = isUpdate && nIn == 4
 		update5 = isUpdate && nIn == 5
 	)
 
-	if !create2 && !create3 && !create4 && !update2 && !update4 && !update5 {
+	if !create2 && !create3 && !create4 && !update2 && !update3 && !update4 && !update5 {
 		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
 	}
 
@@ -419,7 +428,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	}
 
 	var idUUID pgtype.UUID
-	if update4 || update5 {
+	if update3 || update4 || update5 {
 		if err := idUUID.Scan(id); err != nil {
 			return nil, fmt.Errorf("invalid tool_id: %w", err)
 		}
@@ -441,6 +450,8 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	switch {
 	case create2, update2:
 		args = []reflect.Value{reflect.ValueOf(ctx)}
+	case update3:
+		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID)}
 	case create3:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(tenantID)}
 	case create4:

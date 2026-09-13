@@ -166,10 +166,11 @@ func (s *Store) listPostsInSeries(ctx context.Context, seriesID, tenantID pgtype
 	return rows, nil
 }
 
-// getContentTenantID returns the tenant_id of a content row, for cross-tenant
-// verification before linking a post to a series (H7).
+// getContentTenantID is a no-op compatibility helper. Cross-tenant verification
+// is no longer required in the single-tenant deployment.
 func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
-	return s.read.GetContentTenantID(ctx, contentID)
+	_ = contentID
+	return pgtype.UUID{}, nil
 }
 
 // getSeriesForContent returns the series_id for a given content_id, or

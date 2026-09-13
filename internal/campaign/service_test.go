@@ -303,7 +303,7 @@ func (f *fakeReviewSyncStore) ListCampaignItemsByCampaign(ctx context.Context, t
 	return []gen.ContentCampaignItem{f.item}, nil
 }
 
-func (f *fakeReviewSyncStore) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
+func (f *fakeReviewSyncStore) UpdateCampaignStatus(ctx context.Context, id pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
 	return gen.ContentCampaign{ID: id, Status: status}, nil
 }
 

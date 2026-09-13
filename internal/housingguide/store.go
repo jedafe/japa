@@ -2,7 +2,7 @@
 // Guide (§96, ADR-104).
 //
 // Housing guides are standalone records in the housing_guides table
-// keyed by (tenant_id, destination_space_id, city_space_id,
+// keyed by (destination_space_id, city_space_id,
 // accommodation_type). A NULL city_space_id denotes a country-level
 // guide. The package provides public filtered listing, single-guide
 // retrieval, admin CRUD, Content Agent draft generation, and HITL
@@ -73,7 +73,7 @@ LIMIT 1
 
 	var name string
 
-	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -90,7 +90,6 @@ LIMIT 1
 // (HITL reviewer).
 type GuideRow struct {
 	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	CitySpaceID          pgtype.UUID
 	AccommodationType    *string
@@ -120,7 +119,6 @@ type GuideRow struct {
 
 // CreateGuideInput holds the fields for inserting a new housing guide.
 type CreateGuideInput struct {
-	TenantID             pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	CitySpaceID          pgtype.UUID
 	AccommodationType    *string
@@ -157,7 +155,6 @@ type UpdateGuideInput struct {
 // ListGuidesFilter holds the filter parameters for listing published
 // housing guides.
 type ListGuidesFilter struct {
-	TenantID          pgtype.UUID
 	DestSpaceID       pgtype.UUID // optional
 	CitySpaceID       pgtype.UUID // optional
 	AccommodationType string      // optional
@@ -176,10 +173,6 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("hg.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("hg.status = $%d", argIdx))
@@ -233,7 +226,7 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT hg.id, hg.tenant_id, hg.destination_space_id, hg.city_space_id,
+SELECT hg.id, hg.destination_space_id, hg.city_space_id,
        hg.accommodation_type, hg.search_platforms, hg.landlord_requirements,
        hg.rent_ranges, hg.scam_categories, hg.tips, hg.status, hg.is_active,
        hg.ai_generated, hg.ai_model, hg.ai_prompt_hash,
@@ -265,7 +258,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.CitySpaceID,
+			&r.ID, &r.DestinationSpaceID, &r.CitySpaceID,
 			&r.AccommodationType, &r.SearchPlatforms, &r.LandlordRequirements,
 			&r.RentRanges, &r.ScamCategories, &r.Tips, &r.Status, &r.IsActive,
 			&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
@@ -304,7 +297,7 @@ WHERE %s
 // GetGuideByID returns a single housing guide by its id.
 func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
 	const q = `
-SELECT hg.id, hg.tenant_id, hg.destination_space_id, hg.city_space_id,
+SELECT hg.id, hg.destination_space_id, hg.city_space_id,
        hg.accommodation_type, hg.search_platforms, hg.landlord_requirements,
        hg.rent_ranges, hg.scam_categories, hg.tips, hg.status, hg.is_active,
        hg.ai_generated, hg.ai_model, hg.ai_prompt_hash,
@@ -318,14 +311,14 @@ FROM housing_guides hg
 LEFT JOIN spaces ds ON ds.id = hg.destination_space_id
 LEFT JOIN spaces cs ON cs.id = hg.city_space_id
 LEFT JOIN users u ON u.id = hg.hitl_reviewed_by
-WHERE hg.id = $1 AND hg.tenant_id = $2
+WHERE hg.id = $1
 LIMIT 1
 `
 
 	var r GuideRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.CitySpaceID,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.DestinationSpaceID, &r.CitySpaceID,
 		&r.AccommodationType, &r.SearchPlatforms, &r.LandlordRequirements,
 		&r.RentRanges, &r.ScamCategories, &r.Tips, &r.Status, &r.IsActive,
 		&r.AIGenerated, &r.AIModel, &r.AIPromptHash,
@@ -368,11 +361,11 @@ func (s *Store) CreateGuide(ctx context.Context, input CreateGuideInput) (pgtype
 
 	const q = `
 INSERT INTO housing_guides (
-    tenant_id, destination_space_id, city_space_id, accommodation_type,
+    destination_space_id, city_space_id, accommodation_type,
     search_platforms, landlord_requirements, rent_ranges, scam_categories,
     tips, status, is_active, ai_generated, ai_model, ai_prompt_hash,
     last_verified_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id
 `
 
@@ -380,7 +373,7 @@ RETURNING id
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		input.TenantID, input.DestinationSpaceID, input.CitySpaceID,
+		input.DestinationSpaceID, input.CitySpaceID,
 		input.AccommodationType, searchPlatforms, input.LandlordRequirements,
 		rentRanges, input.ScamCategories, input.Tips, status,
 		input.IsActive, input.AIGenerated, input.AIModel, input.AIPromptHash,
@@ -555,7 +548,6 @@ WHERE id = $1 AND tenant_id = $2
 
 // AdminListFilter holds filter parameters for the admin management list.
 type AdminListFilter struct {
-	TenantID          pgtype.UUID
 	Status            string      // optional
 	AccommodationType string      // optional
 	DestSpaceID       pgtype.UUID // optional
@@ -574,10 +566,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, i
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("hg.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("hg.status = $%d", argIdx))
@@ -632,7 +620,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]GuideRow, i
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT hg.id, hg.tenant_id, hg.destination_space_id, hg.city_space_id,
+SELECT hg.id, hg.destination_space_id, hg.city_space_id,
        hg.accommodation_type, hg.search_platforms, hg.landlord_requirements,
        hg.rent_ranges, hg.scam_categories, hg.tips, hg.status, hg.is_active,
        hg.ai_generated, hg.ai_model, hg.ai_prompt_hash,
@@ -664,7 +652,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.CitySpaceID,
+			&r.ID, &r.DestinationSpaceID, &r.CitySpaceID,
 			&r.AccommodationType, &r.SearchPlatforms, &r.LandlordRequirements,
 			&r.RentRanges, &r.ScamCategories, &r.Tips, &r.Status, &r.IsActive,
 			&r.AIGenerated, &r.AIModel, &r.AIPromptHash,

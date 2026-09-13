@@ -53,7 +53,6 @@ func NewStore(database *db.DB) *Store {
 // name/geo_code.
 type RouteRow struct {
 	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	DestSpaceName        *string
 	DestSpaceCode        *string
@@ -83,7 +82,6 @@ type RouteRow struct {
 
 // ListFilter holds the filter parameters for public listing.
 type ListFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	Profession         string      // optional: filter requirements_json
 	Education          string      // optional: filter requirements_json
@@ -102,10 +100,6 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("vr.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, "vr.status = 'published'")
 	conditions = append(conditions, "vr.is_active = true")
@@ -158,7 +152,7 @@ func (s *Store) List(ctx context.Context, f ListFilter) ([]RouteRow, int64, erro
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+SELECT vr.id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
        vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
@@ -187,7 +181,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID,
+			&r.ID, &r.DestinationSpaceID,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
 			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
@@ -223,9 +217,9 @@ SELECT COUNT(*) FROM visa_routes vr WHERE %s
 
 // GetByID returns a single visa route by its primary key. Public callers
 // should filter to published+active; admin callers may fetch any row.
-func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteRow, error) {
+func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (RouteRow, error) {
 	const q = `
-SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+SELECT vr.id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
        vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
@@ -236,14 +230,14 @@ SELECT vr.id, vr.tenant_id, vr.destination_space_id,
        vr.is_japabot_indexed, vr.created_at, vr.updated_at
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
-WHERE vr.id = $1 AND vr.tenant_id = $2
+WHERE vr.id = $1
 LIMIT 1
 `
 
 	var r RouteRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.DestinationSpaceID,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
 		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
@@ -266,9 +260,9 @@ LIMIT 1
 
 // GetBySlug returns a single visa route by its slug. Public callers should
 // filter to published+active; admin callers may fetch any row.
-func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (RouteRow, error) {
+func (s *Store) GetBySlug(ctx context.Context, slug string) (RouteRow, error) {
 	const q = `
-SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+SELECT vr.id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
        vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
@@ -279,14 +273,14 @@ SELECT vr.id, vr.tenant_id, vr.destination_space_id,
        vr.is_japabot_indexed, vr.created_at, vr.updated_at
 FROM visa_routes vr
 LEFT JOIN spaces ds ON ds.id = vr.destination_space_id
-WHERE vr.slug = $1 AND vr.tenant_id = $2
+WHERE vr.slug = $1
 LIMIT 1
 `
 
 	var r RouteRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, slug, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID,
+	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
+		&r.ID, &r.DestinationSpaceID,
 		&r.DestSpaceName, &r.DestSpaceCode,
 		&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
 		&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
@@ -325,7 +319,7 @@ func (s *Store) GetByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype
 	}
 
 	q := fmt.Sprintf(`
-SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+SELECT vr.id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
        vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
@@ -353,7 +347,7 @@ ORDER BY vr.name ASC
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID,
+			&r.ID, &r.DestinationSpaceID,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
 			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
@@ -378,7 +372,6 @@ ORDER BY vr.name ASC
 
 // AdminListFilter holds filter parameters for the admin list.
 type AdminListFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	Status             string      // optional
 	IsActive           *bool       // optional
@@ -398,10 +391,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("vr.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("vr.destination_space_id = $%d", argIdx))
@@ -464,7 +453,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]RouteRow, i
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT vr.id, vr.tenant_id, vr.destination_space_id,
+SELECT vr.id, vr.destination_space_id,
        ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        vr.visa_category, vr.name, vr.slug, vr.eligibility_summary,
        vr.requirements_json, vr.typical_fee_usd, vr.path_to_pr,
@@ -493,7 +482,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r RouteRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID,
+			&r.ID, &r.DestinationSpaceID,
 			&r.DestSpaceName, &r.DestSpaceCode,
 			&r.VisaCategory, &r.Name, &r.Slug, &r.EligibilitySummary,
 			&r.RequirementsJSON, &r.TypicalFeeUSD, &r.PathToPR,
@@ -529,7 +518,6 @@ SELECT COUNT(*) FROM visa_routes vr WHERE %s
 
 // CreateRoute holds the fields for inserting a new visa route.
 type CreateRoute struct {
-	TenantID             pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	VisaCategory         string
 	Name                 string
@@ -563,11 +551,11 @@ func (s *Store) Create(ctx context.Context, input CreateRoute) (RouteRow, error)
 
 	const q = `
 INSERT INTO visa_routes (
-    tenant_id, destination_space_id, visa_category, name, slug,
+    destination_space_id, visa_category, name, slug,
     eligibility_summary, requirements_json, typical_fee_usd, path_to_pr,
     renewal_terms, restrictions, gov_source_url, source_url_last_checked,
     status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 RETURNING id
 `
 
@@ -575,7 +563,7 @@ RETURNING id
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		input.TenantID, input.DestinationSpaceID, input.VisaCategory,
+		input.DestinationSpaceID, input.VisaCategory,
 		input.Name, input.Slug, input.EligibilitySummary, requirementsJSON,
 		input.TypicalFeeUSD, input.PathToPR, input.RenewalTerms,
 		input.Restrictions, input.GovSourceURL, input.SourceURLLastChecked,
@@ -586,7 +574,7 @@ RETURNING id
 		return RouteRow{}, fmt.Errorf("visaroutes: create: %w", err)
 	}
 
-	return s.GetByID(ctx, id, input.TenantID)
+	return s.GetByID(ctx, id)
 }
 
 // UpdateRoute holds the mutable fields for a PATCH update. Only non-nil
@@ -613,7 +601,7 @@ type UpdateRoute struct {
 
 // Update applies a partial update to a visa route and returns the
 // updated row.
-func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRoute) (RouteRow, error) {
+func (s *Store) Update(ctx context.Context, id pgtype.UUID, input UpdateRoute) (RouteRow, error) {
 	var (
 		sets   []string
 		args   []any
@@ -723,17 +711,17 @@ func (s *Store) Update(ctx context.Context, id, tenantID pgtype.UUID, input Upda
 	}
 
 	if len(sets) == 0 {
-		return s.GetByID(ctx, id, tenantID)
+		return s.GetByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	q := fmt.Sprintf(`
 UPDATE visa_routes
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -744,7 +732,7 @@ WHERE id = $%d AND tenant_id = $%d
 		return RouteRow{}, pgx.ErrNoRows
 	}
 
-	return s.GetByID(ctx, id, tenantID)
+	return s.GetByID(ctx, id)
 }
 
 // Approve sets the HITL review fields: hitl_reviewed_by, hitl_reviewed_at
@@ -770,7 +758,7 @@ WHERE id = $1 AND tenant_id = $2
 		return RouteRow{}, pgx.ErrNoRows
 	}
 
-	return s.GetByID(ctx, id, tenantID)
+	return s.GetByID(ctx, id)
 }
 
 // Deactivate soft-deletes a visa route by setting is_active = false.

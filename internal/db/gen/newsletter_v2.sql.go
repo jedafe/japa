@@ -44,7 +44,7 @@ func (q *Queries) AdminCountSubscribers(ctx context.Context, arg AdminCountSubsc
 }
 
 const adminListCampaigns = `-- name: AdminListCampaigns :many
-SELECT id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by FROM newsletter_campaigns
+SELECT id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by FROM newsletter_campaigns
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -67,7 +67,6 @@ func (q *Queries) AdminListCampaigns(ctx context.Context, arg AdminListCampaigns
 		var i NewsletterCampaign
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Subject,
 			&i.Html,
@@ -97,7 +96,7 @@ func (q *Queries) AdminListCampaigns(ctx context.Context, arg AdminListCampaigns
 
 const adminListSubscribers = `-- name: AdminListSubscribers :many
 
-SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
+SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE ($1::text = '' OR status = $1)
  AND ($2::text = '' OR email ILIKE '%' || $2 || '%')
 ORDER BY subscribed_at DESC
@@ -130,7 +129,6 @@ func (q *Queries) AdminListSubscribers(ctx context.Context, arg AdminListSubscri
 		var i NewsletterSubscriber
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Email,
 			&i.UserID,
 			&i.Status,
@@ -202,7 +200,7 @@ const createCampaign = `-- name: CreateCampaign :one
 
 INSERT INTO newsletter_campaigns (name, subject, html, preview_text, body, segment, segment_id, status, scheduled_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 
-RETURNING id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
+RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
 `
 
 type CreateCampaignParams struct {
@@ -237,7 +235,6 @@ func (q *Queries) CreateCampaign(ctx context.Context, arg CreateCampaignParams) 
 	var i NewsletterCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Subject,
 		&i.Html,
@@ -291,7 +288,7 @@ func (q *Queries) DeleteUnsubscribeToken(ctx context.Context, token string) erro
 
 const getDigestSubscribers = `-- name: GetDigestSubscribers :many
 
-SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
+SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE status = 'subscribed'
  AND digest_enabled = true
 ORDER BY subscribed_at ASC
@@ -317,7 +314,6 @@ func (q *Queries) GetDigestSubscribers(ctx context.Context, arg GetDigestSubscri
 		var i NewsletterSubscriber
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Email,
 			&i.UserID,
 			&i.Status,
@@ -376,7 +372,7 @@ func (q *Queries) GetNewsletterCampaignForSend(ctx context.Context, id pgtype.UU
 const getSubscriberByEmail = `-- name: GetSubscriberByEmail :one
 
 
-SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
+SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE email = $1
 `
 
@@ -394,7 +390,6 @@ func (q *Queries) GetSubscriberByEmail(ctx context.Context, email string) (Newsl
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -409,7 +404,7 @@ func (q *Queries) GetSubscriberByEmail(ctx context.Context, email string) (Newsl
 }
 
 const getSubscriberByID = `-- name: GetSubscriberByID :one
-SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
+SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE id = $1
 `
 
@@ -418,7 +413,6 @@ func (q *Queries) GetSubscriberByID(ctx context.Context, id pgtype.UUID) (Newsle
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -433,7 +427,7 @@ func (q *Queries) GetSubscriberByID(ctx context.Context, id pgtype.UUID) (Newsle
 }
 
 const getSubscriberByUserID = `-- name: GetSubscriberByUserID :one
-SELECT id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
+SELECT id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source FROM newsletter_subscribers
 WHERE user_id = $1
 `
 
@@ -442,7 +436,6 @@ func (q *Queries) GetSubscriberByUserID(ctx context.Context, userID pgtype.UUID)
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -707,7 +700,7 @@ ON CONFLICT (email) DO UPDATE SET
  status = 'subscribed',
  unsubscribed_at = NULL,
  subscribed_at = now()
-RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
 type SubscribeParams struct {
@@ -721,7 +714,6 @@ func (q *Queries) Subscribe(ctx context.Context, arg SubscribeParams) (Newslette
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -750,7 +742,7 @@ const unsubscribeByID = `-- name: UnsubscribeByID :one
 UPDATE newsletter_subscribers
 SET status = 'unsubscribed', unsubscribed_at = now()
 WHERE id = $1
-RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
 func (q *Queries) UnsubscribeByID(ctx context.Context, id pgtype.UUID) (NewsletterSubscriber, error) {
@@ -758,7 +750,6 @@ func (q *Queries) UnsubscribeByID(ctx context.Context, id pgtype.UUID) (Newslett
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -785,7 +776,7 @@ SET
  status = COALESCE($8, status),
  scheduled_at = COALESCE($9, scheduled_at)
 WHERE id = $10
-RETURNING id, tenant_id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
+RETURNING id, name, subject, html, status, sent_at, created_at, updated_at, preview_text, body, segment, segment_id, scheduled_at, recipient_count, open_count, click_count, created_by
 `
 
 type UpdateCampaignParams struct {
@@ -817,7 +808,6 @@ func (q *Queries) UpdateCampaign(ctx context.Context, arg UpdateCampaignParams) 
 	var i NewsletterCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Subject,
 		&i.Html,
@@ -844,7 +834,7 @@ SET
  digest_enabled = COALESCE($1, digest_enabled),
  campaign_enabled = COALESCE($2, campaign_enabled)
 WHERE id = $3
-RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
 type UpdatePreferencesParams struct {
@@ -858,7 +848,6 @@ func (q *Queries) UpdatePreferences(ctx context.Context, arg UpdatePreferencesPa
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,
@@ -878,7 +867,7 @@ UPDATE newsletter_subscribers
 SET status = $1,
  unsubscribed_at = CASE WHEN $1 = 'unsubscribed' THEN now() ELSE unsubscribed_at END
 WHERE id = $2
-RETURNING id, tenant_id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
+RETURNING id, email, user_id, status, created_at, digest_enabled, campaign_enabled, subscribed_at, unsubscribed_at, source
 `
 
 type UpdateSubscriberStatusParams struct {
@@ -894,7 +883,6 @@ func (q *Queries) UpdateSubscriberStatus(ctx context.Context, arg UpdateSubscrib
 	var i NewsletterSubscriber
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.UserID,
 		&i.Status,

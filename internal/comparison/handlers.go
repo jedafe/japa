@@ -1208,7 +1208,7 @@ func (h *Handlers) UpsertComparisonValues(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	results, err := h.Service.BatchUpsertComparisonValues(r.Context(), tenantID, dimensionID, inputs)
+	results, err := h.Service.BatchUpsertComparisonValues(r.Context(), dimensionID, inputs)
 	if err != nil {
 		handleServiceError(w, err)
 		return

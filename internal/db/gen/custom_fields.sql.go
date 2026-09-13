@@ -183,7 +183,7 @@ func (q *Queries) CreateCustomField(ctx context.Context, arg CreateCustomFieldPa
 const createCustomFieldGroup = `-- name: CreateCustomFieldGroup :one
 INSERT INTO custom_field_groups (name, slug, description, is_system) VALUES ($1, $2, $3, $4)
 
-RETURNING id, tenant_id, name, slug, description, is_system, created_at
+RETURNING id, name, slug, description, is_system, created_at
 `
 
 type CreateCustomFieldGroupParams struct {
@@ -203,7 +203,6 @@ func (q *Queries) CreateCustomFieldGroup(ctx context.Context, arg CreateCustomFi
 	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -418,7 +417,7 @@ func (q *Queries) GetCustomFieldByKey(ctx context.Context, key string) (GetCusto
 }
 
 const getCustomFieldGroupByID = `-- name: GetCustomFieldGroupByID :one
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE id = $1
 `
@@ -428,7 +427,6 @@ func (q *Queries) GetCustomFieldGroupByID(ctx context.Context, id pgtype.UUID) (
 	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -439,7 +437,7 @@ func (q *Queries) GetCustomFieldGroupByID(ctx context.Context, id pgtype.UUID) (
 }
 
 const getCustomFieldGroupBySlug = `-- name: GetCustomFieldGroupBySlug :one
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 WHERE slug = $1
 `
@@ -449,7 +447,6 @@ func (q *Queries) GetCustomFieldGroupBySlug(ctx context.Context, slug string) (C
 	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -646,7 +643,7 @@ func (q *Queries) ListAssignmentsByTenantGroups(ctx context.Context) ([]CustomFi
 }
 
 const listCustomFieldGroupsByTenant = `-- name: ListCustomFieldGroupsByTenant :many
-SELECT id, tenant_id, name, slug, description, is_system, created_at
+SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups
 
 ORDER BY created_at DESC, id DESC
@@ -663,7 +660,6 @@ func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFi
 		var i CustomFieldGroup
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -681,7 +677,7 @@ func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFi
 }
 
 const listCustomFieldGroupsByTenantAndEntityClass = `-- name: ListCustomFieldGroupsByTenantAndEntityClass :many
-SELECT DISTINCT cfg.id, cfg.tenant_id, cfg.name, cfg.slug, cfg.description,
+SELECT DISTINCT cfg.id, cfg.name, cfg.slug, cfg.description,
  cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
 JOIN custom_field_group_assignments cfga ON cfg.id = cfga.group_id
@@ -700,7 +696,6 @@ func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Contex
 		var i CustomFieldGroup
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -1128,7 +1123,7 @@ const updateCustomFieldGroup = `-- name: UpdateCustomFieldGroup :one
 UPDATE custom_field_groups
 SET name = $1, description = $2
 WHERE id = $3 AND is_system = false
-RETURNING id, tenant_id, name, slug, description, is_system, created_at
+RETURNING id, name, slug, description, is_system, created_at
 `
 
 type UpdateCustomFieldGroupParams struct {
@@ -1142,7 +1137,6 @@ func (q *Queries) UpdateCustomFieldGroup(ctx context.Context, arg UpdateCustomFi
 	var i CustomFieldGroup
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

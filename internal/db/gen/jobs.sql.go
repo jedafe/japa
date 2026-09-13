@@ -66,7 +66,7 @@ func (q *Queries) AdminJobApplicationStatusDistribution(ctx context.Context) ([]
 const adminListJobApplications = `-- name: AdminListJobApplications :many
 
 SELECT
- ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  u.username AS applicant_username,
  c.title AS job_title
 FROM job_applications ja
@@ -85,7 +85,6 @@ type AdminListJobApplicationsParams struct {
 
 type AdminListJobApplicationsRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	ApplicantID       pgtype.UUID        `json:"applicant_id"`
 	SubmissionID      pgtype.UUID        `json:"submission_id"`
@@ -111,7 +110,6 @@ func (q *Queries) AdminListJobApplications(ctx context.Context, arg AdminListJob
 		var i AdminListJobApplicationsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.JobID,
 			&i.ApplicantID,
 			&i.SubmissionID,
@@ -170,7 +168,7 @@ const createJobApplication = `-- name: CreateJobApplication :one
 INSERT INTO job_applications (job_id, applicant_id, submission_id) VALUES ($1, $2, $3)
 
 ON CONFLICT (job_id, applicant_id) DO NOTHING
-RETURNING id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
+RETURNING id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
 `
 
 type CreateJobApplicationParams struct {
@@ -194,7 +192,6 @@ func (q *Queries) CreateJobApplication(ctx context.Context, arg CreateJobApplica
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.JobID,
 		&i.ApplicantID,
 		&i.SubmissionID,
@@ -246,7 +243,7 @@ func (q *Queries) ExpireJobListingsPastDeadline(ctx context.Context) (int64, err
 
 const getJobApplicationByID = `-- name: GetJobApplicationByID :one
 
-SELECT id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at FROM job_applications
+SELECT id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at FROM job_applications
 WHERE id = $1
 `
 
@@ -258,7 +255,6 @@ func (q *Queries) GetJobApplicationByID(ctx context.Context, id pgtype.UUID) (Jo
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.JobID,
 		&i.ApplicantID,
 		&i.SubmissionID,
@@ -273,7 +269,7 @@ func (q *Queries) GetJobApplicationByID(ctx context.Context, id pgtype.UUID) (Jo
 const listJobApplicationsByJob = `-- name: ListJobApplicationsByJob :many
 
 SELECT
- ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  u.username AS applicant_username,
  u.email AS applicant_email
 FROM job_applications ja
@@ -293,7 +289,6 @@ type ListJobApplicationsByJobParams struct {
 
 type ListJobApplicationsByJobRow struct {
 	ID                pgtype.UUID        `json:"id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	ApplicantID       pgtype.UUID        `json:"applicant_id"`
 	SubmissionID      pgtype.UUID        `json:"submission_id"`
@@ -324,7 +319,6 @@ func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobAppli
 		var i ListJobApplicationsByJobRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.JobID,
 			&i.ApplicantID,
 			&i.SubmissionID,
@@ -348,7 +342,7 @@ func (q *Queries) ListJobApplicationsByJob(ctx context.Context, arg ListJobAppli
 const listUserJobApplications = `-- name: ListUserJobApplications :many
 
 SELECT
- ja.id, ja.tenant_id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
+ ja.id, ja.job_id, ja.applicant_id, ja.submission_id, ja.status, ja.employer_notes, ja.applied_at, ja.status_updated_at,
  c.title AS job_title,
  c.slug AS job_slug
 FROM job_applications ja
@@ -366,7 +360,6 @@ type ListUserJobApplicationsParams struct {
 
 type ListUserJobApplicationsRow struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
 	JobID           pgtype.UUID        `json:"job_id"`
 	ApplicantID     pgtype.UUID        `json:"applicant_id"`
 	SubmissionID    pgtype.UUID        `json:"submission_id"`
@@ -392,7 +385,6 @@ func (q *Queries) ListUserJobApplications(ctx context.Context, arg ListUserJobAp
 		var i ListUserJobApplicationsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.JobID,
 			&i.ApplicantID,
 			&i.SubmissionID,
@@ -421,7 +413,7 @@ SET
  employer_notes = COALESCE($2, employer_notes),
  status_updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
+RETURNING id, job_id, applicant_id, submission_id, status, employer_notes, applied_at, status_updated_at
 `
 
 type UpdateJobApplicationStatusParams struct {
@@ -438,7 +430,6 @@ func (q *Queries) UpdateJobApplicationStatus(ctx context.Context, arg UpdateJobA
 	var i JobApplication
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.JobID,
 		&i.ApplicantID,
 		&i.SubmissionID,

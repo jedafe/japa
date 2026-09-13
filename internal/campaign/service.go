@@ -32,7 +32,7 @@ var ErrPersonaPoolTooSmall = errors.New("persona_pool_too_small")
 type storer interface {
 	CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (gen.ContentCampaign, error)
 	CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen.ContentCampaign, items []CampaignItemPlan, plan CampaignPlanResult) ([]gen.ContentCampaignItem, error)
-	UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error)
+	UpdateCampaignStatus(ctx context.Context, id pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error)
 	GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error)
 	ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]gen.ContentCampaign, int64, error)
 	ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error)
@@ -301,7 +301,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 		}
 	}
 
-	if _, err := s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusGenerating, nil); err != nil {
+	if _, err := s.store.UpdateCampaignStatus(ctx, campaign.ID, CampaignStatusGenerating, nil); err != nil {
 		return batch, createdJobs, fmt.Errorf("campaign: update campaign status: %w", err)
 	}
 
@@ -429,7 +429,7 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 		}
 	}
 
-	_, err = s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusCancelled, nil)
+	_, err = s.store.UpdateCampaignStatus(ctx, campaign.ID, CampaignStatusCancelled, nil)
 
 	return err
 }
@@ -535,7 +535,7 @@ func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignI
 		}
 	}
 
-	_, err = s.store.UpdateCampaignStatus(ctx, campaignID, tenantID, CampaignStatusCompleted, nil)
+	_, err = s.store.UpdateCampaignStatus(ctx, campaignID, CampaignStatusCompleted, nil)
 
 	return err
 }
@@ -795,7 +795,7 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.
 
 func (s *Service) failCampaign(ctx context.Context, campaign gen.ContentCampaign, msg string) error {
 	planJSON, _ := json.Marshal(map[string]string{"error": msg})
-	_, err := s.store.UpdateCampaignStatus(ctx, campaign.ID, campaign.TenantID, CampaignStatusFailed, planJSON)
+	_, err := s.store.UpdateCampaignStatus(ctx, campaign.ID, CampaignStatusFailed, planJSON)
 
 	return err
 }

@@ -29,7 +29,7 @@ const createRateAlert = `-- name: CreateRateAlert :one
 INSERT INTO remittance_rate_alerts (user_id, send_currency, receive_currency, target_rate, direction) VALUES ($1, $2, $3, $4, $5)
 
 ON CONFLICT (user_id, send_currency, receive_currency, direction) DO NOTHING
-RETURNING id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
+RETURNING id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
 `
 
 type CreateRateAlertParams struct {
@@ -54,7 +54,6 @@ func (q *Queries) CreateRateAlert(ctx context.Context, arg CreateRateAlertParams
 	var i RemittanceRateAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -72,7 +71,7 @@ const createRemittanceProvider = `-- name: CreateRemittanceProvider :one
 
 INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
-RETURNING id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
+RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
 `
 
 type CreateRemittanceProviderParams struct {
@@ -110,7 +109,6 @@ func (q *Queries) CreateRemittanceProvider(ctx context.Context, arg CreateRemitt
 	var i RemittanceProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.LogoMediaID,
@@ -175,7 +173,7 @@ func (q *Queries) GetCorridors(ctx context.Context) ([]GetCorridorsRow, error) {
 
 const getLatestRatesForCorridor = `-- name: GetLatestRatesForCorridor :many
 SELECT DISTINCT ON (rr.provider_id)
- rr.id, rr.tenant_id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
+ rr.id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
  rp.name AS provider_name,
  rp.slug AS provider_slug,
  rp.website_url AS provider_website
@@ -194,7 +192,6 @@ type GetLatestRatesForCorridorParams struct {
 
 type GetLatestRatesForCorridorRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	ProviderID         pgtype.UUID        `json:"provider_id"`
 	SendCurrency       string             `json:"send_currency"`
 	ReceiveCurrency    string             `json:"receive_currency"`
@@ -227,7 +224,6 @@ func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRa
 		var i GetLatestRatesForCorridorRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ProviderID,
 			&i.SendCurrency,
 			&i.ReceiveCurrency,
@@ -259,7 +255,7 @@ func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRa
 }
 
 const getRateAlertByID = `-- name: GetRateAlertByID :one
-SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
+SELECT id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
 WHERE id = $1 AND user_id = $2
 `
 
@@ -273,7 +269,6 @@ func (q *Queries) GetRateAlertByID(ctx context.Context, arg GetRateAlertByIDPara
 	var i RemittanceRateAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -339,7 +334,7 @@ func (q *Queries) GetRateHistory(ctx context.Context, arg GetRateHistoryParams) 
 }
 
 const getRemittanceProviderByID = `-- name: GetRemittanceProviderByID :one
-SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
 WHERE id = $1
 `
 
@@ -348,7 +343,6 @@ func (q *Queries) GetRemittanceProviderByID(ctx context.Context, id pgtype.UUID)
 	var i RemittanceProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.LogoMediaID,
@@ -366,7 +360,7 @@ const insertRemittanceRate = `-- name: InsertRemittanceRate :one
 
 INSERT INTO remittance_rates (provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, is_manual, source_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+RETURNING id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
 `
 
 type InsertRemittanceRateParams struct {
@@ -399,7 +393,6 @@ func (q *Queries) InsertRemittanceRate(ctx context.Context, arg InsertRemittance
 	var i RemittanceRate
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -421,7 +414,7 @@ func (q *Queries) InsertRemittanceRate(ctx context.Context, arg InsertRemittance
 }
 
 const listActiveAlertsForCorridor = `-- name: ListActiveAlertsForCorridor :many
-SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
+SELECT id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
 WHERE send_currency = $1
  AND receive_currency = $2
  AND is_active = true
@@ -444,7 +437,6 @@ func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiv
 		var i RemittanceRateAlert
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SendCurrency,
 			&i.ReceiveCurrency,
@@ -465,7 +457,7 @@ func (q *Queries) ListActiveAlertsForCorridor(ctx context.Context, arg ListActiv
 }
 
 const listAllActiveAlertsForTenant = `-- name: ListAllActiveAlertsForTenant :many
-SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
+SELECT id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
 WHERE is_active = true
  AND (last_triggered_at IS NULL OR last_triggered_at < now() - interval '24 hours')
 ORDER BY created_at DESC
@@ -482,7 +474,6 @@ func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context) ([]Remittanc
 		var i RemittanceRateAlert
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SendCurrency,
 			&i.ReceiveCurrency,
@@ -503,7 +494,7 @@ func (q *Queries) ListAllActiveAlertsForTenant(ctx context.Context) ([]Remittanc
 }
 
 const listRemittanceProviders = `-- name: ListRemittanceProviders :many
-SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 `
@@ -519,7 +510,6 @@ func (q *Queries) ListRemittanceProviders(ctx context.Context, activeOnly bool) 
 		var i RemittanceProvider
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.LogoMediaID,
@@ -541,7 +531,7 @@ func (q *Queries) ListRemittanceProviders(ctx context.Context, activeOnly bool) 
 }
 
 const listRemittanceProvidersPaginated = `-- name: ListRemittanceProvidersPaginated :many
-SELECT id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 LIMIT $3 OFFSET $2
@@ -564,7 +554,6 @@ func (q *Queries) ListRemittanceProvidersPaginated(ctx context.Context, arg List
 		var i RemittanceProvider
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.LogoMediaID,
@@ -586,7 +575,7 @@ func (q *Queries) ListRemittanceProvidersPaginated(ctx context.Context, arg List
 }
 
 const listUserRateAlerts = `-- name: ListUserRateAlerts :many
-SELECT id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
+SELECT id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at FROM remittance_rate_alerts
 WHERE user_id = $1
  AND ($2::boolean = false OR is_active = true)
 ORDER BY created_at DESC
@@ -608,7 +597,6 @@ func (q *Queries) ListUserRateAlerts(ctx context.Context, arg ListUserRateAlerts
 		var i RemittanceRateAlert
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SendCurrency,
 			&i.ReceiveCurrency,
@@ -662,7 +650,7 @@ SET
  is_active = COALESCE($3, is_active),
  last_triggered_at = COALESCE($4, last_triggered_at)
 WHERE id = $5 AND user_id = $6
-RETURNING id, tenant_id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
+RETURNING id, user_id, send_currency, receive_currency, target_rate, direction, is_active, last_triggered_at, created_at
 `
 
 type UpdateRateAlertParams struct {
@@ -686,7 +674,6 @@ func (q *Queries) UpdateRateAlert(ctx context.Context, arg UpdateRateAlertParams
 	var i RemittanceRateAlert
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SendCurrency,
 		&i.ReceiveCurrency,
@@ -708,7 +695,7 @@ SET
  is_active = COALESCE($4, is_active),
  display_order = COALESCE($5, display_order)
 WHERE id = $6
-RETURNING id, tenant_id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
+RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
 `
 
 type UpdateRemittanceProviderParams struct {
@@ -732,7 +719,6 @@ func (q *Queries) UpdateRemittanceProvider(ctx context.Context, arg UpdateRemitt
 	var i RemittanceProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.LogoMediaID,

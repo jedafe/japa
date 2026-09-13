@@ -1612,10 +1612,6 @@ func toAdminPlanResponse(p gen.SubscriptionPlan) AdminPlanResponse {
 		resp.ID = p.ID.String()
 	}
 
-	if p.TenantID.Valid {
-
-	}
-
 	if p.CreatedAt.Valid {
 		resp.CreatedAt = p.CreatedAt.Time.Format(time.RFC3339)
 	}

@@ -92,7 +92,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Insert ticket into DB and get the generated ticket ID.
-	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID, user.TenantID)
+	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID, pgtype.UUID{})
 	if err != nil {
 		slog.Error("creating ws ticket", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
@@ -110,8 +110,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 
 		ticketFields := map[string]interface{}{
-			"user_id":   user.UserID.String(),
-			"tenant_id": user.TenantID.String(),
+			"user_id": user.UserID.String(),
 		}
 		if err := h.vkClient.Redis().HSet(vctx, valkey.MustKey("ws_ticket:%s", ticket.ID.String()),
 			ticketFields, 60*time.Second).Err(); err != nil {
@@ -188,7 +187,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		userID = ticket.UserID
-		tenantID = ticket.TenantID
+		tenantID = pgtype.UUID{}
 	}
 
 	// Mark ticket as used in DB, validating tenant_id alongside user_id so a

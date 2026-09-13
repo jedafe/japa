@@ -121,10 +121,10 @@ func (s *Store) upsertNotificationPreference(ctx context.Context, params gen.Ups
 }
 
 // getOpenBatchWindow returns an open, non-dispatched batch window.
-func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.GetOpenBatchWindowRow, error) {
+func (s *Store) getOpenBatchWindow(ctx context.Context, params gen.GetOpenBatchWindowParams) (gen.NotificationBatchWindow, error) {
 	window, err := s.read.GetOpenBatchWindow(ctx, params)
 	if err != nil {
-		return gen.GetOpenBatchWindowRow{}, fmt.Errorf("getting open batch window: %w", err)
+		return gen.NotificationBatchWindow{}, fmt.Errorf("getting open batch window: %w", err)
 	}
 
 	return window, nil
@@ -158,10 +158,10 @@ func (s *Store) markBatchWindowDispatched(ctx context.Context, windowID pgtype.U
 }
 
 // getBatchWindowByID returns a batch window by its ID.
-func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (gen.GetBatchWindowByIDRow, error) {
+func (s *Store) getBatchWindowByID(ctx context.Context, windowID pgtype.UUID) (gen.NotificationBatchWindow, error) {
 	window, err := s.read.GetBatchWindowByID(ctx, windowID)
 	if err != nil {
-		return gen.GetBatchWindowByIDRow{}, fmt.Errorf("getting batch window by ID: %w", err)
+		return gen.NotificationBatchWindow{}, fmt.Errorf("getting batch window by ID: %w", err)
 	}
 
 	return window, nil

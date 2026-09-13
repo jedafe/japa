@@ -336,7 +336,7 @@ func (s *Service) ListSelectors(ctx context.Context, tenantID pgtype.UUID) ([]Se
 
 // GetGuide returns a single published guide by id.
 func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
@@ -352,7 +352,7 @@ func (s *Service) GetGuide(ctx context.Context, id, tenantID pgtype.UUID) (Guide
 // The guide must exist, be published, active, and belong to the tenant.
 // Public endpoint — never exposes draft/rejected guides (§92, ADR-088).
 func (s *Service) GetGuideItems(ctx context.Context, guideID, tenantID pgtype.UUID) ([]ChecklistItemDTO, error) {
-	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
 		}
@@ -437,7 +437,6 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 	}
 
 	row, err := s.store.CreateGuide(ctx, CreateGuideInput{
-		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		ApplicantType:      req.ApplicantType,
@@ -860,7 +859,7 @@ func (s *Service) ListUserChecklists(ctx context.Context, tenantID, userID pgtyp
 // Returns pgx.ErrNoRows if the guide does not exist or is not published.
 func (s *Service) GetUserChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]UserChecklistItemDTO, error) {
 	// Verify the guide exists and is published.
-	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, pgx.ErrNoRows
 		}
@@ -920,7 +919,7 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 	// Verify the guide exists and is published (§92 — only published guides
 	// can be started by users; draft/ai_draft/pending/rejected are not
 	// visible to non-admin callers per ADR-088 HITL gate).
-	guide, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID)
+	guide, err := s.store.GetPublishedGuideByID(ctx, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return GuideDTO{}, pgx.ErrNoRows
@@ -941,7 +940,7 @@ func (s *Service) StartChecklist(ctx context.Context, tenantID, userID pgtype.UU
 // Only published+active guides accept progress updates (§92, ADR-088).
 func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemID string, req TickItemRequest) error {
 	// Verify the guide exists and is published.
-	if _, err := s.store.GetPublishedGuideByID(ctx, guideID, tenantID); err != nil {
+	if _, err := s.store.GetPublishedGuideByID(ctx, guideID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -963,7 +962,7 @@ func (s *Service) TickItem(ctx context.Context, tenantID, userID, guideID pgtype
 
 // getGuideDTOByID fetches a guide by id and converts to DTO.
 func (s *Service) getGuideDTOByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideDTO, error) {
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, err
 	}

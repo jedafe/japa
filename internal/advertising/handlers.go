@@ -532,7 +532,6 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 func campaignToWire(c AdCampaign) map[string]any {
 	return map[string]any{
 		"id":                     c.ID,
-		"tenant_id":              c.TenantID,
 		"name":                   c.Name,
 		"slot_type_id":           c.SlotTypeID,
 		"content":                json.RawMessage(c.Content),

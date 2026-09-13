@@ -102,7 +102,7 @@ func (q *Queries) AdminCountAssessmentResults(ctx context.Context, arg AdminCoun
 const adminListAssessmentResults = `-- name: AdminListAssessmentResults :many
 
 SELECT
- ar.id, ar.tenant_id, ar.user_id, ar.submission_id, ar.total_score, ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
+ ar.id, ar.user_id, ar.submission_id, ar.total_score, ar.dimension_scores, ar.threshold_label, ar.roadmap_content, ar.created_at,
  u.username AS username,
  fs.field_values AS submission_values
 FROM assessment_results ar
@@ -123,7 +123,6 @@ type AdminListAssessmentResultsParams struct {
 
 type AdminListAssessmentResultsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	SubmissionID     pgtype.UUID        `json:"submission_id"`
 	TotalScore       int32              `json:"total_score"`
@@ -154,7 +153,6 @@ func (q *Queries) AdminListAssessmentResults(ctx context.Context, arg AdminListA
 		var i AdminListAssessmentResultsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SubmissionID,
 			&i.TotalScore,
@@ -236,7 +234,7 @@ const createAssessmentResult = `-- name: CreateAssessmentResult :one
 
 INSERT INTO assessment_results (user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at
+RETURNING id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at
 `
 
 type CreateAssessmentResultParams struct {
@@ -263,7 +261,6 @@ func (q *Queries) CreateAssessmentResult(ctx context.Context, arg CreateAssessme
 	var i AssessmentResult
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SubmissionID,
 		&i.TotalScore,
@@ -279,7 +276,7 @@ const createAssessmentSubmission = `-- name: CreateAssessmentSubmission :one
 
 INSERT INTO form_submissions (form_id, user_id, field_values, status) VALUES ($1, $2, $3, 'new')
 
-RETURNING id, form_id, tenant_id, user_id, ip_address, field_values, status, created_at, payment_id
+RETURNING id, form_id, user_id, ip_address, field_values, status, created_at, payment_id
 `
 
 type CreateAssessmentSubmissionParams struct {
@@ -297,7 +294,6 @@ func (q *Queries) CreateAssessmentSubmission(ctx context.Context, arg CreateAsse
 	err := row.Scan(
 		&i.ID,
 		&i.FormID,
-		&i.TenantID,
 		&i.UserID,
 		&i.IpAddress,
 		&i.FieldValues,
@@ -327,7 +323,7 @@ func (q *Queries) GdprDeleteAssessmentResultsByUser(ctx context.Context, userID 
 const getActiveAssessmentForm = `-- name: GetActiveAssessmentForm :one
 
 
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
+SELECT id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
 WHERE form_type = 'assessment'
  AND status = 'active'
 ORDER BY created_at DESC
@@ -348,7 +344,6 @@ func (q *Queries) GetActiveAssessmentForm(ctx context.Context) (Form, error) {
 	var i Form
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -368,7 +363,7 @@ func (q *Queries) GetActiveAssessmentForm(ctx context.Context) (Form, error) {
 
 const getAssessmentFormByID = `-- name: GetAssessmentFormByID :one
 
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
+SELECT id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits FROM forms
 WHERE id = $1 AND form_type = 'assessment'
 `
 
@@ -380,7 +375,6 @@ func (q *Queries) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (Fo
 	var i Form
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -400,7 +394,7 @@ func (q *Queries) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (Fo
 
 const getAssessmentFormFields = `-- name: GetAssessmentFormFields :many
 
-SELECT cf.id, cf.group_id, cf.tenant_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed_platforms, cf.placeholder, cf.default_value, cf.is_required, cf.is_system, cf.show_in_frontend, cf.filterable, cf.sortable, cf.searchable, cf.position, cf.created_at, cf.config
+SELECT cf.id, cf.group_id, cf.label, cf.key, cf.field_type, cf.options, cf.embed_platforms, cf.placeholder, cf.default_value, cf.is_required, cf.is_system, cf.show_in_frontend, cf.filterable, cf.sortable, cf.searchable, cf.position, cf.created_at, cf.config
 FROM custom_field_group_assignments a
 JOIN custom_fields cf ON cf.group_id = a.group_id
 WHERE a.entity_class = 'form' AND a.entity_id = $1
@@ -424,7 +418,6 @@ func (q *Queries) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUI
 		if err := rows.Scan(
 			&i.ID,
 			&i.GroupID,
-			&i.TenantID,
 			&i.Label,
 			&i.Key,
 			&i.FieldType,
@@ -454,7 +447,7 @@ func (q *Queries) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUI
 
 const getAssessmentResultByID = `-- name: GetAssessmentResultByID :one
 
-SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
+SELECT id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
 WHERE id = $1
 `
 
@@ -466,7 +459,6 @@ func (q *Queries) GetAssessmentResultByID(ctx context.Context, id pgtype.UUID) (
 	var i AssessmentResult
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SubmissionID,
 		&i.TotalScore,
@@ -480,7 +472,7 @@ func (q *Queries) GetAssessmentResultByID(ctx context.Context, id pgtype.UUID) (
 
 const getAssessmentResultBySubmission = `-- name: GetAssessmentResultBySubmission :one
 
-SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
+SELECT id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
 WHERE submission_id = $1
 `
 
@@ -495,7 +487,6 @@ func (q *Queries) GetAssessmentResultBySubmission(ctx context.Context, submissio
 	var i AssessmentResult
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SubmissionID,
 		&i.TotalScore,
@@ -551,7 +542,7 @@ func (q *Queries) GetLatestAssessmentJourneyContext(ctx context.Context, userID 
 
 const listUserAssessmentResults = `-- name: ListUserAssessmentResults :many
 
-SELECT id, tenant_id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
+SELECT id, user_id, submission_id, total_score, dimension_scores, threshold_label, roadmap_content, created_at FROM assessment_results
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -577,7 +568,6 @@ func (q *Queries) ListUserAssessmentResults(ctx context.Context, arg ListUserAss
 		var i AssessmentResult
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SubmissionID,
 			&i.TotalScore,
@@ -601,7 +591,7 @@ const updateAssessmentFormScoring = `-- name: UpdateAssessmentFormScoring :one
 UPDATE forms
 SET scoring_config = $1
 WHERE id = $2 AND form_type = 'assessment'
-RETURNING id, tenant_id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits
+RETURNING id, name, slug, description, is_multi_step, submit_label, success_message, status, is_system, created_at, space_id, form_type, scoring_config, submission_fee_credits
 `
 
 type UpdateAssessmentFormScoringParams struct {
@@ -617,7 +607,6 @@ func (q *Queries) UpdateAssessmentFormScoring(ctx context.Context, arg UpdateAss
 	var i Form
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

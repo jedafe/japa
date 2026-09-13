@@ -119,7 +119,7 @@ func (q *Queries) CountCOLCities(ctx context.Context, arg CountCOLCitiesParams) 
 const getCOLBaselineCity = `-- name: GetCOLBaselineCity :one
 
 SELECT
- ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ ci.id, ci.content_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
  s.name AS geo_space_name,
  s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -133,7 +133,6 @@ LIMIT 1
 type GetCOLBaselineCityRow struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	ImageID            pgtype.UUID        `json:"image_id"`
@@ -165,7 +164,6 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, typeID pgtype.UUID) (G
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.ImageID,
@@ -193,7 +191,7 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, typeID pgtype.UUID) (G
 const getCOLByGeoSpaceID = `-- name: GetCOLByGeoSpaceID :one
 
 SELECT
- ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ ci.id, ci.content_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
  s.name AS geo_space_name,
  s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -210,7 +208,6 @@ LIMIT 1
 type GetCOLByGeoSpaceIDRow struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	ImageID            pgtype.UUID        `json:"image_id"`
@@ -243,7 +240,6 @@ func (q *Queries) GetCOLByGeoSpaceID(ctx context.Context, geoSpaceID pgtype.UUID
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.ImageID,
@@ -335,7 +331,7 @@ func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, ids []pgtype.UUID) ([]G
 const getCOLCityByID = `-- name: GetCOLCityByID :one
 
 SELECT
- ci.id, ci.content_id, ci.tenant_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
+ ci.id, ci.content_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
  s.name AS geo_space_name,
  s.slug AS geo_space_slug
 FROM comparison_items ci
@@ -346,7 +342,6 @@ WHERE ci.id = $1 AND ci.deleted_at IS NULL
 type GetCOLCityByIDRow struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	Title              string             `json:"title"`
 	Description        *string            `json:"description"`
 	ImageID            pgtype.UUID        `json:"image_id"`
@@ -378,7 +373,6 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, id pgtype.UUID) (GetCOLCit
 	err := row.Scan(
 		&i.ID,
 		&i.ContentID,
-		&i.TenantID,
 		&i.Title,
 		&i.Description,
 		&i.ImageID,
@@ -468,7 +462,7 @@ func (q *Queries) GetCOLValuesForCities(ctx context.Context, itemIds []pgtype.UU
 const getCostOfLivingType = `-- name: GetCostOfLivingType :one
 
 
-SELECT id, tenant_id, name, slug, description, icon, field_group_id, item_label, is_system, created_at, config FROM comparison_type_definitions
+SELECT id, name, slug, description, icon, field_group_id, item_label, is_system, created_at, config FROM comparison_type_definitions
 WHERE slug = 'cost_of_living' AND is_system = true
 `
 
@@ -487,7 +481,6 @@ func (q *Queries) GetCostOfLivingType(ctx context.Context) (ComparisonTypeDefini
 	var i ComparisonTypeDefinition
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

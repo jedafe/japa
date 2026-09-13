@@ -100,10 +100,10 @@ type TrendPoint struct {
 func (s *Store) CreateTimeline(ctx context.Context, t Timeline) (Timeline, error) {
 	const q = `
 INSERT INTO visa_timelines (
-    tenant_id, user_id, origin_space_id, destination_space_id,
+    user_id, origin_space_id, destination_space_id,
     visa_category, consulate, application_method, outcome, is_shared
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, origin_space_id, destination_space_id,
     visa_category, consulate, application_method, outcome, is_shared,
     anonymised_at, created_at, updated_at, deleted_at
 `
@@ -112,10 +112,10 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		t.TenantID, t.UserID, t.OriginSpaceID, t.DestinationSpaceID,
+		t.UserID, t.OriginSpaceID, t.DestinationSpaceID,
 		t.VisaCategory, t.Consulate, t.ApplicationMethod, t.Outcome, t.IsShared,
 	).Scan(
-		&out.ID, &out.TenantID, &out.UserID, &out.OriginSpaceID, &out.DestinationSpaceID,
+		&out.ID, &out.UserID, &out.OriginSpaceID, &out.DestinationSpaceID,
 		&out.VisaCategory, &out.Consulate, &out.ApplicationMethod, &out.Outcome, &out.IsShared,
 		&out.AnonymisedAt, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
@@ -992,11 +992,11 @@ type CreateProcessingTimeInput struct {
 func (s *Store) CreateProcessingTime(ctx context.Context, in CreateProcessingTimeInput) (ProcessingStat, error) {
 	const q = `
 INSERT INTO visa_processing_stats (
-    tenant_id, origin_space_id, destination_space_id, visa_category,
+    origin_space_id, destination_space_id, visa_category,
     consulate, period_start, sample_count, avg_days, median_days,
     p10_days, p90_days, refreshed_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
-RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category,
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+RETURNING id, origin_space_id, destination_space_id, visa_category,
     consulate, period_start, sample_count, avg_days, median_days,
     p10_days, p90_days, refreshed_at
 `
@@ -1005,11 +1005,11 @@ RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category,
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID, in.VisaCategory,
+		in.OriginSpaceID, in.DestinationSpaceID, in.VisaCategory,
 		in.Consulate, in.PeriodStart, in.SampleCount, in.AvgDays, in.MedianDays,
 		in.P10Days, in.P90Days,
 	).Scan(
-		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+		&r.ID, &r.OriginSpaceID, &r.DestinationSpaceID,
 		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
 		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
 	)
@@ -1108,19 +1108,18 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	sets = append(sets, "refreshed_at = now()")
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	q := fmt.Sprintf(
-		"UPDATE visa_processing_stats SET %s WHERE id = $%d AND tenant_id = $%d RETURNING id, tenant_id, origin_space_id, destination_space_id, visa_category, consulate, period_start, sample_count, avg_days, median_days, p10_days, p90_days, refreshed_at",
+		"UPDATE visa_processing_stats SET %s WHERE id = $%d RETURNING id, origin_space_id, destination_space_id, visa_category, consulate, period_start, sample_count, avg_days, median_days, p10_days, p90_days, refreshed_at",
 		strings.Join(sets, ", "),
 		argIdx,
-		argIdx+1,
 	)
 
 	var r ProcessingStat
 
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+		&r.ID, &r.OriginSpaceID, &r.DestinationSpaceID,
 		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
 		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
 	)
@@ -1134,17 +1133,17 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 // GetStatByID returns a single visa_processing_stats row by id and tenant.
 func (s *Store) GetStatByID(ctx context.Context, id, tenantID pgtype.UUID) (ProcessingStat, error) {
 	const q = `
-SELECT id, tenant_id, origin_space_id, destination_space_id, visa_category,
+SELECT id, origin_space_id, destination_space_id, visa_category,
        consulate, period_start, sample_count, avg_days, median_days,
        p10_days, p90_days, refreshed_at
 FROM visa_processing_stats
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	var r ProcessingStat
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.OriginSpaceID, &r.DestinationSpaceID,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.OriginSpaceID, &r.DestinationSpaceID,
 		&r.VisaCategory, &r.Consulate, &r.PeriodStart, &r.SampleCount,
 		&r.AvgDays, &r.MedianDays, &r.P10Days, &r.P90Days, &r.RefreshedAt,
 	)
@@ -1159,8 +1158,8 @@ WHERE id = $1 AND tenant_id = $2
 func (s *Store) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(
 		ctx,
-		`DELETE FROM visa_processing_stats WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID,
+		`DELETE FROM visa_processing_stats WHERE id = $1`,
+		id,
 	)
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)
