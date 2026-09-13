@@ -563,7 +563,7 @@ func mustParseUUID(t *testing.T, s string) pgtype.UUID {
 
 // getComparisonBySlugOrIDRowValues returns the values for the SELECT
 // in GetComparisonBySlugOrID in the same order as the query columns.
-func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID) []any {
+func getComparisonBySlugOrIDRowValues(contentID, authorID pgtype.UUID) []any {
 	nullStr := (*string)(nil)
 	nullUUID := pgtype.UUID{}
 	nullBytes := []byte(nil)
@@ -571,7 +571,6 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 
 	return []any{
 		contentID,                // id
-		tenantID,                 // tenant_id
 		authorID,                 // author_id
 		nullUUID,                 // space_id
 		"comparison",             // content_type
@@ -625,7 +624,6 @@ func getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID pgtype.UUID)
 }
 
 func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
-	tenantID := mustParseUUID(t, "00000000-0000-0000-0000-000000000001")
 	contentID := mustParseUUID(t, "00000000-0000-0000-0000-000000000002")
 	authorID := mustParseUUID(t, "00000000-0000-0000-0000-000000000003")
 	authorIDStr := authorID.String()
@@ -637,7 +635,7 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 	t.Run("public caller with only view", func(t *testing.T) {
 		db := &fakeDBTX{
 			queryRowResults: []*fakeRow{{
-				values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID),
+				values: getComparisonBySlugOrIDRowValues(contentID, authorID),
 			}},
 		}
 
@@ -662,8 +660,8 @@ func TestEngine_GetScoreFallbackRequiresRecalc(t *testing.T) {
 		// without requiring a real transaction.
 		db := &fakeDBTX{
 			queryRowResults: []*fakeRow{
-				{values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID)},
-				{values: getComparisonBySlugOrIDRowValues(tenantID, contentID, authorID)},
+				{values: getComparisonBySlugOrIDRowValues(contentID, authorID)},
+				{values: getComparisonBySlugOrIDRowValues(contentID, authorID)},
 			},
 			queryRows: []*fakeRows{
 				{},                        // ListComparisonScoresByContent

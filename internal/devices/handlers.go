@@ -127,7 +127,7 @@ func (h *Handlers) HandleAdminTestPush(w http.ResponseWriter, r *http.Request) {
 // every endpoint always returned 401).
 func requireAuth(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
-	if user == nil || !user.UserID.Valid || !user.TenantID.Valid {
+	if user == nil || !user.UserID.Valid {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}
