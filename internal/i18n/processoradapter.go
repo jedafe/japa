@@ -31,7 +31,7 @@ func (a *ProcessorAdapter) SetAIDispatcher(d AIDispatcher) {
 // checks which ones are missing in the target, dispatches each to the AI
 // gateway for translation, and upserts the results.
 func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang, targetLang, tenantID string) error {
-	slog.Info("i18n:translate_language_pack", "pack_id", packID, "source", sourceLang, "target", targetLang, )
+	slog.Info("i18n:translate_language_pack", "pack_id", packID, "source", sourceLang, "target", targetLang)
 
 	if a.svc == nil {
 		slog.Warn("i18n:translate_language_pack — service not initialized, skipping")

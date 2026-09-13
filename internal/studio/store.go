@@ -35,8 +35,8 @@ var ErrJobNotCancellable = errors.New("studio: job is not in a cancellable statu
 
 // Job is a studio_jobs row.
 type Job struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID
 	BatchID        pgtype.UUID        `json:"batch_id"`
 	PersonaID      pgtype.UUID        `json:"persona_id"`
 	ContentType    string             `json:"content_type"`
@@ -61,7 +61,7 @@ type Job struct {
 // Batch is a studio_batches row.
 type Batch struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID 
+	TenantID    pgtype.UUID
 	Name        string      `json:"name"`
 	Description *string     `json:"description"`
 	CreatedBy   pgtype.UUID `json:"created_by"`

@@ -575,7 +575,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			eligibilitySummary = text
 		}
 
-		slog.Info("visaroutes: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "visa_category", visaCategory, "prompt_hash", promptHash, )
+		slog.Info("visaroutes: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "visa_category", visaCategory, "prompt_hash", promptHash)
 	}
 
 	aiModel := "content_agent_v1"

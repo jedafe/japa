@@ -20,7 +20,7 @@ import (
 // payment: it credits the creator revenue ledger, upserts the enrollment,
 // and increments the track's cached enrollment counter. Idempotent on
 // payment_id (AUDIT-BE-005).
-// // Payload: { , user_id, track_id, payment_id, source, gross_kobo }.
+// // Payload: { user_id, track_id, payment_id, source, gross_kobo }.
 func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:process_enrollment")
 
@@ -30,7 +30,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 	}
 
 	var payload struct {
-		TenantID  string 
+		TenantID  string
 		UserID    string `json:"user_id"`
 		TrackID   string `json:"track_id"`
 		PaymentID string `json:"payment_id"`
@@ -55,7 +55,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 // HandleUniversityCalculatePeriodPayouts walks every approved instructor
 // with open revenue_splits in the period and rolls them into instructor_payouts
 // rows when the accrued net meets the configured minimum.
-// // Payload: { , period_start, period_end }
+// // Payload: { period_start, period_end }
 // When period_start/period_end are empty, the previous calendar month is used.
 // When is empty (cron-mode sweep), the handler iterates all active
 // tenants and runs the aggregation per tenant — mirroring the pattern used by
@@ -69,7 +69,7 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	}
 
 	var payload struct {
-		TenantID    string 
+		TenantID    string
 		PeriodStart string `json:"period_start"`
 		PeriodEnd   string `json:"period_end"`
 	}
@@ -136,7 +136,7 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 // HandleUniversitySendInstructorPayout executes a single pending/failed
 // instructor payout: marks it processing, performs the transfer, and stamps
 // the final status with a provider reference.
-// // Payload: { , payout_id }.
+// // Payload: { payout_id }.
 func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:send_instructor_payout")
 
@@ -146,7 +146,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 		PayoutID string `json:"payout_id"`
 	}
 
@@ -166,7 +166,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 // HandleUniversityNotifyInstructorApproved notifies a creator that their
 // instructor application was approved. V1: log only; the notification
 // dispatch is wired once the template catalog includes university templates.
-// // Payload: { , instructor_id }.
+// // Payload: { instructor_id }.
 func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:notify_instructor_approved")
 
@@ -175,7 +175,7 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 	}
 
 	var payload struct {
-		TenantID     string 
+		TenantID     string
 		InstructorID string `json:"instructor_id"`
 	}
 
@@ -188,7 +188,7 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 
 // HandleUniversityNotifyCourseApproved notifies a creator that their
 // submitted track was approved to the marketplace.
-// // Payload: { , track_id }.
+// // Payload: { track_id }.
 func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:university:notify_course_approved")
 
@@ -197,7 +197,7 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 		TrackID  string `json:"track_id"`
 	}
 
@@ -213,7 +213,7 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 // logo_media_id. Enqueued when an admin sets/changes a university's
 // logo_url via POST/PATCH /admin/universities (Section 39). Low-tier —
 // logo fetching is non-urgent and can be retried.
-// // Payload: { , space_id, logo_url, uploaded_by }. uploaded_by is
+// // Payload: { space_id, logo_url, uploaded_by }. uploaded_by is
 // the acting admin's user ID, attributed as the media uploader — there is
 // no generic "system user" row, so a missing/invalid uploaded_by causes
 // the fetch to be skipped rather than violating the media.uploader_user_id
@@ -227,7 +227,7 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string 
+		TenantID   string
 		SpaceID    string `json:"space_id"`
 		LogoURL    string `json:"logo_url"`
 		UploadedBy string `json:"uploaded_by"`

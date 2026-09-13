@@ -31,7 +31,7 @@ func NewStore(read, write *pgxpool.Pool) *Store {
 // HITLReview represents a human-in-the-loop review record.
 type HITLReview struct {
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID 
+	TenantID      pgtype.UUID
 	ContentID     pgtype.UUID `json:"content_id"`
 	ContentType   string      `json:"content_type"`
 	AIOutput      []byte      `json:"ai_output"`      // JSONB

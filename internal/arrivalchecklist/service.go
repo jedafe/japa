@@ -632,7 +632,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 		}
 
 		checklistItems = parseChecklistItemsFromAIResponse(resp)
-		slog.Info("arrivalchecklist: AI Gateway generated draft items", "destination_space_id", req.DestinationSpaceID, "visa_category", req.VisaCategory, "applicant_type", applicantType, "prompt_hash", promptHash, "item_count", len(checklistItems), )
+		slog.Info("arrivalchecklist: AI Gateway generated draft items", "destination_space_id", req.DestinationSpaceID, "visa_category", req.VisaCategory, "applicant_type", applicantType, "prompt_hash", promptHash, "item_count", len(checklistItems))
 	}
 
 	aiModel := "content_agent_v1"

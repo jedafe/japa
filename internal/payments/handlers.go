@@ -1560,8 +1560,8 @@ type AdminPlanInput struct {
 // base64-encodes. This struct parses features into a proper JSON array so the
 // frontend receives a usable array.
 type AdminPlanResponse struct {
-	ID            string             `json:"id"`
-	TenantID      string             
+	ID            string `json:"id"`
+	TenantID      string
 	Slug          string             `json:"slug"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`

@@ -146,6 +146,14 @@ func TestSlidingWindowRateLimit_UserTierCapsKey(t *testing.T) {
 		t.Skip("Valkey not available, skipping integration test")
 	}
 
+	// Clean up test keys.
+	ctx := t.Context()
+	prefix := "test_unlimited_" + time.Now().Format("150405")
+	keys, _ := rdb.Keys(ctx, valkeypkg.MustKey("api_rate:%s:*", prefix)).Result()
+	if len(keys) > 0 {
+		rdb.Del(ctx, keys...)
+	}
+
 	// A regular user with an "unlimited" key must be capped at the basic
 	// tier because "unlimited" is not a valid user tier.
 	handler := SlidingWindowRateLimitWithSettings(rdb, nil, &fakeTierResolver{tier: "regular"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -153,7 +161,7 @@ func TestSlidingWindowRateLimit_UserTierCapsKey(t *testing.T) {
 	}))
 
 	keyCtx := &APIKeyContext{
-		KeyPrefix:     "test_unlimited",
+		KeyPrefix:     prefix,
 		RateLimitTier: "unlimited",
 	}
 

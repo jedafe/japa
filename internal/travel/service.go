@@ -404,8 +404,8 @@ func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
 	}
 
 	return HashSearchQuery(struct {
-		TenantID string 
-		Params   any    `json:"params"`
+		TenantID string
+		Params   any `json:"params"`
 	}{Params: params})
 }
 

@@ -138,7 +138,7 @@ func (a *ProcessorAdapter) SetSystemUserID(id pgtype.UUID) {
 // on its space type. For geo spaces, this includes fetching Wikipedia data
 // and flag images. For other space types, it creates default rules and tags.
 func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenantID string) error {
-	slog.Info("space:auto_populate", "space_id", spaceID, )
+	slog.Info("space:auto_populate", "space_id", spaceID)
 
 	if a.svc == nil {
 		slog.Warn("space:auto_populate — service not initialized, skipping")
@@ -175,7 +175,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	case "university":
 		return a.populateUniversitySpace(ctx, &space, tid)
 	default:
-		slog.Info("space:auto_populate — custom space, no auto-population needed", "space_id", spaceID, "type", spaceType, )
+		slog.Info("space:auto_populate — custom space, no auto-population needed", "space_id", spaceID, "type", spaceType)
 	}
 
 	return nil
@@ -195,13 +195,13 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 		// Non-retryable errors (404 — no Wikipedia article exists): don't
 		// fail the task, there's nothing to populate.
 		if errors.Is(err, ErrWikiNotFound) {
-			slog.Warn("space:auto_populate — no Wikipedia article found, skipping", "space_id", space.ID.String(), "title", title, )
+			slog.Warn("space:auto_populate — no Wikipedia article found, skipping", "space_id", space.ID.String(), "title", title)
 
 			return nil
 		}
 		// Retryable errors (429 rate limit, network errors): return the
 		// error so Asynq retries the task with backoff.
-		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", title, "error", err, )
+		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", title, "error", err)
 
 		return fmt.Errorf("fetching Wikipedia summary for %q: %w", title, err)
 	}
@@ -214,12 +214,12 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err, )
+		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil
 	}
 
-	slog.Info("space:auto_populate — populated wiki content", "space_id", space.ID.String(), "type", spaceType, "name", space.Name, )
+	slog.Info("space:auto_populate — populated wiki content", "space_id", space.ID.String(), "type", spaceType, "name", space.Name)
 
 	return nil
 }
@@ -238,12 +238,12 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 		// Asynq retries the task. Don't fall back to Wikipedia — it would
 		// just hit the same rate limit.
 		if errors.Is(err, ErrWikiRateLimited) {
-			slog.Warn("space:auto_populate — Wikidata rate limited, will retry", "space_id", space.ID.String(), "error", err, )
+			slog.Warn("space:auto_populate — Wikidata rate limited, will retry", "space_id", space.ID.String(), "error", err)
 
 			return fmt.Errorf("fetching Wikidata for %q: %w", space.Name, err)
 		}
 
-		slog.Warn("space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback", "space_id", space.ID.String(), "error", err, )
+		slog.Warn("space:auto_populate — Wikidata fetch failed, trying Wikipedia fallback", "space_id", space.ID.String(), "error", err)
 		// Non-retryable errors: fall back to Wikipedia summary, but still
 		// enrich custom fields and enqueue logo fetch from the Wikipedia
 		// thumbnail if available.
@@ -257,7 +257,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err, )
+		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil
 	}
@@ -268,7 +268,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	// Enqueue logo fetch if a logo URL was found and the enqueuer is wired.
 	a.enqueueUniversityLogo(ctx, tenantID, space, uniData.Logo)
 
-	slog.Info("space:auto_populate — populated university data from Wikidata", "space_id", space.ID.String(), "name", space.Name, )
+	slog.Info("space:auto_populate — populated university data from Wikidata", "space_id", space.ID.String(), "name", space.Name)
 
 	return nil
 }
@@ -282,18 +282,18 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 	wikiSummary, err := fetchWikipediaSummary(ctx, space.Name)
 	if err != nil {
 		if errors.Is(err, ErrWikiNotFound) {
-			slog.Warn("space:auto_populate — no Wikipedia article found, skipping", "space_id", space.ID.String(), "title", space.Name, )
+			slog.Warn("space:auto_populate — no Wikipedia article found, skipping", "space_id", space.ID.String(), "title", space.Name)
 
 			return nil
 		}
 
 		if errors.Is(err, ErrWikiRateLimited) {
-			slog.Warn("space:auto_populate — Wikipedia rate limited, will retry", "space_id", space.ID.String(), "title", space.Name, )
+			slog.Warn("space:auto_populate — Wikipedia rate limited, will retry", "space_id", space.ID.String(), "title", space.Name)
 
 			return fmt.Errorf("fetching Wikipedia summary for %q: %w", space.Name, err)
 		}
 
-		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", space.Name, "error", err, )
+		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", space.Name, "error", err)
 
 		return fmt.Errorf("fetching Wikipedia summary for %q: %w", space.Name, err)
 	}
@@ -305,7 +305,7 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 	}
 
 	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, tenantID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err, )
+		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
 
 		return nil
 	}
@@ -323,7 +323,7 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 		a.enqueueUniversityLogo(ctx, tenantID, space, wikiSummary.Thumbnail)
 	}
 
-	slog.Info("space:auto_populate — populated wiki content from Wikipedia fallback", "space_id", space.ID.String(), "type", "university", "name", space.Name, )
+	slog.Info("space:auto_populate — populated wiki content from Wikipedia fallback", "space_id", space.ID.String(), "type", "university", "name", space.Name)
 
 	return nil
 }

@@ -73,7 +73,7 @@ type CreateJCEComparisonInput struct {
 // JCEComparisonResult holds the result of creating a JCE comparison.
 type JCEComparisonResult struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID 
+	TenantID   pgtype.UUID
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`

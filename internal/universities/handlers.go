@@ -856,7 +856,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 	// U-4 fix: actually update the slug when a new one is supplied. UpdateSpace
 	// does not touch slug (no slug column in its SET clause), so a separate
-	// UpdateSpaceSlug call is required. A collision on UNIQUE(, slug)
+	// UpdateSpaceSlug call is required. A collision on UNIQUE( slug)
 	// surfaces as a 409.
 	if input.Slug != nil {
 		newSlug := strings.TrimSpace(*input.Slug)

@@ -172,7 +172,7 @@ var affScanDomains = []string{
 func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string 
+		TenantID  string
 	}
 
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {

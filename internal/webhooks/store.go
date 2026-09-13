@@ -46,8 +46,8 @@ type WebhookDelivery struct {
 
 // WebhookDeliveryResponse is the JSON-safe representation of a webhook delivery.
 type WebhookDeliveryResponse struct {
-	ID               string     `json:"id"`
-	TenantID         string     
+	ID               string `json:"id"`
+	TenantID         string
 	EndpointID       string     `json:"endpoint_id"`
 	EventID          string     `json:"event_id"`
 	EventType        string     `json:"event_type"`

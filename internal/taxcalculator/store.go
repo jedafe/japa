@@ -497,7 +497,7 @@ type TreatyUpsertInput struct {
 }
 
 // CreateOrUpdateTreaty upserts a tax_treaty_pairs row keyed by
-// (, origin_space_id, destination_space_id). On conflict it
+// ( origin_space_id, destination_space_id). On conflict it
 // updates the mutable fields and returns the resulting row.
 func (s *Store) CreateOrUpdateTreaty(ctx context.Context, in TreatyUpsertInput) (TreatyRow, error) {
 	const q = `

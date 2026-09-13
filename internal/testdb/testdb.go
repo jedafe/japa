@@ -1,4 +1,4 @@
-// go:build integration
+//go:build integration
 
 // Package testdb provides a shared real-Postgres integration-test harness
 // for the JapaConnect backend (ADR-061). It connects to a dedicated

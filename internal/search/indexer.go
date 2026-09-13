@@ -54,8 +54,8 @@ func (i *Indexer) HasPool() bool { return i.pool != nil }
 // contentDocument is the shape stored in the posts index. Field names match
 // the engine's searchable/filterable attributes.
 type contentDocument struct {
-	ID                string   `json:"id"`
-	TenantID          string   
+	ID                string `json:"id"`
+	TenantID          string
 	Title             string   `json:"title"`
 	Slug              string   `json:"slug"`
 	Excerpt           string   `json:"excerpt"`
@@ -335,7 +335,7 @@ func contentURL(contentType, slug string) string {
 // forumThreadDocument is the shape stored in the forum_threads index.
 type forumThreadDocument struct {
 	ID           string `json:"id"`
-	TenantID     string 
+	TenantID     string
 	Title        string `json:"title"`
 	Slug         string `json:"slug"`
 	BodyPreview  string `json:"excerpt"`
@@ -392,7 +392,7 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID, tenantID [16]
 // spaceDocument is the shape stored in the spaces index.
 type spaceDocument struct {
 	ID          string `json:"id"`
-	TenantID    string 
+	TenantID    string
 	Name        string `json:"title"`
 	Slug        string `json:"slug"`
 	Description string `json:"excerpt"`
@@ -452,7 +452,7 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) e
 // userDocument is the shape stored in the users index.
 type userDocument struct {
 	ID          string `json:"id"`
-	TenantID    string 
+	TenantID    string
 	Username    string `json:"title"`
 	DisplayName string `json:"excerpt"`
 	Bio         string `json:"bio"`
@@ -541,7 +541,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID, tenantID [16]byte) err
 // tagDocument is the shape stored in the tags index.
 type tagDocument struct {
 	ID           string `json:"id"`
-	TenantID     string 
+	TenantID     string
 	Name         string `json:"title"`
 	Slug         string `json:"slug"`
 	Description  string `json:"excerpt"`
@@ -641,7 +641,7 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]by
 // list so the multi-search result mapper works uniformly across indexes.
 type organizationDocument struct {
 	ID          string `json:"id"`
-	TenantID    string 
+	TenantID    string
 	Name        string `json:"title"`
 	Slug        string `json:"slug"`
 	Description string `json:"excerpt"`
@@ -720,7 +720,7 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID, tenantID [16]by
 // indexed so JapaBot RAG retrieval never surfaces unreviewed content.
 type languageTestRequirementDocument struct {
 	ID                 string `json:"id"`
-	TenantID           string 
+	TenantID           string
 	TestSlug           string `json:"test_slug"`
 	TestName           string `json:"title"`
 	MinimumScore       string `json:"excerpt"`
@@ -869,8 +869,8 @@ func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]
 // geo-aware filtering (ADR-064): a visitor in "NG" can filter to courses
 // relevant to Nigeria.
 type learningTrackDocument struct {
-	ID                string   `json:"id"`
-	TenantID          string   
+	ID                string `json:"id"`
+	TenantID          string
 	Title             string   `json:"title"`
 	Slug              string   `json:"slug"`
 	Description       string   `json:"description"`
@@ -960,7 +960,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID, tenantID [16
 // docPageDocument is the shape stored in the doc_pages index.
 type docPageDocument struct {
 	ID           string `json:"id"`
-	TenantID     string 
+	TenantID     string
 	Title        string `json:"title"`
 	Slug         string `json:"slug"`
 	Audience     string `json:"audience"`

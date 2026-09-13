@@ -1060,7 +1060,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var p struct {
-		TenantID string 
+		TenantID string
 		SpaceID  string `json:"space_id"`
 	}
 
@@ -1132,7 +1132,7 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		EditionID string `json:"edition_id"`
-		TenantID  string 
+		TenantID  string
 	}
 
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -1170,7 +1170,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		UserID             string `json:"user_id"`
-		TenantID           string 
+		TenantID           string
 		Stage              string `json:"stage"`
 		DestinationSpaceID string `json:"destination_space_id"`
 	}

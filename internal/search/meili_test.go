@@ -6,8 +6,8 @@ import (
 
 // TestRenderMeiliFilter verifies the FilterExpr AST translates to correct
 // Meilisearch filter syntax. These cases mirror the exact filter shapes the
-// handlers and adapters build — a regression here silently breaks tenant
-// scoping, geo filtering, or doc-page audience filtering.
+// handlers and adapters build — a regression here silently breaks geo filtering
+// or doc-page audience filtering.
 func TestRenderMeiliFilter(t *testing.T) {
 	cases := []struct {
 		name string
@@ -20,41 +20,32 @@ func TestRenderMeiliFilter(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "tenant scoping (content adapter shape)",
-			in:   
-			want: ``,
-		},
-		{
 			name: "space-scoped content search",
 			in: andAll(
-				
 				Eq{Field: "space_id", Value: "s1"},
 			),
-			want: `(space_id = "s1")`,
+			want: `space_id = "s1"`,
 		},
 		{
 			name: "geo boost (ADR-064)",
 			in: andAll(
-				
 				orAny(
 					IsEmpty{Field: "relevant_countries"},
 					Eq{Field: "relevant_countries", Value: "NG"},
 				),
 			),
-			want: `((relevant_countries IS EMPTY) OR (relevant_countries = "NG"))`,
+			want: `(relevant_countries IS EMPTY) OR (relevant_countries = "NG")`,
 		},
 		{
 			name: "posts extra filter via buildPostFilter",
 			in: andAll(
-				
 				buildPostFilter("post", "s1", "visa"),
 			),
-			want: `((content_type = "post") AND (space_id = "s1") AND (tag_slugs = "visa"))`,
+			want: `(content_type = "post") AND (space_id = "s1") AND (tag_slugs = "visa")`,
 		},
 		{
-			name: "doc pages tenant+status+audience",
+			name: "doc pages status+audience",
 			in: andAll(
-				
 				Eq{Field: "review_status", Value: "published"},
 				In{Field: "audience", Values: []string{"member", "public"}},
 			),
@@ -82,7 +73,7 @@ func TestRenderMeiliFilter(t *testing.T) {
 		},
 		{
 			name: "andAll collapses to nil when empty",
-			in:   ,
+			in:   andAll(),
 			want: "",
 		},
 		{

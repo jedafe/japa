@@ -709,5 +709,5 @@ func RegisterV2Processors(
 	worker.RegisterAdsSelfServeProcessor(NewAdsSelfServeAdapter(adsSvc, database))
 	worker.RegisterPushProcessor(NewPushAdapter(devSvc, database))
 
-	slog.Info("v2 processors registered", "jobs", true, "gamification", true, "import", true, "assessment", true, "scholarship", true, "remittance", true, "referral", true, "ads_self_serve", true, "push", true, "persona", false, "studio", false, )
+	slog.Info("v2 processors registered", "jobs", true, "gamification", true, "import", true, "assessment", true, "scholarship", true, "remittance", true, "referral", true, "ads_self_serve", true, "push", true, "persona", false, "studio", false)
 }

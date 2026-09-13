@@ -161,8 +161,8 @@ type ScoreResult struct {
 // fields, ready for the scoring engine or for public display.
 // //nolint:revive // exported: stutter naming is intentional
 type AssessmentFormDTO struct {
-	ID            string            `json:"id"`
-	TenantID      string            
+	ID            string `json:"id"`
+	TenantID      string
 	Name          string            `json:"name"`
 	Slug          string            `json:"slug"`
 	Description   string            `json:"description"`

@@ -178,8 +178,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // derived entity_type (from assignments) and the group's fields. Both the
 // main app content composer and the admin panel expect these fields.
 type fieldGroupEnriched struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -2303,7 +2303,7 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 	// it through to the trigger dispatcher without re-parsing.
 	payloadBytes, err := json.Marshal(struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string 
+		TenantID     string
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id,omitempty"`
 		FieldValues  []byte `json:"field_values"`

@@ -21,8 +21,8 @@ type ProfileDemographics struct {
 
 // ComparisonProfile is the domain representation of a comparison_profiles row.
 type ComparisonProfile struct {
-	ID             string              `json:"id"`
-	TenantID       string              
+	ID             string `json:"id"`
+	TenantID       string
 	UserID         *string             `json:"user_id"`
 	Title          string              `json:"title"`
 	SourceSpaceID  *string             `json:"source_space_id"`
@@ -70,8 +70,8 @@ type ScoreFactorConfig struct {
 
 // ScoreFactor is the domain representation of a comparison_score_factors row.
 type ScoreFactor struct {
-	ID               string            `json:"id"`
-	TenantID         string            
+	ID               string `json:"id"`
+	TenantID         string
 	ComparisonTypeID *string           `json:"comparison_type_id"`
 	FactorKey        string            `json:"factor_key"`
 	Label            string            `json:"label"`
@@ -147,8 +147,8 @@ type ScoreResult struct {
 
 // ScoreInput triggers a scoring run for a comparison.
 type ScoreInput struct {
-	ContentID string  `json:"content_id"`
-	TenantID  string  
+	ContentID string `json:"content_id"`
+	TenantID  string
 	UserID    *string `json:"user_id"`
 	ProfileID *string `json:"profile_id"`
 	SmartMode string  `json:"smart_mode"`
@@ -164,8 +164,8 @@ type ScoreInput struct {
 
 // GetScoreInput fetches a previously computed score for a comparison.
 type GetScoreInput struct {
-	ContentID string  `json:"content_id"`
-	TenantID  string  
+	ContentID string `json:"content_id"`
+	TenantID  string
 	UserID    *string `json:"user_id"`
 	ProfileID *string `json:"profile_id"`
 	// PublicPerm is the permission to use when checking whether a non-owner
@@ -235,8 +235,8 @@ func ptrToNullString(s string) *string {
 // DataSource is a tenant-wide registry of authoritative comparison value feeds.
 // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.1.
 type DataSource struct {
-	ID             string         `json:"id"`
-	TenantID       string         
+	ID             string `json:"id"`
+	TenantID       string
 	EntityType     *string        `json:"entity_type,omitempty"`
 	EntityID       *string        `json:"entity_id,omitempty"`
 	DimensionSlug  *string        `json:"dimension_slug,omitempty"`
@@ -267,8 +267,8 @@ type DataSourceInput struct {
 // IngestionJob tracks one refresh run for a comparison.
 // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §7.5.
 type IngestionJob struct {
-	ID             string  `json:"id"`
-	TenantID       string  
+	ID             string `json:"id"`
+	TenantID       string
 	ContentID      string  `json:"content_id"`
 	Status         string  `json:"status"`
 	SourceKind     *string `json:"source_kind,omitempty"`
@@ -314,8 +314,8 @@ type FreshnessSummary struct {
 // AdvisorInput is the common request shape for the JCE AI advisor.
 // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.2.
 type AdvisorInput struct {
-	ContentID  pgtype.UUID  `json:"content_id"`
-	TenantID   pgtype.UUID  
+	ContentID  pgtype.UUID `json:"content_id"`
+	TenantID   pgtype.UUID
 	UserID     pgtype.UUID  `json:"user_id"`
 	ProfileID  *pgtype.UUID `json:"profile_id,omitempty"`
 	Question   string       `json:"question"`

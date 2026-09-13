@@ -111,7 +111,7 @@ type OrgRow struct {
 // CreateOrgInput holds the fields for inserting a new community
 // organisation row.
 type CreateOrgInput struct {
-	TenantID             pgtype.UUID 
+	TenantID             pgtype.UUID
 	Name                 string      `json:"name"`
 	Slug                 string      `json:"slug"`
 	OrgType              string      `json:"org_type"`

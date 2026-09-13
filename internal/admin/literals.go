@@ -418,7 +418,7 @@ func (h *Handlers) invalidateLiteralCache(ctx context.Context, tenantID pgtype.U
 	}
 
 	if err := h.Catalog.Invalidate(ctx, tenantID); err != nil {
-		slog.Warn("admin: failed to invalidate literal cache", "error", err, )
+		slog.Warn("admin: failed to invalidate literal cache", "error", err)
 	}
 }
 

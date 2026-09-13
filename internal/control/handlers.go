@@ -2374,13 +2374,13 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type auditLog struct {
-		ID                 pgtype.UUID     `json:"id"`
-		Timestamp          time.Time       `json:"timestamp"`
-		Actor              *auditLogActor  `json:"actor"`
-		ActionType         string          `json:"action_type"`
-		EntityType         *string         `json:"entity_type"`
-		EntityID           *string         `json:"entity_id"`
-		TenantID           pgtype.UUID     
+		ID                 pgtype.UUID    `json:"id"`
+		Timestamp          time.Time      `json:"timestamp"`
+		Actor              *auditLogActor `json:"actor"`
+		ActionType         string         `json:"action_type"`
+		EntityType         *string        `json:"entity_type"`
+		EntityID           *string        `json:"entity_id"`
+		TenantID           pgtype.UUID
 		IPAddress          *string         `json:"ip_address"`
 		ImpersonatedUserID *string         `json:"impersonated_user_id"`
 		Metadata           json.RawMessage `json:"metadata"`

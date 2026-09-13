@@ -355,49 +355,49 @@ var ErrEmptyContent = errors.New("extractor: AI gateway returned empty content")
 // returning an error (BUG-16 fix).
 var ErrExtractionRetriesExhausted = errors.New("extractor: retries exhausted on malformed JSON")
 
-// go:embed prompts/scholarship.txt
+//go:embed prompts/scholarship.txt
 var scholarshipPrompt string
 
-// go:embed prompts/job.txt
+//go:embed prompts/job.txt
 var jobPrompt string
 
-// go:embed prompts/visa.txt
+//go:embed prompts/visa.txt
 var visaPrompt string
 
-// go:embed prompts/remittance.txt
+//go:embed prompts/remittance.txt
 var remittancePrompt string
 
-// go:embed prompts/cost_of_living.txt
+//go:embed prompts/cost_of_living.txt
 var costOfLivingPrompt string
 
-// go:embed prompts/housing.txt
+//go:embed prompts/housing.txt
 var housingPrompt string
 
-// go:embed prompts/travel_routes.txt
+//go:embed prompts/travel_routes.txt
 var travelRoutesPrompt string
 
-// go:embed prompts/grants.txt
+//go:embed prompts/grants.txt
 var grantsPrompt string
 
-// go:embed prompts/admission.txt
+//go:embed prompts/admission.txt
 var admissionPrompt string
 
-// go:embed prompts/banking.txt
+//go:embed prompts/banking.txt
 var bankingPrompt string
 
-// go:embed prompts/work_career.txt
+//go:embed prompts/work_career.txt
 var workCareerPrompt string
 
-// go:embed prompts/health_insurance.txt
+//go:embed prompts/health_insurance.txt
 var healthInsurancePrompt string
 
-// go:embed prompts/credential_pathway.txt
+//go:embed prompts/credential_pathway.txt
 var credentialPathwayPrompt string
 
-// go:embed prompts/culture_lifestyle.txt
+//go:embed prompts/culture_lifestyle.txt
 var cultureLifestylePrompt string
 
-// go:embed prompts/news.txt
+//go:embed prompts/news.txt
 var newsPrompt string
 
 // promptTemplates maps entity_type → embedded prompt template. Adding a

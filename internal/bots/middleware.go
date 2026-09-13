@@ -50,7 +50,7 @@ func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler)
 
 			bots, err := getCachedBots(r.Context(), store, rdb, t.ID)
 			if err != nil {
-				slog.Warn("bot detection: failed to query bots", "error", err, )
+				slog.Warn("bot detection: failed to query bots", "error", err)
 				next.ServeHTTP(w, r)
 
 				return
