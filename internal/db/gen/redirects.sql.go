@@ -59,7 +59,7 @@ func (q *Queries) CountRedirects(ctx context.Context, arg CountRedirectsParams) 
 const createRedirect = `-- name: CreateRedirect :one
 INSERT INTO redirects (source_path, target_url, http_status, notes) VALUES ($1, $2, $3, $4)
 
-RETURNING id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
+RETURNING id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
 `
 
 type CreateRedirectParams struct {
@@ -79,7 +79,6 @@ func (q *Queries) CreateRedirect(ctx context.Context, arg CreateRedirectParams) 
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SourcePath,
 		&i.TargetUrl,
 		&i.HttpStatus,
@@ -104,7 +103,7 @@ func (q *Queries) DeleteRedirect(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getRedirect = `-- name: GetRedirect :one
-SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+SELECT id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
 WHERE id = $1
 `
 
@@ -113,7 +112,6 @@ func (q *Queries) GetRedirect(ctx context.Context, id pgtype.UUID) (Redirect, er
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SourcePath,
 		&i.TargetUrl,
 		&i.HttpStatus,
@@ -128,7 +126,7 @@ func (q *Queries) GetRedirect(ctx context.Context, id pgtype.UUID) (Redirect, er
 }
 
 const getRedirectByPath = `-- name: GetRedirectByPath :one
-SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+SELECT id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
 WHERE source_path = $1 AND is_active = true
 `
 
@@ -137,7 +135,6 @@ func (q *Queries) GetRedirectByPath(ctx context.Context, sourcePath string) (Red
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SourcePath,
 		&i.TargetUrl,
 		&i.HttpStatus,
@@ -152,7 +149,7 @@ func (q *Queries) GetRedirectByPath(ctx context.Context, sourcePath string) (Red
 }
 
 const getRedirectsByIDs = `-- name: GetRedirectsByIDs :many
-SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+SELECT id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
 WHERE id = ANY($1::uuid[])
 `
 
@@ -167,7 +164,6 @@ func (q *Queries) GetRedirectsByIDs(ctx context.Context, ids []pgtype.UUID) ([]R
 		var i Redirect
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SourcePath,
 			&i.TargetUrl,
 			&i.HttpStatus,
@@ -190,7 +186,7 @@ func (q *Queries) GetRedirectsByIDs(ctx context.Context, ids []pgtype.UUID) ([]R
 
 const listRedirects = `-- name: ListRedirects :many
 
-SELECT id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
+SELECT id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at FROM redirects
 WHERE ($1::boolean IS NULL OR is_active = $1::boolean)
  AND ($2::text = '' OR source_path ILIKE '%' || $2 || '%' OR target_url ILIKE '%' || $2 || '%')
 ORDER BY
@@ -242,7 +238,6 @@ func (q *Queries) ListRedirects(ctx context.Context, arg ListRedirectsParams) ([
 		var i Redirect
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SourcePath,
 			&i.TargetUrl,
 			&i.HttpStatus,
@@ -280,7 +275,7 @@ SET source_path = $1, target_url = $2,
  http_status = $3, is_active = $4,
  notes = $5, updated_at = now()
 WHERE id = $6
-RETURNING id, tenant_id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
+RETURNING id, source_path, target_url, http_status, is_active, notes, hit_count, last_hit_at, created_at, updated_at
 `
 
 type UpdateRedirectParams struct {
@@ -304,7 +299,6 @@ func (q *Queries) UpdateRedirect(ctx context.Context, arg UpdateRedirectParams) 
 	var i Redirect
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SourcePath,
 		&i.TargetUrl,
 		&i.HttpStatus,

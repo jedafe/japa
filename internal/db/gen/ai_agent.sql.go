@@ -17,7 +17,7 @@ UPDATE ai_agent_sessions SET
  completed_at = now()
 WHERE id = $1
  AND status = 'running'
-RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
 func (q *Queries) CancelAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentSession, error) {
@@ -25,7 +25,6 @@ func (q *Queries) CancelAgentSession(ctx context.Context, id pgtype.UUID) (AiAge
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -52,7 +51,7 @@ UPDATE ai_agent_sessions SET
  estimated_cost = $4,
  completed_at = now()
 WHERE id = $5
-RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
 type CompleteAgentSessionParams struct {
@@ -77,7 +76,6 @@ func (q *Queries) CompleteAgentSession(ctx context.Context, arg CompleteAgentSes
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -123,7 +121,7 @@ const createAgentSession = `-- name: CreateAgentSession :one
 
 
 INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at) VALUES ($1, $2, $3, $4, $5, now())
-RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
 type CreateAgentSessionParams struct {
@@ -139,9 +137,7 @@ type CreateAgentSessionParams struct {
 // per-entity AI privacy-exemption lookups used by the PrivacyChecker.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
-//
-//	japaconnect-engineering/adr/ADR-111-ai-agent-executor.md
-//
+// japaconnect-engineering/adr/ADR-111-ai-agent-executor.md
 // =====================================================================
 // Agent sessions — lifecycle.
 // One row per agent request. Created at start, updated on
@@ -159,7 +155,6 @@ func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSession
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -180,7 +175,7 @@ func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSession
 const createAgentToolCall = `-- name: CreateAgentToolCall :one
 
 INSERT INTO ai_agent_tool_calls (session_id, tool_name, arguments, status, rbac_checked, privacy_checked) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
+RETURNING id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
 `
 
 type CreateAgentToolCallParams struct {
@@ -210,7 +205,6 @@ func (q *Queries) CreateAgentToolCall(ctx context.Context, arg CreateAgentToolCa
 	var i AiAgentToolCall
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SessionID,
 		&i.ToolName,
 		&i.Arguments,
@@ -235,7 +229,7 @@ UPDATE ai_agent_sessions SET
  estimated_cost = $4,
  completed_at = now()
 WHERE id = $5
-RETURNING id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
 `
 
 type FailAgentSessionParams struct {
@@ -257,7 +251,6 @@ func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionPara
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -336,7 +329,7 @@ func (q *Queries) GetAgentCostReport(ctx context.Context, arg GetAgentCostReport
 }
 
 const getAgentSession = `-- name: GetAgentSession :one
-SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
 WHERE id = $1
 `
 
@@ -345,7 +338,6 @@ func (q *Queries) GetAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentS
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -364,7 +356,7 @@ func (q *Queries) GetAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentS
 }
 
 const getAgentSessionForUser = `-- name: GetAgentSessionForUser :one
-SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
 WHERE id = $1 AND user_id = $2
 `
 
@@ -380,7 +372,6 @@ func (q *Queries) GetAgentSessionForUser(ctx context.Context, arg GetAgentSessio
 	var i AiAgentSession
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Prompt,
 		&i.GeoSpaceID,
@@ -399,7 +390,7 @@ func (q *Queries) GetAgentSessionForUser(ctx context.Context, arg GetAgentSessio
 }
 
 const getAgentToolCall = `-- name: GetAgentToolCall :one
-SELECT id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
+SELECT id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
 WHERE id = $1
 `
 
@@ -408,7 +399,6 @@ func (q *Queries) GetAgentToolCall(ctx context.Context, id pgtype.UUID) (AiAgent
 	var i AiAgentToolCall
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SessionID,
 		&i.ToolName,
 		&i.Arguments,
@@ -568,7 +558,7 @@ func (q *Queries) GetUserAIExempt(ctx context.Context, id pgtype.UUID) (bool, er
 }
 
 const listAgentSessionsByUser = `-- name: ListAgentSessionsByUser :many
-SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -592,7 +582,6 @@ func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSess
 		var i AiAgentSession
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Prompt,
 			&i.GeoSpaceID,
@@ -618,7 +607,7 @@ func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSess
 }
 
 const listAgentSessionsForAdmin = `-- name: ListAgentSessionsForAdmin :many
-SELECT id, tenant_id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -643,7 +632,6 @@ func (q *Queries) ListAgentSessionsForAdmin(ctx context.Context, arg ListAgentSe
 		var i AiAgentSession
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Prompt,
 			&i.GeoSpaceID,
@@ -669,7 +657,7 @@ func (q *Queries) ListAgentSessionsForAdmin(ctx context.Context, arg ListAgentSe
 }
 
 const listAgentToolCallsBySession = `-- name: ListAgentToolCallsBySession :many
-SELECT id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
+SELECT id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at FROM ai_agent_tool_calls
 WHERE session_id = $1
 ORDER BY created_at ASC
 `
@@ -686,7 +674,6 @@ func (q *Queries) ListAgentToolCallsBySession(ctx context.Context, sessionID pgt
 		var i AiAgentToolCall
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SessionID,
 			&i.ToolName,
 			&i.Arguments,
@@ -802,7 +789,7 @@ UPDATE ai_agent_tool_calls SET
  latency_ms = $4,
  hitl_review_id = $5
 WHERE id = $6
-RETURNING id, tenant_id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
+RETURNING id, session_id, tool_name, arguments, result, status, error_message, latency_ms, rbac_checked, privacy_checked, hitl_review_id, created_at
 `
 
 type UpdateAgentToolCallResultParams struct {
@@ -829,7 +816,6 @@ func (q *Queries) UpdateAgentToolCallResult(ctx context.Context, arg UpdateAgent
 	var i AiAgentToolCall
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SessionID,
 		&i.ToolName,
 		&i.Arguments,

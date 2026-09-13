@@ -278,7 +278,7 @@ func (s *Service) ProcessExport(ctx context.Context, exportID pgtype.UUID) error
 	}
 
 	// Collect data from the relevant table.
-	rows, colNames, err := s.collectData(ctx, exp.TenantID, exp.ExportType, exp.IncludeMetadata)
+	rows, colNames, err := s.collectData(ctx, pgtype.UUID{}, exp.ExportType, exp.IncludeMetadata)
 	if err != nil {
 		s.markFailed(ctx, exportID, fmt.Sprintf("collecting data: %v", err))
 		return fmt.Errorf("collecting data: %w", err)
@@ -526,7 +526,7 @@ func (s *Service) generateFile(ctx context.Context, exp gen.PlatformDataExport, 
 		return "", 0, err
 	}
 
-	return s.storage.Store(ctx, exp.TenantID, exp.ID, filename, mimeType, data)
+	return s.storage.Store(ctx, pgtype.UUID{}, exp.ID, filename, mimeType, data)
 }
 
 // renderJSON marshals rows as pretty-printed JSON bytes.
@@ -635,7 +635,7 @@ func (s *Service) GetFilePath(ctx context.Context, id, tenantID pgtype.UUID) (st
 	baseName := sanitizeFilename(exp.Name)
 	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
 
-	return s.storage.GetPath(exp.TenantID, exp.ID, filename)
+	return s.storage.GetPath(pgtype.UUID{}, exp.ID, filename)
 }
 
 // ListPendingExports returns pending exports for the worker.

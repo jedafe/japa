@@ -75,7 +75,7 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 
 	const q = `
 SELECT name FROM spaces
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -97,7 +97,6 @@ LIMIT 1
 // for the destination name and to users for the HITL reviewer name.
 type GuideRow struct {
 	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	DestSpaceName      *string
 	DestSpaceCode      *string
@@ -147,7 +146,6 @@ type SelectorRow struct {
 
 // ListGuidesFilter holds the filter parameters for listing guides.
 type ListGuidesFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	VisaCategory       string      // optional; "_all" sentinel handled by caller
 	ApplicantType      string      // optional
@@ -182,10 +180,6 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("g.status = $%d", argIdx))
@@ -261,7 +255,7 @@ func (s *Store) ListGuides(ctx context.Context, f ListGuidesFilter) ([]GuideRow,
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
+SELECT g.id, g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category, g.applicant_type,
        g.version, g.status, g.is_active, g.ai_generated, g.ai_model,
        g.ai_prompt_hash, g.hitl_reviewed_by, ru.username AS hitl_reviewed_name,
@@ -288,7 +282,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r GuideRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
 			&r.Version, &r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel,
 			&r.AIPromptHash, &r.HITLReviewedBy, &r.HITLReviewedByName,
@@ -324,9 +318,9 @@ WHERE %s
 // GetGuideByID returns a single guide by its id, scoped to tenant_id.
 // Returns guides of ANY status — use only from admin contexts. For
 // public/user-facing endpoints use GetPublishedGuideByID instead.
-func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
+func (s *Store) GetGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
 	const q = `
-SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
+SELECT g.id, g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category, g.applicant_type,
        g.version, g.status, g.is_active, g.ai_generated, g.ai_model,
        g.ai_prompt_hash, g.hitl_reviewed_by, ru.username AS hitl_reviewed_name,
@@ -335,14 +329,14 @@ SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
 FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 LEFT JOIN users ru ON ru.id = g.hitl_reviewed_by
-WHERE g.id = $1 AND g.tenant_id = $2
+WHERE g.id = $1
 LIMIT 1
 `
 
 	var r GuideRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
 		&r.Version, &r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel,
 		&r.AIPromptHash, &r.HITLReviewedBy, &r.HITLReviewedByName,
@@ -364,9 +358,9 @@ LIMIT 1
 // scoped to tenant_id. Use this for all public/user-facing endpoints —
 // draft/ai_draft/pending/rejected guides must never be visible to
 // non-admin callers (§92, ADR-088 HITL gate).
-func (s *Store) GetPublishedGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
+func (s *Store) GetPublishedGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
 	const q = `
-SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
+SELECT g.id, g.destination_space_id, sp.name AS dest_space_name,
        sp.geo_code AS dest_space_code, g.visa_category, g.applicant_type,
        g.version, g.status, g.is_active, g.ai_generated, g.ai_model,
        g.ai_prompt_hash, g.hitl_reviewed_by, ru.username AS hitl_reviewed_name,
@@ -375,7 +369,7 @@ SELECT g.id, g.tenant_id, g.destination_space_id, sp.name AS dest_space_name,
 FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
 LEFT JOIN users ru ON ru.id = g.hitl_reviewed_by
-WHERE g.id = $1 AND g.tenant_id = $2
+WHERE g.id = $1
   AND g.status = 'published'
   AND g.is_active = true
 LIMIT 1
@@ -383,8 +377,8 @@ LIMIT 1
 
 	var r GuideRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.ApplicantType,
 		&r.Version, &r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel,
 		&r.AIPromptHash, &r.HITLReviewedBy, &r.HITLReviewedByName,
@@ -410,7 +404,7 @@ SELECT i.id, i.guide_id, i.phase, i.title, i.description, i.official_link,
        i.origin_country_modifier, i.sort_order, i.is_flagged, i.created_at
 FROM arrival_checklist_items i
 JOIN arrival_checklist_guides g ON g.id = i.guide_id
-WHERE i.guide_id = $1 AND g.tenant_id = $2
+WHERE i.guide_id = $1
   AND g.status = 'published'
   AND g.is_active = true
 ORDER BY i.sort_order ASC, i.created_at ASC
@@ -447,7 +441,6 @@ ORDER BY i.sort_order ASC, i.created_at ASC
 
 // CreateGuideInput is the set of fields for inserting a new guide.
 type CreateGuideInput struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	VisaCategory       *string
 	ApplicantType      string
@@ -477,10 +470,10 @@ func (s *Store) CreateGuide(ctx context.Context, in CreateGuideInput) (GuideRow,
 
 	const q = `
 INSERT INTO arrival_checklist_guides (
-    tenant_id, destination_space_id, visa_category, applicant_type, version,
+    destination_space_id, visa_category, applicant_type, version,
     status, is_active, ai_generated, ai_model, ai_prompt_hash, is_japabot_indexed
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, tenant_id, destination_space_id, visa_category, applicant_type,
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, destination_space_id, visa_category, applicant_type,
           version, status, is_active, ai_generated, ai_model, ai_prompt_hash,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
           is_japabot_indexed, created_at, updated_at
@@ -490,11 +483,11 @@ RETURNING id, tenant_id, destination_space_id, visa_category, applicant_type,
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		in.TenantID, in.DestinationSpaceID, in.VisaCategory, in.ApplicantType,
+		in.DestinationSpaceID, in.VisaCategory, in.ApplicantType,
 		in.Version, in.Status, in.IsActive, in.AIGenerated, in.AIModel,
 		in.AIPromptHash, in.IsJapabotIndexed,
 	).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.VisaCategory, &r.ApplicantType,
+		&r.ID, &r.DestinationSpaceID, &r.VisaCategory, &r.ApplicantType,
 		&r.Version, &r.Status, &r.IsActive, &r.AIGenerated, &r.AIModel,
 		&r.AIPromptHash, &r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
 		&r.IsJapabotIndexed, &r.CreatedAt, &r.UpdatedAt,
@@ -644,7 +637,7 @@ WHERE id = $%d AND tenant_id = $%d
 func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM arrival_checklist_guides
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -671,7 +664,7 @@ SET hitl_reviewed_by = $3,
     hitl_review_notes = $4,
     is_japabot_indexed = true,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
@@ -720,10 +713,8 @@ LEFT JOIN checklist_progress cp
   ON cp.guide_id = g.id
  AND cp.item_key = i.id::text
  AND cp.user_id = $2
- AND cp.tenant_id = $1
  AND cp.list_type = 'arrival'
-WHERE g.tenant_id = $1
-  AND g.is_active = true
+WHERE g.is_active = true
   AND g.status = 'published'
   AND cp.id IS NOT NULL
 GROUP BY g.id, sp.name, sp.geo_code, g.visa_category, g.applicant_type
@@ -790,10 +781,8 @@ LEFT JOIN checklist_progress cp
   ON cp.guide_id = i.guide_id
  AND cp.item_key = i.id::text
  AND cp.user_id = $2
- AND cp.tenant_id = $1
  AND cp.list_type = 'arrival'
 WHERE i.guide_id = $3
-  AND g.tenant_id = $1
   AND g.is_active = true
   AND g.status = 'published'
 ORDER BY i.sort_order ASC, i.created_at ASC
@@ -837,17 +826,16 @@ func (s *Store) StartChecklist(ctx context.Context, tenantID, userID, guideID pg
 	// exist), so the user's checklist appears in ListUserChecklists. Uses
 	// ON CONFLICT DO NOTHING for idempotency.
 	const q = `
-INSERT INTO checklist_progress (tenant_id, user_id, guide_id, item_key, completed, list_type)
+INSERT INTO checklist_progress (user_id, guide_id, item_key, completed, list_type)
 SELECT $1, $2, $3, i.id::text, false, 'arrival'
 FROM arrival_checklist_items i
 JOIN arrival_checklist_guides g ON g.id = i.guide_id
 WHERE i.guide_id = $3
-  AND g.tenant_id = $1
   AND g.is_active = true
   AND g.status = 'published'
 ORDER BY i.sort_order ASC
 LIMIT 1
-ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type) DO NOTHING
+ON CONFLICT (user_id, guide_id, item_key, list_type) DO NOTHING
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, tenantID, userID, guideID)
@@ -870,9 +858,9 @@ func (s *Store) TickItem(ctx context.Context, tenantID, userID, guideID pgtype.U
 	}
 
 	const q = `
-INSERT INTO checklist_progress (tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, list_type)
+INSERT INTO checklist_progress (user_id, guide_id, item_key, completed, completed_at, notes, list_type)
 VALUES ($1, $2, $3, $4, $5, $6, $7, 'arrival')
-ON CONFLICT (tenant_id, user_id, guide_id, item_key, list_type)
+ON CONFLICT (user_id, guide_id, item_key, list_type)
 DO UPDATE SET
     completed = EXCLUDED.completed,
     completed_at = EXCLUDED.completed_at,
@@ -899,7 +887,7 @@ SELECT g.destination_space_id, sp.name AS dest_space_name,
        (MIN(g.id::text))::uuid AS guide_id
 FROM arrival_checklist_guides g
 LEFT JOIN spaces sp ON sp.id = g.destination_space_id
-WHERE g.tenant_id = $1 AND g.is_active = true AND g.status = 'published'
+WHERE g.is_active = true AND g.status = 'published'
 GROUP BY g.destination_space_id, sp.name, sp.geo_code, g.visa_category
 ORDER BY sp.name ASC, g.visa_category ASC NULLS FIRST
 `

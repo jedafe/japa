@@ -461,7 +461,7 @@ type UpdateAssessmentInput struct {
 
 // CreateAssessmentForm inserts a forms row and then sets form_type='assessment'
 // and the scoring_config JSONB.
-func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInput, tenantID pgtype.UUID) (gen.Form, error) {
+func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInput) (gen.Form, error) {
 	description := strPtrOrNil(in.Description)
 	successMessage := strPtrOrNil(in.SuccessMessage)
 
@@ -506,18 +506,18 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 	if _, err := s.pool.Writer.Exec(ctx, `
 		UPDATE forms
 		SET form_type = 'assessment', scoring_config = $1
-		WHERE id = $2 AND tenant_id = $3
-	`, scoringConfig, created.ID, tenantID); err != nil {
+		WHERE id = $2
+	`, scoringConfig, created.ID); err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: set assessment form metadata: %w", err)
 	}
 
-	return s.GetAssessmentFormByID(ctx, tenantID, created.ID)
+	return s.GetAssessmentFormByID(ctx, created.ID)
 }
 
 // UpdateAssessmentForm updates a forms row and its scoring_config. The form_type
 // is preserved as 'assessment'.
-func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UUID, in UpdateAssessmentInput) (gen.Form, error) {
-	existing, err := s.GetAssessmentFormByID(ctx, tenantID, id)
+func (s *Store) UpdateAssessmentForm(ctx context.Context, id pgtype.UUID, in UpdateAssessmentInput) (gen.Form, error) {
+	existing, err := s.GetAssessmentFormByID(ctx, id)
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get form for update: %w", err)
 	}
@@ -575,8 +575,8 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 		if _, err := s.pool.Writer.Exec(ctx, `
 			UPDATE forms
 			SET slug = $1
-			WHERE id = $2 AND tenant_id = $3 AND is_system = false
-		`, *in.Slug, id, tenantID); err != nil {
+			WHERE id = $2 AND is_system = false
+		`, *in.Slug, id); err != nil {
 			return gen.Form{}, fmt.Errorf("assessment: update slug: %w", err)
 		}
 	}
@@ -590,13 +590,13 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 		if _, err := s.pool.Writer.Exec(ctx, `
 			UPDATE forms
 			SET scoring_config = $1
-			WHERE id = $2 AND tenant_id = $3
-		`, b, id, tenantID); err != nil {
+			WHERE id = $2
+		`, b, id); err != nil {
 			return gen.Form{}, fmt.Errorf("assessment: update scoring_config: %w", err)
 		}
 	}
 
-	return s.GetAssessmentFormByID(ctx, tenantID, updated.ID)
+	return s.GetAssessmentFormByID(ctx, updated.ID)
 }
 
 // DeleteAssessmentForm soft-deletes a non-system assessment form by id.
@@ -610,19 +610,19 @@ func (s *Store) DeleteAssessmentForm(ctx context.Context, tenantID, id pgtype.UU
 
 // GetAssessmentFormByID returns a full forms row including form_type and
 // scoring_config for the given tenant and id.
-func (s *Store) GetAssessmentFormByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Form, error) {
+func (s *Store) GetAssessmentFormByID(ctx context.Context, id pgtype.UUID) (gen.Form, error) {
 	const q = `
-SELECT id, tenant_id, name, slug, description, is_multi_step, submit_label,
+SELECT id, name, slug, description, is_multi_step, submit_label,
        success_message, status, is_system, created_at, space_id, form_type,
        scoring_config, submission_fee_credits
 FROM forms
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	var f gen.Form
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&f.ID, &f.TenantID, &f.Name, &f.Slug, &f.Description, &f.IsMultiStep,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&f.ID, &f.Name, &f.Slug, &f.Description, &f.IsMultiStep,
 		&f.SubmitLabel, &f.SuccessMessage, &f.Status, &f.IsSystem, &f.CreatedAt,
 		&f.SpaceID, &f.FormType, &f.ScoringConfig, &f.SubmissionFeeCredits,
 	)

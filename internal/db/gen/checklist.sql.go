@@ -200,7 +200,7 @@ func (q *Queries) DeleteChecklistProgressByUserGuide(ctx context.Context, arg De
 
 const getSingleChecklistProgress = `-- name: GetSingleChecklistProgress :one
 
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = $1 AND guide_id = $2
  AND item_key = $3 AND list_type = 'visa'
 LIMIT 1
@@ -221,7 +221,6 @@ func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleC
 	var i ChecklistProgress
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.ItemKey,
@@ -237,7 +236,7 @@ func (q *Queries) GetSingleChecklistProgress(ctx context.Context, arg GetSingleC
 
 const listChecklistProgressByUserGuide = `-- name: ListChecklistProgressByUserGuide :many
 
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = $1 AND guide_id = $2
  AND list_type = 'visa'
 ORDER BY item_key
@@ -262,7 +261,6 @@ func (q *Queries) ListChecklistProgressByUserGuide(ctx context.Context, arg List
 		var i ChecklistProgress
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.GuideID,
 			&i.ItemKey,
@@ -294,7 +292,7 @@ DO UPDATE SET
  completed_at = COALESCE(EXCLUDED.completed_at, checklist_progress.completed_at),
  notes = COALESCE(EXCLUDED.notes, checklist_progress.notes),
  updated_at = now()
-RETURNING id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type
+RETURNING id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type
 `
 
 type UpsertChecklistProgressParams struct {
@@ -310,9 +308,7 @@ type UpsertChecklistProgressParams struct {
 // Covers per-user progress CRUD, selector data from published visa guides,
 // and admin progress/completion-stats queries.
 // Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//
-//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
-//
+// japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 // =====================================================================
 // Upsert a single checklist progress item (mark complete/incomplete + note).
 // The ON CONFLICT clause handles both insert and update in one statement.
@@ -338,7 +334,6 @@ func (q *Queries) UpsertChecklistProgress(ctx context.Context, arg UpsertCheckli
 	var i ChecklistProgress
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.ItemKey,

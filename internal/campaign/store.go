@@ -128,7 +128,7 @@ func (s *Store) CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen
 }
 
 // UpdateCampaignStatus updates a campaign's status and optional plan_json.
-func (s *Store) UpdateCampaignStatus(ctx context.Context, id, tenantID pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
+func (s *Store) UpdateCampaignStatus(ctx context.Context, id pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error) {
 	return s.write.UpdateContentCampaignStatus(ctx, gen.UpdateContentCampaignStatusParams{
 		ID: id,
 

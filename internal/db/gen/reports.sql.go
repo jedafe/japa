@@ -119,8 +119,8 @@ const createReport = `-- name: CreateReport :one
 INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls) VALUES ($1, $2, $3, $4, $5, $6)
 
 ON CONFLICT (reporter_user_id, entity_type, entity_id) WHERE reporter_user_id IS NOT NULL DO NOTHING
-RETURNING id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
+RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+ status, reviewed_by, resolution_note, resolved_at, created_at
 `
 
 type CreateReportParams struct {
@@ -144,7 +144,6 @@ func (q *Queries) CreateReport(ctx context.Context, arg CreateReportParams) (Con
 	var i ContentReport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -171,8 +170,8 @@ func (q *Queries) DeleteReport(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getReport = `-- name: GetReport :one
-SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
+SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+ status, reviewed_by, resolution_note, resolved_at, created_at
 FROM content_reports
 WHERE id = $1
 `
@@ -182,7 +181,6 @@ func (q *Queries) GetReport(ctx context.Context, id pgtype.UUID) (ContentReport,
 	var i ContentReport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,
@@ -283,8 +281,8 @@ func (q *Queries) ListReports(ctx context.Context, arg ListReportsParams) ([]Lis
 }
 
 const listReportsByReporter = `-- name: ListReportsByReporter :many
-SELECT id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
+SELECT id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+ status, reviewed_by, resolution_note, resolved_at, created_at
 FROM content_reports
 WHERE reporter_user_id = $1
 ORDER BY created_at DESC
@@ -308,7 +306,6 @@ func (q *Queries) ListReportsByReporter(ctx context.Context, arg ListReportsByRe
 		var i ContentReport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ReporterUserID,
 			&i.EntityType,
 			&i.EntityID,
@@ -336,8 +333,8 @@ UPDATE content_reports
 SET status = $1, reviewed_by = $2, resolution_note = $3,
  resolved_at = CASE WHEN $1 IN ('actioned', 'dismissed') THEN now() ELSE resolved_at END
 WHERE id = $4
-RETURNING id, tenant_id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
-    status, reviewed_by, resolution_note, resolved_at, created_at
+RETURNING id, reporter_user_id, entity_type, entity_id, reason, notes, evidence_urls,
+ status, reviewed_by, resolution_note, resolved_at, created_at
 `
 
 type UpdateReportStatusParams struct {
@@ -357,7 +354,6 @@ func (q *Queries) UpdateReportStatus(ctx context.Context, arg UpdateReportStatus
 	var i ContentReport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReporterUserID,
 		&i.EntityType,
 		&i.EntityID,

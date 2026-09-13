@@ -78,7 +78,7 @@ func (q *Queries) CountRepliesByParent(ctx context.Context, parentID pgtype.UUID
 const createComment = `-- name: CreateComment :one
 INSERT INTO comments (content_id, author_user_id, parent_id, body, depth, is_anonymous) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
 `
 
 type CreateCommentParams struct {
@@ -102,7 +102,6 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 	var i Comment
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.AuthorUserID,
 		&i.ParentID,
@@ -134,7 +133,7 @@ INSERT INTO content_thread_links (content_id, thread_id) VALUES ($1, $2)
 ON CONFLICT (content_id, thread_id) DO UPDATE
  SET link_count = content_thread_links.link_count + 1,
  created_at = now()
-RETURNING id, tenant_id, content_id, thread_id, link_count, created_at
+RETURNING id, content_id, thread_id, link_count, created_at
 `
 
 type CreateContentThreadLinkParams struct {
@@ -152,7 +151,6 @@ func (q *Queries) CreateContentThreadLink(ctx context.Context, arg CreateContent
 	var i ContentThreadLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ThreadID,
 		&i.LinkCount,
@@ -254,7 +252,7 @@ func (q *Queries) GetComment(ctx context.Context, id pgtype.UUID) (GetCommentRow
 }
 
 const getCommentVote = `-- name: GetCommentVote :one
-SELECT tenant_id, comment_id, user_id, value, created_at
+SELECT comment_id, user_id, value, created_at
 FROM comment_votes
 WHERE comment_id = $1 AND user_id = $2
 `
@@ -268,7 +266,6 @@ func (q *Queries) GetCommentVote(ctx context.Context, arg GetCommentVoteParams) 
 	row := q.db.QueryRow(ctx, getCommentVote, arg.CommentID, arg.UserID)
 	var i CommentVote
 	err := row.Scan(
-		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,
 		&i.Value,
@@ -1166,7 +1163,7 @@ const updateComment = `-- name: UpdateComment :one
 UPDATE comments
 SET body = $1, is_edited = true, edited_at = now(), updated_at = now()
 WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
 `
 
 type UpdateCommentParams struct {
@@ -1182,7 +1179,6 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 	var i Comment
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.AuthorUserID,
 		&i.ParentID,
@@ -1211,7 +1207,7 @@ const updateCommentUnmarked = `-- name: UpdateCommentUnmarked :one
 UPDATE comments
 SET body = $1, updated_at = now()
 WHERE id = $2 AND author_user_id = $3 AND deleted_at IS NULL
-RETURNING id, tenant_id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
+RETURNING id, content_id, author_user_id, parent_id, body, depth, vote_score, is_pinned, is_edited, edited_at, created_at, updated_at, deleted_at, is_anonymous, reply_count, status, removed_by, removed_reason, view_count, upvote_count, downvote_count
 `
 
 type UpdateCommentUnmarkedParams struct {
@@ -1228,7 +1224,6 @@ func (q *Queries) UpdateCommentUnmarked(ctx context.Context, arg UpdateCommentUn
 	var i Comment
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.AuthorUserID,
 		&i.ParentID,
@@ -1258,7 +1253,7 @@ const upsertCommentVote = `-- name: UpsertCommentVote :one
 INSERT INTO comment_votes (comment_id, user_id, value) VALUES ($1, $2, $3)
 
 ON CONFLICT (comment_id, user_id) DO UPDATE SET value = EXCLUDED.value
-RETURNING tenant_id, comment_id, user_id, value, created_at
+RETURNING comment_id, user_id, value, created_at
 `
 
 type UpsertCommentVoteParams struct {
@@ -1274,7 +1269,6 @@ func (q *Queries) UpsertCommentVote(ctx context.Context, arg UpsertCommentVotePa
 	row := q.db.QueryRow(ctx, upsertCommentVote, arg.CommentID, arg.UserID, arg.Value)
 	var i CommentVote
 	err := row.Scan(
-		&i.TenantID,
 		&i.CommentID,
 		&i.UserID,
 		&i.Value,

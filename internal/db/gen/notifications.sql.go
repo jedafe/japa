@@ -176,23 +176,9 @@ FROM notification_batch_windows
 WHERE id = $1
 `
 
-type GetBatchWindowByIDRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	RecipientID      pgtype.UUID        `json:"recipient_id"`
-	NotificationType string             `json:"notification_type"`
-	SubjectType      string             `json:"subject_type"`
-	SubjectID        pgtype.UUID        `json:"subject_id"`
-	ActorIds         []pgtype.UUID      `json:"actor_ids"`
-	ActorCount       int32              `json:"actor_count"`
-	LastActorID      pgtype.UUID        `json:"last_actor_id"`
-	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
-	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
-	Dispatched       bool               `json:"dispatched"`
-}
-
-func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (GetBatchWindowByIDRow, error) {
+func (q *Queries) GetBatchWindowByID(ctx context.Context, id pgtype.UUID) (NotificationBatchWindow, error) {
 	row := q.db.QueryRow(ctx, getBatchWindowByID, id)
-	var i GetBatchWindowByIDRow
+	var i NotificationBatchWindow
 	err := row.Scan(
 		&i.ID,
 		&i.RecipientID,
@@ -402,31 +388,17 @@ type GetOpenBatchWindowParams struct {
 	SubjectID        pgtype.UUID `json:"subject_id"`
 }
 
-type GetOpenBatchWindowRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	RecipientID      pgtype.UUID        `json:"recipient_id"`
-	NotificationType string             `json:"notification_type"`
-	SubjectType      string             `json:"subject_type"`
-	SubjectID        pgtype.UUID        `json:"subject_id"`
-	ActorIds         []pgtype.UUID      `json:"actor_ids"`
-	ActorCount       int32              `json:"actor_count"`
-	LastActorID      pgtype.UUID        `json:"last_actor_id"`
-	WindowOpenAt     pgtype.Timestamptz `json:"window_open_at"`
-	WindowCloseAt    pgtype.Timestamptz `json:"window_close_at"`
-	Dispatched       bool               `json:"dispatched"`
-}
-
 // =====================
 // Batch Dedup Windows
 // =====================
-func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (GetOpenBatchWindowRow, error) {
+func (q *Queries) GetOpenBatchWindow(ctx context.Context, arg GetOpenBatchWindowParams) (NotificationBatchWindow, error) {
 	row := q.db.QueryRow(ctx, getOpenBatchWindow,
 		arg.RecipientID,
 		arg.NotificationType,
 		arg.SubjectType,
 		arg.SubjectID,
 	)
-	var i GetOpenBatchWindowRow
+	var i NotificationBatchWindow
 	err := row.Scan(
 		&i.ID,
 		&i.RecipientID,

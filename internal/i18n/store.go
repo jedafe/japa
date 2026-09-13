@@ -27,7 +27,7 @@ func NewStore(read, write *gen.Queries) *Store {
 // ---------------------------------------------------------------------------
 
 // ListByLocale returns all translations for a given locale.
-func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) ([]gen.ListTranslationsByLocaleRow, error) {
+func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) ([]gen.Translation, error) {
 	rows, err := s.read.ListTranslationsByLocale(ctx,
 
 		locale,
@@ -40,7 +40,7 @@ func (s *Store) ListByLocale(ctx context.Context, tenantID pgtype.UUID, locale s
 }
 
 // ListByKeyPrefix returns translations whose key starts with the given prefix.
-func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefix string) ([]gen.ListTranslationsByKeyPrefixRow, error) {
+func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefix string) ([]gen.Translation, error) {
 	rows, err := s.read.ListTranslationsByKeyPrefix(ctx,
 
 		&prefix,
@@ -53,14 +53,14 @@ func (s *Store) ListByKeyPrefix(ctx context.Context, tenantID pgtype.UUID, prefi
 }
 
 // Get returns a single translation by locale and key.
-func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, locale, key string) (gen.GetTranslationRow, error) {
+func (s *Store) Get(ctx context.Context, tenantID pgtype.UUID, locale, key string) (gen.Translation, error) {
 	row, err := s.read.GetTranslation(ctx, gen.GetTranslationParams{
 
 		Locale: locale,
 		Key:    key,
 	})
 	if err != nil {
-		return gen.GetTranslationRow{}, fmt.Errorf("getting translation: %w", err)
+		return gen.Translation{}, fmt.Errorf("getting translation: %w", err)
 	}
 
 	return row, nil
@@ -124,13 +124,13 @@ func (s *Store) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale
 }
 
 // GetByID returns a single translation by its primary key.
-func (s *Store) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetTranslationByIDRow, error) {
+func (s *Store) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Translation, error) {
 	row, err := s.read.GetTranslationByID(ctx,
 
 		id,
 	)
 	if err != nil {
-		return gen.GetTranslationByIDRow{}, fmt.Errorf("getting translation by id: %w", err)
+		return gen.Translation{}, fmt.Errorf("getting translation by id: %w", err)
 	}
 
 	return row, nil

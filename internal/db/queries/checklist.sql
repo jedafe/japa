@@ -2,7 +2,7 @@
 -- Covers per-user progress CRUD, selector data from published visa guides,
 -- and admin progress/completion-stats queries.
 -- Ref: japaconnect-engineering/sections/70-visa-checklist.md
---      japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+-- japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 
 -- =====================================================================
 -- Upsert a single checklist progress item (mark complete/incomplete + note).
@@ -34,7 +34,7 @@ RETURNING *;
 -- =====================================================================
 
 -- name: ListChecklistProgressByUserGuide :many
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = @user_id AND guide_id = @guide_id
  AND list_type = 'visa'
 ORDER BY item_key;
@@ -45,7 +45,7 @@ ORDER BY item_key;
 -- =====================================================================
 
 -- name: GetSingleChecklistProgress :one
-SELECT id, tenant_id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
+SELECT id, user_id, guide_id, item_key, completed, completed_at, notes, created_at, updated_at, list_type FROM checklist_progress
 WHERE user_id = @user_id AND guide_id = @guide_id
  AND item_key = @item_key AND list_type = 'visa'
 LIMIT 1;

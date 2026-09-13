@@ -38,7 +38,7 @@ const createVideoImportJob = `-- name: CreateVideoImportJob :one
 
 INSERT INTO video_import_jobs (user_id, source_type, source_url, query, target_author_user_id, status, total_items, imported_count, failed_count, error_log, auto_publish) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'pending'), $7, $8, $9, COALESCE($10, '[]'::jsonb), $11)
 RETURNING
- id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
+ id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 `
@@ -75,7 +75,6 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -96,7 +95,7 @@ func (q *Queries) CreateVideoImportJob(ctx context.Context, arg CreateVideoImpor
 
 const getVideoImportJobByID = `-- name: GetVideoImportJobByID :one
 SELECT
- id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
+ id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
@@ -108,7 +107,6 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (Vi
 	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -129,7 +127,7 @@ func (q *Queries) GetVideoImportJobByID(ctx context.Context, id pgtype.UUID) (Vi
 
 const listVideoImportJobsByUser = `-- name: ListVideoImportJobsByUser :many
 SELECT
- id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
+ id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 FROM video_import_jobs
@@ -155,7 +153,6 @@ func (q *Queries) ListVideoImportJobsByUser(ctx context.Context, arg ListVideoIm
 		var i VideoImportJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -288,7 +285,7 @@ SET status = $1,
  completed_at = COALESCE($7, completed_at)
 WHERE id = $8
 RETURNING
- id, tenant_id, user_id, source_type, source_url, query, target_author_user_id,
+ id, user_id, source_type, source_url, query, target_author_user_id,
  status, total_items, imported_count, failed_count, error_log, created_at,
  completed_at, auto_publish, started_at
 `
@@ -318,7 +315,6 @@ func (q *Queries) UpdateVideoImportJob(ctx context.Context, arg UpdateVideoImpor
 	var i VideoImportJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,

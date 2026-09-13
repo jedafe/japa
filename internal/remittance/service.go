@@ -854,7 +854,7 @@ func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgt
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: insert manual rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, tenantID, sendCurrency, receiveCurrency)
+	s.InvalidateRateCache(ctx, pgtype.UUID{}, sendCurrency, receiveCurrency)
 
 	return r, nil
 }
@@ -926,7 +926,7 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 		return RateInfo{}, fmt.Errorf("remittance: create rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, tenantID, input.SendCurrency, input.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, pgtype.UUID{}, input.SendCurrency, input.ReceiveCurrency)
 
 	return RateInfo{
 		ID:              r.ID.String(),
@@ -960,7 +960,7 @@ func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, inpu
 		return RateInfo{}, errors.New("receive_currency cannot be empty")
 	}
 
-	r, err := s.store.UpdateRate(ctx, tenantID, id, UpdateRateStoreInput(input))
+	r, err := s.store.UpdateRate(ctx, id, UpdateRateStoreInput(input))
 	if err != nil {
 		return RateInfo{}, fmt.Errorf("remittance: update rate: %w", err)
 	}
@@ -970,7 +970,7 @@ func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, inpu
 		return RateInfo{}, fmt.Errorf("remittance: update rate: get provider: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, tenantID, r.SendCurrency, r.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, pgtype.UUID{}, r.SendCurrency, r.ReceiveCurrency)
 
 	return RateInfo{
 		ID:              r.ID.String(),
@@ -991,19 +991,19 @@ func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, inpu
 }
 
 // DeleteRate deletes a remittance rate snapshot by id.
-func (s *Service) DeleteRate(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteRate(ctx context.Context, id pgtype.UUID) error {
 	// Fetch the existing rate so we can invalidate the corridor cache after
 	// deletion.
-	r, err := s.store.GetRateByID(ctx, tenantID, id)
+	r, err := s.store.GetRateByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("remittance: delete rate: %w", err)
 	}
 
-	if err := s.store.DeleteRate(ctx, tenantID, id); err != nil {
+	if err := s.store.DeleteRate(ctx, id); err != nil {
 		return fmt.Errorf("remittance: delete rate: %w", err)
 	}
 
-	s.InvalidateRateCache(ctx, tenantID, r.SendCurrency, r.ReceiveCurrency)
+	s.InvalidateRateCache(ctx, pgtype.UUID{}, r.SendCurrency, r.ReceiveCurrency)
 
 	return nil
 }
@@ -1201,7 +1201,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 			continue
 		}
 
-		s.InvalidateRateCache(ctx, tenantID, snap.SendCurrency, snap.ReceiveCurrency)
+		s.InvalidateRateCache(ctx, pgtype.UUID{}, snap.SendCurrency, snap.ReceiveCurrency)
 	}
 
 	slog.Info("remittance: fetch provider rates: completed",

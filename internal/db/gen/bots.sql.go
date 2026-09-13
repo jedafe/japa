@@ -28,7 +28,7 @@ const createKnownBot = `-- name: CreateKnownBot :one
 
 INSERT INTO known_bots (name, user_agent_pattern, bot_type, policy, is_system, crawl_delay) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
+RETURNING id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
 `
 
 type CreateKnownBotParams struct {
@@ -57,7 +57,6 @@ func (q *Queries) CreateKnownBot(ctx context.Context, arg CreateKnownBotParams) 
 	var i KnownBot
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.UserAgentPattern,
 		&i.BotType,
@@ -81,7 +80,7 @@ func (q *Queries) DeleteKnownBot(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getBotsByUserAgent = `-- name: GetBotsByUserAgent :many
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
+SELECT id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
 WHERE $1 ILIKE '%' || user_agent_pattern || '%'
 `
 
@@ -96,7 +95,6 @@ func (q *Queries) GetBotsByUserAgent(ctx context.Context, userAgentPattern strin
 		var i KnownBot
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.UserAgentPattern,
 			&i.BotType,
@@ -117,7 +115,7 @@ func (q *Queries) GetBotsByUserAgent(ctx context.Context, userAgentPattern strin
 }
 
 const getKnownBotByID = `-- name: GetKnownBotByID :one
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots WHERE id = $1
+SELECT id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots WHERE id = $1
 `
 
 func (q *Queries) GetKnownBotByID(ctx context.Context, id pgtype.UUID) (KnownBot, error) {
@@ -125,7 +123,6 @@ func (q *Queries) GetKnownBotByID(ctx context.Context, id pgtype.UUID) (KnownBot
 	var i KnownBot
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.UserAgentPattern,
 		&i.BotType,
@@ -139,7 +136,7 @@ func (q *Queries) GetKnownBotByID(ctx context.Context, id pgtype.UUID) (KnownBot
 }
 
 const listKnownBots = `-- name: ListKnownBots :many
-SELECT id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
+SELECT id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at FROM known_bots
 WHERE ($1 = '' OR bot_type = $1)
 ORDER BY name ASC
 LIMIT $3
@@ -163,7 +160,6 @@ func (q *Queries) ListKnownBots(ctx context.Context, arg ListKnownBotsParams) ([
 		var i KnownBot
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.UserAgentPattern,
 			&i.BotType,
@@ -192,7 +188,7 @@ SET name = $2,
  crawl_delay = $6,
  updated_at = now()
 WHERE id = $1
-RETURNING id, tenant_id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
+RETURNING id, name, user_agent_pattern, bot_type, policy, is_system, crawl_delay, updated_at, created_at
 `
 
 type UpdateKnownBotParams struct {
@@ -216,7 +212,6 @@ func (q *Queries) UpdateKnownBot(ctx context.Context, arg UpdateKnownBotParams) 
 	var i KnownBot
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.UserAgentPattern,
 		&i.BotType,

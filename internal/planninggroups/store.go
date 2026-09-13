@@ -47,7 +47,6 @@ func NewStore(database *db.DB) *Store {
 // PlanningGroup represents a single planning_groups row.
 type PlanningGroup struct {
 	ID                    pgtype.UUID
-	TenantID              pgtype.UUID
 	Name                  string
 	Description           *string
 	DestinationSpaceID    pgtype.UUID
@@ -68,7 +67,6 @@ type PlanningGroup struct {
 type PlanningGroupMember struct {
 	GroupID       pgtype.UUID
 	UserID        pgtype.UUID
-	TenantID      pgtype.UUID
 	DepartureDate pgtype.Date
 	JoinedAt      pgtype.Timestamptz
 	Username      *string
@@ -78,7 +76,6 @@ type PlanningGroupMember struct {
 // PlanningGroupMilestone represents a single planning_group_milestones row.
 type PlanningGroupMilestone struct {
 	ID          pgtype.UUID
-	TenantID    pgtype.UUID
 	GroupID     pgtype.UUID
 	UserID      pgtype.UUID
 	Title       string
@@ -90,7 +87,6 @@ type PlanningGroupMilestone struct {
 // PlanningGroupCheckin represents a single planning_group_checkins row.
 type PlanningGroupCheckin struct {
 	ID        pgtype.UUID
-	TenantID  pgtype.UUID
 	GroupID   pgtype.UUID
 	UserID    pgtype.UUID
 	Note      string
@@ -102,11 +98,11 @@ type PlanningGroupCheckin struct {
 func (s *Store) CreateGroup(ctx context.Context, group PlanningGroup) (PlanningGroup, error) {
 	const q = `
 INSERT INTO planning_groups (
-    tenant_id, name, description, destination_space_id, visa_category,
+    name, description, destination_space_id, visa_category,
     target_departure_window, target_departure_at, max_members, is_open_join,
     owner_id, expires_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, tenant_id, name, description, destination_space_id, visa_category,
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, name, description, destination_space_id, visa_category,
           target_departure_window, target_departure_at, max_members, is_open_join,
           owner_id, expires_at, created_at, updated_at, deleted_at
 `
@@ -115,11 +111,11 @@ RETURNING id, tenant_id, name, description, destination_space_id, visa_category,
 
 	err := s.pool.Writer.QueryRow(
 		ctx, q,
-		group.TenantID, group.Name, group.Description, group.DestinationSpaceID,
+		group.Name, group.Description, group.DestinationSpaceID,
 		group.VisaCategory, group.TargetDepartureWindow, group.TargetDepartureAt,
 		group.MaxMembers, group.IsOpenJoin, group.OwnerID, group.ExpiresAt,
 	).Scan(
-		&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
+		&g.ID, &g.Name, &g.Description, &g.DestinationSpaceID,
 		&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 		&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
 		&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt,
@@ -165,20 +161,20 @@ WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3)
 // Includes a member_count subquery.
 func (s *Store) GetGroup(ctx context.Context, id, tenantID pgtype.UUID) (PlanningGroup, error) {
 	const q = `
-SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+SELECT g.id, g.name, g.description, g.destination_space_id, g.visa_category,
        g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
        g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
        COALESCE(m.cnt, 0) AS member_count
 FROM planning_groups g
 LEFT JOIN (SELECT group_id, COUNT(*) AS cnt FROM planning_group_members GROUP BY group_id) m
   ON m.group_id = g.id
-WHERE g.id = $1 AND g.tenant_id = $2 AND g.deleted_at IS NULL
+WHERE g.id = $1 AND g.deleted_at IS NULL
 `
 
 	var g PlanningGroup
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&g.ID, &g.Name, &g.Description, &g.DestinationSpaceID,
 		&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 		&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
 		&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
@@ -196,7 +192,6 @@ WHERE g.id = $1 AND g.tenant_id = $2 AND g.deleted_at IS NULL
 
 // ListGroupsFilter holds the filter parameters for listing planning groups.
 type ListGroupsFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	VisaCategory       string      // optional
 	Limit              int32
@@ -211,10 +206,6 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, "deleted_at IS NULL")
 
@@ -247,7 +238,7 @@ func (s *Store) ListGroups(ctx context.Context, f ListGroupsFilter) ([]PlanningG
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+SELECT g.id, g.name, g.description, g.destination_space_id, g.visa_category,
        g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
        g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
        COALESCE(m.cnt, 0) AS member_count
@@ -272,7 +263,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var g PlanningGroup
 		if err := rows.Scan(
-			&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
+			&g.ID, &g.Name, &g.Description, &g.DestinationSpaceID,
 			&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 			&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
 			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
@@ -404,7 +395,7 @@ UPDATE planning_groups SET %s WHERE id = $%d AND tenant_id = $%d AND deleted_at 
 func (s *Store) DeleteGroup(ctx context.Context, id, tenantID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("planninggroups: delete group: %w", err)
@@ -453,16 +444,16 @@ WHERE group_id = $1 AND user_id = $2 AND tenant_id = $3
 // display name and avatar.
 func (s *Store) GetMembers(ctx context.Context, groupID, tenantID pgtype.UUID) ([]PlanningGroupMember, error) {
 	const q = `
-SELECT m.group_id, m.user_id, m.tenant_id, m.departure_date, m.joined_at,
+SELECT m.group_id, m.user_id, m.departure_date, m.joined_at,
        u.username, up.avatar_url
 FROM planning_group_members m
 LEFT JOIN users u ON u.id = m.user_id
 LEFT JOIN user_profiles up ON up.user_id = m.user_id
-WHERE m.group_id = $1 AND m.tenant_id = $2
+WHERE m.group_id = $1
 ORDER BY m.joined_at ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, groupID, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: get members: %w", err)
 	}
@@ -474,7 +465,7 @@ ORDER BY m.joined_at ASC
 	for rows.Next() {
 		var m PlanningGroupMember
 		if err := rows.Scan(
-			&m.GroupID, &m.UserID, &m.TenantID, &m.DepartureDate, &m.JoinedAt,
+			&m.GroupID, &m.UserID, &m.DepartureDate, &m.JoinedAt,
 			&m.Username, &m.AvatarURL,
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan member: %w", err)
@@ -501,7 +492,7 @@ RETURNING id, tenant_id, group_id, user_id, title, completed, completed_at, crea
 	var m PlanningGroupMilestone
 
 	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, title).Scan(
-		&m.ID, &m.TenantID, &m.GroupID, &m.UserID, &m.Title,
+		&m.ID, &m.GroupID, &m.UserID, &m.Title,
 		&m.Completed, &m.CompletedAt, &m.CreatedAt,
 	)
 	if err != nil {
@@ -532,7 +523,7 @@ ORDER BY created_at ASC
 	for rows.Next() {
 		var m PlanningGroupMilestone
 		if err := rows.Scan(
-			&m.ID, &m.TenantID, &m.GroupID, &m.UserID, &m.Title,
+			&m.ID, &m.GroupID, &m.UserID, &m.Title,
 			&m.Completed, &m.CompletedAt, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan milestone: %w", err)
@@ -609,7 +600,7 @@ var ErrAlreadyCheckedIn = errors.New("already checked in this week")
 // (unique violation on idx_planning_group_checkins_weekly).
 func (s *Store) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (PlanningGroupCheckin, error) {
 	const q = `
-INSERT INTO planning_group_checkins (tenant_id, group_id, user_id, note)
+INSERT INTO planning_group_checkins (group_id, user_id, note)
 VALUES ($1, $2, $3, $4)
 RETURNING id, tenant_id, group_id, user_id, note, created_at
 `
@@ -617,7 +608,7 @@ RETURNING id, tenant_id, group_id, user_id, note, created_at
 	var c PlanningGroupCheckin
 
 	err := s.pool.Writer.QueryRow(ctx, q, tenantID, groupID, userID, note).Scan(
-		&c.ID, &c.TenantID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
+		&c.ID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -635,16 +626,16 @@ RETURNING id, tenant_id, group_id, user_id, note, created_at
 // display name. "This week" is the trailing 7 days from now.
 func (s *Store) ListCheckins(ctx context.Context, groupID, tenantID pgtype.UUID) ([]PlanningGroupCheckin, error) {
 	const q = `
-SELECT c.id, c.tenant_id, c.group_id, c.user_id, c.note, c.created_at,
+SELECT c.id, c.group_id, c.user_id, c.note, c.created_at,
        u.username
 FROM planning_group_checkins c
 LEFT JOIN users u ON u.id = c.user_id
-WHERE c.group_id = $1 AND c.tenant_id = $2
+WHERE c.group_id = $1
   AND c.created_at >= now() - interval '7 days'
 ORDER BY c.created_at DESC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, groupID, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("planninggroups: list checkins: %w", err)
 	}
@@ -656,7 +647,7 @@ ORDER BY c.created_at DESC
 	for rows.Next() {
 		var c PlanningGroupCheckin
 		if err := rows.Scan(
-			&c.ID, &c.TenantID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
+			&c.ID, &c.GroupID, &c.UserID, &c.Note, &c.CreatedAt,
 			&c.Username,
 		); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan checkin: %w", err)
@@ -677,7 +668,7 @@ ORDER BY c.created_at DESC
 func (s *Store) ExtendExpiry(ctx context.Context, id, tenantID pgtype.UUID, newExpiry pgtype.Timestamptz) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET expires_at = $3, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `, id, tenantID, newExpiry)
 	if err != nil {
 		return fmt.Errorf("planninggroups: extend expiry: %w", err)
@@ -692,7 +683,6 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 
 // AdminListGroupsFilter holds the filter parameters for the admin list.
 type AdminListGroupsFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	Search             string      // optional — case-insensitive ILIKE on name
 	Limit              int32
@@ -708,10 +698,6 @@ func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("g.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("g.destination_space_id = $%d", argIdx))
@@ -742,7 +728,7 @@ func (s *Store) AdminListGroups(ctx context.Context, f AdminListGroupsFilter) ([
 	}
 
 	listQ := fmt.Sprintf(`
-SELECT g.id, g.tenant_id, g.name, g.description, g.destination_space_id, g.visa_category,
+SELECT g.id, g.name, g.description, g.destination_space_id, g.visa_category,
        g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
        g.owner_id, g.expires_at, g.created_at, g.updated_at, g.deleted_at,
        COALESCE(m.cnt, 0) AS member_count
@@ -767,7 +753,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var g PlanningGroup
 		if err := rows.Scan(
-			&g.ID, &g.TenantID, &g.Name, &g.Description, &g.DestinationSpaceID,
+			&g.ID, &g.Name, &g.Description, &g.DestinationSpaceID,
 			&g.VisaCategory, &g.TargetDepartureWindow, &g.TargetDepartureAt,
 			&g.MaxMembers, &g.IsOpenJoin, &g.OwnerID, &g.ExpiresAt,
 			&g.CreatedAt, &g.UpdatedAt, &g.DeletedAt, &g.MemberCount,
@@ -817,9 +803,8 @@ WHERE expires_at IS NOT NULL
 // MemberWithoutCheckin — ExpiringGroupOwner is used by SendCheckinReminders to identify members
 // who haven't checked in this week.
 type MemberWithoutCheckin struct {
-	GroupID  pgtype.UUID
-	UserID   pgtype.UUID
-	TenantID pgtype.UUID
+	GroupID pgtype.UUID
+	UserID  pgtype.UUID
 }
 
 // MembersWithoutWeeklyCheckin returns group members who haven't submitted
@@ -827,14 +812,13 @@ type MemberWithoutCheckin struct {
 // Asynq task (§82, ADR-090) to send weekly reminders.
 func (s *Store) MembersWithoutWeeklyCheckin(ctx context.Context) ([]MemberWithoutCheckin, error) {
 	const q = `
-SELECT m.group_id, m.user_id, m.tenant_id
+SELECT m.group_id, m.user_id
 FROM planning_group_members m
 JOIN planning_groups g ON g.id = m.group_id AND g.deleted_at IS NULL
 WHERE NOT EXISTS (
     SELECT 1 FROM planning_group_checkins c
     WHERE c.group_id = m.group_id
       AND c.user_id = m.user_id
-      AND c.tenant_id = m.tenant_id
       AND c.created_at >= date_trunc('week', now())
 )
 `
@@ -850,7 +834,7 @@ WHERE NOT EXISTS (
 
 	for rows.Next() {
 		var m MemberWithoutCheckin
-		if err := rows.Scan(&m.GroupID, &m.UserID, &m.TenantID); err != nil {
+		if err := rows.Scan(&m.GroupID, &m.UserID); err != nil {
 			return nil, fmt.Errorf("planninggroups: scan member without checkin: %w", err)
 		}
 

@@ -344,7 +344,7 @@ func (q *Queries) FindScholarshipsNeedingReminders(ctx context.Context, batchLim
 
 const getSavedScholarship = `-- name: GetSavedScholarship :one
 
-SELECT id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at FROM saved_scholarships
+SELECT id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at FROM saved_scholarships
 WHERE user_id = $1 AND guide_id = $2
 `
 
@@ -361,7 +361,6 @@ func (q *Queries) GetSavedScholarship(ctx context.Context, arg GetSavedScholarsh
 	var i SavedScholarship
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.Status,
@@ -377,7 +376,7 @@ func (q *Queries) GetSavedScholarship(ctx context.Context, arg GetSavedScholarsh
 const listSavedScholarships = `-- name: ListSavedScholarships :many
 
 SELECT
- ss.id, ss.tenant_id, ss.user_id, ss.guide_id, ss.status, ss.notes, ss.remind_before_days, ss.last_reminded_at, ss.created_at, ss.updated_at,
+ ss.id, ss.user_id, ss.guide_id, ss.status, ss.notes, ss.remind_before_days, ss.last_reminded_at, ss.created_at, ss.updated_at,
  c.title AS guide_title,
  c.slug AS guide_slug
 FROM saved_scholarships ss
@@ -397,7 +396,6 @@ type ListSavedScholarshipsParams struct {
 
 type ListSavedScholarshipsRow struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
 	UserID           pgtype.UUID        `json:"user_id"`
 	GuideID          pgtype.UUID        `json:"guide_id"`
 	Status           string             `json:"status"`
@@ -429,7 +427,6 @@ func (q *Queries) ListSavedScholarships(ctx context.Context, arg ListSavedSchola
 		var i ListSavedScholarshipsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.GuideID,
 			&i.Status,
@@ -473,7 +470,7 @@ const saveScholarship = `-- name: SaveScholarship :one
 INSERT INTO saved_scholarships (user_id, guide_id, status, remind_before_days) VALUES ($1, $2, 'saved', $3)
 
 ON CONFLICT (user_id, guide_id) DO NOTHING
-RETURNING id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
+RETURNING id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
 `
 
 type SaveScholarshipParams struct {
@@ -497,7 +494,6 @@ func (q *Queries) SaveScholarship(ctx context.Context, arg SaveScholarshipParams
 	var i SavedScholarship
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.Status,
@@ -519,7 +515,7 @@ SET
  remind_before_days = COALESCE($3, remind_before_days),
  updated_at = now()
 WHERE user_id = $4 AND guide_id = $5
-RETURNING id, tenant_id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
+RETURNING id, user_id, guide_id, status, notes, remind_before_days, last_reminded_at, created_at, updated_at
 `
 
 type UpdateSavedScholarshipParams struct {
@@ -544,7 +540,6 @@ func (q *Queries) UpdateSavedScholarship(ctx context.Context, arg UpdateSavedSch
 	var i SavedScholarship
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.GuideID,
 		&i.Status,

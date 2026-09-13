@@ -1,6 +1,6 @@
 -- name: ListTemplateLiterals :many
 -- Returns all template literals for a tenant with optional search and active filter.
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE deleted_at IS NULL
  AND (@search::text = '' OR key ILIKE '%' || @search || '%' OR label ILIKE '%' || @search || '%')
@@ -22,13 +22,13 @@ WHERE deleted_at IS NULL
  AND (@kind::text = '' OR kind = @kind::text);
 
 -- name: GetTemplateLiteral :one
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE id = @id
  AND deleted_at IS NULL;
 
 -- name: GetTemplateLiteralByKey :one
-SELECT id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
+SELECT id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at
 FROM template_literals
 WHERE key = @key
  AND deleted_at IS NULL;
@@ -36,7 +36,7 @@ WHERE key = @key
 -- name: CreateTemplateLiteral :one
 INSERT INTO template_literals (key, kind, value, fallback, label, description, category, is_active) VALUES (@key, @kind, @value, @fallback, @label, @description, @category, @is_active)
 
-RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at;
+RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at;
 
 -- name: UpdateTemplateLiteral :one
 UPDATE template_literals
@@ -50,7 +50,7 @@ SET kind = @kind,
  updated_at = now()
 WHERE id = @id
  AND deleted_at IS NULL
-RETURNING id, tenant_id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at;
+RETURNING id, key, kind, value, fallback, label, description, category, is_system, is_active, created_at, updated_at, deleted_at;
 
 -- name: DeleteTemplateLiteral :exec
 UPDATE template_literals

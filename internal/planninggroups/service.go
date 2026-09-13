@@ -603,7 +603,7 @@ func (s *Service) SendCheckinReminders(ctx context.Context) (int64, error) {
 		}
 
 		if err := s.notifier.CreateNotification(
-			ctx, m.TenantID, m.UserID,
+			ctx, pgtype.UUID{}, m.UserID,
 			"planning_group.checkin_reminder", "system", zero,
 			"planning_group", m.GroupID,
 			title, body,

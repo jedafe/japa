@@ -138,7 +138,7 @@ SET value = EXCLUDED.value,
  value_boolean = EXCLUDED.value_boolean,
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
 
 -- name: UpsertComparisonValueWithMetadata :one
 -- Upserts a comparison value together with its provenance metadata JSONB
@@ -154,7 +154,7 @@ SET value = EXCLUDED.value,
  metadata = COALESCE(EXCLUDED.metadata, comparison_values.metadata),
  data_source_id = EXCLUDED.data_source_id,
  updated_at = now()
-RETURNING dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
+RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id;
 
 -- name: ListComparisonValuesByDimension :many
 SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
@@ -166,7 +166,7 @@ WHERE cv.dimension_id = @dimension_id
  AND ci.deleted_at IS NULL;
 
 -- name: GetComparisonValue :one
-SELECT dimension_id, item_id, tenant_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
+SELECT dimension_id, item_id, value, value_rating, value_boolean, created_at, metadata, updated_at, data_source_id
 FROM comparison_values
 WHERE dimension_id = @dimension_id AND item_id = @item_id;
 
@@ -182,8 +182,8 @@ DELETE FROM comparison_values
 WHERE dimension_id = @dimension_id;
 
 -- name: GetComparisonValuesByContent :many
-SELECT cv.dimension_id, cv.item_id, cv.tenant_id, cv.value, cv.value_rating,
-       cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
+SELECT cv.dimension_id, cv.item_id, cv.value, cv.value_rating,
+ cv.value_boolean, cv.created_at, cv.metadata, cv.updated_at, cv.data_source_id
 FROM comparison_values cv
 JOIN comparison_items ci ON ci.id = cv.item_id
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id
@@ -198,7 +198,7 @@ WHERE ci.content_id = @content_id
 INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config) VALUES (@content_id, @depth, sqlc.narg(promoted_from_id), sqlc.narg(promoted_at), sqlc.narg(smart_mode), @score_version, sqlc.narg(config)) ;
 
 -- name: GetComparisonContentMetadata :one
-SELECT content_id, tenant_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
 FROM comparison_content_metadata
 WHERE content_id = @content_id;
 

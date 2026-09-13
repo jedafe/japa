@@ -3,7 +3,7 @@
 -- per-entity AI privacy-exemption lookups used by the PrivacyChecker.
 --
 -- Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
---      japaconnect-engineering/adr/ADR-111-ai-agent-executor.md
+-- japaconnect-engineering/adr/ADR-111-ai-agent-executor.md
 
 -- =====================================================================
 -- Agent sessions — lifecycle.

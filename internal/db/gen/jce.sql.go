@@ -96,8 +96,8 @@ func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesPara
 
 const createComparisonProfile = `-- name: CreateComparisonProfile :one
 INSERT INTO comparison_profiles (user_id, title, source_space_id, target_space_ids, goals, preferences, demographics, is_default, is_template) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+RETURNING id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 `
 
 type CreateComparisonProfileParams struct {
@@ -127,7 +127,6 @@ func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateCompari
 	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -147,7 +146,7 @@ func (q *Queries) CreateComparisonProfile(ctx context.Context, arg CreateCompari
 const createComparisonRecommendation = `-- name: CreateComparisonRecommendation :one
 
 INSERT INTO comparison_recommendations (content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
+RETURNING id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
 `
 
 type CreateComparisonRecommendationParams struct {
@@ -178,7 +177,6 @@ func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg Create
 	var i ComparisonRecommendation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ItemID,
 		&i.ProfileID,
@@ -196,7 +194,7 @@ func (q *Queries) CreateComparisonRecommendation(ctx context.Context, arg Create
 const createDataSource = `-- name: CreateDataSource :one
 
 INSERT INTO comparison_data_sources (entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, config, source_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id
+RETURNING id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id
 `
 
 type CreateDataSourceParams struct {
@@ -229,7 +227,6 @@ func (q *Queries) CreateDataSource(ctx context.Context, arg CreateDataSourcePara
 	var i ComparisonDataSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.DimensionSlug,
@@ -251,7 +248,7 @@ func (q *Queries) CreateDataSource(ctx context.Context, arg CreateDataSourcePara
 const createIngestionJob = `-- name: CreateIngestionJob :one
 
 INSERT INTO comparison_data_ingestion_jobs (content_id, source_kind) VALUES ($1, $2)
-RETURNING id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
+RETURNING id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
 `
 
 type CreateIngestionJobParams struct {
@@ -267,7 +264,6 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 	var i ComparisonDataIngestionJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.Status,
 		&i.SourceKind,
@@ -284,8 +280,8 @@ func (q *Queries) CreateIngestionJob(ctx context.Context, arg CreateIngestionJob
 const createScoreFactor = `-- name: CreateScoreFactor :one
 
 INSERT INTO comparison_score_factors (comparison_type_id, factor_key, label, description, dimension_slug, data_source, default_weight, config, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+RETURNING id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 `
 
 type CreateScoreFactorParams struct {
@@ -318,7 +314,6 @@ func (q *Queries) CreateScoreFactor(ctx context.Context, arg CreateScoreFactorPa
 	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -456,8 +451,8 @@ func (q *Queries) GetComparisonItemsForScoring(ctx context.Context, contentID pg
 }
 
 const getComparisonProfile = `-- name: GetComparisonProfile :one
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -467,7 +462,6 @@ func (q *Queries) GetComparisonProfile(ctx context.Context, id pgtype.UUID) (Com
 	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -534,7 +528,7 @@ func (q *Queries) GetComparisonValuesForScoring(ctx context.Context, arg GetComp
 }
 
 const getDataSource = `-- name: GetDataSource :one
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
+SELECT id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
 WHERE id = $1
 `
 
@@ -543,7 +537,6 @@ func (q *Queries) GetDataSource(ctx context.Context, id pgtype.UUID) (Comparison
 	var i ComparisonDataSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.DimensionSlug,
@@ -563,7 +556,7 @@ func (q *Queries) GetDataSource(ctx context.Context, id pgtype.UUID) (Comparison
 }
 
 const getIngestionJob = `-- name: GetIngestionJob :one
-SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+SELECT id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
 WHERE id = $1
 `
 
@@ -572,7 +565,6 @@ func (q *Queries) GetIngestionJob(ctx context.Context, id pgtype.UUID) (Comparis
 	var i ComparisonDataIngestionJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.Status,
 		&i.SourceKind,
@@ -587,7 +579,7 @@ func (q *Queries) GetIngestionJob(ctx context.Context, id pgtype.UUID) (Comparis
 }
 
 const getLatestCompletedIngestionJob = `-- name: GetLatestCompletedIngestionJob :one
-SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+SELECT id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
 WHERE content_id = $1 AND status = 'completed'
 ORDER BY completed_at DESC
 LIMIT 1
@@ -598,7 +590,6 @@ func (q *Queries) GetLatestCompletedIngestionJob(ctx context.Context, contentID 
 	var i ComparisonDataIngestionJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.Status,
 		&i.SourceKind,
@@ -613,8 +604,8 @@ func (q *Queries) GetLatestCompletedIngestionJob(ctx context.Context, contentID 
 }
 
 const getScoreFactor = `-- name: GetScoreFactor :one
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE id = $1
 `
@@ -624,7 +615,6 @@ func (q *Queries) GetScoreFactor(ctx context.Context, id pgtype.UUID) (Compariso
 	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -642,8 +632,8 @@ func (q *Queries) GetScoreFactor(ctx context.Context, id pgtype.UUID) (Compariso
 }
 
 const getScoreFactorByKey = `-- name: GetScoreFactorByKey :one
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE comparison_type_id = $1
  AND factor_key = $2
@@ -659,7 +649,6 @@ func (q *Queries) GetScoreFactorByKey(ctx context.Context, arg GetScoreFactorByK
 	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -677,8 +666,8 @@ func (q *Queries) GetScoreFactorByKey(ctx context.Context, arg GetScoreFactorByK
 }
 
 const listComparisonProfileTemplates = `-- name: ListComparisonProfileTemplates :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE is_template = true
  AND deleted_at IS NULL
@@ -696,7 +685,6 @@ func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]Compari
 		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -721,8 +709,8 @@ func (q *Queries) ListComparisonProfileTemplates(ctx context.Context) ([]Compari
 }
 
 const listComparisonProfilesByTenant = `-- name: ListComparisonProfilesByTenant :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC
@@ -739,7 +727,6 @@ func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]Compari
 		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -764,8 +751,8 @@ func (q *Queries) ListComparisonProfilesByTenant(ctx context.Context) ([]Compari
 }
 
 const listComparisonProfilesByUser = `-- name: ListComparisonProfilesByUser :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE user_id = $1
  AND deleted_at IS NULL
@@ -783,7 +770,6 @@ func (q *Queries) ListComparisonProfilesByUser(ctx context.Context, userID pgtyp
 		var i ComparisonProfile
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Title,
 			&i.SourceSpaceID,
@@ -808,7 +794,7 @@ func (q *Queries) ListComparisonProfilesByUser(ctx context.Context, userID pgtyp
 }
 
 const listComparisonRecommendationsByContent = `-- name: ListComparisonRecommendationsByContent :many
-SELECT id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
+SELECT id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
 FROM comparison_recommendations
 WHERE content_id = $1
  AND (profile_id IS NOT DISTINCT FROM $2)
@@ -831,7 +817,6 @@ func (q *Queries) ListComparisonRecommendationsByContent(ctx context.Context, ar
 		var i ComparisonRecommendation
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.ItemID,
 			&i.ProfileID,
@@ -854,8 +839,8 @@ func (q *Queries) ListComparisonRecommendationsByContent(ctx context.Context, ar
 }
 
 const listComparisonScoresByContent = `-- name: ListComparisonScoresByContent :many
-SELECT id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
-    score_value, max_value, explanation, eligible_status, calculated_at, version
+SELECT id, content_id, item_id, factor_id, dimension_id, profile_id,
+ score_value, max_value, explanation, eligible_status, calculated_at, version
 FROM comparison_scores
 WHERE content_id = $1
  AND (profile_id IS NOT DISTINCT FROM $2)
@@ -878,7 +863,6 @@ func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListCom
 		var i ComparisonScore
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.ItemID,
 			&i.FactorID,
@@ -902,7 +886,7 @@ func (q *Queries) ListComparisonScoresByContent(ctx context.Context, arg ListCom
 }
 
 const listDataSources = `-- name: ListDataSources :many
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
+SELECT id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
 WHERE ($1::text IS NULL OR entity_type = $1::text)
  AND ($2::uuid IS NULL OR entity_id = $2::uuid)
 ORDER BY source_name ASC
@@ -932,7 +916,6 @@ func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams
 		var i ComparisonDataSource
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.DimensionSlug,
@@ -959,7 +942,7 @@ func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams
 }
 
 const listIngestionJobsByContent = `-- name: ListIngestionJobsByContent :many
-SELECT id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
+SELECT id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at FROM comparison_data_ingestion_jobs
 WHERE content_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -982,7 +965,6 @@ func (q *Queries) ListIngestionJobsByContent(ctx context.Context, arg ListIngest
 		var i ComparisonDataIngestionJob
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ContentID,
 			&i.Status,
 			&i.SourceKind,
@@ -1004,8 +986,8 @@ func (q *Queries) ListIngestionJobsByContent(ctx context.Context, arg ListIngest
 }
 
 const listScoreFactorsByType = `-- name: ListScoreFactorsByType :many
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE (
  comparison_type_id = $1
@@ -1032,7 +1014,6 @@ func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFacto
 		var i ComparisonScoreFactor
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ComparisonTypeID,
 			&i.FactorKey,
 			&i.Label,
@@ -1057,7 +1038,7 @@ func (q *Queries) ListScoreFactorsByType(ctx context.Context, arg ListScoreFacto
 }
 
 const matchDataSource = `-- name: MatchDataSource :one
-SELECT id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
+SELECT id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id FROM comparison_data_sources
 WHERE (source_name = $1 OR $1 = '')
  AND (entity_type IS NOT DISTINCT FROM $2::text)
  AND (entity_id IS NOT DISTINCT FROM $3::uuid)
@@ -1092,7 +1073,6 @@ func (q *Queries) MatchDataSource(ctx context.Context, arg MatchDataSourceParams
 	var i ComparisonDataSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.DimensionSlug,
@@ -1144,8 +1124,8 @@ SET title = $1,
  is_template = $8,
  updated_at = now()
 WHERE id = $9 AND deleted_at IS NULL
-RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+RETURNING id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 `
 
 type UpdateComparisonProfileParams struct {
@@ -1175,7 +1155,6 @@ func (q *Queries) UpdateComparisonProfile(ctx context.Context, arg UpdateCompari
 	var i ComparisonProfile
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Title,
 		&i.SourceSpaceID,
@@ -1207,7 +1186,7 @@ SET entity_type = $1,
  source_id = COALESCE($11, source_id),
  updated_at = now()
 WHERE id = $12
-RETURNING id, tenant_id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id
+RETURNING id, entity_type, entity_id, dimension_slug, source_name, source_url, source_kind, trust_level, freshness_score, last_verified_at, config, created_at, updated_at, created_by_user_id, source_id
 `
 
 type UpdateDataSourceParams struct {
@@ -1243,7 +1222,6 @@ func (q *Queries) UpdateDataSource(ctx context.Context, arg UpdateDataSourcePara
 	var i ComparisonDataSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.DimensionSlug,
@@ -1271,7 +1249,7 @@ SET status = $1,
  completed_at = $5,
  updated_at = now()
 WHERE id = $6
-RETURNING id, tenant_id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
+RETURNING id, content_id, status, source_kind, refreshed_count, error, started_at, completed_at, created_at, updated_at
 `
 
 type UpdateIngestionJobParams struct {
@@ -1295,7 +1273,6 @@ func (q *Queries) UpdateIngestionJob(ctx context.Context, arg UpdateIngestionJob
 	var i ComparisonDataIngestionJob
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.Status,
 		&i.SourceKind,
@@ -1322,8 +1299,8 @@ SET comparison_type_id = $1,
  is_system = $9,
  updated_at = now()
 WHERE id = $10
-RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+RETURNING id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 `
 
 type UpdateScoreFactorParams struct {
@@ -1355,7 +1332,6 @@ func (q *Queries) UpdateScoreFactor(ctx context.Context, arg UpdateScoreFactorPa
 	var i ComparisonScoreFactor
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ComparisonTypeID,
 		&i.FactorKey,
 		&i.Label,
@@ -1382,8 +1358,8 @@ SET score_value = EXCLUDED.score_value,
  eligible_status = EXCLUDED.eligible_status,
  version = EXCLUDED.version,
  calculated_at = now()
-RETURNING id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
-    score_value, max_value, explanation, eligible_status, calculated_at, version
+RETURNING id, content_id, item_id, factor_id, dimension_id, profile_id,
+ score_value, max_value, explanation, eligible_status, calculated_at, version
 `
 
 type UpsertComparisonScoreParams struct {
@@ -1418,7 +1394,6 @@ func (q *Queries) UpsertComparisonScore(ctx context.Context, arg UpsertCompariso
 	var i ComparisonScore
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ItemID,
 		&i.FactorID,

@@ -63,7 +63,7 @@ const createAIPersona = `-- name: CreateAIPersona :one
 
 INSERT INTO ai_personas (user_id, profile_id, disclosure_mode, autonomy_mode, voice_id, voice_prompt, activity_policy, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
+RETURNING id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
 type CreateAIPersonaParams struct {
@@ -98,7 +98,6 @@ func (q *Queries) CreateAIPersona(ctx context.Context, arg CreateAIPersonaParams
 	var i AiPersona
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProfileID,
 		&i.DisclosureMode,
@@ -119,7 +118,7 @@ const createPersonaUser = `-- name: CreatePersonaUser :one
 
 INSERT INTO users (email, username, profile_type, status, is_bot) VALUES ($1, $2, 'regular', 'active', true)
 
-RETURNING id, tenant_id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, username_changed_at, is_bot, password_changed_at, ai_exempt, current_geo_space_id, is_synthetic, synthetic_source, source_id
+RETURNING id, email, email_verified_at, password_hash, username, profile_type, status, last_login_at, created_at, updated_at, follower_count, force_password_change, username_changed_at, is_bot, password_changed_at, ai_exempt, current_geo_space_id, is_synthetic, synthetic_source, source_id
 `
 
 type CreatePersonaUserParams struct {
@@ -146,7 +145,6 @@ func (q *Queries) CreatePersonaUser(ctx context.Context, arg CreatePersonaUserPa
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Email,
 		&i.EmailVerifiedAt,
 		&i.PasswordHash,
@@ -174,7 +172,7 @@ const createPersonaVoice = `-- name: CreatePersonaVoice :one
 
 INSERT INTO persona_voices (name, slug, description, voice_prompt, is_system, created_by) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
+RETURNING id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
 `
 
 type CreatePersonaVoiceParams struct {
@@ -201,7 +199,6 @@ func (q *Queries) CreatePersonaVoice(ctx context.Context, arg CreatePersonaVoice
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -374,7 +371,7 @@ func (q *Queries) GetAIPersonaByUserID(ctx context.Context, userID pgtype.UUID) 
 }
 
 const getPersonaVoiceByID = `-- name: GetPersonaVoiceByID :one
-SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+SELECT id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
 WHERE id = $1
 `
 
@@ -383,7 +380,6 @@ func (q *Queries) GetPersonaVoiceByID(ctx context.Context, id pgtype.UUID) (Pers
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -397,7 +393,7 @@ func (q *Queries) GetPersonaVoiceByID(ctx context.Context, id pgtype.UUID) (Pers
 }
 
 const getPersonaVoiceBySlug = `-- name: GetPersonaVoiceBySlug :one
-SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+SELECT id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
 WHERE slug = $1
 `
 
@@ -406,7 +402,6 @@ func (q *Queries) GetPersonaVoiceBySlug(ctx context.Context, slug string) (Perso
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -607,7 +602,7 @@ func (q *Queries) ListPersonaActivity(ctx context.Context, arg ListPersonaActivi
 }
 
 const listPersonaVoices = `-- name: ListPersonaVoices :many
-SELECT id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
+SELECT id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at FROM persona_voices
 
 ORDER BY name ASC
 LIMIT $2 OFFSET $1
@@ -629,7 +624,6 @@ func (q *Queries) ListPersonaVoices(ctx context.Context, arg ListPersonaVoicesPa
 		var i PersonaVoice
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -665,7 +659,7 @@ SET
  status = COALESCE($6, status),
  updated_at = now()
 WHERE id = $7
-RETURNING id, tenant_id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
+RETURNING id, user_id, profile_id, disclosure_mode, autonomy_mode, voice_prompt, activity_policy, status, created_by, created_at, updated_at, voice_id
 `
 
 type UpdateAIPersonaParams struct {
@@ -694,7 +688,6 @@ func (q *Queries) UpdateAIPersona(ctx context.Context, arg UpdateAIPersonaParams
 	var i AiPersona
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProfileID,
 		&i.DisclosureMode,
@@ -720,7 +713,7 @@ SET
  is_system = COALESCE($5, is_system),
  updated_at = now()
 WHERE id = $6
-RETURNING id, tenant_id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
+RETURNING id, name, slug, description, voice_prompt, is_system, created_by, created_at, updated_at
 `
 
 type UpdatePersonaVoiceParams struct {
@@ -744,7 +737,6 @@ func (q *Queries) UpdatePersonaVoice(ctx context.Context, arg UpdatePersonaVoice
 	var i PersonaVoice
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

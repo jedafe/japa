@@ -16,7 +16,7 @@ const addReaction = `-- name: AddReaction :one
 INSERT INTO reactions (entity_type, entity_id, user_id, reaction_key) VALUES ($1, $2, $3, $4)
 
 ON CONFLICT (entity_type, entity_id, user_id, reaction_key) DO NOTHING
-RETURNING tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+RETURNING entity_type, entity_id, user_id, reaction_key, created_at
 `
 
 type AddReactionParams struct {
@@ -38,7 +38,6 @@ func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) (React
 	)
 	var i Reaction
 	err := row.Scan(
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.UserID,
@@ -89,7 +88,7 @@ func (q *Queries) CountReactionsByEntity(ctx context.Context, arg CountReactions
 const createReactionType = `-- name: CreateReactionType :one
 INSERT INTO reaction_types (key, emoji, label, enabled, position) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+RETURNING key, emoji, label, enabled, position, created_at, updated_at
 `
 
 type CreateReactionTypeParams struct {
@@ -110,7 +109,6 @@ func (q *Queries) CreateReactionType(ctx context.Context, arg CreateReactionType
 	)
 	var i ReactionType
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,
@@ -132,7 +130,7 @@ func (q *Queries) DeleteReactionType(ctx context.Context, key string) error {
 }
 
 const getReactionType = `-- name: GetReactionType :one
-SELECT tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+SELECT key, emoji, label, enabled, position, created_at, updated_at
 FROM reaction_types
 WHERE key = $1
 `
@@ -141,7 +139,6 @@ func (q *Queries) GetReactionType(ctx context.Context, key string) (ReactionType
 	row := q.db.QueryRow(ctx, getReactionType, key)
 	var i ReactionType
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,
@@ -154,7 +151,7 @@ func (q *Queries) GetReactionType(ctx context.Context, key string) (ReactionType
 }
 
 const getUserReactions = `-- name: GetUserReactions :many
-SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+SELECT entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
 WHERE entity_type = $1 AND entity_id = $2 AND user_id = $3
 `
@@ -175,7 +172,6 @@ func (q *Queries) GetUserReactions(ctx context.Context, arg GetUserReactionsPara
 	for rows.Next() {
 		var i Reaction
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.UserID,
@@ -274,7 +270,7 @@ func (q *Queries) ListContentLikedByUser(ctx context.Context, arg ListContentLik
 }
 
 const listReactionTypes = `-- name: ListReactionTypes :many
-SELECT tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+SELECT key, emoji, label, enabled, position, created_at, updated_at
 FROM reaction_types
 
 ORDER BY position ASC, key ASC
@@ -290,7 +286,6 @@ func (q *Queries) ListReactionTypes(ctx context.Context) ([]ReactionType, error)
 	for rows.Next() {
 		var i ReactionType
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.Key,
 			&i.Emoji,
 			&i.Label,
@@ -310,7 +305,7 @@ func (q *Queries) ListReactionTypes(ctx context.Context) ([]ReactionType, error)
 }
 
 const listReactionsByEntity = `-- name: ListReactionsByEntity :many
-SELECT tenant_id, entity_type, entity_id, user_id, reaction_key, created_at
+SELECT entity_type, entity_id, user_id, reaction_key, created_at
 FROM reactions
 WHERE entity_type = $1 AND entity_id = $2
 ORDER BY created_at DESC
@@ -331,7 +326,6 @@ func (q *Queries) ListReactionsByEntity(ctx context.Context, arg ListReactionsBy
 	for rows.Next() {
 		var i Reaction
 		if err := rows.Scan(
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.UserID,
@@ -374,7 +368,7 @@ const updateReactionType = `-- name: UpdateReactionType :one
 UPDATE reaction_types
 SET emoji = $1, label = $2, enabled = $3, position = $4, updated_at = now()
 WHERE key = $5
-RETURNING tenant_id, key, emoji, label, enabled, position, created_at, updated_at
+RETURNING key, emoji, label, enabled, position, created_at, updated_at
 `
 
 type UpdateReactionTypeParams struct {
@@ -395,7 +389,6 @@ func (q *Queries) UpdateReactionType(ctx context.Context, arg UpdateReactionType
 	)
 	var i ReactionType
 	err := row.Scan(
-		&i.TenantID,
 		&i.Key,
 		&i.Emoji,
 		&i.Label,

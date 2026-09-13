@@ -54,7 +54,7 @@ func (q *Queries) CountMenus(ctx context.Context, arg CountMenusParams) (int32, 
 const createMenu = `-- name: CreateMenu :one
 INSERT INTO menus (slug, name, placement, status) VALUES ($1, $2, $3, $4)
 
-RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at
+RETURNING id, slug, name, placement, status, created_at, updated_at
 `
 
 type CreateMenuParams struct {
@@ -74,7 +74,6 @@ func (q *Queries) CreateMenu(ctx context.Context, arg CreateMenuParams) (Menu, e
 	var i Menu
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -191,7 +190,7 @@ func (q *Queries) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getMenuByID = `-- name: GetMenuByID :one
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE id = $1
 `
@@ -201,7 +200,6 @@ func (q *Queries) GetMenuByID(ctx context.Context, id pgtype.UUID) (Menu, error)
 	var i Menu
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -213,7 +211,7 @@ func (q *Queries) GetMenuByID(ctx context.Context, id pgtype.UUID) (Menu, error)
 }
 
 const getMenuBySlug = `-- name: GetMenuBySlug :one
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE slug = $1
 `
@@ -223,7 +221,6 @@ func (q *Queries) GetMenuBySlug(ctx context.Context, slug string) (Menu, error) 
 	var i Menu
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -236,7 +233,7 @@ func (q *Queries) GetMenuBySlug(ctx context.Context, slug string) (Menu, error) 
 
 const getMenuBySlugForTenant = `-- name: GetMenuBySlugForTenant :one
 
-SELECT id, tenant_id, slug, name, placement, status, created_at, updated_at
+SELECT id, slug, name, placement, status, created_at, updated_at
 FROM menus
 WHERE slug = $1 AND status = 'active'
 `
@@ -249,7 +246,6 @@ func (q *Queries) GetMenuBySlugForTenant(ctx context.Context, slug string) (Menu
 	var i Menu
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,
@@ -501,7 +497,7 @@ const updateMenu = `-- name: UpdateMenu :one
 UPDATE menus
 SET name = $1, placement = $2, status = $3, updated_at = now()
 WHERE id = $4
-RETURNING id, tenant_id, slug, name, placement, status, created_at, updated_at
+RETURNING id, slug, name, placement, status, created_at, updated_at
 `
 
 type UpdateMenuParams struct {
@@ -521,7 +517,6 @@ func (q *Queries) UpdateMenu(ctx context.Context, arg UpdateMenuParams) (Menu, e
 	var i Menu
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Placement,

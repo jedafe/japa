@@ -1,16 +1,16 @@
 -- name: CreateIPBlock :one
 INSERT INTO ip_blocks (cidr, block_type, reason, blocked_by, expires_at) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at;
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at;
 
 -- name: GetIPBlockByCIDR :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE cidr = $1
  AND (expires_at IS NULL OR expires_at > now());
 
 -- name: ListIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -19,7 +19,7 @@ LIMIT $1;
 -- name: ListIPBlocksPaginated :many
 -- Offset-based paginated list for admin DataTable server-side pagination
 -- (BUG-010). Supports optional block_type filter.
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE (sqlc.narg(block_type)::text IS NULL OR block_type = sqlc.narg(block_type))
 ORDER BY created_at DESC, id DESC
@@ -36,7 +36,7 @@ DELETE FROM ip_blocks
 WHERE id = $1;
 
 -- name: GetIPBlockByID :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE id = $1;
 
@@ -45,10 +45,10 @@ UPDATE ip_blocks
 SET cidr = @cidr, block_type = @block_type, reason = sqlc.narg(reason),
  expires_at = sqlc.narg(expires_at), blocked_by = @blocked_by
 WHERE id = @id
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at;
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at;
 
 -- name: GetActiveIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE (expires_at IS NULL OR expires_at > now());
 
@@ -189,10 +189,10 @@ WHERE status = 'pending'
 -- name: CreateCensoredWord :one
 INSERT INTO censored_words (pattern, action, replacement) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, pattern, action, replacement, created_at;
+RETURNING id, pattern, action, replacement, created_at;
 
 -- name: ListCensoredWords :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 
 ORDER BY created_at DESC;
@@ -200,7 +200,7 @@ ORDER BY created_at DESC;
 -- name: ListCensoredWordsPaginated :many
 -- Offset-based paginated list for admin DataTable server-side pagination
 -- (BUG-010). Supports optional action filter.
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 WHERE (sqlc.narg(action)::text IS NULL OR action = sqlc.narg(action))
 ORDER BY created_at DESC, id DESC
@@ -217,7 +217,7 @@ DELETE FROM censored_words
 WHERE id = $1;
 
 -- name: GetCensoredWordByID :one
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 WHERE id = $1;
 
@@ -225,10 +225,10 @@ WHERE id = $1;
 UPDATE censored_words
 SET pattern = @pattern, action = @action, replacement = sqlc.narg(replacement)
 WHERE id = @id
-RETURNING id, tenant_id, pattern, action, replacement, created_at;
+RETURNING id, pattern, action, replacement, created_at;
 
 -- name: GetCensoredWordsByTenant :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 ;
 

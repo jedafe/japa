@@ -61,8 +61,8 @@ func (q *Queries) CountSidebars(ctx context.Context, arg CountSidebarsParams) (i
 const createSidebar = `-- name: CreateSidebar :one
 INSERT INTO sidebars (app, position, slug, name, page_pattern, visibility, required_group_ids, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
-RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
-    required_group_ids, status, created_at, updated_at
+RETURNING id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 `
 
 type CreateSidebarParams struct {
@@ -90,7 +90,6 @@ func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (S
 	var i Sidebar
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -108,9 +107,9 @@ func (q *Queries) CreateSidebar(ctx context.Context, arg CreateSidebarParams) (S
 const createSidebarWidget = `-- name: CreateSidebarWidget :one
 INSERT INTO sidebar_widgets (sidebar_id, widget_type, label, props, sort_order, visibility, required_group_ids, permission_node, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-    visibility, required_group_ids, permission_node, status,
-    created_at, updated_at
+RETURNING id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 `
 
 type CreateSidebarWidgetParams struct {
@@ -140,7 +139,6 @@ func (q *Queries) CreateSidebarWidget(ctx context.Context, arg CreateSidebarWidg
 	var i SidebarWidget
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,
@@ -177,8 +175,8 @@ func (q *Queries) DeleteSidebarWidget(ctx context.Context, id pgtype.UUID) error
 }
 
 const getSidebarByID = `-- name: GetSidebarByID :one
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
+SELECT id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 FROM sidebars
 WHERE id = $1
 `
@@ -188,7 +186,6 @@ func (q *Queries) GetSidebarByID(ctx context.Context, id pgtype.UUID) (Sidebar, 
 	var i Sidebar
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -204,9 +201,9 @@ func (q *Queries) GetSidebarByID(ctx context.Context, id pgtype.UUID) (Sidebar, 
 }
 
 const getSidebarWidget = `-- name: GetSidebarWidget :one
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
 WHERE id = $1
 `
@@ -216,7 +213,6 @@ func (q *Queries) GetSidebarWidget(ctx context.Context, id pgtype.UUID) (Sidebar
 	var i SidebarWidget
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,
@@ -233,9 +229,9 @@ func (q *Queries) GetSidebarWidget(ctx context.Context, id pgtype.UUID) (Sidebar
 }
 
 const listActiveSidebarWidgets = `-- name: ListActiveSidebarWidgets :many
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
 WHERE sidebar_id = $1
  AND status = 'active'
@@ -253,7 +249,6 @@ func (q *Queries) ListActiveSidebarWidgets(ctx context.Context, sidebarID pgtype
 		var i SidebarWidget
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SidebarID,
 			&i.WidgetType,
 			&i.Label,
@@ -278,8 +273,8 @@ func (q *Queries) ListActiveSidebarWidgets(ctx context.Context, sidebarID pgtype
 
 const listActiveSidebarsForResolve = `-- name: ListActiveSidebarsForResolve :many
 
-SELECT id, tenant_id, app, position, slug, name, page_pattern, visibility,
-       required_group_ids, status, created_at, updated_at
+SELECT id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 FROM sidebars
 WHERE app = $1
  AND position = $2
@@ -306,7 +301,6 @@ func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActi
 		var i Sidebar
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.App,
 			&i.Position,
 			&i.Slug,
@@ -330,9 +324,9 @@ func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActi
 
 const listSidebarWidgets = `-- name: ListSidebarWidgets :many
 
-SELECT id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-       visibility, required_group_ids, permission_node, status,
-       created_at, updated_at
+SELECT id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 FROM sidebar_widgets
 WHERE sidebar_id = $1
 ORDER BY sort_order ASC, created_at ASC
@@ -352,7 +346,6 @@ func (q *Queries) ListSidebarWidgets(ctx context.Context, sidebarID pgtype.UUID)
 		var i SidebarWidget
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.SidebarID,
 			&i.WidgetType,
 			&i.Label,
@@ -483,8 +476,8 @@ SET name = $1, page_pattern = $2, visibility = $3,
  required_group_ids = $4, status = $5,
  updated_at = now()
 WHERE id = $6
-RETURNING id, tenant_id, app, position, slug, name, page_pattern, visibility,
-    required_group_ids, status, created_at, updated_at
+RETURNING id, app, position, slug, name, page_pattern, visibility,
+ required_group_ids, status, created_at, updated_at
 `
 
 type UpdateSidebarParams struct {
@@ -508,7 +501,6 @@ func (q *Queries) UpdateSidebar(ctx context.Context, arg UpdateSidebarParams) (S
 	var i Sidebar
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.App,
 		&i.Position,
 		&i.Slug,
@@ -531,9 +523,9 @@ SET label = $1, widget_type = $2, props = $3,
  permission_node = $7, status = $8,
  updated_at = now()
 WHERE id = $9
-RETURNING id, tenant_id, sidebar_id, widget_type, label, props, sort_order,
-    visibility, required_group_ids, permission_node, status,
-    created_at, updated_at
+RETURNING id, sidebar_id, widget_type, label, props, sort_order,
+ visibility, required_group_ids, permission_node, status,
+ created_at, updated_at
 `
 
 type UpdateSidebarWidgetParams struct {
@@ -563,7 +555,6 @@ func (q *Queries) UpdateSidebarWidget(ctx context.Context, arg UpdateSidebarWidg
 	var i SidebarWidget
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.SidebarID,
 		&i.WidgetType,
 		&i.Label,

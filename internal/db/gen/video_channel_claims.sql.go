@@ -57,7 +57,7 @@ const createVideoChannelClaim = `-- name: CreateVideoChannelClaim :one
 
 INSERT INTO video_channel_claims (claimant_user_id, video_author_user_id, video_source_id, claim_type, evidence_url, notes, status) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'pending'))
 RETURNING
- id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+ id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 `
@@ -86,7 +86,6 @@ func (q *Queries) CreateVideoChannelClaim(ctx context.Context, arg CreateVideoCh
 	var i VideoChannelClaim
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ClaimantUserID,
 		&i.VideoAuthorUserID,
 		&i.ClaimType,
@@ -104,7 +103,7 @@ func (q *Queries) CreateVideoChannelClaim(ctx context.Context, arg CreateVideoCh
 
 const getVideoChannelClaimByID = `-- name: GetVideoChannelClaimByID :one
 SELECT
- id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+ id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -116,7 +115,6 @@ func (q *Queries) GetVideoChannelClaimByID(ctx context.Context, id pgtype.UUID) 
 	var i VideoChannelClaim
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ClaimantUserID,
 		&i.VideoAuthorUserID,
 		&i.ClaimType,
@@ -134,7 +132,7 @@ func (q *Queries) GetVideoChannelClaimByID(ctx context.Context, id pgtype.UUID) 
 
 const listVideoChannelClaimsByAuthor = `-- name: ListVideoChannelClaimsByAuthor :many
 SELECT
- id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+ id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -160,7 +158,6 @@ func (q *Queries) ListVideoChannelClaimsByAuthor(ctx context.Context, arg ListVi
 		var i VideoChannelClaim
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ClaimantUserID,
 			&i.VideoAuthorUserID,
 			&i.ClaimType,
@@ -185,7 +182,7 @@ func (q *Queries) ListVideoChannelClaimsByAuthor(ctx context.Context, arg ListVi
 
 const listVideoChannelClaimsByClaimant = `-- name: ListVideoChannelClaimsByClaimant :many
 SELECT
- id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+ id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 FROM video_channel_claims
@@ -212,7 +209,6 @@ func (q *Queries) ListVideoChannelClaimsByClaimant(ctx context.Context, arg List
 		var i VideoChannelClaim
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ClaimantUserID,
 			&i.VideoAuthorUserID,
 			&i.ClaimType,
@@ -340,7 +336,7 @@ SET status = $1,
  resolved_at = now()
 WHERE id = $4
 RETURNING
- id, tenant_id, claimant_user_id, video_author_user_id, claim_type,
+ id, claimant_user_id, video_author_user_id, claim_type,
  evidence_url, notes, status, reviewed_by, resolution_note, created_at, resolved_at,
  video_source_id
 `
@@ -363,7 +359,6 @@ func (q *Queries) UpdateVideoChannelClaimStatus(ctx context.Context, arg UpdateV
 	var i VideoChannelClaim
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ClaimantUserID,
 		&i.VideoAuthorUserID,
 		&i.ClaimType,

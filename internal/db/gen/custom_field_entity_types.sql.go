@@ -14,7 +14,7 @@ import (
 const createCustomFieldEntityType = `-- name: CreateCustomFieldEntityType :one
 INSERT INTO custom_field_entity_types (value, label, is_system, sort_order) VALUES ($1, $2, false, $3)
 
-RETURNING id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+RETURNING id, value, label, is_system, sort_order, created_at, updated_at
 `
 
 type CreateCustomFieldEntityTypeParams struct {
@@ -28,7 +28,6 @@ func (q *Queries) CreateCustomFieldEntityType(ctx context.Context, arg CreateCus
 	var i CustomFieldEntityType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,
@@ -54,7 +53,7 @@ func (q *Queries) DeleteCustomFieldEntityType(ctx context.Context, id pgtype.UUI
 }
 
 const getCustomFieldEntityTypeByValue = `-- name: GetCustomFieldEntityTypeByValue :one
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
 WHERE value = $1
 `
@@ -64,7 +63,6 @@ func (q *Queries) GetCustomFieldEntityTypeByValue(ctx context.Context, value str
 	var i CustomFieldEntityType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,
@@ -76,7 +74,7 @@ func (q *Queries) GetCustomFieldEntityTypeByValue(ctx context.Context, value str
 }
 
 const listCustomFieldEntityTypes = `-- name: ListCustomFieldEntityTypes :many
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
 
 ORDER BY sort_order ASC, label ASC
@@ -93,7 +91,6 @@ func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context) ([]CustomField
 		var i CustomFieldEntityType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Value,
 			&i.Label,
 			&i.IsSystem,
@@ -112,7 +109,7 @@ func (q *Queries) ListCustomFieldEntityTypes(ctx context.Context) ([]CustomField
 }
 
 const listCustomFieldEntityTypesByPrefix = `-- name: ListCustomFieldEntityTypesByPrefix :many
-SELECT id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+SELECT id, value, label, is_system, sort_order, created_at, updated_at
 FROM custom_field_entity_types
 WHERE value LIKE $1
 ORDER BY sort_order ASC, label ASC
@@ -129,7 +126,6 @@ func (q *Queries) ListCustomFieldEntityTypesByPrefix(ctx context.Context, prefix
 		var i CustomFieldEntityType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Value,
 			&i.Label,
 			&i.IsSystem,
@@ -153,7 +149,7 @@ SET label = $1,
  sort_order = $2,
  updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, value, label, is_system, sort_order, created_at, updated_at
+RETURNING id, value, label, is_system, sort_order, created_at, updated_at
 `
 
 type UpdateCustomFieldEntityTypeParams struct {
@@ -167,7 +163,6 @@ func (q *Queries) UpdateCustomFieldEntityType(ctx context.Context, arg UpdateCus
 	var i CustomFieldEntityType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Value,
 		&i.Label,
 		&i.IsSystem,

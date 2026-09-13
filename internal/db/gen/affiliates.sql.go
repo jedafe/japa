@@ -39,8 +39,8 @@ func (q *Queries) CountAffiliateMembersByTenant(ctx context.Context) (int64, err
 const createAffiliateLink = `-- name: CreateAffiliateLink :one
 
 INSERT INTO user_affiliate_links (user_id, product_type, product_id, code, description, destination_url) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+RETURNING id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 `
 
 type CreateAffiliateLinkParams struct {
@@ -67,7 +67,6 @@ func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLi
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -86,8 +85,8 @@ func (q *Queries) CreateAffiliateLink(ctx context.Context, arg CreateAffiliateLi
 const createAffiliateLinkEvent = `-- name: CreateAffiliateLinkEvent :one
 
 INSERT INTO affiliate_link_events (link_id, event_type, referrer_url, ip_hash, user_agent_hash, converted_payment_id, commission_amount) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, link_id, event_type, referrer_url, ip_hash,
-    user_agent_hash, converted_payment_id, commission_amount, created_at
+RETURNING id, link_id, event_type, referrer_url, ip_hash,
+ user_agent_hash, converted_payment_id, commission_amount, created_at
 `
 
 type CreateAffiliateLinkEventParams struct {
@@ -116,7 +115,6 @@ func (q *Queries) CreateAffiliateLinkEvent(ctx context.Context, arg CreateAffili
 	var i AffiliateLinkEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.LinkID,
 		&i.EventType,
 		&i.ReferrerUrl,
@@ -134,8 +132,8 @@ INSERT INTO affiliate_program_members (user_id, status) VALUES ($1, $2)
 
 ON CONFLICT (user_id) DO UPDATE
  SET status = EXCLUDED.status
-RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+RETURNING user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 `
 
 type CreateAffiliateMemberParams struct {
@@ -148,7 +146,6 @@ func (q *Queries) CreateAffiliateMember(ctx context.Context, arg CreateAffiliate
 	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -307,8 +304,8 @@ func (q *Queries) GetAffiliateContentCommissionForCredit(ctx context.Context, id
 }
 
 const getAffiliateLinkByCode = `-- name: GetAffiliateLinkByCode :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE code = $1 AND is_active = true
 `
@@ -318,7 +315,6 @@ func (q *Queries) GetAffiliateLinkByCode(ctx context.Context, code string) (User
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -335,8 +331,8 @@ func (q *Queries) GetAffiliateLinkByCode(ctx context.Context, code string) (User
 }
 
 const getAffiliateLinkByID = `-- name: GetAffiliateLinkByID :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = $1
 `
@@ -346,7 +342,6 @@ func (q *Queries) GetAffiliateLinkByID(ctx context.Context, id pgtype.UUID) (Use
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -363,8 +358,8 @@ func (q *Queries) GetAffiliateLinkByID(ctx context.Context, id pgtype.UUID) (Use
 }
 
 const getAffiliateLinkByIDOnly = `-- name: GetAffiliateLinkByIDOnly :one
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE id = $1
 `
@@ -374,7 +369,6 @@ func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) 
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -391,8 +385,8 @@ func (q *Queries) GetAffiliateLinkByIDOnly(ctx context.Context, id pgtype.UUID) 
 }
 
 const getAffiliateMember = `-- name: GetAffiliateMember :one
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = $1
 `
@@ -402,7 +396,6 @@ func (q *Queries) GetAffiliateMember(ctx context.Context, userID pgtype.UUID) (A
 	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -415,8 +408,8 @@ func (q *Queries) GetAffiliateMember(ctx context.Context, userID pgtype.UUID) (A
 }
 
 const getAffiliateMemberByUserID = `-- name: GetAffiliateMemberByUserID :one
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE user_id = $1
 `
@@ -426,7 +419,6 @@ func (q *Queries) GetAffiliateMemberByUserID(ctx context.Context, userID pgtype.
 	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,
@@ -436,18 +428,6 @@ func (q *Queries) GetAffiliateMemberByUserID(ctx context.Context, userID pgtype.
 		&i.Notes,
 	)
 	return i, err
-}
-
-const getAffiliateMemberTenant = `-- name: GetAffiliateMemberTenant :one
-SELECT tenant_id FROM affiliate_program_members
-WHERE user_id = $1 AND status = 'active'
-`
-
-func (q *Queries) GetAffiliateMemberTenant(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getAffiliateMemberTenant, userID)
-	var tenant_id pgtype.UUID
-	err := row.Scan(&tenant_id)
-	return tenant_id, err
 }
 
 const getAffiliateProgramStats = `-- name: GetAffiliateProgramStats :one
@@ -675,9 +655,9 @@ func (q *Queries) IncrementAffiliateMemberConversions(ctx context.Context, arg I
 const insertAffiliateContentCommission = `-- name: InsertAffiliateContentCommission :one
 
 INSERT INTO affiliate_content_commissions (content_id, provider_id, author_user_id, external_commission, author_share, author_commission_pct, event_description) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, content_id, provider_id, author_user_id,
-          external_commission, author_share, author_commission_pct, event_description,
-          credited, credited_at, created_at
+RETURNING id, content_id, provider_id, author_user_id,
+ external_commission, author_share, author_commission_pct, event_description,
+ credited, credited_at, created_at
 `
 
 type InsertAffiliateContentCommissionParams struct {
@@ -710,7 +690,6 @@ func (q *Queries) InsertAffiliateContentCommission(ctx context.Context, arg Inse
 	var i AffiliateContentCommission
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ContentID,
 		&i.ProviderID,
 		&i.AuthorUserID,
@@ -793,8 +772,8 @@ func (q *Queries) ListAffiliateCommissions(ctx context.Context, arg ListAffiliat
 }
 
 const listAffiliateLinkEvents = `-- name: ListAffiliateLinkEvents :many
-SELECT id, tenant_id, link_id, event_type, referrer_url, ip_hash,
-    user_agent_hash, converted_payment_id, commission_amount, created_at
+SELECT id, link_id, event_type, referrer_url, ip_hash,
+ user_agent_hash, converted_payment_id, commission_amount, created_at
 FROM affiliate_link_events
 WHERE link_id = $1
  AND ($2::text IS NULL OR event_type = $2)
@@ -825,7 +804,6 @@ func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliate
 		var i AffiliateLinkEvent
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.LinkID,
 			&i.EventType,
 			&i.ReferrerUrl,
@@ -846,8 +824,8 @@ func (q *Queries) ListAffiliateLinkEvents(ctx context.Context, arg ListAffiliate
 }
 
 const listAffiliateLinksByUser = `-- name: ListAffiliateLinksByUser :many
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 WHERE user_id = $1
  AND ($2::bool IS NULL OR is_active = $2)
@@ -878,7 +856,6 @@ func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliat
 		var i UserAffiliateLink
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ProductType,
 			&i.ProductID,
@@ -902,8 +879,8 @@ func (q *Queries) ListAffiliateLinksByUser(ctx context.Context, arg ListAffiliat
 }
 
 const listAffiliateMembers = `-- name: ListAffiliateMembers :many
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 
 ORDER BY enrolled_at DESC
@@ -926,7 +903,6 @@ func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMem
 		var i AffiliateProgramMember
 		if err := rows.Scan(
 			&i.UserID,
-			&i.TenantID,
 			&i.EnrolledAt,
 			&i.Status,
 			&i.TotalClicks,
@@ -946,8 +922,8 @@ func (q *Queries) ListAffiliateMembers(ctx context.Context, arg ListAffiliateMem
 }
 
 const listAffiliateMembersFiltered = `-- name: ListAffiliateMembersFiltered :many
-SELECT user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+SELECT user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 FROM affiliate_program_members
 WHERE ($1::text IS NULL OR status = $1)
 ORDER BY enrolled_at DESC
@@ -973,7 +949,6 @@ func (q *Queries) ListAffiliateMembersFiltered(ctx context.Context, arg ListAffi
 		var i AffiliateProgramMember
 		if err := rows.Scan(
 			&i.UserID,
-			&i.TenantID,
 			&i.EnrolledAt,
 			&i.Status,
 			&i.TotalClicks,
@@ -1059,8 +1034,8 @@ func (q *Queries) ListAffiliateScanResults(ctx context.Context, arg ListAffiliat
 }
 
 const listAllAffiliateLinks = `-- name: ListAllAffiliateLinks :many
-SELECT id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+SELECT id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 FROM user_affiliate_links
 
 ORDER BY created_at DESC
@@ -1083,7 +1058,6 @@ func (q *Queries) ListAllAffiliateLinks(ctx context.Context, arg ListAllAffiliat
 		var i UserAffiliateLink
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ProductType,
 			&i.ProductID,
@@ -1238,8 +1212,8 @@ const updateAffiliateLink = `-- name: UpdateAffiliateLink :one
 UPDATE user_affiliate_links
 SET description = $1, is_active = $2
 WHERE id = $3 AND user_id = $4
-RETURNING id, tenant_id, user_id, product_type, product_id, code, description,
-    destination_url, click_count, conversion_count, total_earned, is_active, created_at
+RETURNING id, user_id, product_type, product_id, code, description,
+ destination_url, click_count, conversion_count, total_earned, is_active, created_at
 `
 
 type UpdateAffiliateLinkParams struct {
@@ -1259,7 +1233,6 @@ func (q *Queries) UpdateAffiliateLink(ctx context.Context, arg UpdateAffiliateLi
 	var i UserAffiliateLink
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ProductType,
 		&i.ProductID,
@@ -1279,8 +1252,8 @@ const updateAffiliateMemberStatus = `-- name: UpdateAffiliateMemberStatus :one
 UPDATE affiliate_program_members
 SET status = $1, notes = $2
 WHERE user_id = $3
-RETURNING user_id, tenant_id, enrolled_at, status, total_clicks,
-    total_conversions, total_earned_credits, payout_method, notes
+RETURNING user_id, enrolled_at, status, total_clicks,
+ total_conversions, total_earned_credits, payout_method, notes
 `
 
 type UpdateAffiliateMemberStatusParams struct {
@@ -1294,7 +1267,6 @@ func (q *Queries) UpdateAffiliateMemberStatus(ctx context.Context, arg UpdateAff
 	var i AffiliateProgramMember
 	err := row.Scan(
 		&i.UserID,
-		&i.TenantID,
 		&i.EnrolledAt,
 		&i.Status,
 		&i.TotalClicks,

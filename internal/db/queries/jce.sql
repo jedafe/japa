@@ -1,34 +1,34 @@
 -- name: CreateComparisonProfile :one
 INSERT INTO comparison_profiles (user_id, title, source_space_id, target_space_ids, goals, preferences, demographics, is_default, is_template) VALUES (@user_id, @title, @source_space_id, @target_space_ids, @goals, @preferences, @demographics, @is_default, @is_template)
-RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at;
+RETURNING id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at;
 
 -- name: ListComparisonProfilesByUser :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE user_id = @user_id
  AND deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC;
 
 -- name: ListComparisonProfilesByTenant :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE deleted_at IS NULL
 ORDER BY is_default DESC, updated_at DESC;
 
 -- name: ListComparisonProfileTemplates :many
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE is_template = true
  AND deleted_at IS NULL
 ORDER BY title ASC;
 
 -- name: GetComparisonProfile :one
-SELECT id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
+SELECT id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at
 FROM comparison_profiles
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -44,8 +44,8 @@ SET title = @title,
  is_template = @is_template,
  updated_at = now()
 WHERE id = @id AND deleted_at IS NULL
-RETURNING id, tenant_id, user_id, title, source_space_id, target_space_ids,
-    goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at;
+RETURNING id, user_id, title, source_space_id, target_space_ids,
+ goals, preferences, demographics, is_default, is_template, deleted_at, created_at, updated_at;
 
 -- name: DeleteComparisonProfile :exec
 UPDATE comparison_profiles
@@ -79,12 +79,12 @@ GROUP BY p.source_space_id, s.name, s.slug;
 
 -- name: CreateScoreFactor :one
 INSERT INTO comparison_score_factors (comparison_type_id, factor_key, label, description, dimension_slug, data_source, default_weight, config, is_system) VALUES (@comparison_type_id, @factor_key, @label, @description, @dimension_slug, @data_source, @default_weight, @config, @is_system)
-RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at;
+RETURNING id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at;
 
 -- name: ListScoreFactorsByType :many
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE (
  comparison_type_id = @comparison_type_id
@@ -94,8 +94,8 @@ WHERE (
 ORDER BY is_system DESC, factor_key ASC;
 
 -- name: GetScoreFactor :one
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE id = @id;
 
@@ -112,16 +112,16 @@ SET comparison_type_id = @comparison_type_id,
  is_system = @is_system,
  updated_at = now()
 WHERE id = @id
-RETURNING id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at;
+RETURNING id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at;
 
 -- name: DeleteScoreFactor :exec
 DELETE FROM comparison_score_factors
 WHERE id = @id;
 
 -- name: GetScoreFactorByKey :one
-SELECT id, tenant_id, comparison_type_id, factor_key, label, description,
-    dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
+SELECT id, comparison_type_id, factor_key, label, description,
+ dimension_slug, data_source, default_weight, config, version, is_system, created_at, updated_at
 FROM comparison_score_factors
 WHERE comparison_type_id = @comparison_type_id
  AND factor_key = @factor_key;
@@ -139,12 +139,12 @@ SET score_value = EXCLUDED.score_value,
  eligible_status = EXCLUDED.eligible_status,
  version = EXCLUDED.version,
  calculated_at = now()
-RETURNING id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
-    score_value, max_value, explanation, eligible_status, calculated_at, version;
+RETURNING id, content_id, item_id, factor_id, dimension_id, profile_id,
+ score_value, max_value, explanation, eligible_status, calculated_at, version;
 
 -- name: ListComparisonScoresByContent :many
-SELECT id, tenant_id, content_id, item_id, factor_id, dimension_id, profile_id,
-    score_value, max_value, explanation, eligible_status, calculated_at, version
+SELECT id, content_id, item_id, factor_id, dimension_id, profile_id,
+ score_value, max_value, explanation, eligible_status, calculated_at, version
 FROM comparison_scores
 WHERE content_id = @content_id
  AND (profile_id IS NOT DISTINCT FROM @profile_id)
@@ -161,10 +161,10 @@ WHERE content_id = @content_id
 
 -- name: CreateComparisonRecommendation :one
 INSERT INTO comparison_recommendations (content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority) VALUES (@content_id, @item_id, @profile_id, @factor_id, @text, @action_type, @action_url, @priority)
-RETURNING id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at;
+RETURNING id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at;
 
 -- name: ListComparisonRecommendationsByContent :many
-SELECT id, tenant_id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
+SELECT id, content_id, item_id, profile_id, factor_id, text, action_type, action_url, priority, created_at, updated_at
 FROM comparison_recommendations
 WHERE content_id = @content_id
  AND (profile_id IS NOT DISTINCT FROM @profile_id)

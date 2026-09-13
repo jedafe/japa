@@ -353,7 +353,7 @@ UNION ALL
 SELECT i.id, i.scan_type, i.severity, i.finding, i.meta, i.resolved_at, i.created_at FROM inserted i;
 
 -- name: ListSecurityScanResults :many
-SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
+SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)

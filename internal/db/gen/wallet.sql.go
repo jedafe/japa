@@ -119,7 +119,7 @@ func (q *Queries) DeleteActivityRule(ctx context.Context, id pgtype.UUID) error 
 }
 
 const getActivityEventByID = `-- name: GetActivityEventByID :one
-SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
 WHERE id = $1
 `
 
@@ -128,7 +128,6 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, id pgtype.UUID) (Act
 	var i ActivityEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ActivityKey,
 		&i.Reference,
@@ -141,7 +140,7 @@ func (q *Queries) GetActivityEventByID(ctx context.Context, id pgtype.UUID) (Act
 }
 
 const getActivityRuleByID = `-- name: GetActivityRuleByID :one
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
+SELECT id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE id = $1
 `
 
@@ -150,7 +149,6 @@ func (q *Queries) GetActivityRuleByID(ctx context.Context, id pgtype.UUID) (Acti
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActivityKey,
 		&i.PointValue,
 		&i.IsEnabled,
@@ -165,7 +163,7 @@ func (q *Queries) GetActivityRuleByID(ctx context.Context, id pgtype.UUID) (Acti
 }
 
 const getActivityRuleByKey = `-- name: GetActivityRuleByKey :one
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
+SELECT id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 WHERE activity_key = $1
 `
 
@@ -174,7 +172,6 @@ func (q *Queries) GetActivityRuleByKey(ctx context.Context, activityKey string) 
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActivityKey,
 		&i.PointValue,
 		&i.IsEnabled,
@@ -208,7 +205,7 @@ func (q *Queries) GetLatestBalance(ctx context.Context, arg GetLatestBalancePara
 }
 
 const getLedgerEntryByID = `-- name: GetLedgerEntryByID :one
-SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
+SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
 WHERE id = $1
 `
 
@@ -217,7 +214,6 @@ func (q *Queries) GetLedgerEntryByID(ctx context.Context, id pgtype.UUID) (Walle
 	var i WalletLedger
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.LedgerType,
 		&i.Operation,
@@ -250,7 +246,7 @@ func (q *Queries) GetLifetimePoints(ctx context.Context, userID pgtype.UUID) (in
 
 const getWalletSettings = `-- name: GetWalletSettings :one
 
-SELECT id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings
+SELECT id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning FROM wallet_settings
 `
 
 // =====================
@@ -261,7 +257,6 @@ func (q *Queries) GetWalletSettings(ctx context.Context) (WalletSetting, error) 
 	var i WalletSetting
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.PointsToCreditsRate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -275,7 +270,7 @@ const insertActivityEvent = `-- name: InsertActivityEvent :one
 
 INSERT INTO activity_events (user_id, activity_key, reference, payload) VALUES ($1, $2, $3, $4)
 ON CONFLICT (activity_key, reference) DO NOTHING
-RETURNING id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at
+RETURNING id, user_id, activity_key, reference, payload, processed, processed_at, created_at
 `
 
 type InsertActivityEventParams struct {
@@ -298,7 +293,6 @@ func (q *Queries) InsertActivityEvent(ctx context.Context, arg InsertActivityEve
 	var i ActivityEvent
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.ActivityKey,
 		&i.Reference,
@@ -314,7 +308,7 @@ const insertLedgerEntry = `-- name: InsertLedgerEntry :one
 
 
 INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at
+RETURNING id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at
 `
 
 type InsertLedgerEntryParams struct {
@@ -351,7 +345,6 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 	var i WalletLedger
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.LedgerType,
 		&i.Operation,
@@ -368,7 +361,7 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 }
 
 const listActivityRulesByTenant = `-- name: ListActivityRulesByTenant :many
-SELECT id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
+SELECT id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time FROM activity_point_rules
 
 ORDER BY activity_key ASC
 LIMIT $2 OFFSET $1
@@ -390,7 +383,6 @@ func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivit
 		var i ActivityPointRule
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ActivityKey,
 			&i.PointValue,
 			&i.IsEnabled,
@@ -412,7 +404,7 @@ func (q *Queries) ListActivityRulesByTenant(ctx context.Context, arg ListActivit
 }
 
 const listLedgerEntriesByUser = `-- name: ListLedgerEntriesByUser :many
-SELECT id, tenant_id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
+SELECT id, user_id, ledger_type, operation, amount, resulting_balance, source, actor_user_id, reference, idempotency_key, reason, created_at FROM wallet_ledger
 WHERE user_id = $1
  AND ($2::text IS NULL OR ledger_type = $2)
 ORDER BY created_at DESC
@@ -442,7 +434,6 @@ func (q *Queries) ListLedgerEntriesByUser(ctx context.Context, arg ListLedgerEnt
 		var i WalletLedger
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.LedgerType,
 			&i.Operation,
@@ -466,7 +457,7 @@ func (q *Queries) ListLedgerEntriesByUser(ctx context.Context, arg ListLedgerEnt
 }
 
 const listUnprocessedEvents = `-- name: ListUnprocessedEvents :many
-SELECT id, tenant_id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
+SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events
 WHERE processed = false
 ORDER BY created_at ASC
 LIMIT $1
@@ -483,7 +474,6 @@ func (q *Queries) ListUnprocessedEvents(ctx context.Context, pageLimit int32) ([
 		var i ActivityEvent
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.ActivityKey,
 			&i.Reference,
@@ -517,7 +507,7 @@ const toggleActivityRule = `-- name: ToggleActivityRule :one
 UPDATE activity_point_rules
 SET is_enabled = NOT is_enabled, updated_at = now()
 WHERE id = $1
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
+RETURNING id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 func (q *Queries) ToggleActivityRule(ctx context.Context, id pgtype.UUID) (ActivityPointRule, error) {
@@ -525,7 +515,6 @@ func (q *Queries) ToggleActivityRule(ctx context.Context, id pgtype.UUID) (Activ
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActivityKey,
 		&i.PointValue,
 		&i.IsEnabled,
@@ -549,7 +538,7 @@ SET point_value = $1,
  description = $6,
  updated_at = now()
 WHERE id = $7
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
+RETURNING id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type UpdateActivityRuleByIDParams struct {
@@ -575,7 +564,6 @@ func (q *Queries) UpdateActivityRuleByID(ctx context.Context, arg UpdateActivity
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActivityKey,
 		&i.PointValue,
 		&i.IsEnabled,
@@ -599,7 +587,7 @@ ON CONFLICT (activity_key) DO UPDATE SET
  cap_per_week = EXCLUDED.cap_per_week,
  description = EXCLUDED.description,
  updated_at = now()
-RETURNING id, tenant_id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
+RETURNING id, activity_key, point_value, is_enabled, cap_per_day, cap_per_week, description, created_at, updated_at, one_time
 `
 
 type UpsertActivityRuleParams struct {
@@ -625,7 +613,6 @@ func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRule
 	var i ActivityPointRule
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ActivityKey,
 		&i.PointValue,
 		&i.IsEnabled,
@@ -640,14 +627,16 @@ func (q *Queries) UpsertActivityRule(ctx context.Context, arg UpsertActivityRule
 }
 
 const upsertWalletSettings = `-- name: UpsertWalletSettings :one
-INSERT INTO wallet_settings (points_to_credits_rate, daily_earning_cap, enable_earning) VALUES ($1, $2, $3)
-
-ON CONFLICT (tenant_id) DO UPDATE SET
+WITH existing AS (SELECT id FROM wallet_settings LIMIT 1)
+INSERT INTO wallet_settings (id, points_to_credits_rate, daily_earning_cap, enable_earning)
+SELECT COALESCE((SELECT id FROM existing), gen_random_uuid()),
+       $1, $2, $3
+ON CONFLICT (id) DO UPDATE SET
  points_to_credits_rate = EXCLUDED.points_to_credits_rate,
  daily_earning_cap = EXCLUDED.daily_earning_cap,
  enable_earning = EXCLUDED.enable_earning,
  updated_at = now()
-RETURNING id, tenant_id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning
+RETURNING id, points_to_credits_rate, created_at, updated_at, daily_earning_cap, enable_earning
 `
 
 type UpsertWalletSettingsParams struct {
@@ -661,7 +650,6 @@ func (q *Queries) UpsertWalletSettings(ctx context.Context, arg UpsertWalletSett
 	var i WalletSetting
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.PointsToCreditsRate,
 		&i.CreatedAt,
 		&i.UpdatedAt,

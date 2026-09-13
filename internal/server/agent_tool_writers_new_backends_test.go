@@ -37,11 +37,6 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 	database := &db.DB{Writer: pool, Reader: pool}
 	settings := config.NewSettings(database, nil)
 
-	var tenantID pgtype.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM tenants LIMIT 1").Scan(&tenantID); err != nil {
-		t.Fatalf("get tenant: %v", err)
-	}
-
 	var userID pgtype.UUID
 	if err := pool.QueryRow(ctx, "SELECT id FROM users WHERE email = 'admin@japaconnect.com' LIMIT 1").Scan(&userID); err != nil {
 		t.Fatalf("get user: %v", err)
@@ -66,7 +61,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 	suffix := strconv.FormatInt(time.Now().Unix(), 10)
 
 	// Create a remittance provider so we can create a rate under it.
-	providerRecord, err := reg.CreateTool(ctx, tenantID, userID, "remittance_provider", map[string]any{
+	providerRecord, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, "remittance_provider", map[string]any{
 		"name":          "Test Provider " + suffix,
 		"slug":          "test-provider-" + suffix,
 		"data_source":   "manual",
@@ -179,7 +174,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record, err := reg.CreateTool(ctx, tenantID, userID, tt.toolType, tt.create)
+			record, err := reg.CreateTool(ctx, pgtype.UUID{}, userID, tt.toolType, tt.create)
 			if err != nil {
 				t.Fatalf("create %s: %v", tt.toolType, err)
 			}
@@ -189,7 +184,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 				t.Fatalf("%s create did not return an id", tt.toolType)
 			}
 
-			updated, err := reg.UpdateTool(ctx, tenantID, userID, tt.toolType, id, tt.update)
+			updated, err := reg.UpdateTool(ctx, pgtype.UUID{}, userID, tt.toolType, id, tt.update)
 			if err != nil {
 				t.Fatalf("update %s: %v", tt.toolType, err)
 			}
@@ -200,7 +195,7 @@ func TestToolWriterNewBackendsFullCRUD(t *testing.T) {
 				}
 			}
 
-			if err := reg.DeleteTool(ctx, tenantID, userID, tt.toolType, id); err != nil {
+			if err := reg.DeleteTool(ctx, pgtype.UUID{}, userID, tt.toolType, id); err != nil {
 				t.Fatalf("delete %s: %v", tt.toolType, err)
 			}
 		})

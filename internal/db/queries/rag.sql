@@ -1,15 +1,15 @@
 -- rag.sql — JapaBot RAG Knowledge Layer queries (Section 69, ADR-069).
 -- Covers chunked embedding storage, HNSW cosine retrieval, entity-scoped
 -- deletes, and index stats. The content_embeddings table is append-only per
--- (tenant_id, entity_type, entity_id, chunk_index) — UPSERT replaces chunks
+-- ( entity_type, entity_id, chunk_index) — UPSERT replaces chunks
 -- on re-index, never duplicates them.
 -- Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
---      japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+-- japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 
 -- =====================================================================
 -- Upsert (insert-or-replace) a single chunk embedding.
 -- The ON CONFLICT clause replaces the chunk_text + embedding for an
--- existing (tenant_id, entity_type, entity_id, chunk_index) tuple,
+-- existing ( entity_type, entity_id, chunk_index) tuple,
 -- implementing the ADR-069 "UPSERTS, never raw INSERT" rule.
 -- =====================================================================
 

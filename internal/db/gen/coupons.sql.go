@@ -150,10 +150,10 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 const createCoupon = `-- name: CreateCoupon :one
 
 INSERT INTO coupons (provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
-    discount_type, discount_value, currency, terms_url, referral_url,
-    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
-    created_by, created_at, updated_at
+RETURNING id, provider_id, coupon_type, title, description, code,
+ discount_type, discount_value, currency, terms_url, referral_url,
+ is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+ created_by, created_at, updated_at
 `
 
 type CreateCouponParams struct {
@@ -198,7 +198,6 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 	var i Coupon
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
@@ -1038,10 +1037,10 @@ SET title = $1, description = $2, code = $3,
  status = $11, valid_from = $12,
  expires_at = $13, updated_at = now()
 WHERE id = $14
-RETURNING id, tenant_id, provider_id, coupon_type, title, description, code,
-    discount_type, discount_value, currency, terms_url, referral_url,
-    is_verified, status, valid_from, expires_at, total_clicks, total_copies,
-    created_by, created_at, updated_at
+RETURNING id, provider_id, coupon_type, title, description, code,
+ discount_type, discount_value, currency, terms_url, referral_url,
+ is_verified, status, valid_from, expires_at, total_clicks, total_copies,
+ created_by, created_at, updated_at
 `
 
 type UpdateCouponParams struct {
@@ -1081,7 +1080,6 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 	var i Coupon
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,

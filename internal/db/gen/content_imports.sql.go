@@ -27,7 +27,7 @@ func (q *Queries) AdminCountContentImports(ctx context.Context, status string) (
 const adminListContentImports = `-- name: AdminListContentImports :many
 
 SELECT
- ci.id, ci.tenant_id, ci.user_id, ci.source_type, ci.source_url, ci.status, ci.total_items, ci.imported_count, ci.failed_count, ci.error_log, ci.created_at, ci.completed_at,
+ ci.id, ci.user_id, ci.source_type, ci.source_url, ci.status, ci.total_items, ci.imported_count, ci.failed_count, ci.error_log, ci.created_at, ci.completed_at,
  u.username AS username
 FROM content_imports ci
 JOIN users u ON u.id = ci.user_id
@@ -44,7 +44,6 @@ type AdminListContentImportsParams struct {
 
 type AdminListContentImportsRow struct {
 	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        `json:"tenant_id"`
 	UserID        pgtype.UUID        `json:"user_id"`
 	SourceType    string             `json:"source_type"`
 	SourceUrl     *string            `json:"source_url"`
@@ -72,7 +71,6 @@ func (q *Queries) AdminListContentImports(ctx context.Context, arg AdminListCont
 		var i AdminListContentImportsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -113,7 +111,7 @@ const createContentImport = `-- name: CreateContentImport :one
 
 INSERT INTO content_imports (user_id, source_type, source_url) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+RETURNING id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
 
 type CreateContentImportParams struct {
@@ -136,7 +134,6 @@ func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImpo
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -153,7 +150,7 @@ func (q *Queries) CreateContentImport(ctx context.Context, arg CreateContentImpo
 
 const getContentImportByID = `-- name: GetContentImportByID :one
 
-SELECT id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
+SELECT id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
 WHERE id = $1
 `
 
@@ -165,7 +162,6 @@ func (q *Queries) GetContentImportByID(ctx context.Context, id pgtype.UUID) (Con
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -182,7 +178,7 @@ func (q *Queries) GetContentImportByID(ctx context.Context, id pgtype.UUID) (Con
 
 const listUserContentImports = `-- name: ListUserContentImports :many
 
-SELECT id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
+SELECT id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at FROM content_imports
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -208,7 +204,6 @@ func (q *Queries) ListUserContentImports(ctx context.Context, arg ListUserConten
 		var i ContentImport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -241,7 +236,7 @@ SET
  error_log = '[]'::jsonb,
  completed_at = NULL
 WHERE id = $1 AND status IN ('failed', 'partial')
-RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+RETURNING id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
 
 // =====================================================================
@@ -252,7 +247,6 @@ func (q *Queries) ResetContentImportForRetry(ctx context.Context, id pgtype.UUID
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -278,7 +272,7 @@ SET
  error_log = COALESCE($5, error_log),
  completed_at = COALESCE($6, completed_at)
 WHERE id = $7
-RETURNING id, tenant_id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
+RETURNING id, user_id, source_type, source_url, status, total_items, imported_count, failed_count, error_log, created_at, completed_at
 `
 
 type UpdateContentImportStatusParams struct {
@@ -307,7 +301,6 @@ func (q *Queries) UpdateContentImportStatus(ctx context.Context, arg UpdateConte
 	var i ContentImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.SourceType,
 		&i.SourceUrl,

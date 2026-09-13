@@ -16,7 +16,7 @@ const acceptMentorshipConnection = `-- name: AcceptMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'active', responded_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 // Mentor accepts a pending request (pending → active).
@@ -25,7 +25,6 @@ func (q *Queries) AcceptMentorshipConnection(ctx context.Context, id pgtype.UUID
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -45,7 +44,7 @@ const adminUpdateConnection = `-- name: AdminUpdateConnection :one
 UPDATE mentorship_connections
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type AdminUpdateConnectionParams struct {
@@ -59,7 +58,6 @@ func (q *Queries) AdminUpdateConnection(ctx context.Context, arg AdminUpdateConn
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -79,7 +77,7 @@ const cancelMentorshipConnection = `-- name: CancelMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'cancelled', cancelled_at = now(), cancel_reason = $1, updated_at = now()
 WHERE id = $2 AND status = 'active'
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type CancelMentorshipConnectionParams struct {
@@ -93,7 +91,6 @@ func (q *Queries) CancelMentorshipConnection(ctx context.Context, arg CancelMent
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -133,7 +130,7 @@ const completeMentorshipConnection = `-- name: CompleteMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'completed', completed_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'active'
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 // Either party completes an active connection (active → completed).
@@ -142,7 +139,6 @@ func (q *Queries) CompleteMentorshipConnection(ctx context.Context, id pgtype.UU
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -161,7 +157,7 @@ func (q *Queries) CompleteMentorshipConnection(ctx context.Context, id pgtype.UU
 const createMentorshipConnection = `-- name: CreateMentorshipConnection :one
 INSERT INTO mentorship_connections (mentor_id, mentee_id, status, goals, destination_space_id) VALUES ($1, $2, 'pending', $3, $4)
 
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 type CreateMentorshipConnectionParams struct {
@@ -184,7 +180,6 @@ func (q *Queries) CreateMentorshipConnection(ctx context.Context, arg CreateMent
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -203,7 +198,7 @@ func (q *Queries) CreateMentorshipConnection(ctx context.Context, arg CreateMent
 const createMentorshipProgram = `-- name: CreateMentorshipProgram :one
 INSERT INTO mentorship_programs (name, description, is_active) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
+RETURNING id, name, description, is_active, created_at, updated_at
 `
 
 type CreateMentorshipProgramParams struct {
@@ -217,7 +212,6 @@ func (q *Queries) CreateMentorshipProgram(ctx context.Context, arg CreateMentors
 	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -231,7 +225,7 @@ const declineMentorshipConnection = `-- name: DeclineMentorshipConnection :one
 UPDATE mentorship_connections
 SET status = 'declined', responded_at = now(), updated_at = now()
 WHERE id = $1 AND status = 'pending'
-RETURNING id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
+RETURNING id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at
 `
 
 // Mentor declines a pending request (pending → declined).
@@ -240,7 +234,6 @@ func (q *Queries) DeclineMentorshipConnection(ctx context.Context, id pgtype.UUI
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -477,7 +470,7 @@ func (q *Queries) GetMentorsByIDs(ctx context.Context, userIds []pgtype.UUID) ([
 }
 
 const getMentorshipConnection = `-- name: GetMentorshipConnection :one
-SELECT id, tenant_id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections
+SELECT id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at, updated_at FROM mentorship_connections
 WHERE id = $1
 `
 
@@ -487,7 +480,6 @@ func (q *Queries) GetMentorshipConnection(ctx context.Context, id pgtype.UUID) (
 	var i MentorshipConnection
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.MentorID,
 		&i.MenteeID,
 		&i.Status,
@@ -504,7 +496,7 @@ func (q *Queries) GetMentorshipConnection(ctx context.Context, id pgtype.UUID) (
 }
 
 const getMentorshipProgram = `-- name: GetMentorshipProgram :one
-SELECT id, tenant_id, name, description, is_active, created_at, updated_at
+SELECT id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 WHERE id = $1
 `
@@ -514,7 +506,6 @@ func (q *Queries) GetMentorshipProgram(ctx context.Context, id pgtype.UUID) (Men
 	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,
@@ -548,7 +539,7 @@ func (q *Queries) GetUserEmbedding(ctx context.Context, userID pgtype.UUID) (Get
 }
 
 const listAllConnections = `-- name: ListAllConnections :many
-SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, mu.username AS mentor_username, eu.username AS mentee_username
+SELECT mc.id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, mu.username AS mentor_username, eu.username AS mentee_username
 FROM mentorship_connections mc
 LEFT JOIN users mu ON mu.id = mc.mentor_id
 LEFT JOIN users eu ON eu.id = mc.mentee_id
@@ -569,7 +560,6 @@ type ListAllConnectionsParams struct {
 
 type ListAllConnectionsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`
@@ -603,7 +593,6 @@ func (q *Queries) ListAllConnections(ctx context.Context, arg ListAllConnections
 		var i ListAllConnectionsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.MentorID,
 			&i.MenteeID,
 			&i.Status,
@@ -629,7 +618,7 @@ func (q *Queries) ListAllConnections(ctx context.Context, arg ListAllConnections
 }
 
 const listIncomingConnections = `-- name: ListIncomingConnections :many
-SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentee_username, up.display_name AS mentee_display_name
+SELECT mc.id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentee_username, up.display_name AS mentee_display_name
 FROM mentorship_connections mc
 JOIN users u ON u.id = mc.mentee_id
 LEFT JOIN user_profiles up ON up.user_id = mc.mentee_id
@@ -648,7 +637,6 @@ type ListIncomingConnectionsParams struct {
 
 type ListIncomingConnectionsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`
@@ -681,7 +669,6 @@ func (q *Queries) ListIncomingConnections(ctx context.Context, arg ListIncomingC
 		var i ListIncomingConnectionsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.MentorID,
 			&i.MenteeID,
 			&i.Status,
@@ -1081,7 +1068,7 @@ func (q *Queries) ListMentorshipMatches(ctx context.Context, arg ListMentorshipM
 }
 
 const listMentorshipPrograms = `-- name: ListMentorshipPrograms :many
-SELECT id, tenant_id, name, description, is_active, created_at, updated_at
+SELECT id, name, description, is_active, created_at, updated_at
 FROM mentorship_programs
 
 ORDER BY created_at DESC
@@ -1104,7 +1091,6 @@ func (q *Queries) ListMentorshipPrograms(ctx context.Context, arg ListMentorship
 		var i MentorshipProgram
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Description,
 			&i.IsActive,
@@ -1195,7 +1181,7 @@ func (q *Queries) ListMentorshipProgramsWithCounts(ctx context.Context, arg List
 }
 
 const listOutgoingConnections = `-- name: ListOutgoingConnections :many
-SELECT mc.id, mc.tenant_id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentor_username, up.display_name AS mentor_display_name
+SELECT mc.id, mc.mentor_id, mc.mentee_id, mc.status, mc.goals, mc.destination_space_id, mc.responded_at, mc.completed_at, mc.cancelled_at, mc.cancel_reason, mc.created_at, mc.updated_at, u.username AS mentor_username, up.display_name AS mentor_display_name
 FROM mentorship_connections mc
 JOIN users u ON u.id = mc.mentor_id
 LEFT JOIN user_profiles up ON up.user_id = mc.mentor_id
@@ -1214,7 +1200,6 @@ type ListOutgoingConnectionsParams struct {
 
 type ListOutgoingConnectionsRow struct {
 	ID                 pgtype.UUID        `json:"id"`
-	TenantID           pgtype.UUID        `json:"tenant_id"`
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`
@@ -1247,7 +1232,6 @@ func (q *Queries) ListOutgoingConnections(ctx context.Context, arg ListOutgoingC
 		var i ListOutgoingConnectionsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.MentorID,
 			&i.MenteeID,
 			&i.Status,
@@ -1351,7 +1335,7 @@ const updateMentorshipMatch = `-- name: UpdateMentorshipMatch :one
 UPDATE mentorship_matches
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, program_id, mentor_id, mentee_id, status, created_at, updated_at
+RETURNING id, program_id, mentor_id, mentee_id, status, created_at, updated_at
 `
 
 type UpdateMentorshipMatchParams struct {
@@ -1364,7 +1348,6 @@ func (q *Queries) UpdateMentorshipMatch(ctx context.Context, arg UpdateMentorshi
 	var i MentorshipMatch
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ProgramID,
 		&i.MentorID,
 		&i.MenteeID,
@@ -1379,7 +1362,7 @@ const updateMentorshipProgram = `-- name: UpdateMentorshipProgram :one
 UPDATE mentorship_programs
 SET name = $1, description = $2, is_active = $3, updated_at = now()
 WHERE id = $4
-RETURNING id, tenant_id, name, description, is_active, created_at, updated_at
+RETURNING id, name, description, is_active, created_at, updated_at
 `
 
 type UpdateMentorshipProgramParams struct {
@@ -1399,7 +1382,6 @@ func (q *Queries) UpdateMentorshipProgram(ctx context.Context, arg UpdateMentors
 	var i MentorshipProgram
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Description,
 		&i.IsActive,

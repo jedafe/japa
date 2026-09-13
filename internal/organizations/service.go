@@ -494,7 +494,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 	}
 
 	// Verify the accepting user's email matches the invited email (BUG-003).
-	userEmail, err := s.store.GetUserEmail(ctx, userID, org.TenantID)
+	userEmail, err := s.store.GetUserEmail(ctx, userID, pgtype.UUID{})
 	if err != nil {
 		return "", fmt.Errorf("fetching user email: %w", err)
 	}

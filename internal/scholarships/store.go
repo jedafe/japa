@@ -434,7 +434,7 @@ func sliceField[T any](s []T) (any, bool) {
 // UpdateScholarship applies a tenant-scoped partial update to a scholarship
 // projection row. Only non-nil/non-zero fields in the input are written. The
 // updated row is returned.
-func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID, in UpdateScholarshipInput) (gen.Scholarship, error) {
+func (s *Store) UpdateScholarship(ctx context.Context, id pgtype.UUID, in UpdateScholarshipInput) (gen.Scholarship, error) {
 	getters := []struct {
 		column string
 		get    func() (any, bool)
@@ -481,11 +481,11 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 	q := fmt.Sprintf(`
 		UPDATE scholarships
 		SET %s
-		WHERE id = $%d AND tenant_id = $%d
-		RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at, tenant_id
-	`, strings.Join(sets, ", "), len(args)+1, len(args)+2)
+		WHERE id = $%d
+		RETURNING id, intel_record_id, guide_id, source_url, source_type, trust_level, title, description, country, country_space_id, university, degree_level, fields_of_study, eligible_countries, funding, deadline, application_url, required_documents, minimum_gpa, language_requirements, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, last_verified_at, created_at, updated_at
+	`, strings.Join(sets, ", "), len(args)+1)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	var row gen.Scholarship
 
@@ -518,7 +518,6 @@ func (s *Store) UpdateScholarship(ctx context.Context, id, tenantID pgtype.UUID,
 		&row.LastVerifiedAt,
 		&row.CreatedAt,
 		&row.UpdatedAt,
-		&row.TenantID,
 	)
 	if err != nil {
 		return gen.Scholarship{}, fmt.Errorf("scholarships: update: %w", err)

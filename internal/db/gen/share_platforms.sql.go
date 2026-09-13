@@ -12,7 +12,7 @@ import (
 const createSharePlatform = `-- name: CreateSharePlatform :one
 INSERT INTO share_platforms (key, label, icon, url_template, color, enabled, position) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+RETURNING id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 `
 
 type CreateSharePlatformParams struct {
@@ -39,7 +39,6 @@ func (q *Queries) CreateSharePlatform(ctx context.Context, arg CreateSharePlatfo
 	var i SharePlatform
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,
@@ -65,7 +64,7 @@ func (q *Queries) DeleteSharePlatform(ctx context.Context, key string) error {
 }
 
 const getSharePlatform = `-- name: GetSharePlatform :one
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
 WHERE key = $1
 `
@@ -76,7 +75,6 @@ func (q *Queries) GetSharePlatform(ctx context.Context, key string) (SharePlatfo
 	var i SharePlatform
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,
@@ -91,7 +89,7 @@ func (q *Queries) GetSharePlatform(ctx context.Context, key string) (SharePlatfo
 }
 
 const listEnabledSharePlatforms = `-- name: ListEnabledSharePlatforms :many
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
 WHERE enabled = true
 ORDER BY position ASC, label ASC
@@ -109,7 +107,6 @@ func (q *Queries) ListEnabledSharePlatforms(ctx context.Context) ([]SharePlatfor
 		var i SharePlatform
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Key,
 			&i.Label,
 			&i.Icon,
@@ -131,7 +128,7 @@ func (q *Queries) ListEnabledSharePlatforms(ctx context.Context) ([]SharePlatfor
 }
 
 const listSharePlatforms = `-- name: ListSharePlatforms :many
-SELECT id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+SELECT id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 FROM share_platforms
 
 ORDER BY position ASC, label ASC
@@ -149,7 +146,6 @@ func (q *Queries) ListSharePlatforms(ctx context.Context) ([]SharePlatform, erro
 		var i SharePlatform
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Key,
 			&i.Label,
 			&i.Icon,
@@ -180,7 +176,7 @@ SET label = $1,
  position = $6,
  updated_at = now()
 WHERE key = $7
-RETURNING id, tenant_id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
+RETURNING id, key, label, icon, url_template, color, enabled, position, created_at, updated_at
 `
 
 type UpdateSharePlatformParams struct {
@@ -207,7 +203,6 @@ func (q *Queries) UpdateSharePlatform(ctx context.Context, arg UpdateSharePlatfo
 	var i SharePlatform
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Key,
 		&i.Label,
 		&i.Icon,

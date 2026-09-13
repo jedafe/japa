@@ -1200,7 +1200,7 @@ func (q *Queries) ListPlatformEvents(ctx context.Context, arg ListPlatformEvents
 }
 
 const listSecurityScanResults = `-- name: ListSecurityScanResults :many
-SELECT id, tenant_id, scan_type, severity, finding, meta, resolved_at, created_at
+SELECT id, scan_type, severity, finding, meta, resolved_at, created_at
 FROM security_scan_results
 WHERE ($1::text = '' OR severity = $1)
  AND ($2::bool = false OR resolved_at IS NULL)
@@ -1231,7 +1231,6 @@ func (q *Queries) ListSecurityScanResults(ctx context.Context, arg ListSecurityS
 		var i SecurityScanResult
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ScanType,
 			&i.Severity,
 			&i.Finding,

@@ -26,7 +26,7 @@ func (q *Queries) CountPlatformDataImports(ctx context.Context, status interface
 const createPlatformDataImport = `-- name: CreatePlatformDataImport :one
 
 INSERT INTO platform_data_imports (name, import_type, format, file_url, mode, created_by) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
+RETURNING id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
 `
 
 type CreatePlatformDataImportParams struct {
@@ -52,7 +52,6 @@ func (q *Queries) CreatePlatformDataImport(ctx context.Context, arg CreatePlatfo
 	var i PlatformDataImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ImportType,
 		&i.Format,
@@ -81,7 +80,7 @@ func (q *Queries) DeletePlatformDataImport(ctx context.Context, id pgtype.UUID) 
 }
 
 const getPlatformDataImport = `-- name: GetPlatformDataImport :one
-SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
+SELECT id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
 WHERE id = $1
 `
 
@@ -90,7 +89,6 @@ func (q *Queries) GetPlatformDataImport(ctx context.Context, id pgtype.UUID) (Pl
 	var i PlatformDataImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ImportType,
 		&i.Format,
@@ -109,7 +107,7 @@ func (q *Queries) GetPlatformDataImport(ctx context.Context, id pgtype.UUID) (Pl
 }
 
 const getPlatformDataImportByID = `-- name: GetPlatformDataImportByID :one
-SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
+SELECT id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
 WHERE id = $1
 `
 
@@ -119,7 +117,6 @@ func (q *Queries) GetPlatformDataImportByID(ctx context.Context, id pgtype.UUID)
 	var i PlatformDataImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ImportType,
 		&i.Format,
@@ -138,7 +135,7 @@ func (q *Queries) GetPlatformDataImportByID(ctx context.Context, id pgtype.UUID)
 }
 
 const listPendingPlatformDataImports = `-- name: ListPendingPlatformDataImports :many
-SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
+SELECT id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
 WHERE status = 'pending'
 ORDER BY created_at ASC
 LIMIT $1
@@ -155,7 +152,6 @@ func (q *Queries) ListPendingPlatformDataImports(ctx context.Context, limitVal i
 		var i PlatformDataImport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.ImportType,
 			&i.Format,
@@ -181,7 +177,7 @@ func (q *Queries) ListPendingPlatformDataImports(ctx context.Context, limitVal i
 }
 
 const listPlatformDataImports = `-- name: ListPlatformDataImports :many
-SELECT id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
+SELECT id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at FROM platform_data_imports
 WHERE ($1 = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -204,7 +200,6 @@ func (q *Queries) ListPlatformDataImports(ctx context.Context, arg ListPlatformD
 		var i PlatformDataImport
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.ImportType,
 			&i.Format,
@@ -257,7 +252,7 @@ SET status = $1,
  error_log = $5,
  completed_at = $6
 WHERE id = $7
-RETURNING id, tenant_id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
+RETURNING id, name, import_type, format, status, file_url, total_rows, imported_rows, failed_rows, error_log, mode, created_by, completed_at, created_at
 `
 
 type UpdatePlatformDataImportStatusParams struct {
@@ -283,7 +278,6 @@ func (q *Queries) UpdatePlatformDataImportStatus(ctx context.Context, arg Update
 	var i PlatformDataImport
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.ImportType,
 		&i.Format,

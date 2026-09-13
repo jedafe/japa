@@ -44,8 +44,8 @@ func (q *Queries) CountAdminReviewsFiltered(ctx context.Context, arg CountAdminR
 
 const createReview = `-- name: CreateReview :one
 INSERT INTO reviews (entity_type, entity_id, reviewer_user_id, rating, title, body) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
-          rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type CreateReviewParams struct {
@@ -69,7 +69,6 @@ func (q *Queries) CreateReview(ctx context.Context, arg CreateReviewParams) (Rev
 	var i Review
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -95,8 +94,8 @@ func (q *Queries) DeleteReview(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getReviewAggregate = `-- name: GetReviewAggregate :one
-SELECT tenant_id, entity_type, entity_id, review_count,
-       average_rating, updated_at
+SELECT entity_type, entity_id, review_count,
+ average_rating, updated_at
 FROM review_aggregates
 WHERE entity_type = $1
  AND entity_id = $2
@@ -111,7 +110,6 @@ func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregate
 	row := q.db.QueryRow(ctx, getReviewAggregate, arg.EntityType, arg.EntityID)
 	var i ReviewAggregate
 	err := row.Scan(
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewCount,
@@ -122,8 +120,8 @@ func (q *Queries) GetReviewAggregate(ctx context.Context, arg GetReviewAggregate
 }
 
 const getReviewByID = `-- name: GetReviewByID :one
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE id = $1
 `
@@ -133,7 +131,6 @@ func (q *Queries) GetReviewByID(ctx context.Context, id pgtype.UUID) (Review, er
 	var i Review
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -322,8 +319,8 @@ func (q *Queries) ListAdminReviewsFiltered(ctx context.Context, arg ListAdminRev
 }
 
 const listReviews = `-- name: ListReviews :many
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 
 ORDER BY created_at DESC
@@ -346,7 +343,6 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Rev
 		var i Review
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -369,8 +365,8 @@ func (q *Queries) ListReviews(ctx context.Context, arg ListReviewsParams) ([]Rev
 }
 
 const listReviewsByEntity = `-- name: ListReviewsByEntity :many
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -402,7 +398,6 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 		var i Review
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -425,8 +420,8 @@ func (q *Queries) ListReviewsByEntity(ctx context.Context, arg ListReviewsByEnti
 }
 
 const listReviewsByEntityHighestRating = `-- name: ListReviewsByEntityHighestRating :many
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -459,7 +454,6 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 		var i Review
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -482,8 +476,8 @@ func (q *Queries) ListReviewsByEntityHighestRating(ctx context.Context, arg List
 }
 
 const listReviewsByEntityLowestRating = `-- name: ListReviewsByEntityLowestRating :many
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE entity_type = $1
  AND entity_id = $2
@@ -516,7 +510,6 @@ func (q *Queries) ListReviewsByEntityLowestRating(ctx context.Context, arg ListR
 		var i Review
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -624,8 +617,8 @@ func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListRev
 }
 
 const listReviewsByReviewer = `-- name: ListReviewsByReviewer :many
-SELECT id, tenant_id, entity_type, entity_id, reviewer_user_id,
-       rating, title, body, status, created_at, updated_at, removed_by
+SELECT id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 FROM reviews
 WHERE reviewer_user_id = $1
 ORDER BY created_at DESC
@@ -649,7 +642,6 @@ func (q *Queries) ListReviewsByReviewer(ctx context.Context, arg ListReviewsByRe
 		var i Review
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.EntityType,
 			&i.EntityID,
 			&i.ReviewerUserID,
@@ -692,8 +684,8 @@ UPDATE reviews
 SET status = 'removed', removed_by = $1, updated_at = now()
 WHERE id = $2
  AND reviewer_user_id = $1
-RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
-          rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type SoftDeleteOwnReviewParams struct {
@@ -709,7 +701,6 @@ func (q *Queries) SoftDeleteOwnReview(ctx context.Context, arg SoftDeleteOwnRevi
 	var i Review
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -730,8 +721,8 @@ SET rating = $1, title = $2, body = $3,
  updated_at = now()
 WHERE id = $4
  AND reviewer_user_id = $5
-RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
-          rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type UpdateReviewParams struct {
@@ -753,7 +744,6 @@ func (q *Queries) UpdateReview(ctx context.Context, arg UpdateReviewParams) (Rev
 	var i Review
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -772,8 +762,8 @@ const updateReviewStatus = `-- name: UpdateReviewStatus :one
 UPDATE reviews
 SET status = $1, removed_by = $2, updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, entity_type, entity_id, reviewer_user_id,
-          rating, title, body, status, created_at, updated_at, removed_by
+RETURNING id, entity_type, entity_id, reviewer_user_id,
+ rating, title, body, status, created_at, updated_at, removed_by
 `
 
 type UpdateReviewStatusParams struct {
@@ -789,7 +779,6 @@ func (q *Queries) UpdateReviewStatus(ctx context.Context, arg UpdateReviewStatus
 	var i Review
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewerUserID,
@@ -818,8 +807,8 @@ ON CONFLICT (entity_type, entity_id) DO UPDATE
 SET review_count = EXCLUDED.review_count,
  average_rating = EXCLUDED.average_rating,
  updated_at = now()
-RETURNING tenant_id, entity_type, entity_id, review_count,
-          average_rating, updated_at
+RETURNING entity_type, entity_id, review_count,
+ average_rating, updated_at
 `
 
 type UpsertReviewAggregateParams struct {
@@ -834,7 +823,6 @@ func (q *Queries) UpsertReviewAggregate(ctx context.Context, arg UpsertReviewAgg
 	row := q.db.QueryRow(ctx, upsertReviewAggregate, arg.EntityType, arg.EntityID)
 	var i ReviewAggregate
 	err := row.Scan(
-		&i.TenantID,
 		&i.EntityType,
 		&i.EntityID,
 		&i.ReviewCount,

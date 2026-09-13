@@ -15,7 +15,7 @@ const addTagModerator = `-- name: AddTagModerator :one
 INSERT INTO tag_moderators (tag_id, user_id, assigned_by, assigned_by_user_id) VALUES ($1, $2, $3, $4)
 
 ON CONFLICT (tag_id, user_id) DO UPDATE SET created_at = now()
-RETURNING id, tenant_id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
+RETURNING id, tag_id, user_id, assigned_by, assigned_by_user_id, created_at
 `
 
 type AddTagModeratorParams struct {
@@ -36,7 +36,6 @@ func (q *Queries) AddTagModerator(ctx context.Context, arg AddTagModeratorParams
 	var i TagModerator
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TagID,
 		&i.UserID,
 		&i.AssignedBy,

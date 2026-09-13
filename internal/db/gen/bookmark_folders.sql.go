@@ -15,7 +15,7 @@ const createBookmarkFolder = `-- name: CreateBookmarkFolder :one
 
 INSERT INTO bookmark_folders (user_id, name, position) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
+RETURNING id, user_id, name, created_at, updated_at, position
 `
 
 type CreateBookmarkFolderParams struct {
@@ -32,7 +32,6 @@ func (q *Queries) CreateBookmarkFolder(ctx context.Context, arg CreateBookmarkFo
 	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,
@@ -61,7 +60,7 @@ func (q *Queries) DeleteBookmarkFolder(ctx context.Context, arg DeleteBookmarkFo
 }
 
 const getBookmarkFolder = `-- name: GetBookmarkFolder :one
-SELECT id, tenant_id, user_id, name, created_at, updated_at, position
+SELECT id, user_id, name, created_at, updated_at, position
 FROM bookmark_folders
 WHERE id = $1 AND user_id = $2
 `
@@ -77,7 +76,6 @@ func (q *Queries) GetBookmarkFolder(ctx context.Context, arg GetBookmarkFolderPa
 	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,
@@ -143,7 +141,7 @@ const updateBookmarkFolder = `-- name: UpdateBookmarkFolder :one
 UPDATE bookmark_folders
 SET name = $1, updated_at = now()
 WHERE id = $2 AND user_id = $3
-RETURNING id, tenant_id, user_id, name, created_at, updated_at, position
+RETURNING id, user_id, name, created_at, updated_at, position
 `
 
 type UpdateBookmarkFolderParams struct {
@@ -157,7 +155,6 @@ func (q *Queries) UpdateBookmarkFolder(ctx context.Context, arg UpdateBookmarkFo
 	var i BookmarkFolder
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Name,
 		&i.CreatedAt,

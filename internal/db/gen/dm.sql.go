@@ -100,7 +100,7 @@ func (q *Queries) EditDMMessage(ctx context.Context, arg EditDMMessageParams) er
 }
 
 const getConversationByID = `-- name: GetConversationByID :one
-SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1
+SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations WHERE id = $1
 `
 
 func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmConversation, error) {
@@ -108,7 +108,6 @@ func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmCo
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Participant1ID,
 		&i.Participant2ID,
 		&i.LastMessageAt,
@@ -122,7 +121,7 @@ func (q *Queries) GetConversationByID(ctx context.Context, id pgtype.UUID) (DmCo
 }
 
 const getConversationByParticipants = `-- name: GetConversationByParticipants :one
-SELECT id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
+SELECT id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at FROM dm_conversations
 WHERE participant_1_id = LEAST($1, $2)::uuid
  AND participant_2_id = GREATEST($1, $2)::uuid
 `
@@ -141,7 +140,6 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Participant1ID,
 		&i.Participant2ID,
 		&i.LastMessageAt,
@@ -155,7 +153,7 @@ func (q *Queries) GetConversationByParticipants(ctx context.Context, arg GetConv
 }
 
 const getConversationMessages = `-- name: GetConversationMessages :many
-SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, dm.tenant_id, u.username AS sender_username, p.display_name AS sender_display_name
+SELECT dm.id, dm.conversation_id, dm.sender_id, dm.body, dm.created_at, dm.read_at, dm.deleted_at, dm.edited_at, u.username AS sender_username, p.display_name AS sender_display_name
 FROM dm_messages dm
 JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -180,7 +178,6 @@ type GetConversationMessagesRow struct {
 	ReadAt            pgtype.Timestamptz `json:"read_at"`
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	EditedAt          pgtype.Timestamptz `json:"edited_at"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
 	SenderUsername    string             `json:"sender_username"`
 	SenderDisplayName *string            `json:"sender_display_name"`
 }
@@ -203,7 +200,6 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.ReadAt,
 			&i.DeletedAt,
 			&i.EditedAt,
-			&i.TenantID,
 			&i.SenderUsername,
 			&i.SenderDisplayName,
 		); err != nil {
@@ -218,7 +214,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 }
 
 const getDMMessageByID = `-- name: GetDMMessageByID :one
-SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at, tenant_id FROM dm_messages WHERE id = $1 AND conversation_id = $2
+SELECT id, conversation_id, sender_id, body, created_at, read_at, deleted_at, edited_at FROM dm_messages WHERE id = $1 AND conversation_id = $2
 `
 
 type GetDMMessageByIDParams struct {
@@ -238,13 +234,12 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 		&i.ReadAt,
 		&i.DeletedAt,
 		&i.EditedAt,
-		&i.TenantID,
 	)
 	return i, err
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
-SELECT id, tenant_id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
+SELECT id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
 `
 
 func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmRequest, error) {
@@ -252,7 +247,6 @@ func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.U
 	var i DmRequest
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.RequesterID,
 		&i.RecipientID,
 		&i.ConversationID,
@@ -270,7 +264,7 @@ INSERT INTO dm_conversations (participant_1_id, participant_2_id) VALUES (LEAST(
 
 ON CONFLICT (participant_1_id, participant_2_id) DO UPDATE
 SET updated_at = now()
-RETURNING id, tenant_id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at
+RETURNING id, participant_1_id, participant_2_id, last_message_at, last_message_preview, p1_unread_count, p2_unread_count, created_at, updated_at
 `
 
 type GetOrCreateConversationParams struct {
@@ -284,7 +278,6 @@ func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateCo
 	var i DmConversation
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Participant1ID,
 		&i.Participant2ID,
 		&i.LastMessageAt,
@@ -298,7 +291,7 @@ func (q *Queries) GetOrCreateConversation(ctx context.Context, arg GetOrCreateCo
 }
 
 const getPendingMessageRequests = `-- name: GetPendingMessageRequests :many
-SELECT dr.id, dr.tenant_id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
+SELECT dr.id, dr.requester_id, dr.recipient_id, dr.conversation_id, dr.preview_message, dr.status, dr.created_at, dr.updated_at, dr.resolved_at, u.username AS requester_username, p.display_name AS requester_display_name, p.avatar_url AS requester_avatar_url
 FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
@@ -315,7 +308,6 @@ type GetPendingMessageRequestsParams struct {
 
 type GetPendingMessageRequestsRow struct {
 	ID                   pgtype.UUID        `json:"id"`
-	TenantID             pgtype.UUID        `json:"tenant_id"`
 	RequesterID          pgtype.UUID        `json:"requester_id"`
 	RecipientID          pgtype.UUID        `json:"recipient_id"`
 	ConversationID       pgtype.UUID        `json:"conversation_id"`
@@ -343,7 +335,6 @@ func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingM
 		var i GetPendingMessageRequestsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.RequesterID,
 			&i.RecipientID,
 			&i.ConversationID,
@@ -453,7 +444,7 @@ func (q *Queries) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (str
 }
 
 const getWSTicketForRedemption = `-- name: GetWSTicketForRedemption :one
-SELECT id, user_id, tenant_id, used, created_at, expires_at FROM ws_tickets
+SELECT id, user_id, used, created_at, expires_at FROM ws_tickets
 WHERE id = $1 AND used = false AND expires_at > now()
 `
 
@@ -465,7 +456,6 @@ func (q *Queries) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) 
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.TenantID,
 		&i.Used,
 		&i.CreatedAt,
 		&i.ExpiresAt,
@@ -618,7 +608,7 @@ func (q *Queries) UpsertUserDMPrivacy(ctx context.Context, arg UpsertUserDMPriva
 const useWSTicket = `-- name: UseWSTicket :one
 UPDATE ws_tickets SET used = true
 WHERE id = $1 AND user_id = $2 AND used = false AND expires_at > now()
-RETURNING id, user_id, tenant_id, used, created_at, expires_at
+RETURNING id, user_id, used, created_at, expires_at
 `
 
 type UseWSTicketParams struct {
@@ -632,7 +622,6 @@ func (q *Queries) UseWSTicket(ctx context.Context, arg UseWSTicketParams) (WsTic
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.TenantID,
 		&i.Used,
 		&i.CreatedAt,
 		&i.ExpiresAt,

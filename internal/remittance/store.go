@@ -261,19 +261,19 @@ type UpdateRateStoreInput struct {
 }
 
 // GetRateByID returns a single remittance rate by id and tenant.
-func (s *Store) GetRateByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.RemittanceRate, error) {
+func (s *Store) GetRateByID(ctx context.Context, id pgtype.UUID) (gen.RemittanceRate, error) {
 	const q = `
-SELECT id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct,
+SELECT id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct,
        transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall,
        verification_status, freshness_score, override_source, editorial_overrides
 FROM remittance_rates
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	var r gen.RemittanceRate
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
 		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
 		&r.VerificationStatus, &r.FreshnessScore, &r.OverrideSource, &r.EditorialOverrides,
 	)
@@ -285,8 +285,8 @@ WHERE id = $1 AND tenant_id = $2
 }
 
 // UpdateRate updates a remittance_rate row by id and tenant, returning the row.
-func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in UpdateRateStoreInput) (gen.RemittanceRate, error) {
-	existing, err := s.GetRateByID(ctx, tenantID, id)
+func (s *Store) UpdateRate(ctx context.Context, id pgtype.UUID, in UpdateRateStoreInput) (gen.RemittanceRate, error) {
+	existing, err := s.GetRateByID(ctx, id)
 	if err != nil {
 		return gen.RemittanceRate{}, fmt.Errorf("remittance: update rate: %w", err)
 	}
@@ -363,18 +363,17 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 	sets = append(sets, "fetched_at = now()")
 
 	q := fmt.Sprintf(
-		"UPDATE remittance_rates SET %s WHERE id = $%d AND tenant_id = $%d RETURNING id, tenant_id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides",
+		"UPDATE remittance_rates SET %s WHERE id = $%d RETURNING id, provider_id, send_currency, receive_currency, rate, fee_flat, fee_pct, transfer_time, fetched_at, is_manual, source_url, intel_record_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides",
 		strings.Join(sets, ", "),
 		argIdx,
-		argIdx+1,
 	)
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	var r gen.RemittanceRate
 
 	err = s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&r.ID, &r.TenantID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
+		&r.ID, &r.ProviderID, &r.SendCurrency, &r.ReceiveCurrency, &r.Rate, &r.FeeFlat, &r.FeePct,
 		&r.TransferTime, &r.FetchedAt, &r.IsManual, &r.SourceUrl, &r.IntelRecordID, &r.ConfidenceOverall,
 		&r.VerificationStatus, &r.FreshnessScore, &r.OverrideSource, &r.EditorialOverrides,
 	)
@@ -386,8 +385,8 @@ func (s *Store) UpdateRate(ctx context.Context, tenantID, id pgtype.UUID, in Upd
 }
 
 // DeleteRate deletes a remittance_rate row by id and tenant.
-func (s *Store) DeleteRate(ctx context.Context, tenantID, id pgtype.UUID) error {
-	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM remittance_rates WHERE id = $1 AND tenant_id = $2`, id, tenantID)
+func (s *Store) DeleteRate(ctx context.Context, id pgtype.UUID) error {
+	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM remittance_rates WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("remittance: delete rate: %w", err)
 	}

@@ -1,5 +1,5 @@
 -- name: GetOnboardingState :one
-SELECT id, tenant_id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
+SELECT id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
 FROM onboarding_state
 WHERE user_id = @user_id;
 
@@ -32,20 +32,20 @@ SET step_data = '{}'::jsonb, completed = true, updated_at = now()
 WHERE user_id = @user_id;
 
 -- name: ListOnboardingTemplates :many
-SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 
 ORDER BY created_at DESC;
 
 -- name: GetOnboardingTemplate :one
-SELECT id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at
+SELECT id, name, description, steps, is_active, is_system, created_at, updated_at
 FROM onboarding_templates
 WHERE id = @id;
 
 -- name: CreateOnboardingTemplate :one
 INSERT INTO onboarding_templates (name, description, steps, is_active, is_system) VALUES (@name, @description, @steps, @is_active, @is_system)
 
-RETURNING id, tenant_id, name, description, steps, is_active, is_system, created_at, updated_at;
+RETURNING id, name, description, steps, is_active, is_system, created_at, updated_at;
 
 -- name: UpdateOnboardingTemplate :exec
 UPDATE onboarding_templates

@@ -119,7 +119,7 @@ func (s *Store) SyncFromContentGuide(ctx context.Context, tenantID, contentID pg
 	}
 
 	if existing.GuideID.Valid {
-		_, err = s.UpdateScholarship(ctx, existing.ID, tenantID, buildUpdateInput(params, existing))
+		_, err = s.UpdateScholarship(ctx, existing.ID, buildUpdateInput(params, existing))
 		if err != nil {
 			return fmt.Errorf("scholarships: sync from guide: update: %w", err)
 		}

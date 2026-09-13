@@ -209,8 +209,8 @@ func (s *Service) Compare(ctx context.Context, tenantID pgtype.UUID, ids []pgtyp
 }
 
 // GetByID returns a single published+active visa route for public view.
-func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteDTO, error) {
-	row, err := s.store.GetByID(ctx, id, tenantID)
+func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (RouteDTO, error) {
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
@@ -227,8 +227,8 @@ func (s *Service) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (RouteD
 }
 
 // GetBySlug returns a single published, active visa route by its slug.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (RouteDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug, tenantID)
+func (s *Service) GetBySlug(ctx context.Context, slug string) (RouteDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
@@ -361,7 +361,6 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	}
 
 	row, err := s.store.Create(ctx, CreateRoute{
-		TenantID:             tenantID,
 		DestinationSpaceID:   destSpaceID,
 		VisaCategory:         input.VisaCategory,
 		Name:                 input.Name,
@@ -388,7 +387,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 }
 
 // Update applies a partial update to a visa route (admin).
-func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRouteInput) (RouteDTO, error) {
+func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteInput) (RouteDTO, error) {
 	update := UpdateRoute{}
 
 	if input.DestinationSpaceID != nil && *input.DestinationSpaceID != "" {
@@ -477,7 +476,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID pgtype.UUID, input Up
 		update.AIPromptHash = input.AIPromptHash
 	}
 
-	row, err := s.store.Update(ctx, id, tenantID, update)
+	row, err := s.store.Update(ctx, id, update)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RouteDTO{}, pgx.ErrNoRows
@@ -594,7 +593,6 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	isActive := false
 
 	row, err := s.store.Create(ctx, CreateRoute{
-		TenantID:           tenantID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       visaCategory,
 		Name:               routeName,

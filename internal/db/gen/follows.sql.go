@@ -147,7 +147,7 @@ func (q *Queries) GetBulkFollowingStatus(ctx context.Context, arg GetBulkFollowi
 }
 
 const getFollow = `-- name: GetFollow :one
-SELECT id, tenant_id, follower_id, entity_type, entity_id, created_at
+SELECT id, follower_id, entity_type, entity_id, created_at
 FROM follows
 WHERE follower_id = $1 AND entity_type = $2 AND entity_id = $3
 `
@@ -163,7 +163,6 @@ func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, e
 	var i Follow
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.FollowerID,
 		&i.EntityType,
 		&i.EntityID,

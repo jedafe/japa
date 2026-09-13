@@ -16,7 +16,7 @@ const createTravelProvider = `-- name: CreateTravelProvider :one
 
 INSERT INTO travel_providers (name, slug, provider_type, api_config, affiliate_config, is_active) VALUES ($1, $2, $3, $4, $5, $6)
 
-RETURNING id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at
+RETURNING id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at
 `
 
 type CreateTravelProviderParams struct {
@@ -49,7 +49,6 @@ func (q *Queries) CreateTravelProvider(ctx context.Context, arg CreateTravelProv
 	var i TravelProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.ProviderType,
@@ -63,7 +62,7 @@ func (q *Queries) CreateTravelProvider(ctx context.Context, arg CreateTravelProv
 
 const getActiveTravelProvider = `-- name: GetActiveTravelProvider :one
 
-SELECT id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
+SELECT id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
 WHERE is_active = true
  AND (provider_type = $1 OR provider_type = 'both')
 ORDER BY
@@ -81,7 +80,6 @@ func (q *Queries) GetActiveTravelProvider(ctx context.Context, providerType stri
 	var i TravelProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.ProviderType,
@@ -95,7 +93,7 @@ func (q *Queries) GetActiveTravelProvider(ctx context.Context, providerType stri
 
 const getTravelProviderByID = `-- name: GetTravelProviderByID :one
 
-SELECT id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
+SELECT id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
 WHERE id = $1
 `
 
@@ -107,7 +105,6 @@ func (q *Queries) GetTravelProviderByID(ctx context.Context, id pgtype.UUID) (Tr
 	var i TravelProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.ProviderType,
@@ -121,7 +118,7 @@ func (q *Queries) GetTravelProviderByID(ctx context.Context, id pgtype.UUID) (Tr
 
 const listTravelProviders = `-- name: ListTravelProviders :many
 
-SELECT id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
+SELECT id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
 WHERE ($1::text = '' OR is_active = ($1::text = 'true'))
  AND ($2::text = '' OR provider_type = $2)
  AND ($3::text = '' OR name ILIKE '%' || $3::text || '%' OR slug ILIKE '%' || $3::text || '%')
@@ -154,7 +151,6 @@ func (q *Queries) ListTravelProviders(ctx context.Context, arg ListTravelProvide
 		var i TravelProvider
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.ProviderType,
@@ -183,7 +179,7 @@ SET
  affiliate_config = COALESCE($4, affiliate_config),
  is_active = COALESCE($5, is_active)
 WHERE id = $6
-RETURNING id, tenant_id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at
+RETURNING id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at
 `
 
 type UpdateTravelProviderParams struct {
@@ -210,7 +206,6 @@ func (q *Queries) UpdateTravelProvider(ctx context.Context, arg UpdateTravelProv
 	var i TravelProvider
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.ProviderType,

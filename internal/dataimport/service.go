@@ -242,7 +242,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 	var errors []importErrorEntry
 
 	for i, row := range rows {
-		err := s.insertRow(ctx, imp.TenantID, imp.ImportType, imp.Mode, row)
+		err := s.insertRow(ctx, pgtype.UUID{}, imp.ImportType, imp.Mode, row)
 		if err != nil {
 			failed++
 

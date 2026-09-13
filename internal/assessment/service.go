@@ -612,7 +612,7 @@ func (s *Service) UpdateFormScoring(ctx context.Context, tenantID, formID pgtype
 }
 
 // CreateAssessment creates a new readiness assessment form (form_type='assessment').
-func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, input CreateAssessmentInput) (*AssessmentFormDTO, error) {
+func (s *Service) CreateAssessment(ctx context.Context, input CreateAssessmentInput) (*AssessmentFormDTO, error) {
 	if input.Name == "" {
 		return nil, errors.New("name is required")
 	}
@@ -621,7 +621,7 @@ func (s *Service) CreateAssessment(ctx context.Context, tenantID pgtype.UUID, in
 		return nil, errors.New("slug is required")
 	}
 
-	form, err := s.store.CreateAssessmentForm(ctx, input, tenantID)
+	form, err := s.store.CreateAssessmentForm(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: create assessment: %w", err)
 	}
@@ -639,12 +639,12 @@ func (s *Service) UpdateAssessment(ctx context.Context, id, tenantID pgtype.UUID
 		return nil, errors.New("slug cannot be empty")
 	}
 
-	form, err := s.store.UpdateAssessmentForm(ctx, tenantID, id, input)
+	form, err := s.store.UpdateAssessmentForm(ctx, id, input)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: update assessment: %w", err)
 	}
 
-	fields, err := s.store.GetAssessmentFormFields(ctx, tenantID, id)
+	fields, err := s.store.GetAssessmentFormFields(ctx, id, pgtype.UUID{})
 	if err != nil {
 		return nil, fmt.Errorf("assessment: get form fields after update: %w", err)
 	}

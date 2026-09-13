@@ -64,7 +64,7 @@ ON CONFLICT (source_url) DO UPDATE SET
  source_id = COALESCE(EXCLUDED.source_id, video_sources.source_id),
  status = 'active',
  updated_at = now()
-RETURNING id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 `
 
 type CreateOrUpdateVideoSourceParams struct {
@@ -103,7 +103,6 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorUserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -124,7 +123,7 @@ func (q *Queries) CreateOrUpdateVideoSource(ctx context.Context, arg CreateOrUpd
 }
 
 const getVideoSourceByExternalID = `-- name: GetVideoSourceByExternalID :one
-SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
 WHERE source_type = $1 AND external_id = $2
 `
@@ -139,7 +138,6 @@ func (q *Queries) GetVideoSourceByExternalID(ctx context.Context, arg GetVideoSo
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorUserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -160,7 +158,7 @@ func (q *Queries) GetVideoSourceByExternalID(ctx context.Context, arg GetVideoSo
 }
 
 const getVideoSourceByID = `-- name: GetVideoSourceByID :one
-SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
 WHERE id = $1
 `
@@ -170,7 +168,6 @@ func (q *Queries) GetVideoSourceByID(ctx context.Context, id pgtype.UUID) (Video
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorUserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -191,7 +188,7 @@ func (q *Queries) GetVideoSourceByID(ctx context.Context, id pgtype.UUID) (Video
 }
 
 const getVideoSourceByURL = `-- name: GetVideoSourceByURL :one
-SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
 WHERE source_url = $1
 `
@@ -201,7 +198,6 @@ func (q *Queries) GetVideoSourceByURL(ctx context.Context, sourceUrl string) (Vi
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorUserID,
 		&i.SourceType,
 		&i.SourceUrl,
@@ -222,7 +218,7 @@ func (q *Queries) GetVideoSourceByURL(ctx context.Context, sourceUrl string) (Vi
 }
 
 const listVideoSourcesByAuthor = `-- name: ListVideoSourcesByAuthor :many
-SELECT vs.id, vs.tenant_id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id
+SELECT vs.id, vs.author_user_id, vs.source_type, vs.source_url, vs.external_id, vs.title, vs.description, vs.category, vs.thumbnail_url, vs.thumbnail_media_id, vs.duration_secs, vs.status, vs.field_values, vs.created_at, vs.updated_at, vs.source_id
 FROM video_sources vs
 JOIN users u ON u.id = vs.author_user_id
 WHERE u.username = $1 AND vs.status = 'active'
@@ -247,7 +243,6 @@ func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSou
 		var i VideoSource
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorUserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -275,7 +270,7 @@ func (q *Queries) ListVideoSourcesByAuthor(ctx context.Context, arg ListVideoSou
 }
 
 const listVideoSourcesByAuthorUserID = `-- name: ListVideoSourcesByAuthorUserID :many
-SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
 WHERE author_user_id = $1
 ORDER BY created_at DESC, id DESC
@@ -299,7 +294,6 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 		var i VideoSource
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorUserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -327,7 +321,7 @@ func (q *Queries) ListVideoSourcesByAuthorUserID(ctx context.Context, arg ListVi
 }
 
 const listVideoSourcesBySourceID = `-- name: ListVideoSourcesBySourceID :many
-SELECT id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+SELECT id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 FROM video_sources
 WHERE source_id = $1 AND status = 'active'
 ORDER BY created_at DESC, id DESC
@@ -352,7 +346,6 @@ func (q *Queries) ListVideoSourcesBySourceID(ctx context.Context, arg ListVideoS
 		var i VideoSource
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.AuthorUserID,
 			&i.SourceType,
 			&i.SourceUrl,
@@ -501,7 +494,7 @@ const updateVideoSourceStatus = `-- name: UpdateVideoSourceStatus :one
 UPDATE video_sources
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
+RETURNING id, author_user_id, source_type, source_url, external_id, title, description, category, thumbnail_url, thumbnail_media_id, duration_secs, status, field_values, created_at, updated_at, source_id
 `
 
 type UpdateVideoSourceStatusParams struct {
@@ -515,7 +508,6 @@ func (q *Queries) UpdateVideoSourceStatus(ctx context.Context, arg UpdateVideoSo
 	var i VideoSource
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.AuthorUserID,
 		&i.SourceType,
 		&i.SourceUrl,

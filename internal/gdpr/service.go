@@ -325,7 +325,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	}
 
 	// Collect user data from all relevant tables.
-	userData, err := s.collectUserData(ctx, request.UserID, request.TenantID)
+	userData, err := s.collectUserData(ctx, request.UserID, pgtype.UUID{})
 	if err != nil {
 		if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 			ID:     requestID,
@@ -355,7 +355,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	// AUDIT-FRESH-SETTING-008: export expiry is configurable via system_settings.
 	exportExpiryDays := 1
 	if s.settings != nil {
-		exportExpiryDays = s.settings.GetIntOr(ctx, request.TenantID, "gdpr.export_expiry_days", exportExpiryDays)
+		exportExpiryDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "gdpr.export_expiry_days", exportExpiryDays)
 	}
 
 	expiresAt := time.Now().Add(time.Duration(exportExpiryDays) * 24 * time.Hour)
@@ -363,7 +363,7 @@ func (s *Service) ProcessDataExport(ctx context.Context, requestID pgtype.UUID) 
 	var exportURL string
 
 	if s.storage != nil {
-		url, _, storeErr := s.storage.Store(ctx, request.TenantID, requestID, "application/json", exportJSON)
+		url, _, storeErr := s.storage.Store(ctx, pgtype.UUID{}, requestID, "application/json", exportJSON)
 		if storeErr != nil {
 			if _, statusErr := s.store.updateDataExportRequestStatus(ctx, gen.UpdateDataExportRequestStatusParams{
 				ID:     requestID,
@@ -648,12 +648,12 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			UPDATE api_keys
 			SET status = 'revoked', revoked_at = now(), revoked_by = user_id, updated_at = now()
 			WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to revoke api keys during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
 
-		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepAnonymized); err != nil {
+		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepAnonymized); err != nil {
 			return err
 		}
 
@@ -670,7 +670,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			UPDATE saved_scholarships
 			SET notes = NULL
 			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to scrub saved_scholarships notes during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -687,7 +687,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			UPDATE content_imports
 			SET source_url = NULL
 			WHERE user_id = $1 AND tenant_id = $2 AND source_url IS NOT NULL
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to scrub content_imports source_url during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -703,7 +703,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			UPDATE checklist_progress
 			SET notes = NULL
 			WHERE user_id = $1 AND tenant_id = $2 AND notes IS NOT NULL
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to scrub checklist_progress notes during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -720,7 +720,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if _, err := s.db.Writer.Exec(ctx, `
 			DELETE FROM remittance_rate_alerts
 			WHERE user_id = $1 AND tenant_id = $2
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to delete remittance_rate_alerts during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -740,7 +740,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			UPDATE appointment_alerts
 			SET deleted_at = now(), updated_at = now(), status = 'expired'
 			WHERE user_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-		`, request.UserID, request.TenantID); err != nil {
+		`, request.UserID, pgtype.UUID{}); err != nil {
 			slog.Warn("failed to soft-delete appointment_alerts during deletion",
 				"user_id", request.UserID.String(), "error", err)
 		}
@@ -753,7 +753,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 				"user_id", request.UserID.String(), "error", err)
 		}
 
-		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepTokensRevoked); err != nil {
+		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepTokensRevoked); err != nil {
 			return err
 		}
 
@@ -769,7 +769,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			}
 		}
 
-		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepSessionsDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepSessionsDeleted); err != nil {
 			return err
 		}
 
@@ -796,7 +796,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 				"request_id", requestID, "user_id", request.UserID)
 		}
 
-		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHonchoDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepHonchoDeleted); err != nil {
 			return err
 		}
 
@@ -809,9 +809,9 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 
 	if step < deletionStepHardDeleted {
 		if s.settings != nil {
-			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, request.TenantID, "gdpr.hard_delete_enabled")
+			hardDeleteEnabled, settingsErr := s.settings.GetSettingBool(ctx, pgtype.UUID{}, "gdpr.hard_delete_enabled")
 			if settingsErr == nil && hardDeleteEnabled {
-				retentionDays, _ := s.settings.GetSettingInt(ctx, request.TenantID, "gdpr.retention_days")
+				retentionDays, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "gdpr.retention_days")
 
 				retentionDeadline := request.CreatedAt.Time.Add(time.Duration(retentionDays) * 24 * time.Hour)
 				if time.Now().After(retentionDeadline) {
@@ -819,7 +819,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 						"user_id", request.UserID.String(),
 						"request_id", requestID.String())
 
-					if hardErr := s.hardDeleteUser(ctx, request.UserID, request.TenantID); hardErr != nil {
+					if hardErr := s.hardDeleteUser(ctx, request.UserID, pgtype.UUID{}); hardErr != nil {
 						s.markDeletionFailed(ctx, requestID)
 						return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
 					}
@@ -834,7 +834,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 			}
 		}
 
-		if err := s.checkpoint(ctx, requestID, request.TenantID, deletionStepHardDeleted); err != nil {
+		if err := s.checkpoint(ctx, requestID, pgtype.UUID{}, deletionStepHardDeleted); err != nil {
 			return err
 		}
 	}
@@ -905,7 +905,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 		action = "gdpr.account_retention_wait"
 	}
 
-	if err := logAuditEvent(ctx, s.store, request.TenantID, LogAuditParams{
+	if err := logAuditEvent(ctx, s.store, pgtype.UUID{}, LogAuditParams{
 		ActorUserID: request.UserID,
 		ActionType:  action,
 		TargetType:  "user",

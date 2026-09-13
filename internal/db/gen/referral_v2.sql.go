@@ -38,7 +38,7 @@ func (q *Queries) AdminCountReferrals(ctx context.Context, status string) (int64
 }
 
 const adminListFlaggedReferrals = `-- name: AdminListFlaggedReferrals :many
-SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
+SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
 WHERE status = 'flagged'
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
@@ -60,7 +60,6 @@ func (q *Queries) AdminListFlaggedReferrals(ctx context.Context, arg AdminListFl
 		var i Referral
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ReferrerID,
 			&i.RefereeID,
 			&i.ReferralCode,
@@ -85,7 +84,7 @@ func (q *Queries) AdminListFlaggedReferrals(ctx context.Context, arg AdminListFl
 
 const adminListReferrals = `-- name: AdminListReferrals :many
 
-SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
+SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -111,7 +110,6 @@ func (q *Queries) AdminListReferrals(ctx context.Context, arg AdminListReferrals
 		var i Referral
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ReferrerID,
 			&i.RefereeID,
 			&i.ReferralCode,
@@ -211,7 +209,7 @@ const createReferral = `-- name: CreateReferral :one
 INSERT INTO referrals (referrer_id, referee_id, referral_code, status) VALUES ($1, $2, $3, 'pending')
 
 ON CONFLICT (referee_id) DO NOTHING
-RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+RETURNING id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreateReferralParams struct {
@@ -228,7 +226,6 @@ func (q *Queries) CreateReferral(ctx context.Context, arg CreateReferralParams) 
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -248,7 +245,7 @@ const createReferralCode = `-- name: CreateReferralCode :one
 INSERT INTO referral_codes (user_id, code) VALUES ($1, $2)
 
 ON CONFLICT (user_id) DO NOTHING
-RETURNING id, tenant_id, user_id, code, click_count, created_at
+RETURNING id, user_id, code, click_count, created_at
 `
 
 type CreateReferralCodeParams struct {
@@ -261,7 +258,6 @@ func (q *Queries) CreateReferralCode(ctx context.Context, arg CreateReferralCode
 	var i ReferralCode
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Code,
 		&i.ClickCount,
@@ -278,7 +274,7 @@ SET
  credited_at = now(),
  flagged_reason = NULL
 WHERE id = $2 AND status = 'flagged'
-RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+RETURNING id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreditFlaggedReferralParams struct {
@@ -294,7 +290,6 @@ func (q *Queries) CreditFlaggedReferral(ctx context.Context, arg CreditFlaggedRe
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -317,7 +312,7 @@ SET
  reward_amount = $1,
  credited_at = now()
 WHERE id = $2 AND status = 'qualified'
-RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+RETURNING id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type CreditReferralParams struct {
@@ -330,7 +325,6 @@ func (q *Queries) CreditReferral(ctx context.Context, arg CreditReferralParams) 
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -352,7 +346,7 @@ SET
  status = 'flagged',
  flagged_reason = $1
 WHERE id = $2 AND status IN ('pending', 'qualified')
-RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+RETURNING id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type FlagReferralParams struct {
@@ -368,7 +362,6 @@ func (q *Queries) FlagReferral(ctx context.Context, arg FlagReferralParams) (Ref
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -385,7 +378,7 @@ func (q *Queries) FlagReferral(ctx context.Context, arg FlagReferralParams) (Ref
 }
 
 const getReferralByID = `-- name: GetReferralByID :one
-SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
+SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
 WHERE id = $1
 `
 
@@ -394,7 +387,6 @@ func (q *Queries) GetReferralByID(ctx context.Context, id pgtype.UUID) (Referral
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -411,7 +403,7 @@ func (q *Queries) GetReferralByID(ctx context.Context, id pgtype.UUID) (Referral
 }
 
 const getReferralByReferee = `-- name: GetReferralByReferee :one
-SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
+SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
 WHERE referee_id = $1
 `
 
@@ -420,7 +412,6 @@ func (q *Queries) GetReferralByReferee(ctx context.Context, refereeID pgtype.UUI
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,
@@ -437,7 +428,7 @@ func (q *Queries) GetReferralByReferee(ctx context.Context, refereeID pgtype.UUI
 }
 
 const getReferralCodeByCode = `-- name: GetReferralCodeByCode :one
-SELECT id, tenant_id, user_id, code, click_count, created_at FROM referral_codes
+SELECT id, user_id, code, click_count, created_at FROM referral_codes
 WHERE code = $1
 `
 
@@ -446,7 +437,6 @@ func (q *Queries) GetReferralCodeByCode(ctx context.Context, code string) (Refer
 	var i ReferralCode
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Code,
 		&i.ClickCount,
@@ -458,7 +448,7 @@ func (q *Queries) GetReferralCodeByCode(ctx context.Context, code string) (Refer
 const getReferralCodeByUserID = `-- name: GetReferralCodeByUserID :one
 
 
-SELECT id, tenant_id, user_id, code, click_count, created_at FROM referral_codes
+SELECT id, user_id, code, click_count, created_at FROM referral_codes
 WHERE user_id = $1
 `
 
@@ -476,7 +466,6 @@ func (q *Queries) GetReferralCodeByUserID(ctx context.Context, userID pgtype.UUI
 	var i ReferralCode
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.Code,
 		&i.ClickCount,
@@ -497,7 +486,7 @@ func (q *Queries) IncrementReferralClickCount(ctx context.Context, code string) 
 }
 
 const listReferralsByReferrer = `-- name: ListReferralsByReferrer :many
-SELECT id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
+SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at FROM referrals
 WHERE referrer_id = $1
  AND ($2::text = '' OR status = $2)
 ORDER BY created_at DESC
@@ -527,7 +516,6 @@ func (q *Queries) ListReferralsByReferrer(ctx context.Context, arg ListReferrals
 		var i Referral
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.ReferrerID,
 			&i.RefereeID,
 			&i.ReferralCode,
@@ -551,7 +539,7 @@ func (q *Queries) ListReferralsByReferrer(ctx context.Context, arg ListReferrals
 }
 
 const listUserReferralCodes = `-- name: ListUserReferralCodes :many
-SELECT id, tenant_id, user_id, code, click_count, created_at FROM referral_codes
+SELECT id, user_id, code, click_count, created_at FROM referral_codes
 
 ORDER BY created_at DESC
 `
@@ -567,7 +555,6 @@ func (q *Queries) ListUserReferralCodes(ctx context.Context) ([]ReferralCode, er
 		var i ReferralCode
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.Code,
 			&i.ClickCount,
@@ -590,7 +577,7 @@ SET
  qualified_payment_id = $1,
  qualified_at = now()
 WHERE id = $2 AND status = 'pending'
-RETURNING id, tenant_id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
+RETURNING id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at, qualified_payment_id, reward_amount, flagged_reason, qualified_at, credited_at
 `
 
 type QualifyReferralParams struct {
@@ -603,7 +590,6 @@ func (q *Queries) QualifyReferral(ctx context.Context, arg QualifyReferralParams
 	var i Referral
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.ReferrerID,
 		&i.RefereeID,
 		&i.ReferralCode,

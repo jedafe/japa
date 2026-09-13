@@ -16,10 +16,10 @@ UPDATE tickets
 SET assigned_to = $1, assigned_group_id = $2,
  updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type AssignTicketParams struct {
@@ -33,7 +33,6 @@ func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (Tic
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -76,10 +75,10 @@ const closeTicket = `-- name: CloseTicket :one
 UPDATE tickets
 SET status = 'closed', closed_at = now(), updated_at = now()
 WHERE id = $1
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, error) {
@@ -87,7 +86,6 @@ func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, erro
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -178,10 +176,10 @@ func (q *Queries) CountTicketsByType(ctx context.Context, typeID pgtype.UUID) (i
 const createTicket = `-- name: CreateTicket :one
 
 INSERT INTO tickets (type_id, subject, description, status, priority, submitter_user_id, submitter_email, assigned_to, assigned_group_id, field_values, sla_breach_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type CreateTicketParams struct {
@@ -218,7 +216,6 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -346,8 +343,8 @@ func (q *Queries) CreateTicketEvent(ctx context.Context, arg CreateTicketEventPa
 
 const createTicketType = `-- name: CreateTicketType :one
 INSERT INTO ticket_types (name, slug, description, field_group_id, default_priority, auto_assign_group_id, sla_hours, is_public, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
-    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+RETURNING id, name, slug, description, field_group_id, default_priority,
+ auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 `
 
 type CreateTicketTypeParams struct {
@@ -377,7 +374,6 @@ func (q *Queries) CreateTicketType(ctx context.Context, arg CreateTicketTypePara
 	var i TicketType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -542,8 +538,8 @@ func (q *Queries) GetTicketByID(ctx context.Context, id pgtype.UUID) (GetTicketB
 }
 
 const getTicketTypeByID = `-- name: GetTicketTypeByID :one
-SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
-    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, name, slug, description, field_group_id, default_priority,
+ auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE id = $1
 `
@@ -553,7 +549,6 @@ func (q *Queries) GetTicketTypeByID(ctx context.Context, id pgtype.UUID) (Ticket
 	var i TicketType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -570,8 +565,8 @@ func (q *Queries) GetTicketTypeByID(ctx context.Context, id pgtype.UUID) (Ticket
 }
 
 const getTicketTypeBySlug = `-- name: GetTicketTypeBySlug :one
-SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
-    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, name, slug, description, field_group_id, default_priority,
+ auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE slug = $1
 `
@@ -581,7 +576,6 @@ func (q *Queries) GetTicketTypeBySlug(ctx context.Context, slug string) (TicketT
 	var i TicketType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,
@@ -748,8 +742,8 @@ func (q *Queries) ListTicketEvents(ctx context.Context, ticketID pgtype.UUID) ([
 }
 
 const listTicketTypesByTenant = `-- name: ListTicketTypesByTenant :many
-SELECT id, tenant_id, name, slug, description, field_group_id, default_priority,
-    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+SELECT id, name, slug, description, field_group_id, default_priority,
+ auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 FROM ticket_types
 WHERE ($1::bool IS NULL OR is_public = $1)
 ORDER BY created_at DESC
@@ -773,7 +767,6 @@ func (q *Queries) ListTicketTypesByTenant(ctx context.Context, arg ListTicketTyp
 		var i TicketType
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,
@@ -986,10 +979,10 @@ UPDATE tickets
 SET status = 'resolved', resolution_note = $1,
  resolved_at = now(), updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type ResolveTicketParams struct {
@@ -1002,7 +995,6 @@ func (q *Queries) ResolveTicket(ctx context.Context, arg ResolveTicketParams) (T
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1027,10 +1019,10 @@ const updateTicketPriority = `-- name: UpdateTicketPriority :one
 UPDATE tickets
 SET priority = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type UpdateTicketPriorityParams struct {
@@ -1043,7 +1035,6 @@ func (q *Queries) UpdateTicketPriority(ctx context.Context, arg UpdateTicketPrio
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1081,10 +1072,10 @@ SET status = $1, updated_at = now(),
  resolved_at = CASE WHEN $1 = 'resolved' THEN now() ELSE resolved_at END,
  closed_at = CASE WHEN $1 = 'closed' THEN now() ELSE closed_at END
 WHERE id = $2
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type UpdateTicketStatusParams struct {
@@ -1097,7 +1088,6 @@ func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatus
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1122,10 +1112,10 @@ const updateTicketSubject = `-- name: UpdateTicketSubject :one
 UPDATE tickets
 SET subject = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, tenant_id, type_id, subject, description, status, priority,
-    submitter_user_id, submitter_email, assigned_to, assigned_group_id,
-    resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
-    created_at, updated_at
+RETURNING id, type_id, subject, description, status, priority,
+ submitter_user_id, submitter_email, assigned_to, assigned_group_id,
+ resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
+ created_at, updated_at
 `
 
 type UpdateTicketSubjectParams struct {
@@ -1138,7 +1128,6 @@ func (q *Queries) UpdateTicketSubject(ctx context.Context, arg UpdateTicketSubje
 	var i Ticket
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -1166,8 +1155,8 @@ SET name = $1, description = $2,
  auto_assign_group_id = $5, sla_hours = $6,
  is_public = $7, updated_at = now()
 WHERE id = $8
-RETURNING id, tenant_id, name, slug, description, field_group_id, default_priority,
-    auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
+RETURNING id, name, slug, description, field_group_id, default_priority,
+ auto_assign_group_id, sla_hours, is_public, is_system, created_at, updated_at
 `
 
 type UpdateTicketTypeParams struct {
@@ -1195,7 +1184,6 @@ func (q *Queries) UpdateTicketType(ctx context.Context, arg UpdateTicketTypePara
 	var i TicketType
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Slug,
 		&i.Description,

@@ -72,7 +72,7 @@ const createCensoredWord = `-- name: CreateCensoredWord :one
 
 INSERT INTO censored_words (pattern, action, replacement) VALUES ($1, $2, $3)
 
-RETURNING id, tenant_id, pattern, action, replacement, created_at
+RETURNING id, pattern, action, replacement, created_at
 `
 
 type CreateCensoredWordParams struct {
@@ -89,7 +89,6 @@ func (q *Queries) CreateCensoredWord(ctx context.Context, arg CreateCensoredWord
 	var i CensoredWord
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Pattern,
 		&i.Action,
 		&i.Replacement,
@@ -101,7 +100,7 @@ func (q *Queries) CreateCensoredWord(ctx context.Context, arg CreateCensoredWord
 const createIPBlock = `-- name: CreateIPBlock :one
 INSERT INTO ip_blocks (cidr, block_type, reason, blocked_by, expires_at) VALUES ($1, $2, $3, $4, $5)
 
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at
 `
 
 type CreateIPBlockParams struct {
@@ -123,7 +122,6 @@ func (q *Queries) CreateIPBlock(ctx context.Context, arg CreateIPBlockParams) (I
 	var i IpBlock
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Cidr,
 		&i.BlockType,
 		&i.Reason,
@@ -239,7 +237,7 @@ func (q *Queries) DeleteUserBlock(ctx context.Context, arg DeleteUserBlockParams
 }
 
 const getActiveIPBlocks = `-- name: GetActiveIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE (expires_at IS NULL OR expires_at > now())
 `
@@ -255,7 +253,6 @@ func (q *Queries) GetActiveIPBlocks(ctx context.Context) ([]IpBlock, error) {
 		var i IpBlock
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Cidr,
 			&i.BlockType,
 			&i.Reason,
@@ -274,7 +271,7 @@ func (q *Queries) GetActiveIPBlocks(ctx context.Context) ([]IpBlock, error) {
 }
 
 const getCensoredWordByID = `-- name: GetCensoredWordByID :one
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 WHERE id = $1
 `
@@ -284,7 +281,6 @@ func (q *Queries) GetCensoredWordByID(ctx context.Context, id pgtype.UUID) (Cens
 	var i CensoredWord
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Pattern,
 		&i.Action,
 		&i.Replacement,
@@ -294,7 +290,7 @@ func (q *Queries) GetCensoredWordByID(ctx context.Context, id pgtype.UUID) (Cens
 }
 
 const getCensoredWordsByTenant = `-- name: GetCensoredWordsByTenant :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 `
 
@@ -309,7 +305,6 @@ func (q *Queries) GetCensoredWordsByTenant(ctx context.Context) ([]CensoredWord,
 		var i CensoredWord
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Pattern,
 			&i.Action,
 			&i.Replacement,
@@ -326,7 +321,7 @@ func (q *Queries) GetCensoredWordsByTenant(ctx context.Context) ([]CensoredWord,
 }
 
 const getIPBlockByCIDR = `-- name: GetIPBlockByCIDR :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE cidr = $1
  AND (expires_at IS NULL OR expires_at > now())
@@ -337,7 +332,6 @@ func (q *Queries) GetIPBlockByCIDR(ctx context.Context, cidr netip.Prefix) (IpBl
 	var i IpBlock
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Cidr,
 		&i.BlockType,
 		&i.Reason,
@@ -349,7 +343,7 @@ func (q *Queries) GetIPBlockByCIDR(ctx context.Context, cidr netip.Prefix) (IpBl
 }
 
 const getIPBlockByID = `-- name: GetIPBlockByID :one
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE id = $1
 `
@@ -359,7 +353,6 @@ func (q *Queries) GetIPBlockByID(ctx context.Context, id pgtype.UUID) (IpBlock, 
 	var i IpBlock
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Cidr,
 		&i.BlockType,
 		&i.Reason,
@@ -405,21 +398,15 @@ WHERE blocker_id = $1
 ORDER BY created_at DESC
 `
 
-type GetUserBlocksRow struct {
-	BlockerID pgtype.UUID        `json:"blocker_id"`
-	BlockedID pgtype.UUID        `json:"blocked_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]GetUserBlocksRow, error) {
+func (q *Queries) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]UserBlock, error) {
 	rows, err := q.db.Query(ctx, getUserBlocks, blockerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUserBlocksRow
+	var items []UserBlock
 	for rows.Next() {
-		var i GetUserBlocksRow
+		var i UserBlock
 		if err := rows.Scan(&i.BlockerID, &i.BlockedID, &i.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -635,7 +622,7 @@ func (q *Queries) ListBlockedUsers(ctx context.Context, arg ListBlockedUsersPara
 }
 
 const listCensoredWords = `-- name: ListCensoredWords :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 
 ORDER BY created_at DESC
@@ -652,7 +639,6 @@ func (q *Queries) ListCensoredWords(ctx context.Context) ([]CensoredWord, error)
 		var i CensoredWord
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Pattern,
 			&i.Action,
 			&i.Replacement,
@@ -669,7 +655,7 @@ func (q *Queries) ListCensoredWords(ctx context.Context) ([]CensoredWord, error)
 }
 
 const listCensoredWordsPaginated = `-- name: ListCensoredWordsPaginated :many
-SELECT id, tenant_id, pattern, action, replacement, created_at
+SELECT id, pattern, action, replacement, created_at
 FROM censored_words
 WHERE ($3::text IS NULL OR action = $3)
 ORDER BY created_at DESC, id DESC
@@ -695,7 +681,6 @@ func (q *Queries) ListCensoredWordsPaginated(ctx context.Context, arg ListCensor
 		var i CensoredWord
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Pattern,
 			&i.Action,
 			&i.Replacement,
@@ -712,7 +697,7 @@ func (q *Queries) ListCensoredWordsPaginated(ctx context.Context, arg ListCensor
 }
 
 const listIPBlocks = `-- name: ListIPBlocks :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE (created_at < $2 OR ($2 IS NULL))
 ORDER BY created_at DESC, id DESC
@@ -735,7 +720,6 @@ func (q *Queries) ListIPBlocks(ctx context.Context, arg ListIPBlocksParams) ([]I
 		var i IpBlock
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Cidr,
 			&i.BlockType,
 			&i.Reason,
@@ -754,7 +738,7 @@ func (q *Queries) ListIPBlocks(ctx context.Context, arg ListIPBlocksParams) ([]I
 }
 
 const listIPBlocksPaginated = `-- name: ListIPBlocksPaginated :many
-SELECT id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+SELECT id, cidr, block_type, reason, blocked_by, expires_at, created_at
 FROM ip_blocks
 WHERE ($3::text IS NULL OR block_type = $3)
 ORDER BY created_at DESC, id DESC
@@ -780,7 +764,6 @@ func (q *Queries) ListIPBlocksPaginated(ctx context.Context, arg ListIPBlocksPag
 		var i IpBlock
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Cidr,
 			&i.BlockType,
 			&i.Reason,
@@ -802,7 +785,7 @@ const updateCensoredWord = `-- name: UpdateCensoredWord :one
 UPDATE censored_words
 SET pattern = $1, action = $2, replacement = $3
 WHERE id = $4
-RETURNING id, tenant_id, pattern, action, replacement, created_at
+RETURNING id, pattern, action, replacement, created_at
 `
 
 type UpdateCensoredWordParams struct {
@@ -822,7 +805,6 @@ func (q *Queries) UpdateCensoredWord(ctx context.Context, arg UpdateCensoredWord
 	var i CensoredWord
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Pattern,
 		&i.Action,
 		&i.Replacement,
@@ -856,7 +838,7 @@ UPDATE ip_blocks
 SET cidr = $1, block_type = $2, reason = $3,
  expires_at = $4, blocked_by = $5
 WHERE id = $6
-RETURNING id, tenant_id, cidr, block_type, reason, blocked_by, expires_at, created_at
+RETURNING id, cidr, block_type, reason, blocked_by, expires_at, created_at
 `
 
 type UpdateIPBlockParams struct {
@@ -880,7 +862,6 @@ func (q *Queries) UpdateIPBlock(ctx context.Context, arg UpdateIPBlockParams) (I
 	var i IpBlock
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Cidr,
 		&i.BlockType,
 		&i.Reason,

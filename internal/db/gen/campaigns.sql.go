@@ -27,7 +27,7 @@ const createContentCampaign = `-- name: CreateContentCampaign :one
 
 
 INSERT INTO content_campaigns (name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
+RETURNING id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
 `
 
 type CreateContentCampaignParams struct {
@@ -70,7 +70,6 @@ func (q *Queries) CreateContentCampaign(ctx context.Context, arg CreateContentCa
 	var i ContentCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Prompt,
 		&i.Status,
@@ -92,7 +91,7 @@ func (q *Queries) CreateContentCampaign(ctx context.Context, arg CreateContentCa
 const createContentCampaignItem = `-- name: CreateContentCampaignItem :one
 
 INSERT INTO content_campaign_items (campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'planned')
-RETURNING id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
+RETURNING id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
 `
 
 type CreateContentCampaignItemParams struct {
@@ -123,7 +122,6 @@ func (q *Queries) CreateContentCampaignItem(ctx context.Context, arg CreateConte
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CampaignID,
 		&i.SortOrder,
 		&i.PersonaID,
@@ -143,7 +141,7 @@ func (q *Queries) CreateContentCampaignItem(ctx context.Context, arg CreateConte
 }
 
 const getContentCampaign = `-- name: GetContentCampaign :one
-SELECT id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
+SELECT id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
 WHERE id = $1
 `
 
@@ -152,7 +150,6 @@ func (q *Queries) GetContentCampaign(ctx context.Context, id pgtype.UUID) (Conte
 	var i ContentCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Prompt,
 		&i.Status,
@@ -172,7 +169,7 @@ func (q *Queries) GetContentCampaign(ctx context.Context, id pgtype.UUID) (Conte
 }
 
 const getContentCampaignItem = `-- name: GetContentCampaignItem :one
-SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
+SELECT id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
 WHERE id = $1
 `
 
@@ -181,7 +178,6 @@ func (q *Queries) GetContentCampaignItem(ctx context.Context, id pgtype.UUID) (C
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CampaignID,
 		&i.SortOrder,
 		&i.PersonaID,
@@ -201,7 +197,7 @@ func (q *Queries) GetContentCampaignItem(ctx context.Context, id pgtype.UUID) (C
 }
 
 const getContentCampaignItemByReviewID = `-- name: GetContentCampaignItemByReviewID :one
-SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
+SELECT id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
 WHERE review_id = $1
 `
 
@@ -210,7 +206,6 @@ func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, reviewID
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CampaignID,
 		&i.SortOrder,
 		&i.PersonaID,
@@ -230,7 +225,7 @@ func (q *Queries) GetContentCampaignItemByReviewID(ctx context.Context, reviewID
 }
 
 const getContentCampaignItemByStudioJob = `-- name: GetContentCampaignItemByStudioJob :one
-SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
+SELECT id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
 WHERE studio_job_id = $1
 `
 
@@ -239,7 +234,6 @@ func (q *Queries) GetContentCampaignItemByStudioJob(ctx context.Context, studioJ
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CampaignID,
 		&i.SortOrder,
 		&i.PersonaID,
@@ -336,7 +330,7 @@ func (q *Queries) ListContentCampaignActivePersonasByIDs(ctx context.Context, id
 }
 
 const listContentCampaignItemsByCampaign = `-- name: ListContentCampaignItemsByCampaign :many
-SELECT id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
+SELECT id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at FROM content_campaign_items
 WHERE campaign_id = $1
 ORDER BY sort_order, created_at
 `
@@ -352,7 +346,6 @@ func (q *Queries) ListContentCampaignItemsByCampaign(ctx context.Context, campai
 		var i ContentCampaignItem
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.CampaignID,
 			&i.SortOrder,
 			&i.PersonaID,
@@ -379,7 +372,7 @@ func (q *Queries) ListContentCampaignItemsByCampaign(ctx context.Context, campai
 }
 
 const listContentCampaigns = `-- name: ListContentCampaigns :many
-SELECT id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
+SELECT id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at FROM content_campaigns
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -402,7 +395,6 @@ func (q *Queries) ListContentCampaigns(ctx context.Context, arg ListContentCampa
 		var i ContentCampaign
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Name,
 			&i.Prompt,
 			&i.Status,
@@ -436,7 +428,7 @@ SET status = $1,
  review_id = COALESCE($4, review_id),
  error_message = $5
 WHERE id = $6
-RETURNING id, tenant_id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
+RETURNING id, campaign_id, sort_order, persona_id, content_type, topic_prompt, title, target_space_id, target_tags, status, studio_job_id, content_id, review_id, error_message, created_at
 `
 
 type UpdateContentCampaignItemParams struct {
@@ -460,7 +452,6 @@ func (q *Queries) UpdateContentCampaignItem(ctx context.Context, arg UpdateConte
 	var i ContentCampaignItem
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.CampaignID,
 		&i.SortOrder,
 		&i.PersonaID,
@@ -485,7 +476,7 @@ SET status = $1,
  plan_json = COALESCE($2, plan_json),
  updated_at = now()
 WHERE id = $3
-RETURNING id, tenant_id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
+RETURNING id, name, prompt, status, content_type, requested_count, persona_pool, auto_provision_personas, auto_assign, target_space_id, target_tags, plan_json, created_by, created_at, updated_at
 `
 
 type UpdateContentCampaignStatusParams struct {
@@ -499,7 +490,6 @@ func (q *Queries) UpdateContentCampaignStatus(ctx context.Context, arg UpdateCon
 	var i ContentCampaign
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Name,
 		&i.Prompt,
 		&i.Status,

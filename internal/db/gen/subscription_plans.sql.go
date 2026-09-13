@@ -43,7 +43,7 @@ func (q *Queries) CountTracksForPlan(ctx context.Context, planID pgtype.UUID) (i
 
 const createSubscriptionPlan = `-- name: CreateSubscriptionPlan :one
 INSERT INTO subscription_plans (slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, tier) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''))
-RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
+RETURNING id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
 
 type CreateSubscriptionPlanParams struct {
@@ -77,7 +77,6 @@ func (q *Queries) CreateSubscriptionPlan(ctx context.Context, arg CreateSubscrip
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -106,7 +105,7 @@ func (q *Queries) DeleteSubscriptionPlan(ctx context.Context, id pgtype.UUID) er
 }
 
 const getSubscriptionPlanByID = `-- name: GetSubscriptionPlanByID :one
-SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
+SELECT id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
 WHERE id = $1
 `
 
@@ -115,7 +114,6 @@ func (q *Queries) GetSubscriptionPlanByID(ctx context.Context, id pgtype.UUID) (
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -134,7 +132,7 @@ func (q *Queries) GetSubscriptionPlanByID(ctx context.Context, id pgtype.UUID) (
 }
 
 const getSubscriptionPlanBySlug = `-- name: GetSubscriptionPlanBySlug :one
-SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
+SELECT id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
 WHERE slug = $1
 `
 
@@ -143,7 +141,6 @@ func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, slug string) (S
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,
@@ -180,7 +177,7 @@ func (q *Queries) IsTrackInPlan(ctx context.Context, arg IsTrackInPlanParams) (i
 }
 
 const listActiveSubscriptionPlans = `-- name: ListActiveSubscriptionPlans :many
-SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
+SELECT id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
 WHERE status = 'active'
 ORDER BY sort_order ASC, created_at ASC
 `
@@ -196,7 +193,6 @@ func (q *Queries) ListActiveSubscriptionPlans(ctx context.Context) ([]Subscripti
 		var i SubscriptionPlan
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Slug,
 			&i.Name,
 			&i.Description,
@@ -222,7 +218,7 @@ func (q *Queries) ListActiveSubscriptionPlans(ctx context.Context) ([]Subscripti
 }
 
 const listSubscriptionPlans = `-- name: ListSubscriptionPlans :many
-SELECT id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
+SELECT id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier FROM subscription_plans
 
 ORDER BY sort_order ASC, created_at ASC
 `
@@ -238,7 +234,6 @@ func (q *Queries) ListSubscriptionPlans(ctx context.Context) ([]SubscriptionPlan
 		var i SubscriptionPlan
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.Slug,
 			&i.Name,
 			&i.Description,
@@ -330,7 +325,7 @@ SET
  tier = COALESCE(NULLIF($11, ''), tier),
  updated_at = now()
 WHERE id = $12
-RETURNING id, tenant_id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
+RETURNING id, slug, name, description, features, monthly_amount, yearly_amount, currency, highlighted, sort_order, status, created_at, updated_at, tier
 `
 
 type UpdateSubscriptionPlanParams struct {
@@ -366,7 +361,6 @@ func (q *Queries) UpdateSubscriptionPlan(ctx context.Context, arg UpdateSubscrip
 	var i SubscriptionPlan
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.Slug,
 		&i.Name,
 		&i.Description,

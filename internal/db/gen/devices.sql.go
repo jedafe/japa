@@ -33,7 +33,7 @@ func (q *Queries) DeregisterDeviceToken(ctx context.Context, arg DeregisterDevic
 
 const getActiveDeviceTokensForUser = `-- name: GetActiveDeviceTokensForUser :many
 
-SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
+SELECT id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
 WHERE user_id = $1 AND is_active = true
 ORDER BY last_used_at DESC
 `
@@ -52,7 +52,6 @@ func (q *Queries) GetActiveDeviceTokensForUser(ctx context.Context, userID pgtyp
 		var i DeviceToken
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.DeviceID,
 			&i.Token,
@@ -75,7 +74,7 @@ func (q *Queries) GetActiveDeviceTokensForUser(ctx context.Context, userID pgtyp
 
 const getDeviceTokenByDeviceID = `-- name: GetDeviceTokenByDeviceID :one
 
-SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
+SELECT id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
 WHERE device_id = $1 AND is_active = true
 `
 
@@ -87,7 +86,6 @@ func (q *Queries) GetDeviceTokenByDeviceID(ctx context.Context, deviceID string)
 	var i DeviceToken
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DeviceID,
 		&i.Token,
@@ -103,7 +101,7 @@ func (q *Queries) GetDeviceTokenByDeviceID(ctx context.Context, deviceID string)
 
 const listUserDeviceTokens = `-- name: ListUserDeviceTokens :many
 
-SELECT id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
+SELECT id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at FROM device_tokens
 WHERE user_id = $1
  AND ($2::boolean = false OR is_active = true)
 ORDER BY created_at DESC
@@ -128,7 +126,6 @@ func (q *Queries) ListUserDeviceTokens(ctx context.Context, arg ListUserDeviceTo
 		var i DeviceToken
 		if err := rows.Scan(
 			&i.ID,
-			&i.TenantID,
 			&i.UserID,
 			&i.DeviceID,
 			&i.Token,
@@ -197,7 +194,7 @@ DO UPDATE SET
  is_active = true,
  last_used_at = now(),
  updated_at = now()
-RETURNING id, tenant_id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at
+RETURNING id, user_id, device_id, token, platform, app_version, is_active, last_used_at, created_at, updated_at
 `
 
 type UpsertDeviceTokenParams struct {
@@ -226,7 +223,6 @@ func (q *Queries) UpsertDeviceToken(ctx context.Context, arg UpsertDeviceTokenPa
 	var i DeviceToken
 	err := row.Scan(
 		&i.ID,
-		&i.TenantID,
 		&i.UserID,
 		&i.DeviceID,
 		&i.Token,
