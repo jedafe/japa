@@ -42,7 +42,7 @@ type Client struct {
 	TenantID       string
 	Send           chan []byte
 	SpaceIDs       map[string]bool                    // subscribed spaces
-	SessionChecker func(userID, tenantID string) bool // BUG-018: re-validate session on pong
+	SessionChecker func(userID string) bool // BUG-018: re-validate session on pong
 }
 
 // WSEvent is the envelope for all WebSocket messages.
@@ -114,7 +114,7 @@ func (h *Hub) Unregister(client *Client) {
 // Caller must hold h.mu.
 func (h *Hub) removeSpaceSubscriptionsLocked(client *Client) {
 	for spaceID := range client.SpaceIDs {
-		key := spaceSubscriptionKey(client.TenantID, spaceID)
+		key := spaceSubscriptionKey(spaceID)
 		if subs, ok := h.spaceSubscribers[key]; ok {
 			delete(subs, client)
 
@@ -173,29 +173,26 @@ func (h *Hub) deliverLocalUser(userID string, event WSEvent) {
 }
 
 // BroadcastToSpace sends an event to all subscribers of a space on this
-// instance and publishes to Valkey for delivery on other instances. The
-// subscription is scoped to tenantID so cross-tenant space ID collisions
-// cannot leak events (Rule 4: tenant-scoped).
-func (h *Hub) BroadcastToSpace(tenantID, spaceID string, event WSEvent) {
-	h.deliverLocalSpace(tenantID, spaceID, event)
+// instance and publishes to Valkey for delivery on other instances.
+func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
+	h.deliverLocalSpace(spaceID, event)
 
 	h.mu.RLock()
 	bridge := h.pubsub
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.Publish(event, "", tenantID, spaceID)
+		bridge.Publish(event, "", "", spaceID)
 	}
 }
 
 // deliverLocalSpace sends an event to all subscribers of a space connected
 // to THIS instance only. It does NOT publish to Valkey — see
-// deliverLocalUser for the loop-safety rationale. The subscription key is
-// scoped to tenantID (Rule 4: tenant-scoped).
-func (h *Hub) deliverLocalSpace(tenantID, spaceID string, event WSEvent) {
+// deliverLocalUser for the loop-safety rationale.
+func (h *Hub) deliverLocalSpace(spaceID string, event WSEvent) {
 	h.mu.RLock()
 
-	subs, ok := h.spaceSubscribers[spaceSubscriptionKey(tenantID, spaceID)]
+	subs, ok := h.spaceSubscribers[spaceSubscriptionKey(spaceID)]
 	if !ok {
 		h.mu.RUnlock()
 		return
@@ -345,7 +342,7 @@ func (h *Hub) SubscribeToSpace(client *Client, spaceID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	key := spaceSubscriptionKey(client.TenantID, spaceID)
+	key := spaceSubscriptionKey(spaceID)
 
 	if h.spaceSubscribers[key] == nil {
 		h.spaceSubscribers[key] = make(map[*Client]struct{})
@@ -361,7 +358,7 @@ func (h *Hub) UnsubscribeFromSpace(client *Client, spaceID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	key := spaceSubscriptionKey(client.TenantID, spaceID)
+	key := spaceSubscriptionKey(spaceID)
 
 	if subs, ok := h.spaceSubscribers[key]; ok {
 		delete(subs, client)
@@ -374,8 +371,7 @@ func (h *Hub) UnsubscribeFromSpace(client *Client, spaceID string) {
 	delete(client.SpaceIDs, spaceID)
 }
 
-// spaceSubscriptionKey builds the map key for a space subscription, scoped by
-// tenant_id so cross-tenant space ID collisions cannot leak events.
-func spaceSubscriptionKey(tenantID, spaceID string) string {
-	return tenantID + ":" + spaceID
+// spaceSubscriptionKey builds the map key for a space subscription.
+func spaceSubscriptionKey(spaceID string) string {
+	return spaceID
 }

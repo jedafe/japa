@@ -43,7 +43,7 @@ type Handlers struct {
 	vkClient       *valkey.Client
 	keyRotation    *auth.KeyRotation
 	spamPipeline   *spam.SpamPipeline
-	sessionChecker func(userID, tenantID string) bool // BUG-018
+	sessionChecker func(userID string) bool // BUG-018
 }
 
 // NewHandlers creates Handlers with the given dependencies.
@@ -66,7 +66,7 @@ func (h *Handlers) SetSpamPipeline(p *spam.SpamPipeline) {
 // WebSocket connections on each pong (BUG-018). The checker returns false if
 // the user's session has been revoked, the user has been banned, or the
 // account has been suspended/deleted.
-func (h *Handlers) SetSessionChecker(checker func(userID, tenantID string) bool) {
+func (h *Handlers) SetSessionChecker(checker func(userID string) bool) {
 	h.sessionChecker = checker
 }
 
@@ -229,7 +229,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Send presence event to the caller's tenant only. Broadcasting to all
 	// connected clients would leak presence across tenant boundaries (Rule 4:
 	// tenant-scoped, §5.3 cross-tenant leak prevention).
-	h.hub.BroadcastToTenant(tenantID.String(), WSEvent{
+	h.hub.BroadcastToTenant("", WSEvent{
 		Type:    EventPresence,
 		Payload: map[string]interface{}{"user_id": userID.String(), "status": "online"},
 	})
@@ -257,7 +257,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 		// without this counterpart, other users see the user as online
 		// indefinitely after disconnect (§11 presence tracking).
 		if !c.Hub.IsUserOnline(c.UserID) {
-			c.Hub.BroadcastToTenant(c.TenantID, WSEvent{
+			c.Hub.BroadcastToTenant("", WSEvent{
 				Type: EventPresence,
 				Payload: map[string]interface{}{
 					"user_id": c.UserID,
@@ -278,7 +278,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 		// If the user has been banned, suspended, or their account deleted
 		// mid-connection, close the socket so it does not stay live with
 		// stale credentials.
-		if c.SessionChecker != nil && !c.SessionChecker(c.UserID, c.TenantID) {
+		if c.SessionChecker != nil && !c.SessionChecker(c.UserID) {
 			slog.Info("ws session invalidated, closing connection", "user_id", c.UserID)
 			return websocket.ErrCloseSent
 		}
@@ -378,10 +378,7 @@ func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
 		return
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(c.TenantID); err != nil {
-		return
-	}
+	tenantID := pgtype.UUID{}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(c.UserID); err != nil {
