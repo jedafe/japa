@@ -69,7 +69,7 @@ func (s *Store) getSidebarByID(ctx context.Context, id, tenantID pgtype.UUID) (g
 func (s *Store) createSidebar(ctx context.Context, p gen.CreateSidebarParams) (gen.Sidebar, error) {
 	row, err := s.write.CreateSidebar(ctx, p)
 	if err != nil {
-		// Map the unique violation on (, app, position, slug) to
+		// Map the unique violation on ( app, position, slug) to
 		// ErrDuplicateSlug so the handler returns 409 already_exists instead
 		// of a generic 500. Ref: Section 59 §4; matches the pattern in
 		// internal/tags, internal/content, internal/wallet, etc.
@@ -212,8 +212,8 @@ func (s *Store) listActiveSidebarWidgets(ctx context.Context, tenantID, sidebarI
 
 // SidebarWidgetJSON is the JSON-safe representation of a sidebar widget.
 type SidebarWidgetJSON struct {
-	ID               string         `json:"id"`
-	TenantID         string         
+	ID               string `json:"id"`
+	TenantID         string
 	SidebarID        string         `json:"sidebar_id"`
 	WidgetType       string         `json:"widget_type"`
 	Label            string         `json:"label"`
@@ -231,8 +231,8 @@ type SidebarWidgetJSON struct {
 
 // SidebarJSON is the JSON-safe representation of a sidebar.
 type SidebarJSON struct {
-	ID               string              `json:"id"`
-	TenantID         string              
+	ID               string `json:"id"`
+	TenantID         string
 	App              string              `json:"app"`
 	Position         string              `json:"position"`
 	Slug             string              `json:"slug"`

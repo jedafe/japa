@@ -931,7 +931,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := []FilterExpr{
-		
+
 		Eq{Field: "space_id", Value: spaceID},
 	}
 
@@ -1008,7 +1008,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		Text:     query,
 		Limit:    limit,
 		Filter: andAll(
-			
+
 			Eq{Field: "tag_slugs", Value: tagSlug},
 		),
 		AttributesToRetrieve: searchAttributesToRetrieve,

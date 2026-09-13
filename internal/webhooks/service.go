@@ -273,7 +273,7 @@ func (s *Service) TestEndpoint(ctx context.Context, tenantID, endpointID pgtype.
 		}
 	}
 
-	slog.Info("webhook test delivery created", "delivery_id", deliveryID, "endpoint_id", endpointID, "event_type", eventType, )
+	slog.Info("webhook test delivery created", "delivery_id", deliveryID, "endpoint_id", endpointID, "event_type", eventType)
 
 	return deliveryID, nil
 }

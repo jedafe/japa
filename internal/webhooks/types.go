@@ -62,8 +62,8 @@ type WebhookEndpointWithSecret struct {
 // WebhookEndpointResponse is the JSON-safe representation of a webhook endpoint.
 // The secret is never included (§12: "secret shown once" — only on create).
 type WebhookEndpointResponse struct {
-	ID         string     `json:"id"`
-	TenantID   string     
+	ID         string `json:"id"`
+	TenantID   string
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	EventTypes []string   `json:"event_types"`

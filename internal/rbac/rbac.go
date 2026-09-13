@@ -52,13 +52,13 @@ type Permission struct {
 // Group represents a user group.
 type Group struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID 
-	Name        string      `json:"name"`
-	Slug        string      `json:"slug"`
-	Description string      `json:"description"`
-	IsSystem    bool        `json:"is_system"`
-	MemberCount int32       `json:"member_count"`
-	Permissions []string    `json:"permissions"`
+	TenantID    pgtype.UUID
+	Name        string   `json:"name"`
+	Slug        string   `json:"slug"`
+	Description string   `json:"description"`
+	IsSystem    bool     `json:"is_system"`
+	MemberCount int32    `json:"member_count"`
+	Permissions []string `json:"permissions"`
 }
 
 // UserContext holds a user's groups and their resolved permissions.

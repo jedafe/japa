@@ -133,7 +133,7 @@ type ComparisonItemInput struct {
 // ComparisonCreateResult mirrors comparison.CreateComparisonResult / JCEComparisonResult.
 type ComparisonCreateResult struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID 
+	TenantID   pgtype.UUID
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`
@@ -162,8 +162,8 @@ type ComparisonValueUpsertInput struct {
 // ComparisonDetail mirrors comparison.ComparisonDetail (the subset the AI
 // tools surface to the LLM).
 type ComparisonDetail struct {
-	ID         pgtype.UUID                                `json:"id"`
-	TenantID   pgtype.UUID                                
+	ID         pgtype.UUID `json:"id"`
+	TenantID   pgtype.UUID
 	AuthorID   pgtype.UUID                                `json:"author_id"`
 	Title      string                                     `json:"title"`
 	Slug       string                                     `json:"slug"`
@@ -278,8 +278,8 @@ type LearningStore interface {
 
 // LearningTrack mirrors learning.Track (the subset the AI tools surface).
 type LearningTrack struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description,omitempty"`
@@ -317,8 +317,8 @@ type LearningUpdateTrackInput struct {
 
 // LearningLesson mirrors learning.Lesson (the subset the AI tools surface).
 type LearningLesson struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID
 	ModuleID        pgtype.UUID        `json:"module_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`

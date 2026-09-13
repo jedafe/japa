@@ -42,7 +42,7 @@ func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, tenantID pgt
 	}
 
 	filters := []FilterExpr{
-		
+
 		Eq{Field: "review_status", Value: "published"},
 	}
 

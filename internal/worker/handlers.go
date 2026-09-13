@@ -540,7 +540,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		EventID     string `json:"event_id"`
-		TenantID    string 
+		TenantID    string
 		Status      string `json:"status"` // "succeeded", "failed", "refunded"
 		ProviderRef string `json:"provider_ref"`
 		Provider    string `json:"provider"`
@@ -825,7 +825,7 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, tenant
 	// triggers configured on this form.
 	triggerPayload, _ := json.Marshal(struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string 
+		TenantID     string
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id,omitempty"`
 		FieldValues  []byte `json:"field_values"`
@@ -1025,7 +1025,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		TicketID string `json:"ticket_id"`
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -1245,7 +1245,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		ContentID  string `json:"content_id"`
 		EntityID   string `json:"entity_id"`
 		EntityType string `json:"entity_type"`
-		TenantID   string 
+		TenantID   string
 		Operation  string `json:"operation"`
 	}
 
@@ -1438,7 +1438,7 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
-		TenantID  string 
+		TenantID  string
 		Operation string `json:"operation"` // "resize", "optimize", "thumbnail"
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
@@ -1494,11 +1494,11 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		Prompt          string   `json:"prompt"`
-		Title           string   `json:"title"`
-		Slug            string   `json:"slug"`
-		UserID          string   `json:"user_id"`
-		TenantID        string   
+		Prompt          string `json:"prompt"`
+		Title           string `json:"title"`
+		Slug            string `json:"slug"`
+		UserID          string `json:"user_id"`
+		TenantID        string
 		Audience        string   `json:"audience"`
 		RelatedFeatures []string `json:"related_features"`
 	}
@@ -1545,7 +1545,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 
 	var payload struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string 
+		TenantID     string
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id"` // empty for anonymous submissions
 		FieldValues  []byte `json:"field_values"`
@@ -1691,7 +1691,7 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
-		TenantID   string 
+		TenantID   string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1720,7 +1720,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string 
+		TenantID  string
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -1825,7 +1825,7 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		URL      string `json:"url"`
 		BlockID  string `json:"block_id"`
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1861,7 +1861,7 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 		PackID     string `json:"pack_id"`
 		SourceLang string `json:"source_lang"`
 		TargetLang string `json:"target_lang"`
-		TenantID   string 
+		TenantID   string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1924,7 +1924,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID   string `json:"content_id"`
-		TenantID    string 
+		TenantID    string
 		AuthorID    string `json:"author_id"`
 		SpaceID     string `json:"space_id"`
 		ContentType string `json:"content_type"`
@@ -2174,7 +2174,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string 
+		TenantID  string
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -2250,7 +2250,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 	if studioProcessor != nil {
 		var p struct {
 			JobID    string `json:"job_id"`
-			TenantID string 
+			TenantID string
 		}
 
 		if err := parsePayloadOrSkip(t, &p); err != nil {
@@ -2282,7 +2282,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		JobID       string `json:"job_id"`
-		TenantID    string 
+		TenantID    string
 		PersonaID   string `json:"persona_id"`
 		ContentType string `json:"content_type"`
 		TopicPrompt string `json:"topic_prompt"`
@@ -2314,7 +2314,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 type contentRegenerateFromSourcePayload struct {
 	ContentID     string `json:"content_id"`
 	IntelRecordID string `json:"intel_record_id"`
-	TenantID      string 
+	TenantID      string
 }
 
 // HandleContentRegenerateFromSource rewrites an existing contents row from
@@ -2463,7 +2463,7 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string 
+		TenantID   string
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
 	}
@@ -2535,7 +2535,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		TicketID  string `json:"ticket_id"`
-		TenantID  string 
+		TenantID  string
 		OldStatus string `json:"old_status"`
 		NewStatus string `json:"new_status"`
 	}
@@ -2601,8 +2601,8 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 	var payload struct {
 		UserID   string `json:"user_id"`
 		TrackID  string `json:"track_id"`
-		TenantID string 
-		Progress int    `json:"progress"` // percentage 0-100
+		TenantID string
+		Progress int `json:"progress"` // percentage 0-100
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -2626,7 +2626,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
-		TenantID  string 
+		TenantID  string
 		Operation string `json:"operation"` // "transcode", "thumbnail", "compress"
 	}
 
@@ -2795,7 +2795,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		NewsletterID string `json:"newsletter_id"`
-		TenantID     string 
+		TenantID     string
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -2883,7 +2883,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 // HandleScholarshipSyncFromGuide derives or updates a scholarships projection
 // row from a guide with content_type='guide' and guide_category='scholarship'.
-// It is a no-op for other content types and is idempotent by (, guide_id).
+// It is a no-op for other content types and is idempotent by ( guide_id).
 func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:scholarship:sync_from_guide")
 
@@ -2894,7 +2894,7 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string 
+		TenantID  string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3053,7 +3053,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		UserID   string `json:"user_id"`
-		TenantID string 
+		TenantID string
 		Email    string `json:"email"`
 		Period   string `json:"period"` // "daily", "weekly"
 	}
@@ -3168,7 +3168,7 @@ func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 		BaseURL  string `json:"base_url"`
 	}
 
@@ -3201,7 +3201,7 @@ func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(
 		}
 
 		if baseURL == "" {
-			slog.Warn("task:"+taskName+": no base_url, skipping tenant")
+			slog.Warn("task:" + taskName + ": no base_url, skipping tenant")
 			continue
 		}
 
@@ -3525,7 +3525,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string 
+		TenantID   string
 		CampaignID string `json:"campaign_id"`
 		UserID     string `json:"user_id"`    // may be empty for guest events
 		EventType  string `json:"event_type"` // "impression", "click"
@@ -3576,7 +3576,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 	}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
@@ -3636,7 +3636,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 	}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
@@ -3772,7 +3772,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		SpaceID  string `json:"space_id"`
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3817,7 +3817,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3909,7 +3909,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 		BaseURL  string `json:"base_url"`
 	}
 
@@ -4029,7 +4029,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -4297,7 +4297,7 @@ func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
-		TenantID       string 
+		TenantID       string
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 	}
@@ -4341,7 +4341,7 @@ func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
-		TenantID       string 
+		TenantID       string
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 		BodyPreview    string `json:"body_preview"`
@@ -4750,7 +4750,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
-		TenantID   string 
+		TenantID   string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -4853,7 +4853,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ReportID   string `json:"report_id"`
-		TenantID   string 
+		TenantID   string
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
 		Reason     string `json:"reason"`
@@ -5079,7 +5079,7 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		RedirectID string `json:"redirect_id"`
-		TenantID   string 
+		TenantID   string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -5342,7 +5342,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID    string 
+		TenantID    string
 		InitiatedBy string `json:"initiated_by"`
 	}
 
@@ -5414,7 +5414,7 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		SpaceID  string `json:"space_id"`
-		TenantID string 
+		TenantID string
 	}
 
 	if err := parsePayload(t, &payload); err != nil {

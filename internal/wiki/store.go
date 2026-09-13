@@ -656,7 +656,7 @@ func (s *Store) CreatePageWithRevision(ctx context.Context, tenantID, spaceID, u
 	}
 	defer tx.Rollback(ctx)
 
-	// Insert the page, ignoring duplicate (, space_id, slug).
+	// Insert the page, ignoring duplicate ( space_id, slug).
 	var pageIDResult pgtype.UUID
 	if err := tx.QueryRow(ctx, `
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by) VALUES ($1, $2, $3, $4, $5)

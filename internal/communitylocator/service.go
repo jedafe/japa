@@ -290,7 +290,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 
 	id, err := s.store.CreateOrg(ctx, in)
 	if err != nil {
-		// Detect unique constraint violation on (, slug) and return
+		// Detect unique constraint violation on ( slug) and return
 		// a typed error so the handler can map it to 409 duplicate_slug.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -422,7 +422,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 			aiGeneratedText = text
 		}
 
-		slog.Info("communitylocator: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "org_type", input.OrgType, "prompt_hash", promptHash, )
+		slog.Info("communitylocator: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "org_type", input.OrgType, "prompt_hash", promptHash)
 	}
 
 	slug := slugify(input.Name)

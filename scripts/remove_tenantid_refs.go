@@ -1,4 +1,4 @@
-// go:build ignore
+//go:build ignore
 
 // remove_tenantid_refs removes TenantID key/value pairs from all struct
 // literals and TenantID assignment statements. It does not try to type-check;

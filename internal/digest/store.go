@@ -55,8 +55,8 @@ type DigestEdition struct {
 // EditionRow is the full row shape for digest_editions returned by update
 // and read-back operations. JSON tags keep AI tool payloads snake_case.
 type EditionRow struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID
 	SpaceID      pgtype.UUID        `json:"space_id,omitempty"`
 	Cadence      string             `json:"cadence"`
 	Status       string             `json:"status"`

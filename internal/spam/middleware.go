@@ -52,7 +52,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 			blockType, err := store.GetIPBlockTypeForIP(r.Context(), pgtype.UUID{}, ip)
 			if err != nil {
 				// Log but don't block on check failure — degrade gracefully
-				slog.Warn("ip block check failed", "ip", ip, "error", err, )
+				slog.Warn("ip block check failed", "ip", ip, "error", err)
 				next.ServeHTTP(w, r)
 
 				return
@@ -66,7 +66,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 			// "full" blocks every request immediately. Narrower types are
 			// stored in context so the relevant route group can enforce them.
 			if blockType == BlockTypeFull {
-				slog.Info("blocked request from blocked IP", "ip", ip, "path", r.URL.Path, )
+				slog.Info("blocked request from blocked IP", "ip", ip, "path", r.URL.Path)
 				writeSpamError(w, http.StatusForbidden, "ip_blocked", "Your IP address has been blocked")
 
 				return
@@ -155,7 +155,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			// Get cached censored words (or fetch from DB on miss)
 			words, err := GetCachedCensoredWords(r.Context(), rdb, database)
 			if err != nil {
-				slog.Warn("failed to load censored words for censor middleware", "error", err, )
+				slog.Warn("failed to load censored words for censor middleware", "error", err)
 				// Degrade gracefully — let the request through
 				next.ServeHTTP(w, r)
 
@@ -170,7 +170,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			result := CheckCensoredWords(words, text)
 
 			if result.Blocked {
-				slog.Info("content blocked by censor middleware", "reason", result.FlagReason, "path", r.URL.Path, )
+				slog.Info("content blocked by censor middleware", "reason", result.FlagReason, "path", r.URL.Path)
 				writeSpamError(w, http.StatusForbidden, "content_blocked", result.FlagReason)
 
 				return
@@ -189,7 +189,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 			}
 
 			if result.Flagged {
-				slog.Info("content flagged by censor middleware", "reason", result.FlagReason, "path", r.URL.Path, )
+				slog.Info("content flagged by censor middleware", "reason", result.FlagReason, "path", r.URL.Path)
 			}
 
 			// Store result in context for the handler to inspect

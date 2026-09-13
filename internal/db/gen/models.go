@@ -526,8 +526,8 @@ type BlogSeriesPost struct {
 }
 
 type Booking struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	ServiceID   pgtype.UUID        `json:"service_id"`
 	BookerID    pgtype.UUID        `json:"booker_id"`
 	SlotStart   pgtype.Timestamptz `json:"slot_start"`
@@ -538,8 +538,8 @@ type Booking struct {
 }
 
 type BookingSlot struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	ServiceID   pgtype.UUID        `json:"service_id"`
 	StartTime   pgtype.Timestamptz `json:"start_time"`
 	EndTime     pgtype.Timestamptz `json:"end_time"`
@@ -1558,8 +1558,8 @@ type Enrollment struct {
 }
 
 type ExternalDataSource struct {
-	ID            pgtype.UUID        `json:"id"`
-	TenantID      pgtype.UUID        
+	ID            pgtype.UUID `json:"id"`
+	TenantID      pgtype.UUID
 	Name          string             `json:"name"`
 	SourceType    string             `json:"source_type"`
 	ApiEndpoint   *string            `json:"api_endpoint"`
@@ -2171,8 +2171,8 @@ type MentorReview struct {
 }
 
 type MentorSession struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	MentorID    pgtype.UUID        `json:"mentor_id"`
 	MenteeID    pgtype.UUID        `json:"mentee_id"`
 	Status      string             `json:"status"`
@@ -2209,8 +2209,8 @@ type MentorshipMatch struct {
 }
 
 type MentorshipProfile struct {
-	ID           pgtype.UUID        `json:"id"`
-	TenantID     pgtype.UUID        
+	ID           pgtype.UUID `json:"id"`
+	TenantID     pgtype.UUID
 	UserID       pgtype.UUID        `json:"user_id"`
 	Bio          *string            `json:"bio"`
 	Skills       []byte             `json:"skills"`
@@ -2399,8 +2399,8 @@ type NewsletterCampaign struct {
 }
 
 type NewsletterList struct {
-	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        
+	ID          pgtype.UUID `json:"id"`
+	TenantID    pgtype.UUID
 	Name        string             `json:"name"`
 	Description *string            `json:"description"`
 	IsDefault   bool               `json:"is_default"`

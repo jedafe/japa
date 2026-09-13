@@ -117,7 +117,7 @@ WHERE level = 'country' AND deleted_at IS NULL
 ORDER BY name ASC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, )
+	rows, err := s.pool.Reader.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("checklist: list country spaces: %w", err)
 	}

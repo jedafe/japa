@@ -256,7 +256,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn("registration blocked: breached password", "breach_count", breached.Count, )
+			slog.Warn("registration blocked: breached password", "breach_count", breached.Count)
 			errpkg.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
@@ -289,8 +289,8 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		var pgErr *pgconn.PgError
 		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 		if isDuplicate {
-			// The users table has unique constraints on (, email)
-			// and (, username). Distinguish them when possible.
+			// The users table has unique constraints on ( email)
+			// and ( username). Distinguish them when possible.
 			if pgErr != nil && strings.Contains(pgErr.ConstraintName, "username") {
 				errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
 				return
@@ -1291,7 +1291,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError
 		if errors.As(err, &breached) {
-			slog.Warn("password reset blocked: breached password", "token_prefix", req.Token[:min(8, len(req.Token))], "breach_count", breached.Count, )
+			slog.Warn("password reset blocked: breached password", "token_prefix", req.Token[:min(8, len(req.Token))], "breach_count", breached.Count)
 			errpkg.WriteError(w, http.StatusBadRequest, "password_breached",
 				"This password has appeared in a data breach and cannot be used. Please choose a different password.")
 
@@ -1325,7 +1325,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	if err := CheckPasswordHistory(r.Context(), h.DB, rec.UserID, req.NewPassword, h.Policy); err != nil {
 		var reused *PasswordReusedError
 		if errors.As(err, &reused) {
-			slog.Warn("password reset blocked: reused password", "token_prefix", req.Token[:min(8, len(req.Token))], )
+			slog.Warn("password reset blocked: reused password", "token_prefix", req.Token[:min(8, len(req.Token))])
 			errpkg.WriteError(w, http.StatusBadRequest, "password_reused",
 				"New password cannot be the same as a recent password. Please choose a different password.")
 

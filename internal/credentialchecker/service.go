@@ -656,7 +656,7 @@ Respond with ONLY a JSON object (no markdown fences) in this format:
 		return GeneratePathwayResponse{}, fmt.Errorf("credentialchecker: generate draft: %w", err)
 	}
 
-	slog.Info("credentialchecker: content agent draft created", "pathway_id", id.String(), "profession_id", req.ProfessionID, "ai_model", aiModel, )
+	slog.Info("credentialchecker: content agent draft created", "pathway_id", id.String(), "profession_id", req.ProfessionID, "ai_model", aiModel)
 
 	return GeneratePathwayResponse{
 		Status:             "accepted",

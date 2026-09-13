@@ -67,8 +67,8 @@ const (
 
 // Subscriber represents a newsletter subscriber.
 type Subscriber struct {
-	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        
+	ID              pgtype.UUID `json:"id"`
+	TenantID        pgtype.UUID
 	Email           string             `json:"email"`
 	UserID          *pgtype.UUID       `json:"user_id,omitempty"`
 	Status          string             `json:"status"`
@@ -82,8 +82,8 @@ type Subscriber struct {
 
 // Campaign represents a newsletter campaign.
 type Campaign struct {
-	ID             pgtype.UUID         `json:"id"`
-	TenantID       pgtype.UUID         
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID
 	Name           string              `json:"name"`
 	Subject        string              `json:"subject"`
 	HTML           string              `json:"html"`

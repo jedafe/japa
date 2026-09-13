@@ -969,7 +969,7 @@ func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype
 		return ScoreFactor{}, err
 	}
 
-	// Ensure factor_key is unique for (, comparison_type_id).
+	// Ensure factor_key is unique for ( comparison_type_id).
 	typeID := stringToUUID(ptrString(in.ComparisonTypeID))
 
 	_, err := s.factors.getByKey(ctx, tenantID, typeID, in.FactorKey)

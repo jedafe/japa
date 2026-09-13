@@ -71,7 +71,7 @@ type PersonaInput struct {
 // personaEmail builds a deterministic, tenant-scoped internal email for a
 // persona backing account. These accounts never log in (is_bot = true), so
 // the email is an internal identifier, not a deliverable address. The
-// is embedded to avoid UNIQUE(, email) collisions when
+// is embedded to avoid UNIQUE( email) collisions when
 // two tenants create personas with the same slug (BUG-008).
 func personaEmail(slug string, tenantID pgtype.UUID) string {
 	return fmt.Sprintf("persona+%s+%s@bot.internal", slug, tenantID.String())
@@ -81,8 +81,8 @@ func personaEmail(slug string, tenantID pgtype.UUID) string {
 // names, the decoded activity_policy, and recent actions (§68 spec:
 // "persona detail + activity_policy + recent actions").
 type PersonaDetail struct {
-	ID                  string          `json:"id"`
-	TenantID            string          
+	ID                  string `json:"id"`
+	TenantID            string
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -108,8 +108,8 @@ type PersonaDetail struct {
 // Includes activity stats (total_actions, last_action_at) per §68 spec
 // ("list all personas + activity stats").
 type PersonaListItem struct {
-	ID                  string          `json:"id"`
-	TenantID            string          
+	ID                  string `json:"id"`
+	TenantID            string
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -225,7 +225,7 @@ func (s *Service) ProvisionPersonas(ctx context.Context, tenantID, adminUserID p
 	}
 
 	// Pre-validate duplicate slugs within the batch (BUG-013). Without this,
-	// the second CreatePersonaUser hits a UNIQUE(, email) constraint
+	// the second CreatePersonaUser hits a UNIQUE( email) constraint
 	// violation inside the tx and the admin gets a generic "provisioning
 	// failed" error with no indication of which slug collided.
 	seenSlugs := make(map[string]int, len(inputs))
@@ -696,7 +696,7 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 // PersonaVoice is the API-facing shared persona voice / tone record.
 type PersonaVoice struct {
 	ID          string `json:"id"`
-	TenantID    string 
+	TenantID    string
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
 	Description string `json:"description,omitempty"`

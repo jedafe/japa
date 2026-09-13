@@ -839,7 +839,7 @@ func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID
 		RemindBeforeDays: defaultReminderDays,
 	})
 	if err != nil {
-		// ON CONFLICT (, user_id, guide_id) DO NOTHING returns no
+		// ON CONFLICT ( user_id, guide_id) DO NOTHING returns no
 		// row when the tracker entry already exists; surface the existing
 		// row so a repeat save is idempotent rather than a 400.
 		if errors.Is(err, pgx.ErrNoRows) {

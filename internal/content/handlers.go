@@ -449,7 +449,7 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 
 // enqueueScholarshipSyncFromGuide enqueues the scholarship:sync_from_guide Asynq
 // task when a guide is in the 'scholarship' category. It is a no-op for other
-// content types and is idempotent by (, content_id). Fire-and-forget.
+// content types and is idempotent by ( content_id). Fire-and-forget.
 func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UUID, guideCategory *string) {
 	if h.AsynqClient == nil {
 		return
@@ -2596,8 +2596,8 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 // preserves the raw JSON so clients receive a parsed object (§24 data types,
 // §3.3 contract drift).
 type jsonldTemplateResponse struct {
-	ID          string          `json:"id"`
-	TenantID    string          
+	ID          string `json:"id"`
+	TenantID    string
 	ContentType string          `json:"content_type"`
 	Template    json.RawMessage `json:"template"`
 	IsActive    bool            `json:"is_active"`

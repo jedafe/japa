@@ -679,7 +679,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 			tips = text
 		}
 
-		slog.Info("housingguide: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "accommodation_type", input.AccommodationType, "prompt_hash", promptHash, )
+		slog.Info("housingguide: AI Gateway generated draft", "destination_space_id", input.DestinationSpaceID, "accommodation_type", input.AccommodationType, "prompt_hash", promptHash)
 	}
 
 	aiModel := "content_agent_v1"

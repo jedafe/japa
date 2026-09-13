@@ -723,7 +723,7 @@ LIMIT $%d OFFSET $%d
 
 // RefreshStats recomputes the visa_processing_stats aggregate table from
 // shared, non-deleted visa_timelines and their milestones. For each
-// (, origin_space_id, destination_space_id, visa_category,
+// ( origin_space_id, destination_space_id, visa_category,
 // consulate, month) bucket, computes sample_count, avg_days, median_days,
 // p10_days, p90_days of the processing span (decision or visa_issued
 // milestone occurred_at minus the earliest applied/submitted milestone
@@ -914,8 +914,8 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 	}
 
 	var raws []struct {
-		ID            string  `json:"id"`
-		TenantID      string  
+		ID            string `json:"id"`
+		TenantID      string
 		TimelineID    string  `json:"timeline_id"`
 		MilestoneType string  `json:"milestone_type"`
 		OccurredAt    string  `json:"occurred_at"`

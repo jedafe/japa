@@ -248,7 +248,7 @@ const intelPayloadVersion = "v1"
 type intelSourcePayload struct {
 	Version  string `json:"version"`
 	SourceID string `json:"source_id"`
-	TenantID string 
+	TenantID string
 }
 
 type intelDetectChangesPayload struct {
@@ -256,20 +256,20 @@ type intelDetectChangesPayload struct {
 	SourceID  string `json:"source_id"`
 	RawDocID  string `json:"raw_doc_id"`
 	PriorHash string `json:"prior_hash"`
-	TenantID  string 
+	TenantID  string
 }
 
 type intelExtractPayload struct {
 	Version  string `json:"version"`
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
-	TenantID string 
+	TenantID string
 }
 
 type intelRecordPayload struct {
 	Version        string `json:"version"`
 	RecordID       string `json:"record_id"`
-	TenantID       string 
+	TenantID       string
 	ReviewerUserID string `json:"reviewer_user_id,omitempty"` // INTEL-026: set on approve, empty on auto-publish
 }
 
@@ -278,14 +278,14 @@ type intelPostPublishPayload struct {
 	RecordID   string `json:"record_id"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string 
+	TenantID   string
 }
 
 type intelNotifyPayload struct {
 	Version    string `json:"version"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string 
+	TenantID   string
 }
 
 // ---------------------------------------------------------------------------

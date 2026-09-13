@@ -68,7 +68,7 @@ func (s *Service) SetCache(c ValkeyCache) { s.cache = c }
 const ragQueryCacheTTL = 10 * time.Minute
 
 // ragQueryCacheKey builds the Valkey key for a cached retrieval result.
-// The hash is over (, query_embedding, language, top_k, geo_space_id)
+// The hash is over ( query_embedding, language, top_k, geo_space_id)
 // so identical queries hit the cache. geo_space_id is included so a
 // geo-filtered retrieval and an unfiltered retrieval never share a cache
 // entry (§103 Geo-Filtered RAG amendment to §69).

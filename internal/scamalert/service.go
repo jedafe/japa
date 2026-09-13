@@ -578,7 +578,7 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 	if status == "confirmed" && s.enqueuer != nil {
 		payload, err := json.Marshal(struct {
 			ReportID string `json:"report_id"`
-			TenantID string 
+			TenantID string
 		}{
 			ReportID: id.String(),
 		})
@@ -672,7 +672,7 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 	// baseline; the wallet service deduplicates via idempotency key.
 	if s.enqueuer != nil && reporterID.Valid {
 		payload, err := json.Marshal(struct {
-			TenantID    string 
+			TenantID    string
 			UserID      string `json:"user_id"`
 			Points      int64  `json:"points"`
 			Reason      string `json:"reason"`

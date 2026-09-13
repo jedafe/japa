@@ -66,7 +66,7 @@ type StandardDTO struct {
 // SessionDTO is the API response shape for a single CV format session.
 type SessionDTO struct {
 	ID                 string `json:"id"`
-	TenantID           string 
+	TenantID           string
 	UserID             string `json:"user_id"`
 	OriginSpaceID      string `json:"origin_space_id,omitempty"`
 	DestinationSpaceID string `json:"destination_space_id"`

@@ -32,13 +32,13 @@ func TestLiveEngine(t *testing.T) {
 		t.Fatalf("Health: %v", err)
 	}
 
-	// Dedicated throwaway index — never touch real tenant data.
+	// Dedicated throwaway index.
 	const idx = "__engine_smoke"
 
 	if err := engine.EnsureIndex(ctx, IndexSchema{
 		UID:                  idx,
 		PrimaryKey:           "id",
-		FilterableAttributes: []string{"tenant_id", "relevant_countries", "review_status", "audience"},
+		FilterableAttributes: []string{"relevant_countries", "review_status", "audience"},
 		SortableAttributes:   []string{"created_at"},
 	}); err != nil {
 		t.Fatalf("EnsureIndex: %v", err)
@@ -61,7 +61,6 @@ func TestLiveEngine(t *testing.T) {
 
 	doc := map[string]any{
 		"id":                 "smoke-1",
-		"tenant_id":          "tenant-smoke",
 		"title":              "smoke test document",
 		"excerpt":            "hello world",
 		"url":                "/smoke",
@@ -84,13 +83,12 @@ func TestLiveEngine(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Single-index search with the tenant + geo filter shape.
+	// Single-index search with the geo filter shape.
 	res, err := engine.Search(ctx, idx, Query{
 		IndexUID: idx,
 		Text:     "smoke",
 		Limit:    10,
 		Filter: andAll(
-			
 			orAny(
 				IsEmpty{Field: "relevant_countries"},
 				Eq{Field: "relevant_countries", Value: "NG"},
@@ -114,7 +112,6 @@ func TestLiveEngine(t *testing.T) {
 		IndexUID: idx,
 		Text:     "smoke",
 		Filter: andAll(
-			
 			orAny(
 				IsEmpty{Field: "relevant_countries"},
 				Eq{Field: "relevant_countries", Value: "JP"},
@@ -134,7 +131,6 @@ func TestLiveEngine(t *testing.T) {
 			IndexUID: idx,
 			Text:     "smoke",
 			Filter: andAll(
-				
 				Eq{Field: "review_status", Value: "published"},
 				In{Field: "audience", Values: []string{"member", "public"}},
 			),
@@ -142,7 +138,7 @@ func TestLiveEngine(t *testing.T) {
 		{
 			IndexUID: idx,
 			Text:     "smoke",
-			Filter:   
+			Filter:   Eq{Field: "review_status", Value: "draft"},
 		},
 	})
 	if err != nil {
@@ -155,7 +151,7 @@ func TestLiveEngine(t *testing.T) {
 		t.Errorf("first result: IndexUID=%q hits=%d, want %q/1", multi[0].IndexUID, len(multi[0].Hits), idx)
 	}
 	if len(multi[1].Hits) != 0 {
-		t.Errorf("second result hits = %d, want 0 (wrong tenant)", len(multi[1].Hits))
+		t.Errorf("second result hits = %d, want 0 (mismatched filter)", len(multi[1].Hits))
 	}
 
 	// Hit.DecodeInto on a real engine hit.
@@ -170,14 +166,14 @@ func TestLiveEngine(t *testing.T) {
 	}
 	// Deletion is async — poll until the document is gone.
 	for range 50 {
-		r, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: })
+		r, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke"})
 		if err == nil && len(r.Hits) == 0 {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	res3, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke", Filter: })
+	res3, err := engine.Search(ctx, idx, Query{IndexUID: idx, Text: "smoke"})
 	if err != nil {
 		t.Fatalf("post-delete Search: %v", err)
 	}

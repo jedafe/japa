@@ -318,7 +318,7 @@ func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (stri
 // it iterates all active tenants. When spaceID is valid, the edition is
 // scoped to that Space; otherwise it is tenant-wide.
 // // This method satisfies the worker.DigestProcessor interface. It is
-// idempotent per (, space_id, cadence, week) — a duplicate
+// idempotent per ( space_id, cadence, week) — a duplicate
 // generate within the same week overwrites the existing draft rather than
 // creating a second one (the admin review window handles the rest).
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
