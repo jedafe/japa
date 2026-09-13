@@ -355,7 +355,7 @@ func (s *Service) DeliverWebhook(ctx context.Context, deliveryID [16]byte) error
 
 	// Delivery failed. If retries remain, record 'retrying' with next_attempt_at
 	// and return an error so Asynq re-enqueues (BUG-017).
-	//nolint:gosec // G115: bounded
+	// nolint:gosec // G115: bounded
 	if attempt < int32(maxAttempts) { // #nosec //nolint:gosec // G115: bounded
 		nextAttempt := time.Now().Add(backoffDuration(int(attempt)))
 		errMsg := deliverErr.Error()
@@ -470,8 +470,7 @@ func (s *Service) CreateDelivery(ctx context.Context, tenantID, endpointID, even
 // creates a pending delivery row and enqueues the Asynq webhook_delivery
 // task. This is the canonical entry point for feature services to fire
 // outgoing webhooks (Section 12).
-//
-// Ref: japaconnect-engineering/sections/12-webhooks.md.
+// // Ref: japaconnect-engineering/sections/12-webhooks.md.
 func (s *Service) EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
 	endpoints, err := s.store.ListEndpoints(ctx, tenantID)
 	if err != nil {

@@ -262,12 +262,11 @@ func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUI
 
 // ProcessEnrollment is the idempotent handler for university:process_enrollment.
 // It is called after a course_access payment succeeds. It:
-//  1. Guards against double-credit via HasSplitForPayment (AUDIT-BE-005).
-//  2. Upserts the enrollment row with the payment link.
-//  3. Increments the track's cached total_enrolled counter.
-//  4. Writes an immutable revenue_splits row using the resolved split.
-//
-// The split resolution order is: instructor override → tier default → system
+// 1. Guards against double-credit via HasSplitForPayment (AUDIT-BE-005).
+// 2. Upserts the enrollment row with the payment link.
+// 3. Increments the track's cached total_enrolled counter.
+// 4. Writes an immutable revenue_splits row using the resolved split.
+// // The split resolution order is: instructor override → tier default → system
 // default. Pro-stream enrollments accrue at the configured stream rate with
 // no payment link.
 func (s *Service) ProcessEnrollment(ctx context.Context, tenantID, userID, trackID, paymentID pgtype.UUID, source string, grossKobo int64) error {
@@ -483,7 +482,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, tenantID pgtype.UU
 	periodLabel := periodStart.Format("2006-01-02")
 
 	for _, p := range profiles {
-		// AUDIT-BE-VALKEY-009: read-through cache (jc:university:payout:{tenant_id}:{period}:{instructor_id}).
+		// AUDIT-BE-VALKEY-009: read-through cache (jc:university:payout:{}:{period}:{instructor_id}).
 		cached, err := s.cachedPayoutAccumulator(ctx, tenantID, p.ID, periodLabel, batchByInstructor)
 		if err != nil {
 			slog.Error("university: sum open splits", "instructor_id", p.ID.String(), "error", err)
@@ -723,19 +722,19 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, tr
 // Valkey cache helpers (AUDIT-BE-VALKEY-007/008/009)
 // ---------------------------------------------------------------------------
 
-// instructorProfileCacheKey builds jc:university:{tenant_id}:instructor:{user_id}:profile.
+// instructorProfileCacheKey builds jc:university:{}:instructor:{user_id}:profile.
 // Tenant-scoped to prevent cross-tenant data leakage in multi-tenant deployments (BUG-016).
 func instructorProfileCacheKey(tenantID, userID pgtype.UUID) string {
 	return valkey.MustKey("university:%s:instructor:%s:profile", tenantID.String(), userID.String())
 }
 
-// trackEnrolledCacheKey builds jc:university:{tenant_id}:track:{track_id}:enrolled.
+// trackEnrolledCacheKey builds jc:university:{}:track:{track_id}:enrolled.
 // Tenant-scoped to prevent cross-tenant data leakage (BUG-016).
 func trackEnrolledCacheKey(tenantID, trackID pgtype.UUID) string {
 	return valkey.MustKey("university:%s:track:%s:enrolled", tenantID.String(), trackID.String())
 }
 
-// payoutAccumulatorCacheKey builds jc:university:payout:{tenant_id}:{period}:{instructor_id}.
+// payoutAccumulatorCacheKey builds jc:university:payout:{}:{period}:{instructor_id}.
 func payoutAccumulatorCacheKey(tenantID, instructorID pgtype.UUID, period string) string {
 	return valkey.MustKey("university:payout:%s:%s:%s", tenantID.String(), period, instructorID.String())
 }

@@ -99,8 +99,7 @@ type taskEnqueuer interface {
 // fills and the AI advisor. It is implemented by an adapter in the server
 // package so the jce package does not import the full ai subsystem and create
 // an import cycle.
-//
-// Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.
+// // Ref: docs/superpowers/specs/2026-08-30-jce-subspec-4-design.md §10.
 type aiDispatcher interface {
 	// Generate returns a plain text completion for the given category and prompt.
 	// systemContext is an optional system prompt; model and maxTokens are passed
@@ -133,8 +132,7 @@ type Service struct {
 // NewService creates a JCE service backed by the given dependencies. The
 // scoring engine is constructed via a factory registered by the scoring
 // subpackage when it is linked, which avoids an import cycle.
-//
-// The service does not create its own feature checker; callers must inject
+// // The service does not create its own feature checker; callers must inject
 // one with SetFeatureChecker (usually the shared checker from the server).
 func NewService(
 	database *db.DB,
@@ -194,8 +192,7 @@ func (s *Service) SetDefaultTenant(id pgtype.UUID) {
 }
 
 // Close stops background goroutines owned by the service.
-//
-// The service does not close the injected feature checker; the caller that
+// // The service does not close the injected feature checker; the caller that
 // created the checker is responsible for stopping it.
 func (s *Service) Close() {}
 
@@ -972,7 +969,7 @@ func (s *Service) CreateScoreFactor(ctx context.Context, tenantID, userID pgtype
 		return ScoreFactor{}, err
 	}
 
-	// Ensure factor_key is unique for (tenant_id, comparison_type_id).
+	// Ensure factor_key is unique for (, comparison_type_id).
 	typeID := stringToUUID(ptrString(in.ComparisonTypeID))
 
 	_, err := s.factors.getByKey(ctx, tenantID, typeID, in.FactorKey)

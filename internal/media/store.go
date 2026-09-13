@@ -384,7 +384,7 @@ func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, tenantID, uploaderID
 // QuarantinedMedia holds the full media row including quarantine fields.
 type QuarantinedMedia struct {
 	ID               pgtype.UUID        `json:"id"`
-	TenantID         pgtype.UUID        `json:"tenant_id"`
+	TenantID         pgtype.UUID        
 	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
 	OriginalFilename string             `json:"original_filename"`
 	MimeType         string             `json:"mime_type"`
@@ -428,8 +428,8 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id, tenantID pgtype.
 	return nil
 }
 
-// GetMediaForScan retrieves a media item by ID with its tenant_id.
-// Used by background workers that operate across all tenants — the tenant_id
+// GetMediaForScan retrieves a media item by ID with its .
+// Used by background workers that operate across all tenants — the
 // returned from this read is threaded into subsequent write operations
 // (ConfirmMediaByID, QuarantineMedia) to prevent cross-tenant modification.
 func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaRow, error) {

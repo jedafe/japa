@@ -1,15 +1,12 @@
 // Package japastage implements the Japa Stage Progress Profiles (§87,
 // ADR-095).
-//
-// Each user_profile row carries a japa_stage column tracking where the
+// // Each user_profile row carries a japa_stage column tracking where the
 // member is in their Japan relocation journey (considering → settled), an
 // optional destination space, a visibility toggle, and a jsonb history of
 // stage transitions. The package provides profile reads, stage updates,
 // visibility toggles, and a public directory filtered by stage.
-//
-// Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
-//
-//	japaconnect-engineering/adr/ADR-095-japa-stage-progress-profiles.md
+// // Ref: japaconnect-engineering/sections/87-japa-stage-progress-profiles.md
+// //	japaconnect-engineering/adr/ADR-095-japa-stage-progress-profiles.md
 package japastage
 
 import (
@@ -138,14 +135,12 @@ LIMIT 1
 // japa_stage_is_public (when isPublic is non-nil), and
 // japa_stage_updated_at, and appends a transition record to the
 // japa_stage_history jsonb array. destSpaceID may be NULL to clear it.
-//
-// The upsert (INSERT ... ON CONFLICT DO UPDATE) ensures a user without an
+// // The upsert (INSERT ... ON CONFLICT DO UPDATE) ensures a user without an
 // existing user_profiles row — e.g. a newly registered member who has not
 // yet visited profile settings — can still set their japa stage. CreateUser
 // (auth.sql) only inserts into `users`; no trigger auto-creates the profile
 // row, so a plain UPDATE would affect 0 rows and 404.
-//
-// The history record uses the spec key `set_at` (§87:
+// // The history record uses the spec key `set_at` (§87:
 // `japa_stage_history: [{stage, dest_space_id, set_at}]`); the destination
 // is stored as a `spaces` row (country-level space per ADR-053) because no
 // `geo_countries` table exists.

@@ -1,14 +1,12 @@
 // Package ai — tools_deps.go defines the dependency interfaces and the
 // shared ToolDeps container used by the Phase 4 core tool catalog handlers
 // (Section 103, ADR-111).
-//
-// Each tool handler is a closure over a *ToolDeps, registered with the
+// // Each tool handler is a closure over a *ToolDeps, registered with the
 // ToolHandlerRegistry via RegisterHandler. The interfaces below are the
 // minimal subsets of the real service signatures the handlers call, defined
 // as interfaces so the handlers can be unit-tested with stubs instead of a
 // live database, Meilisearch, or external HTTP API.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tool Catalog Expansion)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 4, tasks 4.01-4.10)
 package ai
 
@@ -59,8 +57,7 @@ type RAGService interface {
 // comparison tools (Phase 7) call. Defined as an interface so handlers can
 // be tested with a stub. The signatures match the real comparison.Service
 // methods 1:1 so the wiring layer can assign the concrete service directly.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 type ComparisonService interface {
 	// Type definitions.
@@ -87,8 +84,7 @@ type ComparisonService interface {
 // advisor tools (analyze, rank, explain, recommend, refresh) call. The
 // adapter in internal/jce implements this interface and converts the typed
 // domain results to map[string]any for the agent.
-//
-// Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
+// // Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine).
 type JCEService interface {
 	Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
@@ -137,7 +133,7 @@ type ComparisonItemInput struct {
 // ComparisonCreateResult mirrors comparison.CreateComparisonResult / JCEComparisonResult.
 type ComparisonCreateResult struct {
 	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID `json:"tenant_id"`
+	TenantID   pgtype.UUID 
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`
@@ -167,7 +163,7 @@ type ComparisonValueUpsertInput struct {
 // tools surface to the LLM).
 type ComparisonDetail struct {
 	ID         pgtype.UUID                                `json:"id"`
-	TenantID   pgtype.UUID                                `json:"tenant_id"`
+	TenantID   pgtype.UUID                                
 	AuthorID   pgtype.UUID                                `json:"author_id"`
 	Title      string                                     `json:"title"`
 	Slug       string                                     `json:"slug"`
@@ -227,8 +223,7 @@ type CacheClient interface {
 // The content.create_draft tool (Phase 8) uses this to force author_id to
 // the persona's backing user rather than the calling user. *personas.Store
 // satisfies this via GetAIPersonaByID. nil disables the draft-request path.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
 // Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id).
 type PersonaResolver interface {
 	// GetPersonaUserID returns the backing users.id for the given persona
@@ -253,8 +248,7 @@ type HITLStore interface {
 // SpacesService is the subset of internal/spaces.Service the Phase 9 space
 // tools call. The signatures match the real spaces.Service methods 1:1 so
 // the wiring layer can assign the concrete service directly.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Space/geo tools).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Space/geo tools).
 type SpacesService interface {
 	FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error)
 	GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
@@ -270,8 +264,7 @@ type SpacesService interface {
 // that would create an import cycle if imported here, so mirror types
 // (LearningTrack, LearningLesson) are defined below and the wiring layer
 // adapts between them.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
 // Ref: japaconnect-engineering/sections/36-learning-platform.md.
 type LearningStore interface {
 	ListTracks(ctx context.Context, tenantID pgtype.UUID) ([]LearningTrack, error)
@@ -286,7 +279,7 @@ type LearningStore interface {
 // LearningTrack mirrors learning.Track (the subset the AI tools surface).
 type LearningTrack struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
+	TenantID    pgtype.UUID        
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description,omitempty"`
@@ -325,7 +318,7 @@ type LearningUpdateTrackInput struct {
 // LearningLesson mirrors learning.Lesson (the subset the AI tools surface).
 type LearningLesson struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
+	TenantID        pgtype.UUID        
 	ModuleID        pgtype.UUID        `json:"module_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
@@ -374,8 +367,7 @@ type LearningReorderEntry struct {
 // call. docs.DocPage and docs.CreateDocPageRequest are docs-package types
 // that would create an import cycle if imported here, so mirror types are
 // defined below.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Docs tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Docs tools)
 // Ref: japaconnect-engineering/sections/44-documentation-system.md.
 type DocsService interface {
 	ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]DocsPage, error)
@@ -434,8 +426,7 @@ type DocsOrganizeEntry struct {
 // MenusService is the subset of internal/menus.Service the Phase 9 menu
 // tools call. menus.CreateMenuItemInput and menus.UpdateMenuItemInput are
 // menus-package types, so mirror types are defined below.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Menu tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Menu tools)
 // Ref: japaconnect-engineering/sections/054-menu-system.md (ADR-054).
 type MenusService interface {
 	ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (MenusListResponse, error)
@@ -488,8 +479,7 @@ type MenusUpdateMenuItemInput struct {
 // UsersService is the subset of internal/users.Service the Phase 9 user
 // tools call. users.UserProfileResponse and users.UpdateProfileRequest are
 // users-package types, so mirror types are defined below.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (User tools).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (User tools).
 type UsersService interface {
 	GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) (*UserProfile, error)
 	UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UserProfileUpdateRequest) error
@@ -523,8 +513,7 @@ type UserProfileUpdateRequest struct {
 // Phase 9 custom field definition tools call. The existing
 // CustomFieldsService (Phase 4) covers field value reads/writes; this
 // interface covers field definition and group CRUD.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Custom field tools).
 type CustomFieldDefsService interface {
 	CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error)
 	UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error)
@@ -536,8 +525,7 @@ type CustomFieldDefsService interface {
 // GuideCategory describes an evergreen guide category (relocation, visa,
 // banking, etc.) and its associated custom field group. This is a mirror
 // type so the ai package does not import internal/customfields directly.
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
 type GuideCategory struct {
 	Slug      string `json:"slug"`
 	Label     string `json:"label"`
@@ -549,8 +537,7 @@ type GuideCategory struct {
 // GuideCategoryService lists admin-configured guide categories for the
 // agent. It is implemented by an adapter in internal/server wrapping
 // customfields.Service.ListGuideCategories.
-//
-// Ref: .jeos/adr/ADR-111-ai-agent-executor.md.
+// // Ref: .jeos/adr/ADR-111-ai-agent-executor.md.
 type GuideCategoryService interface {
 	ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error)
 }
@@ -558,8 +545,7 @@ type GuideCategoryService interface {
 // ContentType describes a JapaConnect content type and the custom field
 // group that holds its structured fields. This is a mirror type so the ai
 // package does not import internal/content directly.
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md.
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md.
 type ContentType struct {
 	ContentType           string `json:"content_type"`
 	Label                 string `json:"label"`
@@ -573,8 +559,7 @@ type ContentType struct {
 // ContentTypesService lists valid content types for the agent. It is
 // implemented by an adapter in internal/server that derives the list from
 // the content package constants and the custom field group assignments.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 type ContentTypesService interface {
 	ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ContentType, error)
 }
@@ -583,8 +568,7 @@ type ContentTypesService interface {
 // Phase 9 content lifecycle tools (delete/list/publish) call. The existing
 // ContentService (Phase 4) covers search/read; this interface covers
 // deletion, type-filtered listing, and status transitions.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools).
 type ContentLifecycleService interface {
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
@@ -598,8 +582,7 @@ type ContentLifecycleService interface {
 // ToolDeps holds the service dependencies every Phase 4 tool handler closes
 // over. A nil field degrades gracefully: the handler returns an error result
 // explaining the dependency is not configured, rather than panicking.
-//
-// ContentCreator and ContentUpdater are function-type bridges (not
+// // ContentCreator and ContentUpdater are function-type bridges (not
 // interfaces on the content.Service) because content.CreateContentInput and
 // content.UpdateContentInput are content-package types — importing
 // internal/content here would create a cycle risk. The wiring layer
@@ -730,8 +713,7 @@ type CampaignService interface {
 // (internal/server) adapts the real per-tool services into this
 // interface so the ai package does not import internal/scholarships,
 // internal/visaroutes, etc.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tools app tools)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Tools app tools)
 // Ref: japaconnect-engineering/sections/78-tools-web-surface.md.
 type ToolsRegistryService interface {
 	// ListTools returns the catalog of available Japa tools with counts.
@@ -760,16 +742,14 @@ type ToolCatalogEntry struct {
 
 // TaskEnqueuer enqueues Asynq tasks from AI agent handlers. The worker
 // package's Enqueuer satisfies this interface.
-//
-// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
+// // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
 type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...any) error
 }
 
 // IntelQuerier loads tenant-scoped intelligence sources and records so
 // agent handlers can validate IDs before enqueueing background work.
-//
-// Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
+// // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelQuerier interface {
 	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
 	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
@@ -779,8 +759,7 @@ type IntelQuerier interface {
 // IntelSourceManager creates and looks up sources for the source.discover
 // workflow. It is satisfied by sources.Service or by a direct gen.Queries
 // adapter.
-//
-// Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
+// // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelSourceManager interface {
 	Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error)
 	GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.IntelSource, error)
@@ -789,8 +768,7 @@ type IntelSourceManager interface {
 // ScholarshipSearchFilters is the argument shape for a scholarship search.
 // It mirrors the filters used by the Scholarship Finder surface (Section 73)
 // so the AI agent tool and the public UI share semantics.
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type ScholarshipSearchFilters struct {
 	Country           string
 	EligibleCountries string
@@ -806,8 +784,7 @@ type ScholarshipSearchFilters struct {
 // ScholarshipSearchResult is a single scholarship record returned to the AI
 // agent. It is intentionally a flat, stable shape independent of the internal
 // scholarships package so the ai package does not import it.
-//
-// Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
+// // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md.
 type ScholarshipSearchResult struct {
 	ID                  string   `json:"id"`
 	GuideID             string   `json:"guide_id"`
@@ -828,8 +805,7 @@ type ScholarshipSearchResult struct {
 
 // ScholarshipSearcher is the subset of the scholarships finder service the
 // scholarship.search AI Agent handler calls.
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type ScholarshipSearcher interface {
 	FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
 }

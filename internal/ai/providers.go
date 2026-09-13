@@ -25,7 +25,7 @@ import (
 // frontend in plaintext — the JSON response uses api_key_masked instead.
 type ProviderConfig struct {
 	ID              pgtype.UUID `json:"id"`
-	TenantID        pgtype.UUID `json:"tenant_id"`
+	TenantID        pgtype.UUID 
 	Name            string      `json:"name"`
 	ProviderType    string      `json:"provider_type"`
 	APIKeyEncrypted string      `json:"-"`              // never serialized to JSON
@@ -315,24 +315,22 @@ func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgt
 
 // NewProviderFromConfig constructs a Provider from a ProviderConfig. The
 // apiKey must be the decrypted plaintext.
-//
-// Supported types:
-//   - "xiaomi": Xiaomi MiMo (uses api-key header, auto-selects base URL from key prefix)
-//   - "openai": Any OpenAI-compatible API with Bearer auth (OpenAI, OpenRouter,
-//     OpenCode Zen, Together AI, LiteLLM, vLLM, Command Code /chat/completions, etc.)
-//   - "groq": Groq Cloud OpenAI-compatible API (https://api.groq.com/openai/v1).
-//   - "ollama": Ollama's OpenAI-compatible endpoint. Local: http://localhost:11434/v1
-//     with any non-empty key (ignored by Ollama). Cloud: https://ollama.com/v1 with
-//     a real Ollama API key from https://ollama.com/settings/keys.
-//   - "anthropic": Anthropic Claude native Messages API (x-api-key header,
-//     /v1/messages endpoint). Also works with Command Code's /messages endpoint.
-//   - "devin": Devin agent API (async session-based, Bearer cog_ token,
-//     polls until session completes)
-//   - "cursor": Cursor Cloud Agents API (async agent-based, Basic auth)
-//   - "perplexity": Perplexity sonar API (OpenAI-compatible, returns citations)
-//   - "custom": Any OpenAI-compatible endpoint
-//
-// "openai", "ollama", and "custom" all use the OpenAIProvider implementation
+// // Supported types:
+// - "xiaomi": Xiaomi MiMo (uses api-key header, auto-selects base URL from key prefix)
+// - "openai": Any OpenAI-compatible API with Bearer auth (OpenAI, OpenRouter,
+// OpenCode Zen, Together AI, LiteLLM, vLLM, Command Code /chat/completions, etc.)
+// - "groq": Groq Cloud OpenAI-compatible API (https://api.groq.com/openai/v1).
+// - "ollama": Ollama's OpenAI-compatible endpoint. Local: http://localhost:11434/v1
+// with any non-empty key (ignored by Ollama). Cloud: https://ollama.com/v1 with
+// a real Ollama API key from https://ollama.com/settings/keys.
+// - "anthropic": Anthropic Claude native Messages API (x-api-key header,
+// /v1/messages endpoint). Also works with Command Code's /messages endpoint.
+// - "devin": Devin agent API (async session-based, Bearer cog_ token,
+// polls until session completes)
+// - "cursor": Cursor Cloud Agents API (async agent-based, Basic auth)
+// - "perplexity": Perplexity sonar API (OpenAI-compatible, returns citations)
+// - "custom": Any OpenAI-compatible endpoint
+// // "openai", "ollama", and "custom" all use the OpenAIProvider implementation
 // since they share the OpenAI Chat Completions API format. "anthropic" has a
 // dedicated AnthropicProvider for the native Messages API. "devin" has a
 // dedicated DevinProvider that wraps the async session flow.
@@ -348,14 +346,13 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 	case "openai", "ollama", "custom", "groq":
 		// All OpenAI-compatible providers use the same implementation.
 		// The base URL and model differentiate them:
-		//   - OpenAI:       https://api.openai.com/v1
-		//   - OpenRouter:   https://openrouter.ai/api/v1
-		//   - Groq:         https://api.groq.com/openai/v1
-		//   - OpenCode Zen: (admin-configured base URL)
-		//   - Ollama:       http://localhost:11434/v1 or https://ollama.com/v1 (Cloud)
-		//   - Command Code: https://api.commandcode.ai/provider/v1
-		//
-		// Validate the admin-supplied base URL before constructing the
+		// - OpenAI: https://api.openai.com/v1
+		// - OpenRouter: https://openrouter.ai/api/v1
+		// - Groq: https://api.groq.com/openai/v1
+		// - OpenCode Zen: (admin-configured base URL)
+		// - Ollama: http://localhost:11434/v1 or https://ollama.com/v1 (Cloud)
+		// - Command Code: https://api.commandcode.ai/provider/v1
+		// // Validate the admin-supplied base URL before constructing the
 		// provider. validateEndpointAllowHTTP permits HTTP for local
 		// proxies (Ollama at http://localhost:11434) while still enforcing
 		// a valid http(s) scheme, non-empty host, and rejecting HTTPS to
@@ -400,7 +397,7 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 	case "devin":
 		// Devin agent API — async session-based, wraps create+poll into Send().
 		// Base URL must include the org path:
-		//   https://api.devin.ai/v3/organizations/org-abc123
+		// https://api.devin.ai/v3/organizations/org-abc123
 		if cfg.BaseURL != "" {
 			if err := validateEndpointAllowHTTP(cfg.BaseURL); err != nil {
 				return nil, fmt.Errorf("ai: invalid base URL for devin provider: %w", err)
@@ -446,8 +443,7 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 // Providers are sorted by priority within each category (lower priority
 // value = tried first). Categories that have no DB-backed providers are
 // left untouched (so env-var-registered providers from startup remain).
-//
-// This is called at startup (after env-var providers are registered) and
+// // This is called at startup (after env-var providers are registered) and
 // on hot-reload when a provider config is created/updated/deleted.
 func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher, tenantID pgtype.UUID) error {
 	providers, err := store.ListProviders(ctx, tenantID)

@@ -1,6 +1,5 @@
 // Package advertising — HTTP handlers for the Ad Placement system.
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission

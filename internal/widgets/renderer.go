@@ -163,14 +163,13 @@ func widgetConfigBool(config json.RawMessage, key string) bool {
 
 // renderLatestContent returns the most recent published content with flexible
 // filtering. Config options:
-//   - content_type: filter by contents.content_type (e.g. "blog", "job_listing",
-//     "achievement", "discussion"). Empty = all types.
-//   - space_id: filter by contents.space_id. Empty = all spaces.
-//   - featured: if true, only return is_pinned=true contents.
-//   - sort: "recent" (default), "popular" (view_count DESC), "discussed"
-//     (comment_count DESC).
-//
-// This single renderer covers blog_posts, job_listings, and achievements via
+// - content_type: filter by contents.content_type (e.g. "blog", "job_listing",
+// "achievement", "discussion"). Empty = all types.
+// - space_id: filter by contents.space_id. Empty = all spaces.
+// - featured: if true, only return is_pinned=true contents.
+// - sort: "recent" (default), "popular" (view_count DESC), "discussed"
+// (comment_count DESC).
+// // This single renderer covers blog_posts, job_listings, and achievements via
 // the content_type filter, but those also have dedicated first-class
 // renderers for domain-specific enrichment.
 func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawMessage, error) {
@@ -527,14 +526,13 @@ func (r *Renderer) renderCustomHTML(ctx context.Context, w Widget) (json.RawMess
 
 // renderFeaturedContent returns admin-pinned content from content_featured,
 // joined with the full content row. Ref: §14 content_featured table.
-//
-// Config options (same filtering surface as latest_content):
-//   - content_type: filter by contents.content_type (e.g. "blog", "job_listing",
-//     "achievement", "discussion"). Empty = all types.
-//   - space_id: filter by contents.space_id. Empty = all spaces.
-//   - sort: "featured" (default, uses featured_order ASC), "recent"
-//     (published_at DESC), "popular" (view_count DESC), "discussed"
-//     (comment_count DESC).
+// // Config options (same filtering surface as latest_content):
+// - content_type: filter by contents.content_type (e.g. "blog", "job_listing",
+// "achievement", "discussion"). Empty = all types.
+// - space_id: filter by contents.space_id. Empty = all spaces.
+// - sort: "featured" (default, uses featured_order ASC), "recent"
+// (published_at DESC), "popular" (view_count DESC), "discussed"
+// (comment_count DESC).
 func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 	spaceID := widgetConfigSpaceID(w.Config)

@@ -1,14 +1,11 @@
 // Package wiki implements the Destination Wiki (§80, ADR-088).
-//
-// Collaborative, versioned knowledge-base pages attached to each destination
+// // Collaborative, versioned knowledge-base pages attached to each destination
 // country/city Space. Wiki pages are living documents continuously improved
 // by reputation-gated community members. Every edit creates a pending
 // revision that must be approved by a moderator+ before it becomes the
 // current content.
-//
-// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-//
-//	japaconnect-engineering/adr/ADR-088-destination-wiki.md
+// // Ref: japaconnect-engineering/sections/80-destination-wiki.md
+// //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 package wiki
 
 import (
@@ -37,8 +34,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // WikiPage represents a single wiki page row.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiPage struct {
 	ID               pgtype.UUID
 	TenantID         pgtype.UUID
@@ -56,8 +52,7 @@ type WikiPage struct {
 }
 
 // WikiPageWithSpace includes the space slug/name for the wiki index listing.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiPageWithSpace struct {
 	WikiPage
 	SpaceSlug string
@@ -77,8 +72,7 @@ type AdminWikiPageWithSpace struct {
 // WikiDestination is a destination space (country/state/city) that has at least
 // one active wiki page. Region is set on country-level spaces and mirrors the
 // spaces.region value (Africa, Americas, Asia, Europe, Oceania).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiDestination struct {
 	SpaceID   pgtype.UUID
 	Slug      string
@@ -90,8 +84,7 @@ type WikiDestination struct {
 }
 
 // WikiRevision represents a single revision row.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type WikiRevision struct {
 	ID              pgtype.UUID
 	TenantID        pgtype.UUID
@@ -663,7 +656,7 @@ func (s *Store) CreatePageWithRevision(ctx context.Context, tenantID, spaceID, u
 	}
 	defer tx.Rollback(ctx)
 
-	// Insert the page, ignoring duplicate (tenant_id, space_id, slug).
+	// Insert the page, ignoring duplicate (, space_id, slug).
 	var pageIDResult pgtype.UUID
 	if err := tx.QueryRow(ctx, `
 INSERT INTO wiki_pages (space_id, slug, title, category, created_by) VALUES ($1, $2, $3, $4, $5)

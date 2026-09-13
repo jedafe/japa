@@ -1,6 +1,5 @@
 // Package wallet implements the Wallet & Credits System (Section 28).
-//
-// Two-tier internal currency: Points (soft, activity-earned, non-monetary)
+// // Two-tier internal currency: Points (soft, activity-earned, non-monetary)
 // and Credits (spendable, monetary-equivalent). Conversion is one-way only
 // (Points → Credits, never reversed), at a fixed but admin-configurable global rate.
 package wallet
@@ -105,7 +104,7 @@ type Service struct {
 	// payoutProviders holds the configured outbound payout providers for
 	// credit withdrawals (Section 58 Credit Withdrawal amendment).
 	payoutProviders map[string]payout.Provider
-	// cacheInvalidator flushes the jc:wallet:currencies:{tenant_id} cache
+	// cacheInvalidator flushes the jc:wallet:currencies:{} cache
 	// after any currency CRUD operation (Section 58, Rule 4). Optional —
 	// when nil, cache invalidation is skipped (tests).
 	cacheInvalidator CacheInvalidator
@@ -116,7 +115,7 @@ type Service struct {
 
 // CacheInvalidator flushes Valkey cache entries for the wallet currency
 // system (Section 58). The implementation deletes the
-// jc:wallet:currencies:{tenant_id} key after any currency CRUD operation.
+// jc:wallet:currencies:{} key after any currency CRUD operation.
 type CacheInvalidator interface {
 	InvalidateCurrenciesCache(ctx context.Context, tenantID pgtype.UUID) error
 }
@@ -229,8 +228,7 @@ func (s *Service) Store() *Store {
 // AwardPoints credits reward_points to a user's wallet by inserting a
 // ledger entry of type "points" with operation "earn" (BUG-GAMMA-002).
 // Used by the gamification service when a challenge is completed.
-//
-// Follows the AUDIT-BE-005 pattern: acquires a per-user advisory lock,
+// // Follows the AUDIT-BE-005 pattern: acquires a per-user advisory lock,
 // reads the latest balance via the sqlc-generated query, and inserts the
 // ledger entry with a deterministic idempotency key so duplicate calls
 // (e.g. gamination retries) are safe (Rule 9).

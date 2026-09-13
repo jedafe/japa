@@ -1,12 +1,10 @@
 // Package search provides pluggable-engine search for JapaConnect.
-//
-// The client file owns the index catalog and engine bootstrapping. The
+// // The client file owns the index catalog and engine bootstrapping. The
 // engine itself sits behind the Engine port (engine.go); Meilisearch is the
 // only driver today (meili.go). Every index uses "id" (a UUID string) as its
-// primary key and exposes tenant_id as a filterable attribute so searches
+// primary key and exposes as a filterable attribute so searches
 // can be scoped to the requesting tenant — multi-tenancy from day one.
-//
-// Ref: japaconnect-engineering/sections/13-search.md (Search Engine Port)
+// // Ref: japaconnect-engineering/sections/13-search.md (Search Engine Port)
 package search
 
 import (
@@ -48,7 +46,7 @@ var allIndexes = []string{
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
-// for filtering. tenant_id is filterable on every index so searches scope to
+// for filtering. is filterable on every index so searches scope to
 // the requesting tenant.
 var filterableAttributesByIndex = map[string][]string{
 	IndexPosts:             {"tenant_id", "content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
@@ -84,8 +82,7 @@ var sortableAttributesByIndex = map[string][]string{
 // index exists with the correct schema. Meilisearch is the only driver
 // today — the Engine port is the seam for adding another backend later
 // without touching callers.
-//
-// The engine is returned even when it is unreachable: index setup is
+// // The engine is returned even when it is unreachable: index setup is
 // best-effort and failures are logged as warnings. This lets the server
 // boot without a running search engine; the search handler degrades
 // gracefully to empty results and the index sync task skips when the

@@ -4,10 +4,8 @@
 // manages credential_pathways and credential_community_notes via the
 // local Store. Feature-flagged via credential_checker.enabled
 // system_setting (§94).
-//
-// Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
-//
-//	japaconnect-engineering/adr/ADR-102-credential-checker.md
+// // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
+// //	japaconnect-engineering/adr/ADR-102-credential-checker.md
 package credentialchecker
 
 import (
@@ -225,7 +223,7 @@ func (s *Service) GetProfessionBySlug(ctx context.Context, slug string) (Profess
 }
 
 // CreateProfession creates a new credential profession. credential_professions
-// is a global table and ignores the supplied tenant_id.
+// is a global table and ignores the supplied .
 func (s *Service) CreateProfession(ctx context.Context, tenantID pgtype.UUID, input CreateProfessionInput) (ProfessionDTO, error) {
 	if input.Slug == "" {
 		return ProfessionDTO{}, errors.New("slug is required")
@@ -556,8 +554,7 @@ func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pg
 // set from the generation call. It requires HITL approval (ApprovePathway)
 // before publication. Admin-only (credential_checker.manage permission
 // checked at route level). Ref: §20, ADR-088, geo-aware-tool-pattern.md.
-//
-// If no AI provider is registered for the "content_generation" category,
+// // If no AI provider is registered for the "content_generation" category,
 // the method gracefully falls back to placeholder content so the draft
 // can still be created and reviewed manually (§21 stub-degradation).
 func (s *Service) GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req GeneratePathwayRequest) (GeneratePathwayResponse, error) {

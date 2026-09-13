@@ -772,8 +772,7 @@ func (s *Store) CreatePage(ctx context.Context, tenantID, createdBy pgtype.UUID,
 }
 
 // UpdatePage updates an existing page row.
-//
-// Omitted fields are preserved: when the client sends only title+blocks (the
+// // Omitted fields are preserved: when the client sends only title+blocks (the
 // common admin-editor save), description/template_id/theme_id/meta are kept
 // intact via COALESCE. A nil json.RawMessage is passed as SQL NULL so COALESCE
 // falls back to the existing column value; a non-nil RawMessage (including `[]`

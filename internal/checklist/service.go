@@ -3,10 +3,8 @@
 // the required_documents field, per-user progress CRUD, and the optional
 // completion-points reward (wallet:award_points task, Section 28). It reads
 // checklist.* system_settings via the hot-reloadable config.Settings.
-//
-// Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//
-//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+// // Ref: japaconnect-engineering/sections/70-visa-checklist.md
+// //	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (
@@ -43,8 +41,7 @@ type TaskEnqueuer interface {
 // ChecklistItem is a single document requirement rendered as a checkable
 // item. ItemKey is a stable slug derived from the label so that rewording a
 // guide's document label does not orphan saved progress.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type ChecklistItem struct {
 	ItemKey     string `json:"item_key"`
 	Label       string `json:"label"`
@@ -58,8 +55,7 @@ type ChecklistItem struct {
 // ChecklistGuideResult is the payload for GET /checklist/:guide_id — the
 // guide's identity plus its checklist items. Matches the frontend
 // ChecklistGuide type (§70 contract).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type ChecklistGuideResult struct {
 	GuideID string          `json:"guide_id"`
 	Title   string          `json:"title"`
@@ -603,11 +599,10 @@ type rawDocumentItem struct {
 
 // extractDocumentItems parses the required_documents field value into a list
 // of rawDocumentItems. The field supports three storage formats:
-//  1. JSON array of objects: [{"label":"Passport","required":true,"category":"Identity"}, ...]
-//  2. JSON array of strings: ["Bank Statement","Passport Copy", ...] (metadata defaults)
-//  3. Comma/newline/semicolon-separated text: "Bank Statement, Passport Copy"
-//
-// Objects with an "items"/"values"/"options" key wrapping an array are also
+// 1. JSON array of objects: [{"label":"Passport","required":true,"category":"Identity"}, ...]
+// 2. JSON array of strings: ["Bank Statement","Passport Copy", ...] (metadata defaults)
+// 3. Comma/newline/semicolon-separated text: "Bank Statement, Passport Copy"
+// // Objects with an "items"/"values"/"options" key wrapping an array are also
 // handled (some multi_select custom fields use this shape).
 func extractDocumentItems(field VisaGuideField) []rawDocumentItem {
 	if len(field.ValueJSON) > 0 {

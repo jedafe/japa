@@ -150,7 +150,7 @@ func (s *Store) RefreshRevenueStreamsView(ctx context.Context) error {
 
 // CreateSecurityScanResult records a new security scan finding, or refreshes
 // the existing unresolved finding of the same scan_type (upsert by
-// tenant_id + scan_type for unresolved rows) to avoid duplicate findings
+// + scan_type for unresolved rows) to avoid duplicate findings
 // on repeated scans.
 func (s *Store) CreateSecurityScanResult(ctx context.Context, p gen.CreateSecurityScanResultParams) (gen.CreateSecurityScanResultRow, error) {
 	return s.write.CreateSecurityScanResult(ctx, p)

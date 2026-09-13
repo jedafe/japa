@@ -2,13 +2,10 @@
 // (Section 60, ADR-078). Every user gets a unique referral code. Sharing
 // the code earns Credits when the referred user completes their first
 // paid action. Single-level, first-click 30-day attribution, fraud-controlled.
-//
-// The Service also manages the legacy referral_programs admin settings
+// // The Service also manages the legacy referral_programs admin settings
 // (referrer/referee reward cents, max referrals, cookie days).
-//
-// Ref: japaconnect-engineering/sections/60-referral-system.md
-//
-//	japaconnect-engineering/adr/ADR-078-referral-system.md
+// // Ref: japaconnect-engineering/sections/60-referral-system.md
+// //	japaconnect-engineering/adr/ADR-078-referral-system.md
 package referral
 
 import (
@@ -57,7 +54,7 @@ type TaskEnqueuer interface {
 // Program represents the referral program settings for a tenant.
 type Program struct {
 	ID                  pgtype.UUID        `json:"id"`
-	TenantID            pgtype.UUID        `json:"tenant_id"`
+	TenantID            pgtype.UUID        
 	ReferrerRewardCents int32              `json:"referrer_reward_cents"`
 	RefereeRewardCents  int32              `json:"referee_reward_cents"`
 	MaxReferrals        int32              `json:"max_referrals"`
@@ -695,7 +692,7 @@ func (s *Service) AdminListFlagged(ctx context.Context, tenantID pgtype.UUID, pa
 // Referral represents a single referral record (legacy struct for old routes).
 type Referral struct {
 	ID                  pgtype.UUID         `json:"id"`
-	TenantID            pgtype.UUID         `json:"tenant_id"`
+	TenantID            pgtype.UUID         
 	ReferrerID          pgtype.UUID         `json:"referrer_id"`
 	RefereeID           *pgtype.UUID        `json:"referee_id,omitempty"`
 	ReferralCode        string              `json:"referral_code"`

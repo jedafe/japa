@@ -5,8 +5,7 @@
 // scholarships services so the radar reuses the established polymorphic
 // follow table and saved-scholarship tracker rather than introducing
 // parallel tables.
-//
-// Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
+// // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 package handlers
 
 import (
@@ -217,8 +216,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 // back-compat for the legacy `limit` + `page` (1-based) pair. Returns a
 // 1-based page and a clamped page size so callers can compute
 // `offset = (page-1) * limit` unchanged.
-//
-// INTEL-016 fix: default and max page sizes are read from system_settings
+// // INTEL-016 fix: default and max page sizes are read from system_settings
 // (intel.radar.default_page_size, intel.radar.max_page_size) when the
 // handler has a settings reader; otherwise falls back to 20/100.
 func (h *Handlers) parsePagination(r *http.Request) (int, int) {

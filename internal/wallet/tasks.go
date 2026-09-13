@@ -17,7 +17,7 @@ import (
 // ProcessActivityEventPayload holds the payload for the process_activity_event task.
 type ProcessActivityEventPayload struct {
 	EventID  string `json:"event_id"`
-	TenantID string `json:"tenant_id"`
+	TenantID string 
 }
 
 // EnqueueProcessActivityEvent enqueues a task to process an activity event.
@@ -62,7 +62,7 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 // webhook handler when a credit_purchase payment transitions to "succeeded".
 type ProcessCreditPurchasePayload struct {
 	PaymentID      string `json:"payment_id"`
-	TenantID       string `json:"tenant_id"`
+	TenantID       string 
 	UserID         string `json:"user_id"`
 	CreditsToGrant int    `json:"credits_to_grant"`
 	CurrencyCode   string `json:"currency_code"`
@@ -164,12 +164,11 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 // assessment scoring, and scholarship save. The value field is flexible:
 // callers may use either "points" or "amount" — the handler checks both.
 // ledger_type defaults to "points"; referral conversions set "credits".
-//
-// IdempotencyKey is optional. When empty the key is derived from
+// // IdempotencyKey is optional. When empty the key is derived from
 // user_id + reason + reference. Callers that need a cross-reference
 // idempotency scope (e.g. assessment completion per form) should provide one.
 type AwardPointsPayload struct {
-	TenantID       string `json:"tenant_id"`
+	TenantID       string 
 	UserID         string `json:"user_id"`
 	Points         int64  `json:"points"`
 	Amount         int64  `json:"amount"`
@@ -275,7 +274,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 // campaign refund (credit back). The organization_id is resolved to the
 // org owner's user_id for the ledger entry.
 type DeductCreditsPayload struct {
-	TenantID       string `json:"tenant_id"`
+	TenantID       string 
 	OrganizationID string `json:"organization_id"`
 	UserID         string `json:"user_id,omitempty"`
 	Amount         int64  `json:"amount"`

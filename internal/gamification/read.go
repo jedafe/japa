@@ -107,7 +107,7 @@ func periodStartDate(period string) time.Time {
 }
 
 // GetLeaderboard returns the leaderboard for a scope and period. Results are
-// cached in Valkey (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL) at
+// cached in Valkey (jc:leaderboard:{}:{scope}:{period}, 1hr TTL) at
 // the full top-N size; the requested limit slices the cached/queried set.
 // Scope: "global" or "space:{uuid}". Period: "all_time", "monthly", "weekly".
 // Returns ErrGamificationDisabled when gamification.leaderboard_enabled is off.

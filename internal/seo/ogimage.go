@@ -36,7 +36,7 @@ type OGImageHandler struct {
 }
 
 // NewOGImageHandler creates a new OG image handler. The vkClient enables
-// Valkey caching of rendered images (Section 26: key jc:og:{tenant_id}:
+// Valkey caching of rendered images (Section 26: key jc:og:{}:
 // {content_id}, TTL 24h) so repeated fetches don't re-render. The font face
 // is loaded once at construction from the embedded Go Regular font
 // (golang.org/x/image/font/gofont/goregular). If font loading fails the
@@ -114,13 +114,13 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenant
 }
 
 // ogCacheKey builds the tenant-scoped Valkey cache key for an OG image.
-// Pattern: jc:og:{tenant_id}:{content_id} (Section 26, valkey-keys-catalog).
+// Pattern: jc:og:{}:{content_id} (Section 26, valkey-keys-catalog).
 func ogCacheKey(tenantID pgtype.UUID, contentID string) string {
 	return "jc:og:" + tenantID.String() + ":" + contentID
 }
 
 // ServeOGImage generates and serves an OG image for the given content ID.
-// Rendered images are cached in Valkey (key jc:og:{tenant_id}:{content_id},
+// Rendered images are cached in Valkey (key jc:og:{}:{content_id},
 // TTL 24h per Section 26) so repeated fetches by social crawlers don't
 // re-render. If the content is found and indexable, its title is rendered
 // as the main text; otherwise a default brand image is served. Private or

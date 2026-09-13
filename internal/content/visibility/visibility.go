@@ -1,12 +1,10 @@
 // Package visibility defines the shared VisibilityFilter type used by the
 // content service, handlers, and dependent packages to enforce status and
 // visibility gating in SQL queries.
-//
-// It lives in its own package to avoid an import cycle: the ai package needs
+// // It lives in its own package to avoid an import cycle: the ai package needs
 // to pass filters to content service interfaces without importing the content
 // package (which itself imports spam/ai).
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (visibility)
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md (visibility)
 package visibility
 
 import (
@@ -21,8 +19,7 @@ import (
 // enforce status and visibility gating in a single query. A zero-value filter
 // represents an unauthenticated guest: only published, public content is
 // returned.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type VisibilityFilter struct {
 	RequesterID       pgtype.UUID
 	CanSeeUnpublished bool
@@ -49,14 +46,12 @@ func InternalVisibilityFilter(requesterID pgtype.UUID) VisibilityFilter {
 
 // VisibilityFilterFromRequest derives a filter from the authenticated caller
 // and the request's RBAC resolver.
-//
-//   - Authors always see their own content.
-//   - Admins, super-admins, and holders of content.edit_any or
-//     admin.moderation may see all content (unpublished, members, and private).
-//   - Authenticated users may see members content in addition to public.
-//   - Guests may only see published public content.
-//
-//nolint:revive // exported: stutter naming is intentional
+// // - Authors always see their own content.
+// - Admins, super-admins, and holders of content.edit_any or
+// admin.moderation may see all content (unpublished, members, and private).
+// - Authenticated users may see members content in addition to public.
+// - Guests may only see published public content.
+// //nolint:revive // exported: stutter naming is intentional
 func VisibilityFilterFromRequest(r *http.Request) VisibilityFilter {
 	filter := VisibilityFilter{}
 

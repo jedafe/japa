@@ -1,25 +1,23 @@
 // Package ai — handlers.go provides HTTP handlers for the AI Core system.
-//
-// Routes:
-//
-//	POST /api/v1/ai/generate                      — generate AI output via the gateway
-//	POST /api/v1/ai/chat                           — JapaBot conversational AI
-//	POST /api/v1/ai/assist/improve                 — improve writing quality
-//	POST /api/v1/ai/assist/summarize               — summarize text
-//	POST /api/v1/ai/assist/translate               — translate text
-//	POST /api/v1/ai/assist/generate-tags           — generate content tags
-//	POST /api/v1/ai/assist/generate-og             — generate OG metadata
-//	POST /api/v1/ai/hitl                           — create HITL review
-//	GET  /api/v1/ai/hitl/pending                   — list pending reviews
-//	POST /api/v1/ai/hitl/{id}/approve              — approve a review
-//	POST /api/v1/ai/hitl/{id}/reject               — reject a review with reason
-//	GET  /api/v1/ai/conversations                  — list user conversations
-//	GET  /api/v1/ai/conversations/{id}             — get a specific conversation
-//	GET  /api/v1/ai/categories                     — list AI categories
-//	GET  /admin/ai/context/{user_id}               — view user's AI context (Honcho)
-//	DELETE /admin/ai/context/{user_id}/{entry_id}  — delete a specific context entry
-//	GET  /admin/ai/usage                           — aggregated AI usage (Section 20)
-//	GET  /admin/ai/models                          — list available AI models
+// // Routes:
+// //	POST /api/v1/ai/generate — generate AI output via the gateway
+// POST /api/v1/ai/chat — JapaBot conversational AI
+// POST /api/v1/ai/assist/improve — improve writing quality
+// POST /api/v1/ai/assist/summarize — summarize text
+// POST /api/v1/ai/assist/translate — translate text
+// POST /api/v1/ai/assist/generate-tags — generate content tags
+// POST /api/v1/ai/assist/generate-og — generate OG metadata
+// POST /api/v1/ai/hitl — create HITL review
+// GET /api/v1/ai/hitl/pending — list pending reviews
+// POST /api/v1/ai/hitl/{id}/approve — approve a review
+// POST /api/v1/ai/hitl/{id}/reject — reject a review with reason
+// GET /api/v1/ai/conversations — list user conversations
+// GET /api/v1/ai/conversations/{id} — get a specific conversation
+// GET /api/v1/ai/categories — list AI categories
+// GET /admin/ai/context/{user_id} — view user's AI context (Honcho)
+// DELETE /admin/ai/context/{user_id}/{entry_id} — delete a specific context entry
+// GET /admin/ai/usage — aggregated AI usage (Section 20)
+// GET /admin/ai/models — list available AI models
 package ai
 
 import (
@@ -198,8 +196,7 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, tenantID, userID pgty
 // and mutates payload. It writes a 400 error to w and returns false on
 // validation failure. Pass defaultKey as the system_settings key for the
 // tenant/category default (e.g. "ai.model.default.content_generation").
-//
-// Note: assist endpoints (improve, summarize, translate, generate-tags,
+// // Note: assist endpoints (improve, summarize, translate, generate-tags,
 // generate-og, draft) share the "content_generation" category so a single
 // tenant default model can power all content assistant surfaces.
 func (h *Handlers) applyModelAndVoice(
@@ -293,13 +290,12 @@ var aiContextCategories = map[string]string{
 
 // buildUserAIContext assembles the AI context payload for a JapaBot chat
 // request (ADR-025). It merges:
-//  1. Prior persistent memory from Honcho (Section 20) — retrieved via
-//     h.Honcho.GetContext and included as "prior_memory".
-//  2. Per-category site-activity context, gated by the ai.context.* nodes
-//     (ADR-025). Each category is only included when the user holds the
-//     corresponding permission node (all default OFF, including super_admin).
-//
-// Caller-supplied input.Context is merged last (lowest precedence) so the
+// 1. Prior persistent memory from Honcho (Section 20) — retrieved via
+// h.Honcho.GetContext and included as "prior_memory".
+// 2. Per-category site-activity context, gated by the ai.context.* nodes
+// (ADR-025). Each category is only included when the user holds the
+// corresponding permission node (all default OFF, including super_admin).
+// // Caller-supplied input.Context is merged last (lowest precedence) so the
 // server remains the authority over what the AI can see.
 func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgtype.UUID, clientContext map[string]any) map[string]any {
 	out := map[string]any{}
@@ -2183,11 +2179,11 @@ func decodeAIOutput(raw []byte) string {
 
 // HandleCreateHITL creates a new HITL review for AI output. Accepts two
 // request formats:
-//   - Legacy: {content_id, content_type, ai_output} — used when a content row
-//     already exists.
-//   - Admin generator: {content, content_type, source} — used by the admin
-//     "Send to Review" feature which submits generated text directly without
-//     a backing content row (content_id is nullable per migration 000275).
+// - Legacy: {content_id, content_type, ai_output} — used when a content row
+// already exists.
+// - Admin generator: {content, content_type, source} — used by the admin
+// "Send to Review" feature which submits generated text directly without
+// a backing content row (content_id is nullable per migration 000275).
 func (h *Handlers) HandleCreateHITL(w http.ResponseWriter, r *http.Request) {
 	_, ok := requireUser(w, r)
 	if !ok {
@@ -2473,8 +2469,7 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 // search provider (Perplexity, Tavily, or Brave). It is intended for human
 // reviewers to verify a factual claim in a guide, comparison, or other
 // AI-generated content before approval.
-//
-// POST /api/v1/ai/hitl/verify
+// // POST /api/v1/ai/hitl/verify
 // Body: { "claim": "...", "context": "..." }
 // Response: { "data": { "answer": "...", "citations": ["..."], "provider": "perplexity" } }.
 func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {

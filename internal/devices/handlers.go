@@ -1,7 +1,6 @@
 // Package devices implements the Mobile Push / Device Token registration
 // surface (Section 77, ADR-074).
-//
-// Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md
+// // Ref: japaconnect-engineering/sections/77-flutter-mobile-app.md
 package devices
 
 import (

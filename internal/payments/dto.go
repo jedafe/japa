@@ -15,7 +15,7 @@ import (
 // frontend can redirect the user to the provider's checkout page.
 type PaymentAPIResponse struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
+	TenantID       pgtype.UUID        
 	UserID         pgtype.UUID        `json:"user_id"`
 	Provider       string             `json:"provider"`
 	ProviderRef    *string            `json:"provider_ref"`

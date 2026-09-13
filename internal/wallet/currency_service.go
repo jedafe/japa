@@ -96,7 +96,7 @@ func (s *Service) deactivateCurrency(ctx context.Context, code string) error {
 	return nil
 }
 
-// invalidateCurrenciesCache flushes the jc:wallet:currencies:{tenant_id}
+// invalidateCurrenciesCache flushes the jc:wallet:currencies:{}
 // cache after any currency CRUD operation (Section 58, Rule 4). Currencies
 // are platform-wide, so the root tenant ID is used.
 func (s *Service) invalidateCurrenciesCache(ctx context.Context) {
@@ -169,8 +169,7 @@ func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurch
 // purchaseCredits initiates a credit purchase by creating a payments row.
 // The actual wallet crediting happens async via the wallet:process_credit_purchase
 // Asynq task after the payment webhook confirms success.
-//
-// Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
+// // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
 func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.UUID, input PurchaseCreditsInput) (PurchaseCreditsResult, error) {
 	// Killswitch: wallet.credit_purchase_enabled (default true). When false,
 	// the endpoint returns 403 credit_purchase_disabled but spending existing

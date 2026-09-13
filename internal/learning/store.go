@@ -16,7 +16,7 @@ import (
 
 // Store provides direct pgx CRUD for learning tracks, modules, lessons,
 // progress records, and certificates. All queries are tenant-scoped via
-// the tenant_id column and use the shared read/write connection pools.
+// the column and use the shared read/write connection pools.
 type Store struct {
 	read  *gen.Queries
 	write *gen.Queries
@@ -44,7 +44,7 @@ type Track struct {
 	Description *string     `json:"description,omitempty"`
 	Difficulty  string      `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
-	 *  contract (ADR-060). Always equal to Difficulty. */
+	 * contract (ADR-060). Always equal to Difficulty. */
 	Level        string       `json:"level"`
 	CoverMediaID *pgtype.UUID `json:"cover_media_id,omitempty"`
 	IsPublished  bool         `json:"is_published"`
@@ -1504,7 +1504,7 @@ type Enrollment struct {
 	NextLesson       *LessonNavRef `json:"next_lesson,omitempty"`
 }
 
-// EnrollUser creates an enrollment for a user in a track. The tenant_id is
+// EnrollUser creates an enrollment for a user in a track. The is
 // required by the enrollments table FK constraint — omitting it leaves a
 // zero-value UUID that violates enrollments_tenant_id_fkey and surfaces as a
 // 500 db_error.
@@ -1907,12 +1907,11 @@ func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackR
 
 // CheckSubscriptionAccess determines whether a user's active subscription
 // plan grants access to a specific track. Returns (true, planSlug) when:
-//   - the user has an active subscription, AND
-//   - the corresponding subscription_plan either has no entries in
-//     subscription_plan_tracks (meaning ALL tracks — backward compatible
-//     with the Pro = all model) OR explicitly includes the track.
-//
-// Returns (false, "") when the user has no active subscription or the plan
+// - the user has an active subscription, AND
+// - the corresponding subscription_plan either has no entries in
+// subscription_plan_tracks (meaning ALL tracks — backward compatible
+// with the Pro = all model) OR explicitly includes the track.
+// // Returns (false, "") when the user has no active subscription or the plan
 // does not cover the track.
 func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (bool, string) {
 	// 1. Get the user's active subscription plan text (e.g. "pro_monthly").

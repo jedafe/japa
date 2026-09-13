@@ -58,16 +58,14 @@ func freshnessCacheKey(tenantID, contentID pgtype.UUID) string {
 }
 
 // cellFreshness computes a 0–100 freshness score and stale flag for a single comparison value.
-//
-// The score is based on the Sub-spec 4 formula:
-//
-//	base = source_kind_weight / 100
-//	trust = trust_level / 5
-//	age_hours = max(0, now - updated_at).hours - stale_hours
-//	decay = max(0, age_hours) * decay_per_hour
-//	confidence = 1.0 (high), 0.75 (medium or missing), 0.5 (low)
-//	estimate_penalty = 0.85 if is_estimate else 1.0
-//	freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty)
+// // The score is based on the Sub-spec 4 formula:
+// //	base = source_kind_weight / 100
+// trust = trust_level / 5
+// age_hours = max(0, now - updated_at).hours - stale_hours
+// decay = max(0, age_hours) * decay_per_hour
+// confidence = 1.0 (high), 0.75 (medium or missing), 0.5 (low)
+// estimate_penalty = 0.85 if is_estimate else 1.0
+// freshness_score = clamp(0, 100, (100 - decay) * base * trust * confidence * estimate_penalty)
 func (s *Service) cellFreshness(
 	ctx context.Context,
 	v gen.ComparisonValue,
@@ -158,10 +156,9 @@ func (s *Service) cellFreshness(
 }
 
 // FreshnessForComparison computes the freshness summary for a comparison.
-//
-// It loads the comparison matrix, the raw comparison_values rows, and the tenant's
+// // It loads the comparison matrix, the raw comparison_values rows, and the tenant's
 // data sources, resolves a source for each cell, and aggregates per-item and overall
-// scores. The result is cached in Valkey under jc:jce:freshness:{tenant_id}:{content_id}.
+// scores. The result is cached in Valkey under jc:jce:freshness:{}:{content_id}.
 func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
 	// Load the comparison and enforce visibility before reading cache or matrix.
 	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String(), tenantID)

@@ -1,16 +1,12 @@
 // Package personas implements the AI Persona System (Section 68, ADR-068).
-//
-// It provides transactional mass provisioning of AI personas (backing user +
+// // It provides transactional mass provisioning of AI personas (backing user +
 // professional profile byline + ai_personas config row in one tx), CRUD over
 // the config, and an activity-log reader backed by platform_events.
-//
-// The package follows the layered architecture: Store wraps the sqlc-generated
+// // The package follows the layered architecture: Store wraps the sqlc-generated
 // queries with read/write pool separation; Service holds business logic and
 // transaction boundaries; Handlers parse/validate input and render responses.
-//
-// Ref: japaconnect-engineering/sections/68-ai-personas.md
-//
-//	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
+// // Ref: japaconnect-engineering/sections/68-ai-personas.md
+// //	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
 package personas
 
 import (
@@ -26,7 +22,7 @@ import (
 // Store wraps the sqlc-generated queries for ai_personas operations.
 // All writes go through the write pool; all reads through the read pool.
 // Tenant scoping is enforced at the query level (every query filters on
-// tenant_id).
+// ).
 type Store struct {
 	read  *gen.Queries
 	write *gen.Queries

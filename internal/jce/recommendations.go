@@ -10,9 +10,8 @@ import (
 )
 
 // recommendationStore provides persistence for comparison recommendations.
-//
-// NOTE: the generated sqlc queries for comparison_recommendations include
-// tenant_id. The brief signatures omit it, so the store methods below accept
+// // NOTE: the generated sqlc queries for comparison_recommendations include
+// . The brief signatures omit it, so the store methods below accept
 // tenantID as the first parameter to stay consistent with the schema.
 type recommendationStore struct {
 	read  *gen.Queries

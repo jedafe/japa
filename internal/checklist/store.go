@@ -2,10 +2,8 @@
 // (Section 70, ADR-070). Checklist items are extracted from the
 // required_documents custom field on published visa guides — no parallel
 // document data store. Per-user progress is persisted in checklist_progress.
-//
-// Ref: japaconnect-engineering/sections/70-visa-checklist.md
-//
-//	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
+// // Ref: japaconnect-engineering/sections/70-visa-checklist.md
+// //	japaconnect-engineering/adr/ADR-070-visa-document-checklist-generator.md
 package checklist
 
 import (
@@ -50,7 +48,7 @@ type VisaGuideField struct {
 // custom_field_values for the requested field keys (e.g.
 // destination_country, visa_type, required_documents). The query joins
 // contents with custom_field_values + custom_fields so tenancy is enforced
-// transitively via custom_fields.tenant_id (BUG-014 pattern).
+// transitively via custom_fields. (BUG-014 pattern).
 func (s *Store) ListPublishedVisaGuideFields(ctx context.Context, tenantID pgtype.UUID, fieldKeys []string) ([]VisaGuideField, error) {
 	if len(fieldKeys) == 0 {
 		return nil, nil

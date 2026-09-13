@@ -1,19 +1,17 @@
-//go:build integration
+// go:build integration
 
 // Package testdb provides a shared real-Postgres integration-test harness
 // for the JapaConnect backend (ADR-061). It connects to a dedicated
 // japa_test database (never the primary japa database), applies all
 // forward migrations once per test process, and exposes typed seed helpers
 // that give each test its own tenant as a data-isolation boundary — since
-// every store query filters by tenant_id (ADR-004), a fresh tenant per
+// every store query filters by (ADR-004), a fresh tenant per
 // test can never see another test's rows, so tests stay parallel-safe with
 // no truncation or teardown required.
-//
-// All files in this package carry the "integration" build tag and are
+// // All files in this package carry the "integration" build tag and are
 // excluded from the default `go test ./...` run. Execute them with:
-//
-//	make test-integration
-//	go test -tags integration ./...
+// //	make test-integration
+// go test -tags integration ./...
 package testdb
 
 import (
@@ -122,16 +120,14 @@ func resolveDSN() string {
 // from the real connection logic: a hand-rolled net/url.Parse extraction
 // disagrees with pgx on at least two DSN forms that a naive check would
 // wrongly wave through —
-//
-//   - libpq keyword/value DSNs ("host=localhost dbname=japa ..."): the
-//     whole string lands in a URL's Path, never matching "japa" by name,
-//     while pgx correctly resolves Database="japa".
-//   - a `?dbname=` query override on a postgresql:// URL
-//     ("postgresql://.../japa_test?dbname=japa"): pgx's own parser lets the
-//     dbname query parameter override the URL path's database, resolving
-//     to "japa", while a Path-only check would still see "japa_test".
-//
-// Using pgx's parser here closes both gaps because the guard now sees
+// // - libpq keyword/value DSNs ("host=localhost dbname=japa ..."): the
+// whole string lands in a URL's Path, never matching "japa" by name,
+// while pgx correctly resolves Database="japa".
+// - a `?dbname=` query override on a postgresql:// URL
+// ("postgresql://.../japa_test?dbname=japa"): pgx's own parser lets the
+// dbname query parameter override the URL path's database, resolving
+// to "japa", while a Path-only check would still see "japa_test".
+// // Using pgx's parser here closes both gaps because the guard now sees
 // exactly what the connection will see. A non-nil error means the DSN
 // could not be parsed at all — callers must treat that as "unsafe", not
 // "not the primary database".

@@ -1,10 +1,8 @@
 // Package personas — handlers_test.go tests the admin persona HTTP handlers
 // using httptest, plus the high-stakes content gate and activity-policy JSON
 // (de)serialization.
-//
-// Ref: japaconnect-engineering/sections/68-ai-personas.md
-//
-//	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
+// // Ref: japaconnect-engineering/sections/68-ai-personas.md
+// //	japaconnect-engineering/adr/ADR-068-ai-persona-system.md
 package personas
 
 import (
@@ -334,7 +332,7 @@ func TestProvisionPersonas_NeedsDefaultLogic(t *testing.T) {
 // TestProvisionPersonas_DuplicateSlugDetection verifies that the duplicate
 // slug pre-validation catches duplicate slugs within a batch before opening
 // a transaction. Without this check, the second CreatePersonaUser would hit
-// a UNIQUE(tenant_id, email) constraint violation inside the tx, and the
+// a UNIQUE(, email) constraint violation inside the tx, and the
 // admin would get a generic "provisioning failed" error with no indication
 // of which slug collided.
 func TestProvisionPersonas_DuplicateSlugDetection(t *testing.T) {

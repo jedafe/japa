@@ -45,7 +45,7 @@ type SuggestedSpace struct {
 // hierarchy endpoints (/geo/countries, /geo/countries/{code}/states,
 // /geo/states/{id}/cities). It is a stable contract type, independent of
 // sqlc-generated row structs, so regenerating internal/db never changes the
-// API shape and internal fields (tenant_id, perms, wiki_content, etc.) are
+// API shape and internal fields (, perms, wiki_content, etc.) are
 // never leaked to unauthenticated callers.
 type GeoSpace struct {
 	ID            string  `json:"id"`
@@ -75,8 +75,7 @@ func NewHandlers(reader *Reader, spacesService SpacesService) *Handlers {
 // The geoip middleware populates the context on every request,
 // so this endpoint simply reads it back and enriches it with
 // suggested_spaces (deterministic country/city Space matches) and is_vpn.
-//
-// GET /api/v1/geo/me.
+// // GET /api/v1/geo/me.
 func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
@@ -104,8 +103,7 @@ func (h *Handlers) HandleGeoMe(w http.ResponseWriter, r *http.Request) {
 
 // HandleGeoLookup resolves an arbitrary IP address (admin only).
 // Returns the geo data for the given IP query parameter.
-//
-// GET /api/v1/geo/lookup?ip=1.2.3.4.
+// // GET /api/v1/geo/lookup?ip=1.2.3.4.
 func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {
@@ -154,8 +152,7 @@ func (h *Handlers) HandleGeoLookup(w http.ResponseWriter, r *http.Request) {
 // HandleGeoDetect resolves the current request IP to a locale (catalog: GET
 // /geo/detect → {country, state, city}), a narrower projection of the same
 // GeoContext HandleGeoMe returns, without the "suggested spaces" payload.
-//
-// GET /api/v1/geo/detect.
+// // GET /api/v1/geo/detect.
 func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 	geo := FromContext(r.Context())
 	if !geo.IsValid {
@@ -173,8 +170,7 @@ func (h *Handlers) HandleGeoDetect(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListCountries returns every seeded country space.
-//
-// GET /api/v1/geo/countries.
+// // GET /api/v1/geo/countries.
 func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
@@ -198,8 +194,7 @@ func (h *Handlers) HandleListCountries(w http.ResponseWriter, r *http.Request) {
 
 // HandleListStates returns the state/province spaces for a country, looked
 // up by its ISO geo_code.
-//
-// GET /api/v1/geo/countries/{code}/states.
+// // GET /api/v1/geo/countries/{code}/states.
 func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
@@ -228,8 +223,7 @@ func (h *Handlers) HandleListStates(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleListCities returns the city spaces for a state.
-//
-// GET /api/v1/geo/states/{id}/cities.
+// // GET /api/v1/geo/states/{id}/cities.
 func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
@@ -262,8 +256,7 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 // CreateCity creates a new city-level geo space under the given state.
 // It is intentionally quota-free because adding a missing city is part of
 // completing a user's location, not creating an owned community.
-//
-// POST /api/v1/geo/states/{id}/cities.
+// // POST /api/v1/geo/states/{id}/cities.
 func (h *Handlers) CreateCity(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
 	if t == nil {
@@ -387,7 +380,7 @@ func derefStr(p *string) string {
 
 // projectGeoSpace builds a GeoSpace projection from the common fields shared
 // by all geo hierarchy sqlc row structs. It is the single chokepoint that
-// keeps internal columns (tenant_id, space_type_id, wiki_content, perms,
+// keeps internal columns (, space_type_id, wiki_content, perms,
 // logo_media_id, header_image_id, deleted_at, etc.) out of the public API
 // response. currency_code is intentionally exposed so geo-aware surfaces can
 // default currency to the selected primary space (Rule 16, ADR-065).

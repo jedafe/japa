@@ -2,10 +2,8 @@
 // embed → upsert) and retrieval (embed query → HNSW search → cache → format
 // context). It reads rag.* system_settings via the hot-reloadable
 // config.Settings and caches retrieval results in Valkey (jc:rag:query:{hash}).
-//
-// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//
-//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+// // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+// //	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package rag
 
 import (
@@ -70,7 +68,7 @@ func (s *Service) SetCache(c ValkeyCache) { s.cache = c }
 const ragQueryCacheTTL = 10 * time.Minute
 
 // ragQueryCacheKey builds the Valkey key for a cached retrieval result.
-// The hash is over (tenant_id, query_embedding, language, top_k, geo_space_id)
+// The hash is over (, query_embedding, language, top_k, geo_space_id)
 // so identical queries hit the cache. geo_space_id is included so a
 // geo-filtered retrieval and an unfiltered retrieval never share a cache
 // entry (§103 Geo-Filtered RAG amendment to §69).
@@ -104,8 +102,7 @@ func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language s
 // IndexEntity chunks the source text, generates embeddings via the AI
 // gateway, and upserts each chunk into content_embeddings. After upserting,
 // stale tail chunks (from a previous, longer index) are deleted.
-//
-// This is called by the extended content:generate_embedding task handler.
+// // This is called by the extended content:generate_embedding task handler.
 func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error {
 	if s.embedder == nil {
 		slog.Warn("rag: index: no embedder configured, skipping", "entity_type", entityType, "entity_id", entityID.String())
@@ -155,7 +152,7 @@ func (s *Service) IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityT
 	}
 
 	// Delete stale tail chunks from a previous, longer index.
-	//nolint:gosec // G115: bounded
+	// nolint:gosec // G115: bounded
 	if err := s.store.DeleteStaleTail(ctx, tenantID, entityType, entityID, int32(len(chunkTexts))); err != nil { // #nosec G115 -- len() of a chunked text slice // #nosec //nolint:gosec // G115: bounded
 		slog.Warn("rag: index: failed to delete stale tail", "entity_id", entityID.String(), "error", err)
 	}
@@ -180,13 +177,11 @@ func (s *Service) PurgeEntityType(ctx context.Context, tenantID pgtype.UUID, ent
 // Retrieve performs the RAG retrieval step: embed the query, search HNSW,
 // and return formatted context passages. Results are cached in Valkey
 // (jc:rag:query:{hash}, 10-min TTL) for identical query embeddings.
-//
-// geoSpaceID optionally restricts retrieval to content chunks whose source
+// // geoSpaceID optionally restricts retrieval to content chunks whose source
 // contents row is geo-scoped to the given space or its direct children
 // (§103 Geo-Filtered RAG amendment to §69). When geoSpaceID is nil or
 // invalid, retrieval is unfiltered (backward-compatible with §69).
-//
-// If rag.enabled is false, returns nil (the chat handler falls back to
+// // If rag.enabled is false, returns nil (the chat handler falls back to
 // non-RAG LLM call).
 func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {

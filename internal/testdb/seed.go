@@ -1,4 +1,4 @@
-//go:build integration
+// go:build integration
 
 package testdb
 
@@ -62,8 +62,7 @@ func SeedUser(t *testing.T, d *db.DB, tenantID pgtype.UUID, o UserOpts) pgtype.U
 // SeedFollowers creates n throwaway follower users and a follows row from
 // each to entityUserID, then recomputes entityUserID's denormalized
 // follower_count from the resulting rows.
-//
-// follower_count is NOT trigger-maintained: migrations/000012_follow_system.sql
+// // follower_count is NOT trigger-maintained: migrations/000012_follow_system.sql
 // documents it as "maintained in the service layer (not via triggers)
 // because not all entity tables exist yet," and no later forward migration
 // adds a trigger (verified by grepping every migrations/*.sql file for
@@ -187,7 +186,7 @@ func SeedComment(t *testing.T, d *db.DB, tenantID, authorID, contentID pgtype.UU
 
 // SeedReaction records userID's reaction_key reaction on (entityType,
 // entityID) under tenantID. reactions.reaction_key has a composite foreign
-// key to reaction_types(tenant_id, key), so SeedReaction first upserts a
+// key to reaction_types(, key), so SeedReaction first upserts a
 // reaction_types row for the given key — a fresh tenant from NewTenant has
 // none of the default-tenant's seeded reaction types.
 func SeedReaction(t *testing.T, d *db.DB, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, key string) {

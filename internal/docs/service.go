@@ -82,7 +82,7 @@ type GenerateDraftResponse struct {
 }
 
 // GetDocPageBySlug returns a published page by audience and slug. Checks the
-// Valkey cache first (jc:cache:page:docs:{audience}:{slug}:{tenant_id}, TTL 5min)
+// Valkey cache first (jc:cache:page:docs:{audience}:{slug}:{}, TTL 5min)
 // and falls back to the DB on miss (VALKEY-003). Cache key is tenant-scoped
 // to prevent cross-tenant data bleed (Rule 4, §4.2).
 func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, audience, slug string) (*DocPage, error) {
@@ -205,7 +205,7 @@ func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]
 
 // GetDocNav returns the published-pages navigation tree grouped by audience,
 // filtered to only the specified audiences. Checks the Valkey cache first
-// (jc:cache:page:docs:nav:{tenant_id}, TTL 10min) and falls back to the DB
+// (jc:cache:page:docs:nav:{}, TTL 10min) and falls back to the DB
 // on miss (VALKEY-003). Cache key is tenant-scoped (Rule 4, §4.2).
 func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID, allowedAudiences []string) ([]DocNavTree, error) {
 	cacheKey := valkey.MustKey("cache:page:docs:nav:%s", tenantID.String())
@@ -324,13 +324,13 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 				Audience: r.Audience,
 				Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
 			})
-			//nolint:gosec // G115: bounded
+			// nolint:gosec // G115: bounded
 			if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
 				break
 			}
 		}
 
-		//nolint:gosec // G115: bounded
+		// nolint:gosec // G115: bounded
 		if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
 			break
 		}
@@ -505,7 +505,7 @@ func (s *Service) invalidateAllPageCaches(ctx context.Context, tenantID pgtype.U
 		slog.Warn("docs: failed to invalidate nav cache", "key", navKey, "error", err)
 	}
 	// Best-effort: scan and delete all page caches for this tenant.
-	// Pattern: jc:cache:page:docs:*:*:{tenant_id}
+	// Pattern: jc:cache:page:docs:*:*:{}
 	pattern := valkey.MustKey("cache:page:docs:*:*:%s", tenantID.String())
 
 	var cursor uint64
@@ -756,8 +756,7 @@ func slugify(s string) string {
 // GenerateDraft creates a doc page draft via the Content Agent (ADR-088).
 // The draft is inserted with ai_generated=true, review_status='draft'. It
 // requires HITL approval before publication.
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as content so a reviewer can
 // fill it manually (graceful degradation).

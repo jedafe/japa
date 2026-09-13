@@ -1,14 +1,11 @@
 // Package rag implements the JapaBot RAG Knowledge Layer (Section 69, ADR-069).
-//
-// It provides chunked embedding storage in content_embeddings (pgvector HNSW),
+// // It provides chunked embedding storage in content_embeddings (pgvector HNSW),
 // cosine-similarity retrieval at chat time, and admin management routes for
 // re-indexing, status, and entity-level purges. The text-extraction utility
 // strips TipTap JSON block structure to plain text before chunking and
 // embedding — never embed raw JSON markup.
-//
-// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-//
-//	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
+// // Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
+// //	japaconnect-engineering/adr/ADR-069-japabot-rag-knowledge-layer.md
 package rag
 
 import (
@@ -34,14 +31,12 @@ const (
 
 // SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
 // The LLM prompt uses this label to qualify claims appropriately.
-//
-// For content entities (entity_type = "content"), the actual content_type
+// // For content entities (entity_type = "content"), the actual content_type
 // (guide, blog_post, comparison, discussion) determines the tier — the
 // entity_type column is generic "content" for all content entities.
 // For non-content entities (forum_thread, space, learning_track), the
 // entity_type itself determines the tier.
-//
-// Ref: ADR-069 §4 — Source tier weighting.
+// // Ref: ADR-069 §4 — Source tier weighting.
 func SourceTier(entityType, contentType string) string {
 	tierKey := entityType
 	if entityType == EntityTypeContent && contentType != "" {

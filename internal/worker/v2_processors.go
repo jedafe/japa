@@ -3,23 +3,21 @@
 // 068, 070–085). Each V2 service implements the relevant interface and
 // registers itself at startup via the Register* functions, mirroring the
 // AIProcessor / RAGIndexer / ContentEmbedder patterns used by V1 tasks.
-//
-// Registered handlers:
-//   - jobs:expire_listings, jobs:notify_application_status  (§63, ADR-081)
-//   - gamification:expire_challenges                         (§64, ADR-082)
-//   - import:process_source, import:fetch_media              (§65, ADR-083)
-//   - assessment:score_submission                            (§71, ADR-071)
-//   - scholarship:check_deadlines                            (§73, ADR-073)
-//   - remittance:fetch_rates, remittance:check_alerts,
-//     remittance:prune_old_rates                             (§74, ADR-075)
-//   - referral:record_click, referral:check_conversion,
-//     referral:review_flagged                                (§60, ADR-078)
-//   - ads:refund_campaign_credits, ads:notify_campaign_status(§61, ADR-079)
-//   - notification:send_push                                 (§77, ADR-074)
-//   - persona:run_activity, persona:dispatch_action          (§76, ADR-077)
-//   - studio:run_batch, studio:retry_failed                  (§75, ADR-076)
-//
-// Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (catalog)
+// // Registered handlers:
+// - jobs:expire_listings, jobs:notify_application_status (§63, ADR-081)
+// - gamification:expire_challenges (§64, ADR-082)
+// - import:process_source, import:fetch_media (§65, ADR-083)
+// - assessment:score_submission (§71, ADR-071)
+// - scholarship:check_deadlines (§73, ADR-073)
+// - remittance:fetch_rates, remittance:check_alerts,
+// remittance:prune_old_rates (§74, ADR-075)
+// - referral:record_click, referral:check_conversion,
+// referral:review_flagged (§60, ADR-078)
+// - ads:refund_campaign_credits, ads:notify_campaign_status(§61, ADR-079)
+// - notification:send_push (§77, ADR-074)
+// - persona:run_activity, persona:dispatch_action (§76, ADR-077)
+// - studio:run_batch, studio:retry_failed (§75, ADR-076)
+// // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (catalog)
 package worker
 
 import (
@@ -129,8 +127,7 @@ type StudioProcessor interface {
 // handlers.go can call it without importing internal/ai or internal/content
 // (which would create a cycle). The wiring layer (internal/server) provides
 // a concrete implementation that closes over the content.Service + ai.Store.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
 type AgentDraftProcessor interface {
 	CreateAgentDraft(ctx context.Context, payload AgentDraftPayload) error
@@ -576,7 +573,7 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 
 // HandleAssessmentScoreSubmission scores an assessment submission (§71).
 // The payload is enqueued by assessment.Service.SubmitAssessment and carries
-// the submission_id + tenant_id (the result row does not exist yet — scoring
+// the submission_id + (the result row does not exist yet — scoring
 // creates it).
 func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "assessment:score_submission", assessmentProcessor != nil, []string{"submission_id", "tenant_id"},
@@ -1055,7 +1052,7 @@ func HandleCvFormatSessionsPurge(ctx context.Context, _ *asynq.Task) error {
 // HandleDigestGenerate assembles a new community digest edition from platform
 // analytics (§84, ADR-092). Runs weekly on Sunday 22:00 UTC on the low queue.
 // When triggered by the admin "Generate" button, the payload carries
-// tenant_id and optionally space_id for a per-Space digest.
+// and optionally space_id for a per-Space digest.
 func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	if digestProcessor == nil {
 		slog.Warn("task:digest:generate: no processor registered, skipping")
@@ -1063,7 +1060,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var p struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		SpaceID  string `json:"space_id"`
 	}
 
@@ -1135,7 +1132,7 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		EditionID string `json:"edition_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 	}
 
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -1173,7 +1170,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		UserID             string `json:"user_id"`
-		TenantID           string `json:"tenant_id"`
+		TenantID           string 
 		Stage              string `json:"stage"`
 		DestinationSpaceID string `json:"destination_space_id"`
 	}

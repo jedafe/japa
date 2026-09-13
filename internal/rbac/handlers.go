@@ -126,7 +126,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DeleteGroup handles DELETE /api/v1/admin/user-groups/{id}.
 // The {id} parameter is a UUID — consistent with all other group endpoints.
 // System groups are protected by the store layer (is_system = false in the
-// DELETE query) and by an explicit check here. The tenant_id filter prevents
+// DELETE query) and by an explicit check here. The filter prevents
 // cross-tenant deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(r)
@@ -595,7 +595,7 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 // UpdateGroup handles PATCH /admin/user-groups/:id (P5.6).
 // System groups cannot have their slug changed — the slug is the resolution
 // key for IsSuperAdmin and other system-group checks. Name, description,
-// and permission updates on system groups are allowed. The tenant_id filter
+// and permission updates on system groups are allowed. The filter
 // prevents cross-tenant updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := requireTenant(r)
@@ -700,8 +700,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // The scope catalog is sourced from publicapi.ScopeCatalog so the developer
 // portal only offers scopes that RequireScope actually enforces (Rule 16 —
 // no hardcoded data that can drift from the enforcement layer).
-//
-// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
+// // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 func (h *Handlers) ListScopes(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": publicapi.AvailableScopes()})
 }

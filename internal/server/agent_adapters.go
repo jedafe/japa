@@ -1,21 +1,19 @@
 // Package server — agent_adapters.go provides the wiring-layer adapters that
 // bridge the AI Agent Executor's (Section 103, ADR-111) narrow dependency
 // interfaces to the real service implementations.
-//
-// The adapters exist because:
-//  1. The ai package's CacheClient uses plain (string, error) returns while
-//     valkeycompat.Cmdable uses go-redis command types — a thin adapter
-//     resolves the signature mismatch without polluting the ai package
-//     with valkeycompat imports.
-//  2. The ai package's RAGService returns []ai.RAGChunk (a mirror type)
-//     to avoid an import cycle with internal/rag — the adapter converts
-//     rag.RetrievedChunk to ai.RAGChunk.
-//  3. The ContentCreator/ContentUpdater function bridges adapt
-//     content.Service.CreateContent/UpdateContent into the ai package's
-//     provider-agnostic input/output types, avoiding an import cycle
-//     between internal/ai and internal/content.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
+// // The adapters exist because:
+// 1. The ai package's CacheClient uses plain (string, error) returns while
+// valkeycompat.Cmdable uses go-redis command types — a thin adapter
+// resolves the signature mismatch without polluting the ai package
+// with valkeycompat imports.
+// 2. The ai package's RAGService returns []ai.RAGChunk (a mirror type)
+// to avoid an import cycle with internal/rag — the adapter converts
+// rag.RetrievedChunk to ai.RAGChunk.
+// 3. The ContentCreator/ContentUpdater function bridges adapt
+// content.Service.CreateContent/UpdateContent into the ai package's
+// provider-agnostic input/output types, avoiding an import cycle
+// between internal/ai and internal/content.
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6 wiring)
 package server
 
@@ -235,8 +233,7 @@ func derefStr(s *string) string {
 // interface (Phase 7). The ai package defines its own input/output mirror
 // types (ComparisonTypeCreateInput, ComparisonCreateInput, etc.) to avoid
 // importing internal/comparison — the adapter converts between the two.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7 wiring).
 type agentComparisonAdapter struct {
 	svc *comparison.Service
@@ -438,8 +435,7 @@ func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, 
 // ai.PersonaResolver interface. The ai package uses a narrow interface so
 // it does not import internal/personas (avoids a cycle risk). The adapter
 // returns only the backing users.id the content.create_draft tool needs.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow)
 // Ref: japaconnect-engineering/sections/68-ai-personas.md (ai_personas.user_id).
 type agentPersonaAdapter struct {
 	store personaUserIDResolver
@@ -468,8 +464,7 @@ func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, pe
 // content.Service + ai.Store + personas.Store + AI dispatcher so the
 // worker package does not import internal/ai or internal/content (which
 // would create a cycle).
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
 // hitlBypassChecker reports whether an actor holds the agent.skip_hitl
 // permission node. Holders (super_admin via the '*' wildcard, plus any
@@ -542,13 +537,13 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, ten
 }
 
 // CreateAgentDraft implements worker.AgentDraftProcessor. It:
-//  1. Resolves the persona's backing users.id (the author).
-//  2. Generates the draft body via the AI dispatcher (synthesizes the
-//     topic prompt + external results).
-//  3. Creates the contents row with status='draft', author_id=persona
-//     user_id, and _ai_provenance in field_values.
-//  4. Creates a HITL review with source='agent_draft_request' + the
-//     created content_id.
+// 1. Resolves the persona's backing users.id (the author).
+// 2. Generates the draft body via the AI dispatcher (synthesizes the
+// topic prompt + external results).
+// 3. Creates the contents row with status='draft', author_id=persona
+// user_id, and _ai_provenance in field_values.
+// 4. Creates a HITL review with source='agent_draft_request' + the
+// created content_id.
 func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, payload worker.AgentDraftPayload) error {
 	tenantID := pgtype.UUID{}
 
@@ -663,8 +658,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 // interface. The ai package uses mirror types (ai.LearningTrack,
 // ai.LearningLesson, ai.LearningCreateTrackInput, etc.) to avoid an import
 // cycle with internal/learning. This adapter converts between the two.
-//
-// learn.lessons.reorder has no backing Store method — the adapter uses
+// // learn.lessons.reorder has no backing Store method — the adapter uses
 // UpdateLesson per entry to set the new sort_order. This is sequential
 // (not a single bulk SQL UPDATE) but correct; a future migration can add
 // a bulk reorder query if performance requires it.
@@ -1194,12 +1188,12 @@ func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, tena
 }
 
 // GenerateJob runs the §75 single-job generation pipeline:
-//  1. Load the studio job + persona (voice prompt + backing author).
-//  2. Generate the draft body via the AI gateway (content_generation).
-//  3. Create the contents row with status='draft', author=persona user_id.
-//  4. Route to the HITL review queue with source='studio', OR auto-publish
-//     low-stakes types per studio.auto_publish_types (§75).
-//  5. Update the studio job to 'in_review' (or 'published').
+// 1. Load the studio job + persona (voice prompt + backing author).
+// 2. Generate the draft body via the AI gateway (content_generation).
+// 3. Create the contents row with status='draft', author=persona user_id.
+// 4. Route to the HITL review queue with source='studio', OR auto-publish
+// low-stakes types per studio.auto_publish_types (§75).
+// 5. Update the studio job to 'in_review' (or 'published').
 func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
 	job, err := a.studio.GetJob(ctx, tenantID, jobID)
 	if err != nil {
@@ -2003,8 +1997,7 @@ func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, te
 // ai.ScholarshipSearcher interface so the ai package can offer the
 // scholarship.search tool without importing internal/scholarships
 // (breaks the ai → scholarships → content → spam → ai cycle).
-//
-// Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
+// // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type agentScholarshipAdapter struct {
 	svc *scholarships.Service
 }
@@ -2201,8 +2194,7 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 // It returns each valid content type with its label, whether it has
 // admin-configurable categories, and the entity_class/group to use with
 // custom_field_groups.list / custom_fields.list.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 type agentContentTypesAdapter struct {
 	cf *customfields.Service
 }
@@ -2315,8 +2307,7 @@ func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantI
 // to the ai.GuideCategoryService interface. The ai package cannot import
 // internal/customfields directly because that creates an import cycle
 // (customfields imports db, content imports customfields, etc.).
-//
-// Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
+// // Ref: japaconnect-engineering/sections/14-content-type-system.md (Guide Content Type System).
 type agentGuideCategoriesAdapter struct {
 	svc *customfields.Service
 }

@@ -308,8 +308,7 @@ func (h *Handlers) filterBlockedRadarItems(ctx context.Context, tenantID, userID
 // promoted entities from all intelligence domains: scholarships, jobs,
 // visa routes, housing guides, remittance rates, and cost-of-living
 // items. Items are merged and sorted by created_at desc.
-//
-// GET /api/v1/intel/radar.
+// // GET /api/v1/intel/radar.
 func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -501,8 +500,7 @@ func sortRadarItems(items []radarItem) {
 // HandleRadarCounts returns per-country scholarship counts for the dashboard
 // widget. The widget renders a world map heat-map; this endpoint supplies the
 // counts that drive the colour intensity per country.
-//
-// GET /api/v1/intel/radar/counts.
+// // GET /api/v1/intel/radar/counts.
 func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -555,13 +553,11 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 // follows service, then fetches scholarships for ALL followed spaces in a
 // single query (BUG-008b fix: the prior per-space loop was an N+1 — one
 // query per followed country).
-//
-// BUG-008a fix: the response now uses the radar envelope
+// // BUG-008a fix: the response now uses the radar envelope
 // {items, next_cursor, has_more, counts_by_type, counts_by_country,
 // followed_space_ids} per spec §739 (same envelope as /radar), not the
 // generic {data, meta} envelope.
-//
-// GET /api/v1/intel/radar/followed.
+// // GET /api/v1/intel/radar/followed.
 func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil || h.followsSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -688,8 +684,7 @@ func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request
 // HandleRadarFollow follows a country space. The body carries the space_id;
 // the handler delegates to the follows service with entity_type "space" so
 // the radar reuses the polymorphic follows table.
-//
-// POST /api/v1/intel/radar/follow.
+// // POST /api/v1/intel/radar/follow.
 func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 	if h.followsSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -746,8 +741,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 // is carried in the request body ({ space_id }). A query-string fallback
 // (?space_id=) is kept for backward compatibility with bodyless DELETE
 // clients (BUG-15 fix, §3.3).
-//
-// DELETE /api/v1/intel/radar/follow.
+// // DELETE /api/v1/intel/radar/follow.
 func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 	if h.followsSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -805,8 +799,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 
 // HandleRadarItemDetail returns a single radar item (scholarship) by its
 // id. The route parameter is the scholarship projection row id.
-//
-// GET /api/v1/intel/radar/feed/{item_id}.
+// // GET /api/v1/intel/radar/feed/{item_id}.
 func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -864,8 +857,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 // HandleRadarSaved lists the caller's saved radar opportunities. In v1 these
 // are saved scholarships; the handler delegates to the scholarships service
 // so the radar reuses the existing saved-scholarship tracker.
-//
-// GET /api/v1/intel/radar/saved.
+// // GET /api/v1/intel/radar/saved.
 func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -910,8 +902,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 // HandleRadarSave saves a radar opportunity to the caller's tracker. The body
 // carries the item_id (scholarship projection row id); the handler resolves
 // the backing guide_id and delegates to the scholarships service.
-//
-// POST /api/v1/intel/radar/save.
+// // POST /api/v1/intel/radar/save.
 func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil || h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -989,8 +980,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 // HandleRadarUnsave removes a radar opportunity from the caller's tracker.
 // The item_id path parameter is the scholarship projection row id; the
 // handler resolves the guide_id and delegates to the scholarships service.
-//
-// DELETE /api/v1/intel/radar/save/{item_id}.
+// // DELETE /api/v1/intel/radar/save/{item_id}.
 func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	if h.scholarSvc == nil || h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")

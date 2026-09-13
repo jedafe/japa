@@ -97,7 +97,7 @@ func (s *Store) updatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUI
 // Webhook Events
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// nolint:unused // reserved for future features
 func (s *Store) insertWebhookEvent(ctx context.Context, p gen.InsertWebhookEventParams) (gen.PaymentWebhookEvent, error) {
 	row, err := s.write.InsertWebhookEvent(ctx, p)
 	if err != nil {
@@ -206,7 +206,7 @@ func (s *Store) getAdminPaymentByID(ctx context.Context, id, tenantID pgtype.UUI
 // Subscriptions
 // ---------------------------------------------------------------------------
 
-//nolint:unused // reserved for future features
+// nolint:unused // reserved for future features
 func (s *Store) createSubscription(ctx context.Context, p gen.CreateSubscriptionParams) (gen.Subscription, error) {
 	row, err := s.write.CreateSubscription(ctx, p)
 	if err != nil {
@@ -255,7 +255,7 @@ func (s *Store) listSubscriptionsByUser(ctx context.Context, tenantID, userID pg
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// nolint:unused // reserved for future features
 func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -273,7 +273,7 @@ func (s *Store) listActiveSubscriptions(ctx context.Context, tenantID pgtype.UUI
 	return rows, nil
 }
 
-//nolint:unused // reserved for future features
+// nolint:unused // reserved for future features
 func (s *Store) updateSubscriptionStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Subscription, error) {
 	row, err := s.write.UpdateSubscriptionStatus(ctx, gen.UpdateSubscriptionStatusParams{
 		ID: id,
@@ -300,7 +300,7 @@ func (s *Store) cancelSubscription(ctx context.Context, id, tenantID pgtype.UUID
 
 // reactivateSubscription reactivates the caller's most recently canceled
 // subscription for the tenant. The subquery in the sqlc query already scopes
-// by (user_id, tenant_id, status='canceled'), so we only forward the params.
+// by (user_id, , status='canceled'), so we only forward the params.
 func (s *Store) reactivateSubscription(ctx context.Context, userID, tenantID pgtype.UUID) (gen.Subscription, error) {
 	row, err := s.write.ReactivateSubscription(ctx,
 		userID,

@@ -33,9 +33,8 @@ const ocrExecTimeout = 120 * time.Second
 // text from scanned PDFs. It is a fallback used by PDFFetcher when the
 // embedded text layer is empty. Callers should check Available() before use
 // and route to REVIEW_REQUIRED when tesseract is absent.
-//
-// When a Valkey client is provided via NewOCRFetcherWithCache, OCR results
-// are cached under jc:intel:ocr_cache:{tenant_id}:{content_hash} (30d TTL)
+// // When a Valkey client is provided via NewOCRFetcherWithCache, OCR results
+// are cached under jc:intel:ocr_cache:{}:{content_hash} (30d TTL)
 // so identical documents are not re-OCRed (BUG-17 fix,
 // valkey-keys-catalog Section INTEL, tenant-scoped per ADR-112 Amendment 2).
 type OCRFetcher struct {
@@ -75,9 +74,8 @@ func (f *OCRFetcher) Available() bool {
 // ExtractText writes the PDF body to a temp file, converts each page to a PNG
 // with pdftoppm, runs tesseract on each image, and concatenates the results.
 // Returns an error if the required binaries are not installed.
-//
-// When a Valkey client is configured, the OCR result is cached under
-// jc:intel:ocr_cache:{tenant_id}:{content_hash} (30d TTL) so identical
+// // When a Valkey client is configured, the OCR result is cached under
+// jc:intel:ocr_cache:{}:{content_hash} (30d TTL) so identical
 // documents skip the expensive OCR step on subsequent crawls (BUG-17 fix,
 // tenant-scoped per ADR-112 Amendment 2).
 func (f *OCRFetcher) ExtractText(body []byte) (string, error) {

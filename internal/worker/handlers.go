@@ -42,24 +42,21 @@ import (
 // paymentPurposeToAffiliateProduct maps a payment purpose_type + purpose_id
 // to the corresponding affiliate product_type + product_id used in the
 // jc:aff_click attribution key (Section 56).
-//
-// The redirect handler stores the attribution key using the affiliate link's
+// // The redirect handler stores the attribution key using the affiliate link's
 // product_type vocabulary (pro_subscription, course, general) and the link's
 // product_id (NULL for pro_subscription/general → "null", content_id for
 // course). The payment webhook, however, works with the payment's
 // purpose_type vocabulary (pro_membership, course_access, credit_purchase,
 // etc.) and the payment's purpose_id (subscription_id, content_id, etc.).
-//
-// Without this mapping, the attribution key stored by the redirect handler
+// // Without this mapping, the attribution key stored by the redirect handler
 // (jc:aff_click:{user}:pro_subscription:null) would never match the key
 // looked up by the payment webhook (jc:aff_click:{user}:pro_membership:{sub_id}),
 // and commission would never be credited (BUG-001/003).
-//
-// Mapping:
-//   - pro_membership → pro_subscription, product_id = "null" (pro_subscription
-//     links have no product_id; the subscription_id is not part of the key)
-//   - course_access  → course, product_id = purpose_id (content_id matches)
-//   - everything else → general, product_id = "null"
+// // Mapping:
+// - pro_membership → pro_subscription, product_id = "null" (pro_subscription
+// links have no product_id; the subscription_id is not part of the key)
+// - course_access → course, product_id = purpose_id (content_id matches)
+// - everything else → general, product_id = "null"
 func paymentPurposeToAffiliateProduct(purposeType string, purposeID pgtype.UUID) (affProductType, affProductID string) {
 	affProductID = "null"
 
@@ -115,8 +112,8 @@ func RegisterEmailGateway(d *email.EmailDispatcher) {
 
 // redisCache is the subset of the valkeycompat.Cmdable API that worker
 // handlers need. Used by HandleRSSRegenerate to cache feeds under
-// jc:cache:feed:rss:{tenant_id} (universal) and
-// jc:cache:feed:rss:blog:{tenant_id} (blog-only), and by
+// jc:cache:feed:rss:{} (universal) and
+// jc:cache:feed:rss:blog:{} (blog-only), and by
 // HandleMaintenanceRegenerateLLMsTxt to invalidate llms.txt caches.
 // Also used by the intelligence cron handlers for the scheduler leader
 // lock (jc:intel:scheduler_leader, BUG-13 fix).
@@ -358,8 +355,7 @@ func scheduleScholarshipSyncFromGuide(ctx context.Context, contentID, tenantID p
 // scheduleRSSRegenerate enqueues the rss:regenerate task for a tenant so
 // RSS feeds reflect newly published content without waiting for the hourly
 // cron. Fire-and-forget per Rule 8 (RSS-013).
-//
-// Ref: japaconnect-engineering/sections/26-seo-performance.md
+// // Ref: japaconnect-engineering/sections/26-seo-performance.md
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md.
 func scheduleRSSRegenerate(enq *Enqueuer, tenantID pgtype.UUID) {
 	if enq == nil {
@@ -412,10 +408,8 @@ func resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
 // nil headers (with a warning log) if the subscriber cannot be resolved or
 // the token cannot be created — the email is still sent without the link
 // rather than dropped, but the failure is visible in logs.
-//
-// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-//
-//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+// // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func newsletterUnsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient string) (string, map[string]string) {
 	if dbPool == nil {
 		return "", nil
@@ -546,7 +540,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		EventID     string `json:"event_id"`
-		TenantID    string `json:"tenant_id"`
+		TenantID    string 
 		Status      string `json:"status"` // "succeeded", "failed", "refunded"
 		ProviderRef string `json:"provider_ref"`
 		Provider    string `json:"provider"`
@@ -668,8 +662,7 @@ func resolveWebhookPayment(ctx context.Context, queries *gen.Queries, tenantID p
 // the redirect handler, NOT from the payer's first active link (Section 56,
 // BUG-003). When no attribution key exists, no commission is credited — the
 // user reached the purchase without an affiliate redirect.
-//
-// It returns false when the enqueue fails so the caller can defer marking
+// // It returns false when the enqueue fails so the caller can defer marking
 // the payment as succeeded and let the task retry (AUDIT-BE-006).
 func enqueueAffiliateCommission(ctx context.Context, p gen.Payment) bool {
 	if taskEnqueuer == nil {
@@ -832,7 +825,7 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, tenant
 	// triggers configured on this form.
 	triggerPayload, _ := json.Marshal(struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string `json:"tenant_id"`
+		TenantID     string 
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id,omitempty"`
 		FieldValues  []byte `json:"field_values"`
@@ -851,10 +844,10 @@ func processPaidFormSubmission(ctx context.Context, queries *gen.Queries, tenant
 
 // reversePaymentSideEffects reverses the side effects of a payment based on
 // its purpose_type when the payment is refunded (JEOS §17):
-//   - credit_purchase: enqueue a wallet credit reversal
-//   - course_access: revoke the course access grant
-//   - org_boost: expire the organization boost
-//   - pro_membership: no reversal (refunds affect future renewal only)
+// - credit_purchase: enqueue a wallet credit reversal
+// - course_access: revoke the course access grant
+// - org_boost: expire the organization boost
+// - pro_membership: no reversal (refunds affect future renewal only)
 func reversePaymentSideEffects(ctx context.Context, tenantID pgtype.UUID, p gen.Payment) error {
 	switch p.PurposeType {
 	case "credit_purchase":
@@ -1032,7 +1025,7 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		TicketID string `json:"ticket_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -1101,11 +1094,10 @@ type emailSendPayload struct {
 }
 
 // HandleEmailSend sends a single transactional email via SMTP.
-// When template_slug is provided with a tenant_id, the handler looks up
+// When template_slug is provided with a , the handler looks up
 // the DB-stored email template and renders it with html/template (XSS-safe).
 // Falls back to raw body/subject when no template is specified (backward compat).
-//
-// Ref: sections/20-email-notification-bugs.md.
+// // Ref: sections/20-email-notification-bugs.md.
 func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:email:send")
 
@@ -1253,7 +1245,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		ContentID  string `json:"content_id"`
 		EntityID   string `json:"entity_id"`
 		EntityType string `json:"entity_type"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 		Operation  string `json:"operation"`
 	}
 
@@ -1362,11 +1354,9 @@ const engagementReindexCursorKey = "jc:search:engagement_reindex_cursor"
 // than the cursor, and re-indexes those documents so ?sort=top stays fresh
 // without re-indexing on every engagement event. The cursor is advanced to
 // the newest last_scored_at seen in the batch.
-//
-// On the first run (no cursor), the cursor defaults to now-1h so only
+// // On the first run (no cursor), the cursor defaults to now-1h so only
 // recently-scored content is indexed, avoiding a full re-index sweep.
-//
-// Failures are logged but do not return an error — the next tick retries
+// // Failures are logged but do not return an error — the next tick retries
 // from the same cursor. A nil search indexer or DB pool is a no-op.
 func HandleSearchReindexEngagementScores(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("task:search:reindex_engagement_scores")
@@ -1448,7 +1438,7 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 		Operation string `json:"operation"` // "resize", "optimize", "thumbnail"
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
@@ -1508,7 +1498,7 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 		Title           string   `json:"title"`
 		Slug            string   `json:"slug"`
 		UserID          string   `json:"user_id"`
-		TenantID        string   `json:"tenant_id"`
+		TenantID        string   
 		Audience        string   `json:"audience"`
 		RelatedFeatures []string `json:"related_features"`
 	}
@@ -1544,8 +1534,7 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 // actual dispatch logic (assign_user_group / send_email / send_webhook /
 // create_ticket / notify_admin); this handler just parses the payload and
 // delegates.
-//
-// Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md.
+// // Ref: japaconnect-engineering/sections/06-custom-field-builder-form-builder.md.
 func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:form:fire_submission_triggers")
 
@@ -1556,7 +1545,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 
 	var payload struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string `json:"tenant_id"`
+		TenantID     string 
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id"` // empty for anonymous submissions
 		FieldValues  []byte `json:"field_values"`
@@ -1702,7 +1691,7 @@ func HandleModerationScan(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1731,7 +1720,7 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -1798,7 +1787,7 @@ func scheduleScheduledPublishFanOut(ctx context.Context, contentID, tenantID pgt
 	scheduleFanOutTask(taskEnqueuer, contentID, tenantID, published.AuthorID, pgtype.UUID{}, published.ContentType, "followers")
 
 	// 2. Fan out to each assigned space via content_spaces (Section 14).
-	//    Falls back to the primary contents.space_id if no content_spaces rows.
+	// Falls back to the primary contents.space_id if no content_spaces rows.
 	spaceIDs := []pgtype.UUID{}
 
 	if rows, err := gen.New(dbPool.Reader).GetContentSpaces(ctx, contentID); err == nil {
@@ -1836,7 +1825,7 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		URL      string `json:"url"`
 		BlockID  string `json:"block_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1872,7 +1861,7 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 		PackID     string `json:"pack_id"`
 		SourceLang string `json:"source_lang"`
 		TargetLang string `json:"target_lang"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1935,7 +1924,7 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID   string `json:"content_id"`
-		TenantID    string `json:"tenant_id"`
+		TenantID    string 
 		AuthorID    string `json:"author_id"`
 		SpaceID     string `json:"space_id"`
 		ContentType string `json:"content_type"`
@@ -2185,7 +2174,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -2249,8 +2238,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 // used by the AI Content Studio. It loads the persona voice prompt, content
 // type field schema, and topic brief from the studio_jobs row, calls the AI
 // gateway, and creates a contents row in 'draft' status.
-//
-// Until the full Studio package is implemented, this handler delegates to
+// // Until the full Studio package is implemented, this handler delegates to
 // the registered AIProcessor (same gateway used by ai:process_task). When a
 // StudioProcessor is registered, it takes precedence.
 func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
@@ -2262,7 +2250,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 	if studioProcessor != nil {
 		var p struct {
 			JobID    string `json:"job_id"`
-			TenantID string `json:"tenant_id"`
+			TenantID string 
 		}
 
 		if err := parsePayloadOrSkip(t, &p); err != nil {
@@ -2294,7 +2282,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		JobID       string `json:"job_id"`
-		TenantID    string `json:"tenant_id"`
+		TenantID    string 
 		PersonaID   string `json:"persona_id"`
 		ContentType string `json:"content_type"`
 		TopicPrompt string `json:"topic_prompt"`
@@ -2326,7 +2314,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 type contentRegenerateFromSourcePayload struct {
 	ContentID     string `json:"content_id"`
 	IntelRecordID string `json:"intel_record_id"`
-	TenantID      string `json:"tenant_id"`
+	TenantID      string 
 }
 
 // HandleContentRegenerateFromSource rewrites an existing contents row from
@@ -2374,11 +2362,9 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 // task (Section 103, Phase 8). It extends content:generate_draft with an
 // agent_session_id reference so the worker can persist provenance linking
 // the draft back to the agent session that triggered it.
-//
-// The canonical type is worker.AgentDraftPayload (v2_processors.go); this
+// // The canonical type is worker.AgentDraftPayload (v2_processors.go); this
 // alias keeps the handler readable while delegating to the exported type.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, Asynq path)
 // Ref: japaconnect-engineering/sections/11-job-queue-asynq.md (agent:create_draft_request)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, task 8.03).
 type agentDraftRequestPayload = AgentDraftPayload
@@ -2388,8 +2374,7 @@ type agentDraftRequestPayload = AgentDraftPayload
 // draft content row from external search results + the topic prompt, with
 // the AI persona as the author, and creates a HITL review with source=
 // 'agent_draft_request' so the draft enters the admin review queue.
-//
-// The handler extends the content:generate_draft pipeline (§75) with the
+// // The handler extends the content:generate_draft pipeline (§75) with the
 // agent_session_id reference. When a StudioProcessor is registered, it is
 // reused for the generation step; otherwise the generic AIProcessor is
 // used. The contents row + HITL review are created via the registered
@@ -2397,8 +2382,7 @@ type agentDraftRequestPayload = AgentDraftPayload
 // content.Service.CreateContent + ai.Store.CreateHITLReview calls so the
 // worker package does not import internal/content or internal/ai (avoiding
 // a cycle).
-//
-// Until an AgentDraftProcessor is registered (RegisterAgentDraftProcessor),
+// // Until an AgentDraftProcessor is registered (RegisterAgentDraftProcessor),
 // this handler logs a warning and returns nil — the task is a no-op. This
 // matches the graceful-degradation pattern of HandleContentGenerateDraft.
 func HandleAgentCreateDraftRequest(ctx context.Context, t *asynq.Task) error {
@@ -2457,7 +2441,7 @@ func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text 
 	// stored on each content_embeddings row and used by retrieval to filter
 	// by the user's locale (ADR-069 §3).
 	// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
-	//      japaconnect-engineering/conventions/system-settings-catalog.md
+	// japaconnect-engineering/conventions/system-settings-catalog.md
 	language := "en"
 	if appSettings != nil {
 		language = appSettings.GetStringOr(ctx, tenantUUID, "i18n.default_language", "en")
@@ -2479,7 +2463,7 @@ func HandleReviewAggregateRecalc(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
 	}
@@ -2551,7 +2535,7 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		TicketID  string `json:"ticket_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 		OldStatus string `json:"old_status"`
 		NewStatus string `json:"new_status"`
 	}
@@ -2617,7 +2601,7 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 	var payload struct {
 		UserID   string `json:"user_id"`
 		TrackID  string `json:"track_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		Progress int    `json:"progress"` // percentage 0-100
 	}
 
@@ -2642,7 +2626,7 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		MediaID   string `json:"media_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 		Operation string `json:"operation"` // "transcode", "thumbnail", "compress"
 	}
 
@@ -2811,7 +2795,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		NewsletterID string `json:"newsletter_id"`
-		TenantID     string `json:"tenant_id"`
+		TenantID     string 
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
@@ -2877,7 +2861,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 		failed += f
 		total += len(recipients)
 
-		//nolint:gosec // G115: bounded
+		// nolint:gosec // G115: bounded
 		if int32(len(recipients)) < batchSize { // #nosec //nolint:gosec // G115: bounded
 			break
 		}
@@ -2899,7 +2883,7 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 
 // HandleScholarshipSyncFromGuide derives or updates a scholarships projection
 // row from a guide with content_type='guide' and guide_category='scholarship'.
-// It is a no-op for other content types and is idempotent by (tenant_id, guide_id).
+// It is a no-op for other content types and is idempotent by (, guide_id).
 func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:scholarship:sync_from_guide")
 
@@ -2910,7 +2894,7 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string `json:"tenant_id"`
+		TenantID  string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3069,7 +3053,7 @@ func HandleDigestEmail(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		UserID   string `json:"user_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		Email    string `json:"email"`
 		Period   string `json:"period"` // "daily", "weekly"
 	}
@@ -3174,7 +3158,7 @@ func sendDigestToUser(ctx context.Context, userID, email, period string) error {
 }
 
 // forEachTenant runs fn for each tenant: the single requested tenant when
-// the payload's tenant_id is set, otherwise all active tenants. The base_url
+// the payload's is set, otherwise all active tenants. The base_url
 // is resolved per tenant from the payload or the tenant's configured
 // base_url. Shared by the sitemap and RSS regeneration sweeps.
 func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(ctx context.Context, tenantID pgtype.UUID, baseURL string)) error {
@@ -3184,7 +3168,7 @@ func forEachTenant(ctx context.Context, t *asynq.Task, taskName string, fn func(
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		BaseURL  string `json:"base_url"`
 	}
 
@@ -3302,7 +3286,7 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	// overwrite each other. The output directory is configurable via
 	// JC_SITEMAP_DIR (default: ./sitemaps).
 	sitemapDir := getEnv("JC_SITEMAP_DIR", "./sitemaps")
-	//nolint:gosec // G301: bounded
+	// nolint:gosec // G301: bounded
 	if err := os.MkdirAll(sitemapDir, 0o755); err != nil { // #nosec //nolint:gosec // G301: bounded
 		slog.Error("task:sitemap:generate: failed to create dir", "dir", sitemapDir, "error", err)
 		return
@@ -3337,16 +3321,14 @@ const rssFeedLimit = 20
 // generateRSSForTenant generates the RSS feed for a single tenant using the
 // shared sqlc query (ListRSSFeedItems — the same one internal/rss uses for
 // live requests) and caches the rendered XML in Valkey under
-// jc:cache:feed:rss:{tenant_id} with a 1-hour TTL (VALKEY-002 compliance).
+// jc:cache:feed:rss:{} with a 1-hour TTL (VALKEY-002 compliance).
 // The live /feed.xml route can read from this cache to avoid a DB hit on
 // every request. Writing to a local file is removed — it was not
 // multi-tenant safe.
-//
-// RSS-001: also generates a blog-only feed (ListPublishedPostsForRSS) into
-// jc:cache:feed:rss:blog:{tenant_id} so /api/v1/blog/feed.xml doesn't serve
+// // RSS-001: also generates a blog-only feed (ListPublishedPostsForRSS) into
+// jc:cache:feed:rss:blog:{} so /api/v1/blog/feed.xml doesn't serve
 // non-blog content from the universal cache.
-//
-// RSS-011: uses the shared internal/rss/model subpackage for the XML model
+// // RSS-011: uses the shared internal/rss/model subpackage for the XML model
 // and rendering helpers — no more local copies that can drift (this drift
 // caused RSS-003: the old local formatRSSTime didn't check IsZero).
 func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL string) {
@@ -3391,7 +3373,7 @@ func generateRSSForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL str
 }
 
 // generateBlogRSSForTenant generates the blog-only RSS feed and caches it
-// under jc:cache:feed:rss:blog:{tenant_id} (1hr TTL).
+// under jc:cache:feed:rss:blog:{} (1hr TTL).
 func generateBlogRSSForTenant(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, baseURL string) {
 	rows, err := q.ListPublishedPostsForRSS(ctx,
 
@@ -3486,7 +3468,7 @@ func HandleDataExport(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandlePlatformDataExport generates a platform-wide data export file
-// (Section 67). The payload carries export_id + tenant_id.
+// (Section 67). The payload carries export_id + .
 func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:platform:data_export")
 
@@ -3502,7 +3484,7 @@ func HandlePlatformDataExport(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandlePlatformDataImport processes a platform-wide data import file
-// (Section 67). The payload carries import_id + tenant_id.
+// (Section 67). The payload carries import_id + .
 func HandlePlatformDataImport(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:platform:data_import")
 
@@ -3543,7 +3525,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 		CampaignID string `json:"campaign_id"`
 		UserID     string `json:"user_id"`    // may be empty for guest events
 		EventType  string `json:"event_type"` // "impression", "click"
@@ -3594,7 +3576,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
@@ -3624,7 +3606,7 @@ func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) e
 	for _, tenantID := range tenantIDs {
 		// Update velocity scores for recently active content.
 		// Velocity = (vote_score * 2 + comment_count + view_count / 100) /
-		//   (hours_since_publish ^ gravity)
+		// (hours_since_publish ^ gravity)
 		// gravity is hot-reloadable via feed.velocity.gravity (default 1.8).
 		gravity := 1.8
 		if appSettings != nil {
@@ -3654,7 +3636,7 @@ func HandleMaintenanceCheckSLABreaches(ctx context.Context, t *asynq.Task) error
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	// Payload is optional — scheduler sends nil. Parse without failing.
@@ -3790,7 +3772,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		SpaceID  string `json:"space_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3823,9 +3805,8 @@ func HandleAnalyticsRefreshViews(ctx context.Context, _ *asynq.Task) error {
 // HandleSecurityScan runs a periodic security scan on uploaded media and
 // triggers the analytics security scan (failed-login spikes, SLA breaches,
 // stale tokens) that populates security_scan_results for the control panel.
-//
-// When the cron scheduler fires with an empty payload ("{}"), the handler
-// iterates over all active tenants. A specific tenant_id can be passed for
+// // When the cron scheduler fires with an empty payload ("{}"), the handler
+// iterates over all active tenants. A specific can be passed for
 // targeted scans.
 func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:security:scan")
@@ -3836,7 +3817,7 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3915,8 +3896,8 @@ func scanTenantSecurity(ctx context.Context, tid pgtype.UUID) {
 
 // HandleMaintenanceRegenerateLLMsTxt regenerates the llms.txt file for the tenant.
 // When called by the cron scheduler with an empty payload, iterates all active tenants.
-// The handler invalidates the Valkey cache keys (jc:llms_txt:{tenant_id} and
-// jc:llms_full_txt:{tenant_id}) so the next request to /llms.txt or /llms-full.txt
+// The handler invalidates the Valkey cache keys (jc:llms_txt:{} and
+// jc:llms_full_txt:{}) so the next request to /llms.txt or /llms-full.txt
 // regenerates the content from the database via bots.LLMsHandler.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) error {
@@ -3928,7 +3909,7 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, t *asynq.Task) erro
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 		BaseURL  string `json:"base_url"`
 	}
 
@@ -4048,7 +4029,7 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -4310,13 +4291,13 @@ func RegisterPushDelivery(d interface {
 // ---------------------------------------------------------------------------
 
 // HandleDMNotifyRequest enqueues a push notification for a new DM request.
-// Payload: { recipient_id, tenant_id, sender_username, conversation_id }.
+// Payload: { recipient_id, , sender_username, conversation_id }.
 func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_request")
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
-		TenantID       string `json:"tenant_id"`
+		TenantID       string 
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 	}
@@ -4354,13 +4335,13 @@ func HandleDMNotifyRequest(_ context.Context, t *asynq.Task) error {
 
 // HandleDMNotifyMessage enqueues a push notification for a new DM message
 // when the conversation is not currently open. Payload:
-// { recipient_id, tenant_id, sender_username, conversation_id, body_preview }.
+// { recipient_id, , sender_username, conversation_id, body_preview }.
 func HandleDMNotifyMessage(_ context.Context, t *asynq.Task) error {
 	slog.Info("task:dm:notify_message")
 
 	var payload struct {
 		RecipientID    string `json:"recipient_id"`
-		TenantID       string `json:"tenant_id"`
+		TenantID       string 
 		SenderUsername string `json:"sender_username"`
 		ConversationID string `json:"conversation_id"`
 		BodyPreview    string `json:"body_preview"`
@@ -4541,8 +4522,7 @@ func sendEmailWithContext(ctx context.Context, to, subject, body string, isHTML 
 // and digest) via the ADR-015 marketing provider, with optional extra SMTP
 // headers (e.g. List-Unsubscribe for GDPR one-click unsubscribe).
 // Ref: japaconnect-engineering/adr/ADR-015-multi-provider-email.md
-//
-//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func sendMarketingEmail(ctx context.Context, to, subject, body string, isHTML bool, headers map[string]string) error {
 	return sendEmailWithCategory(ctx, to, subject, body, isHTML, "marketing", headers)
 }
@@ -4770,7 +4750,7 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -4862,8 +4842,7 @@ func archiveReportedEntity(ctx context.Context, entityType, entityIDStr string, 
 // delivery. Idempotent on report_id — duplicate deliveries are acceptable
 // (the notification insert has no unique constraint, but the Asynq task
 // dedup window + retry backoff prevents spam).
-//
-// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md.
+// // Ref: japaconnect-engineering/sections/51-content-reports-flagging.md.
 func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:report:notify_admin")
 
@@ -4874,7 +4853,7 @@ func HandleReportNotifyAdmin(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		ReportID   string `json:"report_id"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 		EntityType string `json:"entity_type"`
 		EntityID   string `json:"entity_id"`
 		Reason     string `json:"reason"`
@@ -5024,8 +5003,7 @@ func HandleCouponExpireCheck(ctx context.Context, _ *asynq.Task) error {
 
 // HandleAffiliateRecordClick persists click event to affiliate_link_events
 // and increments denormalized click counters on the link and member rows.
-//
-// The payload carries pre-hashed ip_hash and ua_hash (SHA-256 hex) from the
+// // The payload carries pre-hashed ip_hash and ua_hash (SHA-256 hex) from the
 // redirect handler — raw PII never transits Asynq/Valkey (Section 56).
 func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:record_click — persisting click event")
@@ -5052,7 +5030,7 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("affiliate:record_click: %w", err)
 	}
 
-	// Look up the link to get tenant_id (required for the event row).
+	// Look up the link to get (required for the event row).
 	link, err := gen.New(dbPool.Reader).GetAffiliateLinkByIDOnly(ctx, linkID)
 	if err != nil {
 		slog.Error("affiliate:record_click: link not found", "link_id", payload.LinkID, "error", err)
@@ -5101,7 +5079,7 @@ func HandleAffiliateRecordClick(ctx context.Context, t *asynq.Task) error {
 func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		RedirectID string `json:"redirect_id"`
-		TenantID   string `json:"tenant_id"`
+		TenantID   string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -5130,16 +5108,15 @@ func HandleRedirectRecordHit(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleAffiliateCreditCommission credits commission after payment succeeds.
-//
-// Per Section 56 Commission Crediting, this handler:
-//  1. Looks up the affiliate link by code and resolves the commission rate.
-//  2. Calculates commission using integer math (amount in kobo × rate in basis
-//     points / 10000) — never float (Bug Hunter's Guide §1.3).
-//  3. Credits the wallet via the immutable ledger inside a transaction holding
-//     pg_advisory_xact_lock to prevent double-spend (§13).
-//  4. Inserts a conversion event in affiliate_link_events.
-//  5. Increments denormalized counters on the link and member rows.
-//  6. Deletes the jc:aff_click attribution key to prevent double-crediting.
+// // Per Section 56 Commission Crediting, this handler:
+// 1. Looks up the affiliate link by code and resolves the commission rate.
+// 2. Calculates commission using integer math (amount in kobo × rate in basis
+// points / 10000) — never float (Bug Hunter's Guide §1.3).
+// 3. Credits the wallet via the immutable ledger inside a transaction holding
+// pg_advisory_xact_lock to prevent double-spend (§13).
+// 4. Inserts a conversion event in affiliate_link_events.
+// 5. Increments denormalized counters on the link and member rows.
+// 6. Deletes the jc:aff_click attribution key to prevent double-crediting.
 func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 	slog.Info("affiliate:credit_commission — crediting commission")
 
@@ -5166,7 +5143,7 @@ func HandleAffiliateCreditCommission(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	// Look up the affiliate link by code (needed for link_id, tenant_id,
+	// Look up the affiliate link by code (needed for link_id, ,
 	// and user_id for counter increments and conversion event).
 	link, err := gen.New(dbPool.Reader).GetAffiliateLinkByCode(ctx, payload.LinkCode)
 	if err != nil {
@@ -5365,7 +5342,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID    string `json:"tenant_id"`
+		TenantID    string 
 		InitiatedBy string `json:"initiated_by"`
 	}
 
@@ -5426,7 +5403,7 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 // HandleWikiSeedStubPages auto-seeds the 7 default wiki sub-pages for a
 // Country Space when wiki.enabled is activated (§80, ADR-088).
 // The task is idempotent: if the stub pages already exist (matched by
-// tenant_id + space_id + slug), the processor skips them.
+// + space_id + slug), the processor skips them.
 func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:wiki:seed_stub_pages")
 
@@ -5437,7 +5414,7 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 
 	var payload struct {
 		SpaceID  string `json:"space_id"`
-		TenantID string `json:"tenant_id"`
+		TenantID string 
 	}
 
 	if err := parsePayload(t, &payload); err != nil {

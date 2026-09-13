@@ -1,17 +1,14 @@
 // Package gamification — service.go holds the business logic for badges,
 // challenges, and the leaderboard. It reads gamification.* system_settings
 // via the hot-reloadable config.Settings and caches leaderboard results in
-// Valkey (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL).
-//
-// Badge evaluation (EvaluateBadges / EvaluatePointsBadges) and challenge
+// Valkey (jc:leaderboard:{}:{scope}:{period}, 1hr TTL).
+// // Badge evaluation (EvaluateBadges / EvaluatePointsBadges) and challenge
 // progress incrementing are called from the existing
 // wallet:process_activity_event Asynq task — no separate gamification task
 // for most operations. ExpireChallenges is called by the daily
 // gamification:expire_challenges task.
-//
-// Ref: japaconnect-engineering/sections/64-gamification.md
-//
-//	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+// // Ref: japaconnect-engineering/sections/64-gamification.md
+// //	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
 package gamification
 
 import (
@@ -46,7 +43,7 @@ const (
 	PeriodWeekly  = "weekly"
 )
 
-// leaderboardCacheTTL is the TTL for jc:leaderboard:{tenant_id}:{scope}:{period}
+// leaderboardCacheTTL is the TTL for jc:leaderboard:{}:{scope}:{period}
 // (ADR-082: 1 hour).
 const leaderboardCacheTTL = 1 * time.Hour
 

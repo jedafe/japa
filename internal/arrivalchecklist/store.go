@@ -1,7 +1,6 @@
 // Package arrivalchecklist implements the Arrival Checklist Generator
 // (§92, ADR-100).
-//
-// Arrival checklists are guides keyed by destination space + visa category
+// // Arrival checklists are guides keyed by destination space + visa category
 // + applicant type, each containing ordered items grouped by arrival
 // phase (day_1_7, week_2_4, month_1_3, ongoing). Guides may be authored
 // manually or generated as AI drafts by the Content Agent and reviewed
@@ -9,10 +8,8 @@
 // browse endpoints (selector + guide items) and admin CRUD/HITL
 // endpoints. Tenancy uses tenants(id); destination geo entities use
 // spaces(id).
-//
-// Ref: japaconnect-engineering/sections/92-arrival-checklist.md
-//
-//	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
+// // Ref: japaconnect-engineering/sections/92-arrival-checklist.md
+// //	japaconnect-engineering/adr/ADR-100-arrival-checklist.md
 package arrivalchecklist
 
 import (
@@ -315,7 +312,7 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetGuideByID returns a single guide by its id, scoped to tenant_id.
+// GetGuideByID returns a single guide by its id, scoped to .
 // Returns guides of ANY status — use only from admin contexts. For
 // public/user-facing endpoints use GetPublishedGuideByID instead.
 func (s *Store) GetGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
@@ -355,7 +352,7 @@ LIMIT 1
 }
 
 // GetPublishedGuideByID returns a single published, active guide by its id,
-// scoped to tenant_id. Use this for all public/user-facing endpoints —
+// scoped to . Use this for all public/user-facing endpoints —
 // draft/ai_draft/pending/rejected guides must never be visible to
 // non-admin callers (§92, ADR-088 HITL gate).
 func (s *Store) GetPublishedGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
@@ -551,7 +548,7 @@ type UpdateGuideInput struct {
 	HITLReviewNotes    *string
 }
 
-// UpdateGuide updates mutable fields on a guide, scoped to tenant_id.
+// UpdateGuide updates mutable fields on a guide, scoped to .
 func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, in UpdateGuideInput) error {
 	var (
 		sets   []string
@@ -633,7 +630,7 @@ WHERE id = $%d
 }
 
 // DeleteGuide deletes an arrival_checklist_guides row and its associated
-// items (ON DELETE CASCADE) by id, scoped to tenant_id.
+// items (ON DELETE CASCADE) by id, scoped to .
 func (s *Store) DeleteGuide(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM arrival_checklist_guides
@@ -654,7 +651,7 @@ WHERE id = $1
 
 // ApproveGuide performs the human-in-the-loop approval: sets
 // hitl_reviewed_by, hitl_reviewed_at = now(), status = 'published', and
-// optionally records review notes. Scoped to tenant_id.
+// optionally records review notes. Scoped to .
 func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE arrival_checklist_guides

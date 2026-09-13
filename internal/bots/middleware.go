@@ -77,7 +77,7 @@ func BotDetectionMiddleware(store *Store, rdb *valkey.Client) func(http.Handler)
 }
 
 // getCachedBots returns the tenant's bot list, preferring a Valkey-cached
-// copy (jc:bot_list:{tenant_id}, 5-min TTL) and falling back to the DB.
+// copy (jc:bot_list:{}, 5-min TTL) and falling back to the DB.
 func getCachedBots(ctx context.Context, store *Store, rdb *valkey.Client, tenantID pgtype.UUID) ([]gen.KnownBot, error) {
 	cacheKey := valkey.MustKey("bot_list:%s", tenantID.String())
 

@@ -1,17 +1,14 @@
 // Package appointmentalert implements the Embassy Appointment Alerter
 // (§91, ADR-099).
-//
-// The package manages two tables created by migration 000327:
+// // The package manages two tables created by migration 000327:
 // monitored_embassies (admin-configured embassy booking pages that the
 // Asynq worker polls for open appointment slots) and appointment_alerts
 // (per-user subscriptions that fire a notification when a matching slot
 // appears). This package provides the CRUD, listing, and admin config
 // endpoints; the actual scraping/polling is performed by an Asynq worker
 // outside this package.
-//
-// Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
-//
-//	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
+// // Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md
+// //	japaconnect-engineering/adr/ADR-099-embassy-appointment-alerter.md
 package appointmentalert
 
 import (
@@ -779,8 +776,7 @@ WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 // effective poll interval has elapsed since last_polled_at (or
 // last_polled_at is NULL). Used by the recurring poll scheduler to enqueue
 // embassy:poll tasks at each embassy's configured interval (§91, ADR-099).
-//
-// The effective interval is computed per-embassy: if at least one
+// // The effective interval is computed per-embassy: if at least one
 // premium-tier user (holding the appointment_alert.premium permission) has
 // an active alert for the embassy, the effective interval is
 // LEAST(e.poll_interval_seconds, premiumIntervalSeconds); otherwise it is

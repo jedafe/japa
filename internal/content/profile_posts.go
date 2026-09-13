@@ -156,7 +156,7 @@ func orgRefFrom(orgID pgtype.UUID, name, slug *string, logoBucket, logoPath *str
 }
 
 // PostCard is the lean public shape for the profile Posts tab. It omits the
-// internal columns the raw gen row carries — tenant_id, the raw TipTap `body`
+// internal columns the raw gen row carries — , the raw TipTap `body`
 // (body_html is the rendered public form), field_values, content_hash,
 // geo_space_id, canonical_url, status/visibility (always published+public
 // here), is_locked, reshare_count, publish_at, updated_at.

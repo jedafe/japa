@@ -1,15 +1,12 @@
 // Package story implements the Community Story Wall (§79, ADR-087).
-//
-// Stories are records in the contents table with content_type = 'story',
+// // Stories are records in the contents table with content_type = 'story',
 // extended by the story_meta companion table for structured fields (origin
 // country, destination country, visa category, profession, relocation year,
 // challenge/advice fields). The package provides CRUD, filtered listing,
 // and admin verification — inheriting reactions, comments, bookmarks, space
 // filing, and analytics from the Content Type System (§14).
-//
-// Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//
-//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
+// // Ref: japaconnect-engineering/sections/79-community-story-wall.md
+// //	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (
@@ -37,8 +34,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // StoryMeta holds the structured fields for a single story.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type StoryMeta struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
@@ -64,8 +60,7 @@ type StoryMeta struct {
 
 // StoryRow is the joined result of contents + story_meta + space names,
 // returned by list and get-by-slug queries.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type StoryRow struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
@@ -115,7 +110,7 @@ type StoryRow struct {
 }
 
 // CreateStoryMeta inserts a new story_meta row linked to a contents row.
-// Upserts on the (content_id, tenant_id) unique key — the generic contents
+// Upserts on the (content_id, ) unique key — the generic contents
 // pipeline's syncStoryMeta may already have created the row (e.g. a story
 // created through /create before POST /stories completes its own insert).
 func (s *Store) CreateStoryMeta(ctx context.Context, meta StoryMeta) error {
@@ -227,7 +222,7 @@ func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID, tenantID pg
 // an "additional" space (the generic UpdateContentSpaces preserves additional
 // rows, which is correct for multi-space content but not for stories).
 func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpaceID, tenantID pgtype.UUID) error {
-	// content_spaces has no tenant_id column — the tenant scope is enforced
+	// content_spaces has no column — the tenant scope is enforced
 	// by joining through contents.
 	const q = `DELETE FROM content_spaces
 WHERE content_id = $1 AND space_id <> $2

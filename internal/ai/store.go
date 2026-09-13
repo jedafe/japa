@@ -31,7 +31,7 @@ func NewStore(read, write *pgxpool.Pool) *Store {
 // HITLReview represents a human-in-the-loop review record.
 type HITLReview struct {
 	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID `json:"tenant_id"`
+	TenantID      pgtype.UUID 
 	ContentID     pgtype.UUID `json:"content_id"`
 	ContentType   string      `json:"content_type"`
 	AIOutput      []byte      `json:"ai_output"`      // JSONB
@@ -98,7 +98,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 }
 
 // ApproveHITLReview sets the review status to 'approved' with the reviewer identity.
-// The tenant_id filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+// The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
 func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
@@ -117,7 +117,7 @@ func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, revie
 }
 
 // RejectHITLReview sets the review status to 'rejected' with a reason.
-// The tenant_id filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
+// The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
 func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
@@ -238,8 +238,7 @@ func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUI
 // AI Usage Log (Section 20 — admin AI usage monitoring)
 // ---------------------------------------------------------------------------
 // Matches the Section 20 contract: { total_cost_usd, tokens_used, by_task_type }.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AIUsageSummary struct {
 	TotalCostUSD float64             `json:"total_cost_usd"`
 	TokensUsed   int64               `json:"tokens_used"`
@@ -248,8 +247,7 @@ type AIUsageSummary struct {
 }
 
 // AIUsageByTaskType is the per-task-type cost/token breakdown.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AIUsageByTaskType struct {
 	TaskType     string  `json:"task_type"`
 	TokensUsed   int64   `json:"tokens_used"`
@@ -258,8 +256,7 @@ type AIUsageByTaskType struct {
 }
 
 // AIUsageByProvider is the per-provider cost/token breakdown.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type AIUsageByProvider struct {
 	Provider     string  `json:"provider"`
 	TokensUsed   int64   `json:"tokens_used"`

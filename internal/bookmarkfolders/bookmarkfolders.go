@@ -1,7 +1,6 @@
 // Package bookmarkfolders — first-class named bookmark folders (catalog:
 // GET/POST /me/bookmark-folders, PATCH/DELETE /me/bookmark-folders/:id).
-//
-// Distinct from bookmarks.folder (a free-text column added in migration
+// // Distinct from bookmarks.folder (a free-text column added in migration
 // 000103) — that denormalized string is untouched; reconciling the two is a
 // separate decision from wiring this CRUD.
 package bookmarkfolders
@@ -60,7 +59,7 @@ func (s *Service) CreateFolder(ctx context.Context, tenantID, userID pgtype.UUID
 
 // FolderResponse is the canonical API shape for a bookmark folder, returned
 // by every /me/bookmark-folders endpoint (list, create, update). It omits
-// tenant_id/user_id (the caller already knows their own identity — defense
+// /user_id (the caller already knows their own identity — defense
 // in depth) and includes position + bookmark_count so the shape is identical
 // across List, Create, and Update (BF-04/BF-05).
 type FolderResponse struct {

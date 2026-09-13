@@ -1,19 +1,16 @@
 // Package server — agent_tool_writers.go wires the per-tool service
 // Create/Update/Delete methods into the agentToolsRegistry's generic
 // CreateTool/UpdateTool/DeleteTool/AssignGeo dispatch.
-//
-// Each per-tool service exposes its own typed input and DTO structs. To
+// // Each per-tool service exposes its own typed input and DTO structs. To
 // avoid a 112-closure explosion, this file uses reflection to marshal the
 // generic map[string]any payload into the appropriate input struct, call
 // the service, and marshal the returned DTO back to map[string]any.
-//
-// Many services have non-standard method names (CreateGuide, UpdateGuide,
+// // Many services have non-standard method names (CreateGuide, UpdateGuide,
 // CreatePathway, etc.) or require an extra user/owner/caller UUID argument.
 // The reflection helpers detect the input type from the method signature
 // and supply the calling userID when the method takes an extra pgtype.UUID
 // parameter.
-//
-// Ref: docs/superpowers/specs/2026-08-24-dedicated-ai-tool-crud.md
+// // Ref: docs/superpowers/specs/2026-08-24-dedicated-ai-tool-crud.md
 package server
 
 import (
@@ -395,12 +392,12 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	}
 
 	// Supported write-method signatures:
-	//   Create: (ctx, input)
-	//   Create: (ctx, tenantID, input)
-	//   Create: (ctx, tenantID, userID, input)
-	//   Update: (ctx, input) -- input contains id + tenant_id
-	//   Update: (ctx, id, tenantID, input)
-	//   Update: (ctx, id, tenantID, userID, input)
+	// Create: (ctx, input)
+	// Create: (ctx, tenantID, input)
+	// Create: (ctx, tenantID, userID, input)
+	// Update: (ctx, input) -- input contains id +
+	// Update: (ctx, id, tenantID, input)
+	// Update: (ctx, id, tenantID, userID, input)
 	var (
 		create2 = isCreate && nIn == 2
 		create3 = isCreate && nIn == 3
@@ -415,7 +412,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
 	}
 
-	// Merge tenant_id and id into the payload so 2-argument methods that
+	// Merge and id into the payload so 2-argument methods that
 	// take a single gen/DTO input receive them without bespoke plumbing.
 	mergedPayload := make(map[string]any, len(payload)+2)
 	for k, v := range payload {

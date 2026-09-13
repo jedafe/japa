@@ -1,27 +1,23 @@
 // Package ai — agent_handlers.go implements the HTTP handlers for the AI
 // Agent Executor API surface (Section 103, ADR-111, Phase 6).
-//
-// Routes wired by internal/server:
-//
-//	POST   /api/v1/ai/agent                       — agent request (SSE stream)
-//	GET    /api/v1/ai/agent/capabilities          — tool catalog for current user
-//	GET    /api/v1/ai/agent/sessions              — user session history (paginated)
-//	GET    /api/v1/ai/agent/sessions/{id}         — session detail + tool call log
-//	POST   /api/v1/ai/agent/sessions/{id}/cancel  — cancel a running session
-//	POST   /api/v1/content/{id}/reassign-author   — reassign content authorship
-//	GET    /api/v1/me/ai-privacy                  — view own AI privacy exemptions
-//	PUT    /api/v1/me/ai-privacy                  — set AI privacy exemption on own data
-//	GET    /api/v1/admin/agent/sessions           — admin: all sessions (paginated)
-//	GET    /api/v1/admin/agent/sessions/{id}      — admin: session detail + audit trail
-//	GET    /api/v1/admin/agent/tool-stats         — admin: tool usage statistics
-//	GET    /api/v1/admin/agent/cost-report        — admin: cost breakdown by user
-//
-// SSE streaming is new to the codebase (no existing pattern). The agent
+// // Routes wired by internal/server:
+// //	POST /api/v1/ai/agent — agent request (SSE stream)
+// GET /api/v1/ai/agent/capabilities — tool catalog for current user
+// GET /api/v1/ai/agent/sessions — user session history (paginated)
+// GET /api/v1/ai/agent/sessions/{id} — session detail + tool call log
+// POST /api/v1/ai/agent/sessions/{id}/cancel — cancel a running session
+// POST /api/v1/content/{id}/reassign-author — reassign content authorship
+// GET /api/v1/me/ai-privacy — view own AI privacy exemptions
+// PUT /api/v1/me/ai-privacy — set AI privacy exemption on own data
+// GET /api/v1/admin/agent/sessions — admin: all sessions (paginated)
+// GET /api/v1/admin/agent/sessions/{id} — admin: session detail + audit trail
+// GET /api/v1/admin/agent/tool-stats — admin: tool usage statistics
+// GET /api/v1/admin/agent/cost-report — admin: cost breakdown by user
+// // SSE streaming is new to the codebase (no existing pattern). The agent
 // endpoint uses standard Go http.Flusher with Content-Type text/event-stream
 // per §103 "SSE Streaming". Each AgentEvent from the agent loop is marshaled
 // to JSON and written as a `data: {json}\n\n` line, flushed immediately.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (API Routes, SSE Streaming)
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (API Routes, SSE Streaming)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6, tasks 6.01-6.10)
 package ai
 
@@ -162,24 +158,19 @@ func WithAgentPreSearcher(p *PreSearcher) AgentHTTPOption {
 // HandleAgent is the SSE streaming endpoint for agent requests. It reads
 // the prompt from the request body, calls AgentHandler.HandleAgentRequest,
 // and streams AgentEvents back as Server-Sent Events.
-//
-// The request body accepts { prompt: string, conversation_id?: uuid } per
+// // The request body accepts { prompt: string, conversation_id?: uuid } per
 // §103. The conversation_id field is accepted for forward compatibility
 // with multi-turn conversations but is not yet used by the agent loop
 // (Phase 7+ will add conversation context persistence).
-//
-// SSE wire format per §103 "SSE Streaming":
-//
-//	Content-Type: text/event-stream
-//	Cache-Control: no-cache
-//	Connection: keep-alive
-//
-// Each event is written as `data: {json}\n\n` and flushed immediately so the
+// // SSE wire format per §103 "SSE Streaming":
+// //	Content-Type: text/event-stream
+// Cache-Control: no-cache
+// Connection: keep-alive
+// // Each event is written as `data: {json}\n\n` and flushed immediately so the
 // frontend receives progress incrementally. Pre-check failures (agent
 // disabled, no permission, rate limited) return a standard JSON error
 // response with the appropriate status code before the stream opens.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (SSE Streaming, API Routes).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (SSE Streaming, API Routes).
 func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -382,7 +373,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 
 // HandleGetSession returns a single agent session's detail plus its tool
 // call audit log. Ownership is enforced at the DB layer via
-// GetAgentSessionForUser (tenant_id + user_id + id) so a user cannot read
+// GetAgentSessionForUser ( + user_id + id) so a user cannot read
 // another user's session.
 func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
@@ -524,8 +515,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 // HandleReassignAuthor reassigns a content row's author_id and appends
 // authorship provenance to field_values._ai_provenance. Requires the
 // content.assign_author permission (enforced by router middleware).
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment).
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Authorship Assignment).
 func (h *AgentHTTPHandlers) HandleReassignAuthor(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -677,11 +667,10 @@ func mergeAuthorProvenance(fieldValues []byte, assignedBy pgtype.UUID, reason st
 
 // cfvEntityOwnedByUser checks whether the calling user owns the entity a
 // custom_field_value is attached to. Returns true for:
-//   - entity_type "content" → contents.author_id == userID (requires content store)
-//   - entity_type "user" or "user_profile" → entity_id == userID
-//   - other entity types → false (conservative deny)
-//
-// The content store is optional; if it's nil and the entity is content, the
+// - entity_type "content" → contents.author_id == userID (requires content store)
+// - entity_type "user" or "user_profile" → entity_id == userID
+// - other entity types → false (conservative deny)
+// // The content store is optional; if it's nil and the entity is content, the
 // function returns false (deny by default when ownership can't be verified).
 func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID, tenantID pgtype.UUID, content ContentAuthorQueries, ctx context.Context) bool {
 	switch entity.EntityType {
@@ -714,8 +703,7 @@ func cfvEntityOwnedByUser(entity gen.GetCustomFieldValueEntityRow, userID, tenan
 // HandleGetAIPrivacy returns the current user's AI privacy exemption status.
 // Per §103, users can set ai_exempt on their own data (profile, content,
 // custom_field_value).
-//
-// The current implementation returns the profile-level exemption flag
+// // The current implementation returns the profile-level exemption flag
 // (users.ai_exempt). Listing all exempt content/field values for a user
 // would require additional list queries (e.g. "ListExemptContentByAuthor")
 // which are not part of Phase 6. The frontend can determine per-entity
@@ -750,11 +738,10 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 
 // HandleSetAIPrivacy sets the ai_exempt flag on the user's own data. Per
 // §103, a user may only set the flag on their OWN data:
-//   - entity_type "profile" → users.ai_exempt (entity_id must be own user ID)
-//   - entity_type "content" → contents.ai_exempt (entity_id must be own content)
-//   - entity_type "custom_field_value" → custom_field_values.ai_exempt
-//
-// Ownership for "content" and "custom_field_value" is verified by checking
+// - entity_type "profile" → users.ai_exempt (entity_id must be own user ID)
+// - entity_type "content" → contents.ai_exempt (entity_id must be own content)
+// - entity_type "custom_field_value" → custom_field_values.ai_exempt
+// // Ownership for "content" and "custom_field_value" is verified by checking
 // that the content's author_id matches the user (for content) — the SQL
 // queries are tenant-scoped for defense-in-depth.
 func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Request) {
@@ -871,9 +858,9 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		// custom_field_values has no author_id column. We verify ownership
 		// transitively: look up the CFV's entity_type and entity_id, then
 		// check that the calling user owns that entity.
-		//   - entity_type "content" → contents.author_id must match user
-		//   - entity_type "user"/"user_profile" → entity_id must match user
-		//   - other entity types → deny (conservative default)
+		// - entity_type "content" → contents.author_id must match user
+		// - entity_type "user"/"user_profile" → entity_id must match user
+		// - other entity types → deny (conservative default)
 		// The SetCustomFieldValueAIExempt query is tenant-scoped via the
 		// custom_fields JOIN for defense-in-depth (BUG-014).
 		entity, err := h.sessions.GetCustomFieldValueEntity(r.Context(), entityID)
@@ -1076,11 +1063,9 @@ func (h *AgentHTTPHandlers) HandleAdminCostReport(w http.ResponseWriter, r *http
 
 // compareEntitiesRequest is the body shape for POST /api/v1/ai/compare-entities
 // per §103 API Routes:
-//
-//	{ entity_type, entity_ids: uuid[], comparison_fields?: string[],
-//	  focus?: string, geo_space_id?: uuid, create_post?: bool }
-//
-// entity_type is the slug of a comparison_type_definition (e.g.
+// //	{ entity_type, entity_ids: uuid[], comparison_fields?: string[],
+// focus?: string, geo_space_id?: uuid, create_post?: bool }
+// // entity_type is the slug of a comparison_type_definition (e.g.
 // "universities"). entity_ids are the comparison_items to compare
 // (referenced by their comparison_items.id). When create_post is true and
 // the tier is unstructured, the engine creates a new comparison content
@@ -1101,10 +1086,8 @@ type compareEntitiesRequest struct {
 // creates a new comparison content row. The actual value synthesis is left
 // to the agent loop (which has the LLM); this endpoint prepares the
 // structure and returns the tier + knowledge + existing/new comparison.
-//
-// Per §103: "agent-accessible, also directly callable". Gated by agent.use.
-//
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine, API Routes)
+// // Per §103: "agent-accessible, also directly callable". Gated by agent.use.
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine, API Routes)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 7, task 7.07).
 func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)

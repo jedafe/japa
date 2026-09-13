@@ -17,10 +17,8 @@ var ResolverKey = rbacContextKey{"rbac_resolver"}
 
 // RequirePermission is middleware that checks if the authenticated user
 // has a specific permission. It must be used after RequireAuth middleware.
-//
-// Usage:
-//
-//	r.With(rbac.RequirePermission(rbacResolver, "blog.publish")).Post("/posts", handler)
+// // Usage:
+// //	r.With(rbac.RequirePermission(rbacResolver, "blog.publish")).Post("/posts", handler)
 func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,11 +59,9 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 // (e.g. comparison.edit_any). The handler is responsible for enforcing
 // ownership when the user only has the "own" scope. Must be used after
 // RequireAuth middleware.
-//
-// Usage:
-//
-//	r.With(rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
-//		Patch("/comparisons/{id}", handler)
+// // Usage:
+// //	r.With(rbac.RequireAnyPermission(rbacResolver, "comparison.edit_own", "comparison.edit_any")).
+// Patch("/comparisons/{id}", handler)
 func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,8 +100,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 
 // RequirePermissionWithInvalidation is middleware that checks permission for
 // routes that modify group/role assignments (grant, revoke, moderate).
-//
-// Note: This middleware does NOT invalidate the requesting user's cache —
+// // Note: This middleware does NOT invalidate the requesting user's cache —
 // the requesting user's permissions do not change when they assign a
 // moderator or modify a role/group. The handler that processes the mutation
 // is responsible for invalidating the TARGET user's cache (e.g., the spaces
@@ -158,19 +153,15 @@ func FromContext(ctx context.Context) *RBAC {
 // GET /tags, GET /organizations) where guests and authed users with the
 // permission may view the page, but authed users whose groups have had the
 // permission revoked are denied (403). Must be used after OptionalAuth.
-//
-// Behavior:
-//   - Guest (no user in context): allowed (preserves public/SEO access)
-//   - Authed user with permission: allowed
-//   - Authed user without permission: 403 forbidden
-//   - Super admin: always allowed
-//
-// Usage:
-//
-//	r.With(auth.OptionalAuth(kr, vk), rbac.OptionalPermission(rbacResolver, "directory.users.view")).
-//	    Get("/users", handler)
-//
-// Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes).
+// // Behavior:
+// - Guest (no user in context): allowed (preserves public/SEO access)
+// - Authed user with permission: allowed
+// - Authed user without permission: 403 forbidden
+// - Super admin: always allowed
+// // Usage:
+// //	r.With(auth.OptionalAuth(kr, vk), rbac.OptionalPermission(rbacResolver, "directory.users.view")).
+// Get("/users", handler)
+// // Ref: japaconnect-engineering/sections/03-rbac.md (Directory visibility nodes).
 func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,20 +213,17 @@ func spaceFromContext(r *http.Request) pgtype.UUID {
 
 // RequireSpacePermission is middleware that checks if the authenticated user
 // has a space-scoped permission. It resolves the space_id from (in order):
-//  1. A space resolved by the spaces.SpaceResolver middleware (stored in
-//     context — used by {slug} routes)
-//  2. The chi URL parameter "space_id"
-//  3. The chi URL parameter "id"
-//
-// It then delegates to HasSpacePermission, which dynamically resolves
+// 1. A space resolved by the spaces.SpaceResolver middleware (stored in
+// context — used by {slug} routes)
+// 2. The chi URL parameter "space_id"
+// 3. The chi URL parameter "id"
+// // It then delegates to HasSpacePermission, which dynamically resolves
 // "spaces.moderate" via the space_moderators table (Section 03 / RBAC-001):
 // an assigned moderator can moderate the specific space they were assigned
 // to without holding the static "spaces.moderate" node.
-//
-// Usage:
-//
-//	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
-//	    Delete("/spaces/{slug}/rules/{ruleId}", handler)
+// // Usage:
+// //	r.With(rbac.RequireSpacePermission(rbacResolver, "spaces.moderate")).
+// Delete("/spaces/{slug}/rules/{ruleId}", handler)
 func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,5 @@
 // Package publicapi implements the Public API & Developer Portal (Section 47).
-//
-// This package provides API key management for external integrations.
+// // This package provides API key management for external integrations.
 // API keys are stored as SHA-256 hashes — the full key is returned only
 // once at creation time. Keys are validated via the X-API-Key header
 // and injected into the request context for downstream authorization.

@@ -19,8 +19,7 @@ import (
 const MaxStockBody int64 = 1 << 20 // 1MB — only small JSON payloads expected
 
 // StockHandlers holds the stock service for HTTP handler methods.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type StockHandlers struct {
 	svc *Service
 }
@@ -178,7 +177,7 @@ func (h *StockHandlers) GetPhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 // ImportPhoto downloads a stock photo and stores it in the media library.
-// POST /api/v1/stock/import  body: { "provider": "...", "id": "..." }.
+// POST /api/v1/stock/import body: { "provider": "...", "id": "..." }.
 func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
 
@@ -262,7 +261,7 @@ func (h *StockHandlers) AdminListProviders(w http.ResponseWriter, r *http.Reques
 }
 
 // AdminPatchProvider toggles enabled status or updates the API key.
-// PATCH /api/v1/admin/stock/providers/{name}  body: { "enabled": bool, "api_key": "..." }.
+// PATCH /api/v1/admin/stock/providers/{name} body: { "enabled": bool, "api_key": "..." }.
 func (h *StockHandlers) AdminPatchProvider(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxStockBody)
 

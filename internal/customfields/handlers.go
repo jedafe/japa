@@ -1,7 +1,6 @@
 // Package customfields — HTTP handlers for the Universal Custom Field
 // Architecture.
-//
-// Every handler is a method on Handlers so dependencies (Service and
+// // Every handler is a method on Handlers so dependencies (Service and
 // EmbedResolver) are injected via the constructor, never read from globals.
 // Responses follow the JapaConnect API envelope: success bodies are wrapped
 // in {"data": ...} and errors in {"error":{"code":"...","message":"..."}}.
@@ -180,7 +179,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // main app content composer and the admin panel expect these fields.
 type fieldGroupEnriched struct {
 	ID          pgtype.UUID        `json:"id"`
-	TenantID    pgtype.UUID        `json:"tenant_id"`
+	TenantID    pgtype.UUID        
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -328,15 +327,14 @@ func (h *Handlers) enrichFieldGroups(
 
 // ListFieldGroups handles GET /api/v1/custom-field-groups.
 // It accepts optional query params:
-//   - entity_class: exact match on the assignment entity_class column
-//   - entity_type:  simplified token (e.g. "content", "user_profile") that
-//     is matched against the derived EntityTypeFromClass value
-//   - q:            case-insensitive search on group name, slug, and description
-//   - sort:         "key:dir" e.g. "name:asc", "created_at:desc"
-//   - page:         1-based page number (default 1)
-//   - page_size:    page size (default 25, max 100)
-//
-// When both entity_class and entity_type are provided, entity_class takes
+// - entity_class: exact match on the assignment entity_class column
+// - entity_type: simplified token (e.g. "content", "user_profile") that
+// is matched against the derived EntityTypeFromClass value
+// - q: case-insensitive search on group name, slug, and description
+// - sort: "key:dir" e.g. "name:asc", "created_at:desc"
+// - page: 1-based page number (default 1)
+// - page_size: page size (default 25, max 100)
+// // When both entity_class and entity_type are provided, entity_class takes
 // precedence. The entity_type filter, search, sort, and pagination are all
 // applied post-enrichment so they work with the derived/simplified values
 // the frontend uses (Section 06).
@@ -1000,7 +998,7 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			//nolint:gosec // G115: bounded
+			// nolint:gosec // G115: bounded
 			if err := h.Service.UpdateFieldPosition(r.Context(), fieldID, groupID, tenantID, int32(i)); err != nil { // #nosec //nolint:gosec // G115: bounded
 				handleServiceError(w, err)
 				return
@@ -1270,8 +1268,7 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // ListFieldPermissions — SetFieldPermission handles PUT /api/v1/custom-fields/{id}/permissions.
-//
-// BUG-015/BUG-016: field-permission checks (CheckFieldPermissionForUser,
+// // BUG-015/BUG-016: field-permission checks (CheckFieldPermissionForUser,
 // ListVisibleFieldIDsForUser) are cached in Valkey under
 // jc:field_perm:{user_id} with a 5-minute TTL. This handler upserts a
 // permission for a user_group (not a specific user), so after the write we
@@ -1913,8 +1910,7 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 // Returns form definition data (including fields + success message) suitable
 // for rendering an embedded form publicly. Fields are returned so a public
 // form (e.g. /feedback) can be rendered without authentication.
-//
-// For multi-step forms, the response includes a `steps` array where each step
+// // For multi-step forms, the response includes a `steps` array where each step
 // has its own `fields[]` list (fields are scoped to the step's field group).
 // The flat `fields` array is still returned (as the concatenation of all step
 // fields) for backward compatibility with embeds that don't yet understand
@@ -2059,8 +2055,7 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 // SubmitForm handles POST /api/v1/forms/{id}/submissions. This endpoint is
 // public: authentication is optional, so an authenticated user is recorded
 // when present but anonymous submissions are accepted.
-//
-// For paid forms (submission_fee_credits > 0), the request must include a
+// // For paid forms (submission_fee_credits > 0), the request must include a
 // payment_method field: "credit" (wallet credits) or "paystack"/"stripe"
 // (payment gateway). Credits are deducted synchronously; gateway payments
 // create a pending submission + payment intent and return a checkout_url.
@@ -2308,7 +2303,7 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 	// it through to the trigger dispatcher without re-parsing.
 	payloadBytes, err := json.Marshal(struct {
 		SubmissionID string `json:"submission_id"`
-		TenantID     string `json:"tenant_id"`
+		TenantID     string 
 		FormID       string `json:"form_id"`
 		UserID       string `json:"user_id,omitempty"`
 		FieldValues  []byte `json:"field_values"`
@@ -2332,17 +2327,15 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 
 // validateFormSubmission validates the submitted field_values against the
 // form's field definitions (BUG-002). It checks:
-//  1. Required fields (is_required=true) are present and non-empty.
-//  2. Provided field keys/labels correspond to actual fields on the form.
-//  3. Values match their field types (URL, email, select options).
-//  4. rich_text values are sanitized (BUG-001).
-//
-// The field_values map is keyed by field label (matching the frontend
+// 1. Required fields (is_required=true) are present and non-empty.
+// 2. Provided field keys/labels correspond to actual fields on the form.
+// 3. Values match their field types (URL, email, select options).
+// 4. rich_text values are sanitized (BUG-001).
+// // The field_values map is keyed by field label (matching the frontend
 // contract — see apps/main feedback/+page.svelte). Field keys are also
 // accepted for API callers. The map is mutated in-place: rich_text values
 // are replaced with their sanitized versions.
-//
-// Returns an error message and false when validation fails, or "" and true
+// // Returns an error message and false when validation fails, or "" and true
 // when it passes. When the form has no field definitions (e.g. a legacy
 // form with no assigned field group), validation is skipped — all values
 // are accepted — to avoid breaking existing flows.
@@ -2383,7 +2376,7 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID, tenantID 
 	}
 
 	// 2. Check each provided value corresponds to a known field, and validate
-	//    the value against the field type.
+	// the value against the field type.
 	for rawKey, rawVal := range fieldValues {
 		f, ok := byLabel[rawKey]
 		if !ok {
@@ -2482,7 +2475,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
-		// Basic phone validation: digits, spaces, +, -, (, ).
+		// Basic phone validation: digits, spaces, +, -, ( ).
 		cleaned := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "", "+", "").Replace(strVal)
 		if len(cleaned) < 7 || len(cleaned) > 15 {
 			return fmt.Sprintf("Field %q must be a valid phone number (7-15 digits)", f.Label), false
@@ -3270,10 +3263,10 @@ func (h *Handlers) ListEntityTypes(w http.ResponseWriter, r *http.Request) {
 // ListEntityTypesAdmin handles GET /admin/custom-field-entity-types — returns
 // the full entity type rows (including is_system, sort_order) for the admin UI.
 // Supports optional query params:
-//   - q:         case-insensitive search on value and label
-//   - sort:      "key:dir" e.g. "label:asc", "sort_order:desc"
-//   - page:      1-based page number (default 1)
-//   - page_size: page size (default 25, max 100)
+// - q: case-insensitive search on value and label
+// - sort: "key:dir" e.g. "label:asc", "sort_order:desc"
+// - page: 1-based page number (default 1)
+// - page_size: page size (default 25, max 100)
 func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {

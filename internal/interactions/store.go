@@ -122,7 +122,7 @@ func (s *Service) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.U
 // =====================
 
 // MuteUser mutes a user. Returns true if muted, false if already muted (idempotent).
-// Invalidates the jc:muted_users:{tenant_id}:{user_id} Valkey cache (Section 52
+// Invalidates the jc:muted_users:{}:{user_id} Valkey cache (Section 52
 // / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.MuteUser(ctx, gen.MuteUserParams{
@@ -139,7 +139,7 @@ func (s *Service) MuteUser(ctx context.Context, tenantID, userID, mutedUserID pg
 }
 
 // UnmuteUser removes a mute.
-// Invalidates the jc:muted_users:{tenant_id}:{user_id} Valkey cache (Section 52
+// Invalidates the jc:muted_users:{}:{user_id} Valkey cache (Section 52
 // / VALKEY-001, BUG-003: tenant-scoped).
 func (s *Service) UnmuteUser(ctx context.Context, tenantID, userID, mutedUserID pgtype.UUID) error {
 	if err := s.write.UnmuteUser(ctx, gen.UnmuteUserParams{

@@ -4,12 +4,10 @@
 // single entity ID (or no ID for periodic tasks). The services, however, are
 // tenant-scoped — every method requires a tenantID. These adapters resolve
 // the tenant context and delegate to the appropriate service method.
-//
-// This package lives separate from internal/worker to avoid an import cycle:
+// // This package lives separate from internal/worker to avoid an import cycle:
 // worker → assessment → auth → worker. By placing the adapters here, worker
 // never imports the service packages, and the services never import workerv2.
-//
-// Ref: japaconnect-engineering/sections/60-78 (v2 features), ADRs 061-086.
+// // Ref: japaconnect-engineering/sections/60-78 (v2 features), ADRs 061-086.
 package workerv2
 
 import (
@@ -67,7 +65,7 @@ func listTenantIDs(ctx context.Context, database *db.DB) ([]pgtype.UUID, error) 
 	return ids, rows.Err()
 }
 
-// lookupTenantIDByEntity resolves the tenant_id for a single entity row by
+// lookupTenantIDByEntity resolves the for a single entity row by
 // table name and entity UUID. Used by entity-specific task adapters that
 // receive only the entity ID in the Asynq payload.
 func lookupTenantIDByEntity(ctx context.Context, database *db.DB, table, entityCol string, id pgtype.UUID) (pgtype.UUID, error) {
@@ -200,7 +198,7 @@ func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error)
 
 // ImportAdapter adapts the tenant-scoped contentimport.Service to the
 // ImportProcessor interface. The Asynq payload carries only import_id; the
-// adapter resolves tenant_id, source_type, and source_url from the database.
+// adapter resolves , source_type, and source_url from the database.
 type ImportAdapter struct {
 	svc *contentimport.Service
 	db  *db.DB

@@ -1,17 +1,14 @@
 // Package i18n — Service layer with in-memory + distributed Valkey cache for
 // translation lookups.
-//
-// The service maintains a per-tenant, per-locale cache that is lazily loaded
+// // The service maintains a per-tenant, per-locale cache that is lazily loaded
 // on first access and refreshed on mutation. The cache stores key→value maps
 // for fast O(1) lookups from the frontend public API endpoint.
-//
-// Two cache layers are used (Section 18 / VALKEY-002):
-//  1. In-memory L1 cache (per-instance, 5min TTL) — fastest lookups
-//  2. Distributed Valkey L2 cache (jc:cache:i18n:{tenant_id}:{locale}, 1h TTL)
-//     — shared across instances, eliminates DB refetch when a different
-//     instance has already loaded the same locale.
-//
-// On mutation, both layers are invalidated. The L2 DEL is best-effort; a
+// // Two cache layers are used (Section 18 / VALKEY-002):
+// 1. In-memory L1 cache (per-instance, 5min TTL) — fastest lookups
+// 2. Distributed Valkey L2 cache (jc:cache:i18n:{}:{locale}, 1h TTL)
+// — shared across instances, eliminates DB refetch when a different
+// instance has already loaded the same locale.
+// // On mutation, both layers are invalidated. The L2 DEL is best-effort; a
 // failed DEL is non-fatal because the 1h TTL bounds staleness.
 package i18n
 
@@ -72,7 +69,7 @@ func NewService(database *db.DB) *Service {
 }
 
 // SetValkey wires the Valkey client for the distributed L2 cache (Section 18 /
-// VALKEY-002). Keys: jc:cache:i18n:{tenant_id}:{locale}.
+// VALKEY-002). Keys: jc:cache:i18n:{}:{locale}.
 func (s *Service) SetValkey(vk valkeycompat.Cmdable) { s.vk = vk }
 
 // l2Key returns the Valkey L2 cache key for a tenant+locale.

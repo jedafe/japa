@@ -1,7 +1,6 @@
 // Package renderer provides server-side rendering of ProseMirror JSON
 // to HTML via TipTap (Section 15).
-//
-// The renderer shells out to Bun to run a TipTap SSR script. Results
+// // The renderer shells out to Bun to run a TipTap SSR script. Results
 // are cached in Valkey keyed by content_id:updated_at to avoid
 // re-rendering unchanged content.
 package renderer
@@ -93,8 +92,7 @@ func (r *Renderer) SetAffiliateLinkResolver(alr AffiliateLinkResolver) { r.affil
 // New creates a Renderer that shells out to the given Bun script.
 // The cache is used to store rendered HTML keyed by content_id:updated_at.
 // Pass nil for cache to disable caching.
-//
-// The scriptPath is validated against an allowlist root (JC_RENDERER_SCRIPT_ROOT
+// // The scriptPath is validated against an allowlist root (JC_RENDERER_SCRIPT_ROOT
 // or "./scripts/tiptap-ssr" by default): it must be relative, must not contain
 // ".." traversal, and must resolve inside the root. Absolute paths are rejected.
 // This prevents path traversal even if the admin config is compromised.
@@ -188,8 +186,7 @@ func validateScriptPath(scriptPath string) (string, error) {
 
 // Render converts ProseMirror JSON to HTML. If the result is cached,
 // it returns the cached version. Otherwise, it shells out to Bun.
-//
-// The tenantID scopes the Valkey cache key so one tenant cannot read
+// // The tenantID scopes the Valkey cache key so one tenant cannot read
 // another's rendered fragment (§4.2). The output is sanitized through
 // the shared content.SanitizeHTML allowlist before caching/returning to
 // prevent stored XSS from raw embed HTML or crafted node attributes
@@ -299,8 +296,8 @@ func validateRenderInput(data []byte) error {
 }
 
 // cacheKey generates a Valkey cache key for rendered HTML.
-// Format: jc:render:{tenant_id}:{content_id}:{updated_at_hash}. The
-// tenant_id scope prevents cross-tenant cache bleed (§4.2). Uses the
+// Format: jc:render:{}:{content_id}:{updated_at_hash}. The
+// scope prevents cross-tenant cache bleed (§4.2). Uses the
 // full SHA-256 hash to avoid collision risk from truncation (STD-003).
 func (r *Renderer) cacheKey(tenantID, contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()

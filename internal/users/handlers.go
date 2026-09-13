@@ -399,8 +399,7 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 // filter: regular/pro/business), page_size (default 20, max 100),
 // page_offset (default 0). Returns {data: items, meta: {total, page, total_pages}}.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
-//
-//	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
+// //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.requireTenant(w, r)
 	if !ok {
@@ -439,8 +438,7 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 // durations so the admin frontend does not need to hardcode them
 // (BUG-017 through BUG-021).
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses)
-//
-//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
 type UserModerationConfig struct {
 	Statuses             []ConfigOption   `json:"statuses"`
 	ProfileTypes         []ConfigOption   `json:"profile_types"`
@@ -466,8 +464,7 @@ type ConfigDuration struct {
 // types, restriction operations, and restriction durations so the admin
 // frontend does not hardcode them (BUG-017 through BUG-021).
 // Ref: japaconnect-engineering/sections/03-rbac.md (user statuses/profile types)
-//
-//	japaconnect-engineering/sections/46-impersonation.md (moderation)
+// //	japaconnect-engineering/sections/46-impersonation.md (moderation)
 func (h *Handlers) GetUserModerationConfig(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireTenant(w, r); !ok {
 		return
@@ -958,10 +955,8 @@ func (h *Handlers) GetMyLocation(w http.ResponseWriter, r *http.Request) {
 // receive 403 analytics_forbidden. Gated by requireActiveProfileUser on the
 // route (404 for banned/suspended/deleted). Returns aggregate stats for the
 // {id} user's published+public content plus follower/following counts.
-//
-// Ref: japaconnect-engineering/sections/33-professional-profiles.md
-//
-//	japaconnect-engineering/conventions/api-routes-catalog.md §342
+// // Ref: japaconnect-engineering/sections/33-professional-profiles.md
+// //	japaconnect-engineering/conventions/api-routes-catalog.md §342
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

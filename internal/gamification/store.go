@@ -1,15 +1,12 @@
 // Package gamification implements the Advanced Gamification layer (Section
 // 64, ADR-082): badges, challenges, and a leaderboard built on top of the
 // existing Points/Credits ledger and lifetime_points counter.
-//
-// Badge evaluation and challenge progress increment inside the existing
+// // Badge evaluation and challenge progress increment inside the existing
 // wallet:process_activity_event Asynq task — no separate gamification task
 // for most operations. The leaderboard is served from wallet_ledger with
-// Valkey caching (jc:leaderboard:{tenant_id}:{scope}:{period}, 1hr TTL).
-//
-// Ref: japaconnect-engineering/sections/64-gamification.md
-//
-//	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
+// Valkey caching (jc:leaderboard:{}:{scope}:{period}, 1hr TTL).
+// // Ref: japaconnect-engineering/sections/64-gamification.md
+// //	japaconnect-engineering/adr/ADR-082-advanced-gamification.md
 package gamification
 
 import (

@@ -1,6 +1,5 @@
 // Package search provides pluggable-engine search for JapaConnect.
-//
-// The handlers file serves search endpoints: multi-index search, autocomplete,
+// // The handlers file serves search endpoints: multi-index search, autocomplete,
 // space-scoped search, tag-scoped search, and admin search analytics.
 // When no search engine is configured the handler degrades gracefully
 // to empty results so the server always boots and tests run without a search engine.
@@ -115,7 +114,7 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 	h.cache = c
 }
 
-// searchCacheKey builds jc:cache:search:{tenant_id}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}.
+// searchCacheKey builds jc:cache:search:{}:{query_hash}:{type}:{geo}:{limit}:{page}:{sort}.
 // The query is SHA-256 hashed to keep keys short and avoid storing raw user
 // input in Valkey keys. geoCountry is included so visitors from different
 // countries don't share a cached result set (ADR-064 geo-boost). page and sort
@@ -130,8 +129,7 @@ func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, 
 // SearchResultItem holds the type-specific fields for a search result. Per
 // §54, each result type exposes its own field set. Fields are optional — only
 // the fields relevant to the type are populated.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type SearchResultItem struct {
 	ID           string `json:"id"`
 	Title        string `json:"title,omitempty"`
@@ -175,8 +173,7 @@ type SearchResponse struct { //nolint:revive // stuttering type name preserved f
 }
 
 // Search handles GET /api/v1/search?q=...&type=...&limit=20.
-//
-// It resolves the authenticated user and tenant from the request context,
+// // It resolves the authenticated user and tenant from the request context,
 // validates the query and limit, then runs a multi-index engine search
 // scoped to the tenant. The optional type parameter filters which indexes
 // are queried. Results are logged to search_analytics asynchronously.
@@ -301,8 +298,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 
 // SearchSpaces handles GET /api/v1/spaces/search — the same multi-search
 // pipeline as Search, with the type filter pinned to "space".
-//
-// §54: space search is public (guests can search). Uses OptionalAuth so a
+// // §54: space search is public (guests can search). Uses OptionalAuth so a
 // nil user is valid — analytics logging is skipped for guests.
 func (h *Handlers) SearchSpaces(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
@@ -399,7 +395,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 	queries := make([]Query, len(indexes))
 
 	for i, idx := range indexes {
-		filters := []FilterExpr{Eq{Field: "tenant_id", Value: tenantID.String()}}
+		filters := []FilterExpr{}
 
 		// §54: apply content_type / space_id / tag_slug filters to the
 		// posts index only. These attributes don't exist on other indexes.
@@ -410,8 +406,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 		// filterable attribute (posts, learning_tracks), boost results
 		// relevant to the visitor's country. The OR keeps globally-relevant
 		// content (empty relevant_countries) eligible.
-		//
-		// `relevant_countries` is an array of ISO codes — Eq is membership
+		// // `relevant_countries` is an array of ISO codes — Eq is membership
 		// on array fields. Do NOT use substring/contains operators here:
 		// engines may reject the whole multi-search, breaking search for
 		// every user with a non-empty ContentCountry.
@@ -694,8 +689,7 @@ type AutocompleteResponse struct {
 }
 
 // Autocomplete handles GET /api/v1/search/autocomplete?q=...&limit=5.
-//
-// Returns lightweight suggestions across users, spaces, tags, and content.
+// // Returns lightweight suggestions across users, spaces, tags, and content.
 // Maximum 8 results. NOT logged to search analytics per Section 54.
 func (h *Handlers) Autocomplete(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
@@ -803,8 +797,6 @@ func (h *Handlers) filterBlockedUsers(ctx context.Context, tenantID, currentUser
 // a small limit for typeahead suggestions. typeFilter (§54: user|space|tag|
 // content) restricts which indexes are queried; empty means all four.
 func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int, tenantID pgtype.UUID, typeFilter string) ([]AutocompleteSuggestion, error) {
-	tenantFilter := Eq{Field: "tenant_id", Value: tenantID.String()}
-
 	// Build the index list from the type filter. Default: all four
 	// autocomplete indexes (users, spaces, tags, posts).
 	var indexes []string
@@ -831,7 +823,7 @@ func (h *Handlers) runAutocomplete(ctx context.Context, query string, limit int,
 			IndexUID:             idx,
 			Text:                 query,
 			Limit:                limit,
-			Filter:               tenantFilter,
+			Filter:               nil,
 			AttributesToRetrieve: searchAttributesToRetrieve,
 		}
 	}
@@ -902,8 +894,7 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 }
 
 // SearchSpace handles GET /api/v1/spaces/:id/search?q=...&content_type=.
-//
-// Runs a content search scoped to a specific space via the space_id filter.
+// // Runs a content search scoped to a specific space via the space_id filter.
 func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -940,7 +931,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filters := []FilterExpr{
-		Eq{Field: "tenant_id", Value: t.ID.String()},
+		
 		Eq{Field: "space_id", Value: spaceID},
 	}
 
@@ -976,8 +967,7 @@ func (h *Handlers) SearchSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 // SearchTag handles GET /api/v1/tags/:slug/search?q=.
-//
-// Runs a content search filtered by tag slug via the content_tags junction.
+// // Runs a content search filtered by tag slug via the content_tags junction.
 func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 	user := auth.FromContext(r.Context())
 	if user == nil {
@@ -1018,7 +1008,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 		Text:     query,
 		Limit:    limit,
 		Filter: andAll(
-			Eq{Field: "tenant_id", Value: t.ID.String()},
+			
 			Eq{Field: "tag_slugs", Value: tagSlug},
 		),
 		AttributesToRetrieve: searchAttributesToRetrieve,
@@ -1044,8 +1034,7 @@ func (h *Handlers) SearchTag(w http.ResponseWriter, r *http.Request) {
 }
 
 // SearchAdminAnalytics handles GET /api/v1/admin/search/analytics.
-//
-// Returns search analytics: top queries, zero-result queries, and daily volume.
+// // Returns search analytics: top queries, zero-result queries, and daily volume.
 // Requires admin.analytics.search RBAC permission (enforced at router level).
 func (h *Handlers) SearchAdminAnalytics(w http.ResponseWriter, r *http.Request) {
 	t := &struct{ ID pgtype.UUID }{}
@@ -1179,8 +1168,7 @@ func (h *Handlers) logSearchAsync(ctx context.Context, tenantID pgtype.UUID, que
 }
 
 // typeFromParam extracts and validates the type filter parameter.
-//
-// Recognized values must match the `?type=` keys the frontend filter bar
+// // Recognized values must match the `?type=` keys the frontend filter bar
 // emits (apps/main /search: all, content, user, space, forum_thread,
 // organization) plus the backend-only surfaces (tag, course, doc).
 // §54 allows comma-separated values (e.g. "content,user"); this function
@@ -1206,8 +1194,7 @@ func typeFromParam(raw string) string {
 }
 
 // searchTypeIndexes maps a type filter to the indexes to query.
-//
-// Recognized values match the ?type= keys the frontend filter bar emits
+// // Recognized values match the ?type= keys the frontend filter bar emits
 // (apps/main /search: all, content, user, space, forum_thread, organization)
 // plus the backend-only surfaces (tag, course, doc). §54 allows comma-
 // separated values (e.g. "content,user") — these are split and the index

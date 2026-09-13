@@ -1,10 +1,8 @@
 // Package calendar — service.go orchestrates calendar entry browsing,
 // submission, save/subscribe, and admin review. Feature-flagged via
 // calendar.enabled system_setting (§86).
-//
-// Ref: japaconnect-engineering/sections/86-community-calendar.md
-//
-//	japaconnect-engineering/adr/ADR-094-community-calendar.md
+// // Ref: japaconnect-engineering/sections/86-community-calendar.md
+// //	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (
@@ -35,8 +33,7 @@ type Notifier interface {
 }
 
 // CalendarEntryDTO is the API response shape for a calendar entry (list).
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type CalendarEntryDTO struct {
 	ID                 string `json:"id"`
 	Title              string `json:"title"`
@@ -639,8 +636,7 @@ func (s *Service) FlagStaleEntries(ctx context.Context) (int64, error) {
 // dispatches reminder notifications to subscribers per §86, ADR-094.
 // Uses the notification system (§35) to create in-app + email + push
 // notifications based on user preferences.
-//
-// BUG-012: the store now pre-filters in SQL to only entries at the
+// // BUG-012: the store now pre-filters in SQL to only entries at the
 // 90/30/7-day marks, so the Go loop only processes entries that are
 // actually due a reminder.
 func (s *Service) SendReminders(ctx context.Context) (int, error) {
@@ -794,8 +790,7 @@ func parseTimestamp(s string) (pgtype.Timestamptz, error) {
 // ADR-088). The draft is inserted with status='pending', then stamped with
 // ai_generated=true, ai_model='content_agent_v1'. It requires HITL approval
 // before publication. Admin-only (community_calendar.manage permission).
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as description so a reviewer
 // can fill it manually (graceful degradation).

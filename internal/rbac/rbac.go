@@ -1,10 +1,8 @@
 // Package rbac implements the dynamic three-tier RBAC system for JapaConnect.
-//
-// The model is: User Groups -> User Roles -> Permissions.
+// // The model is: User Groups -> User Roles -> Permissions.
 // Every access decision resolves through HasPermission at runtime.
 // No role name is ever hardcoded in business logic.
-//
-// Three system defaults exist and cannot be deleted: super_admin, members, guest.
+// // Three system defaults exist and cannot be deleted: super_admin, members, guest.
 // All other groups are admin-created.
 package rbac
 
@@ -54,7 +52,7 @@ type Permission struct {
 // Group represents a user group.
 type Group struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
+	TenantID    pgtype.UUID 
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
 	Description string      `json:"description"`
@@ -73,7 +71,7 @@ type UserContext struct {
 // RBAC is the core RBAC resolver.
 // L1 = in-memory map (fastest, per-process).
 // L2 = Valkey (shared across server instances, 5min TTL).
-// DB  = source of truth (queried only on L1+L2 miss).
+// DB = source of truth (queried only on L1+L2 miss).
 type RBAC struct {
 	read  *gen.Queries
 	db    *db.DB
@@ -114,12 +112,10 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 
 // HasPermission checks if a user has a specific permission.
 // This is the canonical access check - never hardcode role names.
-//
-// Usage:
-//
-//	if rbac.HasPermission(ctx, userID, tenantID, "blog.publish") {
-//	    allowPublish()
-//	}
+// // Usage:
+// //	if rbac.HasPermission(ctx, userID, tenantID, "blog.publish") {
+// allowPublish()
+// }
 func (r *RBAC) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool {
 	uc, err := r.GetUserContext(ctx, userID, tenantID)
 	if err != nil || uc == nil {
@@ -202,15 +198,14 @@ func (r *RBAC) IsSuperAdmin(ctx context.Context, userID, tenantID pgtype.UUID) b
 // cannot impersonate another user who holds any admin-level role"), any user
 // holding one of these nodes — or the wildcard "*" — is considered
 // admin-level and cannot be impersonated. The list includes:
-//   - the admin-panel section-visibility gates seeded by migration 000147
-//     (admin.*.view)
-//   - the admin action/manage nodes seeded by migration 000109
-//     (admin.rbac.manage, admin.moderation, admin.settings, admin.broadcast,
-//     admin.users.manage, admin.groups.manage, admin.spaces.manage,
-//     admin.feature_flags.manage, etc.)
-//   - the wallet admin and impersonation nodes
-//
-// Together these capture every role that can reach the admin panel or perform
+// - the admin-panel section-visibility gates seeded by migration 000147
+// (admin.*.view)
+// - the admin action/manage nodes seeded by migration 000109
+// (admin.rbac.manage, admin.moderation, admin.settings, admin.broadcast,
+// admin.users.manage, admin.groups.manage, admin.spaces.manage,
+// admin.feature_flags.manage, etc.)
+// - the wallet admin and impersonation nodes
+// // Together these capture every role that can reach the admin panel or perform
 // privileged admin actions. A user granted any manage node without a
 // corresponding view node is still flagged as admin-capable.
 var adminCapabilityNodes = []string{
@@ -249,8 +244,7 @@ var adminCapabilityNodes = []string{
 // node (or the wildcard "*"). Used by the impersonation subsystem (Section 46)
 // to enforce the no-admin-on-admin-impersonation safety rule, and available
 // for any other code path that needs to detect privileged users.
-//
-// Ref: japaconnect-engineering/sections/46-impersonation.md.
+// // Ref: japaconnect-engineering/sections/46-impersonation.md.
 func (r *RBAC) HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool {
 	uc, err := r.GetUserContext(ctx, userID, tenantID)
 	if err != nil || uc == nil {

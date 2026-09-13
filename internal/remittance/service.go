@@ -2,10 +2,8 @@
 // Rate Tracker: latest-rate resolution with Valkey caching, the send-amount
 // calculator, historical chart data, rate-alert CRUD, and admin operations.
 // It reads remittance.* system_settings via the hot-reloadable config.Settings.
-//
-// Ref: japaconnect-engineering/sections/74-remittance-tracker.md
-//
-//	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
+// // Ref: japaconnect-engineering/sections/74-remittance-tracker.md
+// //	japaconnect-engineering/adr/ADR-075-remittance-rate-tracker.md
 package remittance
 
 import (

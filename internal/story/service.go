@@ -3,10 +3,8 @@
 // row creation to the content.Service (§14) and manages the story_meta
 // extension table via the local Store. Feature-flagged via story.enabled
 // system_setting (§79).
-//
-// Ref: japaconnect-engineering/sections/79-community-story-wall.md
-//
-//	japaconnect-engineering/adr/ADR-087-community-story-wall.md
+// // Ref: japaconnect-engineering/sections/79-community-story-wall.md
+// //	japaconnect-engineering/adr/ADR-087-community-story-wall.md
 package story
 
 import (
@@ -46,8 +44,7 @@ type FeatureChecker interface {
 }
 
 // StoryDTO is the API response shape for a single story.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type StoryDTO struct {
 	ID                string `json:"id"`
 	AuthorID          string `json:"author_id,omitempty"`
@@ -778,8 +775,7 @@ type GenerateDraftResponse struct {
 // It creates a contents row with content_type='story' (status='draft') and a
 // story_meta row with ai_generated=true, ai_model='content_agent_v1'. The
 // draft requires HITL verification before publication.
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as the body so a reviewer can
 // fill it manually (graceful degradation).

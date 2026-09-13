@@ -1,7 +1,6 @@
 // Package credentialchecker implements the Professional Credential
 // Recognition Checker (§94, ADR-102).
-//
-// The package provides credential pathway lookup, community note
+// // The package provides credential pathway lookup, community note
 // submission, and admin HITL review workflow for professional credential
 // recognition pathways between jurisdictions. Pathways describe how a
 // credential earned in one space (issuing jurisdiction) maps to another
@@ -10,10 +9,8 @@
 // supervised practice, or full requalification), timeline and cost
 // estimates, and official application URLs. Community notes let members
 // share lived experience alongside the official pathway data.
-//
-// Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
-//
-//	japaconnect-engineering/adr/ADR-102-credential-checker.md
+// // Ref: japaconnect-engineering/sections/94-professional-credential-checker.md
+// //	japaconnect-engineering/adr/ADR-102-credential-checker.md
 package credentialchecker
 
 import (
@@ -646,7 +643,7 @@ WHERE id = $%d
 	return nil
 }
 
-// DeletePathway deletes a credential_pathways row by id and tenant_id.
+// DeletePathway deletes a credential_pathways row by id and .
 // Returns pgx.ErrNoRows if the row does not exist for the tenant.
 func (s *Store) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `

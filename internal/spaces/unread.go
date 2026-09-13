@@ -12,9 +12,9 @@ import (
 )
 
 // UnreadCounter manages per-user per-space unread post counts using Valkey.
-// Key format: jc:space_unread:{tenant_id}:{user_id}:{space_id} -> integer
+// Key format: jc:space_unread:{}:{user_id}:{space_id} -> integer
 // Counters are incremented on new post fan-out and reset to 0 on visit.
-// The tenant_id segment ensures no cross-tenant collision if user IDs are
+// The segment ensures no cross-tenant collision if user IDs are
 // not globally unique (Rule 4, §4.2).
 type UnreadCounter struct {
 	rdb valkeycompat.Cmdable

@@ -1,13 +1,12 @@
 // Package scheduler selects due intelligence sources for crawling and
 // auto-tunes their effective crawl interval based on observed content
 // volatility (source idea §17, Phase 3 Task 20).
-//
-// The volatility auto-tuner stores a per-source effective interval in Valkey
-// under `jc:intel:effective_interval:{tenant_id}:{source_id}` (TTL 7d).
+// // The volatility auto-tuner stores a per-source effective interval in Valkey
+// under `jc:intel:effective_interval:{}:{source_id}` (TTL 7d).
 // After 5 consecutive unchanged crawls the interval is doubled (capped at
 // MaxEffectiveIntervalMins); after any change the interval is halved (floored
 // at the source's base crawl_frequency_mins). A separate counter key
-// `jc:intel:effective_interval:{tenant_id}:{source_id}:unchanged_count`
+// `jc:intel:effective_interval:{}:{source_id}:unchanged_count`
 // tracks the consecutive-unchanged streak so the value survives restarts.
 // All keys are tenant-scoped per ADR-112 Amendment 2.
 package scheduler
@@ -78,15 +77,13 @@ func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.S
 // RecordCrawlOutcome updates the volatility auto-tuner state for a source
 // after a crawl completes. If changed is true the content hash differed from
 // the previous crawl; otherwise the source was crawled but unchanged.
-//
-// Tuning rules:
-//   - unchanged: increment the consecutive-unchanged counter. When it reaches
-//     UnchangedThreshold, double the effective interval (capped at
-//     MaxEffectiveIntervalMins) and reset the counter.
-//   - changed: halve the effective interval, floored at the source's base
-//     crawl_frequency_mins, and reset the counter.
-//
-// baseIntervalMins is the source's crawl_frequency_mins and acts as the
+// // Tuning rules:
+// - unchanged: increment the consecutive-unchanged counter. When it reaches
+// UnchangedThreshold, double the effective interval (capped at
+// MaxEffectiveIntervalMins) and reset the counter.
+// - changed: halve the effective interval, floored at the source's base
+// crawl_frequency_mins, and reset the counter.
+// // baseIntervalMins is the source's crawl_frequency_mins and acts as the
 // floor for the effective interval.
 func (s *Scheduler) RecordCrawlOutcome(ctx context.Context, sourceID string, baseIntervalMins int32, changed bool) error {
 	if sourceID == "" {

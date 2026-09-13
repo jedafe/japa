@@ -2,10 +2,8 @@
 // & Digest System (Section 62, ADR-080). Covers subscriber management,
 // campaign CRUD, one-click unsubscribe tokens, subscriber preferences,
 // and weekly digest support.
-//
-// Ref: japaconnect-engineering/sections/62-newsletter-digest.md
-//
-//	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
+// // Ref: japaconnect-engineering/sections/62-newsletter-digest.md
+// //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 package newsletter
 
 import (
@@ -70,7 +68,7 @@ const (
 // Subscriber represents a newsletter subscriber.
 type Subscriber struct {
 	ID              pgtype.UUID        `json:"id"`
-	TenantID        pgtype.UUID        `json:"tenant_id"`
+	TenantID        pgtype.UUID        
 	Email           string             `json:"email"`
 	UserID          *pgtype.UUID       `json:"user_id,omitempty"`
 	Status          string             `json:"status"`
@@ -85,7 +83,7 @@ type Subscriber struct {
 // Campaign represents a newsletter campaign.
 type Campaign struct {
 	ID             pgtype.UUID         `json:"id"`
-	TenantID       pgtype.UUID         `json:"tenant_id"`
+	TenantID       pgtype.UUID         
 	Name           string              `json:"name"`
 	Subject        string              `json:"subject"`
 	HTML           string              `json:"html"`

@@ -107,8 +107,7 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 }
 
 // InitiateConversation handles POST /api/v1/dm/conversations.
-//
-// Creates or retrieves a conversation with the specified recipient and
+// // Creates or retrieves a conversation with the specified recipient and
 // sends the initial message. Checks blocks and DM privacy settings per
 // Section 48. Body: { recipient_id, message }.
 func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) {
@@ -462,8 +461,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // EditMessage handles PATCH /api/v1/dm/conversations/{id}/messages/{mid}.
-//
-// Edits a message within the 15-minute window. Only the sender can edit.
+// // Edits a message within the 15-minute window. Only the sender can edit.
 func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -523,8 +521,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteMessage handles DELETE /api/v1/dm/conversations/{id}/messages/{mid}.
-//
-// Soft-deletes a message. Only the sender can delete.
+// // Soft-deletes a message. Only the sender can delete.
 func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {

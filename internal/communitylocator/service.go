@@ -3,10 +3,8 @@
 // admin moderation (publish/archive), verification, and organization
 // claim workflow. Feature-flagged via community_locator.enabled
 // system_setting (§101).
-//
-// Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
-//
-//	japaconnect-engineering/adr/ADR-109-community-locator.md
+// // Ref: japaconnect-engineering/sections/101-diaspora-community-locator.md
+// //	japaconnect-engineering/adr/ADR-109-community-locator.md
 package communitylocator
 
 import (
@@ -181,8 +179,7 @@ func (s *Service) OrgTypes() []OrgTypeOption {
 // Submit creates a new community organisation submission. The row is
 // created with status='pending' (awaiting admin review). Auth required
 // (community_locator.submit permission checked at route level).
-//
-// Per §101/ADR-109: when the submitter provides an address but no
+// // Per §101/ADR-109: when the submitter provides an address but no
 // coordinates, the service forward-geocodes the address via Nominatim
 // to populate latitude/longitude. If geocoding fails, the submission
 // proceeds without coordinates (the org is still valid, just without a
@@ -293,7 +290,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 
 	id, err := s.store.CreateOrg(ctx, in)
 	if err != nil {
-		// Detect unique constraint violation on (tenant_id, slug) and return
+		// Detect unique constraint violation on (, slug) and return
 		// a typed error so the handler can map it to 409 duplicate_slug.
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -338,8 +335,7 @@ type GenerateInput struct {
 // status='published') and enters the admin HITL review queue. An admin
 // approves it via ApproveOrg, which transitions ai_draft → published and
 // stamps the HITL review fields.
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the
 // §20 AI Gateway via the "content_generation" category to populate the
 // description/contact fields from the prompt. If the dispatcher is nil,
 // the draft is still created with the admin-supplied structured input

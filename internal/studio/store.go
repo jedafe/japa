@@ -1,14 +1,11 @@
 // Package studio implements the AI Content Studio (Section 75, ADR-076).
-//
-// Admin-facing persona-seeded content generation: an admin configures a
+// // Admin-facing persona-seeded content generation: an admin configures a
 // persona + content type + topic brief, submits a job (or batch), and the
 // system generates a draft via the AI gateway. All drafts enter the §22
 // content_reviews queue. High-stakes guide categories always require human
 // review; low-stakes types may auto-publish per studio.auto_publish_types.
-//
-// Ref: japaconnect-engineering/sections/75-ai-content-studio.md
-//
-//	japaconnect-engineering/adr/ADR-076-ai-content-studio.md
+// // Ref: japaconnect-engineering/sections/75-ai-content-studio.md
+// //	japaconnect-engineering/adr/ADR-076-ai-content-studio.md
 package studio
 
 import (
@@ -39,7 +36,7 @@ var ErrJobNotCancellable = errors.New("studio: job is not in a cancellable statu
 // Job is a studio_jobs row.
 type Job struct {
 	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
+	TenantID       pgtype.UUID        
 	BatchID        pgtype.UUID        `json:"batch_id"`
 	PersonaID      pgtype.UUID        `json:"persona_id"`
 	ContentType    string             `json:"content_type"`
@@ -64,7 +61,7 @@ type Job struct {
 // Batch is a studio_batches row.
 type Batch struct {
 	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID `json:"tenant_id"`
+	TenantID    pgtype.UUID 
 	Name        string      `json:"name"`
 	Description *string     `json:"description"`
 	CreatedBy   pgtype.UUID `json:"created_by"`
@@ -492,8 +489,7 @@ func (s *Store) ListFailedJobs(ctx context.Context, tenantID, batchID pgtype.UUI
 // breakdown fields (Queued/Generating/...) mirror the statuses the admin
 // frontend renders on the Stats tab; TotalJobs is the overall count and
 // PublishRate / AvgReviewH are the aggregate quality metrics.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type StudioStats struct {
 	TotalJobs   int64   `json:"total_jobs"`
 	Queued      int64   `json:"queued"`

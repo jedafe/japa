@@ -127,14 +127,12 @@ func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, user
 // is a server-side value that cannot be influenced by the client. When SiteURL
 // is not configured, it falls back to a trusted-proxy-gated derivation from
 // X-Forwarded-Host / X-Forwarded-Proto via clientip.ForwardedBaseURL.
-//
-// This prevents host-header / password-reset link poisoning (CWE-601): the
+// // This prevents host-header / password-reset link poisoning (CWE-601): the
 // previous implementation derived the base URL from r.Host (the client-
 // controllable Host header) and an unvalidated X-Forwarded-Proto, allowing an
 // attacker to send Host: evil.com and capture the reset token when the victim
 // clicked the link in the email.
-//
-// The r.Host fallback is used ONLY when the immediate peer is a trusted
+// // The r.Host fallback is used ONLY when the immediate peer is a trusted
 // proxy. r.Host is the client-controllable Host header; behind a trusted
 // proxy it is the vhost the proxy forwarded, which is as trustworthy as the
 // X-Forwarded-Host value ForwardedBaseURL already accepts from trusted peers.
@@ -291,8 +289,8 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		var pgErr *pgconn.PgError
 		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 		if isDuplicate {
-			// The users table has unique constraints on (tenant_id, email)
-			// and (tenant_id, username). Distinguish them when possible.
+			// The users table has unique constraints on (, email)
+			// and (, username). Distinguish them when possible.
 			if pgErr != nil && strings.Contains(pgErr.ConstraintName, "username") {
 				errpkg.WriteError(w, http.StatusConflict, "username_exists", "Username already in use")
 				return
@@ -620,13 +618,11 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 // which detects refresh-token theft: if a stolen token is used, the
 // legitimate user's next refresh presents the now-revoked token and the
 // server rejects it.
-//
-// The user's status and email-verification state are re-checked on every
+// // The user's status and email-verification state are re-checked on every
 // refresh so a suspended/banned user cannot keep minting access tokens
 // until their refresh token expires. Ref: §02 (Session invalidation on
 // ban, Email verify required).
-//
-// Mobile clients (X-Device-Id header) send the refresh token in the JSON
+// // Mobile clients (X-Device-Id header) send the refresh token in the JSON
 // body instead of the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	var refreshToken string
@@ -997,8 +993,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 // Logout handles POST /api/v1/auth/logout.
 // Revokes the refresh token, revokes the current access token's JTI,
 // and clears the cookie.
-//
-// Mobile clients send the refresh token in the JSON body because they do
+// // Mobile clients send the refresh token in the JSON body because they do
 // not store the HttpOnly cookie used by the web SPA.
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if isMobileClient(r) {

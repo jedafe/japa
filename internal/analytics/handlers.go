@@ -1,6 +1,5 @@
 // Package analytics — HTTP handlers for Platform Analytics & Site Reports (Section 40).
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission
@@ -60,7 +59,7 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 	h.cache = c
 }
 
-// analyticsCacheKey builds jc:cache:analytics:{tenant_id}:{endpoint}:{period}.
+// analyticsCacheKey builds jc:cache:analytics:{}:{endpoint}:{period}.
 func analyticsCacheKey(tenantID pgtype.UUID, endpoint, period string) string {
 	return vkcache.MustKey("cache:analytics:%s:%s:%s", tenantID.String(), endpoint, period)
 }
@@ -254,8 +253,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveWindow determines the analytics [from, to] window for a request.
-//
-// When both `from` and `to` are supplied they take precedence. They accept
+// // When both `from` and `to` are supplied they take precedence. They accept
 // either RFC3339 or date-only (YYYY-MM-DD) format. When only `from` is
 // supplied the window is left-open (to == nil). When `from` is absent it
 // falls back to the `period` query parameter (24h|7d|30d|90d) or the `days`

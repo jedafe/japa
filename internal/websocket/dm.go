@@ -47,7 +47,7 @@ func (s *Store) CreateWSTicket(ctx context.Context, userID, tenantID pgtype.UUID
 	)
 }
 
-// UseWSTicket marks a ticket as used and returns it if valid. The tenant_id
+// UseWSTicket marks a ticket as used and returns it if valid. The
 // is validated alongside the user_id so a ticket minted in tenant A cannot be
 // consumed in tenant B context (Rule 4: tenant-scoped validation).
 func (s *Store) UseWSTicket(ctx context.Context, id, userID, tenantID pgtype.UUID) (gen.WsTicket, error) {
@@ -58,7 +58,7 @@ func (s *Store) UseWSTicket(ctx context.Context, id, userID, tenantID pgtype.UUI
 }
 
 // GetWSTicketForRedemption resolves a ticket by ID when the Valkey cache
-// misses, returning the user_id and tenant_id needed to upgrade the WebSocket
+// misses, returning the user_id and needed to upgrade the WebSocket
 // connection.
 func (s *Store) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (gen.WsTicket, error) {
 	return s.read.GetWSTicketForRedemption(ctx, id)
@@ -149,7 +149,7 @@ func (s *DMStore) MarkMessagesRead(ctx context.Context, tenantID, conversationID
 
 // UpdateConversationLastMessage updates the last message metadata. The
 // timestamp is set to now() in SQL (not passed from Go) so it is always
-// the actual current time. The tenant_id scopes the update (Rule 4).
+// the actual current time. The scopes the update (Rule 4).
 func (s *DMStore) UpdateConversationLastMessage(ctx context.Context, tenantID, conversationID pgtype.UUID, preview *string) error {
 	return s.write.UpdateConversationLastMessage(ctx, gen.UpdateConversationLastMessageParams{
 		ConversationID: conversationID,

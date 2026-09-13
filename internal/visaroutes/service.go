@@ -1,10 +1,8 @@
 // Package visaroutes — service.go orchestrates public listing,
 // comparison, detail, and admin CRUD with HITL approval for visa routes
 // (§90). Feature-flagged via visa_routes.enabled system_setting.
-//
-// Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
-//
-//	japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
+// // Ref: japaconnect-engineering/sections/90-visa-route-comparison.md
+// //	japaconnect-engineering/adr/ADR-098-visa-route-comparison.md
 package visaroutes
 
 import (
@@ -521,8 +519,7 @@ func (s *Service) Deactivate(ctx context.Context, id pgtype.UUID) error {
 // ai_generated=true, ai_model='content_agent_v1', and
 // ai_prompt_hash=SHA256(prompt). It requires HITL approval before
 // publication. Admin-only (visa_routes.manage permission).
-//
-// When an AI dispatcher is wired (SetDispatcher), the method calls the AI
+// // When an AI dispatcher is wired (SetDispatcher), the method calls the AI
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with placeholder content so a reviewer can
 // fill it manually (graceful degradation).

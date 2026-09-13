@@ -29,9 +29,8 @@ type AIGateway interface {
 
 // Extractor calls the AI gateway to extract structured entity fields from
 // source text, then validates the output against the entity schema.
-//
-// When a Valkey client is provided via WithCache, extraction results are
-// cached under jc:intel:extraction_cache:{tenant_id}:{content_hash} (24hr
+// // When a Valkey client is provided via WithCache, extraction results are
+// cached under jc:intel:extraction_cache:{}:{content_hash} (24hr
 // TTL) so identical source content skips the LLM call on subsequent crawls
 // (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
 // ADR-112 Amendment 2).
@@ -48,8 +47,7 @@ type Extractor struct {
 }
 
 // ExtractorOption configures an Extractor.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type ExtractorOption func(*Extractor)
 
 // WithModel sets the LLM model identifier passed in the request.
@@ -86,7 +84,7 @@ func WithCategory(c string) ExtractorOption {
 // WithCache enables Valkey-backed extraction result caching. Identical
 // source content (by SHA-256 hash) skips the LLM call and returns the
 // cached extraction result. The cache key is
-// jc:intel:extraction_cache:{tenant_id}:{content_hash} with a 24hr TTL
+// jc:intel:extraction_cache:{}:{content_hash} with a 24hr TTL
 // per valkey-keys-catalog Section INTEL (BUG-18 fix, tenant-scoped per
 // ADR-112 Amendment 2).
 func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
@@ -131,9 +129,8 @@ type ExtractResult struct {
 // Extract calls the AI gateway with the scholarship prompt, parses the JSON
 // response, and validates it against the scholarship schema. It retries up to
 // maxRetries times when the LLM returns malformed JSON.
-//
-// When a Valkey client is configured (via WithCache), the extraction result
-// is cached under jc:intel:extraction_cache:{tenant_id}:{content_hash}
+// // When a Valkey client is configured (via WithCache), the extraction result
+// is cached under jc:intel:extraction_cache:{}:{content_hash}
 // (24hr TTL) so identical source content skips the LLM call on subsequent
 // crawls (BUG-18 fix, valkey-keys-catalog Section INTEL, tenant-scoped per
 // ADR-112 Amendment 2).
@@ -261,9 +258,9 @@ func (e *Extractor) cachedExtraction(ctx context.Context, schema schemas.EntityS
 }
 
 // extractionCacheKey returns the Valkey key for the extraction cache.
-// The key is jc:intel:extraction_cache:{tenant_id}:{content_hash} where
+// The key is jc:intel:extraction_cache:{}:{content_hash} where
 // content_hash is the SHA-256 of the entity type + source text, ensuring
-// identical content across re-crawls hits the cache. The tenant_id scopes
+// identical content across re-crawls hits the cache. The scopes
 // the cache per tenant (ADR-112 Amendment 2).
 func (e *Extractor) extractionCacheKey(entityType, sourceText string) string {
 	h := sha256.Sum256([]byte(entityType + ":" + sourceText))
@@ -358,49 +355,49 @@ var ErrEmptyContent = errors.New("extractor: AI gateway returned empty content")
 // returning an error (BUG-16 fix).
 var ErrExtractionRetriesExhausted = errors.New("extractor: retries exhausted on malformed JSON")
 
-//go:embed prompts/scholarship.txt
+// go:embed prompts/scholarship.txt
 var scholarshipPrompt string
 
-//go:embed prompts/job.txt
+// go:embed prompts/job.txt
 var jobPrompt string
 
-//go:embed prompts/visa.txt
+// go:embed prompts/visa.txt
 var visaPrompt string
 
-//go:embed prompts/remittance.txt
+// go:embed prompts/remittance.txt
 var remittancePrompt string
 
-//go:embed prompts/cost_of_living.txt
+// go:embed prompts/cost_of_living.txt
 var costOfLivingPrompt string
 
-//go:embed prompts/housing.txt
+// go:embed prompts/housing.txt
 var housingPrompt string
 
-//go:embed prompts/travel_routes.txt
+// go:embed prompts/travel_routes.txt
 var travelRoutesPrompt string
 
-//go:embed prompts/grants.txt
+// go:embed prompts/grants.txt
 var grantsPrompt string
 
-//go:embed prompts/admission.txt
+// go:embed prompts/admission.txt
 var admissionPrompt string
 
-//go:embed prompts/banking.txt
+// go:embed prompts/banking.txt
 var bankingPrompt string
 
-//go:embed prompts/work_career.txt
+// go:embed prompts/work_career.txt
 var workCareerPrompt string
 
-//go:embed prompts/health_insurance.txt
+// go:embed prompts/health_insurance.txt
 var healthInsurancePrompt string
 
-//go:embed prompts/credential_pathway.txt
+// go:embed prompts/credential_pathway.txt
 var credentialPathwayPrompt string
 
-//go:embed prompts/culture_lifestyle.txt
+// go:embed prompts/culture_lifestyle.txt
 var cultureLifestylePrompt string
 
-//go:embed prompts/news.txt
+// go:embed prompts/news.txt
 var newsPrompt string
 
 // promptTemplates maps entity_type → embedded prompt template. Adding a

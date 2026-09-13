@@ -15,8 +15,7 @@ import (
 // GetPublicOrganization handles GET /organizations/{slug} (public). Returns the
 // lean org header for ACTIVE orgs; non-active/deleted/missing → 404 (the query
 // returns no row → handleServiceError maps pgx.ErrNoRows to 404).
-//
-// The {slug} slot also accepts a UUID: when the param parses as a UUID and the
+// // The {slug} slot also accepts a UUID: when the param parses as a UUID and the
 // caller is an authenticated member of that org, the full gen.Organization row
 // is returned (for the org admin dashboard). This avoids a routing conflict
 // between {slug} and {id} on the same path.

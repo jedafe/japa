@@ -72,16 +72,14 @@ func sourceToDirectoryEntry(s sources.Source) sourceDirectoryEntry {
 // sources are listed; internal crawl state (errors, robots policy, provider
 // config) is omitted. The route uses OptionalAuth so anonymous users can
 // browse the directory.
-//
-// When the ?include_disabled=true query param is set, ALL sources (including
+// // When the ?include_disabled=true query param is set, ALL sources (including
 // disabled) are returned with the full crawl-state fields the control panel
 // needs (crawl_method, crawl_frequency, last_crawled_at, etc.). This is used
 // by the control panel sources management page so disabled sources are
 // visible and re-enableable (BUG-004 fix — the prior endpoint only returned
 // enabled sources via the public directory shape, so the control panel could
 // never see or manage disabled sources).
-//
-// GET /api/v1/intel/sources.
+// // GET /api/v1/intel/sources.
 func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request) {
 	if h.intelSources == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -239,8 +237,7 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 // The record is then ready for promotion via the intel:promote task, which
 // the control panel can trigger manually or which runs automatically on the
 // next crawl cycle (BUG-23 fix).
-//
-// POST /api/v1/intel/review/{record_id}/approve.
+// // POST /api/v1/intel/review/{record_id}/approve.
 func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -321,8 +318,7 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 // HandleReviewReject rejects an intel record pending review. It sets the
 // record status to 'rejected' and writes an audit entry to the review log.
 // The record is not promoted (BUG-23 fix).
-//
-// POST /api/v1/intel/review/{record_id}/reject.
+// // POST /api/v1/intel/review/{record_id}/reject.
 func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
@@ -413,7 +409,7 @@ type intelRecordResponse struct {
 	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
 	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
 	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
-	TenantID          pgtype.UUID        `json:"tenant_id"`
+	TenantID          pgtype.UUID        
 }
 
 // intelRecordToResponse converts a generated intel record row to the
@@ -489,8 +485,7 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 	// only allows ('extracted','deduped','auto_published','review_required',
 	// 'approved','rejected','published','stale'). The prior 'review' value
 	// matched nothing, so the moderation queue was always empty.
-	//
-	// BUG-001 fix: the prior handler hardcoded EntityType='scholarship', so
+	// // BUG-001 fix: the prior handler hardcoded EntityType='scholarship', so
 	// job/visa/grant records awaiting review were invisible. Now an optional
 	// ?entity_type= query param filters by entity type; when omitted, ALL
 	// entity types with review_required status are returned.
@@ -553,10 +548,8 @@ var validIntelRecordStatuses = map[string]bool{
 // records in any pipeline stage (approved, published, rejected, stale,
 // etc.). The control panel review list page and the intelligence overview
 // page both call this endpoint for non-review_required statuses.
-//
-// GET /api/v1/intel/records?status={status}&entity_type={type}
-//
-// Requires: intel.review.view
+// // GET /api/v1/intel/records?status={status}&entity_type={type}
+// // Requires: intel.review.view
 // Ref: route catalog §2248 (intel records list), BUG-A fix.
 func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request) {
 	if h.intelStores == nil {
@@ -629,10 +622,8 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 // uses this to render a record after it has been approved/rejected/published
 // — the prior approach scanned the review_required queue, so any record no
 // longer in that queue was unreachable (BUG-B fix).
-//
-// GET /api/v1/intel/records/{id}
-//
-// Requires: intel.review.view
+// // GET /api/v1/intel/records/{id}
+// // Requires: intel.review.view
 // Ref: route catalog §2249 (intel record detail), BUG-B fix.
 func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Intel record not found", "intel record",

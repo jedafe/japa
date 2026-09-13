@@ -2,10 +2,8 @@
 // browsing, subscription, and moderator review. Feature-flagged via
 // scam_alert.enabled system_setting (§81). Anonymous reports are allowed
 // when scam_alert.anonymous_reports is enabled.
-//
-// Ref: japaconnect-engineering/sections/81-scam-alert-board.md
-//
-//	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
+// // Ref: japaconnect-engineering/sections/81-scam-alert-board.md
+// //	japaconnect-engineering/adr/ADR-089-scam-alert-board.md
 package scamalert
 
 import (
@@ -550,8 +548,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status st
 // Review updates the status of a report (confirm, debunk, or mark duplicate).
 // The reviewerID is stamped as reviewed_by. §81 status machine:
 // under_review → confirmed | debunked | duplicate.
-//
-// When the status is "confirmed", a scam_alert:notify_subscribers Asynq task
+// // When the status is "confirmed", a scam_alert:notify_subscribers Asynq task
 // is enqueued fire-and-forget (Rule 8) to fan out notifications to
 // subscribers of the report's destination space, award the Community
 // Guardian badge to the reporter (§64), and enqueue wallet:award_points
@@ -581,7 +578,7 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 	if status == "confirmed" && s.enqueuer != nil {
 		payload, err := json.Marshal(struct {
 			ReportID string `json:"report_id"`
-			TenantID string `json:"tenant_id"`
+			TenantID string 
 		}{
 			ReportID: id.String(),
 		})
@@ -598,16 +595,15 @@ func (s *Service) Review(ctx context.Context, id, tenantID pgtype.UUID, status, 
 // NotifySubscribers is the Asynq task processor for
 // scam_alert:notify_subscribers. It is called fire-and-forget after a
 // moderator confirms a report. It:
-//  1. Loads the confirmed report's destination_space_id + reporter_id.
-//  2. Queries all subscribers for that destination.
-//  3. Dispatches a scam_alert.confirmed notification to each subscriber
-//     via the notification service (§35).
-//  4. Awards the Community Guardian badge to the reporter via the
-//     gamification service (§64) — EvaluateForWallet with activity key
-//     "scam_alert.confirmed".
-//  5. Enqueues wallet:award_points for the reporter's contribution.
-//
-// All steps are nil-safe: if the notifier/awarder/enqueuer is not wired,
+// 1. Loads the confirmed report's destination_space_id + reporter_id.
+// 2. Queries all subscribers for that destination.
+// 3. Dispatches a scam_alert.confirmed notification to each subscriber
+// via the notification service (§35).
+// 4. Awards the Community Guardian badge to the reporter via the
+// gamification service (§64) — EvaluateForWallet with activity key
+// "scam_alert.confirmed".
+// 5. Enqueues wallet:award_points for the reporter's contribution.
+// // All steps are nil-safe: if the notifier/awarder/enqueuer is not wired,
 // the method logs a warning and continues. This makes the feature
 // gracefully degrade in tests and development.
 func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error {
@@ -649,12 +645,12 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 	}
 
 	// 2. Record the scam_alert.confirmed activity for the reporter (§64).
-	//    The wallet:process_activity_event task evaluates badge/challenge
-	//    triggers for the key — community_guardian (threshold 1) is awarded
-	//    on the reporter's first confirmed report. Emitting the activity
-	//    event (rather than calling the evaluator directly) is what makes
-	//    the activity_count trigger see this report. The reporter_id may be
-	//    invalid for anonymous reports — skip in that case.
+	// The wallet:process_activity_event task evaluates badge/challenge
+	// triggers for the key — community_guardian (threshold 1) is awarded
+	// on the reporter's first confirmed report. Emitting the activity
+	// event (rather than calling the evaluator directly) is what makes
+	// the activity_count trigger see this report. The reporter_id may be
+	// invalid for anonymous reports — skip in that case.
 	if s.activity != nil && reporterID.Valid {
 		event, err := s.activity.EmitActivityEvent(ctx, tenantID, reporterID, wallet.EmitActivityEventInput{
 			ActivityKey: wallet.ActivityKeyScamAlertConfirmed,
@@ -671,12 +667,12 @@ func (s *Service) NotifySubscribers(ctx context.Context, reportID, tenantID pgty
 	}
 
 	// 3. Enqueue wallet:award_points for the reporter's contribution.
-	//    The points amount is configured via the wallet activity_rules
-	//    table. Here we enqueue a direct award with a fixed amount as a
-	//    baseline; the wallet service deduplicates via idempotency key.
+	// The points amount is configured via the wallet activity_rules
+	// table. Here we enqueue a direct award with a fixed amount as a
+	// baseline; the wallet service deduplicates via idempotency key.
 	if s.enqueuer != nil && reporterID.Valid {
 		payload, err := json.Marshal(struct {
-			TenantID    string `json:"tenant_id"`
+			TenantID    string 
 			UserID      string `json:"user_id"`
 			Points      int64  `json:"points"`
 			Reason      string `json:"reason"`

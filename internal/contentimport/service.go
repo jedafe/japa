@@ -4,10 +4,8 @@
 // parses RSS feeds or ZIP exports, converts posts to TipTap JSON (Section 15),
 // creates draft contents rows with canonical_url set to the original URL
 // (Section 26), and enqueues import:fetch_media for each imported item.
-//
-// Ref: japaconnect-engineering/sections/65-content-import.md
-//
-//	japaconnect-engineering/adr/ADR-083-content-import.md
+// // Ref: japaconnect-engineering/sections/65-content-import.md
+// //	japaconnect-engineering/adr/ADR-083-content-import.md
 package contentimport
 
 import (
@@ -448,8 +446,7 @@ func (s *Service) ProcessSource(ctx context.Context, tenantID, importID pgtype.U
 // the media pipeline (Section 34), and replaces the external URLs with
 // stored media URLs. The heavy lifting is delegated to the MediaFetcher
 // adapter (wired in server.go) to avoid a circular import on media/content.
-//
-// If no MediaFetcher is wired, the method logs a warning and returns nil —
+// // If no MediaFetcher is wired, the method logs a warning and returns nil —
 // the imported content is still usable, just with external image URLs.
 func (s *Service) FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
 	if s.mediaFetcher == nil {

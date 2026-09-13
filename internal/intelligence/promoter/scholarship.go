@@ -23,8 +23,7 @@ import (
 
 // Store is the persistence surface the ScholarshipPromoter needs.
 // *stores.Store satisfies this interface; tests substitute a mock.
-//
-// WithTx runs a callback inside a transaction. The callback receives a
+// // WithTx runs a callback inside a transaction. The callback receives a
 // TxStore — a narrower interface that only exposes the write methods needed
 // inside the transaction. This ensures createPath and updatePath perform
 // their multi-table writes atomically (BUG-01/02 fix, §6.2 transaction
@@ -79,8 +78,7 @@ const freshScore int32 = 100
 // scholarships projection table. High-confidence, trusted records also create
 // a published contents guide entry and link it through scholarships.guide_id.
 // Lower-confidence records are created with guide_id NULL and routed to review.
-//
-// It implements the editorial-override-respect invariant: on the update path,
+// // It implements the editorial-override-respect invariant: on the update path,
 // any field present in scholarships.editorial_overrides is left untouched so a
 // human edit always wins over a re-crawl.
 type ScholarshipPromoter struct {
@@ -684,8 +682,7 @@ func buildUpdateParams(existing gen.Scholarship, ext extractor.Extraction, overr
 
 // ---------------------------------------------------------------------------
 // Update-params field applicators
-//
-// Each helper applies a single extraction field to a params struct: skipped
+// // Each helper applies a single extraction field to a params struct: skipped
 // when the field is in editorial_overrides, and only assigned when the new
 // value differs from the existing column. Changed fields are recorded in
 // `changed` so the caller can build an accurate review-log entry.
@@ -1665,7 +1662,7 @@ const maxSlugAttempts = 100
 // ensureUniqueSlug appends a numeric suffix to the candidate (-2, -3, ...) until
 // no contents row in the tenant uses the same slug. The optional excludeID
 // allows an existing content's own slug to be reused during an update. The
-// check includes soft-deleted rows because the unique index on (tenant_id,
+// check includes soft-deleted rows because the unique index on (,
 // slug) is not partial.
 func (p *ScholarshipPromoter) ensureUniqueSlug(ctx context.Context, tx TxStore, slug string, excludeID pgtype.UUID) (string, error) {
 	if slug == "" {

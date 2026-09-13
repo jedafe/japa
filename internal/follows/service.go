@@ -54,8 +54,7 @@ var ErrEntityNotFound = errors.New("entity not found")
 // following the entity, false if they unfollowed. When following a space with
 // `joining_perm = 'open'`, the follower is auto-joined as a member (BL-010 /
 // Section 31). Unfollowing does NOT auto-leave (membership is independent).
-//
-// The follow row toggle and the denormalized follower_count update run in a
+// // The follow row toggle and the denormalized follower_count update run in a
 // single transaction so a count-update failure rolls back the follow (H1 —
 // prevents count drift). Notification dispatch (Section 35, type
 // follow.received) is fire-and-forget per Rule 8 — it runs after the
@@ -120,7 +119,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 		// BUG-012: invalidate the follower's for-you feed cache so the new
 		// follow/unfollow is reflected immediately in their ranked feed.
 		// The cache key pattern is
-		// jc:cache:feed:foryou:{tenant_id}:{user_id}:{sort_mode}:{content_country}
+		// jc:cache:feed:foryou:{}:{user_id}:{sort_mode}:{content_country}
 		// — we SCAN + DEL all variants for this user. Ref: Section 32.
 		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", tenantID, followerID)
 
@@ -212,8 +211,7 @@ func (s *Service) GetFollow(ctx context.Context, tenantID, followerID pgtype.UUI
 // avoid a DB hit on every profile page render. On cache miss or when Valkey
 // is not wired, falls back to the store query and populates the cache.
 // Ref: japaconnect-engineering/sections/31-follow-system.md
-//
-//	conventions/valkey-keys-catalog.md (Follow System section)
+// //	conventions/valkey-keys-catalog.md (Follow System section)
 func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// L3: try Valkey cache first (best-effort — never block on cache).
 	if s.vk != nil {
@@ -255,8 +253,7 @@ func (s *Service) IsFollowing(ctx context.Context, tenantID, followerID pgtype.U
 // checks a single direction (does entityID follow followerID?), so we call
 // it twice and AND the results — mirroring the DM store pattern
 // (internal/websocket/dm.go IsMutualFollow).
-//
-// Ref: japaconnect-engineering/sections/31-follow-system.md (Mutual Follow).
+// // Ref: japaconnect-engineering/sections/31-follow-system.md (Mutual Follow).
 func (s *Service) IsMutualFollow(ctx context.Context, tenantID, followerID, entityID pgtype.UUID) (bool, error) {
 	// Direction 1: does entityID follow followerID?
 	dir1, err := s.store.isMutualFollow(ctx, tenantID, followerID, entityID)

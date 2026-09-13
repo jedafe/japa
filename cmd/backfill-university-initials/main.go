@@ -2,8 +2,7 @@
 // value for every existing university space using the latest DeriveInitials
 // logic. It reads the official_website_url custom field (when present) and the
 // university name, then upserts the initials value.
-//
-// Run as a one-off after updating the curated override maps or the derivation
+// // Run as a one-off after updating the curated override maps or the derivation
 // algorithm. It intentionally overwrites existing initials so the improved
 // derivation takes effect; admin-entered values should be preserved by running
 // this only before production launch or after a deliberate override refresh.

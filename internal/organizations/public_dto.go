@@ -7,7 +7,7 @@ import (
 )
 
 // PublicOrgResponse is the lean public shape for the org profile header. It
-// omits internal columns the raw gen.Organization row carries (tenant_id,
+// omits internal columns the raw gen.Organization row carries (,
 // owner_user_id, field_values, status, deleted_at, updated_at).
 type PublicOrgResponse struct {
 	ID               pgtype.UUID        `json:"id"`

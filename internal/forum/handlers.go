@@ -1,6 +1,5 @@
 // Package forum — HTTP handlers for the Forum Q&A / Solved system.
-//
-// Every handler is a method on Handlers so dependencies (Service) are
+// // Every handler is a method on Handlers so dependencies (Service) are
 // injected via the constructor, never read from globals. Responses follow
 // the JapaConnect API envelope: success bodies are wrapped in {"data": ...}
 // and errors in {"error":{"code":"...","message":"..."}}. Permission
@@ -739,8 +738,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 	// DB round-trip on every request. The cache has a 5-minute TTL; on a
 	// cache miss we fetch the accepted reply, generate the JSON-LD, and
 	// store it. For unsolved threads we generate inline (no DB fetch).
-	//
-	// Section 14 / Section 26: prefer the admin-managed QAPage template
+	// // Section 14 / Section 26: prefer the admin-managed QAPage template
 	// (interpolated with the thread's field values) over the hardcoded
 	// generator. The generator remains the fallback when no active template
 	// exists or the resolver is unavailable.
@@ -872,8 +870,7 @@ func (h *Handlers) GetThread(w http.ResponseWriter, r *http.Request) {
 // or reply body (TipTap JSON) and fires a mention.content notification to
 // each via the batch system (Section 35 — BL-002). Fire-and-forget per
 // Rule 8: errors are logged but never propagated to the caller.
-//
-// Self-mentions (mentioning the author) are skipped.
+// // Self-mentions (mentioning the author) are skipped.
 // Privacy filtering (blocks, erased users, private-space membership) is
 // applied via mentions.FilterMentions when checkers are wired (Section 15).
 // The notificationType parameter distinguishes thread mentions

@@ -1,19 +1,15 @@
 // Package calendar implements the Community Calendar (§86, ADR-094).
-//
-// A community-driven event calendar for each destination Space. Members
+// // A community-driven event calendar for each destination Space. Members
 // submit events (festivals, meetups, markets) which enter a pending review
 // queue. Moderators approve, archive, or flag submissions. Authenticated
 // users can save individual events and subscribe to category/destination
 // notifications.
-//
-// BUG-007: fixed-shape queries are now sqlc-generated (Rule 2). The
+// // BUG-007: fixed-shape queries are now sqlc-generated (Rule 2). The
 // dynamic-filter queries (ListEntries, AdminListEntries,
 // UpcomingEntriesForReminders) remain hand-written pgx because sqlc
 // cannot express dynamic WHERE clauses or dynamic OR builders.
-//
-// Ref: japaconnect-engineering/sections/86-community-calendar.md
-//
-//	japaconnect-engineering/adr/ADR-094-community-calendar.md
+// // Ref: japaconnect-engineering/sections/86-community-calendar.md
+// //	japaconnect-engineering/adr/ADR-094-community-calendar.md
 package calendar
 
 import (
@@ -49,8 +45,7 @@ func NewStore(database *db.DB) *Store {
 }
 
 // CalendarEntry represents a single calendar_entries row.
-//
-//nolint:revive // exported: stutter naming is intentional
+// //nolint:revive // exported: stutter naming is intentional
 type CalendarEntry struct {
 	ID                 pgtype.UUID
 	TenantID           pgtype.UUID
@@ -198,15 +193,13 @@ func (s *Store) FlagStaleEntries(ctx context.Context) (int64, error) {
 // specified day-offset marks (e.g. 90/30/7 days from now) that have
 // subscribers. Used by calendar:send_reminders.
 // Ref: §86 — reminders fire at 90/30/7 days before each entry.
-//
-// BUG-012: the SQL pre-filters to a 1-day-wide window around each mark so
+// // BUG-012: the SQL pre-filters to a 1-day-wide window around each mark so
 // the Go loop only processes entries that are actually due a reminder,
 // instead of loading the entire 90-day window and skipping most rows.
 // The window is [today + days, today + days + 1 day) so that a daily task
 // firing at any time of day catches entries whose occurs_at falls on the
 // target calendar day.
-//
-// This query uses a dynamic OR clause and cannot be expressed in sqlc.
+// // This query uses a dynamic OR clause and cannot be expressed in sqlc.
 func (s *Store) UpcomingEntriesForReminders(ctx context.Context, dayMarks []int) ([]CalendarEntry, error) {
 	if len(dayMarks) == 0 {
 		return nil, nil
@@ -399,8 +392,7 @@ type ListEntriesFilter struct {
 // ListEntries returns published calendar entries matching the filter.
 // Uses COUNT(*) OVER() window function to return the total count in the
 // same query, avoiding a separate COUNT query (BUG-024).
-//
-// This query uses a dynamic WHERE clause and cannot be expressed in sqlc.
+// // This query uses a dynamic WHERE clause and cannot be expressed in sqlc.
 func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
 		conditions []string
@@ -634,8 +626,7 @@ type AdminListEntriesFilter struct {
 // AdminListEntries returns all calendar entries (any status) for admin
 // management (paginated). Uses COUNT(*) OVER() window function to return
 // the total count in the same query (BUG-024).
-//
-// This query uses a dynamic WHERE clause + dynamic ORDER BY and cannot
+// // This query uses a dynamic WHERE clause + dynamic ORDER BY and cannot
 // be expressed in sqlc.
 func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) ([]CalendarEntry, int64, error) {
 	var (
