@@ -593,7 +593,7 @@ func (s *Service) AddMember(ctx context.Context, orgID, addedBy, targetUserID pg
 	}
 
 	// Fetch the org for the tenant-scoped member-count update (read before tx).
-	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	_, err = s.store.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("finding organization: %w", err)
 	}
@@ -665,7 +665,7 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 	}
 
 	// Fetch the org for tenant-scoped member-count update.
-	org, err := s.store.GetOrganizationByIDOnly(ctx, orgID)
+	_, err = s.store.GetOrganizationByIDOnly(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("finding organization: %w", err)
 	}

@@ -681,7 +681,7 @@ func (q *Queries) ListCustomFieldGroupsByTenant(ctx context.Context) ([]CustomFi
 }
 
 const listCustomFieldGroupsByTenantAndEntityClass = `-- name: ListCustomFieldGroupsByTenantAndEntityClass :many
-SELECT DISTINCT cfg.id, cfg.name, cfg.slug, cfg.description,
+SELECT DISTINCT cfg.id, cfg.tenant_id, cfg.name, cfg.slug, cfg.description,
  cfg.is_system, cfg.created_at
 FROM custom_field_groups cfg
 JOIN custom_field_group_assignments cfga ON cfg.id = cfga.group_id
@@ -689,26 +689,18 @@ WHERE cfga.entity_class = $1
 ORDER BY cfg.created_at DESC, cfg.id DESC
 `
 
-type ListCustomFieldGroupsByTenantAndEntityClassRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Name        string             `json:"name"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	IsSystem    bool               `json:"is_system"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Context, entityClass string) ([]ListCustomFieldGroupsByTenantAndEntityClassRow, error) {
+func (q *Queries) ListCustomFieldGroupsByTenantAndEntityClass(ctx context.Context, entityClass string) ([]CustomFieldGroup, error) {
 	rows, err := q.db.Query(ctx, listCustomFieldGroupsByTenantAndEntityClass, entityClass)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListCustomFieldGroupsByTenantAndEntityClassRow
+	var items []CustomFieldGroup
 	for rows.Next() {
-		var i ListCustomFieldGroupsByTenantAndEntityClassRow
+		var i CustomFieldGroup
 		if err := rows.Scan(
 			&i.ID,
+			&i.TenantID,
 			&i.Name,
 			&i.Slug,
 			&i.Description,

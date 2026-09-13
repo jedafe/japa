@@ -820,7 +820,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -906,7 +906,7 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2647,7 +2647,7 @@ func (h *Handlers) ListFormSubmissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3406,7 +3406,7 @@ func (h *Handlers) ListEntityTypesAdmin(w http.ResponseWriter, r *http.Request) 
 
 // CreateEntityType handles POST /admin/custom-field-entity-types.
 func (h *Handlers) CreateEntityType(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3449,7 +3449,7 @@ func (h *Handlers) UpdateEntityType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
