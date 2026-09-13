@@ -55,24 +55,24 @@ type AgentSessionQueries interface {
 	// User-facing session history + detail.
 	GetAgentSessionForUser(ctx context.Context, arg gen.GetAgentSessionForUserParams) (gen.AiAgentSession, error)
 	ListAgentSessionsByUser(ctx context.Context, arg gen.ListAgentSessionsByUserParams) ([]gen.AiAgentSession, error)
-	CountAgentSessionsByUser(ctx context.Context, arg gen.CountAgentSessionsByUserParams) (int64, error)
-	ListAgentToolCallsBySession(ctx context.Context, arg gen.ListAgentToolCallsBySessionParams) ([]gen.AiAgentToolCall, error)
-	CancelAgentSession(ctx context.Context, arg gen.CancelAgentSessionParams) (gen.AiAgentSession, error)
+	CountAgentSessionsByUser(ctx context.Context, userID pgtype.UUID) (int64, error)
+	ListAgentToolCallsBySession(ctx context.Context, sessionID pgtype.UUID) ([]gen.AiAgentToolCall, error)
+	CancelAgentSession(ctx context.Context, id pgtype.UUID) (gen.AiAgentSession, error)
 
 	// Admin session listing + detail.
-	GetAgentSession(ctx context.Context, arg gen.GetAgentSessionParams) (gen.AiAgentSession, error)
+	GetAgentSession(ctx context.Context, id pgtype.UUID) (gen.AiAgentSession, error)
 	ListAgentSessionsForAdmin(ctx context.Context, arg gen.ListAgentSessionsForAdminParams) ([]gen.AiAgentSession, error)
-	CountAgentSessionsForAdmin(ctx context.Context, arg gen.CountAgentSessionsForAdminParams) (int64, error)
+	CountAgentSessionsForAdmin(ctx context.Context, statusFilter string) (int64, error)
 
 	// Admin aggregates.
 	GetAgentToolStats(ctx context.Context, arg gen.GetAgentToolStatsParams) ([]gen.GetAgentToolStatsRow, error)
 	GetAgentCostReport(ctx context.Context, arg gen.GetAgentCostReportParams) ([]gen.GetAgentCostReportRow, error)
 
 	// Privacy exemption reads (GET /me/ai-privacy).
-	GetContentAIExempt(ctx context.Context, arg gen.GetContentAIExemptParams) (bool, error)
-	GetCustomFieldValueAIExempt(ctx context.Context, arg gen.GetCustomFieldValueAIExemptParams) (bool, error)
-	GetCustomFieldValueEntity(ctx context.Context, arg gen.GetCustomFieldValueEntityParams) (gen.GetCustomFieldValueEntityRow, error)
-	GetUserAIExempt(ctx context.Context, arg gen.GetUserAIExemptParams) (bool, error)
+	GetContentAIExempt(ctx context.Context, id pgtype.UUID) (bool, error)
+	GetCustomFieldValueAIExempt(ctx context.Context, id pgtype.UUID) (bool, error)
+	GetCustomFieldValueEntity(ctx context.Context, id pgtype.UUID) (gen.GetCustomFieldValueEntityRow, error)
+	GetUserAIExempt(ctx context.Context, id pgtype.UUID) (bool, error)
 
 	// Privacy exemption writes (PUT /me/ai-privacy).
 	SetContentAIExempt(ctx context.Context, arg gen.SetContentAIExemptParams) (gen.SetContentAIExemptRow, error)
@@ -358,10 +358,7 @@ func (h *AgentHTTPHandlers) HandleListSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	total, err := h.sessions.CountAgentSessionsByUser(r.Context(), gen.CountAgentSessionsByUserParams{
-
-		UserID: user.UserID,
-	})
+	total, err := h.sessions.CountAgentSessionsByUser(r.Context(), user.UserID)
 	if err != nil {
 		slog.Warn("ai: counting agent sessions", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
@@ -420,9 +417,7 @@ func (h *AgentHTTPHandlers) HandleGetSession(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), gen.ListAgentToolCallsBySessionParams{
-		SessionID: sessionID,
-	})
+	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), sessionID)
 	if err != nil {
 		slog.Warn("ai: listing agent tool calls", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
@@ -501,9 +496,7 @@ func (h *AgentHTTPHandlers) HandleCancelSession(w http.ResponseWriter, r *http.R
 	// Mark the session row as cancelled. CancelAgentSession only updates
 	// rows with status = 'running' (race-safe: if the loop completes
 	// between the ownership check and here, the row is already terminal).
-	_, cancelErr := h.sessions.CancelAgentSession(r.Context(), gen.CancelAgentSessionParams{
-		ID: sessionID,
-	})
+	_, cancelErr := h.sessions.CancelAgentSession(r.Context(), sessionID)
 	if cancelErr != nil {
 		if errors.Is(cancelErr, pgx.ErrNoRows) {
 			// The session completed between the ownership check and the
@@ -744,9 +737,7 @@ func (h *AgentHTTPHandlers) HandleGetAIPrivacy(w http.ResponseWriter, r *http.Re
 	}
 
 	// Profile-level exemption (users.ai_exempt).
-	profileExempt, err := h.sessions.GetUserAIExempt(r.Context(), gen.GetUserAIExemptParams{
-		ID: user.UserID,
-	})
+	profileExempt, err := h.sessions.GetUserAIExempt(r.Context(), user.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		slog.Warn("ai: reading user ai_exempt", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to read privacy status")
@@ -891,9 +882,7 @@ func (h *AgentHTTPHandlers) HandleSetAIPrivacy(w http.ResponseWriter, r *http.Re
 		//   - other entity types → deny (conservative default)
 		// The SetCustomFieldValueAIExempt query is tenant-scoped via the
 		// custom_fields JOIN for defense-in-depth (BUG-014).
-		entity, err := h.sessions.GetCustomFieldValueEntity(r.Context(), gen.GetCustomFieldValueEntityParams{
-			ID: entityID,
-		})
+		entity, err := h.sessions.GetCustomFieldValueEntity(r.Context(), entityID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				errpkg.WriteError(w, http.StatusNotFound, "field_value_not_found", "Custom field value not found")
@@ -969,10 +958,7 @@ func (h *AgentHTTPHandlers) HandleAdminListSessions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	total, err := h.sessions.CountAgentSessionsForAdmin(r.Context(), gen.CountAgentSessionsForAdminParams{
-
-		StatusFilter: statusFilter,
-	})
+	total, err := h.sessions.CountAgentSessionsForAdmin(r.Context(), statusFilter)
 	if err != nil {
 		slog.Warn("ai: admin counting agent sessions", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count agent sessions")
@@ -1004,9 +990,7 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 		return
 	}
 
-	session, err := h.sessions.GetAgentSession(r.Context(), gen.GetAgentSessionParams{
-		ID: sessionID,
-	})
+	session, err := h.sessions.GetAgentSession(r.Context(), sessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "session_not_found", "Agent session not found")
@@ -1019,9 +1003,7 @@ func (h *AgentHTTPHandlers) HandleAdminGetSession(w http.ResponseWriter, r *http
 		return
 	}
 
-	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), gen.ListAgentToolCallsBySessionParams{
-		SessionID: sessionID,
-	})
+	toolCalls, err := h.sessions.ListAgentToolCallsBySession(r.Context(), sessionID)
 	if err != nil {
 		slog.Warn("ai: admin listing tool calls", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve tool call log")
