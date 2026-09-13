@@ -154,10 +154,10 @@ type AdminListPostsFilter struct {
 func (s *Store) CreatePost(ctx context.Context, input CreatePostInput) (Post, error) {
 	const q = `
 INSERT INTO mutual_aid_posts (
-    tenant_id, user_id, post_type, category, title, description,
+    user_id, post_type, category, title, description,
     destination_space_id, city_space_id, expires_at, is_fulfilled, status
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, 'active')
-RETURNING id, tenant_id, user_id, post_type, category, title, description,
+RETURNING id, user_id, post_type, category, title, description,
           destination_space_id, city_space_id, expires_at, is_fulfilled,
           status, created_at, updated_at, deleted_at
 `
@@ -186,7 +186,7 @@ RETURNING id, tenant_id, user_id, post_type, category, title, description,
 // Removed posts are reachable via the admin endpoints, not the public one.
 func (s *Store) GetPost(ctx context.Context, id, tenantID pgtype.UUID) (PostRow, error) {
 	const q = `
-SELECT m.id, m.tenant_id, m.user_id, m.post_type, m.category, m.title,
+SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
@@ -197,7 +197,7 @@ LEFT JOIN users u ON u.id = m.user_id
 LEFT JOIN user_profiles up ON up.user_id = m.user_id
 LEFT JOIN spaces ds ON ds.id = m.destination_space_id
 LEFT JOIN spaces cs ON cs.id = m.city_space_id
-WHERE m.id = $1 AND m.tenant_id = $2 AND m.deleted_at IS NULL
+WHERE m.id = $1 AND m.deleted_at IS NULL
   AND m.status <> 'removed'
 LIMIT 1
 `
@@ -230,10 +230,6 @@ func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, in
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("m.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, "m.deleted_at IS NULL")
 	conditions = append(conditions, "m.status = 'active'")
@@ -280,7 +276,7 @@ func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, in
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT m.id, m.tenant_id, m.user_id, m.post_type, m.category, m.title,
+SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
@@ -346,11 +342,11 @@ WHERE %s
 func (s *Store) UpdatePost(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePostInput) error {
 	const q = `
 UPDATE mutual_aid_posts
-SET category = $3,
-    title = $4,
-    description = $5,
+SET category = $2,
+    title = $3,
+    description = $4,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, input.Category, input.Title, input.Description)
@@ -370,7 +366,7 @@ func (s *Store) DeletePost(ctx context.Context, id, tenantID pgtype.UUID) error 
 	const q = `
 UPDATE mutual_aid_posts
 SET deleted_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -390,7 +386,7 @@ func (s *Store) MarkFulfilled(ctx context.Context, id, tenantID pgtype.UUID) err
 	const q = `
 UPDATE mutual_aid_posts
 SET is_fulfilled = true, status = 'fulfilled', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -411,8 +407,8 @@ WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
 func (s *Store) RenewPost(ctx context.Context, id, tenantID pgtype.UUID, newExpiry pgtype.Timestamptz) error {
 	const q = `
 UPDATE mutual_aid_posts
-SET expires_at = $3, status = 'active', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SET expires_at = $2, status = 'active', updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, newExpiry)
@@ -434,10 +430,6 @@ func (s *Store) AdminListPosts(ctx context.Context, f AdminListPostsFilter) ([]P
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("m.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, "m.deleted_at IS NULL")
 
@@ -488,7 +480,7 @@ func (s *Store) AdminListPosts(ctx context.Context, f AdminListPostsFilter) ([]P
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT m.id, m.tenant_id, m.user_id, m.post_type, m.category, m.title,
+SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
        m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
        u.username AS author_name, up.avatar_url AS author_avatar,
@@ -553,8 +545,8 @@ WHERE %s
 func (s *Store) AdminUpdateStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
 	const q = `
 UPDATE mutual_aid_posts
-SET status = $3, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+SET status = $2, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
@@ -591,7 +583,7 @@ WHERE status = 'active' AND expires_at < now() AND deleted_at IS NULL`
 // to send 3-day-prior notifications (§85).
 func (s *Store) PostsExpiringSoon(ctx context.Context, withinHours int) ([]ExpiringPost, error) {
 	const q = `
-SELECT id, tenant_id, user_id, title, expires_at
+SELECT id, user_id, title, expires_at
 FROM mutual_aid_posts
 WHERE status = 'active'
   AND deleted_at IS NULL

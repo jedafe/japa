@@ -203,7 +203,7 @@ func (s *Service) GetSubscriber(ctx context.Context, tenantID, id pgtype.UUID) (
 		       subscribed_at, unsubscribed_at, source, created_at
 		FROM newsletter_subscribers
 		WHERE id = $1
-	`, id).Scan(&sub.ID, &sub.TenantID, &sub.Email, &sub.UserID, &sub.Status,
+	`, id).Scan(&sub.ID, &sub.Email, &sub.UserID, &sub.Status,
 		&sub.DigestEnabled, &sub.CampaignEnabled, &sub.SubscribedAt, &sub.UnsubscribedAt,
 		&sub.Source, &sub.CreatedAt)
 	if err != nil {
@@ -283,7 +283,7 @@ func (s *Service) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (Ca
 		       created_by, created_at, updated_at
 		FROM newsletter_campaigns
 		WHERE id = $1
-	`, id).Scan(&c.ID, &c.TenantID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
+	`, id).Scan(&c.ID, &c.Name, &c.Subject, &c.HTML, &c.PreviewText,
 		&c.Body, &c.Segment, &c.SegmentID, &c.Status, &c.ScheduledAt, &c.SentAt,
 		&c.RecipientCount, &c.OpenCount, &c.ClickCount, &c.CreatedBy, &c.CreatedAt,
 		&c.UpdatedAt)

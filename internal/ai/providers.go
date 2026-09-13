@@ -78,7 +78,7 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 	var encryptedKey string
 
 	if err := row.Scan(
-		&pc.ID, &pc.TenantID, &pc.Name, &pc.ProviderType,
+		&pc.ID, &pc.Name, &pc.ProviderType,
 		&encryptedKey, &pc.BaseURL, &pc.Model, &categoriesJSON,
 		&pc.Priority, &pc.Enabled, &pc.CreatedAt, &pc.UpdatedAt,
 	); err != nil {
@@ -264,8 +264,8 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 
 	query := fmt.Sprintf(`
 		UPDATE ai_providers SET %s
-		WHERE id = $1 AND tenant_id = $2
-		RETURNING id, tenant_id, name, provider_type, api_key_encrypted,
+		WHERE id = $1
+		RETURNING id, name, provider_type, api_key_encrypted,
 		          base_url, model, categories, priority, enabled, created_at, updated_at
 	`, strings.Join(setParts, ", "))
 

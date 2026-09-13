@@ -637,7 +637,7 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Fetch all settings for this tenant from the database.
-	rows, err := h.DB.Reader.Query(ctx, `SELECT key, value FROM system_settings `, )
+	rows, err := h.DB.Reader.Query(ctx, `SELECT key, value FROM system_settings `)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to load settings")
 		return

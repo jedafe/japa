@@ -230,7 +230,7 @@ func (s *Store) UpcomingEntriesForReminders(ctx context.Context, dayMarks []int)
 	whereClause := strings.Join(clauses, " OR ")
 
 	query := fmt.Sprintf(`
-SELECT e.id, e.tenant_id, e.title, e.description, e.category,
+SELECT e.id, e.title, e.description, e.category,
        e.destination_space_id, e.origin_space_id,
        e.occurs_at, e.ends_at, e.is_recurring, e.recurrence_pattern,
        e.source_url, e.status, e.submitted_by, e.reviewed_by, e.reviewed_at,
@@ -316,7 +316,7 @@ func (s *Store) GetEntry(ctx context.Context, id, tenantID pgtype.UUID) (Calenda
 // regardless of status. Used by the public edit path.
 func (s *Store) GetEntryForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
 	const q = `
-SELECT id, tenant_id, title, description, category,
+SELECT id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
@@ -325,7 +325,7 @@ SELECT id, tenant_id, title, description, category,
        ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
        created_at, updated_at, deleted_at
 FROM calendar_entries
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -408,10 +408,6 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, "status = 'published'")
 	conditions = append(conditions, "deleted_at IS NULL")
 
@@ -464,7 +460,7 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 	// BUG-024: use COUNT(*) OVER() to get total in the same query,
 	// eliminating the separate COUNT query that doubled query cost.
 	listQ := fmt.Sprintf(`
-SELECT id, tenant_id, title, description, category,
+SELECT id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,
@@ -648,10 +644,6 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, "deleted_at IS NULL")
 
 	if f.DestinationSpaceID.Valid {
@@ -728,7 +720,7 @@ func (s *Store) AdminListEntries(ctx context.Context, f AdminListEntriesFilter) 
 	// BUG-024: use COUNT(*) OVER() to get total in the same query,
 	// eliminating the separate COUNT query that doubled query cost.
 	listQ := fmt.Sprintf(`
-SELECT id, tenant_id, title, description, category,
+SELECT id, title, description, category,
        destination_space_id, origin_space_id,
        occurs_at, ends_at, is_recurring, recurrence_pattern,
        source_url, status, submitted_by, reviewed_by, reviewed_at,

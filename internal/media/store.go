@@ -439,7 +439,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, tenant_id::text
 		FROM media
 		WHERE id = $1 AND deleted_at IS NULL
-	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID, &row.TenantID)
+	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)
 	if err != nil {
 		return ScanMediaRow{}, fmt.Errorf("getting media for scan: %w", err)
 	}
@@ -584,7 +584,7 @@ func (s *Store) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtyp
 		  AND quarantine_reason IS NOT NULL
 		  AND deleted_at IS NULL
 	`, mediaID).Scan(
-		&m.ID, &m.TenantID, &m.UploaderUserID, &m.OriginalFilename, &m.MimeType,
+		&m.ID, &m.UploaderUserID, &m.OriginalFilename, &m.MimeType,
 		&m.FileSizeBytes, &m.WidthPx, &m.HeightPx, &m.DurationSecs, &m.StoragePath,
 		&m.StorageBucket, &m.AltText, &m.Caption, &m.Confirmed, &m.DeletedAt,
 		&m.QuarantineReason, &m.QuarantinedAt, &m.ReviewedBy, &m.ReviewedAt,

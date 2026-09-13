@@ -262,10 +262,6 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("r.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("r.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -318,7 +314,7 @@ func (s *Store) ListRequirements(ctx context.Context, f ListRequirementsFilter) 
 	}
 
 	q := fmt.Sprintf(`
-SELECT r.id, r.tenant_id, r.destination_space_id, ds.name AS dest_space_name,
+SELECT r.id, r.destination_space_id, ds.name AS dest_space_name,
        ds.geo_code AS dest_space_code, r.visa_category, r.test_id,
        t.slug AS test_slug, t.name AS test_name, r.minimum_score,
        r.score_breakdown, r.notes, r.source_url, r.status, r.is_active,
@@ -345,7 +341,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r RequirementRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.DestSpaceCode, &r.VisaCategory, &r.TestID,
 			&r.TestSlug, &r.TestName, &r.MinimumScore,
 			&r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status, &r.IsActive,
@@ -385,10 +381,6 @@ func (s *Store) AdminListRequirements(ctx context.Context, f AdminListRequiremen
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("r.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("r.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -424,7 +416,7 @@ func (s *Store) AdminListRequirements(ctx context.Context, f AdminListRequiremen
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT r.id, r.tenant_id, r.destination_space_id, ds.name AS dest_space_name,
+SELECT r.id, r.destination_space_id, ds.name AS dest_space_name,
        ds.geo_code AS dest_space_code, r.visa_category, r.test_id,
        t.slug AS test_slug, t.name AS test_name, r.minimum_score,
        r.score_breakdown, r.notes, r.source_url, r.status, r.is_active,
@@ -451,7 +443,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r RequirementRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.DestSpaceCode, &r.VisaCategory, &r.TestID,
 			&r.TestSlug, &r.TestName, &r.MinimumScore,
 			&r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status, &r.IsActive,
@@ -516,11 +508,11 @@ func (s *Store) CreateRequirement(ctx context.Context, in CreateRequirementInput
 
 	const q = `
 INSERT INTO language_test_requirements (
-    tenant_id, destination_space_id, visa_category, test_id, minimum_score,
+    destination_space_id, visa_category, test_id, minimum_score,
     score_breakdown, notes, source_url, status, is_active,
     ai_generated, ai_model, ai_prompt_hash
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
+RETURNING id, destination_space_id, visa_category, test_id,
           minimum_score, score_breakdown, notes, source_url, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
@@ -535,7 +527,7 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 		in.MinimumScore, scoreBreakdown, in.Notes, in.SourceURL, status,
 		in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
 	).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
+		&r.ID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
 		&r.MinimumScore, &r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -591,9 +583,9 @@ type UpdateRequirementInput struct {
 
 // GetRequirementByID returns a single language_test_requirements row
 // by id, scoped to a tenant, with test and destination-space joins.
-func (s *Store) GetRequirementByID(ctx context.Context, id, tenantID pgtype.UUID) (RequirementRow, error) {
+func (s *Store) GetRequirementByID(ctx context.Context, id pgtype.UUID) (RequirementRow, error) {
 	const q = `
-SELECT r.id, r.tenant_id, r.destination_space_id, ds.name AS dest_space_name,
+SELECT r.id, r.destination_space_id, ds.name AS dest_space_name,
        ds.geo_code AS dest_space_code, r.visa_category, r.test_id,
        t.slug AS test_slug, t.name AS test_name, r.minimum_score,
        r.score_breakdown, r.notes, r.source_url, r.status, r.is_active,
@@ -602,14 +594,14 @@ SELECT r.id, r.tenant_id, r.destination_space_id, ds.name AS dest_space_name,
 FROM language_test_requirements r
 JOIN language_tests t ON t.id = r.test_id
 LEFT JOIN spaces ds ON ds.id = r.destination_space_id
-WHERE r.id = $1 AND r.tenant_id = $2
+WHERE r.id = $1
 LIMIT 1
 `
 
 	var r RequirementRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.DestSpaceCode, &r.VisaCategory, &r.TestID,
 		&r.TestSlug, &r.TestName, &r.MinimumScore,
 		&r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status, &r.IsActive,
@@ -710,27 +702,27 @@ func (s *Store) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID,
 	}
 
 	if len(sets) == 0 {
-		return s.GetRequirementByID(ctx, id, tenantID)
+		return s.GetRequirementByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	q := fmt.Sprintf(`
 UPDATE language_test_requirements
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
+WHERE id = $%d
+RETURNING id, destination_space_id, visa_category, test_id,
           minimum_score, score_breakdown, notes, source_url, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
           created_at, updated_at
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+`, strings.Join(sets, ", "), argIdx)
 
 	var r RequirementRow
 
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
+		&r.ID, &r.DestinationSpaceID, &r.VisaCategory, &r.TestID,
 		&r.MinimumScore, &r.ScoreBreakdown, &r.Notes, &r.SourceURL, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -754,7 +746,7 @@ RETURNING id, tenant_id, destination_space_id, visa_category, test_id,
 // DeleteRequirement deletes a language_test_requirements row by id,
 // scoped to a tenant.
 func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
-	const q = `DELETE FROM language_test_requirements WHERE id = $1 AND tenant_id = $2`
+	const q = `DELETE FROM language_test_requirements WHERE id = $1`
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
 	if err != nil {
@@ -774,12 +766,12 @@ func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID)
 func (s *Store) ApproveRequirement(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reviewNotes *string) error {
 	const q = `
 UPDATE language_test_requirements
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'published',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, reviewNotes)
@@ -810,12 +802,12 @@ func (s *Store) ListResources(ctx context.Context, tenantID, testID pgtype.UUID,
 	}
 
 	const q = `
-SELECT id, tenant_id, test_id, title, resource_url, resource_type,
+SELECT id, test_id, title, resource_url, resource_type,
        community_rating::text, rating_count, created_at
 FROM language_test_resources
-WHERE tenant_id = $1 AND test_id = $2
+WHERE test_id = $1
 ORDER BY community_rating DESC NULLS LAST, created_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $2 OFFSET $3
 `
 
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, testID, limit, offset)
@@ -830,7 +822,7 @@ LIMIT $3 OFFSET $4
 	for rows.Next() {
 		var r ResourceRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.TestID, &r.Title, &r.ResourceURL,
+			&r.ID, &r.TestID, &r.Title, &r.ResourceURL,
 			&r.ResourceType, &r.CommunityRating, &r.RatingCount, &r.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("languagetesthub: scan resource row: %w", err)
@@ -867,10 +859,6 @@ func (s *Store) ListStories(ctx context.Context, tenantID, testID, destSpaceID p
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("s.tenant_id = $%d", argIdx))
-	args = append(args, tenantID)
-	argIdx++
-
 	conditions = append(conditions, fmt.Sprintf("s.test_id = $%d", argIdx))
 	args = append(args, testID)
 	argIdx++
@@ -890,7 +878,7 @@ func (s *Store) ListStories(ctx context.Context, tenantID, testID, destSpaceID p
 	whereClause := strings.Join(conditions, " AND ")
 
 	q := fmt.Sprintf(`
-SELECT s.id, s.tenant_id, s.user_id, s.test_id, s.starting_level,
+SELECT s.id, s.user_id, s.test_id, s.starting_level,
        s.final_score, s.destination_space_id, ds.name AS dest_space_name,
        s.prep_duration_weeks, s.resources_used, s.advice, s.status,
        s.created_at, u.username AS author_name
@@ -915,7 +903,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ScoreStoryRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.TestID, &r.StartingLevel,
+			&r.ID, &r.UserID, &r.TestID, &r.StartingLevel,
 			&r.FinalScore, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.PrepDurationWeeks, &r.ResourcesUsed, &r.Advice, &r.Status,
 			&r.CreatedAt, &r.AuthorName,
@@ -957,10 +945,10 @@ func (s *Store) CreateStory(ctx context.Context, in CreateStoryInput) (ScoreStor
 
 	const q = `
 INSERT INTO language_score_stories (
-    tenant_id, user_id, test_id, starting_level, final_score,
+    user_id, test_id, starting_level, final_score,
     destination_space_id, prep_duration_weeks, resources_used, advice, status
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, tenant_id, user_id, test_id, starting_level, final_score,
+RETURNING id, user_id, test_id, starting_level, final_score,
           destination_space_id, prep_duration_weeks, resources_used, advice,
           status, created_at
 `
@@ -973,7 +961,7 @@ RETURNING id, tenant_id, user_id, test_id, starting_level, final_score,
 		in.DestinationSpaceID, in.PrepDurationWeeks, in.ResourcesUsed,
 		in.Advice, status,
 	).Scan(
-		&r.ID, &r.TenantID, &r.UserID, &r.TestID, &r.StartingLevel,
+		&r.ID, &r.UserID, &r.TestID, &r.StartingLevel,
 		&r.FinalScore, &r.DestinationSpaceID, &r.PrepDurationWeeks,
 		&r.ResourcesUsed, &r.Advice, &r.Status, &r.CreatedAt,
 	)

@@ -116,13 +116,13 @@ type WikiRevision struct {
 // GetWikiPageBySlug returns a wiki page by space slug + page slug.
 func (s *Store) GetWikiPageBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageWithSpace, error) {
 	const q = `
-SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
-JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
-WHERE wp.tenant_id = $1 AND sp.slug = $2 AND wp.slug = $3
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE sp.slug = $1 AND wp.slug = $2
   AND wp.is_active = true
 LIMIT 1
 `
@@ -130,7 +130,7 @@ LIMIT 1
 	var p WikiPageWithSpace
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, spaceSlug, pageSlug).Scan(
-		&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
+		&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 		&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 		&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
 		&p.SpaceSlug, &p.SpaceName,
@@ -150,13 +150,13 @@ LIMIT 1
 // associated space slug and name (Rule 16 — avoid a second API round-trip).
 func (s *Store) ListWikiPagesBySpace(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) ([]WikiPageWithSpace, error) {
 	const q = `
-SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
-JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
-WHERE wp.tenant_id = $1 AND sp.slug = $2 AND wp.is_active = true
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE sp.slug = $1 AND wp.is_active = true
 ORDER BY wp.category, wp.title
 `
 
@@ -172,7 +172,7 @@ ORDER BY wp.category, wp.title
 	for rows.Next() {
 		var p WikiPageWithSpace
 		if err := rows.Scan(
-			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
+			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
 			&p.SpaceSlug, &p.SpaceName,
@@ -194,13 +194,13 @@ ORDER BY wp.category, wp.title
 // Used by the ?dest= geo-aware query parameter (ADR-086 geo-aware pattern).
 func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPageWithSpace, error) {
 	const q = `
-SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        sp.slug AS space_slug, sp.name AS space_name
 FROM wiki_pages wp
-JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
-WHERE wp.tenant_id = $1 AND wp.space_id = $2 AND wp.is_active = true
+JOIN spaces sp ON sp.id = wp.space_id
+WHERE wp.space_id = $1 AND wp.is_active = true
 ORDER BY wp.category, wp.title`
 
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceID)
@@ -215,7 +215,7 @@ ORDER BY wp.category, wp.title`
 	for rows.Next() {
 		var p WikiPageWithSpace
 		if err := rows.Scan(
-			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
+			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
 			&p.SpaceSlug, &p.SpaceName,
@@ -256,10 +256,6 @@ func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, 
 
 	argn := 1
 
-	conds = append(conds, fmt.Sprintf("sp.tenant_id = $%d", argn))
-	args = append(args, tenantID)
-	argn++
-
 	conds = append(conds, "sp.status = 'active'")
 	conds = append(conds, "sp.level IN ('country', 'state', 'city')")
 
@@ -277,7 +273,7 @@ func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, 
 
 	var parentCond string
 	if parentSlug != "" {
-		parentCond = fmt.Sprintf("sp.parent_id = (SELECT id FROM spaces WHERE slug = $%d AND tenant_id = $1)", argn)
+		parentCond = fmt.Sprintf("sp.parent_id = (SELECT id FROM spaces WHERE slug = $%d)", argn)
 
 		args = append(args, parentSlug)
 		argn++
@@ -293,7 +289,7 @@ func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, 
 		q = fmt.Sprintf(`
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) AS page_count
 FROM spaces sp
-JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.tenant_id = sp.tenant_id AND wp.is_active = true
+JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.is_active = true
 WHERE %s
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
 HAVING COUNT(wp.id) > 0
@@ -302,7 +298,7 @@ ORDER BY sp.name`, where)
 		q = fmt.Sprintf(`
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level, COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
 FROM spaces sp
-LEFT JOIN wiki_pages wp ON wp.space_id = sp.id AND wp.tenant_id = sp.tenant_id
+LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
 WHERE %s
 GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
 ORDER BY sp.name`, where)
@@ -335,14 +331,14 @@ ORDER BY sp.name`, where)
 // GetApprovedRevision returns the latest approved revision for a wiki page.
 func (s *Store) GetApprovedRevision(ctx context.Context, pageID, tenantID pgtype.UUID) (WikiRevision, error) {
 	const q = `
-SELECT wr.id, wr.tenant_id, wr.wiki_page_id, wr.content, wr.summary,
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at, u.username AS submitted_by_name
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
-WHERE wr.wiki_page_id = $1 AND wr.tenant_id = $2 AND wr.status = 'approved'
+WHERE wr.wiki_page_id = $1 AND wr.status = 'approved'
 ORDER BY wr.created_at DESC
 LIMIT 1
 `
@@ -350,7 +346,7 @@ LIMIT 1
 	var r WikiRevision
 
 	err := s.pool.Reader.QueryRow(ctx, q, pageID, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.WikiPageID, &r.Content, &r.Summary,
+		&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 		&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 		&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
@@ -378,7 +374,7 @@ func (s *Store) ListRevisions(ctx context.Context, pageID, tenantID pgtype.UUID,
 	}
 
 	const q = `
-SELECT wr.id, wr.tenant_id, wr.wiki_page_id, wr.content, wr.summary,
+SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.status, wr.submitted_by, wr.reviewed_by, wr.reviewed_at,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
@@ -387,9 +383,9 @@ SELECT wr.id, wr.tenant_id, wr.wiki_page_id, wr.content, wr.summary,
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
 LEFT JOIN users ru ON ru.id = wr.reviewed_by
-WHERE wr.wiki_page_id = $1 AND wr.tenant_id = $2
+WHERE wr.wiki_page_id = $1
 ORDER BY wr.created_at DESC
-LIMIT $3 OFFSET $4
+LIMIT $2 OFFSET $3
 `
 
 	rows, err := s.pool.Reader.Query(ctx, q, pageID, tenantID, limit, offset)
@@ -404,7 +400,7 @@ LIMIT $3 OFFSET $4
 	for rows.Next() {
 		var r WikiRevision
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.WikiPageID, &r.Content, &r.Summary,
+			&r.ID, &r.WikiPageID, &r.Content, &r.Summary,
 			&r.Status, &r.SubmittedBy, &r.ReviewedBy, &r.ReviewedAt,
 			&r.AiGenerated, &r.AiModel, &r.AiPromptHash,
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
@@ -421,7 +417,7 @@ LIMIT $3 OFFSET $4
 	}
 
 	var total int64
-	if err := s.pool.Reader.QueryRow(ctx, `SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1`, pageID, ).Scan(&total); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, `SELECT COUNT(*) FROM wiki_revisions WHERE wiki_page_id = $1`, pageID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("wiki: count revisions: %w", err)
 	}
 
@@ -575,11 +571,11 @@ func (s *Store) UpdatePage(ctx context.Context, pageID, tenantID pgtype.UUID, is
 	}
 
 	conditions = append(conditions, "updated_at = now()")
-	args = append(args, pageID, tenantID)
+	args = append(args, pageID)
 
 	q := fmt.Sprintf(`
-UPDATE wiki_pages SET %s WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(conditions, ", "), argIdx, argIdx+1)
+UPDATE wiki_pages SET %s WHERE id = $%d
+`, strings.Join(conditions, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -605,7 +601,7 @@ func (s *Store) GetSpaceBySlug(ctx context.Context, tenantID pgtype.UUID, spaceS
 SELECT id, level
 FROM spaces
 WHERE slug = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
-LIMIT 1`, spaceSlug, ).Scan(&id, &level)
+LIMIT 1`, spaceSlug).Scan(&id, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, "", pgx.ErrNoRows
@@ -625,7 +621,7 @@ func (s *Store) GetSpaceByID(ctx context.Context, tenantID, spaceID pgtype.UUID)
 SELECT slug, level
 FROM spaces
 WHERE id = $1 AND level IN ('country', 'state', 'city') AND status = 'active'
-LIMIT 1`, spaceID, ).Scan(&slug, &level)
+LIMIT 1`, spaceID).Scan(&slug, &level)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", "", pgx.ErrNoRows
@@ -692,7 +688,7 @@ RETURNING id
 
 	// Insert the initial pending revision.
 	var revIDResult pgtype.UUID
-	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (tenant_id, wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
+	if err := tx.QueryRow(ctx, "\nINSERT INTO wiki_revisions (wiki_page_id, content, summary, status,\n    submitted_by, ai_generated, ai_model, ai_prompt_hash, content_hash)\nVALUES ($1, $2, $3, $4, 'pending', $5, false, NULL, $6)\nRETURNING", tenantID, pageIDResult, content, summaryPtr, userID, contentHash).Scan(&revIDResult); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "wiki_revisions_page_hash") {
 			return pgtype.UUID{}, pgtype.UUID{}, ErrDuplicateContent
@@ -728,10 +724,6 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("wp.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.SpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("wp.space_id = $%d", argIdx))
@@ -780,20 +772,20 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	copy(countArgs, args)
 
 	listQ := fmt.Sprintf(`
-SELECT wp.id, wp.tenant_id, wp.space_id, wp.slug, wp.title, wp.category,
+SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
        wp.created_at, wp.updated_at, wp.is_japabot_indexed,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id, lr.status AS latest_revision_status,
        lr.excerpt
 FROM wiki_pages wp
-JOIN spaces sp ON sp.id = wp.space_id AND sp.tenant_id = wp.tenant_id
+JOIN spaces sp ON sp.id = wp.space_id
 LEFT JOIN LATERAL (
     SELECT wr.id, wr.status,
            COALESCE(wr.summary, left(btrim(regexp_replace(
                wr.content::text, '<[^>]+>', '', 'g')), 200), '') AS excerpt
     FROM wiki_revisions wr
-    WHERE wr.wiki_page_id = wp.id AND wr.tenant_id = wp.tenant_id
+    WHERE wr.wiki_page_id = wp.id
     ORDER BY wr.created_at DESC
     LIMIT 1
 ) lr ON true
@@ -815,7 +807,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var p AdminWikiPageWithSpace
 		if err := rows.Scan(
-			&p.ID, &p.TenantID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
+			&p.ID, &p.SpaceID, &p.Slug, &p.Title, &p.Category,
 			&p.IsActive, &p.IsFeatured, &p.IsLocked, &p.CreatedBy,
 			&p.CreatedAt, &p.UpdatedAt, &p.IsJapabotIndexed,
 			&p.SpaceSlug, &p.SpaceName,

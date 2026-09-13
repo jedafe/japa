@@ -98,7 +98,7 @@ func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenant
 	var seoIndexable bool
 
 	err = h.reader.QueryRow(ctx, `SELECT title, content_type, visibility, seo_indexable
-		 FROM contents WHERE id = $1`, pgID, ).Scan(&meta.Title, &meta.ContentType, &visibility, &seoIndexable)
+		 FROM contents WHERE id = $1`, pgID).Scan(&meta.Title, &meta.ContentType, &visibility, &seoIndexable)
 	if err != nil {
 		return nil
 	}

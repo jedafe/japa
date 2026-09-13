@@ -71,7 +71,7 @@ func (s *Service) ListSpaceTypeCategories(ctx context.Context, tenantID pgtype.U
 	query := `
 		SELECT DISTINCT COALESCE(category, '') AS value
 		FROM space_types
-		WHERE tenant_id = $1
+		
 		ORDER BY value`
 
 	rows, err := s.db.Reader.Query(ctx, query, tenantID)

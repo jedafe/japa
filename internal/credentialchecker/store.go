@@ -309,10 +309,6 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("p.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("p.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -364,7 +360,7 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT p.id, p.tenant_id, p.profession_id,
+SELECT p.id, p.profession_id,
        pr.slug AS profession_slug, pr.name AS profession_name, pr.category AS profession_category,
        p.issuing_space_id, iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
        p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
@@ -396,7 +392,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.ProfessionID,
+			&r.ID, &r.ProfessionID,
 			&r.ProfessionSlug, &r.ProfessionName, &r.ProfessionCategory,
 			&r.IssuingSpaceID, &r.IssuingSpaceName, &r.IssuingSpaceCode,
 			&r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode,
@@ -436,7 +432,7 @@ WHERE %s
 // credential_professions + spaces (issuing + destination).
 func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
 	const q = `
-SELECT p.id, p.tenant_id, p.profession_id,
+SELECT p.id, p.profession_id,
        pr.slug AS profession_slug, pr.name AS profession_name, pr.category AS profession_category,
        p.issuing_space_id, iss.name AS issuing_space_name, iss.geo_code AS issuing_space_code,
        p.destination_space_id, dst.name AS destination_space_name, dst.geo_code AS destination_space_code,
@@ -450,14 +446,14 @@ FROM credential_pathways p
 JOIN credential_professions pr ON pr.id = p.profession_id
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces dst ON dst.id = p.destination_space_id
-WHERE p.id = $1 AND p.tenant_id = $2
+WHERE p.id = $1
 LIMIT 1
 `
 
 	var r PathwayRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.ProfessionID,
+		&r.ID, &r.ProfessionID,
 		&r.ProfessionSlug, &r.ProfessionName, &r.ProfessionCategory,
 		&r.IssuingSpaceID, &r.IssuingSpaceName, &r.IssuingSpaceCode,
 		&r.DestinationSpaceID, &r.DestinationSpaceName, &r.DestinationSpaceCode,
@@ -487,7 +483,7 @@ func (s *Store) GetPathwayNotes(ctx context.Context, pathwayID, tenantID pgtype.
 SELECT n.id, n.pathway_id, n.user_id, u.username AS user_name,
        n.note, n.upvotes, n.status, n.created_at
 FROM credential_community_notes n
-JOIN credential_pathways p ON p.id = n.pathway_id AND p.tenant_id = $2
+JOIN credential_pathways p ON p.id = n.pathway_id
 LEFT JOIN users u ON u.id = n.user_id
 WHERE n.pathway_id = $1 AND n.status = 'published' AND n.deleted_at IS NULL
 ORDER BY n.upvotes DESC, n.created_at DESC
@@ -531,7 +527,7 @@ func (s *Store) CreatePathway(ctx context.Context, input CreatePathwayInput) (pg
 
 	const q = `
 INSERT INTO credential_pathways (
-    tenant_id, profession_id, issuing_space_id, destination_space_id,
+    profession_id, issuing_space_id, destination_space_id,
     regulatory_body, regulatory_body_url, pathway_type,
     timeline_estimate, cost_estimate_usd, pathway_description,
     official_application_url, source_url_last_checked,
@@ -631,12 +627,12 @@ func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, inp
 
 	sets = append(sets, "updated_at = now()")
 
-	args = append(args, id, tenantID)
+	args = append(args, id)
 	q := fmt.Sprintf(`
 UPDATE credential_pathways
 SET %s
-WHERE id = $%d AND tenant_id = $%d
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -655,7 +651,7 @@ WHERE id = $%d AND tenant_id = $%d
 func (s *Store) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 DELETE FROM credential_pathways
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -676,12 +672,12 @@ WHERE id = $1 AND tenant_id = $2
 func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE credential_pathways
-SET hitl_reviewed_by = $3,
+SET hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
-    hitl_review_notes = $4,
+    hitl_review_notes = $3,
     status = 'published',
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)

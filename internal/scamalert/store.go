@@ -89,7 +89,7 @@ INSERT INTO scam_reports (
     status
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'under_review')
 RETURNING id
-`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities, ).Scan(&id)
+`, report.ReporterID, report.ScamType, report.DestinationSpaceID, report.OriginSpaceID, report.OriginCommunity, report.PlatformUsed, report.ApproximateDate, report.AmountRange, report.Description, report.ReportedToAuthorities).Scan(&id)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("scamalert: create report: %w", err)
 	}
@@ -100,7 +100,7 @@ RETURNING id
 // GetReport returns a single confirmed report by id (public view).
 func (s *Store) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (ScamReportRow, error) {
 	const q = `
-SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
+SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
@@ -115,7 +115,7 @@ FROM scam_reports sr
 LEFT JOIN spaces ds ON ds.id = sr.destination_space_id
 LEFT JOIN spaces os ON os.id = sr.origin_space_id
 LEFT JOIN users u ON u.id = sr.reporter_id
-WHERE sr.id = $1 AND sr.tenant_id = $2
+WHERE sr.id = $1
   AND sr.status = 'confirmed' AND sr.deleted_at IS NULL
 LIMIT 1
 `
@@ -150,7 +150,7 @@ LIMIT 1
 // status. Used by the public edit path before an ownership/permission check.
 func (s *Store) GetReportForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (ScamReportRow, error) {
 	const q = `
-SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
+SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
@@ -165,7 +165,7 @@ FROM scam_reports sr
 LEFT JOIN spaces ds ON ds.id = sr.destination_space_id
 LEFT JOIN spaces os ON os.id = sr.origin_space_id
 LEFT JOIN users u ON u.id = sr.reporter_id
-WHERE sr.id = $1 AND sr.tenant_id = $2 AND sr.deleted_at IS NULL
+WHERE sr.id = $1 AND sr.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -243,10 +243,6 @@ func (s *Store) ListReports(ctx context.Context, f ListReportsFilter) ([]ScamRep
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("sr.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, "sr.status = 'confirmed'")
 	conditions = append(conditions, "sr.deleted_at IS NULL")
 
@@ -279,7 +275,7 @@ func (s *Store) ListReports(ctx context.Context, f ListReportsFilter) ([]ScamRep
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
+SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,
@@ -454,10 +450,6 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("sr.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, "sr.deleted_at IS NULL")
 
 	if f.Status != "" {
@@ -525,7 +517,7 @@ func (s *Store) AdminListReports(ctx context.Context, f AdminListReportsFilter) 
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT sr.id, sr.tenant_id, sr.reporter_id, sr.scam_type,
+SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
        sr.platform_used, sr.approximate_date, sr.amount_range, sr.description,
        sr.reported_to_authorities, sr.status, sr.moderator_note,

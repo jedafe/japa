@@ -782,7 +782,7 @@ LEFT JOIN checklist_progress cp
  AND cp.item_key = i.id::text
  AND cp.user_id = $1
  AND cp.list_type = 'arrival'
-WHERE i.guide_id = $3
+WHERE i.guide_id = $2
   AND g.is_active = true
   AND g.status = 'published'
 ORDER BY i.sort_order ASC, i.created_at ASC

@@ -140,7 +140,7 @@ func (p *toolTablePublisher) publishWikiPage(ctx context.Context, tenantID, revi
 	err := p.db.Reader.QueryRow(ctx, `
 		SELECT id FROM wiki_revisions
 		WHERE wiki_page_id = $1 AND status = 'pending'
-		ORDER BY created_at DESC LIMIT 1`, pageID, ).Scan(&revID)
+		ORDER BY created_at DESC LIMIT 1`, pageID).Scan(&revID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("wiki: no pending revision for page %s", pageID)

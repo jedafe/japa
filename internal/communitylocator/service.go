@@ -303,7 +303,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: submit: fetch created: %w", err)
 	}
@@ -521,7 +521,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 		return OrgDTO{}, fmt.Errorf("communitylocator: generate: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: generate: fetch created: %w", err)
 	}
@@ -654,7 +654,7 @@ func (s *Service) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtyp
 		return OrgDTO{}, fmt.Errorf("communitylocator: approve org: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: approve org: fetch: %w", err)
 	}
@@ -674,7 +674,7 @@ func (s *Service) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) (Org
 		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: archive org: fetch: %w", err)
 	}
@@ -709,7 +709,7 @@ func (s *Service) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) (OrgD
 		return OrgDTO{}, fmt.Errorf("communitylocator: verify org: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: verify org: fetch: %w", err)
 	}
@@ -729,7 +729,7 @@ func (s *Service) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, ap
 		return OrgDTO{}, fmt.Errorf("communitylocator: resolve claim: %w", err)
 	}
 
-	row, err := s.store.GetByID(ctx, id, tenantID)
+	row, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return OrgDTO{}, fmt.Errorf("communitylocator: resolve claim: fetch: %w", err)
 	}

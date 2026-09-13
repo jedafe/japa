@@ -80,7 +80,7 @@ func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID)
 
 	const q = `
 SELECT name FROM spaces
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -167,10 +167,6 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("p.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("p.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -222,7 +218,7 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
+SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -250,7 +246,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
+			&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 			&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 			&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -289,7 +285,7 @@ WHERE %s
 // to avoid leaking draft/ai_draft/pending/rejected pathways (BUG-001).
 func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
 	const q = `
-SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
+SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -299,14 +295,14 @@ SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_spa
 FROM attestation_pathways p
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
-WHERE p.id = $1 AND p.tenant_id = $2
+WHERE p.id = $1
 LIMIT 1
 `
 
 	var r PathwayRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
+		&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -331,7 +327,7 @@ LIMIT 1
 // pathways to anonymous users (BUG-001).
 func (s *Store) GetPublishedPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
 	const q = `
-SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
+SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -341,14 +337,14 @@ SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_spa
 FROM attestation_pathways p
 LEFT JOIN spaces iss ON iss.id = p.issuing_space_id
 LEFT JOIN spaces ds ON ds.id = p.destination_space_id
-WHERE p.id = $1 AND p.tenant_id = $2 AND p.status = 'published' AND p.is_active = true
+WHERE p.id = $1 AND p.status = 'published' AND p.is_active = true
 LIMIT 1
 `
 
 	var r PathwayRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
+		&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 		&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,
@@ -372,12 +368,12 @@ LIMIT 1
 func (s *Store) CreatePathway(ctx context.Context, p Pathway) (Pathway, error) {
 	const q = `
 INSERT INTO attestation_pathways (
-    tenant_id, document_type, issuing_space_id, destination_space_id,
+    document_type, issuing_space_id, destination_space_id,
     apostille_required, pathway_steps, community_last_verified, status,
     is_active, ai_generated, ai_model, ai_prompt_hash,
     hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
+RETURNING id, document_type, issuing_space_id, destination_space_id,
           apostille_required, pathway_steps, community_last_verified, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
           hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes,
@@ -403,7 +399,7 @@ RETURNING id, tenant_id, document_type, issuing_space_id, destination_space_id,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
 		p.HITLReviewedBy, p.HITLReviewedAt, p.HITLReviewNotes,
 	).Scan(
-		&out.ID, &out.TenantID, &out.DocumentType, &out.IssuingSpaceID, &out.DestinationSpaceID,
+		&out.ID, &out.DocumentType, &out.IssuingSpaceID, &out.DestinationSpaceID,
 		&out.ApostilleRequired, &out.PathwaySteps, &out.CommunityLastVerified, &out.Status,
 		&out.IsActive, &out.AIGenerated, &out.AIModel, &out.AIPromptHash,
 		&out.HITLReviewedBy, &out.HITLReviewedAt, &out.HITLReviewNotes,
@@ -427,20 +423,20 @@ func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, p P
 
 	const q = `
 UPDATE attestation_pathways
-SET document_type        = $3,
-    issuing_space_id     = $4,
-    destination_space_id = $5,
-    apostille_required   = $6,
-    pathway_steps        = $7,
-    community_last_verified = $8,
-    status               = $9,
-    is_active            = $10,
-    ai_generated         = $11,
-    ai_model             = $12,
-    ai_prompt_hash       = $13,
-    hitl_review_notes    = $14,
+SET document_type        = $2,
+    issuing_space_id     = $3,
+    destination_space_id = $4,
+    apostille_required   = $5,
+    pathway_steps        = $6,
+    community_last_verified = $7,
+    status               = $8,
+    is_active            = $9,
+    ai_generated         = $10,
+    ai_model             = $11,
+    ai_prompt_hash       = $12,
+    hitl_review_notes    = $13,
     updated_at           = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(
@@ -470,14 +466,14 @@ WHERE id = $1 AND tenant_id = $2
 func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, apostilleRequired bool, notes *string) error {
 	const q = `
 UPDATE attestation_pathways
-SET hitl_reviewed_by        = $3,
+SET hitl_reviewed_by        = $2,
     hitl_reviewed_at        = now(),
-    hitl_review_notes      = $4,
+    hitl_review_notes      = $3,
     status                 = 'published',
-    apostille_required     = $5,
+    apostille_required     = $4,
     community_last_verified = COALESCE(community_last_verified, now()::date),
     updated_at             = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes, apostilleRequired)
@@ -525,12 +521,11 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
 	const q = `
 UPDATE attestation_community_updates u
-SET status      = $3,
-    reviewed_by = $4
+SET status      = $2,
+    reviewed_by = $3
 FROM attestation_pathways p
 WHERE u.id = $1
   AND u.pathway_id = p.id
-  AND p.tenant_id = $2
   AND u.deleted_at IS NULL
 `
 
@@ -554,7 +549,7 @@ WHERE u.id = $1
 func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, tenantID pgtype.UUID, stepIndex *int32, feeEstimate *string, turnaroundDays *int32) error {
 	// Load current pathway_steps so we can patch in Go (cleaner than nested
 	// jsonb_set SQL for conditional fields).
-	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1 AND tenant_id = $2`
+	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1`
 
 	var steps []byte
 	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID, tenantID).Scan(&steps); err != nil {
@@ -583,10 +578,10 @@ func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, ten
 
 	const q = `
 UPDATE attestation_pathways
-SET pathway_steps            = $3,
+SET pathway_steps            = $2,
     community_last_verified = now()::date,
     updated_at              = now()
-WHERE id = $1 AND tenant_id = $2`
+WHERE id = $1`
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, tenantID, steps)
 	if err != nil {
@@ -608,7 +603,7 @@ SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
        u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
 FROM attestation_community_updates u
 JOIN attestation_pathways p ON p.id = u.pathway_id
-WHERE u.id = $1 AND p.tenant_id = $2 AND u.deleted_at IS NULL
+WHERE u.id = $1 AND u.deleted_at IS NULL
 LIMIT 1
 `
 
@@ -643,9 +638,9 @@ type ListCommunityUpdatesFilter struct {
 // queue (GET /admin/attestation/updates — BUG-005).
 func (s *Store) ListCommunityUpdates(ctx context.Context, f ListCommunityUpdatesFilter) ([]CommunityUpdate, int64, error) {
 	var (
-		conditions = []string{"p.tenant_id = $1", "u.deleted_at IS NULL"}
-		args       = []any{f.TenantID}
-		argIdx     = 2
+		conditions = []string{"u.deleted_at IS NULL"}
+		args       = []any{}
+		argIdx     = 1
 	)
 
 	if f.Status != "" {
@@ -756,10 +751,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("p.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("p.status = $%d", argIdx))
 		args = append(args, f.Status)
@@ -820,7 +811,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT p.id, p.tenant_id, p.document_type, p.issuing_space_id, p.destination_space_id,
+SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
        p.is_active, p.ai_generated, p.ai_model, p.ai_prompt_hash,
        p.hitl_reviewed_by, p.hitl_reviewed_at, p.hitl_review_notes,
@@ -848,7 +839,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PathwayRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
+			&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 			&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 			&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
 			&r.HITLReviewedBy, &r.HITLReviewedAt, &r.HITLReviewNotes,

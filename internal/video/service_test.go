@@ -244,7 +244,7 @@ func TestService_ClaimAndApproveChannel(t *testing.T) {
 	// The synthetic user has been promoted to real.
 	var isSynthetic bool
 	err = database.Reader.QueryRow(context.Background(),
-		"SELECT is_synthetic FROM users WHERE id = $1 AND tenant_id = $2",
+		"SELECT is_synthetic FROM users WHERE id = $1",
 		syntheticUserID, tenantID).Scan(&isSynthetic)
 	if err != nil {
 		t.Fatalf("querying synthetic user: %v", err)

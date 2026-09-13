@@ -110,10 +110,6 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("e.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	if f.DestinationSpaceID.Valid {
 		conditions = append(conditions, fmt.Sprintf("e.destination_space_id = $%d", argIdx))
 		args = append(args, f.DestinationSpaceID)
@@ -168,7 +164,7 @@ func (s *Store) ListEmbassies(ctx context.Context, f ListEmbassiesFilter) ([]Emb
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
        e.last_polled_at, e.created_at, e.updated_at
 FROM monitored_embassies e
@@ -191,7 +187,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r EmbassyRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 			&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
@@ -224,19 +220,19 @@ WHERE %s
 // the tenant.
 func (s *Store) GetEmbassyBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (EmbassyRow, error) {
 	const q = `
-SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
        e.last_polled_at, e.created_at, e.updated_at
 FROM monitored_embassies e
 LEFT JOIN spaces sp ON sp.id = e.destination_space_id
-WHERE e.tenant_id = $1 AND e.slug = $2
+WHERE e.slug = $1
 LIMIT 1
 `
 
 	var r EmbassyRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 	)
@@ -255,10 +251,10 @@ LIMIT 1
 func (s *Store) CreateEmbassy(ctx context.Context, r EmbassyRow) (EmbassyRow, error) {
 	const q = `
 INSERT INTO monitored_embassies (
-    tenant_id, destination_space_id, slug, name, booking_url,
+    destination_space_id, slug, name, booking_url,
     poll_interval_seconds, is_active
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
+RETURNING id, destination_space_id, slug, name, booking_url,
           poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
 `
 
@@ -269,7 +265,7 @@ RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
 		r.TenantID, r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
 		r.PollIntervalSeconds, r.IsActive,
 	).Scan(
-		&out.ID, &out.TenantID, &out.DestinationSpaceID, &out.Slug, &out.Name,
+		&out.ID, &out.DestinationSpaceID, &out.Slug, &out.Name,
 		&out.BookingURL, &out.PollIntervalSeconds, &out.IsActive,
 		&out.LastPolledAt, &out.CreatedAt, &out.UpdatedAt,
 	)
@@ -326,15 +322,15 @@ func (s *Store) UpdateEmbassy(ctx context.Context, id, tenantID pgtype.UUID, nam
 	q := fmt.Sprintf(`
 UPDATE monitored_embassies
 SET %s
-WHERE id = $1 AND tenant_id = $2
-RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
+WHERE id = $1
+RETURNING id, destination_space_id, slug, name, booking_url,
           poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
 `, strings.Join(sets, ", "))
 
 	var out EmbassyRow
 
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&out.ID, &out.TenantID, &out.DestinationSpaceID, &out.Slug, &out.Name,
+		&out.ID, &out.DestinationSpaceID, &out.Slug, &out.Name,
 		&out.BookingURL, &out.PollIntervalSeconds, &out.IsActive,
 		&out.LastPolledAt, &out.CreatedAt, &out.UpdatedAt,
 	)
@@ -352,19 +348,19 @@ RETURNING id, tenant_id, destination_space_id, slug, name, booking_url,
 // getEmbassyByID fetches a single monitored embassy by its PK.
 func (s *Store) getEmbassyByID(ctx context.Context, id, tenantID pgtype.UUID) (EmbassyRow, error) {
 	const q = `
-SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
        e.last_polled_at, e.created_at, e.updated_at
 FROM monitored_embassies e
 LEFT JOIN spaces sp ON sp.id = e.destination_space_id
-WHERE e.id = $1 AND e.tenant_id = $2
+WHERE e.id = $1
 LIMIT 1
 `
 
 	var r EmbassyRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 		&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 	)
@@ -386,7 +382,7 @@ func (s *Store) MarkEmbassyPolled(ctx context.Context, id, tenantID pgtype.UUID)
 	const q = `
 UPDATE monitored_embassies
 SET last_polled_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2
+WHERE id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -418,10 +414,6 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("a.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, fmt.Sprintf("a.user_id = $%d", argIdx))
 	args = append(args, f.UserID)
 	argIdx++
@@ -452,7 +444,7 @@ func (s *Store) ListUserAlerts(ctx context.Context, f ListUserAlertsFilter) ([]A
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
+SELECT a.id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
        a.status, a.last_checked_at, a.fired_at, a.expires_at,
        a.notification_channels, a.created_at, a.updated_at, a.deleted_at
@@ -476,7 +468,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r AlertRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 			&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
 			&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -509,20 +501,20 @@ WHERE %s
 // GetAlertByID returns a single appointment alert by its PK.
 func (s *Store) GetAlertByID(ctx context.Context, id, tenantID pgtype.UUID) (AlertRow, error) {
 	const q = `
-SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
+SELECT a.id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
        a.status, a.last_checked_at, a.fired_at, a.expires_at,
        a.notification_channels, a.created_at, a.updated_at, a.deleted_at
 FROM appointment_alerts a
 LEFT JOIN spaces sp ON sp.id = a.destination_space_id
-WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
+WHERE a.id = $1 AND a.deleted_at IS NULL
 LIMIT 1
 `
 
 	var r AlertRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
+		&r.ID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 		&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 		&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
 		&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -552,10 +544,10 @@ func (s *Store) CreateAlert(ctx context.Context, r AlertRow) (AlertRow, error) {
 
 	const q = `
 INSERT INTO appointment_alerts (
-    tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+    user_id, destination_space_id, embassy_slug, visa_category,
     date_range_start, date_range_end, status, expires_at, notification_channels
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
           date_range_start, date_range_end, status, last_checked_at, fired_at,
           expires_at, notification_channels, created_at, updated_at, deleted_at
 `
@@ -567,7 +559,7 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 		r.TenantID, r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
 		r.DateRangeStart, r.DateRangeEnd, status, r.ExpiresAt, channels,
 	).Scan(
-		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
+		&out.ID, &out.UserID, &out.DestinationSpaceID,
 		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
 		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
 		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
@@ -636,8 +628,8 @@ func (s *Store) UpdateAlert(ctx context.Context, id, tenantID pgtype.UUID, statu
 	q := fmt.Sprintf(`
 UPDATE appointment_alerts
 SET %s
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_category,
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
           date_range_start, date_range_end, status, last_checked_at, fired_at,
           expires_at, notification_channels, created_at, updated_at, deleted_at
 `, strings.Join(sets, ", "))
@@ -645,7 +637,7 @@ RETURNING id, tenant_id, user_id, destination_space_id, embassy_slug, visa_categ
 	var out AlertRow
 
 	err := s.pool.Writer.QueryRow(ctx, q, args...).Scan(
-		&out.ID, &out.TenantID, &out.UserID, &out.DestinationSpaceID,
+		&out.ID, &out.UserID, &out.DestinationSpaceID,
 		&out.EmbassySlug, &out.VisaCategory, &out.DateRangeStart, &out.DateRangeEnd,
 		&out.Status, &out.LastCheckedAt, &out.FiredAt, &out.ExpiresAt,
 		&out.NotificationChannels, &out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
@@ -669,7 +661,7 @@ func (s *Store) DeleteAlert(ctx context.Context, id, tenantID pgtype.UUID) error
 	const q = `
 UPDATE appointment_alerts
 SET deleted_at = now(), updated_at = now(), status = 'expired'
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -716,14 +708,13 @@ WHERE deleted_at IS NULL
 // are returned.
 func (s *Store) ListActiveAlertsByEmbassySlug(ctx context.Context, embassySlug string, tenantID pgtype.UUID) ([]AlertRow, error) {
 	const q = `
-SELECT a.id, a.tenant_id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
+SELECT a.id, a.user_id, a.destination_space_id, sp.name AS dest_space_name,
        a.embassy_slug, a.visa_category, a.date_range_start, a.date_range_end,
        a.status, a.last_checked_at, a.fired_at, a.expires_at,
        a.notification_channels, a.created_at, a.updated_at, a.deleted_at
 FROM appointment_alerts a
 LEFT JOIN spaces sp ON sp.id = a.destination_space_id
-WHERE a.tenant_id = $1
-  AND a.embassy_slug = $2
+WHERE a.embassy_slug = $1
   AND a.status = 'active'
   AND a.deleted_at IS NULL
   AND CURRENT_DATE >= a.date_range_start
@@ -743,7 +734,7 @@ ORDER BY a.created_at ASC
 	for rows.Next() {
 		var r AlertRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.UserID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.EmbassySlug, &r.VisaCategory, &r.DateRangeStart, &r.DateRangeEnd,
 			&r.Status, &r.LastCheckedAt, &r.FiredAt, &r.ExpiresAt,
 			&r.NotificationChannels, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -769,7 +760,7 @@ func (s *Store) MarkAlertFired(ctx context.Context, id, tenantID pgtype.UUID) er
 	const q = `
 UPDATE appointment_alerts
 SET fired_at = now(), status = 'fired', last_checked_at = now(), updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND deleted_at IS NULL
+WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -803,7 +794,7 @@ WITH premium_embassies AS (
     -- user_groups → group_roles → role_permissions → permissions.
     SELECT DISTINCT a.embassy_slug, a.tenant_id
     FROM appointment_alerts a
-    JOIN user_group_memberships m ON m.user_id = a.user_id AND m.tenant_id = a.tenant_id
+    JOIN user_group_memberships m ON m.user_id = a.user_id
     JOIN user_groups ug ON ug.id = m.group_id
     JOIN group_roles gr ON gr.group_id = ug.id
     JOIN role_permissions rp ON rp.role_id = gr.role_id
@@ -812,7 +803,7 @@ WITH premium_embassies AS (
       AND a.deleted_at IS NULL
       AND p.key = 'appointment_alert.premium'
 )
-SELECT e.id, e.tenant_id, e.destination_space_id, sp.name AS dest_space_name,
+SELECT e.id, e.destination_space_id, sp.name AS dest_space_name,
        e.slug, e.name, e.booking_url, e.poll_interval_seconds, e.is_active,
        e.last_polled_at, e.created_at, e.updated_at
 FROM monitored_embassies e
@@ -846,7 +837,7 @@ ORDER BY e.last_polled_at ASC NULLS FIRST
 	for rows.Next() {
 		var r EmbassyRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.DestinationSpaceID, &r.DestSpaceName,
+			&r.ID, &r.DestinationSpaceID, &r.DestSpaceName,
 			&r.Slug, &r.Name, &r.BookingURL, &r.PollIntervalSeconds, &r.IsActive,
 			&r.LastPolledAt, &r.CreatedAt, &r.UpdatedAt,
 		); err != nil {

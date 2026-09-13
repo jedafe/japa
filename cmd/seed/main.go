@@ -95,7 +95,7 @@ func run() error {
 	// ── Check if admin already exists (idempotent) ─────────────────────
 	var existingID pgtype.UUID
 
-	err = database.Reader.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, adminEmail, ).Scan(&existingID)
+	err = database.Reader.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, adminEmail).Scan(&existingID)
 
 	var userID pgtype.UUID
 
@@ -111,7 +111,7 @@ func run() error {
 		}
 
 		err = database.Writer.QueryRow(ctx, `INSERT INTO users (email, username, password_hash, profile_type, status) VALUES ($1, $2, $3, $4, 'personal', 'active')
-			 RETURNING id`, tid, adminEmail, adminUsername, hash, ).Scan(&userID)
+			 RETURNING id`, tid, adminEmail, adminUsername, hash).Scan(&userID)
 		if err != nil {
 			return fmt.Errorf("creating admin user: %w", err)
 		}
@@ -119,7 +119,7 @@ func run() error {
 		fmt.Printf("seed: created admin user %s (%s)\n", adminEmail, userID.String())
 
 		// ── Create user profile ────────────────────────────────────────
-		_, err = database.Writer.Exec(ctx, `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2, $3)`, tid, userID, adminDisplayName, )
+		_, err = database.Writer.Exec(ctx, `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2, $3)`, tid, userID, adminDisplayName)
 		if err != nil {
 			return fmt.Errorf("creating admin profile: %w", err)
 		}
@@ -138,7 +138,7 @@ func run() error {
 		gid := parseUUID(groupPair.id)
 
 		_, err = database.Writer.Exec(ctx, `INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2, $3)
-			 ON CONFLICT (user_id, group_id) DO NOTHING`, tid, userID, gid, )
+			 ON CONFLICT (user_id, group_id) DO NOTHING`, tid, userID, gid)
 		if err != nil {
 			return fmt.Errorf("adding admin to %s group: %w", groupPair.name, err)
 		}
@@ -158,14 +158,14 @@ func run() error {
 			) VALUES ($1, $2, $3, $4, $5, 'country',
 				'public', 'members', 'members', 'members', 'open', 'active')
 			ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-			RETURNING id`, tid, stID, s.Name, s.Slug, s.Description, ).Scan(&spaceID)
+			RETURNING id`, tid, stID, s.Name, s.Slug, s.Description).Scan(&spaceID)
 		if err != nil {
 			return fmt.Errorf("creating space %s: %w", s.Slug, err)
 		}
 
 		// Add admin as member of the space.
 		_, err = database.Writer.Exec(ctx, `INSERT INTO space_members (space_id, user_id, role) VALUES ($1, $2, $3, 'admin')
-			 ON CONFLICT (space_id, user_id) DO NOTHING`, spaceID, userID, tid, )
+			 ON CONFLICT (space_id, user_id) DO NOTHING`, spaceID, userID, tid)
 		if err != nil {
 			return fmt.Errorf("adding admin to space %s: %w", s.Slug, err)
 		}
@@ -175,7 +175,7 @@ func run() error {
 
 	// ── Create user preferences ────────────────────────────────────────
 	_, err = database.Writer.Exec(ctx, `INSERT INTO user_preferences (user_id, dark_mode, language) VALUES ($1, $2, 'system', 'en-NG')
-		 ON CONFLICT (user_id) DO NOTHING`, tid, userID, )
+		 ON CONFLICT (user_id) DO NOTHING`, tid, userID)
 	if err != nil {
 		return fmt.Errorf("creating user preferences: %w", err)
 	}
@@ -288,10 +288,10 @@ func seedUsers(ctx context.Context, database *db.DB, tid, adminID pgtype.UUID) (
 
 		err = database.Writer.QueryRow(ctx, `INSERT INTO users (email, username, password_hash, profile_type, status) VALUES ($1, $2, $3, $4, 'personal', 'active')
 			 ON CONFLICT (email) DO NOTHING
-			 RETURNING id`, tid, u.email, u.username, hash, ).Scan(&uid)
+			 RETURNING id`, tid, u.email, u.username, hash).Scan(&uid)
 		if err != nil {
 			// If ON CONFLICT fired (no RETURNING), try to fetch existing
-			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, u.email, ).Scan(&uid)
+			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, u.email).Scan(&uid)
 			if err2 != nil {
 				return nil, fmt.Errorf("creating user %s: %w", u.email, err)
 			}
@@ -301,16 +301,16 @@ func seedUsers(ctx context.Context, database *db.DB, tid, adminID pgtype.UUID) (
 
 		// Create profile
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2, $3)
-			 ON CONFLICT (user_id) DO NOTHING`, tid, uid, u.displayName, )
+			 ON CONFLICT (user_id) DO NOTHING`, tid, uid, u.displayName)
 
 		// Add to members group
 		gid := parseUUID(membersGroupID)
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO user_group_memberships (user_id, group_id) VALUES ($1, $2, $3)
-			 ON CONFLICT (user_id, group_id) DO NOTHING`, tid, uid, gid, )
+			 ON CONFLICT (user_id, group_id) DO NOTHING`, tid, uid, gid)
 
 		// Add user preferences
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO user_preferences (user_id, dark_mode, language) VALUES ($1, $2, 'system', 'en-NG')
-			 ON CONFLICT (user_id) DO NOTHING`, tid, uid, )
+			 ON CONFLICT (user_id) DO NOTHING`, tid, uid)
 
 		fmt.Printf("seed: created user %s (%s)\n", u.email, uid.String())
 	}
@@ -352,9 +352,9 @@ func seedTags(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgtype.U
 
 		err := database.Writer.QueryRow(ctx, `INSERT INTO tags (name, slug) VALUES ($1, $2, $3)
 			 ON CONFLICT (slug) DO NOTHING
-			 RETURNING id`, tid, t.name, t.slug, ).Scan(&tagID)
+			 RETURNING id`, tid, t.name, t.slug).Scan(&tagID)
 		if err != nil {
-			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM tags WHERE slug = $1`, t.slug, ).Scan(&tagID)
+			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM tags WHERE slug = $1`, t.slug).Scan(&tagID)
 			if err2 != nil {
 				return nil, fmt.Errorf("creating tag %s: %w", t.slug, err)
 			}
@@ -548,14 +548,14 @@ func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userID
 				publish_at, published_at
 			) VALUES ($1, $2, $3, 'blog_post', $4, $5, $6, $7, 'published', 'public', $8, NOW(), NOW())
 			ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-			RETURNING id`, tid, userIDs[b.authorIdx], spaceIDs[b.spaceIdx], b.title, b.slug, b.body, b.bodyHTML, len(b.body)/200+1, ).Scan(&contentID)
+			RETURNING id`, tid, userIDs[b.authorIdx], spaceIDs[b.spaceIdx], b.title, b.slug, b.body, b.bodyHTML, len(b.body)/200+1).Scan(&contentID)
 		if err != nil {
 			return fmt.Errorf("creating blog post %d: %w", i+1, err)
 		}
 
 		// Create content score (critical for feed!)
 		_, err = database.Writer.Exec(ctx, `INSERT INTO content_scores (content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score) VALUES ($1, $2, $3, $4, 0, $5::numeric / GREATEST(EXTRACT(EPOCH FROM (NOW() - (SELECT created_at FROM contents WHERE id = $1))) / 3600, 1))
-			 ON CONFLICT (content_id) DO NOTHING`, contentID, b.voteScore, b.commentCount, b.viewCount, b.voteScore, )
+			 ON CONFLICT (content_id) DO NOTHING`, contentID, b.voteScore, b.commentCount, b.viewCount, b.voteScore)
 		if err != nil {
 			return fmt.Errorf("creating content score for blog %d: %w", i+1, err)
 		}
@@ -564,7 +564,7 @@ func seedBlogPosts(ctx context.Context, database *db.DB, tid pgtype.UUID, userID
 		for _, tagIdx := range b.tagIndices {
 			if tagIdx < len(tagIDs) {
 				_, _ = database.Writer.Exec(ctx, `INSERT INTO content_tags (content_id, tag_id) VALUES ($1, $2)
-					 ON CONFLICT (content_id, tag_id) DO NOTHING`, contentID, tagIDs[tagIdx], )
+					 ON CONFLICT (content_id, tag_id) DO NOTHING`, contentID, tagIDs[tagIdx])
 			}
 		}
 	}
@@ -622,7 +622,7 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 				space_id, author_user_id, title, slug, body, solved
 			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (slug) WHERE deleted_at IS NULL DO UPDATE SET slug = EXCLUDED.slug
-			RETURNING id`, tid, spaceIDs[t.spaceIdx], userIDs[t.authorIdx], t.title, t.slug, fmt.Sprintf(`[{"type":"paragraph","content":[{"type":"text","text":"%s"}]}]`, t.body), t.solved, ).Scan(&threadID)
+			RETURNING id`, tid, spaceIDs[t.spaceIdx], userIDs[t.authorIdx], t.title, t.slug, fmt.Sprintf(`[{"type":"paragraph","content":[{"type":"text","text":"%s"}]}]`, t.body), t.solved).Scan(&threadID)
 		if err != nil {
 			return fmt.Errorf("creating forum thread %d: %w", i+1, err)
 		}
@@ -630,7 +630,7 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 		// Link forum tag
 		if t.forumTagIdx < len(forumTagIDs) {
 			_, _ = database.Writer.Exec(ctx, `INSERT INTO forum_thread_tags (thread_id, tag_id) VALUES ($1, $2)
-				 ON CONFLICT DO NOTHING`, threadID, forumTagIDs[t.forumTagIdx], )
+				 ON CONFLICT DO NOTHING`, threadID, forumTagIDs[t.forumTagIdx])
 		}
 
 		// Create replies
@@ -640,14 +640,14 @@ func seedForumContent(ctx context.Context, database *db.DB, tid pgtype.UUID, use
 
 			_, err = database.Writer.Exec(ctx, `INSERT INTO forum_replies (
 					thread_id, author_user_id, body
-				) VALUES ($1, $2, $3, $4)`, tid, threadID, userIDs[replyAuthorIdx], replyBody, )
+				) VALUES ($1, $2, $3, $4)`, tid, threadID, userIDs[replyAuthorIdx], replyBody)
 			if err != nil {
 				return fmt.Errorf("creating reply for thread %d: %w", i+1, err)
 			}
 		}
 
 		// Update reply count
-		_, _ = database.Writer.Exec(ctx, `UPDATE forum_threads SET reply_count = $1 WHERE id = $2`, t.replies, threadID, )
+		_, _ = database.Writer.Exec(ctx, `UPDATE forum_threads SET reply_count = $1 WHERE id = $2`, t.replies, threadID)
 	}
 
 	fmt.Printf("seed: created %d forum threads with replies\n", len(threads))
@@ -678,9 +678,9 @@ func seedForumTags(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgt
 
 		err := database.Writer.QueryRow(ctx, `INSERT INTO forum_tags (name, slug) VALUES ($1, $2, $3)
 			 ON CONFLICT (slug) DO NOTHING
-			 RETURNING id`, tid, ft.name, ft.slug, ).Scan(&id)
+			 RETURNING id`, tid, ft.name, ft.slug).Scan(&id)
 		if err != nil {
-			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM forum_tags WHERE slug = $1`, ft.slug, ).Scan(&id)
+			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM forum_tags WHERE slug = $1`, ft.slug).Scan(&id)
 			if err2 != nil {
 				return nil, fmt.Errorf("creating forum tag %s: %w", ft.slug, err)
 			}
@@ -802,14 +802,14 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 				publish_at, published_at
 			) VALUES ($1, $2, $3, 'comparison', $4, $5, $6, $7, 'published', 'public', $8, NOW(), NOW())
 			ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-			RETURNING id`, tid, userIDs[c.authorIdx], spaceIDs[c.spaceIdx], c.title, c.slug, "Comparison of "+c.title, fmt.Sprintf("<h2>%s</h2><p>This comparison helps you make informed decisions.</p>", c.title), 3, ).Scan(&contentID)
+			RETURNING id`, tid, userIDs[c.authorIdx], spaceIDs[c.spaceIdx], c.title, c.slug, "Comparison of "+c.title, fmt.Sprintf("<h2>%s</h2><p>This comparison helps you make informed decisions.</p>", c.title), 3).Scan(&contentID)
 		if err != nil {
 			return fmt.Errorf("creating comparison %d: %w", i+1, err)
 		}
 
 		// Create content score
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO content_scores (content_id, vote_score, comment_count, view_count, bookmark_count, velocity_score) VALUES ($1, $2, 0, $3, 0, 0)
-			 ON CONFLICT (content_id) DO NOTHING`, contentID, 20+i*3, 500+i*100, )
+			 ON CONFLICT (content_id) DO NOTHING`, contentID, 20+i*3, 500+i*100)
 
 		// Create comparison items
 		itemIDs := make([]pgtype.UUID, len(c.items))
@@ -818,7 +818,7 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 			var itemID pgtype.UUID
 
 			err := database.Writer.QueryRow(ctx, `INSERT INTO comparison_items (content_id, title, position) VALUES ($1, $2, $3, $4)
-				 RETURNING id`, contentID, tid, item, j, ).Scan(&itemID)
+				 RETURNING id`, contentID, tid, item, j).Scan(&itemID)
 			if err != nil {
 				return fmt.Errorf("creating comparison item: %w", err)
 			}
@@ -831,7 +831,7 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 			var dimID pgtype.UUID
 
 			err := database.Writer.QueryRow(ctx, `INSERT INTO comparison_dimensions (content_id, label, dimension_type, position) VALUES ($1, $2, $3, 'text', $4)
-				 RETURNING id`, contentID, tid, dim, k, ).Scan(&dimID)
+				 RETURNING id`, contentID, tid, dim, k).Scan(&dimID)
 			if err != nil {
 				return fmt.Errorf("creating comparison dimension: %w", err)
 			}
@@ -839,7 +839,7 @@ func seedComparisons(ctx context.Context, database *db.DB, tid pgtype.UUID, user
 			// Create values for each item
 			for _, itemID := range itemIDs {
 				_, _ = database.Writer.Exec(ctx, `INSERT INTO comparison_values (dimension_id, item_id, value) VALUES ($1, $2, $3, 'Good')
-					 ON CONFLICT (dimension_id, item_id) DO NOTHING`, dimID, itemID, tid, )
+					 ON CONFLICT (dimension_id, item_id) DO NOTHING`, dimID, itemID, tid)
 			}
 		}
 	}
@@ -884,7 +884,7 @@ func seedOrganizations(ctx context.Context, database *db.DB, tid pgtype.UUID, us
 				owner_user_id, name, slug, description, org_type, geo_space_id
 			) VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-			RETURNING id`, tid, userIDs[o.ownerIdx], o.name, o.slug, o.description, o.orgType, spaceIDs[o.spaceIdx], ).Scan(&orgID)
+			RETURNING id`, tid, userIDs[o.ownerIdx], o.name, o.slug, o.description, o.orgType, spaceIDs[o.spaceIdx]).Scan(&orgID)
 		if err != nil {
 			return nil, fmt.Errorf("creating organization %s: %w", o.slug, err)
 		}
@@ -893,20 +893,20 @@ func seedOrganizations(ctx context.Context, database *db.DB, tid pgtype.UUID, us
 
 		// Add owner as member
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO organization_members (organization_id, user_id, role, invited_by) VALUES ($1, $2, 'owner', $2)
-			 ON CONFLICT (organization_id, user_id) DO NOTHING`, orgID, userIDs[o.ownerIdx], )
+			 ON CONFLICT (organization_id, user_id) DO NOTHING`, orgID, userIDs[o.ownerIdx])
 
 		// Add 2-3 additional members
 		for m := 1; m <= 2; m++ {
 			memberIdx := (o.ownerIdx + m) % len(userIDs)
 			_, _ = database.Writer.Exec(ctx, `INSERT INTO organization_members (organization_id, user_id, role, invited_by) VALUES ($1, $2, 'member', $3)
-				 ON CONFLICT (organization_id, user_id) DO NOTHING`, orgID, userIDs[memberIdx], userIDs[o.ownerIdx], )
+				 ON CONFLICT (organization_id, user_id) DO NOTHING`, orgID, userIDs[memberIdx], userIDs[o.ownerIdx])
 		}
 
 		// Follow the organization with a few users
 		for f := range 3 {
 			followerIdx := (o.ownerIdx + f + 3) % len(userIDs)
 			_, _ = database.Writer.Exec(ctx, `INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, $2, 'organization', $3)
-				 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[followerIdx], orgID, )
+				 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[followerIdx], orgID)
 		}
 	}
 
@@ -948,7 +948,7 @@ func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs,
 		}
 
 		_, err := database.Writer.Exec(ctx, `INSERT INTO reviews (entity_type, entity_id, reviewer_user_id, rating, title, body) VALUES ($1, 'organization', $2, $3, $4, $5, $6)
-			 ON CONFLICT (entity_type, entity_id, reviewer_user_id) DO NOTHING`, tid, orgIDs[r.entityIdx], userIDs[r.reviewIdx], r.rating, r.title, r.body, )
+			 ON CONFLICT (entity_type, entity_id, reviewer_user_id) DO NOTHING`, tid, orgIDs[r.entityIdx], userIDs[r.reviewIdx], r.rating, r.title, r.body)
 		if err != nil {
 			return fmt.Errorf(" creating review: %w", err)
 		}
@@ -962,14 +962,14 @@ func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs,
 
 		err := database.Reader.QueryRow(ctx, `SELECT COALESCE(AVG(rating), 0), COUNT(*)
 			 FROM reviews
-			 WHERE entity_type = 'organization' AND entity_id = $1`, orgID, ).Scan(&avgRating, &reviewCount)
+			 WHERE entity_type = 'organization' AND entity_id = $1`, orgID).Scan(&avgRating, &reviewCount)
 		if err != nil {
 			continue
 		}
 
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO review_aggregates (entity_type, entity_id, review_count, average_rating) VALUES ($1, 'organization', $2, $3, $4)
 			 ON CONFLICT (entity_type, entity_id)
-			 DO UPDATE SET review_count = $3, average_rating = $4, updated_at = NOW()`, tid, orgID, reviewCount, avgRating, )
+			 DO UPDATE SET review_count = $3, average_rating = $4, updated_at = NOW()`, tid, orgID, reviewCount, avgRating)
 
 		fmt.Printf("seed: organization %d has %d reviews (avg: %.1f)\n", i+1, reviewCount, avgRating)
 	}
@@ -1172,7 +1172,7 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 
 		err := database.Writer.QueryRow(ctx, `INSERT INTO learning_tracks (title, slug, description, difficulty, is_published) VALUES ($1, $2, $3, $4, $5, true)
 			 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-			 RETURNING id`, tid, track.title, track.slug, track.description, track.difficulty, ).Scan(&trackID)
+			 RETURNING id`, tid, track.title, track.slug, track.description, track.difficulty).Scan(&trackID)
 		if err != nil {
 			return fmt.Errorf("creating learning track %d: %w", i+1, err)
 		}
@@ -1182,14 +1182,14 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 
 			err := database.Writer.QueryRow(ctx, `INSERT INTO learning_modules (track_id, title, slug, sort_order) VALUES ($1, $2, $3, $4, $5)
 				 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
-				 RETURNING id`, tid, trackID, mod.title, mod.slug, j, ).Scan(&moduleID)
+				 RETURNING id`, tid, trackID, mod.title, mod.slug, j).Scan(&moduleID)
 			if err != nil {
 				return fmt.Errorf(" creating module: %w", err)
 			}
 
 			for k, lesson := range mod.lessons {
 				_, err := database.Writer.Exec(ctx, `INSERT INTO learning_lessons (module_id, title, slug, content, sort_order, is_published) VALUES ($1, $2, $3, $4, $5, $6, true)
-					 ON CONFLICT (slug) DO NOTHING`, tid, moduleID, lesson.title, lesson.slug, lesson.content, k, )
+					 ON CONFLICT (slug) DO NOTHING`, tid, moduleID, lesson.title, lesson.slug, lesson.content, k)
 				if err != nil {
 					return fmt.Errorf(" creating lesson: %w", err)
 				}
@@ -1226,9 +1226,9 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 
 		err := database.Writer.QueryRow(ctx, `INSERT INTO ticket_types (name, slug, description) VALUES ($1, $2, $3, $4)
 			 ON CONFLICT (slug) DO NOTHING
-			 RETURNING id`, tid, tt.name, tt.slug, tt.desc, ).Scan(&typeID)
+			 RETURNING id`, tid, tt.name, tt.slug, tt.desc).Scan(&typeID)
 		if err != nil {
-			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM ticket_types WHERE slug = $1`, tt.slug, ).Scan(&typeID)
+			err2 := database.Reader.QueryRow(ctx, `SELECT id FROM ticket_types WHERE slug = $1`, tt.slug).Scan(&typeID)
 			if err2 != nil {
 				return fmt.Errorf("creating ticket type: %w", err)
 			}
@@ -1266,7 +1266,7 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 		err := database.Writer.QueryRow(ctx, `INSERT INTO tickets (
 				type_id, subject, description, status, priority, submitter_user_id
 			) VALUES ($1, $2, $3, $4, $5, $6, $7)
-			RETURNING id`, tid, typeIDs[t.typeIdx], t.subject, t.description, t.status, t.priority, userIDs[t.submitterIdx], ).Scan(&ticketID)
+			RETURNING id`, tid, typeIDs[t.typeIdx], t.subject, t.description, t.status, t.priority, userIDs[t.submitterIdx]).Scan(&ticketID)
 		if err != nil {
 			return fmt.Errorf("creating ticket %d: %w", i+1, err)
 		}
@@ -1280,7 +1280,7 @@ func seedTickets(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs 
 				commentBody = "We've identified the root cause and are working on a fix. Expected resolution time: 24 hours."
 			}
 
-			_, _ = database.Writer.Exec(ctx, `INSERT INTO ticket_comments (ticket_id, user_id, body) VALUES ($1, $2, $3)`, ticketID, userIDs[commenterIdx], commentBody, )
+			_, _ = database.Writer.Exec(ctx, `INSERT INTO ticket_comments (ticket_id, user_id, body) VALUES ($1, $2, $3)`, ticketID, userIDs[commenterIdx], commentBody)
 		}
 	}
 
@@ -1294,7 +1294,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	fmt.Println("seed: creating engagement data...")
 
 	// Get all content IDs
-	rows, err := database.Reader.Query(ctx, `SELECT id FROM contents WHERE status = 'published' ORDER BY created_at LIMIT 30`, )
+	rows, err := database.Reader.Query(ctx, `SELECT id FROM contents WHERE status = 'published' ORDER BY created_at LIMIT 30`)
 	if err != nil {
 		return fmt.Errorf("querying contents: %w", err)
 	}
@@ -1315,7 +1315,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 	for i := 0; i < 20 && i < len(contentIDs); i++ {
 		userIdx := i%(len(userIDs)-1) + 1
 		_, _ = database.Writer.Exec(ctx, `INSERT INTO bookmarks (user_id, entity_type, entity_id) VALUES ($1, $2, 'content', $3)
-			 ON CONFLICT (user_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[userIdx], contentIDs[i], )
+			 ON CONFLICT (user_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[userIdx], contentIDs[i])
 	}
 
 	// Create follows (20)
@@ -1325,12 +1325,12 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 
 		if followerIdx != followeeIdx {
 			_, _ = database.Writer.Exec(ctx, `INSERT INTO follows (follower_id, entity_type, entity_id) VALUES ($1, $2, 'user', $3)
-				 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[followerIdx], userIDs[followeeIdx], )
+				 ON CONFLICT (follower_id, entity_type, entity_id) DO NOTHING`, tid, userIDs[followerIdx], userIDs[followeeIdx])
 		}
 	}
 
 	// Create comments on blog posts (20)
-	blogRows, err := database.Reader.Query(ctx, `SELECT id FROM contents WHERE content_type = 'blog_post' AND status = 'published' LIMIT 12`, )
+	blogRows, err := database.Reader.Query(ctx, `SELECT id FROM contents WHERE content_type = 'blog_post' AND status = 'published' LIMIT 12`)
 	if err != nil {
 		return fmt.Errorf("querying blog posts: %w", err)
 	}
@@ -1363,7 +1363,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 		authorIdx := (i % (len(userIDs) - 1)) + 1
 		bodyIdx := i % len(commentBodies)
 
-		_, _ = database.Writer.Exec(ctx, `INSERT INTO comments (content_id, author_user_id, body) VALUES ($1, $2, $3, $4)`, tid, blogIDs[blogIdx], userIDs[authorIdx], commentBodies[bodyIdx], )
+		_, _ = database.Writer.Exec(ctx, `INSERT INTO comments (content_id, author_user_id, body) VALUES ($1, $2, $3, $4)`, tid, blogIDs[blogIdx], userIDs[authorIdx], commentBodies[bodyIdx])
 	}
 
 	fmt.Println("seed: created engagement data")
@@ -1373,7 +1373,7 @@ func seedEngagement(ctx context.Context, database *db.DB, tid pgtype.UUID, userI
 
 // getSpaceIDs returns all space IDs for the tenant.
 func getSpaceIDs(ctx context.Context, database *db.DB, tid pgtype.UUID) ([]pgtype.UUID, error) {
-	rows, err := database.Reader.Query(ctx, `SELECT id FROM spaces  ORDER BY created_at`, )
+	rows, err := database.Reader.Query(ctx, `SELECT id FROM spaces  ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("querying spaces: %w", err)
 	}

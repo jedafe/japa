@@ -38,8 +38,7 @@ func main() {
 	rows, err := pool.Query(context.Background(), `
 		SELECT id::text
 		FROM spaces
-		WHERE tenant_id = '00000000-0000-0000-0000-000000000001'
-		  AND space_type_id = (SELECT id FROM space_types WHERE slug='university' AND tenant_id='00000000-0000-0000-0000-000000000001')
+		WHERE space_type_id = (SELECT id FROM space_types WHERE slug='university')
 		  AND deleted_at IS NULL
 		  AND (wiki_content IS NULL OR wiki_content = '{}'::jsonb)
 	`)
@@ -61,8 +60,7 @@ func main() {
 		}
 
 		payload, _ := json.Marshal(map[string]string{
-			"space_id":  spaceID,
-			"tenant_id": "00000000-0000-0000-0000-000000000001",
+			"space_id": spaceID,
 		})
 
 		_, err := client.Enqueue(

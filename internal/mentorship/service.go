@@ -591,17 +591,16 @@ func (s *Service) SearchMentors(ctx context.Context, tenantID pgtype.UUID, query
 	}
 
 	const q = `
-SELECT up.user_id, up.tenant_id, up.is_mentor, up.mentor_capacity,
+SELECT up.user_id, up.is_mentor, up.mentor_capacity,
        up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
        up.display_name, up.avatar_url, u.username,
        (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
 FROM user_profiles up
-JOIN users u ON u.id = up.user_id AND u.tenant_id = up.tenant_id
-WHERE up.tenant_id = $1
-  AND up.is_mentor = true
-  AND (u.username ILIKE $2 OR up.display_name ILIKE $2)
+JOIN users u ON u.id = up.user_id
+WHERE up.is_mentor = true
+  AND (u.username ILIKE $1 OR up.display_name ILIKE $1)
 ORDER BY up.display_name, u.username
-LIMIT $3
+LIMIT $2
 `
 
 	rows, err := s.db.Reader.Query(ctx, q, tenantID, "%"+query+"%", limit)

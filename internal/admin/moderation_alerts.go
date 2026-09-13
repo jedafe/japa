@@ -42,7 +42,7 @@ func (h *Handlers) ListModerationAlerts(w http.ResponseWriter, r *http.Request) 
 	var total int32
 
 	countErr := h.DB.Reader.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM moderation_alerts
-		 WHERE (NULLIF($1, '') IS NULL OR status = $1)`, status, ).Scan(&total)
+		 WHERE (NULLIF($1, '') IS NULL OR status = $1)`, status).Scan(&total)
 	if countErr != nil {
 		slog.Warn("moderation: counting alerts", "error", countErr)
 	}

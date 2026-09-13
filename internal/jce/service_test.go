@@ -125,7 +125,7 @@ func enableJCEFeatures(t *testing.T, d *db.DB, tenantID pgtype.UUID) {
 	for _, key := range []string{"feature.jce.profiles", "feature.jce.smart_compare", "feature.jce.scoring"} {
 		_, err := d.Writer.Exec(ctx, `
 			INSERT INTO feature_flags (key, enabled, config) VALUES ($1, $2, true, '{}')
-			ON CONFLICT (key, tenant_id) DO UPDATE SET enabled = true, updated_at = now()
+			ON CONFLICT (key) DO UPDATE SET enabled = true, updated_at = now()
 		`, key, tenantID)
 		if err != nil {
 			t.Fatalf("enableJCEFeatures %s: %v", key, err)

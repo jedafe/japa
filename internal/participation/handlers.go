@@ -90,9 +90,9 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 	countQuery := `SELECT count(*) FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
 		 JOIN users u ON u.id = c.author_id
-		 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
+		 WHERE cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	if search != "" {
-		countQuery += ` AND (u.username ILIKE '%' || $2 || '%' OR c.content_type ILIKE '%' || $2 || '%')`
+		countQuery += ` AND (u.username ILIKE '%' || $1 || '%' OR c.content_type ILIKE '%' || $1 || '%')`
 
 		countArgs = append(countArgs, search)
 	}
@@ -126,7 +126,7 @@ func (h *Handlers) HandleQueue(w http.ResponseWriter, r *http.Request) {
 			 FROM content_reviews cr
 			 JOIN contents c ON c.id = cr.content_id
 			 JOIN users u ON u.id = c.author_id
-			 WHERE cr.tenant_id = $1 AND cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
+			 WHERE cr.source = 'persona_action' AND cr.status = 'pending' AND cr.deleted_at IS NULL`
 	argIdx := 2
 
 	if search != "" {

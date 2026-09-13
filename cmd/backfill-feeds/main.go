@@ -31,7 +31,7 @@ func main() {
 
 	// Fetch all published content items.
 	rows, err := conn.Query(ctx, `
-		SELECT c.id, c.author_id, c.tenant_id, COALESCE(c.content_type, 'blog_post')
+		SELECT c.id, c.author_id, COALESCE(c.content_type, 'blog_post')
 		FROM contents c
 		WHERE c.status = 'published'
 		ORDER BY c.created_at
@@ -53,7 +53,7 @@ func main() {
 
 	for rows.Next() {
 		var item contentRow
-		if err := rows.Scan(&item.ContentID, &item.AuthorID, &item.TenantID, &item.ContentType); err != nil {
+		if err := rows.Scan(&item.ContentID, &item.AuthorID, &item.ContentType); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}

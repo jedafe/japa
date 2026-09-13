@@ -497,11 +497,6 @@ func findScholarshipsQuery(tenantID pgtype.UUID, filters ScholarshipFilters, now
 
 	argIdx := 1
 
-	args = append(args, tenantID)
-	tenantIdx := argIdx
-	argIdx++
-
-	conditions = append(conditions, fmt.Sprintf("s.tenant_id = $%d", tenantIdx))
 	conditions = append(conditions, "c.status = 'published'")
 	conditions = append(conditions, "c.deleted_at IS NULL")
 	conditions = append(conditions, "c.guide_category = 'scholarship'")
@@ -751,7 +746,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 		       ) AS field_values
 		FROM scholarships s
 		JOIN contents c ON c.id = s.guide_id
-		WHERE s.tenant_id = $1 AND s.guide_id = $2
+		WHERE s.guide_id = $1
 		  AND c.status = 'published' AND c.deleted_at IS NULL
 		  AND c.guide_category = 'scholarship'`
 

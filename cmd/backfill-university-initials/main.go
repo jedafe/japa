@@ -68,7 +68,7 @@ func main() {
 	}
 
 	rows, err := conn.Query(ctx, `
-		SELECT s.id, s.tenant_id, s.name, COALESCE(cfv.value_text, '') AS website
+		SELECT s.id, s.name, COALESCE(cfv.value_text, '') AS website
 		FROM spaces s
 		JOIN space_types st ON st.id = s.space_type_id
 		LEFT JOIN custom_field_values cfv ON cfv.entity_id = s.id
@@ -89,7 +89,7 @@ func main() {
 		var e backfillEntry
 
 		var website *string
-		if err := rows.Scan(&e.SpaceID, &e.TenantID, &e.Name, &website); err != nil {
+		if err := rows.Scan(&e.SpaceID, &e.Name, &website); err != nil {
 			slog.Warn("skipping row: scan error", "error", err)
 			continue
 		}
@@ -142,7 +142,7 @@ func main() {
 			args = append(args, e.SpaceID, e.TenantID, initials)
 		}
 
-		sb.WriteString(`) AS v(space_id, tenant_id, initials)
+		sb.WriteString(`) AS v(space_id, initials)
 			ON s.id = v.space_id AND s.tenant_id = v.tenant_id
 		`)
 		sb.WriteString(`

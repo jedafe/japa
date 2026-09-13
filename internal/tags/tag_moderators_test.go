@@ -42,9 +42,9 @@ func TestTagModeratorsIntegration(t *testing.T) {
 
 	tenantID = mustExecReturning(`INSERT INTO tenants (id,name,slug,status,created_at,updated_at)
 		VALUES (gen_random_uuid(),'tm','tm_'||replace(gen_random_uuid()::text,'-',''),'active',now(),now()) RETURNING id`)
-	userID = mustExecReturning(`INSERT INTO users (id,tenant_id,email,username,profile_type,status,created_at,updated_at,follower_count,force_password_change)
+	userID = mustExecReturning(`INSERT INTO users (id,email,username,profile_type,status,created_at,updated_at,follower_count,force_password_change)
 		VALUES (gen_random_uuid(),$1,gen_random_uuid()::text||'@test.local','mod_'||replace(gen_random_uuid()::text,'-',''),'personal','active',now(),now(),0,false) RETURNING id`, tenantID)
-	tagID = mustExecReturning(`INSERT INTO tags (id,tenant_id,name,slug,follower_count,created_at,updated_at)
+	tagID = mustExecReturning(`INSERT INTO tags (id,name,slug,follower_count,created_at,updated_at)
 		VALUES (gen_random_uuid(),$1,'modtag','modtag_'||replace(gen_random_uuid()::text,'-',''),0,now(),now()) RETURNING id`, tenantID)
 
 	t.Cleanup(func() {

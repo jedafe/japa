@@ -63,12 +63,11 @@ JOIN custom_field_values cfv
   ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
 JOIN custom_fields cf
   ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.content_type = 'guide'
+WHERE c.content_type = 'guide'
   AND c.guide_category = 'visa'
   AND c.status = 'published'
   AND c.deleted_at IS NULL
-  AND cf.key = ANY($2)
+  AND cf.key = ANY($1)
 ORDER BY c.id, cf.key
 `
 
@@ -116,7 +115,7 @@ func (s *Store) ListCountrySpaces(ctx context.Context, tenantID pgtype.UUID) ([]
 	const q = `
 SELECT id, name, slug
 FROM spaces
-WHERE tenant_id = $1 AND level = 'country' AND deleted_at IS NULL
+WHERE level = 'country' AND deleted_at IS NULL
 ORDER BY name ASC
 `
 
@@ -154,13 +153,12 @@ JOIN custom_field_values cfv
   ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
 JOIN custom_fields cf
   ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
-WHERE c.tenant_id = $1
-  AND c.id = $2
+WHERE c.id = $1
   AND c.content_type = 'guide'
   AND c.guide_category = 'visa'
   AND c.status = 'published'
   AND c.deleted_at IS NULL
-  AND cf.key = $3
+  AND cf.key = $2
 LIMIT 1
 `
 
@@ -190,8 +188,7 @@ func (s *Store) GetVisaGuideTitle(ctx context.Context, tenantID, guideID pgtype.
 	const q = `
 SELECT c.title
 FROM contents c
-WHERE c.tenant_id = $1
-  AND c.id = $2
+WHERE c.id = $1
   AND c.content_type = 'guide'
   AND c.guide_category = 'visa'
   AND c.status = 'published'

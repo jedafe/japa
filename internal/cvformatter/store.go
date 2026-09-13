@@ -265,7 +265,6 @@ DELETE FROM cv_standards cs
 USING spaces sp
 WHERE cs.id = $1
   AND cs.destination_space_id = sp.id
-  AND sp.tenant_id = $2
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -310,12 +309,12 @@ func (s *Store) CreateSession(ctx context.Context, input SessionInput) (SessionR
 
 	const q = `
 INSERT INTO cv_format_sessions (
-    tenant_id, user_id, origin_space_id, destination_space_id,
+    user_id, origin_space_id, destination_space_id,
     input_text, output_format, status, ai_model,
     ai_generated, ai_prompt_hash,
     original_filename, file_storage_path, file_mime_type, file_size_bytes
 ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, true, $8, $9, $10, $11, $12)
-RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
+RETURNING id, user_id, origin_space_id, destination_space_id,
           input_text, output_text, output_format, status, ai_model,
           tokens_used, created_at, expires_at,
           ai_generated, ai_prompt_hash, hitl_reviewed_by,
@@ -332,7 +331,7 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 		input.OriginalFilename, input.FileStoragePath,
 		input.FileMimeType, input.FileSizeBytes,
 	).Scan(
-		&r.ID, &r.TenantID, &r.UserID, &r.OriginSpaceID,
+		&r.ID, &r.UserID, &r.OriginSpaceID,
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
 		&r.OutputFormat, &r.Status, &r.AIModel, &r.TokensUsed,
 		&r.CreatedAt, &r.ExpiresAt,
@@ -351,7 +350,7 @@ RETURNING id, tenant_id, user_id, origin_space_id, destination_space_id,
 // GetSessionByID returns a single cv_format_sessions row by its id.
 func (s *Store) GetSessionByID(ctx context.Context, id pgtype.UUID) (SessionRow, error) {
 	const q = `
-SELECT id, tenant_id, user_id, origin_space_id, destination_space_id,
+SELECT id, user_id, origin_space_id, destination_space_id,
        input_text, output_text, output_format, status, ai_model,
        tokens_used, created_at, expires_at,
        ai_generated, ai_prompt_hash, hitl_reviewed_by,
@@ -364,7 +363,7 @@ WHERE id = $1
 	var r SessionRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
-		&r.ID, &r.TenantID, &r.UserID, &r.OriginSpaceID,
+		&r.ID, &r.UserID, &r.OriginSpaceID,
 		&r.DestinationSpaceID, &r.InputText, &r.OutputText,
 		&r.OutputFormat, &r.Status, &r.AIModel, &r.TokensUsed,
 		&r.CreatedAt, &r.ExpiresAt,

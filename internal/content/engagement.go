@@ -104,10 +104,9 @@ func (s *Service) GetTopContentByVelocity(ctx context.Context, tenantID pgtype.U
 		SELECT ce.content_id, ce.velocity_score
 		FROM content_engagement ce
 		JOIN contents c ON c.id = ce.content_id
-		WHERE c.tenant_id = $1
-		  AND c.status = 'published'
+		WHERE c.status = 'published'
 		ORDER BY ce.velocity_score DESC
-		LIMIT $2
+		LIMIT $1
 	`, tenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying top content by velocity: %w", err)

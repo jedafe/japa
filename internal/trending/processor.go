@@ -233,7 +233,7 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 			JOIN spaces s ON s.id = csp.space_id AND s.deleted_at IS NULL
 			LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
 			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
-			WHERE c.tenant_id = $1 AND c.status = 'published' AND c.deleted_at IS NULL
+			WHERE c.status = 'published' AND c.deleted_at IS NULL
 		) t WHERE geo IS NOT NULL AND geo <> ''
 	`, tenantID)
 	if err != nil {
@@ -337,34 +337,32 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 		)
 		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
-			c.tenant_id,
 			'content',
 			c.id,
 			CASE
 				WHEN EXTRACT(EPOCH FROM (now() - c.published_at)) > 0
 				THEN GREATEST(0,
-					(COALESCE(cs.view_count, 0) * $5 +
-					 COALESCE(cs.comment_count, 0) * $6 +
-					 COALESCE(cs.vote_score, 0) * $7 +
-					 COALESCE(cs.bookmark_count, 0) * $8 +
-					 (COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $9) /
-					POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, $10)
+					(COALESCE(cs.view_count, 0) * $4 +
+					 COALESCE(cs.comment_count, 0) * $5 +
+					 COALESCE(cs.vote_score, 0) * $6 +
+					 COALESCE(cs.bookmark_count, 0) * $7 +
+					 (COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $8) /
+					POWER(EXTRACT(EPOCH FROM (now() - c.published_at)) / 3600.0 + 2, $9)
 				)
 				ELSE 0
 			END AS score,
-			$2,
-			$11,
-			$3
+			$1,
+			$10,
+			$2
 		FROM contents c
 		LEFT JOIN content_scores cs ON cs.content_id = c.id
-		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $11
-		WHERE c.tenant_id = $1
-		  AND c.status = 'published'
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $10
+		WHERE c.status = 'published'
 		  AND c.visibility = 'public'
 		  AND c.deleted_at IS NULL
 		  AND c.published_at IS NOT NULL
-		  AND c.published_at >= now() - $4::interval
-		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
+		  AND c.published_at >= now() - $3::interval
+		  AND ($10::text IS NULL OR g.content_id IS NOT NULL)
 		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
@@ -398,30 +396,28 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 		)
 		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
-			t.tenant_id,
 			'tag',
 			t.id,
-			COALESCE(t.follower_count, 0)::float * $5 +
-				COUNT(DISTINCT CASE WHEN $7::text IS NULL OR g.content_id IS NOT NULL THEN c.id END)::float * $6 AS score,
-			$2,
-			$7,
-			$3
+			COALESCE(t.follower_count, 0)::float * $4 +
+				COUNT(DISTINCT CASE WHEN $6::text IS NULL OR g.content_id IS NOT NULL THEN c.id END)::float * $5 AS score,
+			$1,
+			$6,
+			$2
 		FROM tags t
 		LEFT JOIN content_tags ct ON ct.tag_id = t.id
 		LEFT JOIN contents c ON c.id = ct.content_id
 			AND c.status = 'published'
 			AND c.deleted_at IS NULL
-			AND c.published_at >= now() - $4::interval
-		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $7
-		WHERE t.tenant_id = $1
-		  AND ($7::text IS NULL OR EXISTS (
+			AND c.published_at >= now() - $3::interval
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $6
+		WHERE ($6::text IS NULL OR EXISTS (
 			SELECT 1 FROM content_tags cx
 			JOIN contents cc ON cc.id = cx.content_id
 				AND cc.status = 'published' AND cc.deleted_at IS NULL
-				AND cc.published_at >= now() - $4::interval
-			JOIN cgeo gg ON gg.content_id = cc.id AND gg.geo_code = $7
+				AND cc.published_at >= now() - $3::interval
+			JOIN cgeo gg ON gg.content_id = cc.id AND gg.geo_code = $6
 			WHERE cx.tag_id = t.id))
-		GROUP BY t.id, t.tenant_id, t.follower_count
+		GROUP BY t.id, t.follower_count
 		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
@@ -444,15 +440,14 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 	result, err := p.db.Writer.Exec(ctx, `
 		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
-			s.tenant_id,
 			'space',
 			s.id,
-			COALESCE(s.member_count, 0)::float * $5 +
-				COALESCE(s.post_count, 0)::float * $6 +
-				recent.count::float * $7 AS score,
-			$2,
-			$8,
-			$3
+			COALESCE(s.member_count, 0)::float * $4 +
+				COALESCE(s.post_count, 0)::float * $5 +
+				recent.count::float * $6 AS score,
+			$1,
+			$7,
+			$2
 		FROM spaces s
 		LEFT JOIN spaces sp ON sp.id = s.parent_id AND sp.deleted_at IS NULL
 		LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
@@ -462,15 +457,14 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 			WHERE c.space_id = s.id
 			  AND c.tenant_id = s.tenant_id
 			  AND c.status = 'published'
-			  AND c.published_at >= now() - $4::interval
+			  AND c.published_at >= now() - $3::interval
 		) recent ON true
-		WHERE s.tenant_id = $1
-		  AND s.deleted_at IS NULL
+		WHERE s.deleted_at IS NULL
 		  -- Scoped mode: only spaces whose resolved country geo (child →
 		  -- parent rollup) matches the scope, so per-geo snapshots hold the
 		  -- geo's own spaces rather than the full list relabelled.
-		  AND ($8::text IS NULL OR
-			COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $8)
+		  AND ($7::text IS NULL OR
+			COALESCE(NULLIF(cp.geo_code, ''), NULLIF(sp.geo_code, ''), NULLIF(s.geo_code, '')) = $7)
 		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,
@@ -502,32 +496,30 @@ func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, 
 		)
 		INSERT INTO trending_snapshots (entity_type, entity_id, score, "window", geo_code, expires_at)
 		SELECT
-			c.tenant_id,
 			'user',
 			c.author_id,
 			GREATEST(0,
 				SUM(
-					COALESCE(cs.view_count, 0) * $5 +
-					COALESCE(cs.comment_count, 0) * $6 +
-					COALESCE(cs.vote_score, 0) * $7 +
-					COALESCE(cs.bookmark_count, 0) * $8 +
-					(COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $9
-				) / POWER(GREATEST(1, EXTRACT(EPOCH FROM (now() - MIN(c.published_at))) / 3600.0) + 2, $10)
+					COALESCE(cs.view_count, 0) * $4 +
+					COALESCE(cs.comment_count, 0) * $5 +
+					COALESCE(cs.vote_score, 0) * $6 +
+					COALESCE(cs.bookmark_count, 0) * $7 +
+					(COALESCE(c.share_count, 0) + COALESCE(c.reshare_count, 0)) * $8
+				) / POWER(GREATEST(1, EXTRACT(EPOCH FROM (now() - MIN(c.published_at))) / 3600.0) + 2, $9)
 			) AS score,
-			$2,
-			$11,
-			$3
+			$1,
+			$10,
+			$2
 		FROM contents c
 		LEFT JOIN content_scores cs ON cs.content_id = c.id
-		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $11
-		WHERE c.tenant_id = $1
-		  AND c.status = 'published'
+		LEFT JOIN cgeo g ON g.content_id = c.id AND g.geo_code = $10
+		WHERE c.status = 'published'
 		  AND c.deleted_at IS NULL
 		  AND c.author_id IS NOT NULL
-		  AND c.published_at >= now() - $4::interval
-		  AND ($11::text IS NULL OR g.content_id IS NOT NULL)
+		  AND c.published_at >= now() - $3::interval
+		  AND ($10::text IS NULL OR g.content_id IS NOT NULL)
 		  AND EXISTS (SELECT 1 FROM users au WHERE au.id = c.author_id AND au.status = 'active')
-		GROUP BY c.tenant_id, c.author_id
+		GROUP BY c.author_id
 		ON CONFLICT (entity_type, entity_id, "window", geo_code)
 		DO UPDATE SET
 			score = EXCLUDED.score,

@@ -121,13 +121,13 @@ type StoryRow struct {
 func (s *Store) CreateStoryMeta(ctx context.Context, meta StoryMeta) error {
 	const q = `
 INSERT INTO story_meta (
-    tenant_id, content_id, origin_space_id, destination_space_id,
+    content_id, origin_space_id, destination_space_id,
     relocation_year, visa_category, profession, biggest_challenge,
     most_useful_resource, best_advice, verified,
     ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
     hitl_reviewed_at, is_japabot_indexed
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-ON CONFLICT (content_id, tenant_id) DO UPDATE SET
+ON CONFLICT (content_id) DO UPDATE SET
     origin_space_id = EXCLUDED.origin_space_id,
     destination_space_id = EXCLUDED.destination_space_id,
     relocation_year = EXCLUDED.relocation_year,
@@ -167,19 +167,19 @@ ON CONFLICT (content_id, tenant_id) DO UPDATE SET
 func (s *Store) UpdateStoryMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta StoryMeta) error {
 	const q = `
 UPDATE story_meta
-SET origin_space_id = $3,
-    destination_space_id = $4,
-    relocation_year = $5,
-    visa_category = $6,
-    profession = $7,
-    biggest_challenge = $8,
-    most_useful_resource = $9,
-    best_advice = $10,
+SET origin_space_id = $2,
+    destination_space_id = $3,
+    relocation_year = $4,
+    visa_category = $5,
+    profession = $6,
+    biggest_challenge = $7,
+    most_useful_resource = $8,
+    best_advice = $9,
     verified = false,
     hitl_reviewed_by = NULL,
     hitl_reviewed_at = NULL,
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	_, err := s.pool.Writer.Exec(
@@ -202,7 +202,7 @@ WHERE content_id = $1 AND tenant_id = $2
 // the content row's source_country/target_country in sync when a story's
 // origin or destination changes through POST/PATCH /stories.
 func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
-	const q = `SELECT geo_code FROM spaces WHERE id = $1 AND tenant_id = $2 AND level = 'country' AND deleted_at IS NULL`
+	const q = `SELECT geo_code FROM spaces WHERE id = $1 AND level = 'country' AND deleted_at IS NULL`
 
 	var code *string
 	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&code)
@@ -231,7 +231,7 @@ func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpa
 	// by joining through contents.
 	const q = `DELETE FROM content_spaces
 WHERE content_id = $1 AND space_id <> $2
-  AND content_id IN (SELECT id FROM contents WHERE id = $1 AND tenant_id = $3)`
+  AND content_id IN (SELECT id FROM contents WHERE id = $1)`
 
 	if _, err := s.pool.Writer.Exec(ctx, q, contentID, keepSpaceID, tenantID); err != nil {
 		return fmt.Errorf("story: prune content_spaces: %w", err)
@@ -243,19 +243,19 @@ WHERE content_id = $1 AND space_id <> $2
 // GetStoryMeta retrieves the story_meta row for a given content_id.
 func (s *Store) GetStoryMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryMeta, error) {
 	const q = `
-SELECT id, tenant_id, content_id, origin_space_id, destination_space_id,
+SELECT id, content_id, origin_space_id, destination_space_id,
        relocation_year, visa_category, profession, biggest_challenge,
        most_useful_resource, best_advice, verified,
        ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
        hitl_reviewed_at, is_japabot_indexed, created_at, updated_at
 FROM story_meta
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	var m StoryMeta
 
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
-		&m.ID, &m.TenantID, &m.ContentID, &m.OriginSpaceID, &m.DestinationSpaceID,
+		&m.ID, &m.ContentID, &m.OriginSpaceID, &m.DestinationSpaceID,
 		&m.RelocationYear, &m.VisaCategory, &m.Profession, &m.BiggestChallenge,
 		&m.MostUsefulResource, &m.BestAdvice, &m.Verified,
 		&m.AiGenerated, &m.AiModel, &m.HitlReviewedBy, &m.AiGeneratedAt,
@@ -278,10 +278,10 @@ func (s *Store) VerifyStory(ctx context.Context, contentID, tenantID, adminUserI
 	const q = `
 UPDATE story_meta
 SET verified = true,
-    hitl_reviewed_by = $3,
+    hitl_reviewed_by = $2,
     hitl_reviewed_at = now(),
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, adminUserID)
@@ -305,7 +305,7 @@ SET verified = false,
     hitl_reviewed_by = null,
     hitl_reviewed_at = null,
     updated_at = now()
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
@@ -349,10 +349,6 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "story")
@@ -427,7 +423,7 @@ func (s *Store) ListStories(ctx context.Context, f ListStoriesFilter) ([]StoryRo
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -437,7 +433,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified,
        u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -460,7 +456,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r StoryRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
@@ -482,7 +478,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 WHERE %s
 `, whereClause)
 	// Rebuild count args without limit/offset (same conditions, fewer params).
@@ -503,7 +499,7 @@ WHERE %s
 // §14 visibility; non-published stories are author- or moderator-only (§79).
 func (s *Store) GetStoryBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (StoryRow, error) {
 	const q = `
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -518,16 +514,16 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
        c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
-LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
-LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
-WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'story'
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+WHERE c.slug = $1 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
@@ -535,7 +531,7 @@ LIMIT 1
 	var r StoryRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
-		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
@@ -564,7 +560,7 @@ LIMIT 1
 // fully-populated DTO with origin/destination space names and author info.
 func (s *Store) GetStoryByID(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryRow, error) {
 	const q = `
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -579,16 +575,16 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.featured_image_id, fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
        c.header_image_id, hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
 LEFT JOIN blog_series bs ON bs.id = bsp.series_id AND bs.deleted_at IS NULL
-LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.tenant_id = c.tenant_id AND fm.deleted_at IS NULL
-LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.tenant_id = c.tenant_id AND hm.deleted_at IS NULL
-WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'story'
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+WHERE c.id = $1 AND c.content_type = 'story'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
@@ -596,7 +592,7 @@ LIMIT 1
 	var r StoryRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, contentID).Scan(
-		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
@@ -639,10 +635,6 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "story")
@@ -702,7 +694,7 @@ func (s *Store) AdminListStories(ctx context.Context, f AdminListStoriesFilter) 
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        c.published_at, c.created_at, c.updated_at,
        sm.origin_space_id, os.name AS origin_space_name, os.geo_code AS origin_space_code,
@@ -712,7 +704,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified,
        u.username AS author_name, u.username AS author_username, up.display_name AS author_display_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 LEFT JOIN spaces os ON os.id = sm.origin_space_id
 JOIN spaces ds ON ds.id = sm.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -735,7 +727,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r StoryRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OriginSpaceID, &r.OriginSpaceName, &r.OriginSpaceCode,
@@ -757,7 +749,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN story_meta sm ON sm.content_id = c.id AND sm.tenant_id = c.tenant_id
+JOIN story_meta sm ON sm.content_id = c.id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]

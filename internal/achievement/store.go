@@ -86,7 +86,7 @@ type AchievementRow struct {
 // space identified by id, or pgx.ErrNoRows if not found. Used by the service
 // to validate that destination_space_id is a country-level space (§89).
 func (s *Store) GetSpaceLevel(ctx context.Context, id, tenantID pgtype.UUID) (string, error) {
-	const q = `SELECT level FROM spaces WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`
+	const q = `SELECT level FROM spaces WHERE id = $1 AND deleted_at IS NULL`
 
 	var level string
 	if err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(&level); err != nil {
@@ -104,7 +104,7 @@ func (s *Store) GetSpaceLevel(ctx context.Context, id, tenantID pgtype.UUID) (st
 func (s *Store) CreateMeta(ctx context.Context, meta AchievementMeta) error {
 	const q = `
 INSERT INTO achievement_meta (
-    tenant_id, content_id, milestone_type, destination_space_id,
+    content_id, milestone_type, destination_space_id,
     origin_space_id, is_anonymous
 ) VALUES ($1, $2, $3, $4, $5, $6)
 `
@@ -124,16 +124,16 @@ INSERT INTO achievement_meta (
 // GetMeta retrieves the achievement_meta row for a given content_id.
 func (s *Store) GetMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementMeta, error) {
 	const q = `
-SELECT id, tenant_id, content_id, milestone_type, destination_space_id,
+SELECT id, content_id, milestone_type, destination_space_id,
        origin_space_id, is_anonymous, created_at
 FROM achievement_meta
-WHERE content_id = $1 AND tenant_id = $2
+WHERE content_id = $1
 `
 
 	var m AchievementMeta
 
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
-		&m.ID, &m.TenantID, &m.ContentID, &m.MilestoneType,
+		&m.ID, &m.ContentID, &m.MilestoneType,
 		&m.DestinationSpaceID, &m.OriginSpaceID, &m.IsAnonymous, &m.CreatedAt,
 	)
 	if err != nil {
@@ -152,11 +152,11 @@ WHERE content_id = $1 AND tenant_id = $2
 func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta AchievementMeta) error {
 	const q = `
 UPDATE achievement_meta
-SET milestone_type = $3,
-    destination_space_id = $4,
-    origin_space_id = $5,
-    is_anonymous = $6
-WHERE content_id = $1 AND tenant_id = $2
+SET milestone_type = $2,
+    destination_space_id = $3,
+    origin_space_id = $4,
+    is_anonymous = $5
+WHERE content_id = $1
 `
 
 	_, err := s.pool.Writer.Exec(
@@ -193,10 +193,6 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "achievement")
@@ -246,7 +242,7 @@ func (s *Store) ListAchievements(ctx context.Context, f ListAchievementsFilter) 
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
         WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
@@ -258,7 +254,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.is_anonymous,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
 JOIN spaces ds ON ds.id = am.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -281,7 +277,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.MilestoneType,
@@ -302,7 +298,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 WHERE %s
 `, whereClause)
 	// Rebuild count args without limit/offset (same conditions, fewer params).
@@ -322,7 +318,7 @@ WHERE %s
 // correlated reaction_count subquery (§29 polymorphic reactions, entity_type
 // 'content') so every detail response surfaces the true reaction count.
 const achievementSelectColumns = `
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
         WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
@@ -334,7 +330,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.is_anonymous,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
 JOIN spaces ds ON ds.id = am.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -345,7 +341,7 @@ LEFT JOIN user_profiles up ON up.user_id = c.author_id
 func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 	var r AchievementRow
 	if err := row.Scan(
-		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.MilestoneType,
@@ -371,13 +367,13 @@ func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 // + spaces + users.
 func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
-WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'achievement'
+WHERE c.slug = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
 	args := []any{tenantID, slug}
 
 	if viewerID.Valid {
-		q += ` OR c.author_id = $3`
+		q += ` OR c.author_id = $1`
 
 		args = append(args, viewerID)
 	}
@@ -399,13 +395,13 @@ WHERE c.tenant_id = $1 AND c.slug = $2 AND c.content_type = 'achievement'
 // metaToDTO shape.
 func (s *Store) GetByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
-WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
+WHERE c.id = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
 	args := []any{tenantID, contentID}
 
 	if viewerID.Valid {
-		q += ` OR c.author_id = $3`
+		q += ` OR c.author_id = $1`
 
 		args = append(args, viewerID)
 	}
@@ -426,7 +422,7 @@ WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
 // route level).
 func (s *Store) GetByIDAnyStatus(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
-WHERE c.tenant_id = $1 AND c.id = $2 AND c.content_type = 'achievement'
+WHERE c.id = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
@@ -451,7 +447,7 @@ func (s *Store) ListBySpace(ctx context.Context, spaceSlug string, tenantID pgty
 	}
 
 	const q = `
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
         WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
@@ -463,16 +459,16 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.is_anonymous,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
 JOIN spaces ds ON ds.id = am.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
-WHERE c.tenant_id = $1 AND c.content_type = 'achievement'
+WHERE c.content_type = 'achievement'
   AND c.status = 'published' AND c.deleted_at IS NULL
-  AND ds.slug = $2
+  AND ds.slug = $1
 ORDER BY c.published_at DESC NULLS LAST, c.created_at DESC
-LIMIT $3
+LIMIT $2
 `
 
 	rows, err := s.pool.Reader.Query(ctx, q, tenantID, spaceSlug, limit)
@@ -487,7 +483,7 @@ LIMIT $3
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.MilestoneType,
@@ -526,10 +522,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("c.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	conditions = append(conditions, fmt.Sprintf("c.content_type = $%d", argIdx))
 	args = append(args, "achievement")
@@ -572,7 +564,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]Achievement
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
        (SELECT COUNT(*) FROM reactions r
         WHERE r.entity_id = c.id AND r.tenant_id = c.tenant_id
@@ -584,7 +576,7 @@ SELECT c.id, c.tenant_id, c.author_id, c.title, c.slug, c.body, c.body_html,
        am.is_anonymous,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 LEFT JOIN spaces os ON os.id = am.origin_space_id
 JOIN spaces ds ON ds.id = am.destination_space_id
 LEFT JOIN users u ON u.id = c.author_id
@@ -607,7 +599,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r AchievementRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount, &r.ReactionCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.MilestoneType,
@@ -628,7 +620,7 @@ LIMIT $%d OFFSET $%d
 
 	countQuery := fmt.Sprintf(`
 SELECT COUNT(*) FROM contents c
-JOIN achievement_meta am ON am.content_id = c.id AND am.tenant_id = c.tenant_id
+JOIN achievement_meta am ON am.content_id = c.id
 WHERE %s
 `, whereClause)
 	countArgs := args[:len(args)-2]

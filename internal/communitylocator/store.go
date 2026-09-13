@@ -154,7 +154,7 @@ func (s *Store) CreateOrg(ctx context.Context, in CreateOrgInput) (pgtype.UUID, 
 
 	const q = `
 INSERT INTO community_organisations (
-    tenant_id, name, slug, org_type, origin_community,
+    name, slug, org_type, origin_community,
     destination_space_id, city_space_id, address, latitude, longitude,
     website_url, meeting_frequency, contact_info,
     japaconnect_space_id, japaconnect_org_id,
@@ -398,17 +398,17 @@ func (s *Store) UpdateOrg(ctx context.Context, id, tenantID pgtype.UUID, in Upda
 	}
 
 	if len(sets) == 0 {
-		return s.GetByID(ctx, id, tenantID)
+		return s.GetByID(ctx, id)
 	}
 
 	sets = append(sets, "updated_at = now()")
-	args = append(args, id, tenantID)
+	args = append(args, id)
 
 	q := fmt.Sprintf(`
 UPDATE community_organisations
 SET %s
-WHERE id = $%d AND tenant_id = $%d AND deleted_at IS NULL
-`, strings.Join(sets, ", "), argIdx, argIdx+1)
+WHERE id = $%d AND deleted_at IS NULL
+`, strings.Join(sets, ", "), argIdx)
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, args...)
 	if err != nil {
@@ -419,7 +419,7 @@ WHERE id = $%d AND tenant_id = $%d AND deleted_at IS NULL
 		return OrgRow{}, pgx.ErrNoRows
 	}
 
-	return s.GetByID(ctx, id, tenantID)
+	return s.GetByID(ctx, id)
 }
 
 // ListOrgsFilter holds the filter parameters for listing community
@@ -451,10 +451,6 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 		args       []any
 		argIdx     = 1
 	)
-
-	conditions = append(conditions, fmt.Sprintf("co.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
 
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("co.status = $%d", argIdx))
@@ -543,7 +539,7 @@ func (s *Store) ListOrgs(ctx context.Context, f ListOrgsFilter) ([]OrgRow, int64
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
+SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
@@ -577,7 +573,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r OrgRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
+			&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 			&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
@@ -618,7 +614,7 @@ WHERE %s
 // GetBySlug returns a single community organisation by its slug.
 func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (OrgRow, error) {
 	const q = `
-SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
+SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
@@ -634,14 +630,14 @@ FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
-WHERE co.tenant_id = $1 AND co.slug = $2 AND co.deleted_at IS NULL
+WHERE co.slug = $1 AND co.deleted_at IS NULL
 LIMIT 1
 `
 
 	var r OrgRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, tenantID, slug).Scan(
-		&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
+		&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 		&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
@@ -666,9 +662,9 @@ LIMIT 1
 }
 
 // GetByID returns a single community organisation by its id.
-func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (OrgRow, error) {
+func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (OrgRow, error) {
 	const q = `
-SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
+SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
@@ -684,14 +680,14 @@ FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
-WHERE co.tenant_id = $1 AND co.id = $2 AND co.deleted_at IS NULL
+WHERE co.id = $1 AND co.deleted_at IS NULL
 LIMIT 1
 `
 
 	var r OrgRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, tenantID, id).Scan(
-		&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
+		&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 		&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
@@ -721,7 +717,7 @@ func (s *Store) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) err
 	const q = `
 UPDATE community_organisations
 SET claim_status = 'pending', updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
   AND status = 'published' AND claim_status = 'unclaimed'
 `
 
@@ -785,10 +781,6 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, fmt.Sprintf("co.tenant_id = $%d", argIdx))
-	args = append(args, f.TenantID)
-	argIdx++
-
 	conditions = append(conditions, "co.deleted_at IS NULL")
 
 	if f.Status != "" {
@@ -844,7 +836,7 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 	}
 
 	listQuery := fmt.Sprintf(`
-SELECT co.id, co.tenant_id, co.name, co.slug, co.org_type, co.origin_community,
+SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
        co.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
        co.address, co.latitude, co.longitude, co.website_url, co.meeting_frequency,
@@ -878,7 +870,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r OrgRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
+			&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 			&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 			&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
 			&r.Address, &r.Latitude, &r.Longitude, &r.WebsiteURL, &r.MeetingFrequency,
@@ -927,12 +919,12 @@ func (s *Store) ApproveOrg(ctx context.Context, id, tenantID, reviewedBy pgtype.
 	const q = `
 UPDATE community_organisations
 SET status = 'published',
-    reviewed_by = $3,
+    reviewed_by = $2,
     reviewed_at = now(),
-    hitl_reviewed_by = CASE WHEN ai_generated = true THEN $3 ELSE hitl_reviewed_by END,
+    hitl_reviewed_by = CASE WHEN ai_generated = true THEN $2 ELSE hitl_reviewed_by END,
     hitl_reviewed_at = CASE WHEN ai_generated = true THEN now() ELSE hitl_reviewed_at END,
     updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
+WHERE id = $1 AND deleted_at IS NULL AND status IN ('pending','ai_draft')
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewedBy)
@@ -954,7 +946,7 @@ func (s *Store) ArchiveOrg(ctx context.Context, id, tenantID pgtype.UUID) error 
 	const q = `
 UPDATE community_organisations
 SET status = 'archived', is_active = false, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
+WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -976,7 +968,7 @@ func (s *Store) DeleteOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET deleted_at = now(), is_active = false, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -997,7 +989,7 @@ func (s *Store) VerifyOrg(ctx context.Context, id, tenantID pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
 SET is_verified = true, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND status = 'published'
+WHERE id = $1 AND deleted_at IS NULL AND status = 'published'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
@@ -1023,8 +1015,8 @@ func (s *Store) ResolveClaim(ctx context.Context, id, tenantID pgtype.UUID, appr
 
 	const q = `
 UPDATE community_organisations
-SET claim_status = $3, updated_at = now()
-WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL AND claim_status = 'pending'
+SET claim_status = $2, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL AND claim_status = 'pending'
 `
 
 	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)

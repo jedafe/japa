@@ -30,7 +30,7 @@ func consumeBackupCode(ctx context.Context, dbConn *db.DB, cred *gen.TotpCredent
 				return false, 0, err
 			}
 
-			_, err = dbConn.Writer.Exec(ctx, `UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`, encoded, userID, )
+			_, err = dbConn.Writer.Exec(ctx, `UPDATE totp_credentials SET backup_codes = $1, updated_at = now() WHERE user_id = $2`, encoded, userID)
 			if err != nil {
 				return false, 0, fmt.Errorf("persisting consumed backup code: %w", err)
 			}

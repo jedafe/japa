@@ -24,7 +24,7 @@ func TestVoteComment_NonDiscussionContent(t *testing.T) {
 	contentID := testdb.SeedContent(t, database, tenantID, author, testdb.ContentOpts{})
 	ctx := t.Context()
 	if _, err := database.Writer.Exec(ctx,
-		"UPDATE contents SET content_type = 'blog' WHERE id = $1 AND tenant_id = $2",
+		"UPDATE contents SET content_type = 'blog' WHERE id = $1",
 		contentID, tenantID); err != nil {
 		t.Fatalf("changing content type to blog: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestListRepliesByParent_UserVote(t *testing.T) {
 	// Make the reply a child of the parent by setting parent_id.
 	ctx := t.Context()
 	if _, err := database.Writer.Exec(ctx,
-		"UPDATE comments SET parent_id = $1, depth = 1 WHERE id = $2 AND tenant_id = $3",
+		"UPDATE comments SET parent_id = $1, depth = 1 WHERE id = $2",
 		parentID, replyID, tenantID); err != nil {
 		t.Fatalf("setting reply parent: %v", err)
 	}

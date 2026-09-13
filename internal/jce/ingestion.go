@@ -787,9 +787,9 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	}
 
 	const staleSweepSQL = `
-SELECT ccm.tenant_id, ccm.content_id
+SELECT ccm.content_id
 FROM comparison_content_metadata ccm
-JOIN contents c ON c.id = ccm.content_id AND c.tenant_id = ccm.tenant_id
+JOIN contents c ON c.id = ccm.content_id
 WHERE ccm.smart_mode IS DISTINCT FROM 'none'
   AND c.deleted_at IS NULL
   AND c.status = 'published'

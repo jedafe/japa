@@ -112,10 +112,9 @@ FROM (
            'review' AS queue_source
     FROM reviews r
     LEFT JOIN users u ON u.id = r.reviewer_user_id
-    WHERE r.tenant_id = $1
-      AND ($2::text = '' OR r.status = $2)
-      AND ($3::text = '' OR r.entity_type = $3)
-      AND ($4::text = '%' OR (r.body ILIKE $4 OR r.title ILIKE $4))
+    WHERE ($1::text = '' OR r.status = $1)
+      AND ($2::text = '' OR r.entity_type = $2)
+      AND ($3::text = '%' OR (r.body ILIKE $3 OR r.title ILIKE $3))
     UNION ALL
     SELECT cr.id,
            cr.feedback AS body,
@@ -127,11 +126,10 @@ FROM (
            'content_review' AS queue_source
     FROM content_reviews cr
     LEFT JOIN users u ON u.id = cr.reviewer_user_id
-    WHERE cr.tenant_id = $1
-      AND cr.source = 'persona_action'
-      AND ($2::text = '' OR cr.status = $2)
-      AND ($3::text = '' OR cr.source = $3)
-      AND ($4::text = '%' OR cr.feedback ILIKE $4)
+    WHERE cr.source = 'persona_action'
+      AND ($1::text = '' OR cr.status = $1)
+      AND ($2::text = '' OR cr.source = $2)
+      AND ($3::text = '%' OR cr.feedback ILIKE $3)
     UNION ALL
     SELECT ah.id,
            COALESCE(ah.human_feedback::text, ah.ai_output::text) AS body,
@@ -143,14 +141,13 @@ FROM (
            'ai_hitl' AS queue_source
     FROM ai_hitl_reviews ah
     LEFT JOIN users u ON u.id = ah.reviewer_id
-    WHERE ah.tenant_id = $1
-      AND ah.source = 'studio'
-      AND ($2::text = '' OR ah.status = $2)
-      AND ($3::text = '' OR ah.content_type = $3)
-      AND ($4::text = '%' OR (ah.human_feedback::text ILIKE $4 OR ah.ai_output::text ILIKE $4))
+    WHERE ah.source = 'studio'
+      AND ($1::text = '' OR ah.status = $1)
+      AND ($2::text = '' OR ah.content_type = $2)
+      AND ($3::text = '%' OR (ah.human_feedback::text ILIKE $3 OR ah.ai_output::text ILIKE $3))
 ) combined
 ORDER BY created_at DESC
-LIMIT $5 OFFSET $6`
+LIMIT $4 OFFSET $5`
 
 	rows, err := h.DB.Reader.Query(ctx, query, listArgs...)
 	if err != nil {
@@ -190,26 +187,23 @@ LIMIT $5 OFFSET $6`
 SELECT COALESCE(SUM(cnt), 0)::int FROM (
     SELECT COUNT(*) AS cnt
     FROM reviews r
-    WHERE r.tenant_id = $1
-      AND ($2::text = '' OR r.status = $2)
-      AND ($3::text = '' OR r.entity_type = $3)
-      AND ($4::text = '%' OR (r.body ILIKE $4 OR r.title ILIKE $4))
+    WHERE ($1::text = '' OR r.status = $1)
+      AND ($2::text = '' OR r.entity_type = $2)
+      AND ($3::text = '%' OR (r.body ILIKE $3 OR r.title ILIKE $3))
     UNION ALL
     SELECT COUNT(*)
     FROM content_reviews cr
-    WHERE cr.tenant_id = $1
-      AND cr.source = 'persona_action'
-      AND ($2::text = '' OR cr.status = $2)
-      AND ($3::text = '' OR cr.source = $3)
-      AND ($4::text = '%' OR cr.feedback ILIKE $4)
+    WHERE cr.source = 'persona_action'
+      AND ($1::text = '' OR cr.status = $1)
+      AND ($2::text = '' OR cr.source = $2)
+      AND ($3::text = '%' OR cr.feedback ILIKE $3)
     UNION ALL
     SELECT COUNT(*)
     FROM ai_hitl_reviews ah
-    WHERE ah.tenant_id = $1
-      AND ah.source = 'studio'
-      AND ($2::text = '' OR ah.status = $2)
-      AND ($3::text = '' OR ah.content_type = $3)
-      AND ($4::text = '%' OR (ah.human_feedback::text ILIKE $4 OR ah.ai_output::text ILIKE $4))
+    WHERE ah.source = 'studio'
+      AND ($1::text = '' OR ah.status = $1)
+      AND ($2::text = '' OR ah.content_type = $2)
+      AND ($3::text = '%' OR (ah.human_feedback::text ILIKE $3 OR ah.ai_output::text ILIKE $3))
 ) t`
 
 	var total int32
@@ -377,9 +371,9 @@ func (h *Handlers) listAdCampaignModeration(
 	ctx context.Context, tenantID pgtype.UUID,
 	limit, offset int32, filterStatus, filterSearch string,
 ) {
-	where := "ac.tenant_id = $1 AND ac.organization_id IS NOT NULL"
-	args := []interface{}{tenantID}
-	argIdx := 2
+	where := "ac.organization_id IS NOT NULL"
+	args := []interface{}{}
+	argIdx := 1
 
 	// Default to pending_review when no status filter is provided;
 	// for ad campaigns, pending_review is the "needs review" status.
@@ -1469,7 +1463,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	var source, status string
 
 	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM content_reviews
-		 WHERE id = $1 AND deleted_at IS NULL`, id, ).Scan(&source, &status)
+		 WHERE id = $1 AND deleted_at IS NULL`, id).Scan(&source, &status)
 	if err != nil {
 		return false // not a content_reviews row (or not found) — not a persona action
 	}
@@ -1499,7 +1493,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, 
 	// (BUG-001). The reason is logged for audit purposes instead.
 	_, err = h.DB.Writer.Exec(ctx, `UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
-		 WHERE id = $3 AND source = 'persona_action'`, newCRStatus, reviewerID, id, )
+		 WHERE id = $3 AND source = 'persona_action'`, newCRStatus, reviewerID, id)
 	if err != nil {
 		slog.Error("moderation: persona action review update failed", "id", id, "error", err)
 		return true
@@ -1537,7 +1531,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	var hitlSource, hitlStatus string
 
 	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM ai_hitl_reviews
-		 WHERE id = $1`, id, ).Scan(&hitlSource, &hitlStatus)
+		 WHERE id = $1`, id).Scan(&hitlSource, &hitlStatus)
 	if err == nil && hitlSource == "studio" {
 		if hitlStatus != "pending" {
 			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping",
@@ -1552,7 +1546,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	var source, status string
 
 	err = h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM content_reviews
-		 WHERE id = $1 AND deleted_at IS NULL`, id, ).Scan(&source, &status)
+		 WHERE id = $1 AND deleted_at IS NULL`, id).Scan(&source, &status)
 	if err != nil {
 		return false, nil // not a content_reviews row (or not found) — not a studio review
 	}
@@ -1583,7 +1577,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	// Update the content_reviews row status + reviewer.
 	_, err = h.DB.Writer.Exec(ctx, `UPDATE content_reviews
 		 SET status = $1, reviewer_user_id = $2, updated_at = now()
-		 WHERE id = $3 AND source = 'studio'`, newCRStatus, reviewerID, id, )
+		 WHERE id = $3 AND source = 'studio'`, newCRStatus, reviewerID, id)
 	if err != nil {
 		slog.Error("moderation: studio review update failed", "id", id, "error", err)
 		return true, nil
@@ -1624,7 +1618,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 
 	_, err := h.DB.Writer.Exec(ctx, `UPDATE ai_hitl_reviews
 		 SET status = $1, reviewer_id = $2, reviewed_at = now(), reason = $3
-		 WHERE id = $4 AND source = 'studio' AND status = 'pending'`, newHITLStatus, reviewerID, reasonPtr, id, )
+		 WHERE id = $4 AND source = 'studio' AND status = 'pending'`, newHITLStatus, reviewerID, reasonPtr, id)
 	if err != nil {
 		slog.Error("moderation: studio ai_hitl_reviews update failed", "id", id, "error", err)
 		return true, nil

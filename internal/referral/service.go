@@ -122,7 +122,7 @@ func (s *Service) GetProgram(ctx context.Context, tenantID pgtype.UUID) (Program
 		FROM referral_programs
 		
 	`).Scan(
-		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
+		&p.ID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
@@ -148,7 +148,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 		RETURNING id, referrer_reward_cents, referee_reward_cents,
 		          max_referrals, cookie_days, is_active, description, created_at, updated_at
 	`).Scan(
-		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
+		&p.ID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
@@ -166,7 +166,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context, tenantID pgtype.UUID) 
 		FROM referral_programs
 		
 	`).Scan(
-		&p.ID, &p.TenantID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
+		&p.ID, &p.ReferrerRewardCents, &p.RefereeRewardCents,
 		&p.MaxReferrals, &p.CookieDays, &p.IsActive, &p.Description,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
@@ -225,7 +225,7 @@ func (s *Service) UpdateProgram(ctx context.Context, tenantID pgtype.UUID, refer
 		RETURNING id, referrer_reward_cents, referee_reward_cents,
 		          max_referrals, cookie_days, is_active, description, created_at, updated_at
 	`, rr, rf, mr, cd, ia, desc).Scan(
-		&updated.ID, &updated.TenantID, &updated.ReferrerRewardCents, &updated.RefereeRewardCents,
+		&updated.ID, &updated.ReferrerRewardCents, &updated.RefereeRewardCents,
 		&updated.MaxReferrals, &updated.CookieDays, &updated.IsActive, &updated.Description,
 		&updated.CreatedAt, &updated.UpdatedAt,
 	)
@@ -711,7 +711,7 @@ type Referral struct {
 // ListReferrals returns all referrals for the tenant (legacy direct pgx).
 func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Referral, error) {
 	rows, err := s.db.Reader.Query(ctx, `
-		SELECT r.id, r.tenant_id, r.referrer_id, r.referee_id, r.referral_code, r.status, r.reward_paid_at, r.created_at,
+		SELECT r.id, r.referrer_id, r.referee_id, r.referral_code, r.status, r.reward_paid_at, r.created_at,
 		       ru.username, rp.display_name,
 		       reu.username, rep.display_name
 		FROM referrals r
@@ -719,9 +719,9 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 		LEFT JOIN user_profiles rp ON rp.user_id = r.referrer_id
 		LEFT JOIN users reu ON reu.id = r.referee_id
 		LEFT JOIN user_profiles rep ON rep.user_id = r.referee_id
-		WHERE r.tenant_id = $1
+		
 		ORDER BY r.created_at DESC
-		LIMIT $2 OFFSET $3
+		LIMIT $1 OFFSET $2
 	`, tenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing referrals: %w", err)
@@ -732,7 +732,7 @@ func (s *Service) ListReferrals(ctx context.Context, tenantID pgtype.UUID, limit
 
 	for rows.Next() {
 		var ref Referral
-		if err := rows.Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt, &ref.ReferrerUsername, &ref.ReferrerDisplayName, &ref.RefereeUsername, &ref.RefereeDisplayName); err != nil {
+		if err := rows.Scan(&ref.ID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt, &ref.ReferrerUsername, &ref.ReferrerDisplayName, &ref.RefereeUsername, &ref.RefereeDisplayName); err != nil {
 			return nil, fmt.Errorf("scanning referral: %w", err)
 		}
 
@@ -750,7 +750,7 @@ func (s *Service) GetReferral(ctx context.Context, tenantID, id pgtype.UUID) (Re
 		SELECT id, referrer_id, referee_id, referral_code, status, reward_paid_at, created_at
 		FROM referrals
 		WHERE id = $1
-	`, id).Scan(&ref.ID, &ref.TenantID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt)
+	`, id).Scan(&ref.ID, &ref.ReferrerID, &ref.RefereeID, &ref.ReferralCode, &ref.Status, &ref.RewardPaidAt, &ref.CreatedAt)
 	if err != nil {
 		return Referral{}, fmt.Errorf("fetching referral %s: %w", id, err)
 	}
