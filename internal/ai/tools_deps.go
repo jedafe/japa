@@ -66,7 +66,7 @@ type ComparisonService interface {
 	CreateComparisonType(ctx context.Context, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error)
 
 	// Comparison content (creates a content_type='comparison' row + items + dimensions).
-	CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error)
+	CreateComparison(ctx context.Context, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error)
 	GetComparisonDetail(ctx context.Context, id pgtype.UUID) (ComparisonDetail, error)
 	GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ComparisonMatrixItem, error)
 

@@ -485,7 +485,7 @@ type CreateComparisonResult struct {
 // agent.use).
 func (e *ComparisonEngine) CreateComparison(
 	ctx context.Context,
-	tenantID, userID pgtype.UUID,
+	userID pgtype.UUID,
 	in CreateComparisonInput,
 ) (*CreateComparisonResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
@@ -520,7 +520,7 @@ func (e *ComparisonEngine) CreateComparison(
 	}
 
 	// Build the comparison content row with items + dimensions.
-	res, err := e.deps.Comparison.CreateComparison(ctx, tenantID, userID, ComparisonCreateInput{
+	res, err := e.deps.Comparison.CreateComparison(ctx, userID, ComparisonCreateInput{
 		Title:      in.Title,
 		Body:       in.Body,
 		Visibility: in.Visibility,

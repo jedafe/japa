@@ -991,7 +991,7 @@ func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectio
 }
 
 // CreateJCEComparisonFromToken creates a quick comparison from a guest selection token.
-func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, tenantID, userID pgtype.UUID, token string, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
+func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtype.UUID, token string, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
 	if s.vk == nil {
 		return JCEComparisonResult{}, errors.New("valkey not configured")
 	}

@@ -210,7 +210,7 @@ func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
 			items = append(items, ComparisonItemInput(it))
 		}
 
-		res, err := engine.CreateComparison(ctx, tenantID, userID, CreateComparisonInput{
+		res, err := engine.CreateComparison(ctx, userID, CreateComparisonInput{
 			CreateType: false, // type already created/resolved above
 			TypeID:     typeID,
 			Title:      a.Title,

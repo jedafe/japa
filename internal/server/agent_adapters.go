@@ -259,7 +259,7 @@ func (a *agentComparisonAdapter) CreateComparisonType(ctx context.Context, input
 	})
 }
 
-func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input ai.ComparisonCreateInput) (ai.ComparisonCreateResult, error) {
+func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, userID pgtype.UUID, input ai.ComparisonCreateInput) (ai.ComparisonCreateResult, error) {
 	// If the caller supplied a JCE depth or polymorphic item_refs, route to
 	// the JCE service so the comparison content metadata and resolver hooks
 	// are created. Otherwise, fall back to the legacy generic create flow.
