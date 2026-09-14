@@ -268,7 +268,8 @@
 					<div class="hero-stat">
 						<div class="hero-stat-icon">
 							{#if getIcon(stat.icon)}
-								<svelte:component this={getIcon(stat.icon)} size={20} />
+								{@const Icon = getIcon(stat.icon)}
+								<Icon size={20} />
 							{/if}
 						</div>
 						<div class="hero-stat-body">
@@ -350,7 +351,8 @@
 				<a href={cat.href} class="category-card group">
 					<div class="category-icon {categoryColorClass(cat.color)}">
 						{#if getIcon(cat.icon)}
-							<svelte:component this={getIcon(cat.icon)} size={28} />
+							{@const Icon = getIcon(cat.icon)}
+							<Icon size={28} />
 						{/if}
 					</div>
 					<h3 class="category-title">{cat.title}</h3>
@@ -526,7 +528,8 @@
 				<a href={toolHref(tool)} class="tool-card group">
 					<div class="tool-icon" style="background-color: {tool.accent ? `color-mix(in srgb, ${tool.accent} 15%, transparent)` : 'var(--color-surface-subtle)'}; color: {tool.accent ?? 'var(--color-primary)'}">
 						{#if getIcon(opportunityIconName(tool.icon))}
-							<svelte:component this={getIcon(opportunityIconName(tool.icon))} size={24} />
+							{@const Icon = getIcon(opportunityIconName(tool.icon))}
+							<Icon size={24} />
 						{/if}
 					</div>
 					<h3 class="tool-name">{tool.name}</h3>
@@ -670,7 +673,7 @@
 		background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 50%, #ffffff 100%);
 		padding: 3rem 1rem 4rem;
 	}
-	[data-theme='dark'] .guest-hero {
+	:global([data-theme='dark'] .guest-hero) {
 		background: linear-gradient(135deg, #052e16 0%, #0f172a 50%, #000000 100%);
 	}
 
@@ -707,7 +710,7 @@
 		font-size: 0.875rem;
 		font-weight: 500;
 	}
-	[data-theme='dark'] .hero-eyebrow {
+	:global([data-theme='dark'] .hero-eyebrow) {
 		background: #14532d;
 		color: #86efac;
 	}
@@ -723,7 +726,7 @@
 		color: #16a34a;
 		display: block;
 	}
-	[data-theme='dark'] .hero-headline-accent {
+	:global([data-theme='dark'] .hero-headline-accent) {
 		color: #4ade80;
 	}
 
@@ -767,7 +770,7 @@
 	.hero-btn-secondary:hover {
 		background: var(--color-surface-subtle);
 	}
-	[data-theme='dark'] .hero-btn-secondary {
+	:global([data-theme='dark'] .hero-btn-secondary) {
 		background: var(--color-surface);
 	}
 
@@ -1438,7 +1441,7 @@
 		gap: 2rem;
 		flex-wrap: wrap;
 	}
-	[data-theme='dark'] .newsletter-inner {
+	:global([data-theme='dark'] .newsletter-inner) {
 		background: linear-gradient(135deg, #052e16 0%, #0f172a 100%);
 	}
 
