@@ -134,7 +134,7 @@ func writeConflictIfDuplicate(w http.ResponseWriter, err error, code, message st
 // flight search to the configured provider.
 // Query: origin, dest, date, adults, return_date, cabin_class.
 func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -174,7 +174,7 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.SearchFlights(r.Context(), tenantID, params)
+	resp, err := h.service.SearchFlights(r.Context(), params)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
@@ -196,7 +196,7 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 // search to the configured provider.
 // Query: dest, checkin, checkout, guests, rooms.
 func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -233,7 +233,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.SearchHotels(r.Context(), tenantID, params)
+	resp, err := h.service.SearchHotels(r.Context(), params)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")

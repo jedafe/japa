@@ -2175,11 +2175,6 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
-	tenantID, err := scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:content:generate_embedding: %w", err)
-	}
-
 	// Re-fetch content text from database (payload is IDs-only).
 	if dbPool == nil {
 		slog.Warn("task:content:generate_embedding: no database, skipping")
@@ -2210,13 +2205,13 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return nil
 	}
 
-	if err := contentEmbedder.EmbedContent(ctx, contentID.Bytes, tenantID.Bytes, text); err != nil {
+	if err := contentEmbedder.EmbedContent(ctx, contentID.Bytes, [16]byte{}, text); err != nil {
 		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
 	// RAG extension (Section 69, ADR-069): also chunk and upsert into
 	// content_embeddings. Best-effort — errors are logged, not propagated.
-	ragIndexAfterEmbed(ctx, tenantID.Bytes, contentID.Bytes, text)
+	ragIndexAfterEmbed(ctx, contentID.Bytes, text)
 
 	return nil
 }
@@ -2413,11 +2408,10 @@ func HandleAgentCreateDraftRequest(ctx context.Context, t *asynq.Task) error {
 // content_embeddings (the RAG knowledge layer, Section 69, ADR-069). Errors
 // are logged but never propagated — RAG indexing is a best-effort extension
 // that must not break the legacy embedding pipeline.
-func ragIndexAfterEmbed(ctx context.Context, tenantID, contentID [16]byte, text string) {
+func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 	if ragIndexer == nil {
 		return
 	}
-	_ = pgtype.UUID{Bytes: tenantID, Valid: true}
 	contentUUID := pgtype.UUID{Bytes: contentID, Valid: true}
 
 	// BUG-004 fix: resolve the indexing language from the i18n.default_language
@@ -3824,8 +3818,8 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	for _, tenantID := range tenantIDs {
-		scanTenantSecurity(ctx, tenantID)
+	for range tenantIDs {
+		scanTenantSecurity(ctx)
 	}
 
 	slog.Info("task:security:scan: complete", "tenant_count", len(tenantIDs))
@@ -3837,10 +3831,10 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 // analytics scan (populating security_scan_results) then the ClamAV media
 // scan via the moderation processor. Per-tenant failures are logged and do
 // not abort the sweep.
-func scanTenantSecurity(ctx context.Context, tid pgtype.UUID) {
+func scanTenantSecurity(ctx context.Context) {
 	// 1. Run the analytics security scan (populates security_scan_results).
 	if analyticsProcessor != nil {
-		if err := analyticsProcessor.RunSecurityScan(ctx, tid.Bytes); err != nil {
+		if err := analyticsProcessor.RunSecurityScan(ctx); err != nil {
 			slog.Error("task:security:scan: analytics scan failed", "error", err)
 		}
 	}

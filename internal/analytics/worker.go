@@ -2,8 +2,6 @@ package analytics
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // WorkerAdapter adapts the analytics Service to the worker.AnalyticsProcessor interface.
@@ -22,8 +20,7 @@ func (a *WorkerAdapter) RefreshViews(ctx context.Context) error {
 	return a.Service.RefreshViews(ctx)
 }
 
-// RunSecurityScan runs the security scanner for the given tenant.
-func (a *WorkerAdapter) RunSecurityScan(ctx context.Context, tenantID [16]byte) error {
-	_ = pgtype.UUID{Bytes: tenantID, Valid: true}
+// RunSecurityScan runs the security scanner.
+func (a *WorkerAdapter) RunSecurityScan(ctx context.Context) error {
 	return a.Service.RunSecurityScan(ctx)
 }

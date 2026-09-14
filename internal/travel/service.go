@@ -390,19 +390,14 @@ func (s *Service) cacheTTL(ctx context.Context) time.Duration {
 // identical queries within a tenant hit the cache while identical queries
 // across tenants stay isolated (ADR-085 §3, jc:travel:search:{hash};
 // Rule 4 — all keys tenant-scoped).
-func searchCacheKey(tenantID pgtype.UUID, params interface{}) string {
-	return valkey.MustKey("travel:search:%s", hashTenantQuery(tenantID, params))
+func searchCacheKey(params interface{}) string {
+	return valkey.MustKey("travel:search:%s", hashTenantQuery(params))
 }
 
 // hashTenantQuery produces a SHA-256 hash over the tenant ID and the canonical
 // JSON of params. Including the tenant ID prevents cross-tenant cache
 // collisions when two tenants issue identical searches.
-func hashTenantQuery(tenantID pgtype.UUID, params interface{}) string {
-	_ = ""
-	if tenantID.Valid {
-		_ = tenantID.String()
-	}
-
+func hashTenantQuery(params interface{}) string {
 	return HashSearchQuery(struct {
 		Params any `json:"params"`
 	}{Params: params})
@@ -557,13 +552,13 @@ func injectAffiliateIntoHotels(results []HotelResult, affiliateConfig json.RawMe
 // provider, (3) call the provider API, (4) inject affiliate params into
 // booking URLs, (5) cache the result, (6) return. If travel.enabled is false,
 // returns ErrTravelDisabled (the handler maps this to 503).
-func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, params FlightSearchParams) (*SearchResponse, error) {
+func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams) (*SearchResponse, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, ErrTravelDisabled
 	}
 
 	start := time.Now()
-	cacheKey := searchCacheKey(tenantID, params)
+	cacheKey := searchCacheKey(params)
 
 	// (1) Check cache.
 	if s.cache != nil {
@@ -629,13 +624,13 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 
 // SearchHotels proxies a hotel search query to the configured hotel provider
 // API. Same flow as SearchFlights.
-func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params HotelSearchParams) (*SearchResponse, error) {
+func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams) (*SearchResponse, error) {
 	if !s.IsEnabled(ctx) {
 		return nil, ErrTravelDisabled
 	}
 
 	start := time.Now()
-	cacheKey := searchCacheKey(tenantID, params)
+	cacheKey := searchCacheKey(params)
 
 	// (1) Check cache.
 	if s.cache != nil {
