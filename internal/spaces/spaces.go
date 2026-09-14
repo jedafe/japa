@@ -241,8 +241,7 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID, tenantID pgt
 	}
 
 	payload, _ := json.Marshal(map[string]string{
-		"space_id":  spaceID.String(),
-		"tenant_id": tenantID.String(),
+		"space_id": spaceID.String(),
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSpaceAutoPopulate, payload); err != nil {
 		slog.Warn("spaces: failed to enqueue auto_populate", "space_id", spaceID.String(), "error", err)
@@ -260,8 +259,8 @@ func (s *Service) EnqueueSearchIndex(ctx context.Context, spaceID, tenantID pgty
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   spaceID.String(),
 		"entity_type": "space",
-		"tenant_id":   tenantID.String(),
-		"operation":   operation,
+
+		"operation": operation,
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
 		slog.Warn("spaces: failed to enqueue search:index_entity", "space_id", spaceID.String(), "operation", operation, "error", err)

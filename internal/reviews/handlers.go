@@ -47,7 +47,7 @@ func (h *Handlers) enqueueReviewAggregateRecalc(tenantID pgtype.UUID, entityType
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id":   tenantID.String(),
+
 		"entity_type": entityType,
 		"entity_id":   entityID.String(),
 	})

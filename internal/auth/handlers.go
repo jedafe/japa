@@ -351,7 +351,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		welcomePayload, _ := json.Marshal(map[string]interface{}{
 			"to":            req.Email,
 			"template_slug": "welcome",
-			"tenant_id":     tenant.ID.String(),
+
 			"template_data": map[string]string{
 				"user_name": req.Username,
 			},

@@ -125,9 +125,9 @@ func (h *Handlers) enqueueSpaceAutoPopulate(ctx context.Context, tenantID, space
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"version":   "1",
-		"tenant_id": tenantID.String(),
-		"space_id":  spaceID.String(),
+		"version": "1",
+
+		"space_id": spaceID.String(),
 	})
 	if err != nil {
 		slog.Warn("universities: marshal auto_populate payload", "error", err)
@@ -145,8 +145,8 @@ func (h *Handlers) enqueueFetchLogo(ctx context.Context, tenantID, spaceID, uplo
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"version":     "1",
-		"tenant_id":   tenantID.String(),
+		"version": "1",
+
 		"space_id":    spaceID.String(),
 		"logo_url":    logoURL,
 		"uploaded_by": uploadedBy.String(),

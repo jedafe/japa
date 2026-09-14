@@ -249,7 +249,7 @@ func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUI
 	s.enqueueNotifyCourseApproved(ctx, tenantID, trackID)
 	// Enqueue search index sync so the track appears in the marketplace index.
 	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
-		"tenant_id": tenantID.String(), "entity_id": trackID.String(),
+		"entity_id":   trackID.String(),
 		"entity_type": "learning_track",
 	})
 
@@ -612,13 +612,13 @@ func (s *Service) FetchLogo(ctx context.Context, tenantID, spaceID pgtype.UUID, 
 
 func (s *Service) enqueueNotifyInstructorApproved(ctx context.Context, tenantID, instructorID pgtype.UUID) {
 	s.enqueue(ctx, worker.TypeUniversityNotifyInstructorApproved, map[string]string{
-		"tenant_id": tenantID.String(), "instructor_id": instructorID.String(),
+		"instructor_id": instructorID.String(),
 	})
 }
 
 func (s *Service) enqueueNotifyCourseApproved(ctx context.Context, tenantID, trackID pgtype.UUID) {
 	s.enqueue(ctx, worker.TypeUniversityNotifyCourseApproved, map[string]string{
-		"tenant_id": tenantID.String(), "track_id": trackID.String(),
+		"track_id": trackID.String(),
 	})
 }
 

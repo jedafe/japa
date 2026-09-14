@@ -57,7 +57,6 @@ func (h *Handlers) enqueueTranslatePack(packID, sourceLang, targetLang string, t
 		"pack_id":     packID,
 		"source_lang": sourceLang,
 		"target_lang": targetLang,
-		"tenant_id":   tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("i18n: failed to marshal translate pack payload", "error", err)

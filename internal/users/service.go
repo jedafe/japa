@@ -882,7 +882,6 @@ func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
 	payload, _ := json.Marshal(map[string]string{
 		"entity_id":   userID.String(),
 		"entity_type": "user",
-		"tenant_id":   tenantID.String(),
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSearchIndexSync, payload); err != nil {
 		slog.Warn("users: failed to enqueue search:index_entity for user", "user_id", userID.String(), "error", err)

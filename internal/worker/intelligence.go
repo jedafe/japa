@@ -1147,7 +1147,6 @@ func intelMaybeEnqueueRegeneration(ctx context.Context, tenantID pgtype.UUID, re
 	regenPayload, err := json.Marshal(map[string]string{
 		"content_id":      result.ContentID.String(),
 		"intel_record_id": record.ID.String(),
-		"tenant_id":       tenantID.String(),
 	})
 	if err != nil {
 		return
@@ -1189,7 +1188,6 @@ func HandleIntelPostPublish(ctx context.Context, t *asynq.Task) error {
 		"domain_id":   domainID.String(),
 		"entity_type": p.EntityType,
 		"record_id":   p.RecordID,
-		"tenant_id":   p.TenantID,
 	})
 
 	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
@@ -1297,7 +1295,6 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 		"entity_type":      p.EntityType,
 		"country_space_id": geoSpaceID,
 		"country":          country,
-		"tenant_id":        p.TenantID,
 	})
 	if err := intelEventPublisher.Publish(ctx, events.DomainEvent{
 		Type:       p.EntityType + ".discovered",

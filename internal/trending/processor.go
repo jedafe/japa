@@ -5,13 +5,11 @@ package trending
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 )
@@ -134,60 +132,23 @@ func (p *Processor) SetSettings(s *config.Settings) {
 	p.settings = s
 }
 
-// ComputeTrending recomputes trending snapshots for all tenants.
-// For each tenant it deletes expired snapshots, then computes velocity-based
+// ComputeTrending recomputes trending snapshots.
+// It deletes expired snapshots, then computes velocity-based
 // scores for content, tags, spaces, and users across three time windows.
 // BUG-001: computes both global (NULL geo_code) and per-country snapshots so
 // that geo-filtered reads (ADR-064) return results.
-// // BUG-012: The per-tenant loop is sequential. For large tenant counts this
-// could be parallelized by fanning out per-tenant as separate Asynq tasks
-// (low tier). The current implementation is acceptable for V1 tenant counts
-// because each query is time-bounded (published_at >= now() - interval) and
-// uses the idx_contents_published_at index. If tenant count grows beyond
-// ~100, consider dispatching computeForTenant as a separate task per tenant.
 func (p *Processor) ComputeTrending(ctx context.Context) error {
 	start := time.Now()
 
 	p.logger.Info("trending: compute_trending starting")
 
-	// Gather all active tenants.
-	tenantRows, err := p.db.Writer.Query(ctx, `SELECT id FROM tenants`)
+	totalSnapshots, err := p.computeForTenant(ctx)
 	if err != nil {
-		return fmt.Errorf("listing tenants: %w", err)
-	}
-	defer tenantRows.Close()
-
-	var tenantIDs [][16]byte
-
-	for tenantRows.Next() {
-		var id [16]byte
-		if err := tenantRows.Scan(&id); err != nil {
-			return fmt.Errorf("scanning tenant id: %w", err)
-		}
-
-		tenantIDs = append(tenantIDs, id)
-	}
-
-	if err := tenantRows.Err(); err != nil {
-		return fmt.Errorf("iterating tenants: %w", err)
-	}
-
-	p.logger.Info("trending: found tenants", "count", len(tenantIDs))
-
-	var totalSnapshots int64
-
-	for _, tid := range tenantIDs {
-		snaps, err := p.computeForTenant(ctx, tid)
-		if err != nil {
-			p.logger.Error("trending: failed for tenant", "tenant_id", hex.EncodeToString(tid[:]), "error", err)
-			continue
-		}
-
-		totalSnapshots += snaps
+		p.logger.Error("trending: failed", "error", err)
+		return err
 	}
 
 	p.logger.Info("trending: compute_trending complete",
-		"tenants", len(tenantIDs),
 		"snapshots", totalSnapshots,
 		"elapsed", time.Since(start).String())
 
@@ -202,11 +163,9 @@ func (p *Processor) ComputeSuggestions(_ context.Context) error {
 	return nil
 }
 
-// computeForTenant deletes expired snapshots and computes new ones for a tenant.
+// computeForTenant deletes expired snapshots and computes new ones.
 // BUG-001: computes both global (NULL geo_code) and per-country snapshots.
-func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (int64, error) {
-	_ = // Load configurable scoring parameters (BUG-016).
-		pgtype.UUID{Bytes: tenantID, Valid: true}
+func (p *Processor) computeForTenant(ctx context.Context) (int64, error) {
 	sc := p.loadScoringConfig(ctx)
 
 	// Delete expired snapshots for this tenant.
@@ -218,7 +177,7 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 		return 0, fmt.Errorf("deleting expired snapshots: %w", err)
 	}
 
-	// Gather the tenant's active geo scopes — restricted to country codes that
+	// Gather active geo scopes — restricted to country codes that
 	// actually have published content (resolved via the content→space chain,
 	// same rollup as the feed's geo proximity). Using every spaces.geo_code
 	// fans out to ~2000 seeded world geos and writes N duplicate snapshot rows
@@ -233,9 +192,9 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 			LEFT JOIN spaces cp ON cp.id = sp.parent_id AND cp.deleted_at IS NULL
 			WHERE c.status = 'published' AND c.deleted_at IS NULL
 		) t WHERE geo IS NOT NULL AND geo <> ''
-	`, tenantID)
+	`)
 	if err != nil {
-		return 0, fmt.Errorf("listing tenant geo scopes: %w", err)
+		return 0, fmt.Errorf("listing geo scopes: %w", err)
 	}
 
 	var geoCodes []string
@@ -451,7 +410,7 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, window string, exp
 			SELECT COUNT(*) AS count
 			FROM contents c
 			WHERE c.space_id = s.id
-			  AND c.tenant_id = s.tenant_id
+	
 			  AND c.status = 'published'
 			  AND c.published_at >= now() - $3::interval
 		) recent ON true

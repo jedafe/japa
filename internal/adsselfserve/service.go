@@ -313,7 +313,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	// Deduct credits from org wallet (fire-and-forget per Rule 8).
 	if s.enqueuer != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id":       tenantID.String(),
+
 			"organization_id": orgID.String(),
 			"amount":          cost,
 			"campaign_id":     campaign.ID.String(),
@@ -433,7 +433,7 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 
 	if refundEnabled && s.enqueuer != nil && campaign.BudgetCredits > 0 {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"tenant_id":       tenantID.String(),
+
 			"organization_id": campaign.OrganizationID.String(),
 			"amount":          int(campaign.BudgetCredits),
 			"campaign_id":     campaign.ID.String(),

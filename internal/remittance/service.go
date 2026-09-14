@@ -1094,7 +1094,7 @@ func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id":   tenantID.String(),
+
 		"provider_id": providerID.String(),
 	})
 	if err != nil {

@@ -43,7 +43,7 @@ func TestGetPublicOrganization_ActiveLean_NonActive404(t *testing.T) {
 		t.Fatalf("active: status=%d want 200; body=%s", rec.Code, rec.Body)
 	}
 	body := rec.Body.String()
-	for _, leaked := range []string{"tenant_id", "owner_user_id", "field_values"} {
+	for _, leaked := range []string{"owner_user_id", "field_values"} {
 		if strings.Contains(body, leaked) {
 			t.Errorf("active org body leaks %q: %s", leaked, body)
 		}

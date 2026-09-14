@@ -677,7 +677,7 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -709,7 +709,6 @@ func (h *Handlers) HandleCrawlNow(w http.ResponseWriter, r *http.Request) {
 	// Enqueue the fetch_source task (fire-and-forget per Rule 8).
 	payload, err := json.Marshal(map[string]string{
 		"source_id": sourceID.String(),
-		"tenant_id": tenantID.String(),
 	})
 	if err != nil {
 		slog.Error("intel: crawl-now marshal failed", "error", err)

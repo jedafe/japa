@@ -208,8 +208,8 @@ func (s *Service) StartImport(ctx context.Context, tenantID, userID pgtype.UUID,
 	// Enqueue import:process_source fire-and-forget (Rule 8).
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
-			"import_id":   imp.ID.String(),
-			"tenant_id":   tenantID.String(),
+			"import_id": imp.ID.String(),
+
 			"user_id":     userID.String(),
 			"source_type": sourceType,
 			"source_url":  sourceURL,
@@ -306,8 +306,8 @@ func (s *Service) RetryImport(ctx context.Context, tenantID, importID pgtype.UUI
 		}
 
 		payload, err := json.Marshal(map[string]string{
-			"import_id":   imp.ID.String(),
-			"tenant_id":   tenantID.String(),
+			"import_id": imp.ID.String(),
+
 			"user_id":     imp.UserID.String(),
 			"source_type": imp.SourceType,
 			"source_url":  sourceURL,
@@ -509,9 +509,9 @@ func (s *Service) importSingleItem(ctx context.Context, tenantID, importID, user
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
 			"content_id": row.ID.String(),
-			"tenant_id":  tenantID.String(),
-			"user_id":    userID.String(),
-			"import_id":  importID.String(),
+
+			"user_id":   userID.String(),
+			"import_id": importID.String(),
 		})
 		if err != nil {
 			slog.Warn("contentimport: fetch_media: marshal payload", "error", err)

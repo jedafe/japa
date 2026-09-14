@@ -155,8 +155,8 @@ func (h *Handlers) enqueueIntelPromote(ctx context.Context, tenantID, recordID, 
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"record_id":        recordID.String(),
-		"tenant_id":        tenantID.String(),
+		"record_id": recordID.String(),
+
 		"reviewer_user_id": reviewerUserID.String(),
 	})
 	if err != nil {

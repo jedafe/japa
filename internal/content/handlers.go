@@ -381,7 +381,6 @@ func (h *Handlers) enqueueContentEmbedding(contentID, tenantID pgtype.UUID) {
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal embedding task payload", "error", err)
@@ -406,7 +405,6 @@ func (h *Handlers) enqueueAffiliateLinkScan(contentID, tenantID pgtype.UUID) {
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal affiliate scan task payload", "error", err)
@@ -431,8 +429,8 @@ func (h *Handlers) enqueueSearchIndex(contentID, tenantID pgtype.UUID, operation
 	payload, err := json.Marshal(map[string]string{
 		"content_id":  contentID.String(),
 		"entity_type": "content",
-		"tenant_id":   tenantID.String(),
-		"operation":   operation,
+
+		"operation": operation,
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal search index payload", "error", err)
@@ -461,7 +459,6 @@ func (h *Handlers) enqueueScholarshipSyncFromGuide(contentID, tenantID pgtype.UU
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal scholarship sync payload", "error", err)
@@ -486,7 +483,6 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID, tenantID p
 	payload, err := json.Marshal(map[string]string{
 		"entity_type": entityType,
 		"entity_id":   entityID.String(),
-		"tenant_id":   tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal moderation scan payload", "error", err)
@@ -549,8 +545,8 @@ func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, a
 // enqueueFanOutTask marshals and enqueues a single fan-out task.
 func (h *Handlers) enqueueFanOutTask(contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
 	payload, err := json.Marshal(map[string]string{
-		"content_id":   contentID.String(),
-		"tenant_id":    tenantID.String(),
+		"content_id": contentID.String(),
+
 		"author_id":    authorID.String(),
 		"space_id":     spaceID.String(),
 		"content_type": contentType,
@@ -579,9 +575,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-	})
+	payload, err := json.Marshal(map[string]string{})
 	if err != nil {
 		slog.Warn("content: failed to marshal rss:regenerate payload", "error", err)
 		return
@@ -665,9 +659,8 @@ func (h *Handlers) enqueueLinkPreview(url, blockID string, tenantID pgtype.UUID)
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"url":       url,
-		"block_id":  blockID,
-		"tenant_id": tenantID.String(),
+		"url":      url,
+		"block_id": blockID,
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal link preview payload", "error", err)
@@ -2233,7 +2226,6 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 
 	payload, err := json.Marshal(map[string]string{
 		"content_id": contentID.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err != nil {
 		slog.Warn("content: failed to marshal scheduled_publish task payload", "error", err)
@@ -2377,7 +2369,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2423,7 +2415,7 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 		// this reaction — treat as idempotent success, not a 404.
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-				"tenant_id":       tenantID,
+
 				"entity_type":     EntityContent,
 				"entity_id":       contentID,
 				"user_id":         user.UserID,

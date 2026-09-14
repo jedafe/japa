@@ -8,7 +8,7 @@
 SELECT sps.parent_space_id, s.name AS parent_name, s.slug AS parent_slug,
  s.level AS parent_level, s.geo_code AS parent_geo_code
 FROM space_parent_spaces sps
-JOIN spaces s ON s.id = sps.parent_space_id AND s.tenant_id = sps.space_id
+JOIN spaces s ON s.id = sps.parent_space_id
 WHERE sps.space_id = @space_id
 ORDER BY s.level ASC;
 
@@ -16,7 +16,7 @@ ORDER BY s.level ASC;
 SELECT sps.space_id, s.name AS child_name, s.slug AS child_slug,
  s.level AS child_level, s.geo_code AS child_geo_code
 FROM space_parent_spaces sps
-JOIN spaces s ON s.id = sps.space_id AND s.tenant_id = sps.parent_space_id
+JOIN spaces s ON s.id = sps.space_id
 WHERE sps.parent_space_id = @parent_space_id
 ORDER BY s.name ASC;
 

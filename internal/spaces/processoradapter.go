@@ -462,7 +462,7 @@ func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, tenantID p
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"tenant_id":   tenantID.String(),
+
 		"space_id":    space.ID.String(),
 		"logo_url":    logoURL,
 		"uploaded_by": a.systemUserID.String(),

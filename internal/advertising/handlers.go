@@ -50,7 +50,7 @@ func (h *Handlers) enqueueAdEventIngest(tenantID, campaignID, userID pgtype.UUID
 
 	// Build payload — omit user_id when invalid (guest/anonymous event).
 	payloadMap := map[string]string{
-		"tenant_id":   tenantID.String(),
+
 		"campaign_id": campaignID.String(),
 		"event_type":  eventType,
 	}
@@ -318,7 +318,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -341,7 +341,7 @@ func (h *Handlers) ActivateCampaign(w http.ResponseWriter, r *http.Request) {
 	// notification when status = active. Fire-and-forget per Rule 8.
 	if h.AsynqClient != nil {
 		notifyPayload, _ := json.Marshal(map[string]string{
-			"tenant_id":   tenantID.String(),
+
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -418,7 +418,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -438,7 +438,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 	// Enqueue credit refund task (fire-and-forget per Rule 8).
 	if h.AsynqClient != nil {
 		payload, _ := json.Marshal(map[string]string{
-			"tenant_id":   tenantID.String(),
+
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -450,7 +450,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 
 		// Enqueue status notification (fire-and-forget).
 		notifyPayload, _ := json.Marshal(map[string]string{
-			"tenant_id":   tenantID.String(),
+
 			"campaign_id": id.String(),
 		})
 		if _, err := h.AsynqClient.Enqueue(

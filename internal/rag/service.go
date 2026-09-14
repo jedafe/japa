@@ -314,7 +314,6 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 		for _, id := range ids {
 			payload, err := json.Marshal(map[string]string{
 				"content_id": id.ID.String(),
-				"tenant_id":  id.TenantID.String(),
 			})
 			if err != nil {
 				slog.Warn("rag: reindex: marshal payload failed", "content_id", id.ID.String(), "error", err)

@@ -261,9 +261,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-	})
+	payload, err := json.Marshal(map[string]string{})
 	if err != nil {
 		slog.Warn("blog: failed to marshal rss:regenerate payload", "error", err)
 		return

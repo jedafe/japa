@@ -173,7 +173,6 @@ func (s *Service) CreateImport(ctx context.Context, tenantID, userID pgtype.UUID
 	// Enqueue background task (fire-and-forget, Rule 8).
 	payload, _ := json.Marshal(map[string]string{
 		"import_id": imp.ID.String(),
-		"tenant_id": tenantID.String(),
 	})
 	if err := s.enqueuer.Enqueue("platform:data_import", payload); err != nil {
 		slog.Error("dataimport: enqueue failed", "error", err)

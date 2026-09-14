@@ -51,7 +51,7 @@ func TestToPublicOrg_LeanAndCorrect(t *testing.T) {
 	}
 
 	got := string(blob)
-	for _, leaked := range []string{"tenant_id", "owner_user_id", "field_values", "\"status\"", "deleted_at", "updated_at"} {
+	for _, leaked := range []string{"owner_user_id", "field_values", "\"status\"", "deleted_at", "updated_at"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("PublicOrgResponse leaks %q: %s", leaked, got)
 		}

@@ -421,7 +421,6 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 	}
 
 	mediaIDStr := mediaID.String()
-	tenantIDStr := tenantID.String()
 
 	// Always enqueue virus scan for all confirmed uploads.
 	scanPayload, _ := json.Marshal(map[string]string{
@@ -440,8 +439,8 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 	switch {
 	case isImageMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
-			"media_id":  mediaIDStr,
-			"tenant_id": tenantIDStr,
+			"media_id": mediaIDStr,
+
 			"operation": "optimize",
 		})
 		if _, err := h.AsynqClient.Enqueue(
@@ -452,8 +451,8 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 		}
 	case isVideoMIME(mimeType):
 		processPayload, _ := json.Marshal(map[string]string{
-			"media_id":  mediaIDStr,
-			"tenant_id": tenantIDStr,
+			"media_id": mediaIDStr,
+
 			"operation": "transcode",
 		})
 		if _, err := h.AsynqClient.Enqueue(

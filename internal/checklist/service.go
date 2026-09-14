@@ -483,11 +483,11 @@ func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, user
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"tenant_id": tenantID.String(),
-		"user_id":   userID.String(),
-		"guide_id":  guideID.String(),
-		"points":    points,
-		"reason":    "checklist_completion",
+
+		"user_id":  userID.String(),
+		"guide_id": guideID.String(),
+		"points":   points,
+		"reason":   "checklist_completion",
 	})
 	if err != nil {
 		slog.Warn("checklist: completion award: marshal payload", "error", err)

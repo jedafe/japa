@@ -225,7 +225,7 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -289,7 +289,7 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		payload := map[string]interface{}{
 			"to":            input.Email,
 			"template_slug": tmpl.Slug,
-			"tenant_id":     tenantID.String(),
+
 			"template_data": map[string]string{},
 		}
 		body, _ := json.Marshal(payload)

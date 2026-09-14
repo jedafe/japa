@@ -117,8 +117,8 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 	// Enqueue the fan-out task for async processing.
 	// The worker will handle the actual fan-out logic.
 	payload, err := json.Marshal(map[string]string{
-		"content_id":   contentID.String(),
-		"tenant_id":    tenantID.String(),
+		"content_id": contentID.String(),
+
 		"space_id":     spaceID.String(),
 		"content_type": contentType,
 		"fan_out_type": fanOutType,

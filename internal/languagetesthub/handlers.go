@@ -66,8 +66,8 @@ func (h *Handlers) enqueueSearchIndex(reqID, tenantID pgtype.UUID, operation str
 	payload, err := json.Marshal(map[string]string{
 		"entity_id":   reqID.String(),
 		"entity_type": "language_test_requirement",
-		"tenant_id":   tenantID.String(),
-		"operation":   operation,
+
+		"operation": operation,
 	})
 	if err != nil {
 		slog.Warn("languagetesthub: failed to marshal search index payload", "error", err)

@@ -189,8 +189,8 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"id":                      prof.ID,
-		"tenant_id":               prof.TenantID,
+		"id": prof.ID,
+
 		"user_id":                 prof.UserID,
 		"display_name":            prof.DisplayName,
 		"headline":                prof.Headline,

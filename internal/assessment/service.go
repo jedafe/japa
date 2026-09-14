@@ -320,7 +320,6 @@ func (s *Service) SubmitAssessment(ctx context.Context, tenantID pgtype.UUID, us
 	if s.enqueuer != nil {
 		payload, err := json.Marshal(map[string]string{
 			"submission_id": sub.ID.String(),
-			"tenant_id":     tenantID.String(),
 		})
 		if err != nil {
 			slog.Warn("assessment: submit: marshal payload failed", "error", err)
@@ -475,8 +474,8 @@ func (s *Service) ScoreSubmission(ctx context.Context, tenantID pgtype.UUID, inp
 			idempotencyKey := fmt.Sprintf("assessment:completion:%s:%s:%s", tenantID.String(), input.UserID.String(), submission.FormID.String())
 
 			payload, err := json.Marshal(map[string]any{
-				"user_id":         input.UserID.String(),
-				"tenant_id":       tenantID.String(),
+				"user_id": input.UserID.String(),
+
 				"points":          points,
 				"reason":          "assessment_completion",
 				"reference_id":    ar.ID.String(),

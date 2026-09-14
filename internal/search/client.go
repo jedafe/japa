@@ -46,19 +46,18 @@ var allIndexes = []string{
 }
 
 // filterableAttributesByIndex declares which attributes each index exposes
-// for filtering. is filterable on every index so searches scope to
-// the requesting tenant.
+// for filtering.
 var filterableAttributesByIndex = map[string][]string{
-	IndexPosts:             {"tenant_id", "content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
-	IndexForumThreads:      {"tenant_id", "space_id", "solved"},
-	IndexSpaces:            {"tenant_id", "level", "status"},
-	IndexUsers:             {"tenant_id", "status"},
-	IndexTags:              {"tenant_id"},
-	IndexKnowledgeArticles: {"tenant_id", "status"},
-	IndexLearningTracks:    {"tenant_id", "difficulty", "category", "language", "relevant_countries", "is_free"},
-	IndexDocPages:          {"tenant_id", "audience", "review_status"},
-	IndexOrganizations:     {"tenant_id", "org_type", "verified", "status", "country_code"},
-	IndexLanguageTestReqs:  {"tenant_id", "test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
+	IndexPosts:             {"content_type", "status", "relevant_countries", "space_id", "tag_slugs"},
+	IndexForumThreads:      {"space_id", "solved"},
+	IndexSpaces:            {"level", "status"},
+	IndexUsers:             {"status"},
+	IndexTags:              {},
+	IndexKnowledgeArticles: {"status"},
+	IndexLearningTracks:    {"difficulty", "category", "language", "relevant_countries", "is_free"},
+	IndexDocPages:          {"audience", "review_status"},
+	IndexOrganizations:     {"org_type", "verified", "status", "country_code"},
+	IndexLanguageTestReqs:  {"test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
 }
 
 // sortableAttributesByIndex declares which attributes each index exposes for

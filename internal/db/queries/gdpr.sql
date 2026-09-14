@@ -471,15 +471,14 @@ SET download_url = NULL,
 WHERE id = $1;
 
 -- name: PruneAuditLogs :exec
--- Per-tenant retention via system_settings 'audit.log_retention_days'
--- (default 365 days). Tenants without the setting keep the catalog default.
+-- Global retention via system_settings 'audit.log_retention_days'
+-- (default 365 days).
 DELETE FROM audit_logs a
 USING (
  SELECT (COALESCE((SELECT s.value->>0
  FROM system_settings s
  WHERE s.key = 'audit.log_retention_days'),
  '365')::int || ' days')::interval AS retention
- FROM (SELECT DISTINCT tenant_id FROM audit_logs) a2
 ) cfg
 WHERE a.created_at < now() - cfg.retention;
 

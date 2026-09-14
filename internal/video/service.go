@@ -833,8 +833,8 @@ func (s *Service) GenerateDraft(ctx context.Context, userID, videoSourceID pgtyp
 	resp, err := s.dispatcher.Dispatch(ctx, "content_generation", ai.Request{
 		Category: "content_generation",
 		Payload: map[string]any{
-			"prompt":                prompt,
-			"tenant_id":             tenantID,
+			"prompt": prompt,
+
 			"max_completion_tokens": 1024,
 		},
 	})

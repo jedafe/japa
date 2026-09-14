@@ -57,7 +57,7 @@ func TestToSpaceCards_LeanAndCorrect(t *testing.T) {
 	}
 
 	got := string(blob)
-	for _, leaked := range []string{"tenant_id", "wiki_content", "posting_perm", "replying_perm", "joining_perm", "parent_id", "space_type_id", "post_count", "status", "level"} {
+	for _, leaked := range []string{"wiki_content", "posting_perm", "replying_perm", "joining_perm", "parent_id", "space_type_id", "post_count", "status", "level"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("SpaceCard JSON leaks internal field %q: %s", leaked, got)
 		}

@@ -2218,8 +2218,8 @@ func (h *Handlers) SubmitForm(w http.ResponseWriter, r *http.Request) {
 			PurposeID:   formID.String(),
 			Amount:      feeCredits,
 			Metadata: map[string]interface{}{
-				"form_id":      formID.String(),
-				"tenant_id":    tenantID.String(),
+				"form_id": formID.String(),
+
 				"field_values": req.FieldValues,
 			},
 		})
@@ -2276,8 +2276,8 @@ func (h *Handlers) enqueueFormTriggers(formID, tenantID, submissionID, userID pg
 
 	payload := map[string]string{
 		"submission_id": submissionID.String(),
-		"tenant_id":     tenantID.String(),
-		"form_id":       formID.String(),
+
+		"form_id": formID.String(),
 	}
 	if userID.Valid {
 		payload["user_id"] = userID.String()

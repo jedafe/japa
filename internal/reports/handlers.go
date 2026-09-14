@@ -65,7 +65,7 @@ type reportRequestBody struct {
 // report handler: parse the entity ID from the given URL param, decode the
 // body, and create the report.
 func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityType, idParam string) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -105,7 +105,6 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		payload, _ := json.Marshal(map[string]string{
 			"entity_type": entityType,
 			"entity_id":   entityID.String(),
-			"tenant_id":   tenantID.String(),
 		})
 		if err := h.enqueuer.Enqueue(worker.TypeModerationAutoHide, payload); err != nil {
 			slog.Warn("reports: failed to enqueue moderation:auto_hide", "entity_type", entityType, "entity_id", entityID.String(), "error", err)
@@ -114,8 +113,8 @@ func (h *Handlers) submitReport(w http.ResponseWriter, r *http.Request, entityTy
 		// Enqueue admin notification (Section 51 report:notify_admin).
 		// Notifies every user with reports.review that a new report was filed.
 		notifyPayload, _ := json.Marshal(map[string]string{
-			"report_id":   report.ID.String(),
-			"tenant_id":   tenantID.String(),
+			"report_id": report.ID.String(),
+
 			"entity_type": entityType,
 			"entity_id":   entityID.String(),
 			"reason":      body.Reason,

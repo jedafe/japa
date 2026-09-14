@@ -333,7 +333,7 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 			initiatedBy = u.UserID.String()
 		}
 
-		payload, _ := json.Marshal(map[string]string{"tenant_id": tenant.ID.String(), "initiated_by": initiatedBy})
+		payload, _ := json.Marshal(map[string]string{"initiated_by": initiatedBy})
 
 		task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
 		if _, err := h.Client.Enqueue(
@@ -2055,7 +2055,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 
 // TriggerSecurityScan is an exported method.
 func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2065,9 +2065,7 @@ func (h *Handlers) TriggerSecurityScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"tenant_id": tenantID.String(),
-	})
+	payload, err := json.Marshal(map[string]any{})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create scan task")
 		return
@@ -3673,7 +3671,7 @@ var knownExtensions = []extensionEntry{
 
 // ListExtensions is an exported method.
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3685,7 +3683,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 		rollout := 100
 
 		if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
-			enabled = h.FeatureChecker.IsEnabled(r.Context(), tenantID, ext.FeatureFlagKey)
+			enabled = h.FeatureChecker.IsEnabled(r.Context(), pgtype.UUID{}, ext.FeatureFlagKey)
 
 			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
 				rollout = cfg.RolloutPercentage

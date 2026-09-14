@@ -285,7 +285,6 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 	// Reuses §62 Newsletter infrastructure in the task handler.
 	payload, _ := json.Marshal(map[string]string{
 		"edition_id": id.String(),
-		"tenant_id":  tenantID.String(),
 	})
 	if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
 		// Log but do not fail the publish — email delivery is async and
@@ -301,9 +300,7 @@ func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgt
 // from platform analytics — no AI generation (purely metrics-driven).
 // Returns "accepted" to indicate the task was enqueued (202 response).
 func (s *Service) AdminGenerate(ctx context.Context, tenantID pgtype.UUID) (string, error) {
-	payload, _ := json.Marshal(map[string]string{
-		"tenant_id": tenantID.String(),
-	})
+	payload, _ := json.Marshal(map[string]string{})
 	if err := s.enqueuer.Enqueue("digest:generate", payload); err != nil {
 		return "", fmt.Errorf("digest: enqueue generate: %w", err)
 	}
@@ -413,7 +410,6 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 		// admin can re-trigger email from the panel.
 		payload, _ := json.Marshal(map[string]string{
 			"edition_id": e.ID.String(),
-			"tenant_id":  e.TenantID.String(),
 		})
 		if err := s.enqueuer.Enqueue("digest:send_email", payload); err != nil {
 			slog.Error("digest: auto-publish enqueue send_email failed", "error", err, "edition_id", e.ID.String())
