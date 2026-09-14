@@ -180,21 +180,21 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // IsEnabled reads the jobs.enabled system_setting (default true).
-func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "jobs.enabled", true)
+	return s.settings.GetBoolOr(ctx, "jobs.enabled", true)
 }
 
 // FeaturedCredits reads the jobs.featured_credits system_setting (default 1000).
-func (s *Service) FeaturedCredits(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) FeaturedCredits(ctx context.Context) int {
 	if s.settings == nil {
 		return 1000
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "jobs.featured_credits", 1000)
+	return s.settings.GetIntOr(ctx, "jobs.featured_credits", 1000)
 }
 
 // IsOrgMember returns true if the user is a member of the org with one of the
@@ -236,7 +236,7 @@ var (
 // JobBelongsToOrg returns true if the job (content) is a job_listing in the
 // tenant owned by orgID. Used to authorize application routes so a caller
 // cannot reach a job's applications through a different org's ID (JOBS-012).
-func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pgtype.UUID) (bool, error) {
+func (s *Service) JobBelongsToOrg(ctx context.Context, jobID, orgID pgtype.UUID) (bool, error) {
 	var exists bool
 
 	err := s.store.pool.Reader.QueryRow(ctx, `
@@ -258,7 +258,7 @@ func (s *Service) JobBelongsToOrg(ctx context.Context, tenantID, jobID, orgID pg
 // as static sqlc queries.
 //
 // Ref: japaconnect-engineering/sections/63-jobs-board.md.
-func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters JobFilters) ([]JobResult, int64, error) {
+func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult, int64, error) {
 	if filters.Limit <= 0 {
 		filters.Limit = 20
 	}
@@ -514,7 +514,7 @@ func (s *Service) FindJobs(ctx context.Context, tenantID pgtype.UUID, filters Jo
 }
 
 // GetJobDetail returns a single job listing with all its custom field values.
-func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (JobDetail, error) {
+func (s *Service) GetJobDetail(ctx context.Context, slug string) (JobDetail, error) {
 	query := `
 		SELECT
 			c.id, c.title, c.slug, c.body, c.organization_id, c.intel_record_id,
@@ -603,7 +603,7 @@ func (s *Service) GetJobDetail(ctx context.Context, tenantID pgtype.UUID, slug s
 
 // ListOrgJobs returns published job_listing contents for a specific org,
 // with pagination.
-func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, page, limit int) ([]JobResult, int64, error) {
+func (s *Service) ListOrgJobs(ctx context.Context, orgID pgtype.UUID, page, limit int) ([]JobResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -706,7 +706,7 @@ func (s *Service) ListOrgJobs(ctx context.Context, tenantID, orgID pgtype.UUID, 
 
 // CreateJobListing creates a job_listing content row with the given field
 // values and returns the created listing detail.
-func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string) (JobDetail, error) {
+func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string) (JobDetail, error) {
 	if slug == "" {
 		slug = generateJobSlug(title)
 	}
@@ -732,7 +732,7 @@ func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorI
 	// Insert custom field values via the typed upsert helper (EAV schema,
 	// correct value_* column per field type — JOBS-002/007).
 	for fieldKey, value := range fieldValues {
-		s.upsertJobFieldValue(ctx, tenantID, contentID, fieldKey, value)
+		s.upsertJobFieldValue(ctx, contentID, fieldKey, value)
 	}
 
 	return JobDetail{
@@ -749,7 +749,7 @@ func (s *Service) CreateJobListing(ctx context.Context, tenantID, orgID, authorI
 // GetJobByID returns a single job_listing content row by id, scoped to
 // tenant and organization. Used by the public update flow to verify ownership
 // and to re-fetch the updated row.
-func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.UUID) (JobDetail, error) {
+func (s *Service) GetJobByID(ctx context.Context, orgID, jobID pgtype.UUID) (JobDetail, error) {
 	query := `
 		SELECT
 			c.id, c.title, c.slug, c.body,
@@ -825,7 +825,7 @@ func (s *Service) GetJobByID(ctx context.Context, tenantID, orgID, jobID pgtype.
 // UpdateJobListing updates an org-owned job listing. The caller must be an
 // editor-or-above member of the organization. Immutable fields (tenant,
 // organization, author, content_type, status) are not changed.
-func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
+func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID pgtype.UUID, input UpdateJobListingInput) (JobDetail, error) {
 	member, err := s.IsOrgMember(ctx, callerID, orgID, OrgJobEditorRoles)
 	if err != nil {
 		return JobDetail{}, fmt.Errorf("jobs: update listing: org check: %w", err)
@@ -835,7 +835,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 		return JobDetail{}, ErrNotOrgMember
 	}
 
-	existing, err := s.GetJobByID(ctx, tenantID, orgID, jobID)
+	existing, err := s.GetJobByID(ctx, orgID, jobID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return JobDetail{}, pgx.ErrNoRows
@@ -920,11 +920,11 @@ func (s *Service) UpdateJobListing(ctx context.Context, tenantID, orgID, jobID, 
 
 	// Upsert any custom field values provided.
 	for fieldKey, value := range input.FieldValues {
-		s.upsertJobFieldValue(ctx, tenantID, jobID, fieldKey, value)
+		s.upsertJobFieldValue(ctx, jobID, fieldKey, value)
 	}
 
 	// Re-fetch from the writer to avoid read-replica lag.
-	return s.GetJobByID(ctx, tenantID, orgID, jobID)
+	return s.GetJobByID(ctx, orgID, jobID)
 }
 
 // generateJobSlug creates a URL-safe slug from a title.
@@ -1016,7 +1016,7 @@ var jobFieldTypes = map[string]jobFieldType{
 // custom_fields by key + tenant, and verifies the target content is a
 // job_listing in the tenant (prevents cross-tenant / non-job writes).
 // Empty values are skipped. Unknown keys are skipped with a warning.
-func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID pgtype.UUID, key, value string) {
+func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID, key, value string) {
 	if value == "" {
 		return
 	}
@@ -1080,7 +1080,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, tenantID, contentID p
 // ApplyToJob creates a job_applications record. Checks for duplicate — a user
 // can only apply once per job. submissionID is optional (nil if applying with
 // form data submitted separately).
-func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID pgtype.UUID, submissionID *uuid.UUID) (gen.JobApplication, error) {
+func (s *Service) ApplyToJob(ctx context.Context, jobID, applicantID pgtype.UUID, submissionID *uuid.UUID) (gen.JobApplication, error) {
 	var subID pgtype.UUID
 
 	if submissionID != nil {
@@ -1088,7 +1088,7 @@ func (s *Service) ApplyToJob(ctx context.Context, tenantID, jobID, applicantID p
 		subID = pgtype.UUID{Bytes: b, Valid: true}
 	}
 
-	app, err := s.store.CreateJobApplication(ctx, tenantID, jobID, applicantID, subID)
+	app, err := s.store.CreateJobApplication(ctx, jobID, applicantID, subID)
 	if err != nil {
 		// ON CONFLICT DO NOTHING with sqlc :one returns pgx.ErrNoRows when
 		// the conflict triggers (no row returned). Detect that and re-query
@@ -1131,12 +1131,12 @@ func (s *Service) findExistingApplication(ctx context.Context, jobID, applicantI
 
 // UpdateApplicationStatus updates the status of an application and enqueues a
 // jobs:notify_application_status task fire-and-forget (Rule 8).
-func (s *Service) UpdateApplicationStatus(ctx context.Context, tenantID, appID pgtype.UUID, status string, employerNotes *string) (gen.JobApplication, error) {
+func (s *Service) UpdateApplicationStatus(ctx context.Context, appID pgtype.UUID, status string, employerNotes *string) (gen.JobApplication, error) {
 	if !IsValidStatus(status) {
 		return gen.JobApplication{}, fmt.Errorf("jobs: invalid status %q", status)
 	}
 
-	app, err := s.store.UpdateJobApplicationStatus(ctx, tenantID, appID, status, employerNotes)
+	app, err := s.store.UpdateJobApplicationStatus(ctx, appID, status, employerNotes)
 	if err != nil {
 		return gen.JobApplication{}, fmt.Errorf("jobs: update application status: %w", err)
 	}
@@ -1164,13 +1164,13 @@ func (s *Service) UpdateApplicationStatus(ctx context.Context, tenantID, appID p
 // notification adapter. Read-only — does not mutate application state.
 // Used by the jobs:notify_application_status Asynq task handler (§63,
 // ADR-081).
-func (s *Service) GetApplicationForNotification(ctx context.Context, tenantID, applicationID pgtype.UUID) (gen.JobApplication, error) {
-	return s.store.GetJobApplicationByID(ctx, tenantID, applicationID)
+func (s *Service) GetApplicationForNotification(ctx context.Context, applicationID pgtype.UUID) (gen.JobApplication, error) {
+	return s.store.GetJobApplicationByID(ctx, applicationID)
 }
 
 // ListUserApplications returns an applicant's application history with
 // pagination.
-func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgtype.UUID, page, limit int) ([]ApplicationResult, int64, error) {
+func (s *Service) ListUserApplications(ctx context.Context, userID pgtype.UUID, page, limit int) ([]ApplicationResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1182,12 +1182,12 @@ func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgt
 	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * limit)
 
-	total, err := s.store.CountUserJobApplications(ctx, tenantID, userID)
+	total, err := s.store.CountUserJobApplications(ctx, userID)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.ListUserJobApplications(ctx, tenantID, userID, offset, int32(limit)) //nolint:gosec // G115: bounded
+	rows, err := s.store.ListUserJobApplications(ctx, userID, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1202,7 +1202,7 @@ func (s *Service) ListUserApplications(ctx context.Context, tenantID, userID pgt
 
 // ListJobApplications returns applications for a specific job (employer view)
 // with pagination and optional status filter.
-func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtype.UUID, status string, page, limit int) ([]ApplicationResult, int64, error) {
+func (s *Service) ListJobApplications(ctx context.Context, jobID pgtype.UUID, status string, page, limit int) ([]ApplicationResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1214,12 +1214,12 @@ func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtyp
 	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * limit)
 
-	total, err := s.store.CountJobApplicationsByJob(ctx, tenantID, jobID, status)
+	total, err := s.store.CountJobApplicationsByJob(ctx, jobID, status)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.ListJobApplicationsByJob(ctx, tenantID, jobID, status, offset, int32(limit)) //nolint:gosec // G115: bounded
+	rows, err := s.store.ListJobApplicationsByJob(ctx, jobID, status, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1234,7 +1234,7 @@ func (s *Service) ListJobApplications(ctx context.Context, tenantID, jobID pgtyp
 
 // AdminListApplications returns all applications across all jobs for a tenant,
 // with pagination and optional status filter.
-func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]ApplicationResult, int64, error) {
+func (s *Service) AdminListApplications(ctx context.Context, status string, page, limit int) ([]ApplicationResult, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1246,12 +1246,12 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 	// #nosec G115 // value bounded by caller
 	offset := int32((page - 1) * limit)
 
-	total, err := s.store.AdminCountJobApplications(ctx, tenantID, status)
+	total, err := s.store.AdminCountJobApplications(ctx, status)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := s.store.AdminListJobApplications(ctx, tenantID, status, offset, int32(limit)) //nolint:gosec // G115: bounded
+	rows, err := s.store.AdminListJobApplications(ctx, status, offset, int32(limit)) //nolint:gosec // G115: bounded
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1267,7 +1267,7 @@ func (s *Service) AdminListApplications(ctx context.Context, tenantID pgtype.UUI
 // AdminListJobs returns all job_listing contents for a tenant, with
 // pagination and optional status filter. This is the admin "all listings"
 // view per Section 63: GET /admin/jobs — all listings (admin).
-func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]AdminJobListing, int64, error) {
+func (s *Service) AdminListJobs(ctx context.Context, status string, page, limit int) ([]AdminJobListing, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1417,7 +1417,7 @@ func (s *Service) AdminListJobs(ctx context.Context, tenantID pgtype.UUID, statu
 
 // AdminJobStatusDistribution returns the count of job_listing contents grouped
 // by content status (published, archived, draft) for a tenant.
-func (s *Service) AdminJobStatusDistribution(ctx context.Context, tenantID pgtype.UUID) (map[string]int64, error) {
+func (s *Service) AdminJobStatusDistribution(ctx context.Context) (map[string]int64, error) {
 	query := `
 		SELECT status, COUNT(*) AS count
 		FROM contents
@@ -1450,8 +1450,8 @@ func (s *Service) AdminJobStatusDistribution(ctx context.Context, tenantID pgtyp
 
 // AdminApplicationStatusDistribution returns the count of applications grouped
 // by status for a tenant.
-func (s *Service) AdminApplicationStatusDistribution(ctx context.Context, tenantID pgtype.UUID) (map[string]int64, error) {
-	rows, err := s.store.AdminApplicationStatusDistribution(ctx, tenantID)
+func (s *Service) AdminApplicationStatusDistribution(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.store.AdminApplicationStatusDistribution(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1466,14 +1466,14 @@ func (s *Service) AdminApplicationStatusDistribution(ctx context.Context, tenant
 
 // ExpireListingsPastDeadline archives published job_listing content whose
 // application_deadline is in the past. Called by the jobs:expire_listings task.
-func (s *Service) ExpireListingsPastDeadline(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
-	return s.store.ExpireListingsPastDeadline(ctx, tenantID)
+func (s *Service) ExpireListingsPastDeadline(ctx context.Context) (int64, error) {
+	return s.store.ExpireListingsPastDeadline(ctx)
 }
 
 // ToggleFeature toggles the is_featured custom field value for a job listing.
 // Used by the admin feature route. Tenant-scoped and content-type-checked for
 // security (prevents cross-tenant toggle and toggling non-job content).
-func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID) (bool, error) {
+func (s *Service) ToggleFeature(ctx context.Context, jobID pgtype.UUID) (bool, error) {
 	// Read the current value — verify tenant + content_type = job_listing.
 	// Join custom_field_values → custom_fields to resolve the field key.
 	var current bool
@@ -1530,7 +1530,7 @@ func (s *Service) ToggleFeature(ctx context.Context, tenantID, jobID pgtype.UUID
 // and custom field values. The jobID must be a content row with
 // content_type='job_listing' in the given tenant. The contents table has no
 // summary column (JOBS-004); summary is derived from body at read time.
-func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUID, title, summary, body, status *string, fieldValues map[string]string) error {
+func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, summary, body, status *string, fieldValues map[string]string) error {
 	// Build the SET clause dynamically based on which fields are provided.
 	// summary is intentionally ignored — no such column (JOBS-004).
 	setParts := []string{"updated_at = now()"}
@@ -1571,7 +1571,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 	// Update custom field values via the typed upsert helper (correct
 	// value_* column per field type — JOBS-007).
 	for fieldKey, value := range fieldValues {
-		s.upsertJobFieldValue(ctx, tenantID, jobID, fieldKey, value)
+		s.upsertJobFieldValue(ctx, jobID, fieldKey, value)
 	}
 
 	return nil
@@ -1580,7 +1580,7 @@ func (s *Service) AdminUpdateJob(ctx context.Context, tenantID, jobID pgtype.UUI
 // AdminDeleteJob soft-deletes a job listing by setting deleted_at = now().
 // The jobID must be a content row with content_type='job_listing' in the
 // given tenant.
-func (s *Service) AdminDeleteJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+func (s *Service) AdminDeleteJob(ctx context.Context, jobID pgtype.UUID) error {
 	_, err := s.store.pool.Writer.Exec(ctx, `
 		UPDATE contents SET deleted_at = now(), updated_at = now()
 		WHERE id = $1 AND content_type = 'job_listing'`,

@@ -107,7 +107,7 @@ type StudioProcessor interface {
 	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
 	// RetryBatchFailed retries all failed jobs in a batch asynchronously.
 	// Called by the studio:retry_failed task handler (ADR-076 §7).
-	RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error)
+	RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error)
 	// GenerateJob generates the draft for a single studio job: it loads the
 	// job, resolves its persona, invokes the AI gateway for the body, creates
 	// the draft contents row and routes it to the HITL review queue (or
@@ -148,8 +148,8 @@ type AgentDraftPayload struct {
 
 // MentorProcessor handles mentorship matching background tasks (§102, ADR-110).
 type MentorProcessor interface {
-	GenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) error
-	UpdateMeilisearch(ctx context.Context, tenantID, userID pgtype.UUID) error
+	GenerateEmbedding(ctx context.Context, userID pgtype.UUID) error
+	UpdateMeilisearch(ctx context.Context, userID pgtype.UUID) error
 }
 
 // EmbassyAlerterProcessor handles Embassy Appointment Alerter background
@@ -785,7 +785,7 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "studio:retry_failed", studioProcessor != nil, []string{"tenant_id", "batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			count, err := studioProcessor.RetryBatchFailed(ctx, ids[0], ids[1])
+			count, err := studioProcessor.RetryBatchFailed(ctx, ids[1])
 			if err != nil {
 				return err
 			}
@@ -801,7 +801,7 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "mentor:generate_embedding", mentorProcessor != nil, []string{"tenant_id", "user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return mentorProcessor.GenerateEmbedding(ctx, ids[0], ids[1])
+			return mentorProcessor.GenerateEmbedding(ctx, ids[1])
 		})
 }
 
@@ -810,7 +810,7 @@ func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
 func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"tenant_id", "user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return mentorProcessor.UpdateMeilisearch(ctx, ids[0], ids[1])
+			return mentorProcessor.UpdateMeilisearch(ctx, ids[1])
 		})
 }
 

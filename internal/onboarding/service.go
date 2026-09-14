@@ -49,8 +49,8 @@ func (s *Service) SetFollower(f Follower) {
 
 // GetState returns the current onboarding state for the given user.
 // If no state exists yet, returns a default starting state (step 1).
-func (s *Service) GetState(ctx context.Context, tenantID, userID pgtype.UUID) (*OnboardingStatusResponse, error) {
-	row, err := s.store.getState(ctx, tenantID, userID)
+func (s *Service) GetState(ctx context.Context, userID pgtype.UUID) (*OnboardingStatusResponse, error) {
+	row, err := s.store.getState(ctx, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &OnboardingStatusResponse{
@@ -83,7 +83,7 @@ const totalSteps = 5
 // ends up meeting the platform's baseline density target).
 func (s *Service) UpdateStep(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateStepRequest) error {
 	// Read current state to merge step_data.
-	current, err := s.store.getState(ctx, tenantID, userID)
+	current, err := s.store.getState(ctx, userID)
 
 	var currentStep int32 = 1
 
@@ -136,7 +136,7 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 	// Auto-join primary geo spaces when location fields are present (Section 05, ADR-005).
 	fields := parseStepData(merged)
 	if fields.CountryCode != "" {
-		if err := s.autoJoinGeoSpaces(ctx, tenantID, userID, fields); err != nil {
+		if err := s.autoJoinGeoSpaces(ctx, userID, fields); err != nil {
 			slog.Warn("auto-join geo spaces failed", "error", err)
 			// Non-fatal — don't block onboarding.
 		}
@@ -149,7 +149,7 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 	// to set it again in Settings. Failures are non-fatal — onboarding
 	// must not block on the custom-field write.
 	if fields.DestinationCountryCode != "" {
-		if err := s.setDestinationCountry(ctx, tenantID, userID, fields.DestinationCountryCode); err != nil {
+		if err := s.setDestinationCountry(ctx, userID, fields.DestinationCountryCode); err != nil {
 			slog.Warn("onboarding: failed to save destination_country custom field", "error", err)
 			// Non-fatal — don't block onboarding.
 		}
@@ -177,7 +177,7 @@ func (s *Service) persistStep(ctx context.Context, tenantID, userID pgtype.UUID,
 		newStep = totalSteps
 	}
 
-	if err := s.store.upsertState(ctx, tenantID, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
+	if err := s.store.upsertState(ctx, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
 		return fmt.Errorf("updating onboarding step: %w", err)
 	}
 
@@ -261,12 +261,12 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 	switch step {
 	case 3:
 		// Step 3: Interests/Tags — auto-pick min_tags_follow promoted tags.
-		minTags := s.getMinTagsFollow(ctx, tenantID)
+		minTags := s.getMinTagsFollow(ctx)
 		if minTags <= 0 {
 			return nil
 		}
 
-		promotedTagsJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedTags)
+		promotedTagsJSON, _ := s.settings.GetSetting(ctx, keyPromotedTags)
 
 		var promotedTags []string
 
@@ -293,8 +293,8 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 	case 4:
 		// Step 4: Recommended Spaces & Connections — auto-follow min spaces
 		// and min users from the recommendation engine.
-		minSpaces := s.getMinSpacesJoin(ctx, tenantID)
-		minUsers := s.getMinUsersFollow(ctx, tenantID)
+		minSpaces := s.getMinSpacesJoin(ctx)
+		minUsers := s.getMinUsersFollow(ctx)
 
 		if minSpaces <= 0 && minUsers <= 0 {
 			return nil
@@ -345,8 +345,8 @@ func (s *Service) autoFulfillSkip(ctx context.Context, tenantID, userID pgtype.U
 
 // getMinTagsFollow reads the onboarding.min_tags_follow setting with the
 // Section 09 default of 3.
-func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinTagsFollow)
+func (s *Service) getMinTagsFollow(ctx context.Context) int {
+	v, _ := s.settings.GetSettingInt(ctx, keyMinTagsFollow)
 	if v == 0 {
 		return 3
 	}
@@ -356,8 +356,8 @@ func (s *Service) getMinTagsFollow(ctx context.Context, tenantID pgtype.UUID) in
 
 // getMinUsersFollow reads the onboarding.min_users_follow setting with the
 // Section 09 default of 2.
-func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinUsersFollow)
+func (s *Service) getMinUsersFollow(ctx context.Context) int {
+	v, _ := s.settings.GetSettingInt(ctx, keyMinUsersFollow)
 	if v == 0 {
 		return 2
 	}
@@ -367,8 +367,8 @@ func (s *Service) getMinUsersFollow(ctx context.Context, tenantID pgtype.UUID) i
 
 // getMinSpacesJoin reads the onboarding.min_spaces_join setting with the
 // Section 09 default of 2.
-func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) int {
-	v, _ := s.settings.GetSettingInt(ctx, pgtype.UUID{}, keyMinSpacesJoin)
+func (s *Service) getMinSpacesJoin(ctx context.Context) int {
+	v, _ := s.settings.GetSettingInt(ctx, keyMinSpacesJoin)
 	if v == 0 {
 		return 2
 	}
@@ -381,8 +381,8 @@ func (s *Service) getMinSpacesJoin(ctx context.Context, tenantID pgtype.UUID) in
 // a user must have reached step 5 before they can complete. This prevents
 // a malicious client from calling POST /onboarding/complete immediately
 // after signup and bypassing the baseline density target.
-func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	state, err := s.store.getState(ctx, tenantID, userID)
+func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
+	state, err := s.store.getState(ctx, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: onboarding not started", errpkg.ErrInvalidStatusTransition)
@@ -401,7 +401,7 @@ func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) er
 		return fmt.Errorf("%w: onboarding not complete (current step %d, need 5)", errpkg.ErrInvalidStatusTransition, state.CurrentStep)
 	}
 
-	if err := s.store.completeOnboarding(ctx, tenantID, userID); err != nil {
+	if err := s.store.completeOnboarding(ctx, userID); err != nil {
 		return fmt.Errorf("completing onboarding: %w", err)
 	}
 
@@ -409,8 +409,8 @@ func (s *Service) Complete(ctx context.Context, tenantID, userID pgtype.UUID) er
 }
 
 // DismissTour marks the product tour as dismissed.
-func (s *Service) DismissTour(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	if err := s.store.dismissTour(ctx, tenantID, userID); err != nil {
+func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID) error {
+	if err := s.store.dismissTour(ctx, userID); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
 
@@ -428,7 +428,7 @@ func (s *Service) DismissTour(ctx context.Context, tenantID, userID pgtype.UUID)
 // popular items only when no personalized signals are available.
 func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	// Parse step_data to extract interests/tags and location for matching.
-	state, err := s.store.getState(ctx, tenantID, userID)
+	state, err := s.store.getState(ctx, userID)
 	if err != nil {
 		// BUG-008: only fall back to popular on "no state yet" (ErrNoRows);
 		// return real DB/infra errors instead of masking them.
@@ -448,7 +448,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	// Tier 1: Admin-pinned promotions (Section 09).
-	promotedRecs, err := s.getPromotedRecommendations(ctx, tenantID)
+	promotedRecs, err := s.getPromotedRecommendations(ctx)
 	if err != nil {
 		slog.Warn("onboarding: failed to load promoted entities", "error", err)
 		// Non-fatal — continue without promoted tier.
@@ -456,7 +456,7 @@ func (s *Service) GetRecommendations(ctx context.Context, tenantID, userID pgtyp
 	}
 
 	// Tier 2: Exact geo match (user's country/state/city geo spaces).
-	geoRecs, err := s.recommendByGeo(ctx, tenantID, userID, stepData)
+	geoRecs, err := s.recommendByGeo(ctx, userID, stepData)
 	if err != nil {
 		slog.Warn("onboarding: geo recommendation failed", "error", err)
 
@@ -508,9 +508,9 @@ func mergeRecommendations(tiers ...[]OnboardingRecommendation) []OnboardingRecom
 // from system_settings (onboarding.promoted_spaces / promoted_users) into
 // recommendation records with reason="promoted" and the highest score (1.0),
 // so they always appear first in the tiered ordering per Section 09.
-func (s *Service) getPromotedRecommendations(ctx context.Context, tenantID pgtype.UUID) ([]OnboardingRecommendation, error) {
-	promotedSpacesJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedSpaces)
-	promotedUsersJSON, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedUsers)
+func (s *Service) getPromotedRecommendations(ctx context.Context) ([]OnboardingRecommendation, error) {
+	promotedSpacesJSON, _ := s.settings.GetSetting(ctx, keyPromotedSpaces)
+	promotedUsersJSON, _ := s.settings.GetSetting(ctx, keyPromotedUsers)
 
 	var spaceIDs, userIDs []string
 	if promotedSpacesJSON != "" {
@@ -704,7 +704,7 @@ func (s *Service) recommendSpacesByTags(ctx context.Context, tenantID, _ pgtype.
 // geo hierarchy (Section 09 "exact geo match"), not a fuzzy name LIKE. The
 // country is resolved by geo_code, state/city by ID — the same approach as
 // autoJoinGeoSpaces. Sibling spaces at each level are not fuzzy-matched.
-func (s *Service) recommendByGeo(ctx context.Context, tenantID, _ pgtype.UUID, fields stepDataFields) ([]OnboardingRecommendation, error) {
+func (s *Service) recommendByGeo(ctx context.Context, _ pgtype.UUID, fields stepDataFields) ([]OnboardingRecommendation, error) {
 	if fields.CountryCode == "" && fields.StateID == "" && fields.CityID == "" {
 		return nil, nil
 	}
@@ -834,7 +834,7 @@ func tagOverlapScore(description string, tags []string) float64 {
 // and continues without blocking onboarding. All joins + the geo-space update
 // run in a single transaction so a mid-sequence failure rolls back the entire
 // geo-join (BUG-002 fix, §6.2 transaction boundary, Section 09 space auto-join).
-func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype.UUID, fields stepDataFields) error {
+func (s *Service) autoJoinGeoSpaces(ctx context.Context, userID pgtype.UUID, fields stepDataFields) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning geo-join transaction: %w", err)
@@ -922,7 +922,7 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, tenantID, userID pgtype
 // mirrors the write path in users.Store.setGeoCustomField so the geo-aware
 // VisitorContext resolver picks up the destination selected during onboarding
 // without the user having to re-enter it in Settings.
-func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pgtype.UUID, geoCode string) error {
+func (s *Service) setDestinationCountry(ctx context.Context, userID pgtype.UUID, geoCode string) error {
 	code := strings.ToUpper(strings.TrimSpace(geoCode))
 	if code == "" {
 		return nil
@@ -974,31 +974,31 @@ const (
 // the 5-step flow is hardcoded in GetState/the frontend. Template-driven
 // onboarding is a future enhancement (§21); the CRUD surface is preserved
 // so admins can pre-configure templates ahead of the consumer-side wiring.
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
-	return s.store.listTemplates(ctx, tenantID)
+func (s *Service) ListTemplates(ctx context.Context) ([]gen.OnboardingTemplate, error) {
+	return s.store.listTemplates(ctx)
 }
 
 // GetTemplate retrieves a single onboarding template by ID.
-func (s *Service) GetTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.OnboardingTemplate, error) {
-	return s.store.getTemplate(ctx, tenantID, id)
+func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (gen.OnboardingTemplate, error) {
+	return s.store.getTemplate(ctx, id)
 }
 
 // CreateTemplate creates a new onboarding template.
-func (s *Service) CreateTemplate(ctx context.Context, tenantID pgtype.UUID, req *CreateTemplateRequest) (gen.OnboardingTemplate, error) {
+func (s *Service) CreateTemplate(ctx context.Context, req *CreateTemplateRequest) (gen.OnboardingTemplate, error) {
 	steps, err := json.Marshal(req.Steps)
 	if err != nil {
 		return gen.OnboardingTemplate{}, fmt.Errorf("marshaling steps: %w", err)
 	}
 
-	return s.store.createTemplate(ctx, tenantID, req.Name, req.Description, steps, req.IsActive, false)
+	return s.store.createTemplate(ctx, req.Name, req.Description, steps, req.IsActive, false)
 }
 
 // UpdateTemplate updates an existing onboarding template.
 // System templates (is_system = true) cannot be modified — the API enforces
 // this guard so a direct API call cannot bypass the frontend's hidden edit
 // button (BUG-003 fix, §09 system template protection).
-func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id pgtype.UUID, req *UpdateTemplateRequest) error {
-	existing, err := s.store.getTemplate(ctx, tenantID, id)
+func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, req *UpdateTemplateRequest) error {
+	existing, err := s.store.getTemplate(ctx, id)
 	if err != nil {
 		return fmt.Errorf("checking template before update: %w", err)
 	}
@@ -1012,15 +1012,15 @@ func (s *Service) UpdateTemplate(ctx context.Context, tenantID, id pgtype.UUID, 
 		return fmt.Errorf("marshaling steps: %w", err)
 	}
 
-	return s.store.updateTemplate(ctx, tenantID, id, req.Name, req.Description, steps, req.IsActive)
+	return s.store.updateTemplate(ctx, id, req.Name, req.Description, steps, req.IsActive)
 }
 
 // DeleteTemplate deletes an onboarding template.
 // System templates (is_system = true) cannot be deleted — the API enforces
 // this guard so a direct API call cannot bypass the frontend's hidden delete
 // button (BUG-003 fix, §09 system template protection).
-func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
-	existing, err := s.store.getTemplate(ctx, tenantID, id)
+func (s *Service) DeleteTemplate(ctx context.Context, id pgtype.UUID) error {
+	existing, err := s.store.getTemplate(ctx, id)
 	if err != nil {
 		return fmt.Errorf("checking template before delete: %w", err)
 	}
@@ -1029,7 +1029,7 @@ func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) 
 		return fmt.Errorf("%w: system templates cannot be deleted", errpkg.ErrForbidden)
 	}
 
-	return s.store.deleteTemplate(ctx, tenantID, id)
+	return s.store.deleteTemplate(ctx, id)
 }
 
 // GetAdminSettings returns the tenant's onboarding configuration as exposed
@@ -1037,22 +1037,22 @@ func (s *Service) DeleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) 
 // and promoted-entities picker). Reads the six onboarding.* system_settings
 // keys and assembles them into OnboardingAdminSettings. Missing keys fall
 // back to the Section 09 defaults (3 tags, 2 users, 2 spaces, empty lists).
-func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*OnboardingAdminSettings, error) {
+func (s *Service) GetAdminSettings(ctx context.Context) (*OnboardingAdminSettings, error) {
 	settings := &OnboardingAdminSettings{
-		MinTagsFollow:  s.getMinTagsFollow(ctx, tenantID),
-		MinUsersFollow: s.getMinUsersFollow(ctx, tenantID),
-		MinSpacesJoin:  s.getMinSpacesJoin(ctx, tenantID),
+		MinTagsFollow:  s.getMinTagsFollow(ctx),
+		MinUsersFollow: s.getMinUsersFollow(ctx),
+		MinSpacesJoin:  s.getMinSpacesJoin(ctx),
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedSpaces); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, keyPromotedSpaces); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedSpaces)
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedUsers); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, keyPromotedUsers); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedUsers)
 	}
 
-	if raw, _ := s.settings.GetSetting(ctx, pgtype.UUID{}, keyPromotedTags); raw != "" {
+	if raw, _ := s.settings.GetSetting(ctx, keyPromotedTags); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings.PromotedTags)
 	}
 
@@ -1076,7 +1076,7 @@ func (s *Service) GetAdminSettings(ctx context.Context, tenantID pgtype.UUID) (*
 // fields preserve the existing value. All writes are applied atomically via
 // UpdateSettingsBatch so the admin never observes a half-applied config.
 // Ref: Section 09 — admin Onboarding Settings surface.
-func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID, req *UpdateOnboardingSettingsRequest) error {
+func (s *Service) UpdateAdminSettings(ctx context.Context, req *UpdateOnboardingSettingsRequest) error {
 	pending := make(map[string][]byte, 6)
 
 	if req.MinTagsFollow != nil {
@@ -1113,7 +1113,7 @@ func (s *Service) UpdateAdminSettings(ctx context.Context, tenantID pgtype.UUID,
 		return nil
 	}
 
-	if err := s.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+	if err := s.settings.UpdateSettingsBatch(ctx, pending); err != nil {
 		return fmt.Errorf("updating onboarding settings: %w", err)
 	}
 

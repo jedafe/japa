@@ -70,14 +70,14 @@ func (s *Service) PayWithCredit(
 	currency := "NGN"
 
 	if s.settings != nil {
-		if v, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "payment.currency"); err == nil && v != "" {
+		if v, err := s.settings.GetSetting(ctx, "payment.currency"); err == nil && v != "" {
 			currency = v
 		}
 	}
 
 	// Step 1: Create the payment row with status="pending" FIRST. If this
 	// fails, no credits are debited — the user's balance is untouched.
-	payment, err := s.createPaymentRow(ctx, tenantID, userID, CreatePaymentInput{
+	payment, err := s.createPaymentRow(ctx, userID, CreatePaymentInput{
 		Provider:    ProviderCredit,
 		PurposeType: purposeType,
 		PurposeID:   purposeID,
@@ -101,12 +101,12 @@ func (s *Service) PayWithCredit(
 	newBalance, err := s.wallet.SpendCredits(ctx, tenantID, userID, input)
 	if err != nil {
 		// Debit failed — mark the payment as failed so it's not orphaned.
-		_, _ = s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
+		_, _ = s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusFailed)
 		return 0, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
 
 	// Step 3: Mark the payment as succeeded — the debit committed successfully.
-	if _, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded); err != nil {
+	if _, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded); err != nil {
 		// The debit succeeded but the status update failed. This is a
 		// recoverable state — the payment row exists with status="pending"
 		// and the ledger entry exists. A background reconciliation task

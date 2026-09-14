@@ -504,11 +504,11 @@ type stubCustomFieldDefsService struct {
 	createGroupErr error
 }
 
-func (s *stubCustomFieldDefsService) ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error) {
+func (s *stubCustomFieldDefsService) ListFieldGroups(ctx context.Context) ([]gen.CustomFieldGroup, error) {
 	return s.groups, s.groupsErr
 }
 
-func (s *stubCustomFieldDefsService) ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error) {
+func (s *stubCustomFieldDefsService) ListFieldGroupsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroup, error) {
 	if s.groupsByClass != nil {
 		return s.groupsByClass[entityClass], s.groupsErr
 	}
@@ -524,7 +524,7 @@ func (s *stubCustomFieldDefsService) UpdateField(ctx context.Context, params gen
 	return gen.UpdateCustomFieldRow{}, s.updateFieldErr
 }
 
-func (s *stubCustomFieldDefsService) CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
+func (s *stubCustomFieldDefsService) CreateFieldGroup(ctx context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error) {
 	return gen.CustomFieldGroup{}, s.createGroupErr
 }
 

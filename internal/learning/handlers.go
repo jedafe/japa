@@ -32,22 +32,22 @@ type TaskEnqueueClient interface {
 // Section 26). The learning platform uses it to emit Course structured data
 // from the active template.
 type JSONLDResolver interface {
-	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
 // RAGEntityIndexer is the subset of the RAG indexer that learning needs to
 // index track content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
-	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
-	PurgeEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
 // settingsReader is the subset of config.Settings needed by the learning
 // handlers to resolve hot-reloadable system_settings (e.g.
 // i18n.default_language for RAG indexing). Nil falls back to defaults.
 type settingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // Handlers exposes HTTP endpoints for the learning platform. Each handler
@@ -80,9 +80,9 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // resolveRAGLanguage resolves the indexing language from i18n.default_language
 // (§7 i18n). Falls back to "en" when settings are not injected or the key is
 // unset. BUG-002 (rag-audit): replaces hardcoded "en" at the call sites.
-func (h *Handlers) resolveRAGLanguage(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *Handlers) resolveRAGLanguage(ctx context.Context) string {
 	if h.settings != nil {
-		return h.settings.GetStringOr(ctx, pgtype.UUID{}, "i18n.default_language", "en")
+		return h.settings.GetStringOr(ctx, "i18n.default_language", "en")
 	}
 
 	return "en"
@@ -91,7 +91,7 @@ func (h *Handlers) resolveRAGLanguage(ctx context.Context, tenantID pgtype.UUID)
 // indexTrackRAG fires-and-forgets a RAG indexing call for a learning track.
 // The body is the track title + description concatenated for embedding.
 // Errors are logged, never propagated (Rule 8).
-func (h *Handlers) indexTrackRAG(ctx context.Context, tenantID, trackID pgtype.UUID, title string, description *string, language string) {
+func (h *Handlers) indexTrackRAG(ctx context.Context, trackID pgtype.UUID, title string, description *string, language string) {
 	if h.ragIndexer == nil {
 		return
 	}
@@ -115,21 +115,21 @@ func (h *Handlers) indexTrackRAG(ctx context.Context, tenantID, trackID pgtype.U
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, tenantID, "learning_track", trackID, text, language); err != nil {
+		if err := h.ragIndexer.IndexEntity(bgCtx, "learning_track", trackID, text, language); err != nil {
 			slog.Warn("learning: RAG index failed for track", "track_id", trackID.String(), "error", err)
 		}
 	}()
 }
 
 // purgeTrackRAG fires-and-forgets a RAG purge for a deleted/unpublished track.
-func (h *Handlers) purgeTrackRAG(ctx context.Context, tenantID, trackID pgtype.UUID) {
+func (h *Handlers) purgeTrackRAG(ctx context.Context, trackID pgtype.UUID) {
 	if h.ragIndexer == nil {
 		return
 	}
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.PurgeEntity(bgCtx, tenantID, "learning_track", trackID); err != nil {
+		if err := h.ragIndexer.PurgeEntity(bgCtx, "learning_track", trackID); err != nil {
 			slog.Warn("learning: RAG purge failed for track", "track_id", trackID.String(), "error", err)
 		}
 	}()
@@ -172,7 +172,7 @@ func (h *Handlers) ListPublishedTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tracks, err := h.store.ListPublishedTracks(r.Context(), t.ID)
+	tracks, err := h.store.ListPublishedTracks(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
@@ -199,7 +199,7 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := h.store.GetTrackDetail(r.Context(), t.ID, slug)
+	detail, err := h.store.GetTrackDetail(r.Context(), slug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
@@ -212,7 +212,7 @@ func (h *Handlers) GetTrackDetail(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"data": detail}
 
 	if h.jsonldResolver != nil {
-		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), t.ID, "Course", trackJSONLDFields(detail)); jErr == nil && len(jsonLd) > 0 {
+		if jsonLd, jErr := h.jsonldResolver.ResolveJSONLD(r.Context(), "Course", trackJSONLDFields(detail)); jErr == nil && len(jsonLd) > 0 {
 			resp["json_ld"] = json.RawMessage(jsonLd)
 		} else if jErr != nil {
 			slog.Warn("learning: JSON-LD template resolution failed", "slug", slug, "error", jErr)
@@ -267,13 +267,13 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.store.GetTrackBySlug(r.Context(), t.ID, trackSlug)
+	track, err := h.store.GetTrackBySlug(r.Context(), trackSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
 	}
 
-	module, err := h.store.GetModuleBySlug(r.Context(), t.ID, track.ID, moduleSlug)
+	module, err := h.store.GetModuleBySlug(r.Context(), track.ID, moduleSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
 		return
@@ -289,7 +289,7 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		userID = user.UserID
 	}
 
-	lesson, err := h.store.GetLessonDetail(r.Context(), t.ID, module.ID, lessonSlug, userID)
+	lesson, err := h.store.GetLessonDetail(r.Context(), module.ID, lessonSlug, userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
@@ -322,7 +322,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the lesson exists and belongs to this tenant.
-	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
+	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
@@ -345,7 +345,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, input)
+	progress, err := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update progress")
 		return
@@ -355,7 +355,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	// progress_pct (same rationale as CompleteLesson — the async worker may
 	// not be running).
 	if input.Status == "completed" {
-		mod, merr := h.store.GetModuleByID(r.Context(), t.ID, lesson.ModuleID)
+		mod, merr := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
 		if merr == nil {
 			completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
 			if perr == nil && total > 0 {
@@ -366,7 +366,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
+		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": progress})
@@ -386,7 +386,7 @@ func (h *Handlers) GetMyCertificates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	certs, err := h.store.ListCertificatesByUser(r.Context(), t.ID, user.UserID)
+	certs, err := h.store.ListCertificatesByUser(r.Context(), user.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
 		return
@@ -411,7 +411,7 @@ func (h *Handlers) ListCertificatesByUser(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	certs, err := h.store.ListCertificatesByUser(r.Context(), t.ID, userID)
+	certs, err := h.store.ListCertificatesByUser(r.Context(), userID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list certificates")
 		return
@@ -432,7 +432,7 @@ func (h *Handlers) ListAllTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tracks, err := h.store.ListAllTracks(r.Context(), t.ID)
+	tracks, err := h.store.ListAllTracks(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list tracks")
 		return
@@ -475,7 +475,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		input.Difficulty = "beginner"
 	}
 
-	track, err := h.store.CreateTrack(r.Context(), t.ID, input)
+	track, err := h.store.CreateTrack(r.Context(), input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create track")
 		return
@@ -484,7 +484,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: learning
 	// tracks are part of the RAG corpus). Only index published tracks.
 	if input.IsPublished {
-		h.indexTrackRAG(r.Context(), t.ID, track.ID, input.Title, input.Description, h.resolveRAGLanguage(r.Context(), t.ID))
+		h.indexTrackRAG(r.Context(), track.ID, input.Title, input.Description, h.resolveRAGLanguage(r.Context()))
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
@@ -513,7 +513,7 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.store.UpdateTrack(r.Context(), t.ID, id, input)
+	track, err := h.store.UpdateTrack(r.Context(), id, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update track")
 		return
@@ -522,9 +522,9 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix). Only
 	// published tracks are indexed; unpublished tracks are purged.
 	if input.IsPublished {
-		h.indexTrackRAG(r.Context(), t.ID, id, input.Title, input.Description, h.resolveRAGLanguage(r.Context(), t.ID))
+		h.indexTrackRAG(r.Context(), id, input.Title, input.Description, h.resolveRAGLanguage(r.Context()))
 	} else {
-		h.purgeTrackRAG(r.Context(), t.ID, id)
+		h.purgeTrackRAG(r.Context(), id)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
@@ -547,14 +547,14 @@ func (h *Handlers) DeleteTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteTrack(r.Context(), t.ID, id); err != nil {
+	if err := h.store.DeleteTrack(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete track")
 		return
 	}
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted tracks
 	// must not be retrievable in RAG).
-	h.purgeTrackRAG(r.Context(), t.ID, id)
+	h.purgeTrackRAG(r.Context(), id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -598,7 +598,7 @@ func (h *Handlers) CreateModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	module, err := h.store.CreateModule(r.Context(), t.ID, trackID, input)
+	module, err := h.store.CreateModule(r.Context(), trackID, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create module")
 		return
@@ -630,7 +630,7 @@ func (h *Handlers) UpdateModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	module, err := h.store.UpdateModule(r.Context(), t.ID, id, input)
+	module, err := h.store.UpdateModule(r.Context(), id, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update module")
 		return
@@ -656,7 +656,7 @@ func (h *Handlers) DeleteModule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteModule(r.Context(), t.ID, id); err != nil {
+	if err := h.store.DeleteModule(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete module")
 		return
 	}
@@ -707,7 +707,7 @@ func (h *Handlers) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		input.LessonType = "article"
 	}
 
-	lesson, err := h.store.CreateLesson(r.Context(), t.ID, moduleID, input)
+	lesson, err := h.store.CreateLesson(r.Context(), moduleID, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to create lesson")
 		return
@@ -739,7 +739,7 @@ func (h *Handlers) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.store.UpdateLesson(r.Context(), t.ID, id, input)
+	lesson, err := h.store.UpdateLesson(r.Context(), id, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update lesson")
 		return
@@ -765,7 +765,7 @@ func (h *Handlers) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteLesson(r.Context(), t.ID, id); err != nil {
+	if err := h.store.DeleteLesson(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to delete lesson")
 		return
 	}
@@ -811,7 +811,7 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID)
+	track, err := h.store.GetTrackByID(r.Context(), trackID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "track_not_found", "Track not found")
 		return
@@ -824,9 +824,9 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 
 	// Subscription-eligible tracks: check if the user's plan covers this track.
 	if track.SubscriptionEligible {
-		hasAccess, planSlug := h.store.CheckSubscriptionAccess(r.Context(), t.ID, user.UserID, trackID)
+		hasAccess, planSlug := h.store.CheckSubscriptionAccess(r.Context(), user.UserID, trackID)
 		if hasAccess {
-			enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, "subscription")
+			enrollment, err := h.store.EnrollUser(r.Context(), user.UserID, trackID, "subscription")
 			if err != nil {
 				errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
 				return
@@ -881,7 +881,7 @@ func (h *Handlers) EnrollInTrack(w http.ResponseWriter, r *http.Request) {
 	// Free track, not subscription-eligible (or no active subscription).
 	accessType := "free"
 
-	enrollment, err := h.store.EnrollUser(r.Context(), t.ID, user.UserID, trackID, accessType)
+	enrollment, err := h.store.EnrollUser(r.Context(), user.UserID, trackID, accessType)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to enroll")
 		return
@@ -906,7 +906,7 @@ func (h *Handlers) ListMyEnrollments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), t.ID, user.UserID)
+	enrollments, err := h.store.ListEnrollmentsByUser(r.Context(), user.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list enrollments")
 		return
@@ -936,7 +936,7 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
+	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
@@ -972,20 +972,20 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.store.GetLessonByID(r.Context(), t.ID, lessonID)
+	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
 		return
 	}
 
 	// Resolve the module to get the correct track ID.
-	mod, err := h.store.GetModuleByID(r.Context(), t.ID, lesson.ModuleID)
+	mod, err := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
 		return
 	}
 
-	progress, err := h.store.UpsertProgress(r.Context(), t.ID, user.UserID, lessonID, UpdateProgressInput{Status: "completed"})
+	progress, err := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, UpdateProgressInput{Status: "completed"})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to complete lesson")
 		return
@@ -1003,7 +1003,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.maybeIssueCertificate(r.Context(), t.ID, user.UserID, lesson.ModuleID)
+	h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 
 	// Enqueue async track completion update — fire-and-forget (best-effort
 	// backup for environments where the worker is running).
@@ -1033,7 +1033,7 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	questions, err := h.store.GetQuizQuestions(r.Context(), t.ID, lessonID)
+	questions, err := h.store.GetQuizQuestions(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
 		return
@@ -1068,7 +1068,7 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	questions, err := h.store.GetQuizQuestionsWithAnswers(r.Context(), t.ID, lessonID)
+	questions, err := h.store.GetQuizQuestionsWithAnswers(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
 		return
@@ -1215,9 +1215,9 @@ func (h *Handlers) GetTrackProgress(w http.ResponseWriter, r *http.Request) {
 // maybeIssueCertificate checks if the user has completed all lessons in a
 // track and issues a certificate if so. Errors are logged but not returned
 // — certificate issuance is best-effort.
-func (h *Handlers) maybeIssueCertificate(ctx context.Context, tenantID, userID, moduleID pgtype.UUID) {
+func (h *Handlers) maybeIssueCertificate(ctx context.Context, userID, moduleID pgtype.UUID) {
 	// Resolve the module to find its track_id.
-	mod, err := h.store.GetModuleByID(ctx, tenantID, moduleID)
+	mod, err := h.store.GetModuleByID(ctx, moduleID)
 	if err != nil {
 		return
 	}
@@ -1232,7 +1232,7 @@ func (h *Handlers) maybeIssueCertificate(ctx context.Context, tenantID, userID, 
 	// sequences that PostgreSQL's text column rejects (SQLSTATE 22021).
 	certNumber := fmt.Sprintf("JC-%d-%s", time.Now().Unix(), hex.EncodeToString(userID.Bytes[:8]))
 
-	if _, err := h.store.IssueCertificate(ctx, tenantID, userID, mod.TrackID, certNumber); err != nil {
+	if _, err := h.store.IssueCertificate(ctx, userID, mod.TrackID, certNumber); err != nil {
 		slog.Error("issue certificate", "user_id", userID, "track_id", mod.TrackID, "error", err)
 	}
 }
@@ -1300,7 +1300,7 @@ func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	enrollments, err := h.store.ListEnrollmentsByTrack(r.Context(), t.ID, trackID, limit, offset)
+	enrollments, err := h.store.ListEnrollmentsByTrack(r.Context(), trackID, limit, offset)
 	if err != nil {
 		slog.Error("learning: list track enrollments", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list enrollments")
@@ -1319,7 +1319,7 @@ func (h *Handlers) ListAllModules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modules, err := h.store.ListAllModules(r.Context(), t.ID)
+	modules, err := h.store.ListAllModules(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
 		return
@@ -1336,7 +1336,7 @@ func (h *Handlers) ListAllLessons(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lessons, err := h.store.ListAllLessons(r.Context(), t.ID)
+	lessons, err := h.store.ListAllLessons(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list lessons")
 		return
@@ -1362,7 +1362,7 @@ func (h *Handlers) ListModulesByTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	modules, err := h.store.ListModulesByTrack(r.Context(), t.ID, trackID)
+	modules, err := h.store.ListModulesByTrack(r.Context(), trackID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list modules")
 		return
@@ -1385,7 +1385,7 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.PublishTrack(r.Context(), t.ID, trackID, true); err != nil {
+	if err := h.store.PublishTrack(r.Context(), trackID, true); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to publish track")
 		return
 	}
@@ -1393,8 +1393,8 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: published
 	// learning tracks are part of the RAG corpus). Fetch the track text
 	// from the store for embedding.
-	if track, err := h.store.GetTrackByID(r.Context(), t.ID, trackID); err == nil && track != nil {
-		h.indexTrackRAG(r.Context(), t.ID, trackID, track.Title, track.Description, track.Language)
+	if track, err := h.store.GetTrackByID(r.Context(), trackID); err == nil && track != nil {
+		h.indexTrackRAG(r.Context(), trackID, track.Title, track.Description, track.Language)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
@@ -1455,7 +1455,7 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 		body = &input.Body
 	}
 
-	review, err := h.store.CreateTrackReview(r.Context(), t.ID, trackID, user.UserID, input.Rating, title, body)
+	review, err := h.store.CreateTrackReview(r.Context(), trackID, user.UserID, input.Rating, title, body)
 	if err != nil {
 		handleReviewError(w, err)
 		return
@@ -1482,13 +1482,13 @@ func (h *Handlers) ListTrackReviews(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	reviews, err := h.store.ListTrackReviews(r.Context(), t.ID, trackID, limit, offset)
+	reviews, err := h.store.ListTrackReviews(r.Context(), trackID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list reviews")
 		return
 	}
 
-	aggregate, err := h.store.GetTrackReviewAggregate(r.Context(), t.ID, trackID)
+	aggregate, err := h.store.GetTrackReviewAggregate(r.Context(), trackID)
 	if err != nil {
 		// Aggregate may not exist yet — default to zeros.
 		aggregate = TrackReviewAggregate{}

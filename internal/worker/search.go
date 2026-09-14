@@ -11,18 +11,18 @@ import "context"
 // the search_index_sync task handler based on entity_type; the search
 // package owns the DB fetch and document shaping.
 type SearchIndexer interface {
-	IndexContent(ctx context.Context, contentID, tenantID [16]byte) error
-	IndexForumThread(ctx context.Context, threadID, tenantID [16]byte) error
-	IndexSpace(ctx context.Context, spaceID, tenantID [16]byte) error
-	IndexUser(ctx context.Context, userID, tenantID [16]byte) error
-	IndexTag(ctx context.Context, tagID, tenantID [16]byte) error
+	IndexContent(ctx context.Context, contentID [16]byte) error
+	IndexForumThread(ctx context.Context, threadID [16]byte) error
+	IndexSpace(ctx context.Context, spaceID [16]byte) error
+	IndexUser(ctx context.Context, userID [16]byte) error
+	IndexTag(ctx context.Context, tagID [16]byte) error
 	// IndexDirectoryTag indexes a tags-table directory tag (the /tags
 	// surface) into the shared tags index — entity_type "directory_tag".
-	IndexDirectoryTag(ctx context.Context, tagID, tenantID [16]byte) error
-	IndexLearningTrack(ctx context.Context, trackID, tenantID [16]byte) error
-	IndexDocPage(ctx context.Context, pageID, tenantID [16]byte) error
-	IndexOrganization(ctx context.Context, orgID, tenantID [16]byte) error
-	IndexLanguageTestRequirement(ctx context.Context, reqID, tenantID [16]byte) error
+	IndexDirectoryTag(ctx context.Context, tagID [16]byte) error
+	IndexLearningTrack(ctx context.Context, trackID [16]byte) error
+	IndexDocPage(ctx context.Context, pageID [16]byte) error
+	IndexOrganization(ctx context.Context, orgID [16]byte) error
+	IndexLanguageTestRequirement(ctx context.Context, reqID [16]byte) error
 	DeleteDocument(ctx context.Context, indexName string, id [16]byte) error
 }
 

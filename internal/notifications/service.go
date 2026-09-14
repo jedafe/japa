@@ -49,7 +49,7 @@ type DispatchResult struct {
 // 2. If window exists and not dispatched: extend it (add actor)
 // 3. If no window: create new window
 // Returns whether a new notification was created or batch was extended.
-func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
+func (s *Service) DispatchNotification(ctx context.Context, recipientID pgtype.UUID, nType, _ string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, _, _, _ string) (DispatchResult, error) {
 	// Check effective preferences (user override OR type default).
 	// BUG-001: previously only checked explicit user preferences, ignoring
 	// notification_type defaults. A type with default_in_app=false would
@@ -84,7 +84,7 @@ func (s *Service) DispatchNotification(ctx context.Context, tenantID, recipientI
 	// AUDIT-FRESH-SETTING-007: batch window is configurable via system_settings.
 	batchWindowMinutes := 5
 	if s.settings != nil {
-		batchWindowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.batch_window_minutes", batchWindowMinutes)
+		batchWindowMinutes = s.settings.GetIntOr(ctx, "notifications.batch_window_minutes", batchWindowMinutes)
 	}
 	// BUG-001: pass so the batch window carries tenant context
 	// through to DispatchBatch, which needs it for the notifications insert.
@@ -163,7 +163,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 	// Get the last actor's display name for the batch title.
 	// BUG-003: pass the batch window's so the profile lookup
 	// resolves correctly (previously always returned "Someone").
-	actorName := s.resolveActorDisplayName(ctx, pgtype.UUID{}, window.LastActorID)
+	actorName := s.resolveActorDisplayName(ctx, window.LastActorID)
 
 	title := BuildBatchTitle(actorName, window.ActorCount, action)
 
@@ -184,7 +184,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, "", "")
 			}
 
 			return nil
@@ -249,7 +249,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
+				s.enqueueEmailDelivery(ctx, window.RecipientID, window.NotificationType, title, "", "")
 			}
 
 			return nil
@@ -258,7 +258,7 @@ func (s *Service) DispatchBatch(ctx context.Context, windowID pgtype.UUID) error
 
 	// Fallback if preference resolution failed — use the old per-call checks.
 	s.checkAndEnqueuePush(ctx, window.RecipientID, window.NotificationType, title, "", "")
-	s.checkAndEnqueueEmail(ctx, pgtype.UUID{}, window.RecipientID, window.NotificationType, title, "", "")
+	s.checkAndEnqueueEmail(ctx, window.RecipientID, window.NotificationType, title, "", "")
 
 	return nil
 }
@@ -288,8 +288,8 @@ func notificationAction(ntype string) string {
 // BUG-003: previously passed a zero UUID as , which caused
 // GetUserProfile to return ErrNoRows for every user — batch notification
 // titles were always "Someone and N others reacted".
-func (s *Service) resolveActorDisplayName(ctx context.Context, tenantID, userID pgtype.UUID) string {
-	name, err := s.store.getUserDisplayName(ctx, tenantID, userID)
+func (s *Service) resolveActorDisplayName(ctx context.Context, userID pgtype.UUID) string {
+	name, err := s.store.getUserDisplayName(ctx, userID)
 	if err != nil || name == nil || *name == "" {
 		return "Someone"
 	}
@@ -308,7 +308,7 @@ func stringPtr(s string) *string {
 
 // CreateNotification directly creates a single notification (non-batch path).
 // If the recipient has push enabled for this type, a push delivery task is enqueued.
-func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
+func (s *Service) CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error {
 	var actorTypePtr *string
 	if actorType != "" {
 		actorTypePtr = &actorType
@@ -376,7 +376,7 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 			}
 
 			if ep.Email {
-				s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
+				s.enqueueEmailDelivery(ctx, recipientID, nType, title, body, actionURL)
 			}
 
 			return nil
@@ -385,15 +385,15 @@ func (s *Service) CreateNotification(ctx context.Context, tenantID, recipientID 
 
 	// Fallback if preference resolution failed — use the old per-call checks.
 	s.checkAndEnqueuePush(ctx, recipientID, nType, title, body, actionURL)
-	s.checkAndEnqueueEmail(ctx, tenantID, recipientID, nType, title, body, actionURL)
+	s.checkAndEnqueueEmail(ctx, recipientID, nType, title, body, actionURL)
 
 	return nil
 }
 
 // GetNotifications returns paginated notifications for a user.
 // BUG-007: supports the ?unread_only=true filter (§35 L107).
-func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]NotificationInfo, error) {
-	rows, err := s.store.getNotificationsByRecipient(ctx, tenantID, recipientID, limit, offset, unreadOnly)
+func (s *Service) GetNotifications(ctx context.Context, recipientID pgtype.UUID, limit, offset int32, unreadOnly bool) ([]NotificationInfo, error) {
+	rows, err := s.store.getNotificationsByRecipient(ctx, recipientID, limit, offset, unreadOnly)
 	if err != nil {
 		return nil, fmt.Errorf("getting notifications: %w", err)
 	}
@@ -409,13 +409,13 @@ func (s *Service) GetNotifications(ctx context.Context, tenantID, recipientID pg
 // GetUnreadCount returns the count of unread notifications.
 // BUG-013: caches the count in Valkey (jc:notif_unread:{user_id}) with a
 // 60s TTL to avoid hitting the DB on every badge poll.
-func (s *Service) GetUnreadCount(ctx context.Context, tenantID, recipientID pgtype.UUID) (int, error) {
+func (s *Service) GetUnreadCount(ctx context.Context, recipientID pgtype.UUID) (int, error) {
 	// Try cache first.
 	if cached := s.getCachedUnreadCount(ctx, recipientID); cached >= 0 {
 		return cached, nil
 	}
 
-	count, err := s.store.getUnreadCount(ctx, tenantID, recipientID)
+	count, err := s.store.getUnreadCount(ctx, recipientID)
 	if err != nil {
 		return 0, fmt.Errorf("getting unread count: %w", err)
 	}
@@ -437,8 +437,8 @@ func (s *Service) MarkAsRead(ctx context.Context, notificationID, recipientID pg
 }
 
 // MarkAllAsRead marks all notifications as read for a user.
-func (s *Service) MarkAllAsRead(ctx context.Context, tenantID, recipientID pgtype.UUID) error {
-	if err := s.store.markAllNotificationsRead(ctx, tenantID, recipientID); err != nil {
+func (s *Service) MarkAllAsRead(ctx context.Context, recipientID pgtype.UUID) error {
+	if err := s.store.markAllNotificationsRead(ctx, recipientID); err != nil {
 		return err
 	}
 

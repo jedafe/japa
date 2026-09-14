@@ -33,7 +33,7 @@ func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tena
 		slog.Warn("link_preview: invalid tenant_id in task payload, using zero", "error", err)
 	}
 
-	preview, err := a.fetcher.Fetch(ctx, url, tid)
+	preview, err := a.fetcher.Fetch(ctx, url)
 	if err != nil {
 		return err
 	}

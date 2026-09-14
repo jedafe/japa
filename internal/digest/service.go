@@ -129,16 +129,16 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "digest.enabled", false)
+	return s.settings.GetBoolOr(ctx, "digest.enabled", false)
 }
 
 // EmailEnabled reads the digest.email system_setting toggle.
-func (s *Service) EmailEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) EmailEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "digest.email", false)
+	return s.settings.GetBoolOr(ctx, "digest.email", false)
 }
 
 // GetLatest returns the most recently published edition for a tenant
@@ -157,8 +157,8 @@ func (s *Service) GetLatest(ctx context.Context, tenantID, spaceID pgtype.UUID) 
 }
 
 // Get returns a single published edition by id (public browse).
-func (s *Service) Get(ctx context.Context, tenantID, id pgtype.UUID) (DigestEditionDetailDTO, error) {
-	edition, err := s.store.GetEdition(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailDTO, error) {
+	edition, err := s.store.GetEdition(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
@@ -219,8 +219,8 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 }
 
 // AdminGet returns a single edition (any status) for admin management.
-func (s *Service) AdminGet(ctx context.Context, tenantID, id pgtype.UUID) (DigestEditionDetailDTO, error) {
-	edition, err := s.store.GetEdition(ctx, id, tenantID)
+func (s *Service) AdminGet(ctx context.Context, id pgtype.UUID) (DigestEditionDetailDTO, error) {
+	edition, err := s.store.GetEdition(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DigestEditionDetailDTO{}, pgx.ErrNoRows
@@ -235,12 +235,12 @@ func (s *Service) AdminGet(ctx context.Context, tenantID, id pgtype.UUID) (Diges
 // AdminUpdate edits the content of a draft or review-status edition before
 // publication. It preserves the §84 lifecycle guard by refusing to update
 // editions that are already published or cancelled.
-func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, content json.RawMessage) error {
+func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.RawMessage) error {
 	if len(content) == 0 {
 		return errors.New("content is required")
 	}
 
-	e, err := s.store.GetEdition(ctx, id, tenantID)
+	e, err := s.store.GetEdition(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -253,7 +253,7 @@ func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, con
 		return pgx.ErrNoRows
 	}
 
-	_, err = s.store.UpdateEdition(ctx, id, tenantID, UpdateEditionInput{Content: &content})
+	_, err = s.store.UpdateEdition(ctx, id, UpdateEditionInput{Content: &content})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -269,7 +269,7 @@ func (s *Service) AdminUpdate(ctx context.Context, tenantID, id pgtype.UUID, con
 // digest:send_email task (fire-and-forget, Rule 8), and clears the
 // jc:digest_draft Valkey key (§84, ADR-092).
 func (s *Service) AdminPublish(ctx context.Context, tenantID, reviewerID, id pgtype.UUID) error {
-	if err := s.store.PublishEdition(ctx, id, tenantID, reviewerID); err != nil {
+	if err := s.store.PublishEdition(ctx, id, reviewerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -438,7 +438,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 		return errors.New("digest: send_email: edition_id and tenant_id are required")
 	}
 
-	if !s.EmailEnabled(ctx, tenantID) {
+	if !s.EmailEnabled(ctx) {
 		slog.Info("task:digest:send_email: email disabled, skipping")
 		return nil
 	}
@@ -448,7 +448,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 		return nil
 	}
 
-	edition, err := s.store.GetEdition(ctx, editionID, tenantID)
+	edition, err := s.store.GetEdition(ctx, editionID)
 	if err != nil {
 		return fmt.Errorf("digest: send_email: load edition: %w", err)
 	}
@@ -458,7 +458,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 			editionID, edition.Status)
 	}
 
-	subscribers, err := s.store.GetDigestSubscriberEmails(ctx, tenantID)
+	subscribers, err := s.store.GetDigestSubscriberEmails(ctx)
 	if err != nil {
 		return fmt.Errorf("digest: send_email: list subscribers: %w", err)
 	}
@@ -468,14 +468,14 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 		return nil
 	}
 
-	baseURL := s.resolveBaseURL(ctx, tenantID)
-	subject := s.emailSubject(ctx, tenantID)
+	baseURL := s.resolveBaseURL(ctx)
+	subject := s.emailSubject(ctx)
 	htmlBody := renderDigestEmail(edition.Content, baseURL)
 
 	sent, failed := 0, 0
 
 	for _, recipient := range subscribers {
-		unsubURL, headers := s.unsubscribeLink(ctx, tenantID, recipient, baseURL)
+		unsubURL, headers := s.unsubscribeLink(ctx, recipient, baseURL)
 		body := htmlBody
 
 		if unsubURL != "" {
@@ -501,7 +501,7 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 	}
 
 	// Stamp email_sent so the admin panel reflects delivery status.
-	if err := s.store.MarkEmailSent(ctx, editionID, tenantID); err != nil {
+	if err := s.store.MarkEmailSent(ctx, editionID); err != nil {
 		slog.Warn("task:digest:send_email: mark email_sent failed", "error", err)
 	}
 
@@ -512,9 +512,9 @@ func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgty
 
 // resolveBaseURL returns the tenant's site base URL from system_settings,
 // falling back to the JC_SITE_URL env var (mirrors worker.resolveBaseURL).
-func (s *Service) resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) string {
+func (s *Service) resolveBaseURL(ctx context.Context) string {
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, pgtype.UUID{}, "site.base_url", ""); v != "" {
+		if v := s.settings.GetStringOr(ctx, "site.base_url", ""); v != "" {
 			return v
 		}
 	}
@@ -523,11 +523,11 @@ func (s *Service) resolveBaseURL(ctx context.Context, tenantID pgtype.UUID) stri
 }
 
 // emailSubject resolves the site name for the digest email subject line.
-func (s *Service) emailSubject(ctx context.Context, tenantID pgtype.UUID) string {
+func (s *Service) emailSubject(ctx context.Context) string {
 	name := "JapaConnect"
 
 	if s.settings != nil {
-		if v := s.settings.GetStringOr(ctx, pgtype.UUID{}, "site.name", ""); v != "" {
+		if v := s.settings.GetStringOr(ctx, "site.name", ""); v != "" {
 			name = v
 		}
 	}
@@ -538,8 +538,8 @@ func (s *Service) emailSubject(ctx context.Context, tenantID pgtype.UUID) string
 // unsubscribeLink generates a per-recipient one-click unsubscribe URL + the
 // List-Unsubscribe SMTP headers (§62 compliance, ADR-080 §4). Returns
 // ("", nil) if the subscriber cannot be resolved (best-effort).
-func (s *Service) unsubscribeLink(ctx context.Context, tenantID pgtype.UUID, recipient, baseURL string) (string, map[string]string) {
-	token, err := s.store.CreateUnsubscribeTokenForEmail(ctx, tenantID, recipient)
+func (s *Service) unsubscribeLink(ctx context.Context, recipient, baseURL string) (string, map[string]string) {
+	token, err := s.store.CreateUnsubscribeTokenForEmail(ctx, recipient)
 	if err != nil {
 		slog.Warn("task:digest:send_email: unsubscribe token failed", "recipient", recipient, "error", err)
 		return "", nil

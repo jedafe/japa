@@ -138,7 +138,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListRedirects is an exported method.
 func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	result, err := h.Service.ListRedirects(r.Context(), tenantID, isActive, search, sort, dir, limit, offset)
+	result, err := h.Service.ListRedirects(r.Context(), isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -172,7 +172,7 @@ func (h *Handlers) ListRedirects(w http.ResponseWriter, r *http.Request) {
 
 // GetRedirect is an exported method.
 func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -183,7 +183,7 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect, err := h.Service.GetRedirect(r.Context(), id, tenantID)
+	redirect, err := h.Service.GetRedirect(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

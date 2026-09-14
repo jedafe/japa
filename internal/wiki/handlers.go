@@ -53,21 +53,21 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // pointsChecker returns the user's lifetime points (reputation) for the
 // reputation gate on wiki edits (§80: wiki.edit is reputation-gated).
 type pointsChecker interface {
-	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // permissionChecker checks RBAC nodes at runtime. Used by the community_edits
 // gate (§80): when wiki.community_edits is false, only wiki.review/wiki.manage
 // holders may submit. Also used for the wiki.lock gate (B7).
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // ragIndexer is the subset of the RAG indexer that wiki needs to index
 // approved revision content into content_embeddings (B8, §69/ADR-069).
 // Implemented by rag.Service; nil disables RAG indexing (graceful degradation).
 type ragIndexer interface {
-	IndexEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, body, language string) error
+	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, body, language string) error
 }
 
 // SetPointsChecker injects the points service for reputation checks on
@@ -139,7 +139,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // Also accepts ?dest= (destination space ID) as a geo-aware alternative to
 // the URL path :space_slug parameter (ADR-086 geo-aware pattern).
 func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -152,7 +152,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), tenantID, destSpaceID)
+		pages, err := h.service.GetWikiIndexByDestSpaceID(r.Context(), destSpaceID)
 		if err != nil {
 			if errors.Is(err, ErrSpaceNotFound) {
 				errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -176,7 +176,7 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.service.GetWikiIndex(r.Context(), tenantID, spaceSlug)
+	pages, err := h.service.GetWikiIndex(r.Context(), spaceSlug)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -233,7 +233,7 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 //	?has_wiki=     true (default) or false — when true, only spaces with at
 //	               least one active wiki page are returned.
 func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -245,7 +245,7 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 
 	hasWiki := q.Get("has_wiki") != "false"
 
-	dests, err := h.service.GetWikiDestinations(r.Context(), tenantID, level, parentSlug, region, hasWiki)
+	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, hasWiki)
 	if err != nil {
 		slog.Error("wiki: destinations failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "destinations_failed", "Failed to get wiki destinations")
@@ -364,9 +364,9 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.service.CommunityEditsAllowed(r.Context(), tenantID) && h.perms != nil {
-		isMod := h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.review") ||
-			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.manage")
+	if !h.service.CommunityEditsAllowed(r.Context()) && h.perms != nil {
+		isMod := h.perms.HasPermission(r.Context(), user.UserID, "wiki.review") ||
+			h.perms.HasPermission(r.Context(), user.UserID, "wiki.manage")
 		if !isMod {
 			errpkg.WriteError(w, http.StatusForbidden, "community_edits_disabled",
 				"Community edits are currently disabled for this wiki")
@@ -374,7 +374,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
+	threshold := h.service.MinReputationToEdit(r.Context())
 	if threshold > 0 {
 		if h.points == nil {
 			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
@@ -384,7 +384,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+		points, err := h.points.GetPointsBalance(r.Context(), user.UserID)
 		if err != nil {
 			slog.Error("wiki: reputation check failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
@@ -471,9 +471,9 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	// B5: community_edits gate (§80). When wiki.community_edits is false,
 	// community submissions are blocked — only mods/admins (wiki.review or
 	// wiki.manage holders) may submit.
-	if !h.service.CommunityEditsAllowed(r.Context(), tenantID) && h.perms != nil {
-		isMod := h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.review") ||
-			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.manage")
+	if !h.service.CommunityEditsAllowed(r.Context()) && h.perms != nil {
+		isMod := h.perms.HasPermission(r.Context(), user.UserID, "wiki.review") ||
+			h.perms.HasPermission(r.Context(), user.UserID, "wiki.manage")
 		if !isMod {
 			errpkg.WriteError(w, http.StatusForbidden, "community_edits_disabled",
 				"Community edits are currently disabled for this wiki")
@@ -487,7 +487,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 	// BUG-004: fail closed when the points checker is nil — if the reputation
 	// gate cannot be enforced, the edit must be rejected rather than silently
 	// allowed. This prevents a bypass if SetPointsChecker was never called.
-	threshold := h.service.MinReputationToEdit(r.Context(), tenantID)
+	threshold := h.service.MinReputationToEdit(r.Context())
 	if threshold > 0 {
 		if h.points == nil {
 			slog.Error("wiki: points checker is nil, cannot enforce reputation gate (fail-closed)")
@@ -497,7 +497,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+		points, err := h.points.GetPointsBalance(r.Context(), user.UserID)
 		if err != nil {
 			slog.Error("wiki: reputation check failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed",
@@ -577,8 +577,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -599,7 +598,7 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	content, err := h.service.ApproveRevision(r.Context(), revID, pageID, tenantID, user.UserID, body.Notes)
+	content, err := h.service.ApproveRevision(r.Context(), revID, pageID, user.UserID, body.Notes)
 	if err != nil {
 		slog.Error("wiki: approve failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve revision")
@@ -616,12 +615,12 @@ func (h *Handlers) HandleApproveRevision(w http.ResponseWriter, r *http.Request)
 		// Falls back to "en" when settings are not injected or the key is unset.
 		language := "en"
 		if h.settings != nil {
-			language = h.settings.GetStringOr(r.Context(), pgtype.UUID{}, "i18n.default_language", "en")
+			language = h.settings.GetStringOr(r.Context(), "i18n.default_language", "en")
 		}
 
 		go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 			ctx := context.Background()
-			if err := h.rag.IndexEntity(ctx, tenantID, "wiki_page", pageID, string(content), language); err != nil {
+			if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, string(content), language); err != nil {
 				slog.Warn("wiki: RAG index failed on approval",
 					"page_id", pageID.String(), "error", err)
 			}
@@ -639,8 +638,7 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -662,7 +660,7 @@ func (h *Handlers) HandleRejectRevision(w http.ResponseWriter, r *http.Request) 
 		notes = body.Notes
 	}
 
-	if err := h.service.RejectRevision(r.Context(), revID, tenantID, user.UserID, notes); err != nil {
+	if err := h.service.RejectRevision(r.Context(), revID, user.UserID, notes); err != nil {
 		slog.Error("wiki: reject failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject revision")
 
@@ -681,8 +679,7 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -701,14 +698,14 @@ func (h *Handlers) HandleUpdatePage(w http.ResponseWriter, r *http.Request) {
 	// B7: when is_locked is being changed, require wiki.lock in addition to
 	// wiki.manage (§80 defines wiki.lock as a distinct permission node).
 	if input.IsLocked != nil && h.perms != nil {
-		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "wiki.lock") {
+		if !h.perms.HasPermission(r.Context(), user.UserID, "wiki.lock") {
 			errpkg.WriteError(w, http.StatusForbidden, "lock_permission_required",
 				"Locking/unlocking wiki pages requires the wiki.lock permission")
 			return
 		}
 	}
 
-	if err := h.service.UpdatePage(r.Context(), pageID, tenantID, input); err != nil {
+	if err := h.service.UpdatePage(r.Context(), pageID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
@@ -733,8 +730,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -750,7 +746,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pageID, err := h.service.GeneratePage(r.Context(), tenantID, user.UserID, input)
+	pageID, err := h.service.GeneratePage(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -796,8 +792,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -827,7 +822,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pages, total, err := h.service.AdminListPages(r.Context(), tenantID, spaceID, category, q, lockedPtr, page, limit)
+	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, category, q, lockedPtr, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")

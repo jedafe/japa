@@ -54,13 +54,13 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		currency = "NGN"
 
 		if s.settings != nil {
-			if v, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "payment.currency"); err == nil && v != "" {
+			if v, err := s.settings.GetSetting(ctx, "payment.currency"); err == nil && v != "" {
 				currency = v
 			}
 		}
 	}
 
-	discountCodeID, discountAmount, netAmount, err := s.resolveDiscount(ctx, tenantID, userID, input)
+	discountCodeID, discountAmount, netAmount, err := s.resolveDiscount(ctx, userID, input)
 	if err != nil {
 		return CreatePaymentResult{}, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 	// so the post-payment fulfillment (course enrollment) is triggered.
 	// The payment row stores the original gross Amount and the DiscountAmount.
 	if netAmount <= 0 {
-		p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusSucceeded)
+		p, err := s.createPaymentRow(ctx, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusSucceeded)
 		if err != nil {
 			return CreatePaymentResult{}, err
 		}
@@ -115,7 +115,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 		checkoutURL = resp.CheckoutURL
 	}
 
-	p, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, providerRef, checkoutURL, input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
+	p, err := s.createPaymentRow(ctx, userID, input, currency, providerRef, checkoutURL, input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
 	if err != nil {
 		return CreatePaymentResult{}, err
 	}
@@ -126,7 +126,7 @@ func (s *Service) CreatePayment(ctx context.Context, tenantID, userID pgtype.UUI
 // resolveDiscount validates a discount code (if supplied) and returns the
 // net amount to charge. input.Amount is the gross amount; discountAmount is
 // the deduction computed from the code. netAmount is never negative.
-func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput) (pgtype.UUID, int64, int64, error) {
+func (s *Service) resolveDiscount(ctx context.Context, userID pgtype.UUID, input CreatePaymentInput) (pgtype.UUID, int64, int64, error) {
 	var discountCodeID pgtype.UUID
 
 	discountAmount := int64(0)
@@ -136,7 +136,7 @@ func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.U
 		return discountCodeID, discountAmount, netAmount, nil
 	}
 
-	code, err := s.store.getDiscountCodeByCode(ctx, tenantID, input.DiscountCode)
+	code, err := s.store.getDiscountCodeByCode(ctx, input.DiscountCode)
 	if err != nil {
 		return discountCodeID, discountAmount, netAmount, fmt.Errorf("invalid discount code: %w", err)
 	}
@@ -162,7 +162,7 @@ func (s *Service) resolveDiscount(ctx context.Context, tenantID, userID pgtype.U
 
 // createPaymentRow inserts the payment record. amount is the gross invoice
 // amount, discountAmount the deduction, and status the initial state.
-func (s *Service) createPaymentRow(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePaymentInput, currency, providerRef, checkoutURL string, amount, discountAmount int64, discountCodeID pgtype.UUID, status string) (gen.Payment, error) {
+func (s *Service) createPaymentRow(ctx context.Context, userID pgtype.UUID, input CreatePaymentInput, currency, providerRef, checkoutURL string, amount, discountAmount int64, discountCodeID pgtype.UUID, status string) (gen.Payment, error) {
 	var purposeID pgtype.UUID
 	if input.PurposeID != "" {
 		if err := purposeID.Scan(input.PurposeID); err != nil {
@@ -243,7 +243,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	}
 
 	// Step 1: Create the payment row with the original gross Amount and DiscountAmount.
-	payment, err := s.createPaymentRow(ctx, tenantID, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
+	payment, err := s.createPaymentRow(ctx, userID, input, currency, "", "", input.Amount, discountAmount, discountCodeID, PaymentStatusPending)
 	if err != nil {
 		return gen.Payment{}, fmt.Errorf("recording credit payment: %w", err)
 	}
@@ -258,7 +258,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	}
 	if _, err := s.wallet.SpendCredits(ctx, tenantID, userID, creditInput); err != nil {
 		// Debit failed — mark the payment as failed.
-		failed, fErr := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusFailed)
+		failed, fErr := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusFailed)
 		if fErr != nil {
 			slog.Error("payments: failed to mark credit payment as failed", "payment_id", payment.ID, "error", fErr)
 		} else {
@@ -269,7 +269,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	}
 
 	// Step 3: Mark the payment as succeeded.
-	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, tenantID, PaymentStatusSucceeded)
+	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
 	if err != nil {
 		slog.Error("payments: failed to mark credit payment as succeeded", "payment_id", payment.ID, "error", err)
 	} else {
@@ -280,23 +280,23 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 }
 
 // GetPayment retrieves a payment by ID.
-func (s *Service) GetPayment(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
-	return s.store.getPaymentByID(ctx, id, tenantID)
+func (s *Service) GetPayment(ctx context.Context, id pgtype.UUID) (gen.Payment, error) {
+	return s.store.getPaymentByID(ctx, id)
 }
 
 // ListPaymentsByUser returns payments for a user.
-func (s *Service) ListPaymentsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Payment, error) {
-	return s.store.listPaymentsByUser(ctx, tenantID, userID, limit, offset)
+func (s *Service) ListPaymentsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Payment, error) {
+	return s.store.listPaymentsByUser(ctx, userID, limit, offset)
 }
 
 // ListPaymentsByStatus returns payments with a specific status.
-func (s *Service) ListPaymentsByStatus(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.Payment, error) {
-	return s.store.listPaymentsByStatus(ctx, tenantID, status, limit, offset)
+func (s *Service) ListPaymentsByStatus(ctx context.Context, status string, limit, offset int32) ([]gen.Payment, error) {
+	return s.store.listPaymentsByStatus(ctx, status, limit, offset)
 }
 
 // UpdatePaymentStatus updates a payment's status.
 func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.Payment, error) {
-	payment, err := s.store.updatePaymentStatus(ctx, id, tenantID, status)
+	payment, err := s.store.updatePaymentStatus(ctx, id, status)
 	if err != nil {
 		return gen.Payment{}, err
 	}
@@ -321,7 +321,7 @@ func (s *Service) emitPaymentStatusWebhook(ctx context.Context, tenantID pgtype.
 		return
 	}
 
-	s.emitWebhook(ctx, tenantID, eventType, map[string]any{
+	s.emitWebhook(ctx, eventType, map[string]any{
 		"payment_id": payment.ID,
 		"amount":     payment.Amount,
 		"currency":   payment.Currency,
@@ -335,8 +335,8 @@ func (s *Service) ListAdminPayments(ctx context.Context, params gen.ListAdminPay
 }
 
 // GetAdminPayment retrieves a payment for admin detail view (JEOS §17).
-func (s *Service) GetAdminPayment(ctx context.Context, id, tenantID pgtype.UUID) (gen.Payment, error) {
-	return s.store.getAdminPaymentByID(ctx, id, tenantID)
+func (s *Service) GetAdminPayment(ctx context.Context, id pgtype.UUID) (gen.Payment, error) {
+	return s.store.getAdminPaymentByID(ctx, id)
 }
 
 // ProcessWebhook processes a webhook event from a payment provider.
@@ -367,7 +367,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	// If not (a prior enqueue failed — BUG-P011), re-enqueue the task. If
 	// already processed, skip — the worker already handled this event.
 	if !inserted {
-		alreadyProcessed, err := s.store.isWebhookEventProcessed(ctx, tenantID, provider, event.EventID)
+		alreadyProcessed, err := s.store.isWebhookEventProcessed(ctx, provider, event.EventID)
 		if err != nil {
 			return fmt.Errorf("checking webhook event processed: %w", err)
 		}
@@ -403,7 +403,7 @@ func (s *Service) ProcessWebhook(ctx context.Context, tenantID pgtype.UUID, prov
 	// Mark as processed AFTER successful enqueue (BUG-P011). If the enqueue
 	// failed above, the event stays unprocessed and the provider retry will
 	// re-enqueue via the !inserted + !alreadyProcessed path.
-	if err := s.store.markWebhookEventProcessed(ctx, tenantID, provider, event.EventID); err != nil {
+	if err := s.store.markWebhookEventProcessed(ctx, provider, event.EventID); err != nil {
 		return fmt.Errorf("marking webhook event processed: %w", err)
 	}
 
@@ -428,7 +428,7 @@ type CreateSubscriptionInput struct {
 // Pro access immediately without charging — a free-entitlement bug (BUG-003).
 // Until the provider subscription integration is built, this endpoint
 // returns a not_implemented error so no unearned entitlement is granted.
-func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtype.UUID, input CreateSubscriptionInput) (gen.Subscription, error) {
+func (s *Service) CreateSubscription(ctx context.Context, userID pgtype.UUID, input CreateSubscriptionInput) (gen.Subscription, error) {
 	if input.Plan == "" {
 		return gen.Subscription{}, errors.New("plan is required")
 	}
@@ -461,29 +461,29 @@ func (s *Service) CreateSubscription(ctx context.Context, tenantID, userID pgtyp
 }
 
 // GetSubscription retrieves a subscription by ID.
-func (s *Service) GetSubscription(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
-	return s.store.getSubscriptionByID(ctx, id, tenantID)
+func (s *Service) GetSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
+	return s.store.getSubscriptionByID(ctx, id)
 }
 
 // GetActiveSubscription returns the active subscription for a user.
-func (s *Service) GetActiveSubscription(ctx context.Context, tenantID, userID pgtype.UUID) (gen.Subscription, error) {
-	return s.store.getActiveSubscriptionByUser(ctx, tenantID, userID)
+func (s *Service) GetActiveSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
+	return s.store.getActiveSubscriptionByUser(ctx, userID)
 }
 
 // ListSubscriptionsByUser returns subscriptions for a user.
-func (s *Service) ListSubscriptionsByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
-	return s.store.listSubscriptionsByUser(ctx, tenantID, userID, limit, offset)
+func (s *Service) ListSubscriptionsByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Subscription, error) {
+	return s.store.listSubscriptionsByUser(ctx, userID, limit, offset)
 }
 
 // CancelSubscription cancels a subscription.
-func (s *Service) CancelSubscription(ctx context.Context, id, tenantID pgtype.UUID) (gen.Subscription, error) {
-	return s.store.cancelSubscription(ctx, id, tenantID)
+func (s *Service) CancelSubscription(ctx context.Context, id pgtype.UUID) (gen.Subscription, error) {
+	return s.store.cancelSubscription(ctx, id)
 }
 
 // ReactivateSubscription reactivates the caller's most recently canceled
 // subscription. Returns the updated subscription row.
-func (s *Service) ReactivateSubscription(ctx context.Context, userID, tenantID pgtype.UUID) (gen.Subscription, error) {
-	return s.store.reactivateSubscription(ctx, userID, tenantID)
+func (s *Service) ReactivateSubscription(ctx context.Context, userID pgtype.UUID) (gen.Subscription, error) {
+	return s.store.reactivateSubscription(ctx, userID)
 }
 
 // ---------------------------------------------------------------------------
@@ -505,7 +505,7 @@ type CreateDiscountCodeInput struct {
 }
 
 // CreateDiscountCode creates a new discount code.
-func (s *Service) CreateDiscountCode(ctx context.Context, tenantID pgtype.UUID, input CreateDiscountCodeInput) (gen.DiscountCode, error) {
+func (s *Service) CreateDiscountCode(ctx context.Context, input CreateDiscountCodeInput) (gen.DiscountCode, error) {
 	if input.Code == "" {
 		return gen.DiscountCode{}, errors.New("code is required")
 	}
@@ -572,23 +572,23 @@ func (s *Service) CreateDiscountCode(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // GetDiscountCode retrieves a discount code by code string.
-func (s *Service) GetDiscountCode(ctx context.Context, tenantID pgtype.UUID, code string) (gen.DiscountCode, error) {
-	return s.store.getDiscountCodeByCode(ctx, tenantID, code)
+func (s *Service) GetDiscountCode(ctx context.Context, code string) (gen.DiscountCode, error) {
+	return s.store.getDiscountCodeByCode(ctx, code)
 }
 
 // ListDiscountCodes returns all discount codes for a tenant.
-func (s *Service) ListDiscountCodes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.DiscountCode, error) {
-	return s.store.listDiscountCodes(ctx, tenantID, limit, offset)
+func (s *Service) ListDiscountCodes(ctx context.Context, limit, offset int32) ([]gen.DiscountCode, error) {
+	return s.store.listDiscountCodes(ctx, limit, offset)
 }
 
 // DeleteDiscountCode deletes a discount code.
-func (s *Service) DeleteDiscountCode(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteDiscountCode(ctx, id, tenantID)
+func (s *Service) DeleteDiscountCode(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteDiscountCode(ctx, id)
 }
 
 // ValidateDiscountCode validates a discount code for a user and purpose.
-func (s *Service) ValidateDiscountCode(ctx context.Context, tenantID, userID pgtype.UUID, code, purposeType string) (gen.DiscountCode, error) {
-	discountCode, err := s.store.getDiscountCodeByCode(ctx, tenantID, code)
+func (s *Service) ValidateDiscountCode(ctx context.Context, userID pgtype.UUID, code, purposeType string) (gen.DiscountCode, error) {
+	discountCode, err := s.store.getDiscountCodeByCode(ctx, code)
 	if err != nil {
 		return gen.DiscountCode{}, errors.New("invalid discount code")
 	}
@@ -756,7 +756,7 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 	// Finalize the payment status as "refunded" so the canonical payment
 	// row reflects the provider state and downstream queries see the
 	// refund. The handler has already verified the payment was succeeded.
-	updated, err := s.store.updatePaymentStatus(ctx, paymentID, input.TenantID, PaymentStatusRefunded)
+	updated, err := s.store.updatePaymentStatus(ctx, paymentID, PaymentStatusRefunded)
 	if err != nil {
 		// The refund row is recorded; surface the error but don't lose it.
 		return refund, fmt.Errorf("updating payment status to refunded: %w", err)

@@ -78,26 +78,26 @@ func defaultScoringConfig() scoringConfig {
 
 // loadScoringConfig reads the scoring configuration from system_settings,
 // falling back to defaults when keys are unset (BUG-016, Rule 3).
-func (p *Processor) loadScoringConfig(ctx context.Context, tenantID pgtype.UUID) scoringConfig {
+func (p *Processor) loadScoringConfig(ctx context.Context) scoringConfig {
 	sc := defaultScoringConfig()
 	if p.settings == nil {
 		return sc
 	}
 
-	sc.ViewsWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.views", sc.ViewsWeight)
-	sc.CommentsWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.comments", sc.CommentsWeight)
-	sc.VotesWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.votes", sc.VotesWeight)
-	sc.BookmarksWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.bookmarks", sc.BookmarksWeight)
-	sc.SharesWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.shares", sc.SharesWeight)
-	sc.Gravity = p.settings.GetFloatOr(ctx, tenantID, "trending.gravity", sc.Gravity)
-	sc.TagFollowerWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.tag_follower", sc.TagFollowerWeight)
-	sc.TagContentWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.tag_content", sc.TagContentWeight)
-	sc.SpaceMemberWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_member", sc.SpaceMemberWeight)
-	sc.SpacePostWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_post", sc.SpacePostWeight)
-	sc.SpaceRecentWeight = p.settings.GetFloatOr(ctx, tenantID, "trending.weight.space_recent", sc.SpaceRecentWeight)
-	sc.Expiry24hHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.24h_hours", sc.Expiry24hHours)
-	sc.Expiry7dHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.7d_hours", sc.Expiry7dHours)
-	sc.Expiry30dHours = p.settings.GetIntOr(ctx, pgtype.UUID{}, "trending.expiry.30d_hours", sc.Expiry30dHours)
+	sc.ViewsWeight = p.settings.GetFloatOr(ctx, "trending.weight.views", sc.ViewsWeight)
+	sc.CommentsWeight = p.settings.GetFloatOr(ctx, "trending.weight.comments", sc.CommentsWeight)
+	sc.VotesWeight = p.settings.GetFloatOr(ctx, "trending.weight.votes", sc.VotesWeight)
+	sc.BookmarksWeight = p.settings.GetFloatOr(ctx, "trending.weight.bookmarks", sc.BookmarksWeight)
+	sc.SharesWeight = p.settings.GetFloatOr(ctx, "trending.weight.shares", sc.SharesWeight)
+	sc.Gravity = p.settings.GetFloatOr(ctx, "trending.gravity", sc.Gravity)
+	sc.TagFollowerWeight = p.settings.GetFloatOr(ctx, "trending.weight.tag_follower", sc.TagFollowerWeight)
+	sc.TagContentWeight = p.settings.GetFloatOr(ctx, "trending.weight.tag_content", sc.TagContentWeight)
+	sc.SpaceMemberWeight = p.settings.GetFloatOr(ctx, "trending.weight.space_member", sc.SpaceMemberWeight)
+	sc.SpacePostWeight = p.settings.GetFloatOr(ctx, "trending.weight.space_post", sc.SpacePostWeight)
+	sc.SpaceRecentWeight = p.settings.GetFloatOr(ctx, "trending.weight.space_recent", sc.SpaceRecentWeight)
+	sc.Expiry24hHours = p.settings.GetIntOr(ctx, "trending.expiry.24h_hours", sc.Expiry24hHours)
+	sc.Expiry7dHours = p.settings.GetIntOr(ctx, "trending.expiry.7d_hours", sc.Expiry7dHours)
+	sc.Expiry30dHours = p.settings.GetIntOr(ctx, "trending.expiry.30d_hours", sc.Expiry30dHours)
 
 	return sc
 }
@@ -205,9 +205,9 @@ func (p *Processor) ComputeSuggestions(_ context.Context) error {
 // computeForTenant deletes expired snapshots and computes new ones for a tenant.
 // BUG-001: computes both global (NULL geo_code) and per-country snapshots.
 func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (int64, error) {
-	// Load configurable scoring parameters (BUG-016).
-	tenantUUID := pgtype.UUID{Bytes: tenantID, Valid: true}
-	sc := p.loadScoringConfig(ctx, tenantUUID)
+	_ = // Load configurable scoring parameters (BUG-016).
+		pgtype.UUID{Bytes: tenantID, Valid: true}
+	sc := p.loadScoringConfig(ctx)
 
 	// Delete expired snapshots for this tenant.
 	_, err := p.db.Writer.Exec(ctx, `
@@ -274,28 +274,28 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 		expiresAt := time.Now().Add(sc.expiryForWindow(w.Name))
 
 		for _, geoScope := range geoScopes {
-			contentN, err := p.computeContentTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
+			contentN, err := p.computeContentTrending(ctx, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("content trending (%s, geo=%v): %w", w.Name, geoScope, err))
 			} else {
 				total += contentN
 			}
 
-			tagN, err := p.computeTagTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
+			tagN, err := p.computeTagTrending(ctx, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("tag trending (%s, geo=%v): %w", w.Name, geoScope, err))
 			} else {
 				total += tagN
 			}
 
-			spaceN, err := p.computeSpaceTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
+			spaceN, err := p.computeSpaceTrending(ctx, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("space trending (%s, geo=%v): %w", w.Name, geoScope, err))
 			} else {
 				total += spaceN
 			}
 
-			userN, err := p.computeUserTrending(ctx, tenantID, w.Name, expiresAt, geoScope, sc)
+			userN, err := p.computeUserTrending(ctx, w.Name, expiresAt, geoScope, sc)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("user trending (%s, geo=%v): %w", w.Name, geoScope, err))
 			} else {
@@ -313,7 +313,7 @@ func (p *Processor) computeForTenant(ctx context.Context, tenantID [16]byte) (in
 // // where gravity comes from system_settings (default 1.8, ADR-032).
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.
-func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
+func (p *Processor) computeContentTrending(ctx context.Context, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
 	// The cgeo CTE resolves each content's country geo via the content_spaces →
@@ -375,7 +375,7 @@ func (p *Processor) computeContentTrending(ctx context.Context, tenantID [16]byt
 // computeTagTrending computes trending tags by follower count and recent usage.
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.
-func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
+func (p *Processor) computeTagTrending(ctx context.Context, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
 	// Scoped mode ($7) only includes tags used by in-window published content
@@ -430,7 +430,7 @@ func (p *Processor) computeTagTrending(ctx context.Context, tenantID [16]byte, w
 // computeSpaceTrending computes trending spaces by member count and recent post activity.
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.
-func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
+func (p *Processor) computeSpaceTrending(ctx context.Context, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
 	result, err := p.db.Writer.Exec(ctx, `
@@ -478,7 +478,7 @@ func (p *Processor) computeSpaceTrending(ctx context.Context, tenantID [16]byte,
 // BUG-002: uses the Section 32 HN gravity formula.
 // BUG-001: geoScope is nil for global or a country code string for geo-scoped.
 // BUG-016: weights are configurable via system_settings.
-func (p *Processor) computeUserTrending(ctx context.Context, tenantID [16]byte, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
+func (p *Processor) computeUserTrending(ctx context.Context, window string, expiresAt time.Time, geoScope any, sc scoringConfig) (int64, error) {
 	interval := windowInterval(window)
 
 	result, err := p.db.Writer.Exec(ctx, `

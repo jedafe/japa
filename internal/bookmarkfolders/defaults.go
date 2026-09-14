@@ -81,13 +81,13 @@ func folderPosition(name string) int32 {
 // entity and (for content) content type. If no default mapping exists, it
 // returns an empty FolderResponse with a zero ID. If the mapped folder does
 // not yet exist for the user, it is created.
-func (r *DefaultFolderResolver) Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (FolderResponse, error) {
+func (r *DefaultFolderResolver) Resolve(ctx context.Context, userID pgtype.UUID, entityType, contentType string) (FolderResponse, error) {
 	name := r.resolveName(entityType, contentType)
 	if name == "" {
 		return FolderResponse{}, nil
 	}
 
-	return r.findOrCreateFolder(ctx, tenantID, userID, name)
+	return r.findOrCreateFolder(ctx, userID, name)
 }
 
 // resolveName returns the default folder name for the given entity/content
@@ -116,8 +116,8 @@ func (r *DefaultFolderResolver) resolveName(entityType, contentType string) stri
 // findOrCreateFolder returns the existing folder with the given name, or
 // creates it with the canonical default position. The name is already
 // validated as a known default folder.
-func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID, userID pgtype.UUID, name string) (FolderResponse, error) {
-	folders, err := r.service.ListFolders(ctx, tenantID, userID)
+func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, userID pgtype.UUID, name string) (FolderResponse, error) {
+	folders, err := r.service.ListFolders(ctx, userID)
 	if err != nil {
 		return FolderResponse{}, fmt.Errorf("listing folders for default resolution: %w", err)
 	}
@@ -128,7 +128,7 @@ func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID
 		}
 	}
 
-	folder, err := r.service.CreateFolder(ctx, tenantID, userID, name)
+	folder, err := r.service.CreateFolder(ctx, userID, name)
 	if err == nil {
 		return folderResponseFromModel(folder), nil
 	}
@@ -136,7 +136,7 @@ func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID
 	// The folder may have been created by a concurrent request between the
 	// list and the insert. Re-list once and return the existing folder.
 	if errors.Is(err, errpkg.ErrDuplicate) {
-		folders, err = r.service.ListFolders(ctx, tenantID, userID)
+		folders, err = r.service.ListFolders(ctx, userID)
 		if err != nil {
 			return FolderResponse{}, fmt.Errorf("re-listing folders after duplicate: %w", err)
 		}
@@ -153,9 +153,9 @@ func (r *DefaultFolderResolver) findOrCreateFolder(ctx context.Context, tenantID
 
 // CreateDefaultFoldersForUser pre-seeds all default folders for a user at
 // registration. It is idempotent — existing folders are left untouched.
-func (r *DefaultFolderResolver) CreateDefaultFoldersForUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (r *DefaultFolderResolver) CreateDefaultFoldersForUser(ctx context.Context, userID pgtype.UUID) error {
 	for _, name := range defaultFolderOrder {
-		if _, err := r.findOrCreateFolder(ctx, tenantID, userID, name); err != nil {
+		if _, err := r.findOrCreateFolder(ctx, userID, name); err != nil {
 			return fmt.Errorf("pre-seeding default folder %q: %w", name, err)
 		}
 	}

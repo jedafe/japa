@@ -2,8 +2,6 @@ package sources
 
 import (
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestTrustLevelConstants(t *testing.T) {
@@ -94,7 +92,7 @@ func TestCrawlNow(t *testing.T) {
 		_ = recover()
 	}()
 
-	err := svc.CrawlNow(t.Context(), pgtype.UUID{}, SourceID{})
+	err := svc.CrawlNow(t.Context(), SourceID{})
 	if err != nil && contains(err.Error(), "Task 22") {
 		t.Errorf("CrawlNow should no longer return the old Task 22 stub error, got: %q", err.Error())
 	}

@@ -78,16 +78,16 @@ const statusInReview = "in_review"
 // ContentService is the subset of content.Service the blog post handlers need.
 type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
-	GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error)
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
+	ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 	// ResolveJSONLD resolves the admin-managed JSON-LD template for a content
 	// type (Section 14 / Section 26). Returns nil when no active template
 	// exists so the caller can fall back to a hardcoded generator.
-	ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error)
+	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 	// ResolveContentFields resolves {{...}} template literals in the Title,
 	// Body, BodyHtml, MetaTitle, and MetaDescription fields of a content-like
 	// struct or slice (Section 14 — global template literals). Best-effort;
@@ -101,7 +101,7 @@ type ContentService interface {
 type MentionNotifier interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -133,7 +133,7 @@ type TaskEnqueueClient interface {
 // (§41 Layer "rate_limit"). Narrow interface so the blog package stays
 // testable without importing spam.
 type ContentCreationRecorder interface {
-	RecordContentCreation(ctx context.Context, tenantID, userID pgtype.UUID)
+	RecordContentCreation(ctx context.Context, userID pgtype.UUID)
 }
 
 // CacheReader is the subset of valkeycompat.Cmdable used by blog handlers for
@@ -184,7 +184,7 @@ func (h *Handlers) SetMentionNotifier(n MentionNotifier) { h.notifier = n }
 // applied via mentions.FilterMentions when checkers are wired (Section 15).
 func (h *Handlers) dispatchMentionNotifications(
 	ctx context.Context,
-	tenantID, authorID, contentID, spaceID pgtype.UUID,
+	authorID, contentID, spaceID pgtype.UUID,
 	body string,
 ) {
 	if h.notifier == nil {
@@ -198,7 +198,7 @@ func (h *Handlers) dispatchMentionNotifications(
 	}
 
 	if h.mentionCheckers != nil {
-		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, tenantID, spaceID)
+		isPrivateSpace, err := h.mentionCheckers.IsPrivateSpace(ctx, spaceID)
 		if err != nil {
 			slog.Warn("blog: IsPrivateSpace check failed", "space_id", spaceID.String(), "error", err)
 
@@ -206,7 +206,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		}
 
 		mentioned, err = mentions.FilterMentions(
-			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			ctx, mentioned, authorID, spaceID, isPrivateSpace,
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
@@ -220,7 +220,7 @@ func (h *Handlers) dispatchMentionNotifications(
 		}
 
 		if err := h.notifier.DispatchNotification(
-			ctx, tenantID, m.ID,
+			ctx, m.ID,
 			"mention.content", "",
 			authorID,
 			"content", contentID,
@@ -237,8 +237,8 @@ func (h *Handlers) dispatchMentionNotifications(
 // RejectReview, and FeaturePost to prevent the blog-specific endpoints
 // from acting on non-blog content that shares the content_reviews or
 // content_featured tables (BUG-002/BUG-004).
-func (h *Handlers) verifyBlogPostContent(ctx context.Context, contentID, tenantID pgtype.UUID) error {
-	existing, err := h.content.GetContent(ctx, contentID, tenantID)
+func (h *Handlers) verifyBlogPostContent(ctx context.Context, contentID pgtype.UUID) error {
+	existing, err := h.content.GetContent(ctx, contentID)
 	if err != nil {
 		return err
 	}
@@ -488,8 +488,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -524,7 +523,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	series, err := h.Service.CreateSeries(r.Context(), tenantID, user.UserID, CreateSeriesInput{
+	series, err := h.Service.CreateSeries(r.Context(), user.UserID, CreateSeriesInput{
 		Title:        input.Title,
 		Slug:         input.Slug,
 		Description:  input.Description,
@@ -545,7 +544,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 // JEOS §24: returns the public Series DTO with cover_image_url and pagination
 // metadata (total, page_size, page_offset).
 func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -561,13 +560,13 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		series, err := h.Service.ListSeriesByAuthor(r.Context(), tenantID, authorID, limit, offset)
+		series, err := h.Service.ListSeriesByAuthor(r.Context(), authorID, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		total, err := h.Service.CountSeriesByAuthor(r.Context(), tenantID, authorID)
+		total, err := h.Service.CountSeriesByAuthor(r.Context(), authorID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -592,13 +591,13 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	// on /guides, /stories).
 	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
 
-	series, err := h.Service.ListSeriesByTenant(r.Context(), tenantID, q, contentType, limit, offset)
+	series, err := h.Service.ListSeriesByTenant(r.Context(), q, contentType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.CountSeriesByTenant(r.Context(), tenantID, q, contentType)
+	total, err := h.Service.CountSeriesByTenant(r.Context(), q, contentType)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -617,7 +616,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 // GetSeries handles GET /api/v1/blog/series/{slug}.
 // Returns the public Series DTO with a computed cover_image_url.
 func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -628,7 +627,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	series, err := h.Service.GetSeriesBySlug(r.Context(), slug, tenantID)
+	series, err := h.Service.GetSeriesBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -639,7 +638,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 
 // ListSeriesPosts handles GET /api/v1/blog/series/{id}/posts — lists all posts in a series.
 func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -651,13 +650,13 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the series exists and belongs to this tenant.
-	_, err = h.Service.GetSeries(r.Context(), id, tenantID)
+	_, err = h.Service.GetSeries(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	posts, err := h.Service.ListPostsInSeries(r.Context(), id, tenantID)
+	posts, err := h.Service.ListPostsInSeries(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -672,8 +671,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -710,7 +708,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	series, err := h.Service.UpdateSeries(r.Context(), id, tenantID, input.Title, input.Slug, input.Description, coverImageID, input.Status)
+	series, err := h.Service.UpdateSeries(r.Context(), id, input.Title, input.Slug, input.Description, coverImageID, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -722,7 +720,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 // DeleteSeries handles DELETE /api/v1/blog/series/{id}.
 func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 	deleteEntity(w, r, h, "id", "series", func(ctx context.Context, tenantID, id pgtype.UUID) error {
-		return h.Service.DeleteSeries(ctx, id, tenantID)
+		return h.Service.DeleteSeries(ctx, id)
 	})
 }
 
@@ -787,8 +785,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -805,7 +802,7 @@ func (h *Handlers) RemovePostFromSeries(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.RemovePostFromSeries(r.Context(), seriesID, contentID, tenantID); err != nil {
+	if err := h.Service.RemovePostFromSeries(r.Context(), seriesID, contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -827,8 +824,7 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -841,7 +837,7 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-009: pass tenantID so the query is tenant-scoped, preventing
 	// cross-tenant information disclosure via series membership probing.
-	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID, tenantID)
+	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": nil}})
@@ -865,8 +861,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -907,7 +902,7 @@ func (h *Handlers) ReorderSeriesPosts(w http.ResponseWriter, r *http.Request) {
 		posts[i].Position = p.Position
 	}
 
-	if err := h.Service.BulkReorderSeriesPosts(r.Context(), seriesID, tenantID, posts); err != nil {
+	if err := h.Service.BulkReorderSeriesPosts(r.Context(), seriesID, posts); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -925,8 +920,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -953,7 +947,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.CreateReview(r.Context(), tenantID, user.UserID, CreateReviewInput{
+	review, err := h.Service.CreateReview(r.Context(), user.UserID, CreateReviewInput{
 		ContentID: contentID,
 		Status:    input.Status,
 		Feedback:  input.Feedback,
@@ -976,8 +970,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -993,7 +986,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		reviews, err := h.Service.ListReviewsByContent(r.Context(), contentID, tenantID)
+		reviews, err := h.Service.ListReviewsByContent(r.Context(), contentID)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -1006,7 +999,7 @@ func (h *Handlers) ListReviews(w http.ResponseWriter, r *http.Request) {
 
 	// C3: return enriched review summaries (with post title/slug/author/excerpt)
 	// for the admin review-queue. This is the default and ?pending=true path.
-	summaries, err := h.Service.ListPendingReviewSummaries(r.Context(), tenantID, limit, offset)
+	summaries, err := h.Service.ListPendingReviewSummaries(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1021,8 +1014,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1048,7 +1040,7 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, input.Status, input.Feedback)
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, user.UserID, input.Status, input.Feedback)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1063,8 +1055,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1075,7 +1066,7 @@ func (h *Handlers) DeleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReview(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteReview(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1113,13 +1104,13 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	// BUG-002: verify the review belongs to a blog_post before acting.
 	// content_reviews is shared by ads, persona actions, and studio; the
 	// blog review-queue must not publish non-blog content.
-	existingReview, err := h.Service.GetReview(r.Context(), id, tenantID)
+	existingReview, err := h.Service.GetReview(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
+	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID); vErr != nil {
 		if errors.Is(vErr, errWrongContentType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
@@ -1130,7 +1121,7 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusApproved, input.Feedback)
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, user.UserID, ReviewStatusApproved, input.Feedback)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1180,13 +1171,13 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-002: verify the review belongs to a blog_post before acting.
-	existingReview, err := h.Service.GetReview(r.Context(), id, tenantID)
+	existingReview, err := h.Service.GetReview(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID, tenantID); vErr != nil {
+	if vErr := h.verifyBlogPostContent(r.Context(), existingReview.ContentID); vErr != nil {
 		if errors.Is(vErr, errWrongContentType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
@@ -1197,7 +1188,7 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.UpdateReviewStatus(r.Context(), id, tenantID, user.UserID, ReviewStatusRejected, feedback)
+	review, err := h.Service.UpdateReviewStatus(r.Context(), id, user.UserID, ReviewStatusRejected, feedback)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1221,8 +1212,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1253,7 +1243,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 	// content_featured is a generic junction; without this check an admin
 	// with blog.feature could feature forum threads, pages, or any other
 	// content type, which would then appear in the blog featured tab.
-	if vErr := h.verifyBlogPostContent(r.Context(), contentID, tenantID); vErr != nil {
+	if vErr := h.verifyBlogPostContent(r.Context(), contentID); vErr != nil {
 		if errors.Is(vErr, errWrongContentType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "wrong_content_type", "Not a blog post")
 			return
@@ -1272,7 +1262,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	featured, err := h.Service.FeaturePost(r.Context(), tenantID, FeaturePostInput{
+	featured, err := h.Service.FeaturePost(r.Context(), FeaturePostInput{
 		ContentID:     contentID,
 		FeaturedOrder: input.FeaturedOrder,
 		FeaturedUntil: featuredUntil,
@@ -1288,7 +1278,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 // UnfeaturePost handles DELETE /api/v1/blog/featured/{contentId}.
 func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 	deleteEntity(w, r, h, "contentId", "content", func(ctx context.Context, tenantID, id pgtype.UUID) error {
-		return h.Service.UnfeaturePost(ctx, tenantID, id)
+		return h.Service.UnfeaturePost(ctx, id)
 	})
 }
 
@@ -1296,7 +1286,7 @@ func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
 // H6: returns enriched blog post cards (with title/slug/author/cover image)
 // instead of raw content_featured junction rows.
 func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1304,7 +1294,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	cards, err := h.Service.ListFeaturedBlogPostCards(r.Context(), tenantID, limit, offset)
+	cards, err := h.Service.ListFeaturedBlogPostCards(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1312,13 +1302,13 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve template literals ({{...}}) in card titles/bodies — best-effort.
 	if h.content != nil {
-		rc := literals.NewRequestContext(r, tenantID, "")
+		rc := literals.NewRequestContext(r, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), cards, rc); resErr != nil {
 			slog.Warn("blog: failed to resolve featured literals", "error", resErr)
 		}
 	}
 
-	total, err := h.Service.CountFeaturedBlogPostCards(r.Context(), tenantID)
+	total, err := h.Service.CountFeaturedBlogPostCards(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1379,8 +1369,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1415,7 +1404,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 		items[i].Order = item.Order
 	}
 
-	if err := h.Service.BulkUpdateFeaturedOrder(r.Context(), tenantID, items); err != nil {
+	if err := h.Service.BulkUpdateFeaturedOrder(r.Context(), items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1469,7 +1458,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cache miss — generate live from the DB.
-	posts, err := h.Service.ListPublishedPostsForRSS(r.Context(), tenantID, 50)
+	posts, err := h.Service.ListPublishedPostsForRSS(r.Context(), 50)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1495,7 +1484,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 // C4: returns an enriched DTO with author name, avatar, featured image URL,
 // tags, and series navigation (prev/next within a series).
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1512,7 +1501,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		viewerUserID = user.UserID
 	}
 
-	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, tenantID, viewerUserID, false)
+	post, err := h.Service.GetBlogPostDetail(r.Context(), slug, viewerUserID, false)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
@@ -1529,7 +1518,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// detail path bypasses the content handlers, so it must resolve here.
 	// Best-effort: failures are logged but do not fail the request.
 	if h.content != nil {
-		rc := literals.NewRequestContext(r, tenantID, "")
+		rc := literals.NewRequestContext(r, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), &post, rc); resErr != nil {
 			slog.Warn("blog: failed to resolve post literals", "error", resErr, "post_id", post.ID.String())
 		}
@@ -1617,7 +1606,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// to its client-side generator). Emitted as a sibling of `data` so the
 	// frontend load function can read envelope.json_ld directly.
 	resp := map[string]any{"data": dto}
-	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), tenantID, "Article", blogPostJSONLDFields(post, dto)); jErr == nil && len(jsonLd) > 0 {
+	if jsonLd, jErr := h.content.ResolveJSONLD(r.Context(), "Article", blogPostJSONLDFields(post, dto)); jErr == nil && len(jsonLd) > 0 {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("blog: JSON-LD template resolution failed", "slug", slug, "error", jErr)
@@ -1631,7 +1620,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			[]byte(post.Body),
 			post.BodyHtml,
-			tenantID,
+
 			h.mentionCheckers,
 		)
 		if redErr != nil {
@@ -1698,7 +1687,7 @@ func formatTimestamptz(t pgtype.Timestamptz) string {
 // JOINs users + media for author name and featured image URL.
 // BUG-005: switched from cursor-based to offset-based pagination per Rule 5.
 func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1758,7 +1747,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 	// Resolve template literals ({{...}}) in card titles/excerpts — same
 	// best-effort resolution the content list handler applies.
 	if h.content != nil {
-		rc := literals.NewRequestContext(r, tenantID, "")
+		rc := literals.NewRequestContext(r, "")
 		if resErr := h.content.ResolveContentFields(r.Context(), posts, rc); resErr != nil {
 			slog.Warn("blog: failed to resolve list literals", "error", resErr)
 		}
@@ -1840,7 +1829,7 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 // panel. Reuses the content listing; unlike the public ListPosts it does
 // NOT filter out non-published posts.
 func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1852,7 +1841,7 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 	// user_profiles) so the admin /blog table gets author_name. The
 	// generic ListContentsByType returned no author join, showing "—"
 	// for every author. Offset-paginated per Rule 5.
-	posts, err := h.Service.ListAdminBlogPosts(r.Context(), tenantID, limit, offset)
+	posts, err := h.Service.ListAdminBlogPosts(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2003,11 +1992,11 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget — the pipeline records a timestamp in Valkey and never
 	// blocks the response.
 	if h.spamRecorder != nil {
-		h.spamRecorder.RecordContentCreation(r.Context(), tenantID, user.UserID)
+		h.spamRecorder.RecordContentCreation(r.Context(), user.UserID)
 	}
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, post.ID, post.SpaceID, input.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, post.ID, post.SpaceID, input.Body)
 
 	// BUG-009: enqueue rss:regenerate when a blog post is created directly as
 	// published, so the feed reflects it without waiting for the hourly cron.
@@ -2042,7 +2031,7 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	existing, err := h.content.GetContent(r.Context(), contentID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
@@ -2065,7 +2054,7 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	// (ListPendingReviewSummaries) can list this submission. BUG-003: the
 	// reviewer is unassigned (zero UUID → NULL) — the actual reviewer is
 	// recorded when approve/reject is called.
-	if _, err := h.Service.CreateReview(r.Context(), tenantID, pgtype.UUID{}, CreateReviewInput{
+	if _, err := h.Service.CreateReview(r.Context(), pgtype.UUID{}, CreateReviewInput{
 		ContentID: contentID,
 		Status:    ReviewStatusPending,
 	}); err != nil {
@@ -2083,8 +2072,7 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2095,7 +2083,7 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.content.GetContent(r.Context(), contentID, tenantID)
+	existing, err := h.content.GetContent(r.Context(), contentID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Post not found")
 		return
@@ -2124,7 +2112,7 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	featured, err := h.Service.FeaturePost(r.Context(), tenantID, FeaturePostInput{
+	featured, err := h.Service.FeaturePost(r.Context(), FeaturePostInput{
 		ContentID:     contentID,
 		FeaturedOrder: input.FeaturedOrder,
 		FeaturedUntil: featuredUntil,
@@ -2145,8 +2133,8 @@ func (h *Handlers) FeaturePostByID(w http.ResponseWriter, r *http.Request) {
 // authorship, so without this any blog.edit_own holder could edit/delete ANY
 // blog post by id). Ref: japaconnect-engineering/sections/24-blog-extension.md
 // ("blog.edit_own" — edit OWN posts).
-func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, bool) {
-	existing, err := h.content.GetContent(r.Context(), id, tenantID)
+func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, id pgtype.UUID) (gen.GetContentByIDRow, bool) {
+	existing, err := h.content.GetContent(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Blog post not found")
@@ -2171,7 +2159,7 @@ func (h *Handlers) verifyOwnBlogPost(w http.ResponseWriter, r *http.Request, use
 		// gated by blog.review.manage. The user-facing PATCH /blog/{id} is
 		// strictly own-post per §24.
 		if resolver := rbac.FromContext(r.Context()); resolver != nil &&
-			resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			resolver.IsSuperAdmin(r.Context(), user.UserID) {
 			return existing, true
 		}
 
@@ -2205,7 +2193,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, ok := h.verifyOwnBlogPost(w, r, user, tenantID, id)
+	existing, ok := h.verifyOwnBlogPost(w, r, user, id)
 	if !ok {
 		return
 	}
@@ -2320,7 +2308,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 
 	bypassEditWindow := false
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
-		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID)
+		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID)
 	}
 
 	updated, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, input, bypassEditWindow)
@@ -2361,7 +2349,7 @@ func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := h.verifyOwnBlogPost(w, r, user, tenantID, id); !ok {
+	if _, ok := h.verifyOwnBlogPost(w, r, user, id); !ok {
 		return
 	}
 

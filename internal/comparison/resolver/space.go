@@ -32,7 +32,7 @@ func NewSpaceResolver(svc *spaces.Service, opts ...Option) *SpaceResolver {
 }
 
 // Resolve fetches a space by id or slug.
-func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if r == nil || r.svc == nil {
 		return ResolvedItem{}, false, errors.New("space resolver not initialized")
 	}
@@ -43,7 +43,7 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 			return ResolvedItem{}, false, err
 		}
 
-		row, err := r.svc.GetSpaceByID(ctx, tenantID, id)
+		row, err := r.svc.GetSpaceByID(ctx, id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ResolvedItem{}, false, nil
@@ -53,14 +53,14 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 		}
 
 		if base, ok := spaceBaseFromRow(row); ok {
-			return resolveSpaceBase(ctx, tenantID, r.deps, "space", base), true, nil
+			return resolveSpaceBase(ctx, r.deps, "space", base), true, nil
 		}
 
 		return ResolvedItem{}, false, nil
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
-		row, err := r.svc.GetSpaceBySlug(ctx, slug, tenantID)
+		row, err := r.svc.GetSpaceBySlug(ctx, slug)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ResolvedItem{}, false, nil
@@ -70,7 +70,7 @@ func (r *SpaceResolver) Resolve(ctx context.Context, ref map[string]any, tenantI
 		}
 
 		if base, ok := spaceBaseFromRow(row); ok {
-			return resolveSpaceBase(ctx, tenantID, r.deps, "space", base), true, nil
+			return resolveSpaceBase(ctx, r.deps, "space", base), true, nil
 		}
 
 		return ResolvedItem{}, false, nil
@@ -102,7 +102,7 @@ func spaceFilters(filters map[string]any) (geoCode, level, region, subregion str
 }
 
 // Search lists public spaces matching the query.
-func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("space resolver not initialized")
 	}
@@ -123,7 +123,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 
 	viewer := pgtype.UUID{}
 
-	items, err := r.svc.ListSpacesPaginated(ctx, tenantID, viewer, query, geoCode, level, region, subregion, "name", pgtype.UUID{}, false, limit, offset)
+	items, err := r.svc.ListSpacesPaginated(ctx, viewer, query, geoCode, level, region, subregion, "name", pgtype.UUID{}, false, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing spaces: %w", err)
 	}
@@ -132,7 +132,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 
 	for _, it := range items {
 		if base, ok := spaceBaseFromRow(it); ok {
-			out = append(out, resolveSpaceBase(ctx, tenantID, r.deps, "space", base))
+			out = append(out, resolveSpaceBase(ctx, r.deps, "space", base))
 		}
 	}
 
@@ -140,7 +140,7 @@ func (r *SpaceResolver) Search(ctx context.Context, query string, filters map[st
 }
 
 // Count returns the total number of public spaces matching the query.
-func (r *SpaceResolver) Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+func (r *SpaceResolver) Count(ctx context.Context, query string, filters map[string]any) (int64, error) {
 	if r == nil || r.svc == nil {
 		return -1, errors.New("space resolver not initialized")
 	}
@@ -148,7 +148,7 @@ func (r *SpaceResolver) Count(ctx context.Context, query string, filters map[str
 	geoCode, level, region, subregion := spaceFilters(filters)
 	viewer := pgtype.UUID{}
 
-	return r.svc.CountSpaces(ctx, tenantID, viewer, query, geoCode, level, region, subregion, pgtype.UUID{}, false)
+	return r.svc.CountSpaces(ctx, viewer, query, geoCode, level, region, subregion, pgtype.UUID{}, false)
 }
 
 func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID string, memberCount int32) map[string]any {
@@ -161,7 +161,7 @@ func spaceMetadata(id pgtype.UUID, slug, level string, geoCode *string, imageID 
 		"geo_code":     deref(geoCode),
 		"image_id":     imageID,
 		"member_count": memberCount,
-		"score_inputs": spaceScoreInputs(context.Background(), pgtype.UUID{}, nil, "space", base),
+		"score_inputs": spaceScoreInputs(context.Background(), nil, "space", base),
 	}
 	if level == "country" && geoCode != nil && *geoCode != "" {
 		meta["country"] = *geoCode

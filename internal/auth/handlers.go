@@ -31,7 +31,7 @@ import (
 // auth package does not import referral (avoids an import cycle).
 // Ref: japaconnect-engineering/sections/60-referral-system.md (Attribution).
 type ReferralCapturer interface {
-	CaptureSignupReferral(ctx context.Context, tenantID, refereeUserID pgtype.UUID, refCode string) error
+	CaptureSignupReferral(ctx context.Context, refereeUserID pgtype.UUID, refCode string) error
 }
 
 // DefaultFolderProvider pre-seeds a user's default bookmark folders at
@@ -39,14 +39,14 @@ type ReferralCapturer interface {
 // interface lives here so auth does not import bookmarkfolders directly.
 // Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
 type DefaultFolderProvider interface {
-	CreateDefaultFoldersForUser(ctx context.Context, tenantID, userID pgtype.UUID) error
+	CreateDefaultFoldersForUser(ctx context.Context, userID pgtype.UUID) error
 }
 
 // TierManager assigns a new user to the regular/pro/business tier group and
 // syncs users.profile_type. Implemented by the tiers package; the interface
 // lives here so auth does not import tiers directly.
 type TierManager interface {
-	SetUserTier(ctx context.Context, tenantID, userID pgtype.UUID, tier string) error
+	SetUserTier(ctx context.Context, userID pgtype.UUID, tier string) error
 }
 
 // SourceManager creates canonical intel_sources rows for new entity profiles
@@ -97,7 +97,7 @@ func (h *AuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, user
 	}
 
 	if h.Settings != nil {
-		enabled, err := h.Settings.GetSettingBool(ctx, tenantID, "sources.auto_create_for_users")
+		enabled, err := h.Settings.GetSettingBool(ctx, "sources.auto_create_for_users")
 		if err != nil || !enabled {
 			return
 		}
@@ -154,7 +154,7 @@ func (h *AuthHandlers) baseURL(r *http.Request) string {
 
 // Querier is the interface for database operations needed by auth handlers.
 type Querier interface {
-	GetUserByEmail(ctx context.Context, tenantID pgtype.UUID, email string) (*User, error)
+	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 
@@ -205,7 +205,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
 	tenant := &struct{ ID pgtype.UUID }{}
 	if h.Settings != nil && tenant != nil {
-		if open, err := h.Settings.GetSettingBool(r.Context(), tenant.ID, "general.registration_open"); err == nil && !open {
+		if open, err := h.Settings.GetSettingBool(r.Context(), "general.registration_open"); err == nil && !open {
 			errpkg.WriteError(w, http.StatusForbidden, "registration_closed",
 				"Registration is currently closed. Please check back later.")
 			return
@@ -307,7 +307,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// §unified-tiers: new users start on the regular tier. This adds them to
 	// the base members group and syncs users.profile_type.
 	if h.TierManager != nil {
-		if err := h.TierManager.SetUserTier(r.Context(), tenant.ID, userID, "regular"); err != nil {
+		if err := h.TierManager.SetUserTier(r.Context(), userID, "regular"); err != nil {
 			slog.Error("register: failed to set regular tier", "error", err, "user_id", userID.String())
 			errpkg.WriteError(w, http.StatusInternalServerError, "tier_assignment_failed", "Failed to initialize user tier")
 
@@ -329,7 +329,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// not block registration (the referral is simply lost). Self-referral and
 	// duplicate-referee are guarded inside CaptureSignupReferral.
 	if req.RefCode != "" && h.ReferralCapturer != nil {
-		if err := h.ReferralCapturer.CaptureSignupReferral(r.Context(), tenant.ID, userID, req.RefCode); err != nil {
+		if err := h.ReferralCapturer.CaptureSignupReferral(r.Context(), userID, req.RefCode); err != nil {
 			slog.Warn("register: failed to capture referral", "ref_code", req.RefCode, "error", err)
 		}
 	}
@@ -337,7 +337,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	// §50 Pre-seed default bookmark folders. Non-fatal: a failure logs a
 	// warning but does not block registration.
 	if h.DefaultFolderSetter != nil {
-		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), tenant.ID, userID); err != nil {
+		if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(r.Context(), userID); err != nil {
 			slog.Warn("register: failed to create default bookmark folders", "error", err)
 		}
 	}
@@ -377,7 +377,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenant.ID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -444,7 +444,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	// Check brute-force lockout — read max attempts from tenant settings.
 	maxAttempts := DefaultMaxLoginAttempts
 	if h.Settings != nil {
-		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings, tenant.ID)
+		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings)
 	}
 
 	allowed, retryAfter := CheckLoginAttempt(r.Context(), h.BruteForce, bruteKey, maxAttempts)
@@ -455,13 +455,13 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.DB.GetUserByEmail(r.Context(), tenant.ID, req.Email)
+	user, err := h.DB.GetUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
 		if err := RecordFailedLogin(r.Context(), h.BruteForce, bruteKey); err != nil {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
+		h.logFailedLoginAudit(r.Context(), req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -484,7 +484,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
+		h.logFailedLoginAudit(r.Context(), req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -496,7 +496,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("record failed login", "error", err)
 		}
 
-		h.logFailedLoginAudit(r.Context(), tenant.ID, req.Email, ip)
+		h.logFailedLoginAudit(r.Context(), req.Email, ip)
 
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 
@@ -510,7 +510,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Check email verification requirement from system_settings.
 	// Super admins bypass email verification — they are platform operators.
-	if EmailVerifyRequired(r.Context(), h.Settings, tenant.ID) && !user.EmailVerifiedAt.Valid {
+	if EmailVerifyRequired(r.Context(), h.Settings) && !user.EmailVerifiedAt.Valid {
 		isSuperAdmin, err := h.DB.IsUserInGroup(r.Context(), gen.IsUserInGroupParams{
 
 			UserID:    user.ID,
@@ -586,7 +586,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, user.TenantID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -701,7 +701,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	// Re-check email verification when the tenant requires it. A user
 	// whose email was un-verified (or whose verification was revoked)
 	// cannot keep refreshing. Ref: §02 (auth.email.verify_required).
-	if EmailVerifyRequired(r.Context(), h.Settings, stored.TenantID) {
+	if EmailVerifyRequired(r.Context(), h.Settings) {
 		verifiedAt, err := h.Queries.GetUserEmailVerifiedStatus(r.Context(),
 
 			stored.UserID,
@@ -733,7 +733,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newTokenHash := HashRefreshToken(newRefreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, stored.TenantID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 	newExpiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -846,7 +846,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -933,7 +933,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	matched, remaining, err := consumeBackupCode(r.Context(), h.Database, &backupRecord, req.BackupCode, tenantID, userID)
+	matched, remaining, err := consumeBackupCode(r.Context(), h.Database, &backupRecord, req.BackupCode, userID)
 	if err != nil {
 		slog.Error("consume backup code", "error", err)
 		errpkg.CaptureException(fmt.Errorf("consume backup code for user %s: %w", userID, err))
@@ -968,7 +968,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
@@ -1057,7 +1057,7 @@ func clientIP(r *http.Request) string {
 // logFailedLoginAudit writes an audit_logs entry for a failed login attempt.
 // This is consumed by the analytics security scanner (scanFailedLoginSpike)
 // to detect brute-force attacks. Ref: sections/40-platform-analytics-reports.md.
-func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, tenantID pgtype.UUID, email, ip string) {
+func (h *AuthHandlers) logFailedLoginAudit(ctx context.Context, email, ip string) {
 	if h.Database == nil {
 		return
 	}
@@ -1148,7 +1148,7 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 		})
 	}()
 
-	user, err := h.DB.GetUserByEmail(r.Context(), t.ID, req.Email)
+	user, err := h.DB.GetUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
 		// Silently return success — don't reveal whether the email exists.
 		return
@@ -1368,7 +1368,7 @@ func (h *AuthHandlers) HandleResetPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Invalidate all sessions for this user.
-	if err := InvalidateAllUserSessions(r.Context(), h.Queries, rec.UserID, rec.TenantID); err != nil {
+	if err := InvalidateAllUserSessions(r.Context(), h.Queries, rec.UserID); err != nil {
 		slog.Error("reset-password: failed to invalidate sessions", "user_id", rec.UserID.String(), "error", err)
 	}
 
@@ -1487,7 +1487,7 @@ func (h *AuthHandlers) HandleResendVerification(w http.ResponseWriter, r *http.R
 		})
 	}()
 
-	user, err := h.DB.GetUserByEmail(r.Context(), t.ID, req.Email)
+	user, err := h.DB.GetUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
 		return
 	}

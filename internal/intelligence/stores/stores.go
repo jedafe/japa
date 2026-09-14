@@ -68,7 +68,7 @@ func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
 // returns the persisted row, including its server-generated id and
 // retrieved_at timestamp. The tenantID is stamped into the row regardless of
 // any value the caller set on arg.TenantID.
-func (s *Store) CreateIntelRawDocument(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelRawDocumentParams) (gen.IntelRawDocument, error) {
+func (s *Store) CreateIntelRawDocument(ctx context.Context, arg gen.CreateIntelRawDocumentParams) (gen.IntelRawDocument, error) {
 
 	row, err := s.queries.CreateIntelRawDocument(ctx, arg)
 	if err != nil {
@@ -81,7 +81,7 @@ func (s *Store) CreateIntelRawDocument(ctx context.Context, tenantID pgtype.UUID
 // GetLatestIntelRawDocHash returns the content_hash of the most recently
 // retrieved raw document for a source. Callers use this to short-circuit
 // unchanged upstream content (dedup, Task 17).
-func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, tenantID, sourceID pgtype.UUID) (string, error) {
+func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, sourceID pgtype.UUID) (string, error) {
 	hash, err := s.queries.GetLatestIntelRawDocHash(ctx,
 
 		sourceID,
@@ -96,7 +96,7 @@ func (s *Store) GetLatestIntelRawDocHash(ctx context.Context, tenantID, sourceID
 // GetIntelRawDocument fetches a single raw document by its primary key. Used
 // by the control panel moderation surface (raw content pane) to render the
 // fetched HTML/JSON/PDF body for reviewer inspection.
-func (s *Store) GetIntelRawDocument(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRawDocument, error) {
+func (s *Store) GetIntelRawDocument(ctx context.Context, id pgtype.UUID) (gen.IntelRawDocument, error) {
 	row, err := s.queries.GetIntelRawDocument(ctx,
 
 		id,
@@ -115,7 +115,7 @@ func (s *Store) GetIntelRawDocument(ctx context.Context, tenantID, id pgtype.UUI
 // GetIntelSource fetches a single intel source by its primary key. Used by the
 // promoter (Task 19) to resolve source_url, source_type, and trust_level for a
 // promoted projection row.
-func (s *Store) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error) {
+func (s *Store) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
 	row, err := s.queries.GetIntelSource(ctx,
 
 		id,
@@ -132,7 +132,7 @@ func (s *Store) GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (g
 // of the invalid defaultTenantID (FK violation fix). Returns an invalid
 // pgtype.UUID when the persona does not exist so the caller can fall back
 // to the default author.
-func (s *Store) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Store) GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error) {
 	row, err := s.queries.GetIntelPersonaUserID(ctx,
 
 		personaID,
@@ -148,7 +148,7 @@ func (s *Store) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype
 // country code via the existing GetSpaceByGeoCode query. Returns an invalid
 // pgtype.UUID (NULL) when no country space exists for the code so the caller
 // can leave scholarships.country_space_id nullable. BUG-005 fix (spec §455).
-func (s *Store) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+func (s *Store) GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error) {
 	code := countryCode
 
 	row, err := s.queries.GetSpaceByGeoCode(ctx,
@@ -168,7 +168,7 @@ func (s *Store) GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, count
 // CreateIntelRecord inserts a newly extracted intel record in the
 // 'extracted' status and returns the persisted row. The tenantID is stamped
 // into the row regardless of any value the caller set on arg.TenantID.
-func (s *Store) CreateIntelRecord(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelRecordParams) (gen.IntelRecord, error) {
+func (s *Store) CreateIntelRecord(ctx context.Context, arg gen.CreateIntelRecordParams) (gen.IntelRecord, error) {
 
 	row, err := s.queries.CreateIntelRecord(ctx, arg)
 	if err != nil {
@@ -179,7 +179,7 @@ func (s *Store) CreateIntelRecord(ctx context.Context, tenantID pgtype.UUID, arg
 }
 
 // GetIntelRecord fetches a single intel record by its primary key.
-func (s *Store) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+func (s *Store) GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
 	row, err := s.queries.GetIntelRecord(ctx,
 
 		id,
@@ -196,7 +196,7 @@ func (s *Store) GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (g
 // to detect re-extractions of the same upstream entity. The tenantID is
 // stamped into the query params regardless of any value the caller set on
 // arg.TenantID.
-func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 
 	row, err := s.queries.GetIntelRecordByExternalKey(ctx, arg)
 	if err != nil {
@@ -211,7 +211,7 @@ func (s *Store) GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype
 // stage's CheckAcrossSources (BUG-20 fix) to detect when the same upstream
 // entity has already been extracted from a different source — a cross-source
 // conflict that should be held for human review.
-func (s *Store) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error) {
+func (s *Store) ListIntelRecordsByExternalKey(ctx context.Context, externalKey string) ([]gen.IntelRecord, error) {
 	rows, err := s.queries.ListIntelRecordsByExternalKey(ctx,
 
 		externalKey,
@@ -227,7 +227,7 @@ func (s *Store) ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgty
 // entity_type and status, newest extraction first. The tenantID is stamped
 // into the query params regardless of any value the caller set on
 // arg.TenantID.
-func (s *Store) ListIntelRecordsByStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelRecordsByStatusParams) ([]gen.IntelRecord, error) {
+func (s *Store) ListIntelRecordsByStatus(ctx context.Context, arg gen.ListIntelRecordsByStatusParams) ([]gen.IntelRecord, error) {
 
 	rows, err := s.queries.ListIntelRecordsByStatus(ctx, arg)
 	if err != nil {
@@ -242,7 +242,7 @@ func (s *Store) ListIntelRecordsByStatus(ctx context.Context, tenantID pgtype.UU
 // the review-queue handler when no entity_type filter is supplied
 // (BUG-001 fix). The tenantID is stamped into the query params regardless
 // of any value the caller set on arg.TenantID.
-func (s *Store) ListIntelRecordsByStatusAll(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelRecordsByStatusAllParams) ([]gen.IntelRecord, error) {
+func (s *Store) ListIntelRecordsByStatusAll(ctx context.Context, arg gen.ListIntelRecordsByStatusAllParams) ([]gen.IntelRecord, error) {
 
 	rows, err := s.queries.ListIntelRecordsByStatusAll(ctx, arg)
 	if err != nil {
@@ -255,7 +255,7 @@ func (s *Store) ListIntelRecordsByStatusAll(ctx context.Context, tenantID pgtype
 // UpdateIntelRecordStatus sets the status of an intel record and stamps
 // last_verified_at to now(). The tenantID is stamped into the query params
 // regardless of any value the caller set on arg.TenantID.
-func (s *Store) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+func (s *Store) UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error {
 
 	if err := s.queries.UpdateIntelRecordStatus(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record status: %w", err)
@@ -268,7 +268,7 @@ func (s *Store) UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUI
 // automatically transitions the status to 'stale' when the score drops to
 // 40 or below. The tenantID is stamped into the query params regardless of
 // any value the caller set on arg.TenantID.
-func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordFreshnessParams) error {
+func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, arg gen.UpdateIntelRecordFreshnessParams) error {
 
 	if err := s.queries.UpdateIntelRecordFreshness(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record freshness: %w", err)
@@ -281,7 +281,7 @@ func (s *Store) UpdateIntelRecordFreshness(ctx context.Context, tenantID pgtype.
 // intel record and flips its status to 'published'. Used by the promoter
 // (Task 19). The tenantID is stamped into the query params regardless of any
 // value the caller set on arg.TenantID.
-func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error {
 
 	if err := s.queries.UpdateIntelRecordPromoted(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel record promoted: %w", err)
@@ -293,7 +293,7 @@ func (s *Store) UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.U
 // ListStaleIntelRecords returns up to limit published intel records whose
 // freshness score has decayed to 40 or below, for re-verification by the
 // freshness worker.
-func (s *Store) ListStaleIntelRecords(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelRecord, error) {
+func (s *Store) ListStaleIntelRecords(ctx context.Context, limit int32) ([]gen.IntelRecord, error) {
 	rows, err := s.queries.ListStaleIntelRecords(ctx,
 
 		limit,
@@ -311,7 +311,7 @@ func (s *Store) ListStaleIntelRecords(ctx context.Context, tenantID pgtype.UUID,
 // "promoted records preserved" — deleting a source with promoted records
 // would CASCADE-wipe the promoted scholarships + their contents guides
 // (BUG-004 fix).
-func (s *Store) CountPromotedIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID) (int64, error) {
+func (s *Store) CountPromotedIntelRecordsBySource(ctx context.Context, sourceID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountPromotedIntelRecordsBySource(ctx,
 
 		sourceID,
@@ -331,7 +331,7 @@ func (s *Store) CountPromotedIntelRecordsBySource(ctx context.Context, tenantID,
 // human-in-the-loop action (approve, reject, edit, override). The tenantID
 // is stamped into the row regardless of any value the caller set on
 // arg.TenantID.
-func (s *Store) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+func (s *Store) CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error {
 
 	if err := s.queries.CreateIntelReviewLog(ctx, arg); err != nil {
 		return fmt.Errorf("stores: create intel review log: %w", err)
@@ -342,7 +342,7 @@ func (s *Store) CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, 
 
 // ListIntelReviewLog returns the review history for an intel record,
 // newest action first.
-func (s *Store) ListIntelReviewLog(ctx context.Context, tenantID, intelRecordID pgtype.UUID) ([]gen.IntelReviewLog, error) {
+func (s *Store) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.UUID) ([]gen.IntelReviewLog, error) {
 	rows, err := s.queries.ListIntelReviewLog(ctx,
 
 		intelRecordID,
@@ -361,7 +361,7 @@ func (s *Store) ListIntelReviewLog(ctx context.Context, tenantID, intelRecordID 
 // CreateScholarship inserts a promoted scholarship projection row and
 // returns the persisted record. The tenantID is stamped into the row
 // regardless of any value the caller set on arg.TenantID.
-func (s *Store) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (s *Store) CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
@@ -372,7 +372,7 @@ func (s *Store) CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg
 }
 
 // GetScholarship fetches a single scholarship by its primary key.
-func (s *Store) GetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+func (s *Store) GetScholarship(ctx context.Context, id pgtype.UUID) (gen.Scholarship, error) {
 	row, err := s.queries.GetScholarship(ctx,
 
 		id,
@@ -387,7 +387,7 @@ func (s *Store) GetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (g
 // GetScholarshipByIntelRecord fetches the scholarship projection row
 // associated with a given intel record. Used by the promoter to check
 // whether a record has already been promoted.
-func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
+func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error) {
 	row, err := s.queries.GetScholarshipByIntelRecord(ctx,
 
 		intelRecordID,
@@ -401,7 +401,7 @@ func (s *Store) GetScholarshipByIntelRecord(ctx context.Context, tenantID, intel
 
 // GetScholarshipByGuide fetches the scholarship projection row for a given
 // guide entry, if one has been promoted.
-func (s *Store) GetScholarshipByGuide(ctx context.Context, tenantID, guideID pgtype.UUID) (gen.Scholarship, error) {
+func (s *Store) GetScholarshipByGuide(ctx context.Context, guideID pgtype.UUID) (gen.Scholarship, error) {
 	row, err := s.queries.GetScholarshipByGuide(ctx,
 
 		guideID,
@@ -415,7 +415,7 @@ func (s *Store) GetScholarshipByGuide(ctx context.Context, tenantID, guideID pgt
 
 // GetScholarshipBySourceURL fetches a scholarship by its canonical
 // source_url. Used for dedup against existing promoted rows.
-func (s *Store) GetScholarshipBySourceURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.Scholarship, error) {
+func (s *Store) GetScholarshipBySourceURL(ctx context.Context, sourceURL string) (gen.Scholarship, error) {
 	row, err := s.queries.GetScholarshipBySourceURL(ctx,
 
 		sourceURL,
@@ -431,7 +431,7 @@ func (s *Store) GetScholarshipBySourceURL(ctx context.Context, tenantID pgtype.U
 // projection row and stamps last_verified_at and updated_at to now(). The
 // tenantID is stamped into the query params regardless of any value the
 // caller set on arg.TenantID.
-func (s *Store) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+func (s *Store) UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
 
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update scholarship: %w", err)
@@ -444,7 +444,7 @@ func (s *Store) UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg
 // projection row and stamps last_verified_at and updated_at to now(). The
 // tenantID is stamped into the query params regardless of any value the
 // caller set on arg.TenantID.
-func (s *Store) UpdateScholarshipFreshness(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipFreshnessParams) error {
+func (s *Store) UpdateScholarshipFreshness(ctx context.Context, arg gen.UpdateScholarshipFreshnessParams) error {
 
 	if err := s.queries.UpdateScholarshipFreshness(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update scholarship freshness: %w", err)
@@ -458,7 +458,7 @@ func (s *Store) UpdateScholarshipFreshness(ctx context.Context, tenantID pgtype.
 // 'editorial' (or 'mixed' if the row was previously 'auto'-overridden). This
 // is the persistence side of the "Approve with edits" / "Edit published"
 // moderation action (spec §6). The tenantID is stamped into the query params.
-func (s *Store) UpdateScholarshipEditorialOverrides(ctx context.Context, tenantID, id pgtype.UUID, overrides []byte) error {
+func (s *Store) UpdateScholarshipEditorialOverrides(ctx context.Context, id pgtype.UUID, overrides []byte) error {
 	if err := s.queries.UpdateScholarshipEditorialOverrides(ctx, gen.UpdateScholarshipEditorialOverridesParams{
 
 		ID:                 id,
@@ -473,7 +473,7 @@ func (s *Store) UpdateScholarshipEditorialOverrides(ctx context.Context, tenantI
 // ListScholarships returns a page of scholarships ordered by created_at
 // descending. The tenantID is stamped into the query params regardless of
 // any value the caller set on arg.TenantID.
-func (s *Store) ListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
+func (s *Store) ListScholarships(ctx context.Context, arg gen.ListScholarshipsParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.ListScholarships(ctx, arg)
 	if err != nil {
@@ -487,7 +487,7 @@ func (s *Store) ListScholarships(ctx context.Context, tenantID pgtype.UUID, arg 
 // (created_at DESC, id DESC), resuming after the (cursorCreatedAt, cursorID)
 // tuple for keyset pagination (spec §731-733, BUG-006 fix). When the cursor
 // timestamp is invalid (first page), the keyset clause is skipped.
-func (s *Store) ListScholarshipsKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsKeysetParams) ([]gen.Scholarship, error) {
+func (s *Store) ListScholarshipsKeyset(ctx context.Context, arg gen.ListScholarshipsKeysetParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.ListScholarshipsKeyset(ctx, arg)
 	if err != nil {
@@ -500,7 +500,7 @@ func (s *Store) ListScholarshipsKeyset(ctx context.Context, tenantID pgtype.UUID
 // ListScholarshipsBySpaces returns scholarships whose country_space_id is in
 // the given set, for the followed-countries radar feed (spec §739,
 // BUG-008b fix — replaces the per-space N+1 loop).
-func (s *Store) ListScholarshipsBySpaces(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsBySpacesParams) ([]gen.Scholarship, error) {
+func (s *Store) ListScholarshipsBySpaces(ctx context.Context, arg gen.ListScholarshipsBySpacesParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.ListScholarshipsBySpaces(ctx, arg)
 	if err != nil {
@@ -514,7 +514,7 @@ func (s *Store) ListScholarshipsBySpaces(ctx context.Context, tenantID pgtype.UU
 // projection. NULL filter values are treated as wildcards by the query. The
 // tenantID is stamped into the query params regardless of any value the
 // caller set on arg.TenantID.
-func (s *Store) SearchScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.SearchScholarshipsParams) ([]gen.Scholarship, error) {
+func (s *Store) SearchScholarships(ctx context.Context, arg gen.SearchScholarshipsParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.SearchScholarships(ctx, arg)
 	if err != nil {
@@ -527,7 +527,7 @@ func (s *Store) SearchScholarships(ctx context.Context, tenantID pgtype.UUID, ar
 // ListScholarshipsBySpace returns a page of scholarships for a given
 // country_space_id, newest first. The tenantID is stamped into the query
 // params regardless of any value the caller set on arg.TenantID.
-func (s *Store) ListScholarshipsBySpace(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsBySpaceParams) ([]gen.Scholarship, error) {
+func (s *Store) ListScholarshipsBySpace(ctx context.Context, arg gen.ListScholarshipsBySpaceParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.ListScholarshipsBySpace(ctx, arg)
 	if err != nil {
@@ -540,7 +540,7 @@ func (s *Store) ListScholarshipsBySpace(ctx context.Context, tenantID pgtype.UUI
 // ListScholarshipsByCountry returns a page of scholarships for a given
 // country, newest first. The tenantID is stamped into the query params
 // regardless of any value the caller set on arg.TenantID.
-func (s *Store) ListScholarshipsByCountry(ctx context.Context, tenantID pgtype.UUID, arg gen.ListScholarshipsByCountryParams) ([]gen.Scholarship, error) {
+func (s *Store) ListScholarshipsByCountry(ctx context.Context, arg gen.ListScholarshipsByCountryParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.ListScholarshipsByCountry(ctx, arg)
 	if err != nil {
@@ -552,7 +552,7 @@ func (s *Store) ListScholarshipsByCountry(ctx context.Context, tenantID pgtype.U
 
 // CountScholarshipsByCountry returns the per-country scholarship counts,
 // used to populate the scholarship finder facet panel.
-func (s *Store) CountScholarshipsByCountry(ctx context.Context, tenantID pgtype.UUID) ([]gen.CountScholarshipsByCountryRow, error) {
+func (s *Store) CountScholarshipsByCountry(ctx context.Context) ([]gen.CountScholarshipsByCountryRow, error) {
 	rows, err := s.queries.CountScholarshipsByCountry(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stores: count scholarships by country: %w", err)
@@ -569,7 +569,7 @@ func (s *Store) CountScholarshipsByCountry(ctx context.Context, tenantID pgtype.
 // Used by the promoter (Task 19) to create the guide entry that backs a
 // promoted scholarship projection row. The tenantID is stamped into the row
 // regardless of any value the caller set on arg.TenantID.
-func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+func (s *Store) CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 
 	row, err := s.queries.CreateContent(ctx, arg)
 	if err != nil {
@@ -581,7 +581,7 @@ func (s *Store) CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen
 
 // GetContentByID fetches a single contents row by primary key. Used by the
 // promoter (Task 3) to load an existing guide for update.
-func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (s *Store) GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	row, err := s.queries.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.GetContentByIDRow{}, fmt.Errorf("stores: get content by id: %w", err)
@@ -591,7 +591,7 @@ func (s *Store) GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (g
 }
 
 // GetContentByIntelRecord fetches a contents row by its linked intel record.
-func (s *Store) GetContentByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.GetContentByIntelRecordRow, error) {
+func (s *Store) GetContentByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.GetContentByIntelRecordRow, error) {
 	row, err := s.queries.GetContentByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.GetContentByIntelRecordRow{}, fmt.Errorf("stores: get content by intel record: %w", err)
@@ -628,7 +628,7 @@ func (s *Store) ContentSlugExists(ctx context.Context, slug string) (bool, error
 // updated_at to now(). Used by the promoter (Task 3) to sync guide content
 // with a re-crawled scholarship extraction. The tenantID is stamped into the
 // query params regardless of any value the caller set on arg.TenantID.
-func (s *Store) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+func (s *Store) UpdateContent(ctx context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 
 	row, err := s.queries.UpdateContent(ctx, arg)
 	if err != nil {
@@ -643,7 +643,7 @@ func (s *Store) UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen
 // ---------------------------------------------------------------------------
 
 // CreateIntelJob is an exported method.
-func (s *Store) CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error) {
+func (s *Store) CreateIntelJob(ctx context.Context, arg gen.CreateIntelJobParams) (gen.IntelJob, error) {
 
 	row, err := s.queries.CreateIntelJob(ctx, arg)
 	if err != nil {
@@ -654,7 +654,7 @@ func (s *Store) CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg ge
 }
 
 // GetIntelJob is an exported method.
-func (s *Store) GetIntelJob(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelJob, error) {
+func (s *Store) GetIntelJob(ctx context.Context, id pgtype.UUID) (gen.IntelJob, error) {
 	row, err := s.queries.GetIntelJob(ctx, id)
 	if err != nil {
 		return gen.IntelJob{}, fmt.Errorf("stores: get intel job: %w", err)
@@ -664,7 +664,7 @@ func (s *Store) GetIntelJob(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 }
 
 // GetIntelJobByIntelRecord is an exported method.
-func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error) {
+func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.IntelJob, error) {
 	row, err := s.queries.GetIntelJobByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.IntelJob{}, fmt.Errorf("stores: get intel job by intel record: %w", err)
@@ -674,7 +674,7 @@ func (s *Store) GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRec
 }
 
 // UpdateIntelJob is an exported method.
-func (s *Store) UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error {
+func (s *Store) UpdateIntelJob(ctx context.Context, arg gen.UpdateIntelJobParams) error {
 
 	if err := s.queries.UpdateIntelJob(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update intel job: %w", err)
@@ -684,7 +684,7 @@ func (s *Store) UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg ge
 }
 
 // ListIntelJobsKeyset is an exported method.
-func (s *Store) ListIntelJobsKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsKeysetParams) ([]gen.IntelJob, error) {
+func (s *Store) ListIntelJobsKeyset(ctx context.Context, arg gen.ListIntelJobsKeysetParams) ([]gen.IntelJob, error) {
 
 	rows, err := s.queries.ListIntelJobsKeyset(ctx, arg)
 	if err != nil {
@@ -695,7 +695,7 @@ func (s *Store) ListIntelJobsKeyset(ctx context.Context, tenantID pgtype.UUID, a
 }
 
 // ListIntelJobsBySpaces is an exported method.
-func (s *Store) ListIntelJobsBySpaces(ctx context.Context, tenantID pgtype.UUID, arg gen.ListIntelJobsBySpacesParams) ([]gen.IntelJob, error) {
+func (s *Store) ListIntelJobsBySpaces(ctx context.Context, arg gen.ListIntelJobsBySpacesParams) ([]gen.IntelJob, error) {
 
 	rows, err := s.queries.ListIntelJobsBySpaces(ctx, arg)
 	if err != nil {
@@ -710,7 +710,7 @@ func (s *Store) ListIntelJobsBySpaces(ctx context.Context, tenantID pgtype.UUID,
 // ---------------------------------------------------------------------------
 
 // CreateVisaRouteIntel is an exported method.
-func (s *Store) CreateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateVisaRouteIntelParams) (gen.VisaRoute, error) {
+func (s *Store) CreateVisaRouteIntel(ctx context.Context, arg gen.CreateVisaRouteIntelParams) (gen.VisaRoute, error) {
 
 	row, err := s.queries.CreateVisaRouteIntel(ctx, arg)
 	if err != nil {
@@ -721,7 +721,7 @@ func (s *Store) CreateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // GetVisaRouteByIntelRecord is an exported method.
-func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.VisaRoute, error) {
+func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.VisaRoute, error) {
 	row, err := s.queries.GetVisaRouteByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.VisaRoute{}, fmt.Errorf("stores: get visa route by intel record: %w", err)
@@ -731,7 +731,7 @@ func (s *Store) GetVisaRouteByIntelRecord(ctx context.Context, tenantID, intelRe
 }
 
 // UpdateVisaRouteIntel is an exported method.
-func (s *Store) UpdateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateVisaRouteIntelParams) error {
+func (s *Store) UpdateVisaRouteIntel(ctx context.Context, arg gen.UpdateVisaRouteIntelParams) error {
 
 	if err := s.queries.UpdateVisaRouteIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update visa route intel: %w", err)
@@ -741,7 +741,7 @@ func (s *Store) UpdateVisaRouteIntel(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // ListVisaRoutesIntelKeyset is an exported method.
-func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListVisaRoutesIntelKeysetParams) ([]gen.VisaRoute, error) {
+func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, arg gen.ListVisaRoutesIntelKeysetParams) ([]gen.VisaRoute, error) {
 
 	rows, err := s.queries.ListVisaRoutesIntelKeyset(ctx, arg)
 	if err != nil {
@@ -756,7 +756,7 @@ func (s *Store) ListVisaRoutesIntelKeyset(ctx context.Context, tenantID pgtype.U
 // ---------------------------------------------------------------------------
 
 // CreateHousingGuideIntel is an exported method.
-func (s *Store) CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error) {
+func (s *Store) CreateHousingGuideIntel(ctx context.Context, arg gen.CreateHousingGuideIntelParams) (gen.HousingGuide, error) {
 
 	row, err := s.queries.CreateHousingGuideIntel(ctx, arg)
 	if err != nil {
@@ -767,7 +767,7 @@ func (s *Store) CreateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUI
 }
 
 // GetHousingGuideByIntelRecord is an exported method.
-func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.HousingGuide, error) {
+func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.HousingGuide, error) {
 	row, err := s.queries.GetHousingGuideByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.HousingGuide{}, fmt.Errorf("stores: get housing guide by intel record: %w", err)
@@ -777,7 +777,7 @@ func (s *Store) GetHousingGuideByIntelRecord(ctx context.Context, tenantID, inte
 }
 
 // UpdateHousingGuideIntel is an exported method.
-func (s *Store) UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateHousingGuideIntelParams) error {
+func (s *Store) UpdateHousingGuideIntel(ctx context.Context, arg gen.UpdateHousingGuideIntelParams) error {
 
 	if err := s.queries.UpdateHousingGuideIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update housing guide intel: %w", err)
@@ -787,7 +787,7 @@ func (s *Store) UpdateHousingGuideIntel(ctx context.Context, tenantID pgtype.UUI
 }
 
 // ListHousingGuidesIntelKeyset is an exported method.
-func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListHousingGuidesIntelKeysetParams) ([]gen.HousingGuide, error) {
+func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, arg gen.ListHousingGuidesIntelKeysetParams) ([]gen.HousingGuide, error) {
 
 	rows, err := s.queries.ListHousingGuidesIntelKeyset(ctx, arg)
 	if err != nil {
@@ -802,7 +802,7 @@ func (s *Store) ListHousingGuidesIntelKeyset(ctx context.Context, tenantID pgtyp
 // ---------------------------------------------------------------------------
 
 // CreateRemittanceRateIntel is an exported method.
-func (s *Store) CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error) {
+func (s *Store) CreateRemittanceRateIntel(ctx context.Context, arg gen.CreateRemittanceRateIntelParams) (gen.RemittanceRate, error) {
 
 	row, err := s.queries.CreateRemittanceRateIntel(ctx, arg)
 	if err != nil {
@@ -813,7 +813,7 @@ func (s *Store) CreateRemittanceRateIntel(ctx context.Context, tenantID pgtype.U
 }
 
 // GetRemittanceRateByIntelRecord is an exported method.
-func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.RemittanceRate, error) {
+func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.RemittanceRate, error) {
 	row, err := s.queries.GetRemittanceRateByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.RemittanceRate{}, fmt.Errorf("stores: get remittance rate by intel record: %w", err)
@@ -823,7 +823,7 @@ func (s *Store) GetRemittanceRateByIntelRecord(ctx context.Context, tenantID, in
 }
 
 // UpdateRemittanceRateIntel is an exported method.
-func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateRemittanceRateIntelParams) error {
+func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, arg gen.UpdateRemittanceRateIntelParams) error {
 
 	if err := s.queries.UpdateRemittanceRateIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update remittance rate intel: %w", err)
@@ -833,7 +833,7 @@ func (s *Store) UpdateRemittanceRateIntel(ctx context.Context, tenantID pgtype.U
 }
 
 // ListRemittanceRatesIntelKeyset is an exported method.
-func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListRemittanceRatesIntelKeysetParams) ([]gen.RemittanceRate, error) {
+func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, arg gen.ListRemittanceRatesIntelKeysetParams) ([]gen.RemittanceRate, error) {
 
 	rows, err := s.queries.ListRemittanceRatesIntelKeyset(ctx, arg)
 	if err != nil {
@@ -848,7 +848,7 @@ func (s *Store) ListRemittanceRatesIntelKeyset(ctx context.Context, tenantID pgt
 // ---------------------------------------------------------------------------
 
 // CreateComparisonItemIntel is an exported method.
-func (s *Store) CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error) {
+func (s *Store) CreateComparisonItemIntel(ctx context.Context, arg gen.CreateComparisonItemIntelParams) (gen.ComparisonItem, error) {
 
 	row, err := s.queries.CreateComparisonItemIntel(ctx, arg)
 	if err != nil {
@@ -859,7 +859,7 @@ func (s *Store) CreateComparisonItemIntel(ctx context.Context, tenantID pgtype.U
 }
 
 // GetComparisonItemByIntelRecord is an exported method.
-func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.ComparisonItem, error) {
+func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.ComparisonItem, error) {
 	row, err := s.queries.GetComparisonItemByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.ComparisonItem{}, fmt.Errorf("stores: get comparison item by intel record: %w", err)
@@ -869,7 +869,7 @@ func (s *Store) GetComparisonItemByIntelRecord(ctx context.Context, tenantID, in
 }
 
 // UpdateComparisonItemIntel is an exported method.
-func (s *Store) UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateComparisonItemIntelParams) error {
+func (s *Store) UpdateComparisonItemIntel(ctx context.Context, arg gen.UpdateComparisonItemIntelParams) error {
 
 	if err := s.queries.UpdateComparisonItemIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update comparison item intel: %w", err)
@@ -879,7 +879,7 @@ func (s *Store) UpdateComparisonItemIntel(ctx context.Context, tenantID pgtype.U
 }
 
 // ListComparisonItemsIntelKeyset is an exported method.
-func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgtype.UUID, arg gen.ListComparisonItemsIntelKeysetParams) ([]gen.ComparisonItem, error) {
+func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, arg gen.ListComparisonItemsIntelKeysetParams) ([]gen.ComparisonItem, error) {
 
 	rows, err := s.queries.ListComparisonItemsIntelKeyset(ctx, arg)
 	if err != nil {
@@ -894,7 +894,7 @@ func (s *Store) ListComparisonItemsIntelKeyset(ctx context.Context, tenantID pgt
 // ---------------------------------------------------------------------------
 
 // CreateWikiPageIntel is an exported method.
-func (s *Store) CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error) {
+func (s *Store) CreateWikiPageIntel(ctx context.Context, arg gen.CreateWikiPageIntelParams) (gen.WikiPage, error) {
 
 	row, err := s.queries.CreateWikiPageIntel(ctx, arg)
 	if err != nil {
@@ -905,7 +905,7 @@ func (s *Store) CreateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, a
 }
 
 // GetWikiPageByIntelRecord is an exported method.
-func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.WikiPage, error) {
+func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.WikiPage, error) {
 	row, err := s.queries.GetWikiPageByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.WikiPage{}, fmt.Errorf("stores: get wiki page by intel record: %w", err)
@@ -916,7 +916,7 @@ func (s *Store) GetWikiPageByIntelRecord(ctx context.Context, tenantID, intelRec
 
 // GetWikiPageByIntelRecordWithSpace loads a wiki page by intel record, joining
 // its owning space so the public URL can be built as /wiki/{space}/{page}.
-func (s *Store) GetWikiPageByIntelRecordWithSpace(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.GetWikiPageByIntelRecordWithSpaceRow, error) {
+func (s *Store) GetWikiPageByIntelRecordWithSpace(ctx context.Context, intelRecordID pgtype.UUID) (gen.GetWikiPageByIntelRecordWithSpaceRow, error) {
 	row, err := s.queries.GetWikiPageByIntelRecordWithSpace(ctx, intelRecordID)
 	if err != nil {
 		return gen.GetWikiPageByIntelRecordWithSpaceRow{}, fmt.Errorf("stores: get wiki page by intel record with space: %w", err)
@@ -926,7 +926,7 @@ func (s *Store) GetWikiPageByIntelRecordWithSpace(ctx context.Context, tenantID,
 }
 
 // UpdateWikiPageIntel is an exported method.
-func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateWikiPageIntelParams) error {
+func (s *Store) UpdateWikiPageIntel(ctx context.Context, arg gen.UpdateWikiPageIntelParams) error {
 
 	if err := s.queries.UpdateWikiPageIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update wiki page intel: %w", err)
@@ -940,7 +940,7 @@ func (s *Store) UpdateWikiPageIntel(ctx context.Context, tenantID pgtype.UUID, a
 // ---------------------------------------------------------------------------
 
 // CreateLanguageTestRequirementIntel is an exported method.
-func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error) {
+func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error) {
 
 	row, err := s.queries.CreateLanguageTestRequirementIntel(ctx, arg)
 	if err != nil {
@@ -951,7 +951,7 @@ func (s *Store) CreateLanguageTestRequirementIntel(ctx context.Context, tenantID
 }
 
 // GetLanguageTestRequirementByIntelRecord is an exported method.
-func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error) {
+func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error) {
 	row, err := s.queries.GetLanguageTestRequirementByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.LanguageTestRequirement{}, fmt.Errorf("stores: get language test requirement by intel record: %w", err)
@@ -961,7 +961,7 @@ func (s *Store) GetLanguageTestRequirementByIntelRecord(ctx context.Context, ten
 }
 
 // UpdateLanguageTestRequirementIntel is an exported method.
-func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateLanguageTestRequirementIntelParams) error {
+func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, arg gen.UpdateLanguageTestRequirementIntelParams) error {
 
 	if err := s.queries.UpdateLanguageTestRequirementIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update language test requirement intel: %w", err)
@@ -971,10 +971,9 @@ func (s *Store) UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID
 }
 
 // GetLanguageTestByName resolves the language_tests(id) FK from a test name
-// extracted as free text. language_tests is a global reference table (no
-// ), so the tenantID is accepted for interface consistency with the
-// promoter store contract but is not used in the query filter.
-func (s *Store) GetLanguageTestByName(ctx context.Context, _ pgtype.UUID, name string) (gen.LanguageTest, error) {
+// extracted as free text. language_tests is a global reference table, so
+// the query filter does not use a tenant ID.
+func (s *Store) GetLanguageTestByName(ctx context.Context, name string) (gen.LanguageTest, error) {
 	row, err := s.queries.GetLanguageTestByName(ctx, name)
 	if err != nil {
 		return gen.LanguageTest{}, fmt.Errorf("stores: get language test by name: %w", err)
@@ -988,7 +987,7 @@ func (s *Store) GetLanguageTestByName(ctx context.Context, _ pgtype.UUID, name s
 // ---------------------------------------------------------------------------
 
 // CreateTaxObligationGuideIntel is an exported method.
-func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateTaxObligationGuideIntelParams) (gen.TaxObligationGuide, error) {
+func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, arg gen.CreateTaxObligationGuideIntelParams) (gen.TaxObligationGuide, error) {
 
 	row, err := s.queries.CreateTaxObligationGuideIntel(ctx, arg)
 	if err != nil {
@@ -999,7 +998,7 @@ func (s *Store) CreateTaxObligationGuideIntel(ctx context.Context, tenantID pgty
 }
 
 // GetTaxObligationGuideByIntelRecord is an exported method.
-func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.TaxObligationGuide, error) {
+func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.TaxObligationGuide, error) {
 	row, err := s.queries.GetTaxObligationGuideByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.TaxObligationGuide{}, fmt.Errorf("stores: get tax obligation guide by intel record: %w", err)
@@ -1009,7 +1008,7 @@ func (s *Store) GetTaxObligationGuideByIntelRecord(ctx context.Context, tenantID
 }
 
 // UpdateTaxObligationGuideIntel is an exported method.
-func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateTaxObligationGuideIntelParams) error {
+func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, arg gen.UpdateTaxObligationGuideIntelParams) error {
 
 	if err := s.queries.UpdateTaxObligationGuideIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update tax obligation guide intel: %w", err)
@@ -1023,7 +1022,7 @@ func (s *Store) UpdateTaxObligationGuideIntel(ctx context.Context, tenantID pgty
 // ---------------------------------------------------------------------------
 
 // CreateCommunityOrganisationIntel is an exported method.
-func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCommunityOrganisationIntelParams) (gen.CommunityOrganisation, error) {
+func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, arg gen.CreateCommunityOrganisationIntelParams) (gen.CommunityOrganisation, error) {
 
 	row, err := s.queries.CreateCommunityOrganisationIntel(ctx, arg)
 	if err != nil {
@@ -1034,7 +1033,7 @@ func (s *Store) CreateCommunityOrganisationIntel(ctx context.Context, tenantID p
 }
 
 // GetCommunityOrganisationByIntelRecord is an exported method.
-func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CommunityOrganisation, error) {
+func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.CommunityOrganisation, error) {
 	row, err := s.queries.GetCommunityOrganisationByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.CommunityOrganisation{}, fmt.Errorf("stores: get community organisation by intel record: %w", err)
@@ -1044,7 +1043,7 @@ func (s *Store) GetCommunityOrganisationByIntelRecord(ctx context.Context, tenan
 }
 
 // UpdateCommunityOrganisationIntel is an exported method.
-func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCommunityOrganisationIntelParams) error {
+func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, arg gen.UpdateCommunityOrganisationIntelParams) error {
 
 	if err := s.queries.UpdateCommunityOrganisationIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update community organisation intel: %w", err)
@@ -1058,7 +1057,7 @@ func (s *Store) UpdateCommunityOrganisationIntel(ctx context.Context, tenantID p
 // ---------------------------------------------------------------------------
 
 // CreateCredentialPathwayIntel creates a credential_pathways row from an intelligence extraction.
-func (s *Store) CreateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
+func (s *Store) CreateCredentialPathwayIntel(ctx context.Context, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
 
 	row, err := s.queries.CreateCredentialPathwayIntel(ctx, arg)
 	if err != nil {
@@ -1069,7 +1068,7 @@ func (s *Store) CreateCredentialPathwayIntel(ctx context.Context, tenantID pgtyp
 }
 
 // GetCredentialPathwayByIntelRecord returns the credential_pathways row linked to an intel record.
-func (s *Store) GetCredentialPathwayByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.CredentialPathway, error) {
+func (s *Store) GetCredentialPathwayByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.CredentialPathway, error) {
 	row, err := s.queries.GetCredentialPathwayByIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return gen.CredentialPathway{}, fmt.Errorf("stores: get credential pathway by intel record: %w", err)
@@ -1079,7 +1078,7 @@ func (s *Store) GetCredentialPathwayByIntelRecord(ctx context.Context, tenantID,
 }
 
 // UpdateCredentialPathwayIntel updates a credential_pathways projection row from a re-crawl.
-func (s *Store) UpdateCredentialPathwayIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateCredentialPathwayIntelParams) error {
+func (s *Store) UpdateCredentialPathwayIntel(ctx context.Context, arg gen.UpdateCredentialPathwayIntelParams) error {
 
 	if err := s.queries.UpdateCredentialPathwayIntel(ctx, arg); err != nil {
 		return fmt.Errorf("stores: update credential pathway intel: %w", err)
@@ -1114,7 +1113,7 @@ func (s *Store) GetCredentialProfessionByName(ctx context.Context, name string) 
 
 // GetPublicSourceBySlugWithLinkedEntity loads an enabled source by slug,
 // joining any linked space, organization, or user.
-func (s *Store) GetPublicSourceBySlugWithLinkedEntity(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.GetIntelSourceBySlugWithLinkedEntityRow, error) {
+func (s *Store) GetPublicSourceBySlugWithLinkedEntity(ctx context.Context, slug string) (gen.GetIntelSourceBySlugWithLinkedEntityRow, error) {
 	row, err := s.queries.GetIntelSourceBySlugWithLinkedEntity(ctx,
 
 		&slug,
@@ -1128,7 +1127,7 @@ func (s *Store) GetPublicSourceBySlugWithLinkedEntity(ctx context.Context, tenan
 
 // ListPublicSources returns a paginated list of public sources ordered by
 // the requested sort mode. It returns the source rows and the total count.
-func (s *Store) ListPublicSources(ctx context.Context, tenantID pgtype.UUID, category, sourceKind, q, sort string, limit, offset int32) ([]gen.IntelSource, int64, error) {
+func (s *Store) ListPublicSources(ctx context.Context, category, sourceKind, q, sort string, limit, offset int32) ([]gen.IntelSource, int64, error) {
 	count, err := s.queries.CountPublicSources(ctx, gen.CountPublicSourcesParams{Column1: category, Column2: sourceKind, Column3: q})
 	if err != nil {
 		return nil, 0, fmt.Errorf("stores: count public sources: %w", err)
@@ -1160,7 +1159,7 @@ func (s *Store) ListPublicSources(ctx context.Context, tenantID pgtype.UUID, cat
 // ListIntelRecordsBySource returns published intel records for a source,
 // optionally filtered by entity_type and sorted at the DB level. Valid sort
 // values are: latest, popular, discussed, upvoted.
-func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType, sort string, limit, offset int32) ([]gen.IntelRecord, error) {
+func (s *Store) ListIntelRecordsBySource(ctx context.Context, sourceID pgtype.UUID, entityType, sort string, limit, offset int32) ([]gen.IntelRecord, error) {
 	rows, err := s.queries.ListIntelRecordsBySource(ctx, gen.ListIntelRecordsBySourceParams{
 
 		SourceID: sourceID, Column2: entityType, Limit: limit,
@@ -1176,7 +1175,7 @@ func (s *Store) ListIntelRecordsBySource(ctx context.Context, tenantID, sourceID
 // CountIntelRecordsBySource returns the total number of published intel
 // records for a source, optionally filtered by entity_type. Used for accurate
 // source item feed pagination.
-func (s *Store) CountIntelRecordsBySource(ctx context.Context, tenantID, sourceID pgtype.UUID, entityType string) (int64, error) {
+func (s *Store) CountIntelRecordsBySource(ctx context.Context, sourceID pgtype.UUID, entityType string) (int64, error) {
 	count, err := s.queries.CountIntelRecordsBySource(ctx, gen.CountIntelRecordsBySourceParams{
 
 		SourceID: sourceID, Column2: entityType,
@@ -1189,7 +1188,7 @@ func (s *Store) CountIntelRecordsBySource(ctx context.Context, tenantID, sourceI
 }
 
 // IncrementSourcePostCount bumps the post_count for a source.
-func (s *Store) IncrementSourcePostCount(ctx context.Context, tenantID, sourceID pgtype.UUID) error {
+func (s *Store) IncrementSourcePostCount(ctx context.Context, sourceID pgtype.UUID) error {
 	if err := s.queries.IncrementSourcePostCount(ctx, sourceID); err != nil {
 		return fmt.Errorf("stores: increment source post count: %w", err)
 	}
@@ -1198,7 +1197,7 @@ func (s *Store) IncrementSourcePostCount(ctx context.Context, tenantID, sourceID
 }
 
 // DecrementSourcePostCount decrements the post_count for a source, never below 0.
-func (s *Store) DecrementSourcePostCount(ctx context.Context, tenantID, sourceID pgtype.UUID) error {
+func (s *Store) DecrementSourcePostCount(ctx context.Context, sourceID pgtype.UUID) error {
 	if err := s.queries.DecrementSourcePostCount(ctx, sourceID); err != nil {
 		return fmt.Errorf("stores: decrement source post count: %w", err)
 	}
@@ -1264,7 +1263,7 @@ func maybeString(s *string) string {
 }
 
 // ListSourceCollections returns tenant collections ordered by slug.
-func (s *Store) ListSourceCollections(ctx context.Context, tenantID pgtype.UUID) ([]gen.SourceCollection, error) {
+func (s *Store) ListSourceCollections(ctx context.Context) ([]gen.SourceCollection, error) {
 	rows, err := s.queries.ListSourceCollections(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stores: list source collections: %w", err)
@@ -1275,7 +1274,7 @@ func (s *Store) ListSourceCollections(ctx context.Context, tenantID pgtype.UUID)
 // ListSourceCollectionItems returns the sources in a manual collection, ordered
 // by position. It returns the full intel_sources rows so the handler can reuse
 // the public-source mapping.
-func (s *Store) ListSourceCollectionItems(ctx context.Context, tenantID, collectionID pgtype.UUID) ([]gen.IntelSource, error) {
+func (s *Store) ListSourceCollectionItems(ctx context.Context, collectionID pgtype.UUID) ([]gen.IntelSource, error) {
 	rows, err := s.queries.ListSourceCollectionItems(ctx,
 
 		collectionID,

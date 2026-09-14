@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -45,8 +43,8 @@ type forwardGeocodeResult struct {
 // geoSettingsReader is the subset of config.Settings the geocoder needs.
 // This mirrors the interface in internal/users/geocode.go.
 type geoSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // forwardGeocode resolves a free-text address to latitude/longitude
@@ -58,7 +56,7 @@ type geoSettingsReader interface {
 // The endpoint URL and timeout are configurable via system_settings
 // (geo_personalization.nominatim_url, geo_personalization.nominatim_timeout_ms)
 // per Rule 3 — no hardcoded URLs or limits.
-func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pgtype.UUID, address string) (forwardGeocodeResult, error) {
+func forwardGeocode(ctx context.Context, settings geoSettingsReader, address string) (forwardGeocodeResult, error) {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return forwardGeocodeResult{}, errors.New("empty address")
@@ -70,8 +68,8 @@ func forwardGeocode(ctx context.Context, settings geoSettingsReader, tenantID pg
 	if settings != nil {
 		// Reuse the same settings keys as the reverse geocoder — the
 		// Nominatim base URL is the same host, just a different path.
-		url = settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_url", nominatimForwardDefaultURL)
-		timeoutMs = settings.GetIntOr(ctx, pgtype.UUID{}, "geo_personalization.nominatim_timeout_ms", nominatimForwardDefaultTimeoutMs)
+		url = settings.GetStringOr(ctx, "geo_personalization.nominatim_url", nominatimForwardDefaultURL)
+		timeoutMs = settings.GetIntOr(ctx, "geo_personalization.nominatim_timeout_ms", nominatimForwardDefaultTimeoutMs)
 		// The nominatim_url setting points at /reverse for the users
 		// package. Replace the path with /search for forward geocoding.
 		url = strings.Replace(url, "/reverse", "/search", 1)

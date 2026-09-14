@@ -106,7 +106,7 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 //  1. content.comment — to the content author (if commenter ≠ author, top-level)
 //  2. comment.reply — to the parent comment author (if reply and replier ≠ parent author)
 //  3. mention.comment — to each @mentioned user (extracted from TipTap JSON body)
-func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgtype.UUID, comment gen.Comment, dispatcher NotificationDispatcher) {
+func (s *Service) DispatchCommentNotifications(ctx context.Context, comment gen.Comment, dispatcher NotificationDispatcher) {
 	if dispatcher == nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 			slog.Warn("comments: failed to fetch content for author notification", "content_id", comment.ContentID.String(), "error", err)
 		} else if content.AuthorID.Valid && content.AuthorID != comment.AuthorUserID {
 			if err := dispatcher.DispatchNotification(
-				ctx, tenantID, content.AuthorID,
+				ctx, content.AuthorID,
 				notifications.TypeContentComment, "",
 				comment.AuthorUserID,
 				"comment", comment.ID,
@@ -140,7 +140,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 			slog.Warn("comments: failed to fetch parent for reply notification", "parent_id", comment.ParentID.String(), "error", err)
 		} else if parent.AuthorUserID.Valid && parent.AuthorUserID != comment.AuthorUserID {
 			if err := dispatcher.DispatchNotification(
-				ctx, tenantID, parent.AuthorUserID,
+				ctx, parent.AuthorUserID,
 				notifications.TypeCommentReply, "",
 				comment.AuthorUserID,
 				"comment", comment.ID,
@@ -182,7 +182,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 			}
 
 			mentionedUsers, err = mentions.FilterMentions(
-				ctx, mentionedUsers, tenantID, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
+				ctx, mentionedUsers, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
 				s.mentionCheckers, s.mentionCheckers, s.mentionCheckers,
 			)
 			if err != nil {
@@ -201,7 +201,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 		}
 
 		if err := dispatcher.DispatchNotification(
-			ctx, tenantID, m.ID,
+			ctx, m.ID,
 			"mention.comment", "",
 			comment.AuthorUserID,
 			"comment", comment.ID,
@@ -218,7 +218,7 @@ func (s *Service) DispatchCommentNotifications(ctx context.Context, tenantID pgt
 // events and should not fire on edit. The notification batch system
 // deduplicates by (recipient, type, subject), so newly added mentions on edit
 // are dispatched while pre-existing mentions are suppressed.
-func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgtype.UUID, comment gen.Comment, dispatcher NotificationDispatcher) {
+func (s *Service) DispatchMentionNotifications(ctx context.Context, comment gen.Comment, dispatcher NotificationDispatcher) {
 	if dispatcher == nil {
 		return
 	}
@@ -248,7 +248,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 			}
 
 			mentionedUsers, err = mentions.FilterMentions(
-				ctx, mentionedUsers, tenantID, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
+				ctx, mentionedUsers, comment.AuthorUserID, content.SpaceID, isPrivateSpace,
 				s.mentionCheckers, s.mentionCheckers, s.mentionCheckers,
 			)
 			if err != nil {
@@ -264,7 +264,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 		}
 
 		if err := dispatcher.DispatchNotification(
-			ctx, tenantID, m.ID,
+			ctx, m.ID,
 			"mention.comment", "",
 			comment.AuthorUserID,
 			"comment", comment.ID,
@@ -279,7 +279,7 @@ func (s *Service) DispatchMentionNotifications(ctx context.Context, tenantID pgt
 // posted on. Returns pgtype.UUID{} with Valid=false if the content has no
 // space. Used by the handler to enforce the space's commenting_perm and
 // replying_perm axes (Section 05 lines 145-154, BUG-002).
-func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Service) GetContentSpaceID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
 	content, err := s.read.GetContentByID(ctx,
 		contentID,
 	)
@@ -293,7 +293,7 @@ func (s *Service) GetContentSpaceID(ctx context.Context, tenantID, contentID pgt
 // GetCommentContentAuthorID returns the author_user_id of the parent content
 // for the given comment. Used by PinComment to allow the content author to
 // pin comments on their own content (Section 49, BL-003).
-func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, commentID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Service) GetCommentContentAuthorID(ctx context.Context, commentID pgtype.UUID) (pgtype.UUID, error) {
 	comment, err := s.read.GetComment(ctx,
 		commentID,
 	)
@@ -312,7 +312,7 @@ func (s *Service) GetCommentContentAuthorID(ctx context.Context, tenantID, comme
 }
 
 // GetComment is an exported method.
-func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUID) (gen.GetCommentRow, error) {
+func (s *Service) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
 	comment, err := s.read.GetComment(ctx,
 		commentID,
 	)
@@ -327,7 +327,7 @@ func (s *Service) GetComment(ctx context.Context, tenantID, commentID pgtype.UUI
 // honoring the Section 49 ?sort=top|new|oldest query parameter. "top" (the
 // default) orders by pin then vote score then recency; "new" by recency;
 // "oldest" by ascending creation time. Pinned comments always surface first.
-func (s *Service) ListCommentsByContent(ctx context.Context, tenantID, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
+func (s *Service) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -445,7 +445,7 @@ func (s *Service) coerceOldestRows(rows []gen.ListCommentsByContentOldestRow) []
 }
 
 // ListRepliesByParent returns replies for a given parent comment.
-func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
+func (s *Service) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -469,7 +469,7 @@ func (s *Service) ListRepliesByParent(ctx context.Context, tenantID, parentID, v
 // — within the `comments.edit_window_minutes` grace period the edit is
 // "clean" (is_edited not set); after the window the edit still succeeds but
 // is_edited = true and edited_at are stamped (BL-001).
-func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
+func (s *Service) UpdateComment(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
 	// Edit-window threshold (BL-001 / Section 49). Fetch the comment first
 	// to read created_at. GetComment joins users/user_profiles, so it returns
 	// a GetCommentRow; we only need the CreatedAt field.
@@ -488,7 +488,7 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 	if existing.CreatedAt.Valid {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
-			windowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "comments.edit_window_minutes", defaultEditWindowMinutes)
+			windowMinutes = s.settings.GetIntOr(ctx, "comments.edit_window_minutes", defaultEditWindowMinutes)
 		}
 
 		if windowMinutes > 0 {
@@ -529,7 +529,7 @@ func (s *Service) UpdateComment(ctx context.Context, tenantID, commentID, userID
 // SoftDeleteComment soft-deletes a comment by setting deleted_at. This is the
 // moderator path (comments.delete_any) — no author check. Authors must use
 // SoftDeleteCommentByAuthor instead (Section 49, BUG-003).
-func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
+func (s *Service) SoftDeleteComment(ctx context.Context, commentID pgtype.UUID) error {
 	comment, err := s.read.GetComment(ctx,
 		commentID,
 	)
@@ -559,7 +559,7 @@ func (s *Service) SoftDeleteComment(ctx context.Context, tenantID, commentID pgt
 // so a comments.delete_own holder cannot delete another author's comment
 // (BUG-003). Returns errpkg.ErrNotFound when the comment does not exist or the
 // user is not the author.
-func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
+func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, commentID, userID pgtype.UUID) error {
 	comment, err := s.read.GetComment(ctx,
 		commentID,
 	)
@@ -590,7 +590,7 @@ func (s *Service) SoftDeleteCommentByAuthor(ctx context.Context, tenantID, comme
 // row remains visible for audit and is excluded from public queries by the
 // status filter. The reason is optional (empty string → NULL). Used by the
 // admin moderation surface (BUG-010).
-func (s *Service) RemoveComment(ctx context.Context, tenantID, commentID, moderatorID pgtype.UUID, reason string) error {
+func (s *Service) RemoveComment(ctx context.Context, commentID, moderatorID pgtype.UUID, reason string) error {
 	comment, err := s.read.GetComment(ctx,
 		commentID,
 	)
@@ -644,7 +644,7 @@ func (s *Service) decrementCommentCounters(ctx context.Context, comment gen.GetC
 }
 
 // PinComment pins a comment (only content author or moderator).
-func (s *Service) PinComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
+func (s *Service) PinComment(ctx context.Context, commentID pgtype.UUID) error {
 	if err := s.write.PinComment(ctx,
 		commentID,
 	); err != nil {
@@ -655,7 +655,7 @@ func (s *Service) PinComment(ctx context.Context, tenantID, commentID pgtype.UUI
 }
 
 // UnpinComment unpins a comment.
-func (s *Service) UnpinComment(ctx context.Context, tenantID, commentID pgtype.UUID) error {
+func (s *Service) UnpinComment(ctx context.Context, commentID pgtype.UUID) error {
 	if err := s.write.UnpinComment(ctx,
 		commentID,
 	); err != nil {
@@ -670,7 +670,7 @@ func (s *Service) UnpinComment(ctx context.Context, tenantID, commentID pgtype.U
 // ---------------------------------------------------------------------------
 
 // VoteComment upserts a vote on a comment and recalculates the vote score.
-func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID pgtype.UUID, value int16) error {
+func (s *Service) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error {
 	if value != 1 && value != -1 {
 		return errors.New("vote value must be 1 or -1")
 	}
@@ -700,7 +700,7 @@ func (s *Service) VoteComment(ctx context.Context, tenantID, commentID, userID p
 
 // RemoveCommentVote removes a user's vote and recalculates the score.
 // Tenant-scoped per Guide §4.2/§9 (SEC-001).
-func (s *Service) RemoveCommentVote(ctx context.Context, tenantID, commentID, userID pgtype.UUID) error {
+func (s *Service) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
 	if err := s.write.DeleteCommentVote(ctx, gen.DeleteCommentVoteParams{
 
 		CommentID: commentID,
@@ -723,7 +723,7 @@ func (s *Service) RemoveCommentVote(ctx context.Context, tenantID, commentID, us
 // ---------------------------------------------------------------------------
 
 // CountCommentsByContent returns the total comment count for content.
-func (s *Service) CountCommentsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) (int32, error) {
+func (s *Service) CountCommentsByContent(ctx context.Context, contentID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountCommentsByContent(ctx,
 		contentID,
 	)

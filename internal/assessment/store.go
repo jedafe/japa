@@ -43,7 +43,7 @@ func NewStore(database *db.DB) *Store {
 
 // GetActiveAssessmentForm returns the active assessment form
 // (form_type='assessment', status='active') for the tenant.
-func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUID) (gen.Form, error) {
+func (s *Store) GetActiveAssessmentForm(ctx context.Context) (gen.Form, error) {
 	form, err := s.queries.GetActiveAssessmentForm(ctx)
 	if err != nil {
 		return gen.Form{}, fmt.Errorf("assessment: get active form: %w", err)
@@ -55,7 +55,7 @@ func (s *Store) GetActiveAssessmentForm(ctx context.Context, tenantID pgtype.UUI
 // GetAssessmentFormFields returns the custom fields attached to an assessment
 // form, ordered by position. The scoring engine uses each field's config
 // JSONB to resolve per-answer scores.
-func (s *Store) GetAssessmentFormFields(ctx context.Context, tenantID, formID pgtype.UUID) ([]gen.CustomField, error) {
+func (s *Store) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUID) ([]gen.CustomField, error) {
 	fields, err := s.queries.GetAssessmentFormFields(ctx,
 
 		formID,
@@ -69,7 +69,7 @@ func (s *Store) GetAssessmentFormFields(ctx context.Context, tenantID, formID pg
 
 // CreateAssessmentSubmission inserts a form_submissions row for an assessment.
 // userID may be invalid (zero) for anonymous submissions.
-func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, tenantID, userID pgtype.UUID, fieldValues []byte) (gen.FormSubmission, error) {
+func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, userID pgtype.UUID, fieldValues []byte) (gen.FormSubmission, error) {
 	sub, err := s.queries.CreateAssessmentSubmission(ctx, gen.CreateAssessmentSubmissionParams{
 		FormID: formID,
 
@@ -84,7 +84,7 @@ func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, tenantID
 }
 
 // CreateAssessmentResult stores a scored assessment result.
-func (s *Store) CreateAssessmentResult(ctx context.Context, tenantID, userID, submissionID pgtype.UUID, totalScore int32, dimensionScores []byte, thresholdLabel string, roadmapContent []byte) (gen.AssessmentResult, error) {
+func (s *Store) CreateAssessmentResult(ctx context.Context, userID, submissionID pgtype.UUID, totalScore int32, dimensionScores []byte, thresholdLabel string, roadmapContent []byte) (gen.AssessmentResult, error) {
 	result, err := s.queries.CreateAssessmentResult(ctx, gen.CreateAssessmentResultParams{
 
 		UserID:          userID,
@@ -102,7 +102,7 @@ func (s *Store) CreateAssessmentResult(ctx context.Context, tenantID, userID, su
 }
 
 // GetAssessmentResultByID returns a single assessment result by ID.
-func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.AssessmentResult, error) {
+func (s *Store) GetAssessmentResultByID(ctx context.Context, id pgtype.UUID) (gen.AssessmentResult, error) {
 	result, err := s.queries.GetAssessmentResultByID(ctx,
 
 		id,
@@ -117,7 +117,7 @@ func (s *Store) GetAssessmentResultByID(ctx context.Context, tenantID, id pgtype
 // GetAssessmentResultBySubmission returns the assessment result linked to a
 // submission, if the Asynq scoring task has written it yet. Used by the
 // public polling endpoint after an async submit.
-func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
+func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, submissionID pgtype.UUID) (gen.AssessmentResult, error) {
 	result, err := s.queries.GetAssessmentResultBySubmission(ctx,
 
 		submissionID,
@@ -131,7 +131,7 @@ func (s *Store) GetAssessmentResultBySubmission(ctx context.Context, tenantID, s
 
 // ListUserAssessmentResults returns a user's assessment results (history),
 // paginated by offset/limit, newest first.
-func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AssessmentResult, error) {
+func (s *Store) ListUserAssessmentResults(ctx context.Context, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AssessmentResult, error) {
 	results, err := s.queries.ListUserAssessmentResults(ctx, gen.ListUserAssessmentResultsParams{
 
 		UserID:     userID,
@@ -146,7 +146,7 @@ func (s *Store) ListUserAssessmentResults(ctx context.Context, tenantID, userID 
 }
 
 // CountUserAssessmentResults returns the total count of a user's results.
-func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+func (s *Store) CountUserAssessmentResults(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountUserAssessmentResults(ctx,
 
 		userID,
@@ -161,7 +161,7 @@ func (s *Store) CountUserAssessmentResults(ctx context.Context, tenantID, userID
 // CountAssessmentResultsByUserAndForm returns how many results the user has
 // for a specific assessment form. Used to award completion points only once
 // per user per form (Section 28).
-func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantID, userID, formID pgtype.UUID) (int64, error) {
+func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, userID, formID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountAssessmentResultsByUserAndForm(ctx, gen.CountAssessmentResultsByUserAndFormParams{
 
 		UserID: userID,
@@ -176,7 +176,7 @@ func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, tenantI
 
 // UpdateAssessmentFormScoring updates the scoring_config JSONB on an
 // assessment form. Admin-only.
-func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, tenantID, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {
+func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {
 	form, err := s.queries.UpdateAssessmentFormScoring(ctx, gen.UpdateAssessmentFormScoringParams{
 		ScoringConfig: scoringConfig,
 
@@ -347,7 +347,7 @@ LIMIT $%d OFFSET $%d`,
 
 // AdminCountAssessmentResults returns the total count of assessment results
 // for the tenant, optionally filtered by score range. Admin-only.
-func (s *Store) AdminCountAssessmentResults(ctx context.Context, tenantID pgtype.UUID, minScore, maxScore int32) (int64, error) {
+func (s *Store) AdminCountAssessmentResults(ctx context.Context, minScore, maxScore int32) (int64, error) {
 	count, err := s.queries.AdminCountAssessmentResults(ctx, gen.AdminCountAssessmentResultsParams{
 
 		MinScore: minScore,
@@ -369,7 +369,7 @@ type AdminScoreDistributionRow struct {
 
 // AdminScoreDistribution returns the count and average score of assessment
 // results grouped by threshold label. Admin-only.
-func (s *Store) AdminScoreDistribution(ctx context.Context, tenantID pgtype.UUID) ([]AdminScoreDistributionRow, error) {
+func (s *Store) AdminScoreDistribution(ctx context.Context) ([]AdminScoreDistributionRow, error) {
 	rows, err := s.queries.AdminAssessmentScoreDistribution(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("assessment: admin score distribution: %w", err)
@@ -396,7 +396,7 @@ type AdminCompletionStatsRow struct {
 
 // AdminCompletionStats returns total submissions, total scored results, and
 // the average score across all assessment submissions. Admin-only.
-func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID) (AdminCompletionStatsRow, error) {
+func (s *Store) AdminCompletionStats(ctx context.Context) (AdminCompletionStatsRow, error) {
 	row, err := s.queries.AdminAssessmentCompletionStats(ctx)
 	if err != nil {
 		return AdminCompletionStatsRow{}, fmt.Errorf("assessment: admin completion stats: %w", err)
@@ -594,7 +594,7 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, id pgtype.UUID, in Upd
 }
 
 // DeleteAssessmentForm soft-deletes a non-system assessment form by id.
-func (s *Store) DeleteAssessmentForm(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteAssessmentForm(ctx context.Context, id pgtype.UUID) error {
 	if err := s.queries.DeleteForm(ctx, id); err != nil {
 		return fmt.Errorf("assessment: delete form: %w", err)
 	}
@@ -630,7 +630,7 @@ WHERE id = $1
 // GetSubmissionByID returns a form_submissions row by ID. It is used by the
 // result roadmap endpoint to re-build the visitor's journey context from the
 // submission's field_values without re-storing that context on the result row.
-func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
+func (s *Store) GetSubmissionByID(ctx context.Context, submissionID pgtype.UUID) (gen.GetFormSubmissionByIDRow, error) {
 	sub, err := s.queries.GetFormSubmissionByID(ctx,
 		submissionID,
 	)
@@ -645,7 +645,7 @@ func (s *Store) GetSubmissionByID(ctx context.Context, tenantID, submissionID pg
 // It is used by the scoring engine to resolve the destination country to a
 // geoSpaceID for RAG grounding and feed ranking. A missing space returns a
 // zero-value row and a nil error so the caller can fall back to global RAG.
-func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geoCode string) (gen.GetSpaceByGeoCodeRow, error) {
+func (s *Store) GetSpaceByGeoCode(ctx context.Context, geoCode string) (gen.GetSpaceByGeoCodeRow, error) {
 	code := strings.ToUpper(strings.TrimSpace(geoCode))
 
 	row, err := s.queries.GetSpaceByGeoCode(ctx,
@@ -669,7 +669,7 @@ func (s *Store) GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, geo
 // source, and purpose. The caller scores and picks the best match. An empty
 // result means no more specific content exists and the caller should keep the
 // original step.
-func (s *Store) FindRoadmapContentByDimension(ctx context.Context, tenantID pgtype.UUID, dimension, destination, stage, visa, origin, purpose string) ([]gen.FindRoadmapContentByDimensionRow, error) {
+func (s *Store) FindRoadmapContentByDimension(ctx context.Context, dimension, destination, stage, visa, origin, purpose string) ([]gen.FindRoadmapContentByDimensionRow, error) {
 	rows, err := s.queries.FindRoadmapContentByDimension(ctx, gen.FindRoadmapContentByDimensionParams{
 
 		Dimension:          []byte(dimension),

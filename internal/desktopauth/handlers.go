@@ -119,7 +119,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 
 	refreshHash := auth.HashRefreshToken(refreshToken)
 
-	refreshTTL := auth.GetRefreshTokenTTL(ctx, h.KeyRotation.Settings, keyCtx.TenantID)
+	refreshTTL := auth.GetRefreshTokenTTL(ctx, h.KeyRotation.Settings)
 	expiresAt := time.Now().Add(refreshTTL)
 
 	deviceName := r.Header.Get("X-Device-Id")
@@ -145,7 +145,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessTTL := auth.GetAccessTokenTTL(ctx, h.KeyRotation.Settings, keyCtx.TenantID)
+	accessTTL := auth.GetAccessTokenTTL(ctx, h.KeyRotation.Settings)
 
 	resp := ExchangeKeyResponse{
 		AccessToken:  accessToken,

@@ -40,13 +40,13 @@ import (
 // permission checks (post_type-specific create nodes). Kept as an interface
 // so the handler stays testable with a stub.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // pointsChecker returns the user's lifetime points (reputation) for the
 // reputation gate on need posts (§85: create_need is reputation-gated).
 type pointsChecker interface {
-	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // DMConversationResult is the minimal return from dmInitiator — just the
@@ -216,7 +216,7 @@ func (h *Handlers) HandlePostTypes(w http.ResponseWriter, r *http.Request) {
 // HandleList handles GET /mutual-aid — list active posts with filters.
 // Query params: ?type=&category=&dest=&city=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -243,7 +243,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	posts, total, err := h.service.List(r.Context(), tenantID, postType, category, destSpaceID, citySpaceID, page, limit)
+	posts, total, err := h.service.List(r.Context(), postType, category, destSpaceID, citySpaceID, page, limit)
 	if err != nil {
 		slog.Error("mutualaid: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list posts")
@@ -376,7 +376,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if permKey != "mutual_aid.create_offer" && h.perms != nil {
-		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, permKey) {
+		if !h.perms.HasPermission(r.Context(), user.UserID, permKey) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to create this post type")
 			return
 		}
@@ -385,9 +385,9 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// Reputation gate for need posts (BUG-002): §85 specifies create_need
 	// is "member with reputation ≥ threshold".
 	if input.PostType == PostTypeNeed && h.points != nil {
-		threshold := h.service.NeedReputationThreshold(r.Context(), tenantID)
+		threshold := h.service.NeedReputationThreshold(r.Context())
 		if threshold > 0 {
-			points, err := h.points.GetPointsBalance(r.Context(), tenantID, user.UserID)
+			points, err := h.points.GetPointsBalance(r.Context(), user.UserID)
 			if err != nil {
 				slog.Error("mutualaid: reputation check failed", "error", err)
 				errpkg.WriteError(w, http.StatusInternalServerError, "reputation_check_failed", "Failed to verify reputation")
@@ -710,8 +710,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -742,7 +741,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	posts, total, err := h.service.AdminList(r.Context(), tenantID, postType, status, q, destSpaceID, citySpaceID, page, limit)
+	posts, total, err := h.service.AdminList(r.Context(), postType, status, q, destSpaceID, citySpaceID, page, limit)
 	if err != nil {
 		slog.Error("mutualaid: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list posts")

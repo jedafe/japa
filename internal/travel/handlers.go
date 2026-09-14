@@ -254,7 +254,7 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 // HandlePublicListProviders handles GET /api/v1/travel/providers — list active
 // travel providers for the current tenant. Public, no auth required.
 func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -264,7 +264,7 @@ func (h *Handlers) HandlePublicListProviders(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	providers, err := h.service.ListPublicProviders(r.Context(), tenantID)
+	providers, err := h.service.ListPublicProviders(r.Context())
 	if err != nil {
 		slog.Error("travel: public list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list travel providers")
@@ -288,8 +288,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -312,7 +311,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	providers, err := h.service.ListProviders(r.Context(), tenantID, isActiveFilter, providerType, q)
+	providers, err := h.service.ListProviders(r.Context(), isActiveFilter, providerType, q)
 	if err != nil {
 		slog.Error("travel: admin list providers failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "providers_failed", "Failed to list providers")

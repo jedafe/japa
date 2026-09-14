@@ -115,12 +115,12 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the community_locator.enabled system_setting toggle
 // (§101 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "community_locator.enabled", false)
+	return s.settings.GetBoolOr(ctx, "community_locator.enabled", false)
 }
 
 // ErrDuplicateSlug is returned when a submission's slug already exists for
@@ -184,7 +184,7 @@ func (s *Service) OrgTypes() []OrgTypeOption {
 // to populate latitude/longitude. If geocoding fails, the submission
 // proceeds without coordinates (the org is still valid, just without a
 // map pin).
-func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitInput) (OrgDTO, error) {
+func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, input SubmitInput) (OrgDTO, error) {
 	if input.Name == "" {
 		return OrgDTO{}, errors.New("name is required")
 	}
@@ -243,7 +243,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	lng := input.Longitude
 
 	if input.Address != "" && lat == 0 && lng == 0 {
-		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
+		if result, err := forwardGeocode(ctx, s.settings, input.Address); err == nil {
 			lat = result.Latitude
 			lng = result.Longitude
 		} else {
@@ -432,7 +432,7 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 	lng := 0.0
 
 	if input.Address != "" {
-		if result, err := forwardGeocode(ctx, s.settings, tenantID, input.Address); err == nil {
+		if result, err := forwardGeocode(ctx, s.settings, input.Address); err == nil {
 			lat = result.Latitude
 			lng = result.Longitude
 		} else {
@@ -522,8 +522,8 @@ func (s *Service) Generate(ctx context.Context, tenantID, generatedBy pgtype.UUI
 
 // GetBySlug returns a single published community organisation by its slug.
 // Anonymous-accessible.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (OrgDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug, tenantID)
+func (s *Service) GetBySlug(ctx context.Context, slug string) (OrgDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
@@ -538,7 +538,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 // List returns a paginated, filtered list of published community
 // organisations. When lat, lng, and radiusKm are all non-zero, results are
 // filtered by a simplified bounding box.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, originCommunity, orgType string, lat, lng, radiusKm float64, page, limit int32) ([]OrgDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, originCommunity, orgType string, lat, lng, radiusKm float64, page, limit int32) ([]OrgDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -596,7 +596,7 @@ func (s *Service) InitiateClaim(ctx context.Context, id, tenantID pgtype.UUID) e
 // AdminList returns all community organisations (any status) for the
 // moderation queue. Supports filtering by destination (geo-aware
 // pattern), origin community, org type, status, and free-text search.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, originCommunity, orgType, status, q, sort, dir string, page, limit int32) ([]OrgDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, originCommunity, orgType, status, q, sort, dir string, page, limit int32) ([]OrgDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

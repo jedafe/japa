@@ -23,7 +23,7 @@ import (
 
 // GetPost handles GET /api/v1/post/{content_type}/{slug}.
 func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -41,11 +41,11 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enriched detail row, disambiguated by both content_type and slug.
-	content, err := h.Service.GetContentDetailBySlugAndType(r.Context(), contentType, slug, tenantID)
+	content, err := h.Service.GetContentDetailBySlugAndType(r.Context(), contentType, slug)
 	if err != nil {
 		// Try slug redirect before returning not found.
 		if newSlug, found := h.Service.ResolveSlugRedirect(r.Context(), EntityContent, slug); found {
-			content, err = h.Service.GetContentDetailBySlugAndType(r.Context(), contentType, newSlug, tenantID)
+			content, err = h.Service.GetContentDetailBySlugAndType(r.Context(), contentType, newSlug)
 		}
 
 		if err != nil {
@@ -57,7 +57,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	// Visibility/status gate — same rules as GET /content/{slug}.
 	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
-		if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
@@ -71,7 +71,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case VisibilityPrivate:
-			if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
@@ -82,7 +82,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve template literals in the content title, body, and meta fields.
-	rc := buildRenderContext(r, tenantID, "")
+	rc := buildRenderContext(r, "")
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
 		slog.Warn("content: failed to resolve content literals",
 			"error", err, "content_id", content.ID.String())
@@ -95,7 +95,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			[]byte(content.Body),
 			content.BodyHtml,
-			tenantID,
+
 			h.mentionCheckers,
 		)
 		if redErr != nil {
@@ -198,7 +198,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if content.ContentType == TypeGuide && content.GuideCategory != nil && h.guideCategoryLister != nil {
-		if cats, catErr := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID); catErr == nil {
+		if cats, catErr := h.guideCategoryLister.ListGuideCategories(r.Context()); catErr == nil {
 			for _, cat := range cats {
 				if cat.Slug == *content.GuideCategory {
 					dto["guide_category_label"] = cat.Label
@@ -215,7 +215,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	// JSON-LD structured data using the same template interpolation as the
 	// canonical single-type page.
-	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), tenantID, content.ContentType, postContentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), content.ContentType, postContentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", contentType, "error", jErr)

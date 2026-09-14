@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"math"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // BruteForceStore is the interface for tracking failed login attempts.
@@ -24,8 +22,8 @@ const DefaultMaxLoginAttempts = 5
 const DefaultFailWindow = 15 * time.Minute
 
 // MaxLoginAttempts reads the threshold from system_settings (security.max_login_attempts).
-func MaxLoginAttempts(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) int {
-	if val, err := reader.GetSettingInt(ctx, pgtype.UUID{}, "security.max_login_attempts"); err == nil && val > 0 {
+func MaxLoginAttempts(ctx context.Context, reader SettingsReader) int {
+	if val, err := reader.GetSettingInt(ctx, "security.max_login_attempts"); err == nil && val > 0 {
 		return val
 	}
 
@@ -33,8 +31,8 @@ func MaxLoginAttempts(ctx context.Context, reader SettingsReader, tenantID pgtyp
 }
 
 // FailWindow reads the lockout window from system_settings (security.fail_window_minutes).
-func FailWindow(ctx context.Context, reader SettingsReader, tenantID pgtype.UUID) time.Duration {
-	if val, err := reader.GetSettingInt(ctx, pgtype.UUID{}, "security.fail_window_minutes"); err == nil && val > 0 {
+func FailWindow(ctx context.Context, reader SettingsReader) time.Duration {
+	if val, err := reader.GetSettingInt(ctx, "security.fail_window_minutes"); err == nil && val > 0 {
 		return time.Duration(val) * time.Minute
 	}
 

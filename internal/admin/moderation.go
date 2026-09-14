@@ -86,7 +86,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	// campaigns cannot live there; the pending_review status IS the
 	// review-queue entry.
 	if filterContentType == "ad_campaign" {
-		h.listAdCampaignModeration(w, r, ctx, tenantID, limit, offset, filterStatus, filterSearch)
+		h.listAdCampaignModeration(w, r, ctx, limit, offset, filterStatus, filterSearch)
 		return
 	}
 
@@ -368,7 +368,7 @@ func (h *Handlers) GetModerationOptions(w http.ResponseWriter, r *http.Request) 
 // pagination. Ref: §61 Review Gate, ADR-079 §3.
 func (h *Handlers) listAdCampaignModeration(
 	w http.ResponseWriter, r *http.Request,
-	ctx context.Context, tenantID pgtype.UUID,
+	ctx context.Context,
 	limit, offset int32, filterStatus, filterSearch string,
 ) {
 	where := "ac.organization_id IS NOT NULL"
@@ -660,8 +660,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -715,7 +714,7 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 	// Immediate broadcast: insert a notification for every active user in the
 	// target scope (all, a user group, or a geo space).
-	sent, err := h.broadcastToScopedUsers(ctx, tenantID, user.UserID, req.Subject, req.Body, req.Target, req.TargetID)
+	sent, err := h.broadcastToScopedUsers(ctx, user.UserID, req.Subject, req.Body, req.Target, req.TargetID)
 	if err != nil {
 		slog.Error("broadcast: failed to send", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "broadcast_error", "Failed to send broadcast")
@@ -735,14 +734,14 @@ func (h *Handlers) Broadcast(w http.ResponseWriter, r *http.Request) {
 
 // broadcastToAllUsers inserts a system_announcement notification for every
 // active user in the tenant. Returns the count of notifications created.
-func (h *Handlers) broadcastToAllUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body string) (int, error) {
-	return h.broadcastToScopedUsers(ctx, tenantID, senderID, title, body, "all", "")
+func (h *Handlers) broadcastToAllUsers(ctx context.Context, senderID pgtype.UUID, title, body string) (int, error) {
+	return h.broadcastToScopedUsers(ctx, senderID, title, body, "all", "")
 }
 
 // broadcastToScopedUsers inserts a system_announcement notification for every
 // active user in the target scope. When target is "user_group" or "geo_space",
 // only users in the specified group or space receive the notification.
-func (h *Handlers) broadcastToScopedUsers(ctx context.Context, tenantID, senderID pgtype.UUID, title, body, target, targetID string) (int, error) {
+func (h *Handlers) broadcastToScopedUsers(ctx context.Context, senderID pgtype.UUID, title, body, target, targetID string) (int, error) {
 	var rows []pgtype.UUID
 
 	var err error
@@ -1422,7 +1421,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// approved action is actually published. Previously ModerateItem only
 	// touched the `reviews` table (§29 Ratings & Reviews) and the
 	// content_reviews persona-action row stayed 'pending' forever.
-	if h.handlePersonaActionReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason) {
+	if h.handlePersonaActionReview(ctx, rid, user.UserID, input.Action, input.Reason) {
 		slog.Info("moderation: persona action review processed", "item_id", id, "action", input.Action, "reviewer", user.UserID.String())
 	}
 
@@ -1444,7 +1443,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 // the persona:dispatch_action task so the action is published. On reject, it
 // sets the status to 'rejected'. The content_reviews status CHECK constraint
 // (000018) allows 'approved' and 'rejected'.
-func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) bool {
+func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) bool {
 	// Check whether this ID is a persona-action content_reviews row.
 	var source, status string
 
@@ -1554,7 +1553,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 	// Fail closed (BUG-004): run the studio hook BEFORE committing the
 	// review status so a failed publish/reject never leaves an "approved"
 	// review paired with an unpublished studio job.
-	if hookErr := h.callStudioHook(ctx, id, tenantID, reviewerID, action); hookErr != nil {
+	if hookErr := h.callStudioHook(ctx, id, reviewerID, action); hookErr != nil {
 		return true, hookErr
 	}
 
@@ -1590,7 +1589,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 		return true, nil
 	}
 
-	if hookErr := h.callStudioHook(ctx, id, tenantID, reviewerID, action); hookErr != nil {
+	if hookErr := h.callStudioHook(ctx, id, reviewerID, action); hookErr != nil {
 		return true, hookErr
 	}
 
@@ -1618,7 +1617,7 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, r
 // A hook failure is returned so callers can fail closed — the review status
 // must not be committed when the linked studio_job could not transition
 // (BUG-004).
-func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action string) error {
+func (h *Handlers) callStudioHook(ctx context.Context, id, reviewerID pgtype.UUID, action string) error {
 	if h.StudioHook == nil {
 		slog.Warn("moderation: studio review hook not wired, studio_jobs status not transitioned", "review_id", id, "action", action)
 		return nil
@@ -1626,12 +1625,12 @@ func (h *Handlers) callStudioHook(ctx context.Context, id, tenantID, reviewerID 
 
 	switch action {
 	case "approve":
-		if err := h.StudioHook.OnStudioReviewApproved(ctx, tenantID, id, reviewerID); err != nil {
+		if err := h.StudioHook.OnStudioReviewApproved(ctx, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review approve hook failed", "review_id", id, "error", err)
 			return err
 		}
 	case "reject", "delete":
-		if err := h.StudioHook.OnStudioReviewRejected(ctx, tenantID, id, reviewerID); err != nil {
+		if err := h.StudioHook.OnStudioReviewRejected(ctx, id, reviewerID); err != nil {
 			slog.Error("moderation: studio review reject hook failed", "review_id", id, "error", err)
 			return err
 		}

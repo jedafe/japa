@@ -31,7 +31,7 @@ func firstString(ref map[string]any, keys ...string) string {
 	return ""
 }
 
-func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	idStr := firstString(ref, "guide_id", "id")
 	if idStr == "" {
 		return ResolvedItem{}, false, errors.New("scholarship item_ref missing id/guide_id")
@@ -42,7 +42,7 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 		return ResolvedItem{}, false, err
 	}
 
-	s, err := r.svc.GetScholarshipDetail(ctx, tenantID, id)
+	s, err := r.svc.GetScholarshipDetail(ctx, pgtype.UUID{}, id)
 	if err != nil {
 		if IsNotFound(err) {
 			return ResolvedItem{}, false, nil
@@ -54,7 +54,7 @@ func (r *scholarshipResolver) Resolve(ctx context.Context, ref map[string]any, t
 	return scholarshipToResolvedItem(s), true, nil
 }
 
-func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -84,7 +84,7 @@ func (r *scholarshipResolver) Search(ctx context.Context, query string, _ map[st
 		Limit: resultLimit,
 	}
 
-	results, _, err := r.svc.FindScholarships(ctx, tenantID, f)
+	results, _, err := r.svc.FindScholarships(ctx, f)
 	if err != nil {
 		return nil, fmt.Errorf("searching scholarships: %w", err)
 	}

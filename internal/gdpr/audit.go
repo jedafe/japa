@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // LogAuditEvent is a standalone helper for creating audit log entries.
 // It can be called from any package that has access to the Store.
-func LogAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, params LogAuditParams) error {
-	return logAuditEvent(ctx, store, tenantID, params)
+func LogAuditEvent(ctx context.Context, store *Store, params LogAuditParams) error {
+	return logAuditEvent(ctx, store, params)
 }
 
-func logAuditEvent(ctx context.Context, store *Store, tenantID pgtype.UUID, params LogAuditParams) error {
+func logAuditEvent(ctx context.Context, store *Store, params LogAuditParams) error {
 	metadataJSON := []byte("{}")
 
 	if len(params.Metadata) > 0 {

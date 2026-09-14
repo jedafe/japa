@@ -36,8 +36,8 @@ const defaultPageSize int32 = 20
 // (SETTING-001 / Rule 3). *config.Settings satisfies this structurally.
 // When nil, the handler falls back to compiled-in defaults.
 type SettingsProvider interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // Handlers holds dependencies for payment HTTP handlers.
@@ -148,11 +148,11 @@ func (h *Handlers) ListPricingPlans(w http.ResponseWriter, r *http.Request) {
 	bizYearly := int64(15000000)
 
 	if h.settings != nil {
-		currency = h.settings.GetStringOr(r.Context(), pgtype.UUID{}, "pricing.currency", "NGN")
-		proMonthly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.pro.monthly_amount", 500000))
-		proYearly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.pro.yearly_amount", 5000000))
-		bizMonthly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.business.monthly_amount", 1500000))
-		bizYearly = int64(h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "pricing.plan.business.yearly_amount", 15000000))
+		currency = h.settings.GetStringOr(r.Context(), "pricing.currency", "NGN")
+		proMonthly = int64(h.settings.GetIntOr(r.Context(), "pricing.plan.pro.monthly_amount", 500000))
+		proYearly = int64(h.settings.GetIntOr(r.Context(), "pricing.plan.pro.yearly_amount", 5000000))
+		bizMonthly = int64(h.settings.GetIntOr(r.Context(), "pricing.plan.business.monthly_amount", 1500000))
+		bizYearly = int64(h.settings.GetIntOr(r.Context(), "pricing.plan.business.yearly_amount", 15000000))
 	}
 
 	plans := []PricingPlan{
@@ -776,8 +776,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -785,7 +784,7 @@ func (h *Handlers) ListPayments(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	payments, err := h.Service.ListPaymentsByUser(r.Context(), tenantID, user.UserID, limit, offset)
+	payments, err := h.Service.ListPaymentsByUser(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -803,8 +802,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -815,7 +813,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payment, err := h.Service.GetPayment(r.Context(), id, tenantID)
+	payment, err := h.Service.GetPayment(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -840,8 +838,7 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -856,7 +853,7 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 	// Without this check, a refund could be created for a payment in
 	// another tenant (BUG-P008) or for a payment that was never
 	// succeeded (BUG-P009).
-	payment, err := h.Service.GetPayment(r.Context(), id, tenantID)
+	payment, err := h.Service.GetPayment(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -912,8 +909,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -938,7 +934,7 @@ func (h *Handlers) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscription, err := h.Service.CreateSubscription(r.Context(), tenantID, user.UserID, CreateSubscriptionInput{
+	subscription, err := h.Service.CreateSubscription(r.Context(), user.UserID, CreateSubscriptionInput{
 		Plan:     input.Plan,
 		Provider: input.Provider,
 	})
@@ -956,8 +952,7 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -965,7 +960,7 @@ func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	subscriptions, err := h.Service.ListSubscriptionsByUser(r.Context(), tenantID, user.UserID, limit, offset)
+	subscriptions, err := h.Service.ListSubscriptionsByUser(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -980,13 +975,12 @@ func (h *Handlers) GetActiveSubscription(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	subscription, err := h.Service.GetActiveSubscription(r.Context(), tenantID, user.UserID)
+	subscription, err := h.Service.GetActiveSubscription(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1003,19 +997,18 @@ func (h *Handlers) CancelMySubscription(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	active, err := h.Service.GetActiveSubscription(r.Context(), tenantID, user.UserID)
+	active, err := h.Service.GetActiveSubscription(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	subscription, err := h.Service.CancelSubscription(r.Context(), active.ID, tenantID)
+	subscription, err := h.Service.CancelSubscription(r.Context(), active.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1034,8 +1027,7 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1092,7 +1084,7 @@ func (h *Handlers) CreateDiscountCode(w http.ResponseWriter, r *http.Request) {
 		validUntil = &t
 	}
 
-	code, err := h.Service.CreateDiscountCode(r.Context(), tenantID, CreateDiscountCodeInput{
+	code, err := h.Service.CreateDiscountCode(r.Context(), CreateDiscountCodeInput{
 		Code:          input.Code,
 		DiscountType:  input.DiscountType,
 		DiscountValue: input.DiscountValue,
@@ -1118,8 +1110,7 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1127,7 +1118,7 @@ func (h *Handlers) ListDiscountCodes(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	codes, err := h.Service.ListDiscountCodes(r.Context(), tenantID, limit, offset)
+	codes, err := h.Service.ListDiscountCodes(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1142,8 +1133,7 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1168,7 +1158,7 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	code, err := h.Service.ValidateDiscountCode(r.Context(), tenantID, user.UserID, input.Code, input.PurposeType)
+	code, err := h.Service.ValidateDiscountCode(r.Context(), user.UserID, input.Code, input.PurposeType)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1183,8 +1173,7 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1195,7 +1184,7 @@ func (h *Handlers) DeleteDiscountCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteDiscountCode(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteDiscountCode(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1472,8 +1461,7 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1485,7 +1473,7 @@ func (h *Handlers) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch the subscription and verify ownership before mutating.
-	sub, err := h.Service.GetSubscription(r.Context(), id, tenantID)
+	sub, err := h.Service.GetSubscription(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1515,13 +1503,12 @@ func (h *Handlers) ReactivateSubscription(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	subscription, err := h.Service.ReactivateSubscription(r.Context(), user.UserID, tenantID)
+	subscription, err := h.Service.ReactivateSubscription(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1827,7 +1814,7 @@ func (h *Handlers) ListAdminPayments(w http.ResponseWriter, r *http.Request) {
 // GetAdminPayment handles GET /api/v1/admin/payments/:id.
 // Returns payment detail (JEOS §17 "Admin Payment Routes").
 func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1838,7 +1825,7 @@ func (h *Handlers) GetAdminPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payment, err := h.Service.GetAdminPayment(r.Context(), id, tenantID)
+	payment, err := h.Service.GetAdminPayment(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

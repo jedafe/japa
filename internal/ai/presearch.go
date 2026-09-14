@@ -188,7 +188,7 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 	result.TotalResult = len(result.Content) + len(result.RAGChunks)
 	result.BestScore = bestRAGSimilarity(result.RAGChunks)
 
-	threshold := p.fullThreshold(ctx, tenantID)
+	threshold := p.fullThreshold(ctx)
 	result.Level = classifyPreSearch(result, threshold)
 
 	return result, nil
@@ -200,7 +200,7 @@ func (p *PreSearcher) PreSearch(ctx context.Context, tenantID pgtype.UUID, promp
 func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID) []PreSearchContentItem {
 	filter := visibility.InternalVisibilityFilter(pgtype.UUID{})
 	if geoSpaceID != nil && geoSpaceID.Valid {
-		rows, err := p.content.SearchContentsBySpace(ctx, tenantID, *geoSpaceID, prompt, preSearchLimit, 0, filter)
+		rows, err := p.content.SearchContentsBySpace(ctx, *geoSpaceID, prompt, preSearchLimit, 0, filter)
 		if err != nil {
 			slog.Warn("ai: pre-search content search by space failed", "error", err)
 			return nil
@@ -211,7 +211,7 @@ func (p *PreSearcher) searchContent(ctx context.Context, tenantID pgtype.UUID, p
 		return toPreSearchItems(contentSearchResultsFromSpace(filtered))
 	}
 
-	rows, err := p.content.ListContents(ctx, tenantID, prompt, pgtype.Timestamptz{}, preSearchLimit, filter)
+	rows, err := p.content.ListContents(ctx, prompt, pgtype.Timestamptz{}, preSearchLimit, filter)
 	if err != nil {
 		slog.Warn("ai: pre-search content search failed", "error", err)
 		return nil
@@ -242,12 +242,12 @@ func toPreSearchItems(items []contentSearchResult) []PreSearchContentItem {
 // fullThreshold reads agent.presearch_full_threshold from system_settings,
 // falling back to 0.85 (§103 default) when the settings reader is nil or
 // the key is absent.
-func (p *PreSearcher) fullThreshold(ctx context.Context, tenantID pgtype.UUID) float64 {
+func (p *PreSearcher) fullThreshold(ctx context.Context) float64 {
 	if p.settings == nil {
 		return 0.85
 	}
 
-	return p.settings.GetFloatOr(ctx, tenantID, "agent.presearch_full_threshold", 0.85)
+	return p.settings.GetFloatOr(ctx, "agent.presearch_full_threshold", 0.85)
 }
 
 // bestRAGSimilarity returns the highest similarity score across the RAG

@@ -259,31 +259,31 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	}
 
 	// --- Task 5.10: agent.enabled toggle ---
-	if !h.getBoolSetting(ctx, tenantID, "agent.enabled", true) {
+	if !h.getBoolSetting(ctx, "agent.enabled", true) {
 		return nil, errAgentDisabled
 	}
 
 	// --- Task 5.05: agent.use RBAC permission ---
 	if h.perms != nil {
-		if !h.perms.HasPermission(ctx, userID, tenantID, "agent.use") {
+		if !h.perms.HasPermission(ctx, userID, "agent.use") {
 			return nil, errAgentNoPermission
 		}
 	}
 
 	// --- Task 5.11: rate limiting (jc:agent:rate:{user_id}:{date}) ---
-	if err := h.checkRateLimit(ctx, userID, tenantID); err != nil {
+	if err := h.checkRateLimit(ctx, userID); err != nil {
 		return nil, errAgentRateLimited
 	}
 
 	// --- Guide §19: daily budget enforcement (jc:agent:cost:{user_id}:{date}) ---
 	// Rejects the request if the user's accumulated daily AI spend has
 	// reached agent.daily_budget_usd. A budget of 0 disables the check.
-	if err := h.checkDailyBudget(ctx, userID, tenantID); err != nil {
+	if err := h.checkDailyBudget(ctx, userID); err != nil {
 		return nil, errAgentBudgetExceeded
 	}
 
 	// --- Task 5.05: resolve geo context from users.current_geo_space_id ---
-	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID, tenantID)
+	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID)
 
 	// --- Tasks 5.01-5.03: pre-search ---
 	var preSearchResult *PreSearchResult
@@ -302,20 +302,20 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	}
 
 	// --- Task 5.09: create ai_agent_sessions record ---
-	session, err := h.createSession(ctx, userID, tenantID, prompt, geoSpaceID, preSearchResult.Level)
+	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level)
 	if err != nil {
 		return nil, fmt.Errorf("ai: creating agent session: %w", err)
 	}
 
 	// --- Set session state in Valkey for cancellation checks ---
-	h.setSessionState(ctx, tenantID, session.ID)
+	h.setSessionState(ctx, session.ID)
 
 	// --- Phase 8: resolve the draft-request context (Content Request Flow).
 	// When pre-search = NONE and the user has agent.draft_request but not
 	// content.create, the agent should search externally and create a draft
 	// for admin review. The persona user_id is resolved here so the system
 	// prompt can instruct the LLM to pass it to content.create_draft. ---
-	draftCtx := h.resolveDraftRequestContext(ctx, userID, tenantID, preSearchResult.Level)
+	draftCtx := h.resolveDraftRequestContext(ctx, userID, preSearchResult.Level)
 
 	// --- Return channel and run the loop in a goroutine ---
 	events := make(chan AgentEvent, 32)
@@ -349,22 +349,22 @@ type draftRequestContext struct {
 // as the author_id. Resolution failures (no persona configured, persona not
 // found) degrade gracefully — the path stays inactive and the LLM falls
 // back to presenting external results without creating a draft.
-func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, tenantID pgtype.UUID, level PreSearchLevel) draftRequestContext {
+func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID pgtype.UUID, level PreSearchLevel) draftRequestContext {
 	if level != PreSearchNone || h.perms == nil || h.persona == nil {
 		return draftRequestContext{}
 	}
 
-	if !h.perms.HasPermission(ctx, userID, tenantID, "agent.draft_request") {
+	if !h.perms.HasPermission(ctx, userID, "agent.draft_request") {
 		return draftRequestContext{}
 	}
 
-	if h.perms.HasPermission(ctx, userID, tenantID, "content.create") {
+	if h.perms.HasPermission(ctx, userID, "content.create") {
 		// User has full create capability — they use content.create, not
 		// the draft-request path.
 		return draftRequestContext{}
 	}
 
-	personaIDStr := h.getStringSetting(ctx, tenantID, "agent.default_persona_id", "")
+	personaIDStr := h.getStringSetting(ctx, "agent.default_persona_id", "")
 	if personaIDStr == "" || personaIDStr == "\"\"" {
 		return draftRequestContext{}
 	}
@@ -374,7 +374,7 @@ func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, t
 		return draftRequestContext{}
 	}
 
-	pid, err := h.persona.GetPersonaUserID(ctx, tenantID, personaID)
+	pid, err := h.persona.GetPersonaUserID(ctx, personaID)
 	if err != nil || !pid.Valid {
 		slog.Warn("ai: draft-request persona resolution failed", "persona_id", personaIDStr, "error", err)
 		return draftRequestContext{}
@@ -388,12 +388,12 @@ func (h *AgentHandler) resolveDraftRequestContext(ctx context.Context, userID, t
 }
 
 // getStringSetting reads a string setting with fallback.
-func (h *AgentHandler) getStringSetting(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+func (h *AgentHandler) getStringSetting(ctx context.Context, key, fallback string) string {
 	if h.settings == nil {
 		return fallback
 	}
 
-	return h.settings.GetStringOr(ctx, pgtype.UUID{}, key, fallback)
+	return h.settings.GetStringOr(ctx, key, fallback)
 }
 
 // ---------------------------------------------------------------------------
@@ -415,14 +415,14 @@ func (h *AgentHandler) runLoop(
 
 	// Enforce timeout (agent.timeout_seconds). The loop ctx is derived from
 	// the request ctx with the configured timeout.
-	timeout := time.Duration(h.getIntSetting(ctx, tenantID, "agent.timeout_seconds", defaultTimeoutSeconds)) * time.Second
+	timeout := time.Duration(h.getIntSetting(ctx, "agent.timeout_seconds", defaultTimeoutSeconds)) * time.Second
 
 	loopCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	maxToolCalls := h.getIntSetting(ctx, tenantID, "agent.max_tool_calls", defaultMaxToolCalls)
-	costLimit := h.getFloatSetting(ctx, tenantID, "agent.cost_limit_per_request_usd", defaultCostLimitUSD)
-	temperature := h.getFloatSetting(ctx, tenantID, "agent.temperature", defaultLLMTemperature)
+	maxToolCalls := h.getIntSetting(ctx, "agent.max_tool_calls", defaultMaxToolCalls)
+	costLimit := h.getFloatSetting(ctx, "agent.cost_limit_per_request_usd", defaultCostLimitUSD)
+	temperature := h.getFloatSetting(ctx, "agent.temperature", defaultLLMTemperature)
 
 	// Cost estimator uses per-provider/model price settings so the agent's
 	// per-request cost limit reflects the actual configured LLM price.
@@ -487,7 +487,7 @@ func (h *AgentHandler) runLoop(
 
 	for iteration := range maxToolCalls {
 		// Check for user-initiated cancellation (jc:agent:session:{}:{id} = "cancelled").
-		if h.isCancelled(loopCtx, tenantID, session.ID) {
+		if h.isCancelled(loopCtx, session.ID) {
 			cancelled = true
 			break
 		}
@@ -515,7 +515,7 @@ func (h *AgentHandler) runLoop(
 
 		// Accumulate token usage + cost using the per-provider/model price.
 		totalTokens += resp.Usage.TotalTokens
-		estimatedCost += costEstimator.Estimate(loopCtx, tenantID, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
+		estimatedCost += costEstimator.Estimate(loopCtx, resp.ProviderName, resp.Model, resp.Usage.TotalTokens)
 
 		// --- Cost limit check (task 5.10) ---
 		if estimatedCost > costLimit {
@@ -660,36 +660,36 @@ func (h *AgentHandler) runLoop(
 // ---------------------------------------------------------------------------
 
 // getIntSetting reads an int setting with fallback.
-func (h *AgentHandler) getIntSetting(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (h *AgentHandler) getIntSetting(ctx context.Context, key string, fallback int) int {
 	if h.settings == nil {
 		return fallback
 	}
 
-	return h.settings.GetIntOr(ctx, pgtype.UUID{}, key, fallback)
+	return h.settings.GetIntOr(ctx, key, fallback)
 }
 
 // getFloatSetting reads a float setting with fallback.
-func (h *AgentHandler) getFloatSetting(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (h *AgentHandler) getFloatSetting(ctx context.Context, key string, fallback float64) float64 {
 	if h.settings == nil {
 		return fallback
 	}
 
-	return h.settings.GetFloatOr(ctx, tenantID, key, fallback)
+	return h.settings.GetFloatOr(ctx, key, fallback)
 }
 
 // getBoolSetting reads a bool setting with fallback.
-func (h *AgentHandler) getBoolSetting(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (h *AgentHandler) getBoolSetting(ctx context.Context, key string, fallback bool) bool {
 	if h.settings == nil {
 		return fallback
 	}
 
-	return h.settings.GetBoolOr(ctx, pgtype.UUID{}, key, fallback)
+	return h.settings.GetBoolOr(ctx, key, fallback)
 }
 
 // resolveGeoContext fetches the user's current_geo_space_id and builds a
 // human-readable summary for the system prompt. Returns (nil, "") when the
 // geo resolver is not configured or the user has no geo space set.
-func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID, tenantID pgtype.UUID) (*pgtype.UUID, string) {
+func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID pgtype.UUID) (*pgtype.UUID, string) {
 	if h.geo == nil {
 		return nil, ""
 	}
@@ -732,7 +732,7 @@ func (h *AgentHandler) resolveGeoContext(ctx context.Context, userID, tenantID p
 // rejects the request if the daily limit is exceeded. When the rate limiter
 // is nil, rate limiting is skipped (graceful degradation — the wiring layer
 // SHOULD provide one).
-func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (h *AgentHandler) checkRateLimit(ctx context.Context, userID pgtype.UUID) error {
 	if h.rateLimiter == nil {
 		return nil
 	}
@@ -752,7 +752,7 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgty
 		}
 	}
 
-	limit := h.getIntSetting(ctx, tenantID, "agent.rate_limit_per_day", defaultRateLimitPerDay)
+	limit := h.getIntSetting(ctx, "agent.rate_limit_per_day", defaultRateLimitPerDay)
 	if int(count) > limit {
 		return fmt.Errorf("ai: daily agent rate limit exceeded (%d/%d)", count, limit)
 	}
@@ -767,12 +767,12 @@ func (h *AgentHandler) checkRateLimit(ctx context.Context, userID, tenantID pgty
 // the check is skipped (fail-open) so a Valkey outage does not lock users
 // out of the agent — the per-request cost limit (agent.cost_limit_per_request_usd)
 // still applies as a per-session guard.
-func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (h *AgentHandler) checkDailyBudget(ctx context.Context, userID pgtype.UUID) error {
 	if h.rateLimiter == nil {
 		return nil
 	}
 
-	budget := h.getFloatSetting(ctx, tenantID, "agent.daily_budget_usd", defaultDailyBudgetUSD)
+	budget := h.getFloatSetting(ctx, "agent.daily_budget_usd", defaultDailyBudgetUSD)
 	if budget <= 0 {
 		return nil // 0 = disabled
 	}
@@ -848,7 +848,7 @@ func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID, tenantID pg
 		}
 	}
 
-	tools := h.registry.CatalogForUser(ctx, h.perms, userID, tenantID)
+	tools := h.registry.CatalogForUser(ctx, h.perms, userID)
 
 	// Cache the result.
 	if h.cache != nil && len(tools) > 0 {
@@ -864,7 +864,7 @@ func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID, tenantID pg
 
 // createSession inserts an ai_agent_sessions row with status "running" and
 // the pre-search level. Returns the created session.
-func (h *AgentHandler) createSession(ctx context.Context, userID, tenantID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel) (gen.AiAgentSession, error) {
+func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel) (gen.AiAgentSession, error) {
 	if h.sessions == nil {
 		// No session store configured — return a zero-value session so
 		// the loop can proceed (useful for tests).
@@ -947,7 +947,7 @@ func (h *AgentHandler) cancelSession(ctx context.Context, session gen.AiAgentSes
 // "running" with a 5-minute TTL. The cancel endpoint (Phase 6) sets it to
 // "cancelled". Tenant-scoping prevents cross-tenant session cancellation
 // (Rule 4 defense-in-depth, complementing the DB ownership check).
-func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID pgtype.UUID) {
+func (h *AgentHandler) setSessionState(ctx context.Context, sessionID pgtype.UUID) {
 	if h.cache == nil {
 		return
 	}
@@ -960,7 +960,7 @@ func (h *AgentHandler) setSessionState(ctx context.Context, tenantID, sessionID 
 
 // isCancelled checks whether the session has been cancelled via the
 // jc:agent:session:{}:{session_id} Valkey key.
-func (h *AgentHandler) isCancelled(ctx context.Context, tenantID, sessionID pgtype.UUID) bool {
+func (h *AgentHandler) isCancelled(ctx context.Context, sessionID pgtype.UUID) bool {
 	if h.cache == nil {
 		return false
 	}

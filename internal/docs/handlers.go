@@ -27,7 +27,7 @@ type TaskEnqueueClient interface {
 
 // PermissionChecker is the interface for RBAC permission checks.
 type PermissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // AudienceGates maps each audience to the RBAC permission node required to read
@@ -99,7 +99,7 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // Public audiences (users, api) always pass. Gated audiences require auth
 // and the RBAC permission node mapped in audienceGates (§44).
 // Returns true if access is allowed; false and writes a 403 if denied.
-func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, audience string) bool {
+func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, audience string) bool {
 	requiredPerm, gated := AudienceGates[audience]
 	if !gated {
 		return true // public audience
@@ -117,7 +117,7 @@ func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, ten
 		return false
 	}
 
-	if !h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
+	if !h.rbac.HasPermission(r.Context(), user.UserID, requiredPerm) {
 		errpkg.WriteError(w, http.StatusForbidden, "audience_forbidden", "You do not have access to this documentation section")
 		return false
 	}
@@ -127,7 +127,7 @@ func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, ten
 
 // accessibleAudiences returns the list of audiences the requester may read,
 // in canonical display order. Used to filter nav tree and search results.
-func (h *Handlers) accessibleAudiences(r *http.Request, tenantID pgtype.UUID) []string {
+func (h *Handlers) accessibleAudiences(r *http.Request) []string {
 	user := auth.FromContext(r.Context())
 	if user == nil || h.rbac == nil {
 		// Guest or no RBAC: only public audiences.
@@ -143,7 +143,7 @@ func (h *Handlers) accessibleAudiences(r *http.Request, tenantID pgtype.UUID) []
 			continue
 		}
 
-		if h.rbac.HasPermission(r.Context(), user.UserID, tenantID, requiredPerm) {
+		if h.rbac.HasPermission(r.Context(), user.UserID, requiredPerm) {
 			allowed = append(allowed, aud)
 		}
 	}
@@ -174,7 +174,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 // ListDocPages handles GET /api/v1/docs/{audience}.
 // Returns published pages for the given audience section.
 func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -185,11 +185,11 @@ func (h *Handlers) ListDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.checkAudienceGate(w, r, tenantID, audience) {
+	if !h.checkAudienceGate(w, r, audience) {
 		return
 	}
 
-	pages, err := h.Service.ListDocPagesByAudience(r.Context(), tenantID, audience)
+	pages, err := h.Service.ListDocPagesByAudience(r.Context(), audience)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -214,7 +214,7 @@ func (h *Handlers) GetDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.checkAudienceGate(w, r, tenantID, audience) {
+	if !h.checkAudienceGate(w, r, audience) {
 		return
 	}
 
@@ -236,7 +236,7 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed := h.accessibleAudiences(r, tenantID)
+	allowed := h.accessibleAudiences(r)
 
 	nav, err := h.Service.GetDocNav(r.Context(), tenantID, allowed)
 	if err != nil {
@@ -252,7 +252,7 @@ func (h *Handlers) ListDocNav(w http.ResponseWriter, r *http.Request) {
 // only the audiences the requester may read (§44 — audience-filtered search).
 // When audience is provided, results are further filtered to that section.
 func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -270,7 +270,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Restrict to accessible audiences (§44 — only return pages the requester can see).
-	allowed := h.accessibleAudiences(r, tenantID)
+	allowed := h.accessibleAudiences(r)
 	if audience != "" {
 		// If the requester asked for a specific audience they can't access, deny.
 		allowedSet := make(map[string]bool, len(allowed))
@@ -294,7 +294,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	results, err := h.Service.SearchDocPagesInAudiences(r.Context(), tenantID, q, allowed, limit)
+	results, err := h.Service.SearchDocPagesInAudiences(r.Context(), q, allowed, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -308,7 +308,7 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 // Requires authentication; guests may vote client-side until a captcha/anon
 // path is added. CSRF is enforced by the route middleware (DOC-011).
 func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -341,7 +341,7 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.Service.SubmitDocPageFeedback(r.Context(), tenantID, audience, slug, input.Vote); err != nil {
+	if err := h.Service.SubmitDocPageFeedback(r.Context(), audience, slug, input.Vote); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -377,7 +377,7 @@ func (h *Handlers) ListDocStatuses(w http.ResponseWriter, r *http.Request) {
 // ListAllDocPages handles GET /api/v1/admin/docs/pages.
 // Returns all pages (any status) for admin listing. Optionally filters by ?audience=.
 func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -389,7 +389,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), tenantID, audience)
+		pages, err := h.Service.ListAllDocPagesByAudience(r.Context(), audience)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -400,7 +400,7 @@ func (h *Handlers) ListAllDocPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages, err := h.Service.ListAllDocPages(r.Context(), tenantID)
+	pages, err := h.Service.ListAllDocPages(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -439,7 +439,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 	h.enqueueSearchIndex(pageID, tenantID, "index")
 
 	// Fetch the created page to return it (any status — use GetDocPageByID).
-	page, fetchErr := h.Service.GetDocPageByID(r.Context(), tenantID, pageID)
+	page, fetchErr := h.Service.GetDocPageByID(r.Context(), pageID)
 	if fetchErr != nil {
 		// Page was created but we can't fetch it — return minimal success.
 		errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"id": pageID.String(), "status": "created", "slug": req.Slug, "audience": req.Audience}})
@@ -452,7 +452,7 @@ func (h *Handlers) CreateDocPage(w http.ResponseWriter, r *http.Request) {
 // GetAdminDocPage handles GET /api/v1/admin/docs/pages/{id}.
 // Returns a single page by ID (any status) for admin detail view.
 func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -463,7 +463,7 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.Service.GetDocPageByID(r.Context(), tenantID, id)
+	page, err := h.Service.GetDocPageByID(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -26,7 +26,7 @@ const defaultEditWindowMinutes = 60
 // for hot-reloadable operational limits (edit window). *config.Settings
 // satisfies this structurally. When nil, compiled-in defaults are used.
 type settingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // Service provides comment operations with reader/writer pool separation.
@@ -67,7 +67,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: key,
 		Reference:   reference,
 		Payload:     payload,

@@ -66,12 +66,12 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		// pattern used throughout the codebase.
 		slog.Error("media:scan: ClamAV error, confirming without scan",
 			"media_id", mediaID, "error", err)
-		return p.svc.confirmMediaByID(ctx, mid[:], m.TenantID)
+		return p.svc.confirmMediaByID(ctx, mid[:])
 	}
 
 	if result.Clean {
 		slog.Info("media:scan: clean", "media_id", mediaID)
-		return p.svc.confirmMediaByID(ctx, mid[:], m.TenantID)
+		return p.svc.confirmMediaByID(ctx, mid[:])
 	}
 
 	// Infected — soft-delete and log the incident.
@@ -83,7 +83,7 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		"uploader", m.UploaderUserID,
 	)
 
-	if err := p.svc.rejectMediaByID(ctx, mid[:], m.TenantID, result.VirusName); err != nil {
+	if err := p.svc.rejectMediaByID(ctx, mid[:], result.VirusName); err != nil {
 		return fmt.Errorf("media:scan: reject infected media %s: %w", mediaID, err)
 	}
 

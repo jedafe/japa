@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // defaultCostPer1kTokensUSD is the fallback price when no setting is configured.
@@ -33,12 +31,12 @@ func NewCostEstimator(settings SettingsReader) *CostEstimator {
 
 // Estimate returns the cost in USD for totalTokens, looking up per-provider
 // and per-model prices before falling back to global defaults.
-func (e *CostEstimator) Estimate(ctx context.Context, tenantID pgtype.UUID, provider, model string, totalTokens int) float64 {
+func (e *CostEstimator) Estimate(ctx context.Context, provider, model string, totalTokens int) float64 {
 	if totalTokens <= 0 {
 		return 0
 	}
 
-	price := e.pricePer1k(ctx, tenantID, provider, model)
+	price := e.pricePer1k(ctx, provider, model)
 
 	return float64(totalTokens) * price / 1000.0
 }
@@ -52,17 +50,17 @@ func (e *CostEstimator) Estimate(ctx context.Context, tenantID pgtype.UUID, prov
 //  5. ai.cost_per_1k_tokens_usd
 //  6. agent.cost_per_1k_tokens (legacy fallback, kept for backward compatibility)
 //  7. defaultCostPer1kTokensUSD
-func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, provider, model string) float64 {
+func (e *CostEstimator) pricePer1k(ctx context.Context, provider, model string) float64 {
 	if e.settings == nil {
 		return defaultCostPer1kTokensUSD
 	}
 
-	overrides := e.loadProviderCostOverrides(ctx, tenantID)
+	overrides := e.loadProviderCostOverrides(ctx)
 
 	if model != "" && provider != "" {
 		key := fmt.Sprintf("ai.provider.%s.%s.cost_per_1k_tokens_usd", provider, model)
 
-		v := e.settings.GetFloatOr(ctx, tenantID, key, -1)
+		v := e.settings.GetFloatOr(ctx, key, -1)
 		if v >= 0 {
 			return v
 		}
@@ -75,7 +73,7 @@ func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, pr
 	if provider != "" {
 		key := fmt.Sprintf("ai.provider.%s.cost_per_1k_tokens_usd", provider)
 
-		v := e.settings.GetFloatOr(ctx, tenantID, key, -1)
+		v := e.settings.GetFloatOr(ctx, key, -1)
 		if v >= 0 {
 			return v
 		}
@@ -86,21 +84,21 @@ func (e *CostEstimator) pricePer1k(ctx context.Context, tenantID pgtype.UUID, pr
 	}
 
 	// Global AI cost default.
-	v := e.settings.GetFloatOr(ctx, tenantID, "ai.cost_per_1k_tokens_usd", -1)
+	v := e.settings.GetFloatOr(ctx, "ai.cost_per_1k_tokens_usd", -1)
 	if v >= 0 {
 		return v
 	}
 
 	// Legacy agent setting for backward compatibility.
-	return e.settings.GetFloatOr(ctx, tenantID, "agent.cost_per_1k_tokens", defaultCostPer1kTokensUSD)
+	return e.settings.GetFloatOr(ctx, "agent.cost_per_1k_tokens", defaultCostPer1kTokensUSD)
 }
 
 // loadProviderCostOverrides parses the ai.provider_cost_overrides JSON map.
 // Keys are "provider" or "provider.model"; values are USD per 1,000 tokens.
 // The map is cached on the CostEstimator for the lifetime of the estimate call
 // (the caller holds a context, so the same request does not parse it twice).
-func (e *CostEstimator) loadProviderCostOverrides(ctx context.Context, tenantID pgtype.UUID) map[string]float64 {
-	raw := e.settings.GetStringOr(ctx, pgtype.UUID{}, "ai.provider_cost_overrides", "{}")
+func (e *CostEstimator) loadProviderCostOverrides(ctx context.Context) map[string]float64 {
+	raw := e.settings.GetStringOr(ctx, "ai.provider_cost_overrides", "{}")
 	if raw == "" {
 		raw = "{}"
 	}

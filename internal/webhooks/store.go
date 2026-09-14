@@ -183,7 +183,7 @@ func deliveryFromListRow(row gen.ListWebhookDeliveriesRow) WebhookDelivery {
 // ---------------------------------------------------------------------------
 
 // ListEndpoints returns all webhook endpoints for the given tenant, newest first.
-func (s *Store) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]WebhookEndpointWithSecret, error) {
+func (s *Store) ListEndpoints(ctx context.Context) ([]WebhookEndpointWithSecret, error) {
 	rows, err := s.read.ListWebhookEndpoints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing webhook endpoints: %w", err)
@@ -198,7 +198,7 @@ func (s *Store) ListEndpoints(ctx context.Context, tenantID pgtype.UUID) ([]Webh
 }
 
 // GetEndpoint returns a tenant-scoped webhook endpoint by ID.
-func (s *Store) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
+func (s *Store) GetEndpoint(ctx context.Context, id pgtype.UUID) (WebhookEndpointWithSecret, error) {
 	row, err := s.read.GetWebhookEndpoint(ctx, id)
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("fetching webhook endpoint %s: %w", id, err)
@@ -211,7 +211,7 @@ func (s *Store) GetEndpoint(ctx context.Context, tenantID, id pgtype.UUID) (Webh
 // and encrypted at rest before storage (BUG-016). New endpoints default to
 // is_active=false until challenge/response verification (§12). createdBy is
 // the admin user who created the endpoint.
-func (s *Store) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, name, url, secret string, eventTypes []string, createdBy pgtype.UUID) (WebhookEndpointWithSecret, error) {
+func (s *Store) CreateEndpoint(ctx context.Context, name, url, secret string, eventTypes []string, createdBy pgtype.UUID) (WebhookEndpointWithSecret, error) {
 	encSecret, err := crypto.Encrypt(secret)
 	if err != nil {
 		return WebhookEndpointWithSecret{}, fmt.Errorf("encrypting webhook secret: %w", err)
@@ -243,7 +243,7 @@ func (s *Store) CreateEndpoint(ctx context.Context, tenantID pgtype.UUID, name, 
 // UpdateEndpoint updates an existing webhook endpoint. If the secret starts
 // with "v1:" it is already encrypted; otherwise it is plaintext and gets
 // encrypted before storage (BUG-016).
-func (s *Store) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, name, url, secret string, eventTypes []string, status string, isActive bool) (WebhookEndpointWithSecret, error) {
+func (s *Store) UpdateEndpoint(ctx context.Context, id pgtype.UUID, name, url, secret string, eventTypes []string, status string, isActive bool) (WebhookEndpointWithSecret, error) {
 	encSecret := secret
 
 	if !strings.HasPrefix(secret, "v1:") {
@@ -274,7 +274,7 @@ func (s *Store) UpdateEndpoint(ctx context.Context, tenantID, id pgtype.UUID, na
 
 // VerifyEndpoint marks a webhook endpoint as verified and active after a
 // successful challenge/response (§12).
-func (s *Store) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) VerifyEndpoint(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.VerifyWebhookEndpoint(ctx,
 
 		id,
@@ -286,7 +286,7 @@ func (s *Store) VerifyEndpoint(ctx context.Context, tenantID, id pgtype.UUID) er
 }
 
 // DeleteEndpoint removes a webhook endpoint by ID.
-func (s *Store) DeleteEndpoint(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteEndpoint(ctx context.Context, id pgtype.UUID) error {
 	rowsAffected, err := s.write.DeleteWebhookEndpoint(ctx, id)
 	if err != nil {
 		return fmt.Errorf("deleting webhook endpoint %s: %w", id, err)
@@ -344,7 +344,7 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id pgtype.UUID) (Webhook
 // ---------------------------------------------------------------------------
 
 // CreateDelivery records a pending webhook delivery and returns its ID.
-func (s *Store) CreateDelivery(ctx context.Context, tenantID, endpointID, eventID pgtype.UUID, eventType string, payloadJSON []byte) (pgtype.UUID, error) {
+func (s *Store) CreateDelivery(ctx context.Context, endpointID, eventID pgtype.UUID, eventType string, payloadJSON []byte) (pgtype.UUID, error) {
 	id, err := s.write.CreateWebhookDelivery(ctx, gen.CreateWebhookDeliveryParams{
 
 		EndpointID: endpointID,
@@ -370,7 +370,7 @@ func (s *Store) GetWebhookDelivery(ctx context.Context, id pgtype.UUID) (Webhook
 }
 
 // GetDelivery returns a tenant-scoped delivery record.
-func (s *Store) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) (WebhookDelivery, error) {
+func (s *Store) GetDelivery(ctx context.Context, deliveryID pgtype.UUID) (WebhookDelivery, error) {
 	row, err := s.read.GetWebhookDeliveryForTenant(ctx, deliveryID)
 	if err != nil {
 		return WebhookDelivery{}, fmt.Errorf("get delivery: %w", err)
@@ -380,7 +380,7 @@ func (s *Store) GetDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUI
 }
 
 // ListDeliveries returns delivery records for a specific endpoint, newest first.
-func (s *Store) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDelivery, error) {
+func (s *Store) ListDeliveries(ctx context.Context, endpointID pgtype.UUID, limit, offset int32) ([]WebhookDelivery, error) {
 	rows, err := s.read.ListWebhookDeliveries(ctx, gen.ListWebhookDeliveriesParams{
 
 		EndpointID: endpointID,
@@ -400,7 +400,7 @@ func (s *Store) ListDeliveries(ctx context.Context, tenantID, endpointID pgtype.
 }
 
 // RetryDelivery resets a failed delivery to pending for immediate re-enqueue.
-func (s *Store) RetryDelivery(ctx context.Context, tenantID, deliveryID pgtype.UUID) error {
+func (s *Store) RetryDelivery(ctx context.Context, deliveryID pgtype.UUID) error {
 	rowsAffected, err := s.write.RetryWebhookDelivery(ctx, deliveryID)
 	if err != nil {
 		return fmt.Errorf("retry delivery: %w", err)

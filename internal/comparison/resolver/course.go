@@ -21,7 +21,7 @@ func NewCourseResolver(svc *university_courses.Service) Resolver {
 	return &courseResolver{svc: svc}
 }
 
-func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	idStr, _ := ref["id"].(string)
 	slug, _ := ref["slug"].(string)
 
@@ -39,9 +39,9 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 			return ResolvedItem{}, false, perr
 		}
 
-		offering, err = r.svc.GetOfferingByID(ctx, tenantID, id)
+		offering, err = r.svc.GetOfferingByID(ctx, id)
 	} else {
-		offering, err = r.svc.GetOfferingBySlug(ctx, tenantID, slug)
+		offering, err = r.svc.GetOfferingBySlug(ctx, slug)
 	}
 
 	if err != nil {
@@ -55,7 +55,7 @@ func (r *courseResolver) Resolve(ctx context.Context, ref map[string]any, tenant
 	return offeringToResolvedItem(offering), true, nil
 }
 
-func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *courseResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -73,7 +73,7 @@ func (r *courseResolver) Search(ctx context.Context, query string, filters map[s
 		return nil, fmt.Errorf("%w: university_id filter is required for course search", errpkg.ErrRequired)
 	}
 
-	offerings, err := r.svc.SearchOfferings(ctx, tenantID, universityID, query, limit, offset)
+	offerings, err := r.svc.SearchOfferings(ctx, universityID, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching course offerings: %w", err)
 	}

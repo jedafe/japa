@@ -89,7 +89,7 @@ type ragCapture struct {
 	chunks []RAGChunk
 }
 
-func (r *ragCapture) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (r *ragCapture) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
 	r.geo = geoSpaceID
 	return r.chunks, nil
 }
@@ -359,7 +359,7 @@ type providerSettingsReader struct {
 	apiKey   string
 }
 
-func (s *providerSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+func (s *providerSettingsReader) GetStringOr(ctx context.Context, key, fallback string) string {
 	switch key {
 	case "agent.external_search_provider":
 		if s.provider != "" {
@@ -374,14 +374,14 @@ func (s *providerSettingsReader) GetStringOr(ctx context.Context, tenantID pgtyp
 	}
 }
 
-func (s *providerSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (s *providerSettingsReader) GetIntOr(ctx context.Context, key string, fallback int) int {
 	return fallback
 }
 
-func (s *providerSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (s *providerSettingsReader) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	return fallback
 }
 
-func (s *providerSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (s *providerSettingsReader) GetBoolOr(ctx context.Context, key string, fallback bool) bool {
 	return fallback
 }

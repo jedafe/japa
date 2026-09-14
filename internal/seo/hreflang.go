@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // hreflangSettingsReader is the subset of config.Settings the hreflang helpers
@@ -18,7 +16,7 @@ import (
 //
 //	conventions/system-settings-catalog.md (i18n.enabled_languages)
 type hreflangSettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // FallbackLanguages is the spec fallback for i18n.enabled_languages when the
@@ -32,12 +30,12 @@ var FallbackLanguages = []string{"en", "fr"}
 // FallbackLanguages when the reader is nil or the setting is empty.
 // Use this instead of the old hardcoded DefaultLanguages so the hreflang set
 // matches the active language selector (Rule 3 — no hardcoded config).
-func ResolveLanguages(ctx context.Context, reader hreflangSettingsReader, tenantID pgtype.UUID) []string {
+func ResolveLanguages(ctx context.Context, reader hreflangSettingsReader) []string {
 	if reader == nil {
 		return FallbackLanguages
 	}
 
-	raw := reader.GetStringOr(ctx, pgtype.UUID{}, "i18n.enabled_languages", "en,fr")
+	raw := reader.GetStringOr(ctx, "i18n.enabled_languages", "en,fr")
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
 

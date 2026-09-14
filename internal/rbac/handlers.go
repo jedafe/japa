@@ -32,13 +32,13 @@ func requireTenant(r *http.Request) (pgtype.UUID, bool) {
 
 // ListGroups handles GET /api/v1/admin/rbac/groups.
 func (h *Handlers) ListGroups(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
 	}
 
-	groups, err := h.store.ListGroups(r.Context(), tenantID)
+	groups, err := h.store.ListGroups(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list groups")
 		return
@@ -60,7 +60,7 @@ type CreateGroupInput struct {
 
 // CreateGroup handles POST /api/v1/admin/rbac/groups.
 func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -87,7 +87,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.store.CreateGroup(r.Context(), tenantID, input.Name, slug, input.Description)
+	id, err := h.store.CreateGroup(r.Context(), input.Name, slug, input.Description)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create group")
 		return
@@ -97,7 +97,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	if len(input.Permissions) > 0 {
 		roleName := input.Name + " Role"
 
-		roleID, err := h.store.CreateRole(r.Context(), tenantID, roleName)
+		roleID, err := h.store.CreateRole(r.Context(), roleName)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create role for group")
 			return
@@ -129,7 +129,7 @@ func (h *Handlers) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // DELETE query) and by an explicit check here. The filter prevents
 // cross-tenant deletion.
 func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -141,7 +141,7 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteGroupByID(r.Context(), tenantID, groupID); err != nil {
+	if err := h.store.DeleteGroupByID(r.Context(), groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete group")
 		return
 	}
@@ -151,7 +151,7 @@ func (h *Handlers) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 // ListGroupMembers handles GET /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -163,7 +163,7 @@ func (h *Handlers) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.store.ListGroupMembers(r.Context(), groupID, tenantID)
+	members, err := h.store.ListGroupMembers(r.Context(), groupID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list members")
 		return
@@ -179,7 +179,7 @@ type AddGroupMemberInput struct {
 
 // AddGroupMember handles POST /api/v1/admin/rbac/groups/{id}/members.
 func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -208,7 +208,7 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.AddUserToGroup(r.Context(), tenantID, userID, groupID); err != nil {
+	if err := h.store.AddUserToGroup(r.Context(), userID, groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to add user to group")
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 
 // RemoveGroupMember handles DELETE /api/v1/admin/rbac/groups/{id}/members/{userId}.
 func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -236,7 +236,7 @@ func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.RemoveUserFromGroup(r.Context(), tenantID, userID, groupID); err != nil {
+	if err := h.store.RemoveUserFromGroup(r.Context(), userID, groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove user from group")
 		return
 	}
@@ -269,7 +269,7 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uc, err := h.rbac.GetUserContext(r.Context(), user.UserID, user.TenantID)
+	uc, err := h.rbac.GetUserContext(r.Context(), user.UserID)
 	if err != nil || uc == nil {
 		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"permissions": []string{}}})
 		return
@@ -289,7 +289,7 @@ func (h *Handlers) GetUserPermissions(w http.ResponseWriter, r *http.Request) {
 
 // ListRoles handles GET /api/v1/admin/rbac/roles.
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -314,7 +314,7 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	roles, total, err := h.store.ListRolesPaginated(r.Context(), tenantID, search, limit, offset)
+	roles, total, err := h.store.ListRolesPaginated(r.Context(), search, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list roles")
 		return
@@ -341,7 +341,7 @@ type CreateRoleInput struct {
 
 // CreateRole handles POST /api/v1/admin/rbac/roles.
 func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -358,7 +358,7 @@ func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.store.CreateRole(r.Context(), tenantID, input.Name)
+	id, err := h.store.CreateRole(r.Context(), input.Name)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create role")
 		return
@@ -496,7 +496,7 @@ func parseUUID(s string) (pgtype.UUID, error) {
 
 // DeleteRole handles DELETE /admin/roles/:id (P5.6).
 func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -508,7 +508,7 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.DeleteRole(r.Context(), tenantID, roleID); err != nil {
+	if err := h.store.DeleteRole(r.Context(), roleID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete role")
 		return
 	}
@@ -518,7 +518,7 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRole handles PATCH /admin/roles/:id (P5.6).
 func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -543,7 +543,7 @@ func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	// Only update the name when a non-empty value is provided, so a
 	// PATCH that only changes permissions doesn't wipe the role name.
 	if input.Name != "" {
-		if err := h.store.UpdateRole(r.Context(), tenantID, roleID, input.Name); err != nil {
+		if err := h.store.UpdateRole(r.Context(), roleID, input.Name); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update role")
 			return
 		}
@@ -598,7 +598,7 @@ func (h *Handlers) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
 // and permission updates on system groups are allowed. The filter
 // prevents cross-tenant updates.
 func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(r)
+	_, ok := requireTenant(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
 		return
@@ -630,7 +630,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	// Protect system groups from slug changes — the slug is the resolution
 	// key for IsSuperAdmin (rbac.go:178) and IsSystemGroup. Changing it
 	// would break the system.
-	existing, err := h.store.GetGroupByID(r.Context(), tenantID, groupID)
+	existing, err := h.store.GetGroupByID(r.Context(), groupID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to look up group")
 		return
@@ -665,7 +665,7 @@ func (h *Handlers) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		updateDesc = existing.Description
 	}
 
-	if err := h.store.UpdateGroup(r.Context(), tenantID, groupID, updateName, updateSlug, updateDesc); err != nil {
+	if err := h.store.UpdateGroup(r.Context(), groupID, updateName, updateSlug, updateDesc); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update group")
 		return
 	}

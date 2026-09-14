@@ -73,7 +73,7 @@ type CreateProviderInput struct {
 }
 
 // CreateProvider is an exported method.
-func (s *Service) CreateProvider(ctx context.Context, tenantID pgtype.UUID, input CreateProviderInput) (gen.AffiliateProvider, error) {
+func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput) (gen.AffiliateProvider, error) {
 	return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 
 		Name:           input.Name,
@@ -91,8 +91,8 @@ func (s *Service) CreateProvider(ctx context.Context, tenantID pgtype.UUID, inpu
 }
 
 // GetProvider is an exported method.
-func (s *Service) GetProvider(ctx context.Context, id, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
-	p, err := s.store.getProviderByID(ctx, id, tenantID)
+func (s *Service) GetProvider(ctx context.Context, id pgtype.UUID) (gen.AffiliateProvider, error) {
+	p, err := s.store.getProviderByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.AffiliateProvider{}, ErrProviderNotFound
@@ -105,17 +105,17 @@ func (s *Service) GetProvider(ctx context.Context, id, tenantID pgtype.UUID) (ge
 }
 
 // ListProviders is an exported method.
-func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, page, pageSize int32) ([]gen.AffiliateProvider, error) {
+func (s *Service) ListProviders(ctx context.Context, page, pageSize int32) ([]gen.AffiliateProvider, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listProviders(ctx, tenantID, true, limit, offset)
+	return s.store.listProviders(ctx, true, limit, offset)
 }
 
 // UpdateProviderInput is an exported type.
 type UpdateProviderInput = CreateProviderInput
 
 // UpdateProvider is an exported method.
-func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, input UpdateProviderInput) (gen.AffiliateProvider, error) {
-	_, err := s.store.getProviderByID(ctx, id, tenantID)
+func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, input UpdateProviderInput) (gen.AffiliateProvider, error) {
+	_, err := s.store.getProviderByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.AffiliateProvider{}, ErrProviderNotFound
@@ -133,8 +133,8 @@ func (s *Service) UpdateProvider(ctx context.Context, id, tenantID pgtype.UUID, 
 }
 
 // DeleteProvider is an exported method.
-func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
-	_, err := s.store.getProviderByID(ctx, id, tenantID)
+func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	_, err := s.store.getProviderByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return ErrProviderNotFound
@@ -152,7 +152,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) 
 		return ErrProviderHasCoupons
 	}
 
-	return s.store.deleteProvider(ctx, id, tenantID)
+	return s.store.deleteProvider(ctx, id)
 }
 
 // ── Coupon Operations ───────────────────────────────────────────────
@@ -195,7 +195,7 @@ func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID
 }
 
 // GetCoupon is an exported method.
-func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
+func (s *Service) GetCoupon(ctx context.Context, id pgtype.UUID) (gen.GetCouponByIDRow, error) {
 	// Try cache first (jc:coupon:{id}, TTL 15min — Section 55).
 	cacheKey := valkey.MustKey("coupon:%s", id.String())
 	if s.vk != nil {
@@ -207,7 +207,7 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 		}
 	}
 
-	c, err := s.store.getCouponByID(ctx, id, tenantID)
+	c, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.GetCouponByIDRow{}, ErrCouponNotFound
@@ -229,9 +229,9 @@ func (s *Service) GetCoupon(ctx context.Context, id, tenantID pgtype.UUID) (gen.
 }
 
 // ListCoupons is an exported method.
-func (s *Service) ListCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsByTenantRow, error) {
+func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsByTenantRow, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listCoupons(ctx, tenantID, status, couponType, search, pgtype.UUID{}, limit, offset)
+	return s.store.listCoupons(ctx, status, couponType, search, pgtype.UUID{}, limit, offset)
 }
 
 func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
@@ -255,7 +255,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 		pid = *providerID
 	}
 
-	coupons, err := s.store.listActiveCoupons(ctx, tenantID, pid, couponType, search, limit, offset)
+	coupons, err := s.store.listActiveCoupons(ctx, pid, couponType, search, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
 func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
-	_, err := s.store.getCouponByID(ctx, id, tenantID)
+	_, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.Coupon{}, ErrCouponNotFound
@@ -305,7 +305,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 
 // DeleteCoupon is an exported method.
 func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
-	_, err := s.store.getCouponByID(ctx, id, tenantID)
+	_, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return ErrCouponNotFound
@@ -314,7 +314,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) er
 		return fmt.Errorf("checking coupon: %w", err)
 	}
 
-	if err := s.store.deleteCoupon(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteCoupon(ctx, id); err != nil {
 		return err
 	}
 
@@ -387,8 +387,8 @@ type RenderedCoupon struct {
 }
 
 // ResolveCouponForRender is an exported method.
-func (s *Service) ResolveCouponForRender(ctx context.Context, tenantID, id pgtype.UUID) (*RenderedCoupon, error) {
-	r, err := s.store.getCouponForRender(ctx, id, tenantID)
+func (s *Service) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*RenderedCoupon, error) {
+	r, err := s.store.getCouponForRender(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrCouponNotFound
@@ -420,8 +420,8 @@ type RenderedAffiliateLink struct {
 }
 
 // ResolveAffiliateLinkForRender is an exported method.
-func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, tenantID, providerID pgtype.UUID, originalURL string) (*RenderedAffiliateLink, error) {
-	r, err := s.store.getAffiliateProviderForRender(ctx, providerID, tenantID)
+func (s *Service) ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*RenderedAffiliateLink, error) {
+	r, err := s.store.getAffiliateProviderForRender(ctx, providerID)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, ErrProviderNotFound
@@ -558,7 +558,7 @@ type RecordAffiliateCommissionInput struct {
 //
 // AUDIT-BE-TASK-001: this is the missing INSERT site that triggers the
 // affiliate:credit_author_commission task.
-func (s *Service) RecordAffiliateCommission(ctx context.Context, tenantID pgtype.UUID, in RecordAffiliateCommissionInput) (gen.AffiliateContentCommission, error) {
+func (s *Service) RecordAffiliateCommission(ctx context.Context, in RecordAffiliateCommissionInput) (gen.AffiliateContentCommission, error) {
 	// 1. Look up the content to get the author_id.
 	content, err := s.store.read.GetContentByID(ctx,
 		in.ContentID,

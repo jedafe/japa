@@ -55,7 +55,7 @@ func (h *OAuthHandlers) maybeCreateUserSource(ctx context.Context, tenantID, use
 	}
 
 	if h.Settings != nil {
-		enabled, err := h.Settings.GetSettingBool(ctx, tenantID, "sources.auto_create_for_users")
+		enabled, err := h.Settings.GetSettingBool(ctx, "sources.auto_create_for_users")
 		if err != nil || !enabled {
 			return
 		}
@@ -100,7 +100,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 	// affects the site. Ref: conventions/system-settings-catalog.md
 	if h.Settings != nil {
 		if t := &struct{ ID pgtype.UUID }{}; t != nil {
-			if allowed, err := h.Settings.GetSettingBool(r.Context(), t.ID, "users.allow_social_login"); err == nil && !allowed {
+			if allowed, err := h.Settings.GetSettingBool(r.Context(), "users.allow_social_login"); err == nil && !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "social_login_disabled",
 					"Social login is disabled for this tenant")
 				return
@@ -328,7 +328,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 
 		// §unified-tiers: new users start on the regular tier.
 		if h.TierManager != nil {
-			if tierErr := h.TierManager.SetUserTier(ctx, tenantID, userID, "regular"); tierErr != nil {
+			if tierErr := h.TierManager.SetUserTier(ctx, userID, "regular"); tierErr != nil {
 				slog.Warn("oauth register: failed to set regular tier", "error", tierErr, "user_id", userID.String())
 			}
 		}
@@ -339,7 +339,7 @@ func (h *OAuthHandlers) createOAuthUser(ctx context.Context, tenantID pgtype.UUI
 
 		// §50 Pre-seed default bookmark folders. Non-fatal: logged on failure.
 		if h.DefaultFolderSetter != nil {
-			if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(ctx, tenantID, userID); err != nil {
+			if err := h.DefaultFolderSetter.CreateDefaultFoldersForUser(ctx, userID); err != nil {
 				slog.Warn("oauth register: failed to create default bookmark folders", "error", err)
 			}
 		}
@@ -431,7 +431,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
-	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings, tenantID)
+	refreshTTL := GetRefreshTokenTTL(r.Context(), h.Settings)
 
 	if err := h.Queries.CreateRefreshToken(r.Context(), gen.CreateRefreshTokenParams{
 
@@ -453,7 +453,7 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	// hardcoded 15 minutes would cause the cookie to expire before or after
 	// the actual token if an admin changes the setting.
 	// Ref: sections/02-authentication-sessions.md (Token model)
-	accessTTL := GetAccessTokenTTL(r.Context(), h.Settings, tenantID)
+	accessTTL := GetAccessTokenTTL(r.Context(), h.Settings)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "jc_token",
 		Value:    accessToken,

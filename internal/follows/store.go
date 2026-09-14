@@ -23,7 +23,7 @@ func NewStore(read, write *gen.Queries) *Store {
 // getSpaceJoiningPerm returns the joining_perm value for a space. Used by
 // ToggleFollow to decide whether following a space should auto-join the
 // follower as a member (BL-010 / Section 31: open-joining spaces auto-join).
-func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	space, err := s.read.GetSpaceByID(ctx,
 		spaceID,
 	)
@@ -37,7 +37,7 @@ func (s *Store) getSpaceJoiningPerm(ctx context.Context, spaceID, tenantID pgtyp
 // addSpaceMember adds the user as a member of the space. The underlying
 // query is INSERT ... ON CONFLICT DO NOTHING, so calling this when the user
 // is already a member is a safe no-op (BL-010).
-func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID, tenantID pgtype.UUID) error {
+func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID pgtype.UUID) error {
 	if err := s.write.AddSpaceMember(ctx, gen.AddSpaceMemberParams{
 		SpaceID: spaceID,
 		UserID:  userID,
@@ -50,14 +50,14 @@ func (s *Store) addSpaceMember(ctx context.Context, spaceID, userID, tenantID pg
 
 // toggleFollow inserts a follow row. Returns true if a new row was inserted,
 // false if the row already existed (ON CONFLICT DO NOTHING).
-func (s *Store) toggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
-	return s.toggleFollowTx(ctx, s.write, tenantID, followerID, entityType, entityID)
+func (s *Store) toggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+	return s.toggleFollowTx(ctx, s.write, followerID, entityType, entityID)
 }
 
 // toggleFollowTx is the transaction-scoped version of toggleFollow. It uses
 // the provided gen.Queries (which may be backed by a transaction) for both
 // the read check and the write, ensuring the toggle + count update are atomic.
-func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	// First check if the follow already exists.
 	existing, err := q.GetFollow(ctx, gen.GetFollowParams{
 
@@ -93,7 +93,7 @@ func (s *Store) toggleFollowTx(ctx context.Context, q *gen.Queries, tenantID, fo
 }
 
 // getFollow returns the follow row for a specific follower-entity pair.
-func (s *Store) getFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
+func (s *Store) getFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.Follow, error) {
 	follow, err := s.read.GetFollow(ctx, gen.GetFollowParams{
 
 		FollowerID: followerID,
@@ -108,7 +108,7 @@ func (s *Store) getFollow(ctx context.Context, tenantID, followerID pgtype.UUID,
 }
 
 // isFollowing returns true if the follower is following the entity.
-func (s *Store) isFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+func (s *Store) isFollowing(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsFollowing(ctx, gen.IsFollowingParams{
 
 		FollowerID: followerID,
@@ -125,7 +125,7 @@ func (s *Store) isFollowing(ctx context.Context, tenantID, followerID pgtype.UUI
 // isMutualFollow returns true if the entityID follows the followerID (single
 // direction). The Service.IsMutualFollow wrapper calls this twice to check
 // both directions for a true mutual connection (Section 31).
-func (s *Store) isMutualFollow(ctx context.Context, tenantID, followerID, entityID pgtype.UUID) (bool, error) {
+func (s *Store) isMutualFollow(ctx context.Context, followerID, entityID pgtype.UUID) (bool, error) {
 	result, err := s.read.IsMutualFollow(ctx, gen.IsMutualFollowParams{
 
 		EntityID:   entityID,
@@ -139,7 +139,7 @@ func (s *Store) isMutualFollow(ctx context.Context, tenantID, followerID, entity
 }
 
 // getFollowers returns paginated followers of an entity with user info.
-func (s *Store) getFollowers(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.GetFollowersByEntityRow, error) {
+func (s *Store) getFollowers(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.GetFollowersByEntityRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -159,7 +159,7 @@ func (s *Store) getFollowers(ctx context.Context, tenantID pgtype.UUID, entityTy
 }
 
 // getFollowing returns paginated entities that a user follows.
-func (s *Store) getFollowing(ctx context.Context, tenantID, followerID pgtype.UUID, limit, offset int32) ([]gen.GetFollowingByUserRow, error) {
+func (s *Store) getFollowing(ctx context.Context, followerID pgtype.UUID, limit, offset int32) ([]gen.GetFollowingByUserRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -179,7 +179,7 @@ func (s *Store) getFollowing(ctx context.Context, tenantID, followerID pgtype.UU
 
 // getFollowingByType returns paginated entities of one entity_type that a
 // user follows (catalog: GET /me/followed-tags uses entity_type "tag").
-func (s *Store) getFollowingByType(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, limit, offset int32) ([]gen.GetFollowingByUserAndTypeRow, error) {
+func (s *Store) getFollowingByType(ctx context.Context, followerID pgtype.UUID, entityType string, limit, offset int32) ([]gen.GetFollowingByUserAndTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -199,7 +199,7 @@ func (s *Store) getFollowingByType(ctx context.Context, tenantID, followerID pgt
 }
 
 // countFollowers returns the number of followers for an entity.
-func (s *Store) countFollowers(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (int32, error) {
+func (s *Store) countFollowers(ctx context.Context, entityType string, entityID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountFollowersByEntity(ctx, gen.CountFollowersByEntityParams{
 
 		EntityType: entityType,
@@ -213,7 +213,7 @@ func (s *Store) countFollowers(ctx context.Context, tenantID pgtype.UUID, entity
 }
 
 // countFollowing returns the number of entities a user follows.
-func (s *Store) countFollowing(ctx context.Context, tenantID, followerID pgtype.UUID) (int32, error) {
+func (s *Store) countFollowing(ctx context.Context, followerID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountFollowingByUser(ctx,
 
 		followerID,
@@ -226,7 +226,7 @@ func (s *Store) countFollowing(ctx context.Context, tenantID, followerID pgtype.
 }
 
 // getBulkFollowingStatus returns follow status for multiple entities of the same type.
-func (s *Store) getBulkFollowingStatus(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityIDs []pgtype.UUID) (map[pgtype.UUID]bool, error) {
+func (s *Store) getBulkFollowingStatus(ctx context.Context, followerID pgtype.UUID, entityType string, entityIDs []pgtype.UUID) (map[pgtype.UUID]bool, error) {
 	if len(entityIDs) == 0 {
 		return map[pgtype.UUID]bool{}, nil
 	}

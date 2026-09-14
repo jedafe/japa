@@ -23,7 +23,7 @@ type stubPersonaResolver struct {
 	lastPID pgtype.UUID
 }
 
-func (s *stubPersonaResolver) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
+func (s *stubPersonaResolver) GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error) {
 	s.called = true
 	s.lastPID = personaID
 

@@ -57,8 +57,8 @@ type Handlers struct {
 // /custom-field-groups endpoint is auth-gated. Satisfied by
 // customfields.Service.
 type TagFieldDefLister interface {
-	ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error)
-	ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
+	ListFieldGroupsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroup, error)
+	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 }
 
 // NewHandlers creates Handlers with the given services.
@@ -152,14 +152,14 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 
 // resolveTag looks up a tag by slug, writing a 404 and returning ok=false if
 // it doesn't exist. Shared by every handler below GetTag.
-func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (gen.GetTagBySlugRow, bool) {
+func (h *Handlers) resolveTag(w http.ResponseWriter, r *http.Request) (gen.GetTagBySlugRow, bool) {
 	slug := chi.URLParam(r, "slug")
 	if slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Tag slug is required")
 		return gen.GetTagBySlugRow{}, false
 	}
 
-	tag, err := h.service.GetTagBySlug(r.Context(), tenantID, slug)
+	tag, err := h.service.GetTagBySlug(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
@@ -253,12 +253,12 @@ func (h *Handlers) ListTags(w http.ResponseWriter, r *http.Request) {
 
 // GetTag handles GET /api/v1/tags/{slug}. [public].
 func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	tag, ok := h.resolveTag(w, r, tenantID)
+	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
 	}
@@ -269,7 +269,7 @@ func (h *Handlers) GetTag(w http.ResponseWriter, r *http.Request) {
 	// Embed the tag entity-class field definitions so guests can render
 	// labeled field_values — /custom-field-groups is auth-gated. Best-effort:
 	// nil lister or an error degrades to an empty array.
-	row["field_defs"] = h.tagFieldDefs(r.Context(), tenantID)
+	row["field_defs"] = h.tagFieldDefs(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": row})
 }
 
@@ -288,13 +288,13 @@ type tagFieldDef struct {
 // entity class, deduplicated by key (multiple groups may define the same
 // key — the page's keyed each block would break). Returns an empty slice on
 // failure or when no lister is wired.
-func (h *Handlers) tagFieldDefs(ctx context.Context, tenantID pgtype.UUID) []tagFieldDef {
+func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 	defs := make([]tagFieldDef, 0)
 	if h.fieldDefs == nil {
 		return defs
 	}
 
-	groups, err := h.fieldDefs.ListFieldGroupsByEntityClass(ctx, tenantID, "tag")
+	groups, err := h.fieldDefs.ListFieldGroupsByEntityClass(ctx, "tag")
 	if err != nil {
 		slog.Warn("tags: failed to load tag field groups", "error", err)
 		return defs
@@ -302,7 +302,7 @@ func (h *Handlers) tagFieldDefs(ctx context.Context, tenantID pgtype.UUID) []tag
 
 	seen := make(map[string]bool)
 	for _, g := range groups {
-		fields, err := h.fieldDefs.ListFieldsByGroup(ctx, g.ID, tenantID)
+		fields, err := h.fieldDefs.ListFieldsByGroup(ctx, g.ID)
 		if err != nil {
 			slog.Warn("tags: failed to load tag field group fields", "group_id", g.ID, "error", err)
 			continue
@@ -333,12 +333,12 @@ func (h *Handlers) tagFieldDefs(ctx context.Context, tenantID pgtype.UUID) []tag
 // The composite (created_at, id) cursor avoids skipping items that share the
 // same created_at timestamp. [public].
 func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	tag, ok := h.resolveTag(w, r, tenantID)
+	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
 	}
@@ -370,7 +370,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 	filter := visibility.VisibilityFilterFromRequest(r)
 
-	items, err := h.content.ListContentByTag(r.Context(), tenantID, tag.ID, cursor, cursorID, limit, filter)
+	items, err := h.content.ListContentByTag(r.Context(), tag.ID, cursor, cursorID, limit, filter)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tagged content")
 		return
@@ -378,7 +378,7 @@ func (h *Handlers) GetTagContent(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve template literals ({{...}}) in item titles/bodies — same
 	// best-effort resolution the content list handler applies.
-	rc := literals.NewRequestContext(r, tenantID, "")
+	rc := literals.NewRequestContext(r, "")
 	if resErr := h.content.ResolveContentFields(r.Context(), items, rc); resErr != nil {
 		slog.Warn("tags: failed to resolve item literals", "error", resErr)
 	}
@@ -452,7 +452,7 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, ok := h.resolveTag(w, r, tenantID)
+	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
 	}
@@ -468,12 +468,12 @@ func (h *Handlers) ToggleTagFollow(w http.ResponseWriter, r *http.Request) {
 
 // GetTagFollowers handles GET /api/v1/tags/{slug}/followers.
 func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	tag, ok := h.resolveTag(w, r, tenantID)
+	tag, ok := h.resolveTag(w, r)
 	if !ok {
 		return
 	}
@@ -488,7 +488,7 @@ func (h *Handlers) GetTagFollowers(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	followers, err := h.follows.GetFollowers(r.Context(), tenantID, callerID, follows.EntityTypeTag, tag.ID, limit, offset)
+	followers, err := h.follows.GetFollowers(r.Context(), callerID, follows.EntityTypeTag, tag.ID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get tag followers")
 		return
@@ -686,7 +686,7 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tag, err := h.service.CreateTag(r.Context(), tenantID, CreateTagInput{
+	tag, err := h.service.CreateTag(r.Context(), CreateTagInput{
 		Name:         content.SanitizeText(input.Name),
 		Slug:         slug,
 		Description:  input.Description,
@@ -797,7 +797,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	// fetched once when either guarded field is absent.
 	var existing gen.GetTagByIDRow
 	if input.IsSystem == nil || len(input.FieldValues) == 0 || string(input.FieldValues) == "null" {
-		e, err := h.service.GetTagByID(r.Context(), id, tenantID)
+		e, err := h.service.GetTagByID(r.Context(), id)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 			return
@@ -818,7 +818,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		fieldValues = existing.FieldValues
 	}
 
-	tag, err := h.service.UpdateTag(r.Context(), id, tenantID, UpdateTagInput{
+	tag, err := h.service.UpdateTag(r.Context(), id, UpdateTagInput{
 		Name:         content.SanitizeText(input.Name),
 		Slug:         slug,
 		Description:  input.Description,
@@ -868,7 +868,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Guard 1: Check if tag is a system tag (cannot be deleted).
-	tag, err := h.service.GetTagByID(r.Context(), id, tenantID)
+	tag, err := h.service.GetTagByID(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tag not found")
 		return
@@ -891,7 +891,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteTag(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteTag(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tag")
 		return
 	}
@@ -924,7 +924,7 @@ func isValidHexColor(s string) bool {
 
 // ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
 func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -935,7 +935,7 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.service.ListTagModerators(r.Context(), tagID, tenantID)
+	rows, err := h.service.ListTagModerators(r.Context(), tagID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
 		return
@@ -955,7 +955,7 @@ func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 
 // AddTagModerator handles POST /api/v1/admin/tags/:id/moderators (Section 49).
 func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -990,7 +990,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case input.Username != "":
-		userID, err = h.service.GetUserIDByUsername(r.Context(), tenantID, input.Username)
+		userID, err = h.service.GetUserIDByUsername(r.Context(), input.Username)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
 			return
@@ -1032,7 +1032,7 @@ func (h *Handlers) AddTagModerator(w http.ResponseWriter, r *http.Request) {
 
 // RemoveTagModerator handles DELETE /api/v1/admin/tags/:id/moderators/:userId (Section 49).
 func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1049,7 +1049,7 @@ func (h *Handlers) RemoveTagModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.RemoveTagModerator(r.Context(), tagID, userID, tenantID); err != nil {
+	if err := h.service.RemoveTagModerator(r.Context(), tagID, userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove tag moderator")
 		return
 	}

@@ -30,19 +30,19 @@ var ErrPersonaPoolTooSmall = errors.New("persona_pool_too_small")
 // storer is the storage interface required by the service. The concrete
 // *Store satisfies it; tests can provide a fake implementation.
 type storer interface {
-	CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (gen.ContentCampaign, error)
+	CreateCampaign(ctx context.Context, userID pgtype.UUID, in CreateCampaignInput) (gen.ContentCampaign, error)
 	CreateCampaignItemsAndFinalize(ctx context.Context, campaign gen.ContentCampaign, items []CampaignItemPlan, plan CampaignPlanResult) ([]gen.ContentCampaignItem, error)
 	UpdateCampaignStatus(ctx context.Context, id pgtype.UUID, status string, planJSON []byte) (gen.ContentCampaign, error)
-	GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error)
-	ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]gen.ContentCampaign, int64, error)
-	ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error)
-	GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaignItem, error)
-	GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error)
-	GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error)
+	GetCampaign(ctx context.Context, id pgtype.UUID) (gen.ContentCampaign, error)
+	ListCampaigns(ctx context.Context, f CampaignListFilter) ([]gen.ContentCampaign, int64, error)
+	ListCampaignItemsByCampaign(ctx context.Context, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error)
+	GetCampaignItem(ctx context.Context, id pgtype.UUID) (gen.ContentCampaignItem, error)
+	GetCampaignItemByStudioJob(ctx context.Context, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error)
+	GetCampaignItemByReviewID(ctx context.Context, reviewID pgtype.UUID) (gen.ContentCampaignItem, error)
 	UpdateCampaignItem(ctx context.Context, params gen.UpdateContentCampaignItemParams) (gen.ContentCampaignItem, error)
-	ListActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListContentCampaignActivePersonasRow, error)
-	ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error)
-	SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error)
+	ListActivePersonas(ctx context.Context) ([]gen.ListContentCampaignActivePersonasRow, error)
+	ListActivePersonasByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error)
+	SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error)
 }
 
 // personaProvisioner is the subset of the personas service the campaign layer
@@ -55,21 +55,21 @@ type personaProvisioner interface {
 // create batches, retry jobs, and cancel jobs.
 type studioService interface {
 	CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, in studio.CreateBatchInput) (studio.Batch, []studio.Job, error)
-	RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error
-	CancelJob(ctx context.Context, tenantID, id pgtype.UUID) error
-	ListContentTypes(ctx context.Context, tenantID pgtype.UUID) studio.ContentTypeResponse
+	RetryJob(ctx context.Context, id pgtype.UUID) error
+	CancelJob(ctx context.Context, id pgtype.UUID) error
+	ListContentTypes(ctx context.Context) studio.ContentTypeResponse
 }
 
 // permissionChecker is the RBAC resolver subset used to gate auto-provision.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // settingsReader is the system settings subset the service needs.
 type settingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // Service implements the content campaign business logic.
@@ -97,21 +97,21 @@ func NewService(store storer, planner Planner, personas personaProvisioner, stud
 // CreateCampaign validates the input, creates a campaign row, plans it, and
 // optionally runs it immediately.
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (Campaign, []CampaignItem, error) {
-	if !s.isEnabled(ctx, tenantID) {
+	if !s.isEnabled(ctx) {
 		return Campaign{}, nil, errors.New("campaign: feature is disabled")
 	}
 
-	if err := s.validateCount(ctx, tenantID, in.Count); err != nil {
+	if err := s.validateCount(ctx, in.Count); err != nil {
 		return Campaign{}, nil, err
 	}
 
 	if in.TargetSpaceID != "" {
-		if err := s.validateTargetSpace(ctx, tenantID, in.TargetSpaceID); err != nil {
+		if err := s.validateTargetSpace(ctx, in.TargetSpaceID); err != nil {
 			return Campaign{}, nil, err
 		}
 	}
 
-	campaign, err := s.store.CreateCampaign(ctx, tenantID, userID, in)
+	campaign, err := s.store.CreateCampaign(ctx, userID, in)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: create campaign: %w", err)
 	}
@@ -122,7 +122,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 	}
 
 	if in.RunImmediately {
-		if s.perms == nil || !s.perms.HasPermission(ctx, userID, tenantID, "campaign.run") {
+		if s.perms == nil || !s.perms.HasPermission(ctx, userID, "campaign.run") {
 			return planned, items, fmt.Errorf("campaign: %w: run immediately requires campaign.run permission", errpkg.ErrForbidden)
 		}
 
@@ -132,7 +132,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 			slog.Warn("campaign: run immediately failed after plan", "campaign_id", campaign.ID, "error", err)
 		}
 		// Reload so the returned campaign and items reflect the latest state.
-		reloaded, reloadedItems, reloadErr := s.GetCampaign(ctx, tenantID, campaign.ID)
+		reloaded, reloadedItems, reloadErr := s.GetCampaign(ctx, campaign.ID)
 		if reloadErr != nil {
 			slog.Warn("campaign: reload after run failed", "campaign_id", campaign.ID, "error", reloadErr)
 		} else {
@@ -147,12 +147,12 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 // allowed, generates a content plan, and persists the items with the campaign
 // in the 'planned' status.
 func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error) {
-	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
 	}
 
-	if !s.isEnabled(ctx, tenantID) {
+	if !s.isEnabled(ctx) {
 		return Campaign{}, nil, errors.New("campaign: feature is disabled")
 	}
 
@@ -167,11 +167,11 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 	}
 
 	// Validate the requested count again against the final pool size.
-	if err := s.validateCount(ctx, tenantID, int(campaign.RequestedCount)); err != nil {
+	if err := s.validateCount(ctx, int(campaign.RequestedCount)); err != nil {
 		return Campaign{}, nil, err
 	}
 
-	allowedTypes := s.allowedContentTypes(ctx, tenantID, campaign.ContentType)
+	allowedTypes := s.allowedContentTypes(ctx, campaign.ContentType)
 
 	provisionedCount := 0
 
@@ -209,7 +209,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 		return Campaign{}, nil, err
 	}
 
-	if err := s.validatePlanTargetSpaces(ctx, tenantID, campaign, plan.Items); err != nil {
+	if err := s.validatePlanTargetSpaces(ctx, campaign, plan.Items); err != nil {
 		_ = s.failCampaign(ctx, campaign, err.Error())
 		return Campaign{}, nil, err
 	}
@@ -219,7 +219,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 		return Campaign{}, nil, fmt.Errorf("campaign: finalize campaign: %w", err)
 	}
 
-	updated, err := s.store.GetCampaign(ctx, tenantID, campaign.ID)
+	updated, err := s.store.GetCampaign(ctx, campaign.ID)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: reload campaign: %w", err)
 	}
@@ -243,7 +243,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 // RunCampaign converts planned campaign items into a Studio batch and updates
 // the campaign status to 'generating'.
 func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) (studio.Batch, []studio.Job, error) {
-	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return studio.Batch{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
 	}
@@ -252,7 +252,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 		return studio.Batch{}, nil, fmt.Errorf("campaign: %w: campaign must be planned to run (current: %s)", errpkg.ErrInvalidStatusTransition, campaign.Status)
 	}
 
-	items, err := s.store.ListCampaignItemsByCampaign(ctx, tenantID, campaignID)
+	items, err := s.store.ListCampaignItemsByCampaign(ctx, campaignID)
 	if err != nil {
 		return studio.Batch{}, nil, fmt.Errorf("campaign: list items: %w", err)
 	}
@@ -309,7 +309,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 }
 
 // ListCampaigns returns a paginated list of campaigns for a tenant.
-func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]Campaign, int64, error) {
+func (s *Service) ListCampaigns(ctx context.Context, f CampaignListFilter) ([]Campaign, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
 	}
@@ -318,7 +318,7 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Cam
 		f.Limit = 100
 	}
 
-	rows, total, err := s.store.ListCampaigns(ctx, tenantID, f)
+	rows, total, err := s.store.ListCampaigns(ctx, f)
 	if err != nil {
 		return nil, 0, fmt.Errorf("campaign: list: %w", err)
 	}
@@ -332,19 +332,19 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Cam
 }
 
 // GetCampaign returns a campaign and all its items.
-func (s *Service) GetCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) (Campaign, []CampaignItem, error) {
-	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+func (s *Service) GetCampaign(ctx context.Context, campaignID pgtype.UUID) (Campaign, []CampaignItem, error) {
+	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
 	}
 
-	items, err := s.store.ListCampaignItemsByCampaign(ctx, tenantID, campaignID)
+	items, err := s.store.ListCampaignItemsByCampaign(ctx, campaignID)
 	if err != nil {
 		return Campaign{}, nil, fmt.Errorf("campaign: list items: %w", err)
 	}
 
 	// Best-effort persona name map from current active personas.
-	active, err := s.store.ListActivePersonas(ctx, tenantID)
+	active, err := s.store.ListActivePersonas(ctx)
 	personaNames := make(map[string]string)
 
 	if err == nil {
@@ -362,8 +362,8 @@ func (s *Service) GetCampaign(ctx context.Context, tenantID, campaignID pgtype.U
 }
 
 // RetryItem retries a failed campaign item by re-enqueueing its Studio job.
-func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype.UUID) error {
-	item, err := s.store.GetCampaignItem(ctx, tenantID, itemID)
+func (s *Service) RetryItem(ctx context.Context, userID, itemID pgtype.UUID) error {
+	item, err := s.store.GetCampaignItem(ctx, itemID)
 	if err != nil {
 		return fmt.Errorf("campaign: get item: %w", err)
 	}
@@ -373,7 +373,7 @@ func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype
 	}
 
 	if item.StudioJobID.Valid {
-		if err := s.studio.RetryJob(ctx, tenantID, item.StudioJobID); err != nil {
+		if err := s.studio.RetryJob(ctx, item.StudioJobID); err != nil {
 			return fmt.Errorf("campaign: retry studio job: %w", err)
 		}
 	}
@@ -389,8 +389,8 @@ func (s *Service) RetryItem(ctx context.Context, tenantID, userID, itemID pgtype
 }
 
 // CancelCampaign cancels a campaign and fails all non-final items.
-func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) error {
-	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+func (s *Service) CancelCampaign(ctx context.Context, userID, campaignID pgtype.UUID) error {
+	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("campaign: get campaign: %w", err)
 	}
@@ -399,7 +399,7 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 		return fmt.Errorf("campaign: %w: cannot cancel campaign in status %s", errpkg.ErrInvalidStatusTransition, campaign.Status)
 	}
 
-	items, err := s.store.ListCampaignItemsByCampaign(ctx, tenantID, campaignID)
+	items, err := s.store.ListCampaignItemsByCampaign(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("campaign: list items: %w", err)
 	}
@@ -413,7 +413,7 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 		msg := "cancelled"
 
 		if it.StudioJobID.Valid && it.Status == ItemStatusQueued {
-			if cerr := s.studio.CancelJob(ctx, tenantID, it.StudioJobID); cerr != nil && !errors.Is(cerr, studio.ErrJobNotCancellable) {
+			if cerr := s.studio.CancelJob(ctx, it.StudioJobID); cerr != nil && !errors.Is(cerr, studio.ErrJobNotCancellable) {
 				slog.Warn("campaign: cancel studio job failed", "job_id", it.StudioJobID, "error", cerr)
 			}
 		}
@@ -438,8 +438,8 @@ func (s *Service) CancelCampaign(ctx context.Context, tenantID, userID, campaign
 // Studio job and, when every item has reached a terminal state, transitions the
 // campaign to 'completed'. It is safe to call for jobs that do not belong to a
 // campaign; in that case it returns nil without error.
-func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error {
-	item, err := s.store.GetCampaignItemByStudioJob(ctx, tenantID, studioJobID)
+func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error {
+	item, err := s.store.GetCampaignItemByStudioJob(ctx, studioJobID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -460,7 +460,7 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 		return fmt.Errorf("campaign: sync item by studio job: %w", err)
 	}
 
-	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
+	if err := s.maybeCompleteCampaign(ctx, item.CampaignID); err != nil {
 		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
 	}
 
@@ -470,19 +470,19 @@ func (s *Service) SyncCampaignItemByStudioJob(ctx context.Context, tenantID, stu
 // OnStudioReviewApproved is called by the HITL review pipeline when a
 // source='studio' review is approved. It marks the linked campaign item as
 // 'published' and may complete the campaign.
-func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
-	return s.updateItemByReview(ctx, tenantID, reviewID, ItemStatusPublished)
+func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
+	return s.updateItemByReview(ctx, reviewID, ItemStatusPublished)
 }
 
 // OnStudioReviewRejected is called by the HITL review pipeline when a
 // source='studio' review is rejected. It marks the linked campaign item as
 // 'rejected' and may complete the campaign.
-func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
-	return s.updateItemByReview(ctx, tenantID, reviewID, ItemStatusRejected)
+func (s *Service) OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
+	return s.updateItemByReview(ctx, reviewID, ItemStatusRejected)
 }
 
-func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgtype.UUID, status string) error {
-	item, err := s.store.GetCampaignItemByReviewID(ctx, tenantID, reviewID)
+func (s *Service) updateItemByReview(ctx context.Context, reviewID pgtype.UUID, status string) error {
+	item, err := s.store.GetCampaignItemByReviewID(ctx, reviewID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -500,15 +500,15 @@ func (s *Service) updateItemByReview(ctx context.Context, tenantID, reviewID pgt
 		return fmt.Errorf("campaign: sync item by review: %w", err)
 	}
 
-	if err := s.maybeCompleteCampaign(ctx, tenantID, item.CampaignID); err != nil {
+	if err := s.maybeCompleteCampaign(ctx, item.CampaignID); err != nil {
 		slog.Warn("campaign: check completion failed", "campaign_id", item.CampaignID, "error", err)
 	}
 
 	return nil
 }
 
-func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
-	campaign, err := s.store.GetCampaign(ctx, tenantID, campaignID)
+func (s *Service) maybeCompleteCampaign(ctx context.Context, campaignID pgtype.UUID) error {
+	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return err
 	}
@@ -517,7 +517,7 @@ func (s *Service) maybeCompleteCampaign(ctx context.Context, tenantID, campaignI
 		return nil
 	}
 
-	items, err := s.store.ListCampaignItemsByCampaign(ctx, tenantID, campaignID)
+	items, err := s.store.ListCampaignItemsByCampaign(ctx, campaignID)
 	if err != nil {
 		return err
 	}
@@ -558,7 +558,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 	pool := make([]personaPoolEntry, 0)
 
 	if len(campaign.PersonaPool) > 0 {
-		rows, err := s.store.ListActivePersonasByIDs(ctx, tenantID, campaign.PersonaPool)
+		rows, err := s.store.ListActivePersonasByIDs(ctx, campaign.PersonaPool)
 		if err != nil {
 			return nil, fmt.Errorf("campaign: load persona pool: %w", err)
 		}
@@ -575,7 +575,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 			})
 		}
 	} else {
-		rows, err := s.store.ListActivePersonas(ctx, tenantID)
+		rows, err := s.store.ListActivePersonas(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("campaign: load active personas: %w", err)
 		}
@@ -595,7 +595,7 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 			return nil, fmt.Errorf("%w: need %d personas, have %d", ErrPersonaPoolTooSmall, campaign.RequestedCount, len(pool))
 		}
 
-		if s.perms == nil || !s.perms.HasPermission(ctx, userID, tenantID, "persona.manage") {
+		if s.perms == nil || !s.perms.HasPermission(ctx, userID, "persona.manage") {
 			return nil, fmt.Errorf("campaign: %w: auto-provision requires persona.manage permission", errpkg.ErrForbidden)
 		}
 
@@ -647,14 +647,14 @@ func (s *Service) buildPersonaPool(ctx context.Context, tenantID pgtype.UUID, ca
 	return pool, nil
 }
 
-func (s *Service) validateCount(ctx context.Context, tenantID pgtype.UUID, count int) error {
+func (s *Service) validateCount(ctx context.Context, count int) error {
 	if count <= 0 {
 		return fmt.Errorf("campaign: %w: count must be greater than 0", errpkg.ErrInvalid)
 	}
 
 	maxCount := 100
 	if s.settings != nil {
-		maxCount = s.settings.GetIntOr(ctx, pgtype.UUID{}, "campaign.max_count", 50)
+		maxCount = s.settings.GetIntOr(ctx, "campaign.max_count", 50)
 	}
 
 	if maxCount > 100 {
@@ -668,12 +668,12 @@ func (s *Service) validateCount(ctx context.Context, tenantID pgtype.UUID, count
 	return nil
 }
 
-func (s *Service) allowedContentTypes(ctx context.Context, tenantID pgtype.UUID, campaignContentType *string) []string {
+func (s *Service) allowedContentTypes(ctx context.Context, campaignContentType *string) []string {
 	if campaignContentType != nil && *campaignContentType != "" {
 		return []string{*campaignContentType}
 	}
 
-	resp := s.studio.ListContentTypes(ctx, tenantID)
+	resp := s.studio.ListContentTypes(ctx)
 	types := make([]string, 0, len(resp.Types))
 
 	for _, t := range resp.Types {
@@ -733,13 +733,13 @@ func (s *Service) validatePlan(plan CampaignPlanResult, requestedCount int32, po
 	return nil
 }
 
-func (s *Service) validateTargetSpace(ctx context.Context, tenantID pgtype.UUID, id string) error {
+func (s *Service) validateTargetSpace(ctx context.Context, id string) error {
 	var sid pgtype.UUID
 	if err := sid.Scan(id); err != nil {
 		return fmt.Errorf("campaign: %w: invalid target_space_id %q", errpkg.ErrInvalid, id)
 	}
 
-	exists, err := s.store.SpaceExists(ctx, tenantID, sid)
+	exists, err := s.store.SpaceExists(ctx, sid)
 	if err != nil {
 		return fmt.Errorf("campaign: validate target space: %w", err)
 	}
@@ -751,7 +751,7 @@ func (s *Service) validateTargetSpace(ctx context.Context, tenantID pgtype.UUID,
 	return nil
 }
 
-func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.UUID, campaign gen.ContentCampaign, items []CampaignItemPlan) error {
+func (s *Service) validatePlanTargetSpaces(ctx context.Context, campaign gen.ContentCampaign, items []CampaignItemPlan) error {
 	seen := make(map[string]struct{})
 	ids := make([]pgtype.UUID, 0, len(items)+1)
 
@@ -780,7 +780,7 @@ func (s *Service) validatePlanTargetSpaces(ctx context.Context, tenantID pgtype.
 	}
 
 	for _, sid := range ids {
-		exists, err := s.store.SpaceExists(ctx, tenantID, sid)
+		exists, err := s.store.SpaceExists(ctx, sid)
 		if err != nil {
 			return fmt.Errorf("campaign: validate target space: %w", err)
 		}
@@ -800,12 +800,12 @@ func (s *Service) failCampaign(ctx context.Context, campaign gen.ContentCampaign
 	return err
 }
 
-func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) isEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "campaign.enabled", true)
+	return s.settings.GetBoolOr(ctx, "campaign.enabled", true)
 }
 
 func toPersonaInput(sp PersonaSpec, index int) (personas.PersonaInput, error) {

@@ -60,7 +60,7 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.checker.SetEnabled(r.Context(), pgtype.UUID{}, flagName, input.Enabled, user.UserID); err != nil {
+	if err := h.checker.SetEnabled(r.Context(), flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 
@@ -101,7 +101,7 @@ type FeatureFlag struct {
 // any tenant rows (including admin-created keys) so the list is always complete.
 func (h *Handlers) ListFeatureFlags(w http.ResponseWriter, r *http.Request) {
 
-	rows, err := h.checker.ListFlagRows(r.Context(), pgtype.UUID{})
+	rows, err := h.checker.ListFlagRows(r.Context())
 	if err != nil {
 		slog.Error("features: list rows failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list feature flags")
@@ -213,7 +213,7 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	if err := h.checker.UpdateFlag(r.Context(), pgtype.UUID{}, key, input.IsEnabled, cfg, user.UserID); err != nil {
+	if err := h.checker.UpdateFlag(r.Context(), key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
 
@@ -276,7 +276,7 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	if err := h.checker.UpdateFlag(r.Context(), pgtype.UUID{}, flagName, input.IsEnabled, cfg, user.UserID); err != nil {
+	if err := h.checker.UpdateFlag(r.Context(), flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 
@@ -308,7 +308,7 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.checker.DeleteFlag(r.Context(), pgtype.UUID{}, flagName); err != nil {
+	if err := h.checker.DeleteFlag(r.Context(), flagName); err != nil {
 		slog.Error("features: delete failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
 

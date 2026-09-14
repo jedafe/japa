@@ -110,17 +110,17 @@ type ListRedirectsResponse struct {
 }
 
 // ListRedirects is an exported method.
-func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isActive *bool, search, sort, dir string, limit, offset int32) (*ListRedirectsResponse, error) {
+func (s *Service) ListRedirects(ctx context.Context, isActive *bool, search, sort, dir string, limit, offset int32) (*ListRedirectsResponse, error) {
 	if limit <= 0 {
 		limit = DefaultPageSize
 	}
 
-	redirects, err := s.store.listRedirects(ctx, tenantID, isActive, search, sort, dir, limit, offset)
+	redirects, err := s.store.listRedirects(ctx, isActive, search, sort, dir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing redirects: %w", err)
 	}
 
-	total, err := s.store.countRedirects(ctx, tenantID, isActive, search)
+	total, err := s.store.countRedirects(ctx, isActive, search)
 	if err != nil {
 		return nil, fmt.Errorf("counting redirects: %w", err)
 	}
@@ -134,8 +134,8 @@ func (s *Service) ListRedirects(ctx context.Context, tenantID pgtype.UUID, isAct
 }
 
 // GetRedirect is an exported method.
-func (s *Service) GetRedirect(ctx context.Context, id, tenantID pgtype.UUID) (gen.Redirect, error) {
-	return s.store.getRedirect(ctx, id, tenantID)
+func (s *Service) GetRedirect(ctx context.Context, id pgtype.UUID) (gen.Redirect, error) {
+	return s.store.getRedirect(ctx, id)
 }
 
 // CreateRedirect is an exported method.
@@ -180,7 +180,7 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 	}
 	// Fetch the existing redirect so we can invalidate the old source_path's
 	// Valkey cache entry if the source_path changed (ADR-056 invalidation).
-	existing, err := s.store.getRedirect(ctx, id, tenantID)
+	existing, err := s.store.getRedirect(ctx, id)
 	if err != nil {
 		return gen.Redirect{}, err
 	}
@@ -212,12 +212,12 @@ func (s *Service) UpdateRedirect(ctx context.Context, id, tenantID pgtype.UUID, 
 
 // DeleteRedirect is an exported method.
 func (s *Service) DeleteRedirect(ctx context.Context, id, tenantID pgtype.UUID) error {
-	r, err := s.store.getRedirect(ctx, id, tenantID)
+	r, err := s.store.getRedirect(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	if err := s.store.deleteRedirect(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteRedirect(ctx, id); err != nil {
 		return err
 	}
 
@@ -258,7 +258,7 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 	}
 	// Fetch source_paths before the mutation so we can invalidate the Valkey cache
 	// for each affected redirect (ADR-056 invalidation contract).
-	existing, err := s.store.getRedirectsByIDs(ctx, tenantID, ids)
+	existing, err := s.store.getRedirectsByIDs(ctx, ids)
 	if err != nil {
 		return fmt.Errorf("fetching redirects for bulk action: %w", err)
 	}
@@ -267,15 +267,15 @@ func (s *Service) BulkAction(ctx context.Context, tenantID pgtype.UUID, input Bu
 
 	switch input.Action {
 	case "activate":
-		if err := s.store.bulkUpdateRedirectStatus(ctx, tenantID, true, ids); err != nil {
+		if err := s.store.bulkUpdateRedirectStatus(ctx, true, ids); err != nil {
 			return err
 		}
 	case "deactivate":
-		if err := s.store.bulkUpdateRedirectStatus(ctx, tenantID, false, ids); err != nil {
+		if err := s.store.bulkUpdateRedirectStatus(ctx, false, ids); err != nil {
 			return err
 		}
 	case "delete":
-		if err := s.store.bulkDeleteRedirects(ctx, tenantID, ids); err != nil {
+		if err := s.store.bulkDeleteRedirects(ctx, ids); err != nil {
 			return err
 		}
 	}
@@ -321,7 +321,7 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 }
 
 func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path string) (string, int) {
-	r, err := s.store.getRedirectByPath(ctx, tenantID, path)
+	r, err := s.store.getRedirectByPath(ctx, path)
 	if err != nil {
 		// "no rows" is expected — no redirect for this path. Real DB errors
 		// (connection failures, query errors) are logged so ops has visibility;

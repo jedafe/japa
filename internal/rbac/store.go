@@ -67,7 +67,7 @@ func (s *Store) invalidateGroupCache(ctx context.Context, groupID pgtype.UUID) {
 
 // CreateGroup creates a new user group. System groups cannot be created
 // via this method - they are seeded at install time only.
-func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slug, description string) (pgtype.UUID, error) {
+func (s *Store) CreateGroup(ctx context.Context, name, slug, description string) (pgtype.UUID, error) {
 	if IsSystemGroup(slug) {
 		return pgtype.UUID{}, fmt.Errorf("cannot create system group %s via API", slug)
 	}
@@ -94,7 +94,7 @@ func (s *Store) CreateGroup(ctx context.Context, tenantID pgtype.UUID, name, slu
 // After deletion, it invalidates the permission cache for all former
 // members so they don't retain the group's capabilities for up to 5
 // minutes (Rule 6).
-func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug string) error {
+func (s *Store) DeleteGroup(ctx context.Context, slug string) error {
 	if IsSystemGroup(slug) {
 		return fmt.Errorf("cannot delete system group %s via API", slug)
 	}
@@ -138,7 +138,7 @@ func (s *Store) DeleteGroup(ctx context.Context, tenantID pgtype.UUID, slug stri
 // deleted (the sqlc query enforces is_system = false). The filter
 // prevents cross-tenant deletion. After deletion, it invalidates the
 // permission cache for all former members (Rule 6).
-func (s *Store) DeleteGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) error {
+func (s *Store) DeleteGroupByID(ctx context.Context, groupID pgtype.UUID) error {
 	// Collect member IDs before deletion so we can invalidate their caches
 	// after the group is removed.
 	memberIDs, err := s.read.ListGroupMembersByGroupID(ctx, groupID)
@@ -163,7 +163,7 @@ func (s *Store) DeleteGroupByID(ctx context.Context, tenantID, groupID pgtype.UU
 }
 
 // AddUserToGroup adds a user to a group and invalidates the user's cache.
-func (s *Store) AddUserToGroup(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
+func (s *Store) AddUserToGroup(ctx context.Context, userID, groupID pgtype.UUID) error {
 	if err := s.write.AddUserToGroup(ctx, gen.AddUserToGroupParams{
 
 		UserID:  userID,
@@ -178,7 +178,7 @@ func (s *Store) AddUserToGroup(ctx context.Context, tenantID, userID, groupID pg
 }
 
 // RemoveUserFromGroup removes a user from a group and invalidates the user's cache.
-func (s *Store) RemoveUserFromGroup(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error {
+func (s *Store) RemoveUserFromGroup(ctx context.Context, userID, groupID pgtype.UUID) error {
 	if err := s.write.RemoveUserFromGroup(ctx, gen.RemoveUserFromGroupParams{
 
 		UserID:  userID,
@@ -251,7 +251,7 @@ func (s *Store) AssignRoleToGroup(ctx context.Context, groupID, roleID pgtype.UU
 // ListGroups returns all user groups for a tenant, ordered by name.
 // Uses three batch queries (groups, member counts, permissions) instead of
 // per-group N+1 lookups.
-func (s *Store) ListGroups(ctx context.Context, tenantID pgtype.UUID) ([]Group, error) {
+func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
 	rows, err := s.read.ListUserGroupsByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing groups: %w", err)
@@ -323,7 +323,7 @@ type GroupMember struct {
 }
 
 // ListGroupMembers returns all members of a group.
-func (s *Store) ListGroupMembers(ctx context.Context, groupID, tenantID pgtype.UUID) ([]GroupMember, error) {
+func (s *Store) ListGroupMembers(ctx context.Context, groupID pgtype.UUID) ([]GroupMember, error) {
 	rows, err := s.read.ListGroupMembersWithUser(ctx,
 		groupID,
 	)
@@ -378,7 +378,7 @@ type Role struct {
 }
 
 // ListRoles returns all roles for a tenant.
-func (s *Store) ListRoles(ctx context.Context, tenantID pgtype.UUID) ([]Role, error) {
+func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
 	rows, err := s.read.ListAllRoles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing roles: %w", err)
@@ -398,7 +398,7 @@ func (s *Store) ListRoles(ctx context.Context, tenantID pgtype.UUID) ([]Role, er
 
 // ListRolesPaginated returns a paginated list of roles with optional search.
 // Uses batch queries for permissions and group counts to avoid N+1 lookups.
-func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, search string, limit, offset int32) ([]Role, int32, error) {
+func (s *Store) ListRolesPaginated(ctx context.Context, search string, limit, offset int32) ([]Role, int32, error) {
 	rows, err := s.read.ListRolesPaginated(ctx, gen.ListRolesPaginatedParams{
 
 		Search:     search,
@@ -461,7 +461,7 @@ func (s *Store) ListRolesPaginated(ctx context.Context, tenantID pgtype.UUID, se
 }
 
 // CreateRole creates a new role and returns its ID.
-func (s *Store) CreateRole(ctx context.Context, tenantID pgtype.UUID, name string) (pgtype.UUID, error) {
+func (s *Store) CreateRole(ctx context.Context, name string) (pgtype.UUID, error) {
 	id, err := s.write.CreateUserRole(ctx, gen.CreateUserRoleParams{
 
 		Name: name,
@@ -569,7 +569,7 @@ func slugify(name string) string {
 // After deletion, it invalidates the permission cache for every group that
 // held this role so members don't retain the role's capabilities for up to
 // 5 minutes (Rule 6).
-func (s *Store) DeleteRole(ctx context.Context, tenantID, roleID pgtype.UUID) error {
+func (s *Store) DeleteRole(ctx context.Context, roleID pgtype.UUID) error {
 	// Collect affected groups before deletion so we can invalidate their
 	// members' caches after the role is removed.
 	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
@@ -594,7 +594,7 @@ func (s *Store) DeleteRole(ctx context.Context, tenantID, roleID pgtype.UUID) er
 }
 
 // UpdateRole updates a role's name (P5.6).
-func (s *Store) UpdateRole(ctx context.Context, tenantID, roleID pgtype.UUID, name string) error {
+func (s *Store) UpdateRole(ctx context.Context, roleID pgtype.UUID, name string) error {
 	if err := s.write.UpdateUserRole(ctx, gen.UpdateUserRoleParams{
 		ID:   roleID,
 		Name: name,
@@ -655,7 +655,7 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 
 // UpdateGroup updates a group's name, slug, and description (P5.6).
 // The filter prevents cross-tenant updates.
-func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, name, slug, description string) error {
+func (s *Store) UpdateGroup(ctx context.Context, groupID pgtype.UUID, name, slug, description string) error {
 	var descPtr *string
 	if description != "" {
 		descPtr = &description
@@ -677,7 +677,7 @@ func (s *Store) UpdateGroup(ctx context.Context, tenantID, groupID pgtype.UUID, 
 // IsSystemGroupByID checks whether the group with the given ID is one of the
 // three system defaults (super_admin, members, guest). Used by handlers to
 // prevent dangerous slug changes on system groups.
-func (s *Store) IsSystemGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) (bool, error) {
+func (s *Store) IsSystemGroupByID(ctx context.Context, groupID pgtype.UUID) (bool, error) {
 	g, err := s.read.GetUserGroupByID(ctx,
 		groupID,
 	)
@@ -692,7 +692,7 @@ func (s *Store) IsSystemGroupByID(ctx context.Context, tenantID, groupID pgtype.
 // current slug, is_system flag, and description. Used by handlers that need
 // to preserve the slug of system groups during updates. The filter
 // prevents cross-tenant reads.
-func (s *Store) GetGroupByID(ctx context.Context, tenantID, groupID pgtype.UUID) (Group, error) {
+func (s *Store) GetGroupByID(ctx context.Context, groupID pgtype.UUID) (Group, error) {
 	g, err := s.read.GetUserGroupByID(ctx,
 		groupID,
 	)

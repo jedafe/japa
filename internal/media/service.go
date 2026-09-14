@@ -26,11 +26,11 @@ const MaxFileSizeBytes int64 = 50 * 1024 * 1024
 // back to MaxFileSizeBytes (50 MB) when unset or the settings provider is
 // not wired. Shared by InitiateUpload, DirectUpload, StoreFromBytes, and
 // AdminUpload so every upload path honours the same configurable limit.
-func (s *Service) MaxUploadBytes(ctx context.Context, tenantID pgtype.UUID) int64 {
+func (s *Service) MaxUploadBytes(ctx context.Context) int64 {
 	maxBytes := MaxFileSizeBytes
 
 	if s.settings != nil {
-		if maxMB := s.settings.GetIntOr(ctx, pgtype.UUID{}, "media.max_upload_mb", 50); maxMB > 0 {
+		if maxMB := s.settings.GetIntOr(ctx, "media.max_upload_mb", 50); maxMB > 0 {
 			maxBytes = int64(maxMB) * 1024 * 1024
 		}
 	}
@@ -84,13 +84,13 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 
 	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
 	// Falls back to MaxFileSizeBytes (50 MB) when settings are not configured.
-	maxBytes := s.MaxUploadBytes(ctx, tenantID)
+	maxBytes := s.MaxUploadBytes(ctx)
 
 	if fileSize > maxBytes {
 		return UploadResult{}, fmt.Errorf("file too large: %d bytes exceeds limit of %d bytes", fileSize, maxBytes)
 	}
 
-	if !s.isAllowedMIME(ctx, tenantID, mimeType) {
+	if !s.isAllowedMIME(ctx, mimeType) {
 		return UploadResult{}, fmt.Errorf("unsupported MIME type: %s", mimeType)
 	}
 
@@ -149,9 +149,9 @@ func (s *Service) InitiateUpload(ctx context.Context, tenantID, uploaderID pgtyp
 // user in the same tenant could confirm another user's media ID by
 // guessing it. The presigned URL is single-use, but the confirm endpoint
 // itself must be uploader-scoped per §34 two-step upload.
-func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID, uploaderID pgtype.UUID) error {
+func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.UUID) error {
 	// Fetch the media record to get storage_path and claimed MIME type.
-	m, err := s.store.GetMediaByID(ctx, mediaID, tenantID)
+	m, err := s.store.GetMediaByID(ctx, mediaID)
 	if err != nil {
 		return fmt.Errorf("media not found: %w", err)
 	}
@@ -169,7 +169,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID, uploader
 			"media_id", mediaID.String(), "error", err)
 		// Degrade gracefully — if object storage is unreachable we still
 		// confirm rather than blocking all uploads.
-		return s.store.ConfirmMedia(ctx, mediaID, tenantID)
+		return s.store.ConfirmMedia(ctx, mediaID)
 	}
 
 	if len(header) > 0 {
@@ -177,7 +177,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID, uploader
 		if verifyErr != nil {
 			slog.Warn("mime inspection: verification error, confirming without check",
 				"media_id", mediaID.String(), "error", verifyErr)
-			return s.store.ConfirmMedia(ctx, mediaID, tenantID)
+			return s.store.ConfirmMedia(ctx, mediaID)
 		}
 
 		if !matches {
@@ -186,7 +186,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, tenantID, mediaID, uploader
 		}
 	}
 
-	return s.store.ConfirmMedia(ctx, mediaID, tenantID)
+	return s.store.ConfirmMedia(ctx, mediaID)
 }
 
 // fetchFileHeader reads up to n bytes from the beginning of an object in
@@ -280,28 +280,28 @@ func (s *Service) getMediaForScan(ctx context.Context, mediaID []byte) (ScanMedi
 
 // confirmMediaByID marks a media item as confirmed, scoped to tenant.
 // Used by the background scan processor.
-func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte, tenantID string) error {
-	return s.store.ConfirmMediaByID(ctx, mediaID, tenantID)
+func (s *Service) confirmMediaByID(ctx context.Context, mediaID []byte) error {
+	return s.store.ConfirmMediaByID(ctx, mediaID)
 }
 
 // rejectMediaByID quarantines a media item, scoped to tenant.
 // This gives admins a chance to review false positives before removal.
-func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, tenantID, virusName string) error {
-	return s.store.QuarantineMedia(ctx, mediaID, tenantID, virusName)
+func (s *Service) rejectMediaByID(ctx context.Context, mediaID []byte, virusName string) error {
+	return s.store.QuarantineMedia(ctx, mediaID, virusName)
 }
 
 // ApproveMedia clears quarantine and confirms the media item.
-func (s *Service) ApproveMedia(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
-	return s.store.ApproveQuarantined(ctx, mediaID, tenantID, reviewerID)
+func (s *Service) ApproveMedia(ctx context.Context, mediaID, reviewerID pgtype.UUID) error {
+	return s.store.ApproveQuarantined(ctx, mediaID, reviewerID)
 }
 
 // RejectMedia soft-deletes a quarantined media item after admin review.
-func (s *Service) RejectMedia(ctx context.Context, mediaID, tenantID, reviewerID pgtype.UUID) error {
-	return s.store.RejectQuarantined(ctx, mediaID, tenantID, reviewerID)
+func (s *Service) RejectMedia(ctx context.Context, mediaID, reviewerID pgtype.UUID) error {
+	return s.store.RejectQuarantined(ctx, mediaID, reviewerID)
 }
 
 // AdminUpdateStatus allows admin to change media status (approve/reject/quarantine) for any item.
-func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, reviewerID pgtype.UUID, confirmed bool, quarantineReason *string) error {
+func (s *Service) AdminUpdateStatus(ctx context.Context, mediaID, reviewerID pgtype.UUID, confirmed bool, quarantineReason *string) error {
 	var reason string
 	if quarantineReason != nil {
 		reason = *quarantineReason
@@ -317,23 +317,23 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, tenantID, mediaID, revi
 }
 
 // ListQuarantined returns all quarantined media items for a tenant.
-func (s *Service) ListQuarantined(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]QuarantinedMedia, error) {
-	return s.store.ListQuarantined(ctx, tenantID, limit, offset)
+func (s *Service) ListQuarantined(ctx context.Context, limit, offset int32) ([]QuarantinedMedia, error) {
+	return s.store.ListQuarantined(ctx, limit, offset)
 }
 
 // GetQuarantinedMedia returns a single quarantined media item by ID.
-func (s *Service) GetQuarantinedMedia(ctx context.Context, mediaID, tenantID pgtype.UUID) (QuarantinedMedia, error) {
-	return s.store.GetQuarantinedMedia(ctx, mediaID, tenantID)
+func (s *Service) GetQuarantinedMedia(ctx context.Context, mediaID pgtype.UUID) (QuarantinedMedia, error) {
+	return s.store.GetQuarantinedMedia(ctx, mediaID)
 }
 
 // GetMedia returns a single media item by ID.
-func (s *Service) GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error) {
-	return s.store.GetMediaByID(ctx, mediaID, tenantID)
+func (s *Service) GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error) {
+	return s.store.GetMediaByID(ctx, mediaID)
 }
 
 // UpdateMetadata updates alt_text, caption, dimensions, and user_group_id on a media item.
 // Admin path — no ownership check (gated by media.edit_any).
-func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
+func (s *Service) UpdateMetadata(ctx context.Context, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
 	var durationNum pgtype.Numeric
 	if duration != nil {
 		if err := durationNum.Scan(fmt.Sprintf("%f", *duration)); err != nil {
@@ -355,7 +355,7 @@ func (s *Service) UpdateMetadata(ctx context.Context, tenantID, mediaID pgtype.U
 
 // UpdateMetadataOwn updates metadata scoped to the uploader (gated by media.edit_own).
 // Returns ErrMediaNotFound if the media belongs to a different user.
-func (s *Service) UpdateMetadataOwn(ctx context.Context, tenantID, uploaderID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
+func (s *Service) UpdateMetadataOwn(ctx context.Context, uploaderID, mediaID pgtype.UUID, altText, caption *string, width, height *int32, duration *float64, userGroupID pgtype.UUID) error {
 	var durationNum pgtype.Numeric
 	if duration != nil {
 		if err := durationNum.Scan(fmt.Sprintf("%f", *duration)); err != nil {
@@ -377,21 +377,21 @@ func (s *Service) UpdateMetadataOwn(ctx context.Context, tenantID, uploaderID, m
 }
 
 // DeleteMedia soft-deletes a media item (admin path — no ownership check).
-func (s *Service) DeleteMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) error {
-	return s.store.SoftDeleteMedia(ctx, mediaID, tenantID)
+func (s *Service) DeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
+	return s.store.SoftDeleteMedia(ctx, mediaID)
 }
 
 // DeleteMediaOwn soft-deletes a media item scoped to the uploader (gated by media.delete_own).
 // Returns ErrMediaNotFound if the media belongs to a different user.
-func (s *Service) DeleteMediaOwn(ctx context.Context, tenantID, uploaderID, mediaID pgtype.UUID) error {
-	return s.store.SoftDeleteMediaOwn(ctx, mediaID, tenantID, uploaderID)
+func (s *Service) DeleteMediaOwn(ctx context.Context, uploaderID, mediaID pgtype.UUID) error {
+	return s.store.SoftDeleteMediaOwn(ctx, mediaID, uploaderID)
 }
 
 // ListMedia returns paginated media, optionally filtered by uploader, type,
 // search query, status, and flagged state, along with the total count matching
 // the filter. The total is used by callers to compute total_pages. Empty/zero
 // filter values mean "no filter on this field".
-func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, limit, offset int32) ([]gen.Medium, int32, error) {
+func (s *Service) ListMedia(ctx context.Context, uploaderID *pgtype.UUID, mimeType, query, status, flagged *string, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -425,12 +425,12 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 		flaggedFilter = *flagged
 	}
 
-	items, err := s.store.ListMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, limit, offset)
+	items, err := s.store.ListMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountMediaFiltered(ctx, tenantID, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter)
+	total, err := s.store.CountMediaFiltered(ctx, uploader, mimePattern, searchQuery, statusFilter, flaggedFilter)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -441,7 +441,7 @@ func (s *Service) ListMedia(ctx context.Context, tenantID pgtype.UUID, uploaderI
 // ListByUser returns the media on the user's published public posts (featured/
 // header images), plus the total count. Public-safe: excludes unconfirmed,
 // group-restricted, and draft/private-post media. Powers the profile Media tab.
-func (s *Service) ListByUser(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
+func (s *Service) ListByUser(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -450,12 +450,12 @@ func (s *Service) ListByUser(ctx context.Context, tenantID, userID pgtype.UUID, 
 		offset = 0
 	}
 
-	items, err := s.store.ListMediaFromPublicPostsByUser(ctx, tenantID, userID, limit, offset)
+	items, err := s.store.ListMediaFromPublicPostsByUser(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing media from public posts: %w", err)
 	}
 
-	total, err := s.store.CountMediaFromPublicPostsByUser(ctx, tenantID, userID)
+	total, err := s.store.CountMediaFromPublicPostsByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting media from public posts: %w", err)
 	}
@@ -465,7 +465,7 @@ func (s *Service) ListByUser(ctx context.Context, tenantID, userID pgtype.UUID, 
 
 // ListByOrganization returns media from the org's public posts, with a total
 // count. Powers the org profile Media tab.
-func (s *Service) ListByOrganization(ctx context.Context, tenantID, orgID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
+func (s *Service) ListByOrganization(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.Medium, int32, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -474,12 +474,12 @@ func (s *Service) ListByOrganization(ctx context.Context, tenantID, orgID pgtype
 		offset = 0
 	}
 
-	items, err := s.store.ListMediaFromOrgPublicPosts(ctx, tenantID, orgID, limit, offset)
+	items, err := s.store.ListMediaFromOrgPublicPosts(ctx, orgID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing media from org public posts: %w", err)
 	}
 
-	total, err := s.store.CountMediaFromOrgPublicPosts(ctx, tenantID, orgID)
+	total, err := s.store.CountMediaFromOrgPublicPosts(ctx, orgID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("counting media from org public posts: %w", err)
 	}
@@ -498,21 +498,21 @@ func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
 }
 
 // BulkDelete soft-deletes multiple media items (admin — no ownership check).
-func (s *Service) BulkDelete(ctx context.Context, tenantID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+func (s *Service) BulkDelete(ctx context.Context, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
 	}
 
-	return s.store.BulkSoftDeleteMedia(ctx, tenantID, mediaIDs)
+	return s.store.BulkSoftDeleteMedia(ctx, mediaIDs)
 }
 
 // BulkDeleteOwn soft-deletes multiple media items scoped to the uploader.
-func (s *Service) BulkDeleteOwn(ctx context.Context, tenantID, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
+func (s *Service) BulkDeleteOwn(ctx context.Context, uploaderID pgtype.UUID, mediaIDs []pgtype.UUID) error {
 	if len(mediaIDs) == 0 {
 		return nil
 	}
 
-	return s.store.BulkSoftDeleteMediaOwn(ctx, tenantID, uploaderID, mediaIDs)
+	return s.store.BulkSoftDeleteMediaOwn(ctx, uploaderID, mediaIDs)
 }
 
 // IsAllowedMIMEType checks if a MIME type is in the allowed set.
@@ -524,7 +524,7 @@ func IsAllowedMIMEType(mimeType string) bool {
 // system_settings 'media.allowed_video_types' for video types (Rule 3).
 // When settings are not configured, falls back to the static AllowedMIMETypes
 // map.
-func (s *Service) isAllowedMIME(ctx context.Context, tenantID pgtype.UUID, mimeType string) bool {
+func (s *Service) isAllowedMIME(ctx context.Context, mimeType string) bool {
 	canonical := CanonicalMIMEType(mimeType)
 
 	// Non-video types use the static allowed set.
@@ -538,7 +538,7 @@ func (s *Service) isAllowedMIME(ctx context.Context, tenantID pgtype.UUID, mimeT
 		return AllowedMIMETypes[canonical]
 	}
 
-	allowedCSV := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.allowed_video_types", "mp4,webm,mov")
+	allowedCSV := s.settings.GetStringOr(ctx, "media.allowed_video_types", "mp4,webm,mov")
 
 	return isVideoTypeAllowed(canonical, allowedCSV)
 }
@@ -571,7 +571,7 @@ func NormalizeMIMEType(mimeType string) string {
 }
 
 // DirectUpload stores a file locally and creates the media record.
-func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, localPath, storagePath string) (pgtype.UUID, error) {
+func (s *Service) DirectUpload(ctx context.Context, uploaderID pgtype.UUID, filename, mimeType string, fileSize int64, localPath, storagePath string) (pgtype.UUID, error) {
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
 
 		UploaderUserID:   uploaderID,
@@ -585,7 +585,7 @@ func (s *Service) DirectUpload(ctx context.Context, tenantID, uploaderID pgtype.
 		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
 	}
 
-	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
+	if err := s.store.ConfirmMedia(ctx, m.ID); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
 	}
 
@@ -599,7 +599,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 		return pgtype.UUID{}, errors.New("data is empty")
 	}
 	// Max upload size from system_settings 'media.max_upload_mb' (Rule 3).
-	maxBytes := s.MaxUploadBytes(ctx, tenantID)
+	maxBytes := s.MaxUploadBytes(ctx)
 	if int64(len(data)) > maxBytes {
 		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), maxBytes)
 	}
@@ -659,7 +659,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtyp
 		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
 	}
 
-	if err := s.store.ConfirmMedia(ctx, m.ID, tenantID); err != nil {
+	if err := s.store.ConfirmMedia(ctx, m.ID); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
 	}
 

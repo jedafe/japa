@@ -159,7 +159,7 @@ WHERE group_id = $1 AND user_id = $2)
 
 // GetGroup returns a single planning group by id (must not be soft-deleted).
 // Includes a member_count subquery.
-func (s *Store) GetGroup(ctx context.Context, id, tenantID pgtype.UUID) (PlanningGroup, error) {
+func (s *Store) GetGroup(ctx context.Context, id pgtype.UUID) (PlanningGroup, error) {
 	const q = `
 SELECT g.id, g.name, g.description, g.destination_space_id, g.visa_category,
        g.target_departure_window, g.target_departure_at, g.max_members, g.is_open_join,
@@ -307,7 +307,7 @@ type StoreUpdateInput struct {
 
 // UpdateGroup updates the mutable fields on a planning group. Only the
 // provided (non-nil) fields are written.
-func (s *Store) UpdateGroup(ctx context.Context, id, tenantID pgtype.UUID, input StoreUpdateInput) error {
+func (s *Store) UpdateGroup(ctx context.Context, id pgtype.UUID, input StoreUpdateInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -392,7 +392,7 @@ UPDATE planning_groups SET %s WHERE id = $%d AND deleted_at IS NULL
 }
 
 // DeleteGroup soft-deletes a planning group by setting deleted_at.
-func (s *Store) DeleteGroup(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteGroup(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
@@ -424,7 +424,7 @@ ON CONFLICT (group_id, user_id) DO NOTHING
 }
 
 // LeaveGroup removes a membership row for the given user.
-func (s *Store) LeaveGroup(ctx context.Context, groupID, userID, tenantID pgtype.UUID) error {
+func (s *Store) LeaveGroup(ctx context.Context, groupID, userID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM planning_group_members
 WHERE group_id = $1 AND user_id = $2
@@ -442,7 +442,7 @@ WHERE group_id = $1 AND user_id = $2
 
 // GetMembers returns all members of a planning group, joining users for
 // display name and avatar.
-func (s *Store) GetMembers(ctx context.Context, groupID, tenantID pgtype.UUID) ([]PlanningGroupMember, error) {
+func (s *Store) GetMembers(ctx context.Context, groupID pgtype.UUID) ([]PlanningGroupMember, error) {
 	const q = `
 SELECT m.group_id, m.user_id, m.departure_date, m.joined_at,
        u.username, up.avatar_url
@@ -482,7 +482,7 @@ ORDER BY m.joined_at ASC
 }
 
 // CreateMilestone inserts a new milestone for a user in a group.
-func (s *Store) CreateMilestone(ctx context.Context, groupID, userID, tenantID pgtype.UUID, title string) (PlanningGroupMilestone, error) {
+func (s *Store) CreateMilestone(ctx context.Context, groupID, userID pgtype.UUID, title string) (PlanningGroupMilestone, error) {
 	const q = `
 INSERT INTO planning_group_milestones (group_id, user_id, title)
 VALUES ($1, $2, $3, $4)
@@ -542,7 +542,7 @@ ORDER BY created_at ASC
 // UpdateMilestone updates the completed state of a milestone. When marking
 // completed, completed_at is stamped; when un-completing, it is cleared.
 // The milestone must belong to the given group and user (ownership check).
-func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID, tenantID pgtype.UUID, completed bool) error {
+func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, groupID, userID pgtype.UUID, completed bool) error {
 	var q string
 	if completed {
 		q = `
@@ -598,7 +598,7 @@ var ErrAlreadyCheckedIn = errors.New("already checked in this week")
 // CreateCheckin inserts a new weekly check-in for a user in a group.
 // Returns ErrAlreadyCheckedIn if the user has already checked in this week
 // (unique violation on idx_planning_group_checkins_weekly).
-func (s *Store) CreateCheckin(ctx context.Context, groupID, userID, tenantID pgtype.UUID, note string) (PlanningGroupCheckin, error) {
+func (s *Store) CreateCheckin(ctx context.Context, groupID, userID pgtype.UUID, note string) (PlanningGroupCheckin, error) {
 	const q = `
 INSERT INTO planning_group_checkins (group_id, user_id, note)
 VALUES ($1, $2, $3, $4)
@@ -624,7 +624,7 @@ RETURNING id, group_id, user_id, note, created_at
 
 // ListCheckins returns this week's check-ins for a group, joining users for
 // display name. "This week" is the trailing 7 days from now.
-func (s *Store) ListCheckins(ctx context.Context, groupID, tenantID pgtype.UUID) ([]PlanningGroupCheckin, error) {
+func (s *Store) ListCheckins(ctx context.Context, groupID pgtype.UUID) ([]PlanningGroupCheckin, error) {
 	const q = `
 SELECT c.id, c.group_id, c.user_id, c.note, c.created_at,
        u.username
@@ -665,7 +665,7 @@ ORDER BY c.created_at DESC
 
 // ExtendExpiry updates the expires_at timestamp on a planning group. Used by
 // admins to keep a group alive past its original auto-expiry.
-func (s *Store) ExtendExpiry(ctx context.Context, id, tenantID pgtype.UUID, newExpiry pgtype.Timestamptz) error {
+func (s *Store) ExtendExpiry(ctx context.Context, id pgtype.UUID, newExpiry pgtype.Timestamptz) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE planning_groups SET expires_at = $3, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL

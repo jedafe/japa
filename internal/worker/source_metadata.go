@@ -32,7 +32,7 @@ type Preview struct {
 
 // SourceLinkPreviewer fetches public-site metadata for a URL.
 type SourceLinkPreviewer interface {
-	Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID) (*Preview, error)
+	Fetch(ctx context.Context, rawURL string) (*Preview, error)
 }
 
 var sourceLinkPreviewerInstance SourceLinkPreviewer
@@ -135,7 +135,7 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 // https://domain. It returns the preview and a bool indicating success.
 func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenantID pgtype.UUID, src gen.IntelSource) (*Preview, bool) {
 	if src.SourceUrl != "" {
-		preview, err := fetcher.Fetch(ctx, src.SourceUrl, tenantID)
+		preview, err := fetcher.Fetch(ctx, src.SourceUrl)
 		if err == nil {
 			return preview, true
 		}
@@ -144,7 +144,7 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenant
 
 	if src.Domain != "" {
 		pageURL := "https://" + src.Domain
-		preview, err := fetcher.Fetch(ctx, pageURL, tenantID)
+		preview, err := fetcher.Fetch(ctx, pageURL)
 		if err == nil {
 			return preview, true
 		}
@@ -155,7 +155,7 @@ func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenant
 }
 
 // EnqueueSourceMetadata builds and enqueues a source metadata task.
-func (e *Enqueuer) EnqueueSourceMetadata(sourceID, tenantID string) error {
+func (e *Enqueuer) EnqueueSourceMetadata(sourceID string) error {
 	payload, err := json.Marshal(sourceMetadataPayload{
 		SourceID: sourceID,
 	})

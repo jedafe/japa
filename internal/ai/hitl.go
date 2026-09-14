@@ -33,7 +33,7 @@ func CreateHITLReview(ctx context.Context, store *Store, review HITLReview) (HIT
 
 // ApproveReview approves a pending HITL review. The tenantID scopes the
 // update to the caller's tenant (Section 09 multi-tenancy).
-func ApproveReview(ctx context.Context, store *Store, tenantID, reviewID, reviewerID pgtype.UUID) error {
+func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
 	}
@@ -42,12 +42,12 @@ func ApproveReview(ctx context.Context, store *Store, tenantID, reviewID, review
 		return errors.New("reviewer_id is required")
 	}
 
-	return store.ApproveHITLReview(ctx, tenantID, reviewID, reviewerID)
+	return store.ApproveHITLReview(ctx, reviewID, reviewerID)
 }
 
 // RejectReview rejects a pending HITL review with a reason. The tenantID
 // scopes the update to the caller's tenant (Section 09 multi-tenancy).
-func RejectReview(ctx context.Context, store *Store, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
+func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID, reason string) error {
 	if reviewID == (pgtype.UUID{}) {
 		return errors.New("review_id is required")
 	}
@@ -60,7 +60,7 @@ func RejectReview(ctx context.Context, store *Store, tenantID, reviewID, reviewe
 		return errors.New("rejection reason is required")
 	}
 
-	return store.RejectHITLReview(ctx, tenantID, reviewID, reviewerID, reason)
+	return store.RejectHITLReview(ctx, reviewID, reviewerID, reason)
 }
 
 // ListPendingReviews returns pending HITL reviews for a tenant. When
@@ -71,7 +71,7 @@ func ListPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID,
 		return nil, errors.New("tenant_id is required")
 	}
 
-	return store.ListPendingHITLReviews(ctx, tenantID, sourceFilter, limit, offset)
+	return store.ListPendingHITLReviews(ctx, sourceFilter, limit, offset)
 }
 
 // CountPendingReviews returns the total count of pending HITL reviews for

@@ -193,12 +193,12 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	}
 	// AUDIT-BE-TASK-001: respect the affiliate.scan_on_publish system setting.
 	// If disabled, exit early without scanning.
-	if val, err := getAffSystemSetting(ctx, tenantID, "affiliate.scan_on_publish"); err == nil && (val == "false" || val == "0") {
+	if val, err := getAffSystemSetting(ctx, "affiliate.scan_on_publish"); err == nil && (val == "false" || val == "0") {
 		return nil
 	}
 
 	policy := "flag"
-	if val, err := getAffSystemSetting(ctx, tenantID, "affiliate.unregistered_link_policy"); err == nil {
+	if val, err := getAffSystemSetting(ctx, "affiliate.unregistered_link_policy"); err == nil {
 		policy = val
 	}
 
@@ -218,10 +218,10 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	registered := getRegisteredDomains(ctx, tenantID)
+	registered := getRegisteredDomains(ctx)
 
 	for _, rawURL := range urls {
-		scanURLForAffiliate(ctx, tenantID, contentID, rawURL, policy, registered)
+		scanURLForAffiliate(ctx, contentID, rawURL, policy, registered)
 	}
 
 	return nil
@@ -230,7 +230,7 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 // scanURLForAffiliate checks one URL against the affiliate detection rules and
 // records a content_affiliate_scan_results row when it matches. Registered
 // providers and non-affiliate URLs are skipped.
-func scanURLForAffiliate(ctx context.Context, tenantID, contentID pgtype.UUID, rawURL, policy string, registered map[string]bool) {
+func scanURLForAffiliate(ctx context.Context, contentID pgtype.UUID, rawURL, policy string, registered map[string]bool) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return
@@ -287,7 +287,7 @@ func extractURLsFromTipTap(body string) []string {
 	return result
 }
 
-func getRegisteredDomains(ctx context.Context, tenantID pgtype.UUID) map[string]bool {
+func getRegisteredDomains(ctx context.Context) map[string]bool {
 	domains := make(map[string]bool)
 
 	rows, err := dbPool.Reader.Query(ctx, `SELECT base_url FROM affiliate_providers WHERE is_active = true AND base_url IS NOT NULL`)
@@ -346,7 +346,7 @@ func isKnownAffDomain(domain string) bool {
 	return false
 }
 
-func getAffSystemSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error) {
+func getAffSystemSetting(ctx context.Context, key string) (string, error) {
 	var value string
 	err := dbPool.Reader.QueryRow(ctx, `SELECT value::text FROM system_settings WHERE key = $1`, key).Scan(&value)
 

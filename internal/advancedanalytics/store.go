@@ -73,7 +73,7 @@ func (s *Store) NewsletterEngagement(ctx context.Context, topN int32) ([]gen.Adv
 }
 
 // SubscriberGrowth is an exported method.
-func (s *Store) SubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
+func (s *Store) SubscriberGrowth(ctx context.Context) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
 	rows, err := s.queries.AdvancedAnalyticsSubscriberGrowth(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("advancedanalytics: subscriber growth: %w", err)

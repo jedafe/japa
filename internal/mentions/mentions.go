@@ -33,18 +33,18 @@ type Mention struct {
 // Returns true if the blocker has blocked the blocked.
 // Tenant-scoped per JEOS §9 (BUG-006).
 type BlockChecker interface {
-	IsBlocked(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) (bool, error)
+	IsBlocked(ctx context.Context, blockerID, blockedID pgtype.UUID) (bool, error)
 }
 
 // SpaceMemberChecker determines whether a user is a member of a space.
 // Tenant-scoped per Section 04 (BUG-005).
 type SpaceMemberChecker interface {
-	IsMember(ctx context.Context, tenantID, spaceID, userID pgtype.UUID) (bool, error)
+	IsMember(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error)
 }
 
 // UserStatusChecker determines whether a user account is active or erased.
 type UserStatusChecker interface {
-	IsErased(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error)
+	IsErased(ctx context.Context, userID pgtype.UUID) (bool, error)
 }
 
 // ExtractMentions walks a ProseMirror JSON document and returns all
@@ -132,7 +132,7 @@ func ExtractMentions(docJSON []byte) ([]Mention, error) {
 func FilterMentions(
 	ctx context.Context,
 	mentions []Mention,
-	tenantID pgtype.UUID,
+
 	authorID pgtype.UUID,
 	spaceID pgtype.UUID,
 	isPrivateSpace bool,
@@ -170,7 +170,7 @@ func FilterMentions(
 
 		// Skip if mentioned user's account is erased
 		if userChecker != nil {
-			erased, err := userChecker.IsErased(ctx, tenantID, m.ID)
+			erased, err := userChecker.IsErased(ctx, m.ID)
 			if err != nil {
 				slog.Warn("mentions: IsErased check failed, skipping mention",
 					"user_id", m.ID.String(), "error", err)
@@ -186,7 +186,7 @@ func FilterMentions(
 		// (either direction). The IsBlocked query checks both directions in
 		// a single call, so only one call is needed (BUG-011).
 		if blockChecker != nil {
-			blocked, err := blockChecker.IsBlocked(ctx, tenantID, authorID, m.ID)
+			blocked, err := blockChecker.IsBlocked(ctx, authorID, m.ID)
 			if err != nil {
 				slog.Warn("mentions: IsBlocked check failed, skipping mention",
 					"user_id", m.ID.String(), "error", err)
@@ -201,7 +201,7 @@ func FilterMentions(
 		// Skip if post is in a private space and mentioned user is not a member.
 		// Tenant-scoped per Section 04 (BUG-005).
 		if isPrivateSpace && memberChecker != nil {
-			isMember, err := memberChecker.IsMember(ctx, tenantID, spaceID, m.ID)
+			isMember, err := memberChecker.IsMember(ctx, spaceID, m.ID)
 			if err != nil {
 				slog.Warn("mentions: IsMember check failed, skipping mention",
 					"user_id", m.ID.String(), "space_id", spaceID.String(), "error", err)
@@ -228,7 +228,7 @@ func FilterMentions(
 func ComputeErasedMentionIDs(
 	ctx context.Context,
 	body []byte,
-	tenantID pgtype.UUID,
+
 	userChecker UserStatusChecker,
 ) ([]string, error) {
 	if userChecker == nil {
@@ -248,7 +248,7 @@ func ComputeErasedMentionIDs(
 			continue
 		}
 
-		isErased, err := userChecker.IsErased(ctx, tenantID, m.ID)
+		isErased, err := userChecker.IsErased(ctx, m.ID)
 		if err != nil {
 			slog.Warn("mentions: IsErased check failed in ComputeErasedMentionIDs",
 				"user_id", m.ID.String(), "error", err)
@@ -314,10 +314,10 @@ func RedactErasedMentionsInBody(
 	ctx context.Context,
 	body []byte,
 	bodyHtml string,
-	tenantID pgtype.UUID,
+
 	userChecker UserStatusChecker,
 ) (redactedHTML string, erasedIDs []string, err error) {
-	erasedIDs, err = ComputeErasedMentionIDs(ctx, body, tenantID, userChecker)
+	erasedIDs, err = ComputeErasedMentionIDs(ctx, body, userChecker)
 	if err != nil {
 		return bodyHtml, nil, fmt.Errorf("compute erased mentions: %w", err)
 	}

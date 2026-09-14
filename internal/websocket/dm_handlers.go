@@ -88,8 +88,7 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -97,7 +96,7 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	conversations, err := h.dmService.GetConversations(r.Context(), tenantID, user.UserID, limit, offset)
+	conversations, err := h.dmService.GetConversations(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get conversations")
 		return
@@ -190,8 +189,7 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -208,7 +206,7 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	messages, err := h.dmService.GetMessages(r.Context(), tenantID, conversationID, user.UserID, limit, offset)
+	messages, err := h.dmService.GetMessages(r.Context(), conversationID, user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
 		return
@@ -257,7 +255,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if h.spamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
 
-		spamResult, err := h.spamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+		spamResult, err := h.spamPipeline.Check(r.Context(), spam.SpamCheckRequest{
 			Content:    req.Body,
 			UserID:     user.UserID,
 			IP:         clientIP,
@@ -281,7 +279,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
 	// the rate_limit scoring layer always returns 0.
 	if h.spamPipeline != nil {
-		h.spamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
+		h.spamPipeline.RecordContentCreation(r.Context(), user.UserID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
@@ -294,8 +292,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -309,7 +306,7 @@ func (h *Handlers) MarkAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.MarkAsRead(r.Context(), tenantID, conversationID, user.UserID); err != nil {
+	if err := h.dmService.MarkAsRead(r.Context(), conversationID, user.UserID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark messages as read")
 		return
 	}
@@ -324,8 +321,7 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -339,7 +335,7 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestAccepted); err != nil {
+	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestAccepted); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept message request")
 		return
 	}
@@ -354,8 +350,7 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -369,7 +364,7 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestDeclined); err != nil {
+	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestDeclined); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline message request")
 		return
 	}
@@ -384,8 +379,7 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -399,7 +393,7 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), tenantID, conversationID, user.UserID, MessageRequestBlocked); err != nil {
+	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestBlocked); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to block message request")
 		return
 	}
@@ -415,13 +409,12 @@ func (h *Handlers) GetDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
 
-	privacy, err := h.dmService.GetDMPrivacy(r.Context(), tenantID, user.UserID)
+	privacy, err := h.dmService.GetDMPrivacy(r.Context(), user.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get DM privacy")
 		return
@@ -437,8 +430,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -452,7 +444,7 @@ func (h *Handlers) UpdateDMPrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.UpdateDMPrivacy(r.Context(), tenantID, user.UserID, req.Privacy); err != nil {
+	if err := h.dmService.UpdateDMPrivacy(r.Context(), user.UserID, req.Privacy); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_privacy", "Invalid privacy setting")
 		return
 	}
@@ -468,8 +460,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -506,7 +497,7 @@ func (h *Handlers) EditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.EditMessage(r.Context(), tenantID, conversationID, messageID, user.UserID, req.Body); err != nil {
+	if err := h.dmService.EditMessage(r.Context(), conversationID, messageID, user.UserID, req.Body); err != nil {
 		if errors.Is(err, ErrDMNotSender) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can edit this message")
 			return
@@ -528,8 +519,7 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -552,7 +542,7 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dmService.DeleteMessage(r.Context(), tenantID, conversationID, messageID, user.UserID); err != nil {
+	if err := h.dmService.DeleteMessage(r.Context(), conversationID, messageID, user.UserID); err != nil {
 		if errors.Is(err, ErrDMNotSender) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_sender", "Only the sender can delete this message")
 			return
@@ -577,8 +567,7 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -586,7 +575,7 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	requests, err := h.dmService.GetPendingMessageRequests(r.Context(), tenantID, user.UserID, limit, offset)
+	requests, err := h.dmService.GetPendingMessageRequests(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return

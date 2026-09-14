@@ -69,7 +69,7 @@ func toCourseOffering(row any) (CourseOffering, error) {
 
 // SearchOfferings returns published course offerings for a tenant, optionally
 // filtered by university and/or search query.
-func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
+func (s *Store) SearchOfferings(ctx context.Context, universityID pgtype.UUID, query string, limit, offset int32) ([]CourseOffering, error) {
 	rows, err := s.read.ListCourseOfferingsByUniversity(ctx, gen.ListCourseOfferingsByUniversityParams{
 
 		UniversityID: universityID,
@@ -96,7 +96,7 @@ func (s *Store) SearchOfferings(ctx context.Context, tenantID, universityID pgty
 }
 
 // GetOfferingByID returns a course offering by its ID.
-func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (CourseOffering, error) {
+func (s *Store) GetOfferingByID(ctx context.Context, id pgtype.UUID) (CourseOffering, error) {
 	row, err := s.read.GetCourseOfferingByID(ctx,
 		id,
 	)
@@ -108,7 +108,7 @@ func (s *Store) GetOfferingByID(ctx context.Context, tenantID, id pgtype.UUID) (
 }
 
 // GetOfferingBySlug returns a course offering by its tenant-scoped slug.
-func (s *Store) GetOfferingBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (CourseOffering, error) {
+func (s *Store) GetOfferingBySlug(ctx context.Context, slug string) (CourseOffering, error) {
 	row, err := s.read.GetCourseOfferingBySlug(ctx,
 		slug,
 	)

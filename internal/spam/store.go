@@ -79,7 +79,7 @@ func (s *Store) CreateIPBlock(ctx context.Context, input CreateIPBlockInput) (ge
 }
 
 // GetIPBlockByCIDR checks if a CIDR is blocked for the given tenant.
-func (s *Store) GetIPBlockByCIDR(ctx context.Context, tenantID pgtype.UUID, cidr string) (gen.IpBlock, error) {
+func (s *Store) GetIPBlockByCIDR(ctx context.Context, cidr string) (gen.IpBlock, error) {
 	addr, err := netipParseAddrOrCIDR(cidr)
 	if err != nil {
 		return gen.IpBlock{}, fmt.Errorf("parsing CIDR: %w", err)
@@ -92,7 +92,7 @@ func (s *Store) GetIPBlockByCIDR(ctx context.Context, tenantID pgtype.UUID, cidr
 }
 
 // ListIPBlocks returns paginated IP blocks for the given tenant.
-func (s *Store) ListIPBlocks(ctx context.Context, tenantID pgtype.UUID, limit int32, cursorCreatedAt pgtype.Timestamptz) ([]gen.IpBlock, error) {
+func (s *Store) ListIPBlocks(ctx context.Context, limit int32, cursorCreatedAt pgtype.Timestamptz) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocks(ctx, gen.ListIPBlocksParams{
 
 		Limit:     limit,
@@ -102,7 +102,7 @@ func (s *Store) ListIPBlocks(ctx context.Context, tenantID pgtype.UUID, limit in
 
 // ListIPBlocksPaginated returns offset-paginated IP blocks for admin DataTable
 // server-side pagination (BUG-010). Supports optional block_type filter.
-func (s *Store) ListIPBlocksPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, blockType *string) ([]gen.IpBlock, error) {
+func (s *Store) ListIPBlocksPaginated(ctx context.Context, limit, offset int32, blockType *string) ([]gen.IpBlock, error) {
 	return s.queries.ListIPBlocksPaginated(ctx, gen.ListIPBlocksPaginatedParams{
 
 		Limit:     limit,
@@ -113,7 +113,7 @@ func (s *Store) ListIPBlocksPaginated(ctx context.Context, tenantID pgtype.UUID,
 
 // CountIPBlocks returns the total count of IP blocks for the tenant, optionally
 // filtered by block_type, for DataTable pagination (BUG-010).
-func (s *Store) CountIPBlocks(ctx context.Context, tenantID pgtype.UUID, blockType *string) (int32, error) {
+func (s *Store) CountIPBlocks(ctx context.Context, blockType *string) (int32, error) {
 	return s.queries.CountIPBlocks(ctx,
 
 		blockType,
@@ -121,7 +121,7 @@ func (s *Store) CountIPBlocks(ctx context.Context, tenantID pgtype.UUID, blockTy
 }
 
 // DeleteIPBlock removes an IP block by ID.
-func (s *Store) DeleteIPBlock(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteIPBlock(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeleteIPBlock(ctx,
 		id,
 	)
@@ -137,7 +137,7 @@ type UpdateIPBlockInput struct {
 }
 
 // UpdateIPBlock updates an existing IP block by ID.
-func (s *Store) UpdateIPBlock(ctx context.Context, id, tenantID pgtype.UUID, input UpdateIPBlockInput) (gen.IpBlock, error) {
+func (s *Store) UpdateIPBlock(ctx context.Context, id pgtype.UUID, input UpdateIPBlockInput) (gen.IpBlock, error) {
 	current, err := s.queries.GetIPBlockByID(ctx, id)
 	if err != nil {
 		return gen.IpBlock{}, fmt.Errorf("getting ip block for update: %w", err)
@@ -181,14 +181,14 @@ func (s *Store) UpdateIPBlock(ctx context.Context, id, tenantID pgtype.UUID, inp
 }
 
 // GetActiveIPBlocks returns all non-expired IP blocks for the tenant.
-func (s *Store) GetActiveIPBlocks(ctx context.Context, tenantID pgtype.UUID) ([]gen.IpBlock, error) {
+func (s *Store) GetActiveIPBlocks(ctx context.Context) ([]gen.IpBlock, error) {
 	return s.queries.GetActiveIPBlocks(ctx)
 }
 
 // IsIPBlocked checks via SQL whether the given IP falls within any
 // active CIDR block for the tenant. This uses PostgreSQL's <<= operator
 // which correctly handles inet containment.
-func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string) (bool, error) {
+func (s *Store) IsIPBlocked(ctx context.Context, ip string) (bool, error) {
 	parsedIP, err := netipParseAddrOrCIDR(ip)
 	if err != nil {
 		return false, nil //nolint:nilerr // intentional: invalid IPs are not blocked
@@ -209,7 +209,7 @@ func (s *Store) IsIPBlocked(ctx context.Context, tenantID pgtype.UUID, ip string
 // for the tenant, or "" if no block matches. 'full' takes priority over
 // 'registration'/'posting'/'api'. Per §41, non-full types are scoped to
 // specific route groups rather than blocking all requests (BUG-003).
-func (s *Store) GetIPBlockTypeForIP(ctx context.Context, tenantID pgtype.UUID, ip string) (string, error) {
+func (s *Store) GetIPBlockTypeForIP(ctx context.Context, ip string) (string, error) {
 	parsedIP, err := netipParseAddrOrCIDR(ip)
 	if err != nil {
 		return "", nil //nolint:nilerr // intentional: invalid IPs are not blocked
@@ -230,7 +230,7 @@ func (s *Store) GetIPBlockTypeForIP(ctx context.Context, tenantID pgtype.UUID, i
 
 // CreateUserBlock creates a block relationship.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (s *Store) CreateUserBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
+func (s *Store) CreateUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.CreateUserBlock(ctx, gen.CreateUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
@@ -239,7 +239,7 @@ func (s *Store) CreateUserBlock(ctx context.Context, tenantID, blockerID, blocke
 
 // DeleteUserBlock removes a block relationship.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (s *Store) DeleteUserBlock(ctx context.Context, tenantID, blockerID, blockedID pgtype.UUID) error {
+func (s *Store) DeleteUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
 	return s.queries.DeleteUserBlock(ctx, gen.DeleteUserBlockParams{
 		BlockerID: blockerID,
 		BlockedID: blockedID,
@@ -253,7 +253,7 @@ func (s *Store) GetUserBlocks(ctx context.Context, blockerID pgtype.UUID) ([]gen
 
 // ListAllUserBlocks returns paginated user blocks for the given tenant.
 // Tenant-scoped per JEOS §9 (BUG-001).
-func (s *Store) ListAllUserBlocks(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.ListAllUserBlocksRow, error) {
+func (s *Store) ListAllUserBlocks(ctx context.Context, limit int32) ([]gen.ListAllUserBlocksRow, error) {
 	return s.queries.ListAllUserBlocks(ctx,
 
 		limit,
@@ -262,7 +262,7 @@ func (s *Store) ListAllUserBlocks(ctx context.Context, tenantID pgtype.UUID, lim
 
 // ListAllUserBlocksPaginated returns offset-paginated user blocks for admin
 // DataTable server-side pagination (BUG-010). Tenant-scoped per JEOS §9.
-func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAllUserBlocksPaginatedRow, error) {
+func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, limit, offset int32) ([]gen.ListAllUserBlocksPaginatedRow, error) {
 	return s.queries.ListAllUserBlocksPaginated(ctx, gen.ListAllUserBlocksPaginatedParams{
 
 		Limit:  limit,
@@ -272,13 +272,13 @@ func (s *Store) ListAllUserBlocksPaginated(ctx context.Context, tenantID pgtype.
 
 // CountAllUserBlocks returns the total count of user blocks for the tenant,
 // for DataTable pagination (BUG-010). Tenant-scoped.
-func (s *Store) CountAllUserBlocks(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
+func (s *Store) CountAllUserBlocks(ctx context.Context) (int32, error) {
 	return s.queries.CountAllUserBlocks(ctx)
 }
 
 // IsBlocked checks whether user A has blocked user B or vice versa.
 // Tenant-scoped per JEOS §9 (BUG-006).
-func (s *Store) IsBlocked(ctx context.Context, tenantID, userA, userB pgtype.UUID) (bool, error) {
+func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, error) {
 	result, err := s.queries.IsBlocked(ctx, gen.IsBlockedParams{
 		BlockerID: userA,
 		BlockedID: userB,
@@ -311,13 +311,13 @@ func (s *Store) CreateCensoredWord(ctx context.Context, input CreateCensoredWord
 }
 
 // ListCensoredWords returns all censored words for the given tenant.
-func (s *Store) ListCensoredWords(ctx context.Context, tenantID pgtype.UUID) ([]gen.CensoredWord, error) {
+func (s *Store) ListCensoredWords(ctx context.Context) ([]gen.CensoredWord, error) {
 	return s.queries.ListCensoredWords(ctx)
 }
 
 // ListCensoredWordsPaginated returns offset-paginated censored words for admin
 // DataTable server-side pagination (BUG-010). Supports optional action filter.
-func (s *Store) ListCensoredWordsPaginated(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, action *string) ([]gen.CensoredWord, error) {
+func (s *Store) ListCensoredWordsPaginated(ctx context.Context, limit, offset int32, action *string) ([]gen.CensoredWord, error) {
 	return s.queries.ListCensoredWordsPaginated(ctx, gen.ListCensoredWordsPaginatedParams{
 
 		Limit:  limit,
@@ -328,7 +328,7 @@ func (s *Store) ListCensoredWordsPaginated(ctx context.Context, tenantID pgtype.
 
 // CountCensoredWords returns the total count of censored words for the tenant,
 // optionally filtered by action, for DataTable pagination (BUG-010).
-func (s *Store) CountCensoredWords(ctx context.Context, tenantID pgtype.UUID, action *string) (int32, error) {
+func (s *Store) CountCensoredWords(ctx context.Context, action *string) (int32, error) {
 	return s.queries.CountCensoredWords(ctx,
 
 		action,
@@ -336,7 +336,7 @@ func (s *Store) CountCensoredWords(ctx context.Context, tenantID pgtype.UUID, ac
 }
 
 // DeleteCensoredWord removes a censored word by ID.
-func (s *Store) DeleteCensoredWord(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteCensoredWord(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeleteCensoredWord(ctx,
 		id,
 	)
@@ -350,7 +350,7 @@ type UpdateCensoredWordInput struct {
 }
 
 // UpdateCensoredWord updates an existing censored word by ID.
-func (s *Store) UpdateCensoredWord(ctx context.Context, id, tenantID pgtype.UUID, input UpdateCensoredWordInput) (gen.CensoredWord, error) {
+func (s *Store) UpdateCensoredWord(ctx context.Context, id pgtype.UUID, input UpdateCensoredWordInput) (gen.CensoredWord, error) {
 	current, err := s.queries.GetCensoredWordByID(ctx, id)
 	if err != nil {
 		return gen.CensoredWord{}, fmt.Errorf("getting censored word for update: %w", err)
@@ -388,7 +388,7 @@ func (s *Store) GetCensoredWords(ctx context.Context) ([]gen.CensoredWord, error
 // --- Content Hash ---
 
 // UpdateContentHash sets the content hash on an existing content item.
-func (s *Store) UpdateContentHash(ctx context.Context, contentID, tenantID pgtype.UUID, hash string) error {
+func (s *Store) UpdateContentHash(ctx context.Context, contentID pgtype.UUID, hash string) error {
 	return s.queries.UpdateContentHash(ctx, gen.UpdateContentHashParams{
 		ID: contentID,
 
@@ -397,7 +397,7 @@ func (s *Store) UpdateContentHash(ctx context.Context, contentID, tenantID pgtyp
 }
 
 // CheckDuplicateHash checks whether a content hash already exists for the tenant.
-func (s *Store) CheckDuplicateHash(ctx context.Context, tenantID pgtype.UUID, hash string) (bool, error) {
+func (s *Store) CheckDuplicateHash(ctx context.Context, hash string) (bool, error) {
 	result, err := s.queries.CheckDuplicateHash(ctx,
 
 		&hash,

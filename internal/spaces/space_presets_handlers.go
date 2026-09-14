@@ -15,12 +15,12 @@ import (
 
 // ListPermissionPresets handles GET /api/v1/space-permission-presets.
 func (h *Handlers) ListPermissionPresets(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	presets, err := h.Service.ListPermissionPresets(r.Context(), tenantID)
+	presets, err := h.Service.ListPermissionPresets(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -38,13 +38,12 @@ func (h *Handlers) UpdatePermissionPreset(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_name", "Preset name is required")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	existing, err := h.Service.GetPermissionPreset(r.Context(), name, tenantID)
+	existing, err := h.Service.GetPermissionPreset(r.Context(), name)
 	if err != nil {
 		handleServiceError(w, err)
 		return

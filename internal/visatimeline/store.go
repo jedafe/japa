@@ -153,7 +153,7 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // ListUserTimelines returns all non-deleted timelines owned by a user within
 // a tenant, newest first.
-func (s *Store) ListUserTimelines(ctx context.Context, userID, tenantID pgtype.UUID) ([]Timeline, error) {
+func (s *Store) ListUserTimelines(ctx context.Context, userID pgtype.UUID) ([]Timeline, error) {
 	// Join milestones via COALESCE(LATERAL json_agg, '[]') so the API can
 	// return timelines with their milestones in a single round-trip (§83
 	// defines no separate list-milestones route). Milestones are ordered
@@ -224,7 +224,7 @@ type StoreUpdateTimelineInput struct {
 
 // UpdateTimeline updates the outcome/share toggle (and optional consulate /
 // application method) on a non-deleted timeline within a tenant.
-func (s *Store) UpdateTimeline(ctx context.Context, id, tenantID pgtype.UUID, input StoreUpdateTimelineInput) error {
+func (s *Store) UpdateTimeline(ctx context.Context, id pgtype.UUID, input StoreUpdateTimelineInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -303,7 +303,7 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // AddMilestone inserts a new milestone for a timeline and returns the created
 // row.
-func (s *Store) AddMilestone(ctx context.Context, timelineID, tenantID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz, notes *string) (Milestone, error) {
+func (s *Store) AddMilestone(ctx context.Context, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz, notes *string) (Milestone, error) {
 	const q = `
 INSERT INTO visa_timeline_milestones (timeline_id, milestone_type, occurred_at, notes)
 VALUES ($1, $2, $3, $4)
@@ -334,7 +334,7 @@ type StoreUpdateMilestoneInput struct {
 }
 
 // UpdateMilestone edits a milestone within a tenant.
-func (s *Store) UpdateMilestone(ctx context.Context, milestoneID, tenantID pgtype.UUID, input StoreUpdateMilestoneInput) error {
+func (s *Store) UpdateMilestone(ctx context.Context, milestoneID pgtype.UUID, input StoreUpdateMilestoneInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -382,7 +382,7 @@ UPDATE visa_timeline_milestones SET %s WHERE id = $%d
 }
 
 // ListMilestones returns the milestones for a timeline, ordered chronologically.
-func (s *Store) ListMilestones(ctx context.Context, timelineID, tenantID pgtype.UUID) ([]Milestone, error) {
+func (s *Store) ListMilestones(ctx context.Context, timelineID pgtype.UUID) ([]Milestone, error) {
 	const q = `
 SELECT id, timeline_id, milestone_type, occurred_at, notes, created_at
 FROM visa_timeline_milestones
@@ -421,7 +421,7 @@ ORDER BY occurred_at ASC, created_at ASC
 // origin → destination → visa category combination (consulate optional). The
 // stats are read from the pre-aggregated visa_processing_stats table. When
 // months > 0, only periods within the last `months` months are returned.
-func (s *Store) GetStats(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStat, error) {
+func (s *Store) GetStats(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]ProcessingStat, error) {
 	var (
 		conditions []string
 		args       []any
@@ -498,7 +498,7 @@ ORDER BY period_start DESC
 // GetTrend returns a monthly trend series (avg/median processing days) for a
 // destination space + visa category over the last `months` months. When
 // consulate is non-empty, the trend is filtered to that consulate only.
-func (s *Store) GetTrend(ctx context.Context, tenantID, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPoint, error) {
+func (s *Store) GetTrend(ctx context.Context, destSpaceID pgtype.UUID, visaCategory, consulate string, months int) ([]TrendPoint, error) {
 	if months <= 0 {
 		months = 12
 	}
@@ -869,7 +869,7 @@ WHERE t.deleted_at IS NULL
 // UserAccountAge returns the user's created_at timestamp for the anti-gaming
 // account-age gate (§83: account age ≥ visa_timeline.min_account_age_days).
 // Returns pgtype.Timestamptz{} (Valid=false) if the user does not exist.
-func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID) (pgtype.Timestamptz, error) {
+func (s *Store) UserAccountAge(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
 	const q = `SELECT created_at FROM users WHERE id = $1`
 
 	var ts pgtype.Timestamptz
@@ -890,7 +890,7 @@ func (s *Store) UserAccountAge(ctx context.Context, tenantID, userID pgtype.UUID
 // automatically and held for moderator review"). The milestone is rejected
 // (not stored), and this audit row lets moderators review flagged attempts.
 // Ref: japaconnect-engineering/sections/83-visa-timeline-tracker.md.
-func (s *Store) FlagImplausibleSequence(ctx context.Context, tenantID, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) error {
+func (s *Store) FlagImplausibleSequence(ctx context.Context, userID, timelineID pgtype.UUID, milestoneType string, occurredAt pgtype.Timestamptz) error {
 	metadata := fmt.Sprintf(`{"timeline_id":"%s","milestone_type":%q,"occurred_at":"%s"}`,
 		timelineID.String(), milestoneType, occurredAt.Time.UTC().Format(time.RFC3339))
 	targetType := "visa_timeline_milestone"
@@ -1014,7 +1014,7 @@ type UpdateProcessingTimeInput struct {
 }
 
 // UpdateProcessingTime updates a visa_processing_stats row within a tenant.
-func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UUID, in UpdateProcessingTimeInput) (ProcessingStat, error) {
+func (s *Store) UpdateProcessingTime(ctx context.Context, id pgtype.UUID, in UpdateProcessingTimeInput) (ProcessingStat, error) {
 	var (
 		sets   []string
 		args   []any
@@ -1082,7 +1082,7 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 	}
 
 	if len(sets) == 0 {
-		return s.GetStatByID(ctx, id, tenantID)
+		return s.GetStatByID(ctx, id)
 	}
 
 	sets = append(sets, "refreshed_at = now()")
@@ -1109,7 +1109,7 @@ func (s *Store) UpdateProcessingTime(ctx context.Context, id, tenantID pgtype.UU
 }
 
 // GetStatByID returns a single visa_processing_stats row by id and tenant.
-func (s *Store) GetStatByID(ctx context.Context, id, tenantID pgtype.UUID) (ProcessingStat, error) {
+func (s *Store) GetStatByID(ctx context.Context, id pgtype.UUID) (ProcessingStat, error) {
 	const q = `
 SELECT id, origin_space_id, destination_space_id, visa_category,
        consulate, period_start, sample_count, avg_days, median_days,
@@ -1133,7 +1133,7 @@ WHERE id = $1
 }
 
 // DeleteProcessingTime deletes a visa_processing_stats row within a tenant.
-func (s *Store) DeleteProcessingTime(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteProcessingTime(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM visa_processing_stats WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("visatimeline: delete processing time: %w", err)

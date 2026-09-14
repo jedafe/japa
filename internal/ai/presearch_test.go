@@ -375,15 +375,15 @@ type thresholdSettingsReader struct {
 	threshold float64
 }
 
-func (s *thresholdSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+func (s *thresholdSettingsReader) GetStringOr(ctx context.Context, key, fallback string) string {
 	return fallback
 }
 
-func (s *thresholdSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (s *thresholdSettingsReader) GetIntOr(ctx context.Context, key string, fallback int) int {
 	return fallback
 }
 
-func (s *thresholdSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (s *thresholdSettingsReader) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	if key == "agent.presearch_full_threshold" {
 		return s.threshold
 	}
@@ -391,6 +391,6 @@ func (s *thresholdSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtyp
 	return fallback
 }
 
-func (s *thresholdSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (s *thresholdSettingsReader) GetBoolOr(ctx context.Context, key string, fallback bool) bool {
 	return fallback
 }

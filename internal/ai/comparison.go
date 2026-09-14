@@ -179,7 +179,7 @@ func NewComparisonEngine(deps *ToolDeps) *ComparisonEngine {
 // set with a matching type yields TierSemiStructured.
 func (e *ComparisonEngine) ClassifyRequest(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	entityType string,
 	requestedFields []string,
 ) (tier ComparisonTier, typeRow *gen.GetComparisonTypeBySlugRow, existingDims, missing []string, err error) {
@@ -191,7 +191,7 @@ func (e *ComparisonEngine) ClassifyRequest(
 		return TierUnstructured, nil, nil, nil, nil
 	}
 
-	td, lookupErr := e.deps.Comparison.GetComparisonTypeBySlug(ctx, entityType, tenantID)
+	td, lookupErr := e.deps.Comparison.GetComparisonTypeBySlug(ctx, entityType)
 	if lookupErr != nil {
 		// No matching type → Tier 3 (unstructured). A not-found error is
 		// the expected signal for Tier 3, not a hard failure.
@@ -204,7 +204,7 @@ func (e *ComparisonEngine) ClassifyRequest(
 	// of any existing comparison content linked to this type. When no
 	// comparison content exists yet, the type's field-group fields are the
 	// dimensions (Section 30: "each field = one comparison_dimension row").
-	existingDims = e.dimensionsForType(ctx, tenantID, td)
+	existingDims = e.dimensionsForType(ctx, td)
 
 	if len(requestedFields) == 0 {
 		// No specific fields requested — the type's own dimensions cover it.
@@ -235,12 +235,12 @@ func (e *ComparisonEngine) ClassifyRequest(
 // linked to the type; when none exist, it falls back to the type's
 // field-group fields via the custom fields service. When neither is
 // available, it returns an empty slice.
-func (e *ComparisonEngine) dimensionsForType(ctx context.Context, tenantID pgtype.UUID, td gen.GetComparisonTypeBySlugRow) []string {
+func (e *ComparisonEngine) dimensionsForType(ctx context.Context, td gen.GetComparisonTypeBySlugRow) []string {
 	// The comparison type's field-group fields are the canonical dimension
 	// set (Section 30). We read them via the custom fields service when
 	// available.
 	if e.deps.CustomFields != nil && td.FieldGroupID.Valid {
-		fields, err := e.deps.CustomFields.ListFieldsByGroup(ctx, td.FieldGroupID, tenantID)
+		fields, err := e.deps.CustomFields.ListFieldsByGroup(ctx, td.FieldGroupID)
 		if err != nil {
 			slog.Warn("ai: listing field-group fields for comparison type dimensions",
 				"type_slug", td.Slug, "error", err)
@@ -284,7 +284,7 @@ type FillValueInput struct {
 // dimensions).
 func (e *ComparisonEngine) FillValues(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	inputs []FillValueInput,
 ) (*FillValuesResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
@@ -299,7 +299,7 @@ func (e *ComparisonEngine) FillValues(
 	for _, in := range inputs {
 		meta := provenanceBytes(in.Provenance)
 
-		_, err := e.deps.Comparison.UpsertComparisonValueWithMetadata(ctx, tenantID, ComparisonValueUpsertInput{
+		_, err := e.deps.Comparison.UpsertComparisonValueWithMetadata(ctx, ComparisonValueUpsertInput{
 			DimensionID:  in.DimensionID,
 			ItemID:       in.ItemID,
 			Value:        in.Value,
@@ -369,7 +369,7 @@ type AddDimensionInput struct {
 // The DimensionType defaults to "text" when empty.
 func (e *ComparisonEngine) AddDimensions(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	inputs []AddDimensionInput,
 ) ([]CreatedDimension, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
@@ -381,7 +381,7 @@ func (e *ComparisonEngine) AddDimensions(
 	positionByContent := make(map[pgtype.UUID]int32)
 	for _, in := range inputs {
 		if _, ok := positionByContent[in.ContentID]; !ok {
-			detail, err := e.deps.Comparison.GetComparisonDetail(ctx, in.ContentID, tenantID)
+			detail, err := e.deps.Comparison.GetComparisonDetail(ctx, in.ContentID)
 			if err != nil {
 				slog.Warn("ai: reading comparison detail for dimension position",
 					"content_id", in.ContentID, "error", err)
@@ -403,7 +403,7 @@ func (e *ComparisonEngine) AddDimensions(
 
 		pos := positionByContent[in.ContentID]
 
-		row, err := e.deps.Comparison.CreateComparisonDimension(ctx, tenantID, ComparisonDimensionCreateInput{
+		row, err := e.deps.Comparison.CreateComparisonDimension(ctx, ComparisonDimensionCreateInput{
 			ContentID:     in.ContentID,
 			Label:         in.Label,
 			DimensionType: dimType,
@@ -508,7 +508,7 @@ func (e *ComparisonEngine) CreateComparison(
 			return nil, errors.New("create_type requires name and slug")
 		}
 
-		td, err := e.deps.Comparison.CreateComparisonType(ctx, tenantID, in.TypeInput)
+		td, err := e.deps.Comparison.CreateComparisonType(ctx, in.TypeInput)
 		if err != nil {
 			return nil, fmt.Errorf("creating comparison type: %w", err)
 		}
@@ -536,7 +536,7 @@ func (e *ComparisonEngine) CreateComparison(
 	}
 
 	// Read back the created items + dimensions to surface their IDs.
-	detail, detailErr := e.deps.Comparison.GetComparisonDetail(ctx, res.ID, tenantID)
+	detail, detailErr := e.deps.Comparison.GetComparisonDetail(ctx, res.ID)
 	if detailErr != nil {
 		// The comparison was created; the detail read is best-effort.
 		slog.Warn("ai: reading back created comparison detail", "content_id", res.ID, "error", detailErr)
@@ -582,18 +582,18 @@ type ReadComparisonResult struct {
 // comparison.read tool and as the final step of all three tier flows.
 func (e *ComparisonEngine) ReadComparison(
 	ctx context.Context,
-	contentID, tenantID pgtype.UUID,
+	contentID pgtype.UUID,
 ) (*ReadComparisonResult, error) {
 	if e.deps == nil || e.deps.Comparison == nil {
 		return nil, errors.New("comparison service not configured")
 	}
 
-	detail, err := e.deps.Comparison.GetComparisonDetail(ctx, contentID, tenantID)
+	detail, err := e.deps.Comparison.GetComparisonDetail(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("reading comparison detail: %w", err)
 	}
 
-	matrix, err := e.deps.Comparison.GetComparisonMatrix(ctx, contentID, tenantID)
+	matrix, err := e.deps.Comparison.GetComparisonMatrix(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("reading comparison matrix: %w", err)
 	}

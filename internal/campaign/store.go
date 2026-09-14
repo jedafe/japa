@@ -40,7 +40,7 @@ func NewStore(database *db.DB) *Store {
 func (s *Store) DB() *db.DB { return s.db }
 
 // CreateCampaign inserts a new content_campaigns row in the 'planning' status.
-func (s *Store) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CreateCampaignInput) (gen.ContentCampaign, error) {
+func (s *Store) CreateCampaign(ctx context.Context, userID pgtype.UUID, in CreateCampaignInput) (gen.ContentCampaign, error) {
 	var contentType *string
 	if in.ContentType != "" {
 		contentType = &in.ContentType
@@ -138,12 +138,12 @@ func (s *Store) UpdateCampaignStatus(ctx context.Context, id pgtype.UUID, status
 }
 
 // GetCampaign returns a single campaign by ID.
-func (s *Store) GetCampaign(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaign, error) {
+func (s *Store) GetCampaign(ctx context.Context, id pgtype.UUID) (gen.ContentCampaign, error) {
 	return s.read.GetContentCampaign(ctx, id)
 }
 
 // ListCampaigns returns a paginated list of campaigns for a tenant.
-func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f CampaignListFilter) ([]gen.ContentCampaign, int64, error) {
+func (s *Store) ListCampaigns(ctx context.Context, f CampaignListFilter) ([]gen.ContentCampaign, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
 	}
@@ -178,24 +178,24 @@ func (s *Store) ListCampaigns(ctx context.Context, tenantID pgtype.UUID, f Campa
 }
 
 // ListCampaignItemsByCampaign returns all items for a campaign.
-func (s *Store) ListCampaignItemsByCampaign(ctx context.Context, tenantID, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
+func (s *Store) ListCampaignItemsByCampaign(ctx context.Context, campaignID pgtype.UUID) ([]gen.ContentCampaignItem, error) {
 	return s.read.ListContentCampaignItemsByCampaign(ctx,
 		campaignID,
 	)
 }
 
 // GetCampaignItem returns a single campaign item by ID.
-func (s *Store) GetCampaignItem(ctx context.Context, tenantID, id pgtype.UUID) (gen.ContentCampaignItem, error) {
+func (s *Store) GetCampaignItem(ctx context.Context, id pgtype.UUID) (gen.ContentCampaignItem, error) {
 	return s.read.GetContentCampaignItem(ctx, id)
 }
 
 // GetCampaignItemByStudioJob returns the campaign item linked to a Studio job.
-func (s *Store) GetCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error) {
+func (s *Store) GetCampaignItemByStudioJob(ctx context.Context, studioJobID pgtype.UUID) (gen.ContentCampaignItem, error) {
 	return s.read.GetContentCampaignItemByStudioJob(ctx, studioJobID)
 }
 
 // GetCampaignItemByReviewID returns the campaign item linked to a HITL review.
-func (s *Store) GetCampaignItemByReviewID(ctx context.Context, tenantID, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
+func (s *Store) GetCampaignItemByReviewID(ctx context.Context, reviewID pgtype.UUID) (gen.ContentCampaignItem, error) {
 	return s.read.GetContentCampaignItemByReviewID(ctx, reviewID)
 }
 
@@ -206,12 +206,12 @@ func (s *Store) UpdateCampaignItem(ctx context.Context, params gen.UpdateContent
 
 // ListActivePersonas returns all active personas for a tenant with the
 // information needed by the content planner.
-func (s *Store) ListActivePersonas(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListContentCampaignActivePersonasRow, error) {
+func (s *Store) ListActivePersonas(ctx context.Context) ([]gen.ListContentCampaignActivePersonasRow, error) {
 	return s.read.ListContentCampaignActivePersonas(ctx)
 }
 
 // ListActivePersonasByIDs returns the active personas from a provided pool.
-func (s *Store) ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error) {
+func (s *Store) ListActivePersonasByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.ListContentCampaignActivePersonasByIDsRow, error) {
 	return s.read.ListContentCampaignActivePersonasByIDs(ctx,
 
 		ids,
@@ -219,7 +219,7 @@ func (s *Store) ListActivePersonasByIDs(ctx context.Context, tenantID pgtype.UUI
 }
 
 // SpaceExists checks whether a space exists and belongs to the given tenant.
-func (s *Store) SpaceExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
+func (s *Store) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	_, err := s.read.GetSpaceByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

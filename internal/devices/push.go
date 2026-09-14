@@ -88,12 +88,12 @@ func NewCompositeDispatcher(settings settingReader) *CompositeDispatcher {
 }
 
 // Dispatch routes to the appropriate provider based on platform.
-func (d *CompositeDispatcher) Dispatch(ctx context.Context, tenantID pgtype.UUID, platform, token string, payload PushPayload) error {
+func (d *CompositeDispatcher) Dispatch(ctx context.Context, platform, token string, payload PushPayload) error {
 	switch platform {
 	case PlatformIOS:
-		return d.dispatchAPNs(ctx, tenantID, token, payload)
+		return d.dispatchAPNs(ctx, token, payload)
 	case PlatformAndroid:
-		return d.dispatchFCM(ctx, tenantID, token, payload)
+		return d.dispatchFCM(ctx, token, payload)
 	case PlatformWeb:
 		// Web push is handled by internal/notifications/push.go (VAPID).
 		// Device tokens for web should not reach here; return a clear error.
@@ -111,8 +111,8 @@ const (
 	apnsJWTLead    = 30 * time.Second // refresh JWT 30s before expiry
 )
 
-func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.UUID, deviceToken string, payload PushPayload) error {
-	keyID, teamID, privKeyPEM, err := d.loadAPNsCredentials(ctx, tenantID)
+func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, deviceToken string, payload PushPayload) error {
+	keyID, teamID, privKeyPEM, err := d.loadAPNsCredentials(ctx)
 	if err != nil {
 		return fmt.Errorf("devices: apns credentials: %w", err)
 	}
@@ -166,18 +166,18 @@ func (d *CompositeDispatcher) dispatchAPNs(ctx context.Context, tenantID pgtype.
 	return nil
 }
 
-func (d *CompositeDispatcher) loadAPNsCredentials(ctx context.Context, tenantID pgtype.UUID) (keyID, teamID, privKeyPEM string, err error) {
-	keyID, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_key_id")
+func (d *CompositeDispatcher) loadAPNsCredentials(ctx context.Context) (keyID, teamID, privKeyPEM string, err error) {
+	keyID, err = d.settings.GetSetting(ctx, "push.apns_key_id")
 	if err != nil || keyID == "" {
 		return "", "", "", errors.New("push.apns_key_id not configured")
 	}
 
-	teamID, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_team_id")
+	teamID, err = d.settings.GetSetting(ctx, "push.apns_team_id")
 	if err != nil || teamID == "" {
 		return "", "", "", errors.New("push.apns_team_id not configured")
 	}
 
-	privKeyPEM, err = d.settings.GetSetting(ctx, pgtype.UUID{}, "push.apns_private_key")
+	privKeyPEM, err = d.settings.GetSetting(ctx, "push.apns_private_key")
 	if err != nil || privKeyPEM == "" {
 		return "", "", "", errors.New("push.apns_private_key not configured")
 	}
@@ -242,8 +242,8 @@ const (
 	fcmJWTLead  = 60 * time.Second                      // refresh OAuth2 token 60s before expiry
 )
 
-func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.UUID, deviceToken string, payload PushPayload) error {
-	sa, err := d.loadFCMServiceAccount(ctx, tenantID)
+func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, deviceToken string, payload PushPayload) error {
+	sa, err := d.loadFCMServiceAccount(ctx)
 	if err != nil {
 		return fmt.Errorf("devices: fcm credentials: %w", err)
 	}
@@ -301,8 +301,8 @@ func (d *CompositeDispatcher) dispatchFCM(ctx context.Context, tenantID pgtype.U
 	return nil
 }
 
-func (d *CompositeDispatcher) loadFCMServiceAccount(ctx context.Context, tenantID pgtype.UUID) (*fcmServiceAccount, error) {
-	raw, err := d.settings.GetSetting(ctx, pgtype.UUID{}, "push.fcm_service_account")
+func (d *CompositeDispatcher) loadFCMServiceAccount(ctx context.Context) (*fcmServiceAccount, error) {
+	raw, err := d.settings.GetSetting(ctx, "push.fcm_service_account")
 	if err != nil || raw == "" {
 		return nil, errors.New("push.fcm_service_account not configured")
 	}

@@ -110,7 +110,7 @@ func (s *Service) GetTranslationsByLocale(ctx context.Context, tenantID pgtype.U
 	}
 
 	// Miss: load from DB.
-	rows, err := s.store.ListByLocale(ctx, tenantID, locale)
+	rows, err := s.store.ListByLocale(ctx, locale)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ type UpsertBatchItem struct {
 
 // Delete removes a translation and invalidates the cache.
 func (s *Service) Delete(ctx context.Context, tenantID, id pgtype.UUID, locale string) error {
-	if err := s.store.Delete(ctx, tenantID, id); err != nil {
+	if err := s.store.Delete(ctx, id); err != nil {
 		return err
 	}
 
@@ -233,7 +233,7 @@ func (s *Service) Delete(ctx context.Context, tenantID, id pgtype.UUID, locale s
 
 // DeleteByLocale removes all translations for a locale and invalidates the cache.
 func (s *Service) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, locale string) error {
-	if err := s.store.DeleteByLocale(ctx, tenantID, locale); err != nil {
+	if err := s.store.DeleteByLocale(ctx, locale); err != nil {
 		return err
 	}
 
@@ -243,30 +243,30 @@ func (s *Service) DeleteByLocale(ctx context.Context, tenantID pgtype.UUID, loca
 }
 
 // GetByID returns a single translation by its primary key.
-func (s *Service) GetByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.Translation, error) {
-	return s.store.GetByID(ctx, tenantID, id)
+func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (gen.Translation, error) {
+	return s.store.GetByID(ctx, id)
 }
 
 // ListLocales returns all distinct locales for a tenant.
-func (s *Service) ListLocales(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
-	return s.store.ListLocales(ctx, tenantID)
+func (s *Service) ListLocales(ctx context.Context) ([]string, error) {
+	return s.store.ListLocales(ctx)
 }
 
 // Counts returns translation counts grouped by locale.
-func (s *Service) Counts(ctx context.Context, tenantID pgtype.UUID) ([]gen.CountTranslationsByLocaleRow, error) {
-	return s.store.CountByLocale(ctx, tenantID)
+func (s *Service) Counts(ctx context.Context) ([]gen.CountTranslationsByLocaleRow, error) {
+	return s.store.CountByLocale(ctx)
 }
 
 // RefreshCache forces a full reload of all translations for a tenant into
 // the in-memory cache. Call after bulk imports or migration events.
 func (s *Service) RefreshCache(ctx context.Context, tenantID pgtype.UUID) error {
-	locales, err := s.store.ListLocales(ctx, tenantID)
+	locales, err := s.store.ListLocales(ctx)
 	if err != nil {
 		return fmt.Errorf("refresh cache: listing locales: %w", err)
 	}
 
 	for _, locale := range locales {
-		rows, err := s.store.ListByLocale(ctx, tenantID, locale)
+		rows, err := s.store.ListByLocale(ctx, locale)
 		if err != nil {
 			return fmt.Errorf("refresh cache (locale=%s): %w", locale, err)
 		}

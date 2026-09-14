@@ -112,7 +112,7 @@ func TestMaxCitiesEnforcement(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
+	_, err := svc.CompareCities(t.Context(), ids)
 	if err == nil {
 		t.Fatal("CompareCities with 5 cities (> max 3) did not return an error")
 	}
@@ -147,7 +147,7 @@ func TestCompareCities_AtMaxAccepts(t *testing.T) {
 			}
 		}()
 
-		_, err = svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
+		_, err = svc.CompareCities(t.Context(), ids)
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -371,7 +371,7 @@ func TestCompareCities_Dedup(t *testing.T) {
 			}
 		}()
 
-		_, err = svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
+		_, err = svc.CompareCities(t.Context(), ids)
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -390,7 +390,7 @@ func TestCompareCities_TooManyUnique(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(t.Context(), toPgUUID(uuid.New()), ids)
+	_, err := svc.CompareCities(t.Context(), ids)
 	if err == nil {
 		t.Fatal("CompareCities with 4 unique cities (> max 3) did not return an error")
 	}

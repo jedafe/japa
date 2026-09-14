@@ -33,7 +33,7 @@ const sitemapCacheTTL = time.Hour
 // import cycle); *config.Settings satisfies it structurally.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 type sitemapSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // SitemapHandler handles sitemap generation requests.
@@ -139,26 +139,26 @@ func (h *SitemapHandler) baseURL(r *http.Request) string {
 // for the given tenant, falling back to spec defaults when the settings reader
 // is unavailable or a key is unset.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context, tenantID pgtype.UUID) bots.SitemapQualityConfig {
+func (h *SitemapHandler) sitemapQualityConfig(ctx context.Context) bots.SitemapQualityConfig {
 	cfg := bots.DefaultSitemapQualityConfig()
 	if h.settings == nil {
 		return cfg
 	}
 
-	cfg.MinMembers = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_members", cfg.MinMembers)
-	cfg.MinPosts = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_posts", cfg.MinPosts)
-	cfg.MinForums = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_forums", cfg.MinForums)
-	cfg.MinQuestions = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.space_min_questions", cfg.MinQuestions)
-	cfg.MinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.content_min_words", cfg.MinWords)
-	cfg.BlogMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
-	cfg.ForumMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
-	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
-	cfg.GuideMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
-	cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
-	cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
-	cfg.ForumMinReplies = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
-	cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
-	cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, pgtype.UUID{}, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
+	cfg.MinMembers = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_members", cfg.MinMembers)
+	cfg.MinPosts = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_posts", cfg.MinPosts)
+	cfg.MinForums = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_forums", cfg.MinForums)
+	cfg.MinQuestions = h.settings.GetIntOr(ctx, "seo.sitemap.space_min_questions", cfg.MinQuestions)
+	cfg.MinWords = h.settings.GetIntOr(ctx, "seo.sitemap.content_min_words", cfg.MinWords)
+	cfg.BlogMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_words", cfg.BlogMinWords)
+	cfg.ForumMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_words", cfg.ForumMinWords)
+	cfg.DiscussionMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_words", cfg.DiscussionMinWords)
+	cfg.GuideMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.guide_min_words", cfg.GuideMinWords)
+	cfg.ComparisonMinWords = h.settings.GetIntOr(ctx, "seo.sitemap.comparison_min_words", cfg.ComparisonMinWords)
+	cfg.BlogMinEngagement = h.settings.GetIntOr(ctx, "seo.sitemap.blog_min_engagement", cfg.BlogMinEngagement)
+	cfg.ForumMinReplies = h.settings.GetIntOr(ctx, "seo.sitemap.forum_min_replies", cfg.ForumMinReplies)
+	cfg.QuestionMinAnswers = h.settings.GetIntOr(ctx, "seo.sitemap.question_min_answers", cfg.QuestionMinAnswers)
+	cfg.DiscussionMinComments = h.settings.GetIntOr(ctx, "seo.sitemap.discussion_min_comments", cfg.DiscussionMinComments)
 
 	return cfg
 }
@@ -209,8 +209,8 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	base := h.baseURL(r)
 
 	// Compute the lastmod for each sub-sitemap from the most recent row.
-	contentLastMod := h.latestContentLastMod(r.Context(), t.ID)
-	spacesLastMod := h.latestSpacesLastMod(r.Context(), t.ID)
+	contentLastMod := h.latestContentLastMod(r.Context())
+	spacesLastMod := h.latestSpacesLastMod(r.Context())
 	usersLastMod := h.latestUsersLastMod(r.Context(), t.ID)
 	imagesLastMod := h.latestImagesLastMod(r.Context(), t.ID)
 
@@ -241,7 +241,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 
 // latestContentLastMod returns the most recent content updated_at as RFC3339,
 // or empty string when no published content exists.
-func (h *SitemapHandler) latestContentLastMod(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *SitemapHandler) latestContentLastMod(ctx context.Context) string {
 	rows, err := h.queries.ListPublishedSlugsForSitemap(ctx)
 	if err != nil || len(rows) == 0 {
 		return ""
@@ -251,7 +251,7 @@ func (h *SitemapHandler) latestContentLastMod(ctx context.Context, tenantID pgty
 }
 
 // latestSpacesLastMod returns the most recent active space updated_at, or empty.
-func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context) string {
 	var ts time.Time
 
 	err := h.reader.QueryRow(ctx, `SELECT updated_at FROM spaces WHERE status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1`).Scan(&ts)
@@ -310,7 +310,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	cfg := h.sitemapQualityConfig(r.Context(), t.ID)
+	cfg := h.sitemapQualityConfig(r.Context())
 	base := h.baseURL(r)
 	entries := make([]urlEntry, 0, len(rows))
 
@@ -356,7 +356,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cfg := h.sitemapQualityConfig(r.Context(), t.ID)
+	cfg := h.sitemapQualityConfig(r.Context())
 
 	rows, err := h.reader.Query(r.Context(), `SELECT s.slug, s.updated_at, s.member_count, s.post_count,
 		        COALESCE(fc.forum_count, 0), COALESCE(qc.question_count, 0)

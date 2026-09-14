@@ -135,7 +135,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	scamType := r.URL.Query().Get("scam_type")
 	page, limit := parsePageParams(r)
 
-	reports, total, err := h.service.List(r.Context(), tenantID, destSpaceID, scamType, page, limit)
+	reports, total, err := h.service.List(r.Context(), destSpaceID, scamType, page, limit)
 	if err != nil {
 		slog.Error("scamalert: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list scam reports")
@@ -205,7 +205,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if u := auth.FromContext(r.Context()); u != nil && report.DestinationSpaceID != "" {
 		var destSpaceID pgtype.UUID
 		if err := destSpaceID.Scan(report.DestinationSpaceID); err == nil {
-			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), u.UserID, tenantID, destSpaceID)
+			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), u.UserID, destSpaceID)
 		}
 	}
 
@@ -259,13 +259,13 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		reporterID = user.UserID
 	} else {
 		// Anonymous submission — only allowed when the setting is enabled.
-		if !h.service.AnonymousReportsAllowed(r.Context(), tenantID) {
+		if !h.service.AnonymousReportsAllowed(r.Context()) {
 			errpkg.WriteError(w, http.StatusUnauthorized, "anonymous_disabled", "Authentication required to submit a scam report")
 			return
 		}
 	}
 
-	report, err := h.service.Submit(r.Context(), tenantID, reporterID, input)
+	report, err := h.service.Submit(r.Context(), reporterID, input)
 	if err != nil {
 		if errors.Is(err, ErrInvalidScamType) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_scam_type", "Scam type must be one of: fraudulent_agent, fake_job, housing_fraud, fake_scholarship, whatsapp_telegram, other")
@@ -465,7 +465,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Unsubscribe(r.Context(), user.UserID, tenantID, destSpaceID); err != nil {
+	if err := h.service.Unsubscribe(r.Context(), user.UserID, destSpaceID); err != nil {
 		slog.Error("scamalert: unsubscribe failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
 
@@ -488,8 +488,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -524,7 +523,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	reports, total, err := h.service.AdminList(r.Context(), tenantID, status, destSpaceID, scamType, query, sort, order, page, limit)
+	reports, total, err := h.service.AdminList(r.Context(), status, destSpaceID, scamType, query, sort, order, page, limit)
 	if err != nil {
 		slog.Error("scamalert: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list scam reports")
@@ -550,8 +549,7 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -577,7 +575,7 @@ func (h *Handlers) HandleReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Review(r.Context(), id, tenantID, input.Status, input.ModeratorNote, user.UserID); err != nil {
+	if err := h.service.Review(r.Context(), id, input.Status, input.ModeratorNote, user.UserID); err != nil {
 		if errors.Is(err, ErrInvalidStatus) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'confirmed', 'debunked', or 'duplicate'")
 			return
@@ -609,8 +607,7 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -645,7 +642,7 @@ func (h *Handlers) HandlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Pin(r.Context(), id, tenantID, spaceID); err != nil {
+	if err := h.service.Pin(r.Context(), id, spaceID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Confirmed scam report not found")
 			return
@@ -667,8 +664,7 @@ func (h *Handlers) HandleUnpin(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -683,7 +679,7 @@ func (h *Handlers) HandleUnpin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Unpin(r.Context(), id, tenantID); err != nil {
+	if err := h.service.Unpin(r.Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
 			return

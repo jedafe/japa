@@ -36,7 +36,7 @@ func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataExportP
 }
 
 // Get retrieves a single export by ID within a tenant.
-func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (gen.PlatformDataExport, error) {
+func (s *Store) Get(ctx context.Context, id pgtype.UUID) (gen.PlatformDataExport, error) {
 	return s.queries.GetPlatformDataExport(ctx,
 		id,
 	)
@@ -49,7 +49,7 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataEx
 }
 
 // List returns paginated exports for a tenant, optionally filtered by status.
-func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.PlatformDataExport, error) {
+func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataExport, error) {
 	return s.queries.ListPlatformDataExports(ctx, gen.ListPlatformDataExportsParams{
 
 		Status:    status,
@@ -59,7 +59,7 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, l
 }
 
 // Count returns the total number of exports for a tenant, optionally filtered.
-func (s *Store) Count(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+func (s *Store) Count(ctx context.Context, status string) (int64, error) {
 	return s.queries.CountPlatformDataExports(ctx,
 
 		status,
@@ -72,7 +72,7 @@ func (s *Store) UpdateStatus(ctx context.Context, params gen.UpdatePlatformDataE
 }
 
 // Delete removes an export row.
-func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) Delete(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeletePlatformDataExport(ctx,
 		id,
 	)

@@ -31,7 +31,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 	}
 
 	// One-per-user enforcement.
-	exists, err := s.store.hasUserReviewedEntity(ctx, tenantID, input.EntityType, input.EntityID, reviewerUserID)
+	exists, err := s.store.hasUserReviewedEntity(ctx, input.EntityType, input.EntityID, reviewerUserID)
 	if err != nil {
 		return gen.Review{}, fmt.Errorf("checking existing review: %w", err)
 	}
@@ -72,7 +72,7 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 		slog.Error("upsert review aggregate", "entity_type", input.EntityType, "error", err)
 	}
 
-	s.emitWebhook(ctx, tenantID, "review.created", map[string]any{
+	s.emitWebhook(ctx, "review.created", map[string]any{
 		"review_id":   review.ID,
 		"reviewee_id": review.EntityID,
 		"reviewer_id": review.ReviewerUserID,
@@ -83,56 +83,56 @@ func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgt
 }
 
 // GetReview retrieves a review by ID.
-func (s *Service) GetReview(ctx context.Context, id, tenantID pgtype.UUID) (gen.Review, error) {
-	return s.store.getReviewByID(ctx, id, tenantID)
+func (s *Service) GetReview(ctx context.Context, id pgtype.UUID) (gen.Review, error) {
+	return s.store.getReviewByID(ctx, id)
 }
 
 // ListReviewsByEntity returns published reviews for an entity.
 // sort controls ordering: "newest" (default), "highest", or "lowest" (spec §29).
-func (s *Service) ListReviewsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
-	return s.store.listReviewsByEntity(ctx, tenantID, entityType, entityID, limit, offset, sort)
+func (s *Service) ListReviewsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32, sort string) ([]gen.Review, error) {
+	return s.store.listReviewsByEntity(ctx, entityType, entityID, limit, offset, sort)
 }
 
 // ListReviewsByEntityWithAuthor returns published reviews for an entity with the
 // reviewer's display name/username attached.
-func (s *Service) ListReviewsByEntityWithAuthor(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
-	return s.store.listReviewsByEntityWithAuthor(ctx, tenantID, entityType, entityID, limit, offset)
+func (s *Service) ListReviewsByEntityWithAuthor(ctx context.Context, entityType string, entityID pgtype.UUID, limit, offset int32) ([]gen.ListReviewsByEntityWithAuthorRow, error) {
+	return s.store.listReviewsByEntityWithAuthor(ctx, entityType, entityID, limit, offset)
 }
 
 // ListReviewsByReviewer returns all reviews by a reviewer.
-func (s *Service) ListReviewsByReviewer(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
-	return s.store.listReviewsByReviewer(ctx, tenantID, reviewerUserID, limit, offset)
+func (s *Service) ListReviewsByReviewer(ctx context.Context, reviewerUserID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
+	return s.store.listReviewsByReviewer(ctx, reviewerUserID, limit, offset)
 }
 
 // ListReviews returns all reviews for a tenant (admin moderation view),
 // regardless of entity or reviewer and including all statuses.
-func (s *Service) ListReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.Review, error) {
-	return s.store.listReviews(ctx, tenantID, limit, offset)
+func (s *Service) ListReviews(ctx context.Context, limit, offset int32) ([]gen.Review, error) {
+	return s.store.listReviews(ctx, limit, offset)
 }
 
 // ListAdminReviews returns all reviews for a tenant (admin moderation view)
 // with resolved entity names.
-func (s *Service) ListAdminReviews(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
-	return s.store.listAdminReviews(ctx, tenantID, limit, offset)
+func (s *Service) ListAdminReviews(ctx context.Context, limit, offset int32) ([]gen.ListAdminReviewsRow, error) {
+	return s.store.listAdminReviews(ctx, limit, offset)
 }
 
 // ListAdminReviewsFiltered returns filtered reviews with entity names.
-func (s *Service) ListAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
-	return s.store.listAdminReviewsFiltered(ctx, tenantID, status, entityType, limit, offset)
+func (s *Service) ListAdminReviewsFiltered(ctx context.Context, status, entityType string, limit, offset int32) ([]gen.ListAdminReviewsFilteredRow, error) {
+	return s.store.listAdminReviewsFiltered(ctx, status, entityType, limit, offset)
 }
 
 // CountAdminReviews returns the total review count for a tenant.
-func (s *Service) CountAdminReviews(ctx context.Context, tenantID pgtype.UUID) (int32, error) {
-	return s.store.countAdminReviews(ctx, tenantID)
+func (s *Service) CountAdminReviews(ctx context.Context) (int32, error) {
+	return s.store.countAdminReviews(ctx)
 }
 
 // CountAdminReviewsFiltered returns the filtered review count.
-func (s *Service) CountAdminReviewsFiltered(ctx context.Context, tenantID pgtype.UUID, status, entityType string) (int32, error) {
-	return s.store.countAdminReviewsFiltered(ctx, tenantID, status, entityType)
+func (s *Service) CountAdminReviewsFiltered(ctx context.Context, status, entityType string) (int32, error) {
+	return s.store.countAdminReviewsFiltered(ctx, status, entityType)
 }
 
 // UpdateReview updates an existing review (owner only).
-func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID, rating int16, title, body string) (gen.Review, error) {
+func (s *Service) UpdateReview(ctx context.Context, id, reviewerUserID pgtype.UUID, rating int16, title, body string) (gen.Review, error) {
 	if rating < RatingMin || rating > RatingMax {
 		return gen.Review{}, fmt.Errorf("rating must be between %d and %d", RatingMin, RatingMax)
 	}
@@ -175,8 +175,8 @@ func (s *Service) UpdateReview(ctx context.Context, id, tenantID, reviewerUserID
 // The reviewerUserID parameter enforces owner-only deletion (BUG-001): the
 // SQL query filters by reviewer_user_id so a user can only delete their own
 // review, even if they hold the reviews.delete_own permission.
-func (s *Service) DeleteReview(ctx context.Context, id, tenantID, reviewerUserID pgtype.UUID) error {
-	review, err := s.store.getReviewByID(ctx, id, tenantID)
+func (s *Service) DeleteReview(ctx context.Context, id, reviewerUserID pgtype.UUID) error {
+	review, err := s.store.getReviewByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get review for delete: %w", err)
 	}
@@ -203,13 +203,13 @@ func (s *Service) DeleteReview(ctx context.Context, id, tenantID, reviewerUserID
 }
 
 // HardDeleteReview permanently removes a review from the database (admin only).
-func (s *Service) HardDeleteReview(ctx context.Context, id, tenantID pgtype.UUID) error {
-	review, err := s.store.getReviewByID(ctx, id, tenantID)
+func (s *Service) HardDeleteReview(ctx context.Context, id pgtype.UUID) error {
+	review, err := s.store.getReviewByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get review for hard delete: %w", err)
 	}
 
-	if err := s.store.deleteReview(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteReview(ctx, id); err != nil {
 		return fmt.Errorf("hard delete review: %w", err)
 	}
 
@@ -228,8 +228,8 @@ func (s *Service) HardDeleteReview(ctx context.Context, id, tenantID pgtype.UUID
 // FlagReview sets a review's status to 'flagged' for moderation.
 // A removed review cannot be flagged (it would un-remove it and re-include
 // it in aggregate recalculation — spec §29 L33).
-func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) error {
-	review, err := s.store.getReviewByID(ctx, id, tenantID)
+func (s *Service) FlagReview(ctx context.Context, id pgtype.UUID) error {
+	review, err := s.store.getReviewByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get review for flag: %w", err)
 	}
@@ -263,7 +263,7 @@ func (s *Service) FlagReview(ctx context.Context, id, tenantID pgtype.UUID) erro
 // ModerateReview changes a review's status (admin operation).
 // The moderatorUserID and reason are recorded in audit_logs per spec §29
 // (moderation reuses the Reporting & Appeals system, Section 22).
-func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUserID pgtype.UUID, status, reason string) (gen.Review, error) {
+func (s *Service) ModerateReview(ctx context.Context, id, moderatorUserID pgtype.UUID, status, reason string) (gen.Review, error) {
 	if status == "" {
 		return gen.Review{}, errors.New("status is required")
 	}
@@ -323,13 +323,13 @@ func (s *Service) ModerateReview(ctx context.Context, id, tenantID, moderatorUse
 }
 
 // GetAggregate returns the review aggregate for an entity.
-func (s *Service) GetAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
-	return s.store.getReviewAggregate(ctx, tenantID, entityType, entityID)
+func (s *Service) GetAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) (gen.ReviewAggregate, error) {
+	return s.store.getReviewAggregate(ctx, entityType, entityID)
 }
 
 // RecalculateAggregate deletes and re-upserts the aggregate from scratch.
-func (s *Service) RecalculateAggregate(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
-	if err := s.store.recalculateReviewAggregate(ctx, tenantID, entityType, entityID); err != nil {
+func (s *Service) RecalculateAggregate(ctx context.Context, entityType string, entityID pgtype.UUID) error {
+	if err := s.store.recalculateReviewAggregate(ctx, entityType, entityID); err != nil {
 		return fmt.Errorf("recalculate review aggregate: %w", err)
 	}
 

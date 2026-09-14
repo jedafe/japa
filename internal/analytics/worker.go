@@ -24,6 +24,6 @@ func (a *WorkerAdapter) RefreshViews(ctx context.Context) error {
 
 // RunSecurityScan runs the security scanner for the given tenant.
 func (a *WorkerAdapter) RunSecurityScan(ctx context.Context, tenantID [16]byte) error {
-	id := pgtype.UUID{Bytes: tenantID, Valid: true}
-	return a.Service.RunSecurityScan(ctx, id)
+	_ = pgtype.UUID{Bytes: tenantID, Valid: true}
+	return a.Service.RunSecurityScan(ctx)
 }

@@ -146,7 +146,7 @@ func (s *Service) invalidateUnreadCount(ctx context.Context, userID pgtype.UUID)
 
 // SettingsProvider abstracts system settings access for notification batching.
 type SettingsProvider interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -246,7 +246,7 @@ func (s *Service) enqueuePushDeliveryWithCtx(ctx context.Context, recipientID pg
 	// BUG-004: cap retries at notifications.max_delivery_attempts (default 5).
 	// BUG-006: use the passed context instead of context.Background().
 	if s.settings != nil {
-		maxAttempts := s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.max_delivery_attempts", 5)
+		maxAttempts := s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", 5)
 		if maxAttempts > 0 {
 			opts = append(opts, asynq.MaxRetry(maxAttempts))
 		}
@@ -283,14 +283,14 @@ func (s *Service) checkAndEnqueuePush(ctx context.Context, recipientID pgtype.UU
 // enqueueEmailDelivery enqueues an email:send task for a notification.
 // BUG-003: previously email delivery was never dispatched even when the
 // user's preference had email=true. Ref: §35 L88.
-func (s *Service) enqueueEmailDelivery(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) {
+func (s *Service) enqueueEmailDelivery(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) {
 	if s.client == nil {
 		return
 	}
 
 	// Resolve the recipient's email address. We use the store's user lookup;
 	// if the user has no email, skip silently.
-	email, err := s.store.getUserEmail(ctx, tenantID, recipientID)
+	email, err := s.store.getUserEmail(ctx, recipientID)
 	if err != nil || email == nil || *email == "" {
 		return
 	}
@@ -312,7 +312,7 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, tenantID, recipientI
 	}
 	// BUG-004: cap retries at notifications.max_delivery_attempts (default 5).
 	if s.settings != nil {
-		maxAttempts := s.settings.GetIntOr(ctx, pgtype.UUID{}, "notifications.max_delivery_attempts", 5)
+		maxAttempts := s.settings.GetIntOr(ctx, "notifications.max_delivery_attempts", 5)
 		if maxAttempts > 0 {
 			opts = append(opts, asynq.MaxRetry(maxAttempts))
 		}
@@ -335,14 +335,14 @@ func (s *Service) enqueueEmailDelivery(ctx context.Context, tenantID, recipientI
 // payment.failed, org.invite) would never send email if the user had no
 // saved preference. Now resolves the effective preference (user override
 // OR type default) before deciding.
-func (s *Service) checkAndEnqueueEmail(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) {
+func (s *Service) checkAndEnqueueEmail(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) {
 	prefs, err := s.resolveEffectivePreferences(ctx, recipientID)
 	if err != nil {
 		return
 	}
 
 	if ep, ok := prefs[nType]; ok && ep.Email {
-		s.enqueueEmailDelivery(ctx, tenantID, recipientID, nType, title, body, actionURL)
+		s.enqueueEmailDelivery(ctx, recipientID, nType, title, body, actionURL)
 	}
 }
 

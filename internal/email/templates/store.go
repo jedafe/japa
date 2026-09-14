@@ -19,7 +19,7 @@ func NewStore(read, write *gen.Queries) *Store {
 	return &Store{read: read, write: write}
 }
 
-func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string, limit, offset int32) ([]gen.ListEmailTemplatesRow, error) {
+func (s *Store) listTemplates(ctx context.Context, filterType, filterIsActive string, limit, offset int32) ([]gen.ListEmailTemplatesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -34,7 +34,7 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID, filterT
 	return rows, nil
 }
 
-func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string) (int32, error) {
+func (s *Store) countTemplates(ctx context.Context, filterType, filterIsActive string) (int32, error) {
 	count, err := s.read.CountEmailTemplates(ctx, gen.CountEmailTemplatesParams{
 		Type: filterType, IsActive: filterIsActive,
 	})
@@ -45,7 +45,7 @@ func (s *Store) countTemplates(ctx context.Context, tenantID pgtype.UUID, filter
 	return count, nil
 }
 
-func (s *Store) getTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetEmailTemplateRow, error) {
+func (s *Store) getTemplate(ctx context.Context, id pgtype.UUID) (gen.GetEmailTemplateRow, error) {
 	row, err := s.read.GetEmailTemplate(ctx, id)
 	if err != nil {
 		return gen.GetEmailTemplateRow{}, fmt.Errorf("getting email template: %w", err)
@@ -72,7 +72,7 @@ func (s *Store) updateTemplate(ctx context.Context, p gen.UpdateEmailTemplatePar
 	return row, nil
 }
 
-func (s *Store) resetTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) resetTemplate(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.ResetEmailTemplate(ctx,
 		id,
 	); err != nil {

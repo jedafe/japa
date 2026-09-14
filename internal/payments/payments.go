@@ -8,7 +8,6 @@ package payments
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -129,14 +128,14 @@ type Service struct {
 // webhookEmitter fans a payment.* event out to all subscribed webhook
 // endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
-	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // paymentSettingsReader is the subset of config.Settings the payments service
 // uses for hot-reloadable defaults (currency, etc.). Defined as a local
 // interface so the payments package does not import config.
 type paymentSettingsReader interface {
-	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
+	GetSetting(ctx context.Context, key string) (string, error)
 }
 
 // paymentsEnqueuer is the subset of worker.Enqueuer that payments needs.
@@ -173,12 +172,12 @@ func (s *Service) SetWebhookEmitter(w webhookEmitter) { s.webhooks = w }
 
 // emitWebhook fires a payment.* event fire-and-forget (Rule 8). Errors are
 // logged but never returned to the caller — webhook delivery is async.
-func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
 	if s.webhooks == nil {
 		return
 	}
 
-	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // SetProvider registers a payment provider by name.

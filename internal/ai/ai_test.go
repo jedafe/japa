@@ -530,10 +530,9 @@ func TestCreateHITLReview_MissingAIOutput(t *testing.T) {
 
 func TestApproveReview_MissingReviewID(t *testing.T) {
 	t.Parallel()
+	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
-
-	err := ApproveReview(t.Context(), nil, tenantID, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
+	err := ApproveReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
 	if err == nil || err.Error() != "review_id is required" {
 		t.Errorf("expected review_id error, got: %v", err)
 	}
@@ -541,10 +540,9 @@ func TestApproveReview_MissingReviewID(t *testing.T) {
 
 func TestApproveReview_MissingReviewerID(t *testing.T) {
 	t.Parallel()
+	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
-
-	err := ApproveReview(t.Context(), nil, tenantID, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
+	err := ApproveReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
 	if err == nil || err.Error() != "reviewer_id is required" {
 		t.Errorf("expected reviewer_id error, got: %v", err)
 	}
@@ -552,10 +550,9 @@ func TestApproveReview_MissingReviewerID(t *testing.T) {
 
 func TestRejectReview_MissingReviewID(t *testing.T) {
 	t.Parallel()
+	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
-
-	err := RejectReview(t.Context(), nil, tenantID, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
+	err := RejectReview(t.Context(), nil, pgtype.UUID{}, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "bad content")
 	if err == nil || err.Error() != "review_id is required" {
 		t.Errorf("expected review_id error, got: %v", err)
 	}
@@ -563,10 +560,9 @@ func TestRejectReview_MissingReviewID(t *testing.T) {
 
 func TestRejectReview_MissingReviewerID(t *testing.T) {
 	t.Parallel()
+	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
-
-	err := RejectReview(t.Context(), nil, tenantID, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
+	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{}, "bad content")
 	if err == nil || err.Error() != "reviewer_id is required" {
 		t.Errorf("expected reviewer_id error, got: %v", err)
 	}
@@ -574,10 +570,9 @@ func TestRejectReview_MissingReviewerID(t *testing.T) {
 
 func TestRejectReview_MissingReason(t *testing.T) {
 	t.Parallel()
+	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
-	tenantID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
-
-	err := RejectReview(t.Context(), nil, tenantID, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")
+	err := RejectReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, "")
 	if err == nil || err.Error() != "rejection reason is required" {
 		t.Errorf("expected rejection reason error, got: %v", err)
 	}

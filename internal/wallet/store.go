@@ -37,7 +37,7 @@ func (s *Store) insertLedgerEntry(ctx context.Context, p gen.InsertLedgerEntryPa
 	return row, nil
 }
 
-func (s *Store) listLedgerEntriesByUser(ctx context.Context, tenantID, userID pgtype.UUID, ledgerType *string, limit, offset int32) ([]gen.WalletLedger, error) {
+func (s *Store) listLedgerEntriesByUser(ctx context.Context, userID pgtype.UUID, ledgerType *string, limit, offset int32) ([]gen.WalletLedger, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -56,7 +56,7 @@ func (s *Store) listLedgerEntriesByUser(ctx context.Context, tenantID, userID pg
 	return rows, nil
 }
 
-func (s *Store) getLatestBalance(ctx context.Context, tenantID, userID pgtype.UUID, ledgerType string) (int64, error) {
+func (s *Store) getLatestBalance(ctx context.Context, userID pgtype.UUID, ledgerType string) (int64, error) {
 	balance, err := s.read.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 
 		UserID:     userID,
@@ -79,7 +79,7 @@ func (s *Store) checkIdempotencyKey(ctx context.Context, idempotencyKey *string)
 	return exists, nil
 }
 
-func (s *Store) getLedgerEntryByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.WalletLedger, error) {
+func (s *Store) getLedgerEntryByID(ctx context.Context, id pgtype.UUID) (gen.WalletLedger, error) {
 	row, err := s.read.GetLedgerEntryByID(ctx,
 		id,
 	)
@@ -103,7 +103,7 @@ func (s *Store) upsertActivityRule(ctx context.Context, p gen.UpsertActivityRule
 	return row, nil
 }
 
-func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, activityKey string) (gen.ActivityPointRule, error) {
+func (s *Store) getActivityRuleByKey(ctx context.Context, activityKey string) (gen.ActivityPointRule, error) {
 	row, err := s.read.GetActivityRuleByKey(ctx,
 
 		activityKey,
@@ -117,7 +117,7 @@ func (s *Store) getActivityRuleByKey(ctx context.Context, tenantID pgtype.UUID, 
 
 // countUserLedgerBySource counts how many wallet_ledger rows exist for a user
 // with a given source. Used to enforce one-time activity point rules.
-func (s *Store) countUserLedgerBySource(ctx context.Context, tenantID, userID pgtype.UUID, source string) (int64, error) {
+func (s *Store) countUserLedgerBySource(ctx context.Context, userID pgtype.UUID, source string) (int64, error) {
 	count, err := s.read.CountUserLedgerBySource(ctx, gen.CountUserLedgerBySourceParams{
 
 		UserID: userID,
@@ -131,7 +131,7 @@ func (s *Store) countUserLedgerBySource(ctx context.Context, tenantID, userID pg
 }
 
 // getActivityRuleByID returns a single activity rule by its primary key.
-func (s *Store) getActivityRuleByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
+func (s *Store) getActivityRuleByID(ctx context.Context, id pgtype.UUID) (gen.ActivityPointRule, error) {
 	row, err := s.read.GetActivityRuleByID(ctx,
 		id,
 	)
@@ -152,7 +152,7 @@ func (s *Store) updateActivityRuleByID(ctx context.Context, p gen.UpdateActivity
 	return row, nil
 }
 
-func (s *Store) listActivityRulesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ActivityPointRule, error) {
+func (s *Store) listActivityRulesByTenant(ctx context.Context, limit, offset int32) ([]gen.ActivityPointRule, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -169,7 +169,7 @@ func (s *Store) listActivityRulesByTenant(ctx context.Context, tenantID pgtype.U
 	return rows, nil
 }
 
-func (s *Store) toggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityPointRule, error) {
+func (s *Store) toggleActivityRule(ctx context.Context, id pgtype.UUID) (gen.ActivityPointRule, error) {
 	row, err := s.write.ToggleActivityRule(ctx,
 		id,
 	)
@@ -180,7 +180,7 @@ func (s *Store) toggleActivityRule(ctx context.Context, id, tenantID pgtype.UUID
 	return row, nil
 }
 
-func (s *Store) deleteActivityRule(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteActivityRule(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteActivityRule(ctx,
 		id,
 	); err != nil {
@@ -203,7 +203,7 @@ func (s *Store) insertActivityEvent(ctx context.Context, p gen.InsertActivityEve
 	return row, nil
 }
 
-func (s *Store) getActivityEventByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ActivityEvent, error) {
+func (s *Store) getActivityEventByID(ctx context.Context, id pgtype.UUID) (gen.ActivityEvent, error) {
 	row, err := s.read.GetActivityEventByID(ctx,
 		id,
 	)
@@ -214,7 +214,7 @@ func (s *Store) getActivityEventByID(ctx context.Context, id, tenantID pgtype.UU
 	return row, nil
 }
 
-func (s *Store) markEventProcessed(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) markEventProcessed(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.MarkEventProcessed(ctx,
 		id,
 	); err != nil {
@@ -238,7 +238,7 @@ func (s *Store) listUnprocessedEvents(ctx context.Context, limit int32) ([]gen.A
 	return rows, nil
 }
 
-func (s *Store) countUserActivityToday(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) (int64, error) {
+func (s *Store) countUserActivityToday(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityToday(ctx, gen.CountUserActivityTodayParams{
 
 		UserID:      userID,
@@ -251,7 +251,7 @@ func (s *Store) countUserActivityToday(ctx context.Context, tenantID, userID pgt
 	return count, nil
 }
 
-func (s *Store) countUserActivityThisWeek(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) (int64, error) {
+func (s *Store) countUserActivityThisWeek(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	count, err := s.read.CountUserActivityThisWeek(ctx, gen.CountUserActivityThisWeekParams{
 
 		UserID:      userID,
@@ -268,7 +268,7 @@ func (s *Store) countUserActivityThisWeek(ctx context.Context, tenantID, userID 
 // Wallet Settings
 // ---------------------------------------------------------------------------
 
-func (s *Store) getWalletSettings(ctx context.Context, tenantID pgtype.UUID) (gen.WalletSetting, error) {
+func (s *Store) getWalletSettings(ctx context.Context) (gen.WalletSetting, error) {
 	row, err := s.read.GetWalletSettings(ctx)
 	if err != nil {
 		return gen.WalletSetting{}, fmt.Errorf("getting wallet settings: %w", err)
@@ -277,7 +277,7 @@ func (s *Store) getWalletSettings(ctx context.Context, tenantID pgtype.UUID) (ge
 	return row, nil
 }
 
-func (s *Store) upsertWalletSettings(ctx context.Context, tenantID pgtype.UUID, pointsToCreditsRate, dailyEarningCap int32, enableEarning bool) (gen.WalletSetting, error) {
+func (s *Store) upsertWalletSettings(ctx context.Context, pointsToCreditsRate, dailyEarningCap int32, enableEarning bool) (gen.WalletSetting, error) {
 	row, err := s.write.UpsertWalletSettings(ctx, gen.UpsertWalletSettingsParams{
 
 		PointsToCreditsRate: &pointsToCreditsRate,
@@ -380,7 +380,7 @@ func (s *Store) countSpacesByCurrency(ctx context.Context, code string) (int32, 
 
 // getCurrencyByCountryCode resolves a currency from a country's ISO code
 // via the spaces.currency_code linkage.
-func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string, tenantID pgtype.UUID) (string, error) {
+func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string) (string, error) {
 	row, err := s.read.GetCurrencyByCountryCode(ctx,
 		&geoCode,
 	)
@@ -396,7 +396,7 @@ func (s *Store) getCurrencyByCountryCode(ctx context.Context, geoCode string, te
 // ---------------------------------------------------------------------------
 
 // listActiveCreditPacks returns all active credit packs for a tenant.
-func (s *Store) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
+func (s *Store) listActiveCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	rows, err := s.read.ListActiveCreditPacks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing active credit packs: %w", err)
@@ -406,7 +406,7 @@ func (s *Store) listActiveCreditPacks(ctx context.Context, tenantID pgtype.UUID)
 }
 
 // listAllCreditPacks returns all credit packs (including inactive) for a tenant.
-func (s *Store) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([]gen.CreditPack, error) {
+func (s *Store) listAllCreditPacks(ctx context.Context) ([]gen.CreditPack, error) {
 	rows, err := s.read.ListAllCreditPacks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing all credit packs: %w", err)
@@ -416,7 +416,7 @@ func (s *Store) listAllCreditPacks(ctx context.Context, tenantID pgtype.UUID) ([
 }
 
 // getCreditPackByID returns a single credit pack by ID.
-func (s *Store) getCreditPackByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.CreditPack, error) {
+func (s *Store) getCreditPackByID(ctx context.Context, id pgtype.UUID) (gen.CreditPack, error) {
 	row, err := s.read.GetCreditPackByID(ctx,
 		id,
 	)
@@ -453,7 +453,7 @@ func (s *Store) updateCreditPack(ctx context.Context, p gen.UpdateCreditPackPara
 }
 
 // deactivateCreditPack sets is_active=false on a credit pack (soft delete).
-func (s *Store) deactivateCreditPack(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deactivateCreditPack(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeactivateCreditPack(ctx,
 		id,
 	); err != nil {

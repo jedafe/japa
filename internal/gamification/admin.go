@@ -16,7 +16,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // CreateBadge creates a new badge definition (admin).
-func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in CreateBadgeInput) (BadgeInfo, error) {
+func (s *Service) CreateBadge(ctx context.Context, in CreateBadgeInput) (BadgeInfo, error) {
 	if in.TriggerType != TriggerTypeLifetimePoints && in.TriggerType != TriggerTypeActivityCount && in.TriggerType != TriggerTypeManual {
 		return BadgeInfo{}, fmt.Errorf("gamification: invalid trigger_type %q", in.TriggerType)
 	}
@@ -65,7 +65,7 @@ func (s *Service) CreateBadge(ctx context.Context, tenantID pgtype.UUID, in Crea
 
 // UpdateBadge updates a badge definition's mutable fields (admin). Only
 // non-nil fields in the input are updated.
-func (s *Service) UpdateBadge(ctx context.Context, tenantID, badgeID pgtype.UUID, in UpdateBadgeInput) (BadgeInfo, error) {
+func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in UpdateBadgeInput) (BadgeInfo, error) {
 	arg := gen.UpdateBadgeDefinitionParams{
 
 		ID: badgeID,
@@ -119,7 +119,7 @@ func (s *Service) UpdateBadge(ctx context.Context, tenantID, badgeID pgtype.UUID
 // badge details. If the user already has the badge, returns the existing row.
 func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awardedBy pgtype.UUID) (BadgeWithDetails, error) {
 	// Verify the badge exists.
-	badge, err := s.store.GetBadgeDefinitionByID(ctx, tenantID, badgeID)
+	badge, err := s.store.GetBadgeDefinitionByID(ctx, badgeID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return BadgeWithDetails{}, errors.New("gamification: badge not found")
@@ -136,7 +136,7 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 	})
 	if err != nil {
 		// ON CONFLICT DO NOTHING returns no rows if duplicate — check existing.
-		_, getErr := s.store.GetUserBadge(ctx, tenantID, userID, badgeID)
+		_, getErr := s.store.GetUserBadge(ctx, userID, badgeID)
 		if getErr != nil {
 			return BadgeWithDetails{}, fmt.Errorf("gamification: award badge: %w", err)
 		}
@@ -153,7 +153,7 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 	}
 
 	// Fetch the awarded_at timestamp from the user_badge row.
-	ub, err := s.store.GetUserBadge(ctx, tenantID, userID, badgeID)
+	ub, err := s.store.GetUserBadge(ctx, userID, badgeID)
 	if err != nil {
 		return BadgeWithDetails{
 			ID:          uuidStr(badge.ID),
@@ -175,12 +175,12 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 }
 
 // ListAllBadges returns all badge definitions (admin view, includes inactive).
-func (s *Service) ListAllBadges(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]BadgeInfo, int64, error) {
+func (s *Service) ListAllBadges(ctx context.Context, limit, offset int32) ([]BadgeInfo, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	badges, total, err := s.store.ListBadgeDefinitionsPaginated(ctx, tenantID, false, limit, offset)
+	badges, total, err := s.store.ListBadgeDefinitionsPaginated(ctx, false, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: list all badges: %w", err)
 	}
@@ -194,12 +194,12 @@ func (s *Service) ListAllBadges(ctx context.Context, tenantID pgtype.UUID, limit
 }
 
 // ListAllChallenges returns all challenges (admin view, includes inactive), paginated.
-func (s *Service) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ChallengeInfo, int64, error) {
+func (s *Service) ListAllChallenges(ctx context.Context, limit, offset int32) ([]ChallengeInfo, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	challenges, total, err := s.store.ListAllChallenges(ctx, tenantID, limit, offset)
+	challenges, total, err := s.store.ListAllChallenges(ctx, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("gamification: list all challenges: %w", err)
 	}
@@ -213,7 +213,7 @@ func (s *Service) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, l
 }
 
 // CreateChallenge creates a new challenge definition (admin).
-func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in CreateChallengeInput) (ChallengeInfo, error) {
+func (s *Service) CreateChallenge(ctx context.Context, in CreateChallengeInput) (ChallengeInfo, error) {
 	if in.Slug == "" || in.Name == "" || in.ActivityKey == "" {
 		return ChallengeInfo{}, errors.New("gamification: slug, name, and activity_key are required")
 	}
@@ -283,7 +283,7 @@ func (s *Service) CreateChallenge(ctx context.Context, tenantID pgtype.UUID, in 
 }
 
 // UpdateChallenge updates a challenge definition's mutable fields (admin).
-func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgtype.UUID, in UpdateChallengeInput) (ChallengeInfo, error) {
+func (s *Service) UpdateChallenge(ctx context.Context, challengeID pgtype.UUID, in UpdateChallengeInput) (ChallengeInfo, error) {
 	arg := gen.UpdateChallengeParams{
 
 		ID: challengeID,
@@ -358,8 +358,8 @@ func (s *Service) UpdateChallenge(ctx context.Context, tenantID, challengeID pgt
 
 // DeleteBadge deletes a non-system badge definition (admin). System badges
 // cannot be deleted — the query filters them out and returns 0 rows affected.
-func (s *Service) DeleteBadge(ctx context.Context, tenantID, badgeID pgtype.UUID) error {
-	count, err := s.store.DeleteBadgeDefinition(ctx, tenantID, badgeID)
+func (s *Service) DeleteBadge(ctx context.Context, badgeID pgtype.UUID) error {
+	count, err := s.store.DeleteBadgeDefinition(ctx, badgeID)
 	if err != nil {
 		return fmt.Errorf("gamification: delete badge: %w", err)
 	}
@@ -372,8 +372,8 @@ func (s *Service) DeleteBadge(ctx context.Context, tenantID, badgeID pgtype.UUID
 }
 
 // DeleteChallenge deletes a challenge definition (admin).
-func (s *Service) DeleteChallenge(ctx context.Context, tenantID, challengeID pgtype.UUID) error {
-	count, err := s.store.DeleteChallenge(ctx, tenantID, challengeID)
+func (s *Service) DeleteChallenge(ctx context.Context, challengeID pgtype.UUID) error {
+	count, err := s.store.DeleteChallenge(ctx, challengeID)
 	if err != nil {
 		return fmt.Errorf("gamification: delete challenge: %w", err)
 	}

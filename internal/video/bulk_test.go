@@ -129,7 +129,7 @@ func mustParseUUID(t *testing.T, s string) pgtype.UUID {
 	return u
 }
 
-func importJobRowValues(_ *testing.T, tenantID, userID, jobID pgtype.UUID) []any {
+func importJobRowValues(_ *testing.T, userID, jobID pgtype.UUID) []any {
 	sourceURL := "https://www.youtube.com/channel/UCtest"
 	status := "pending"
 	total := int32(0)
@@ -207,7 +207,7 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	jobID := mustParseUUID(t, uuid.New().String())
 
 	fakeDB := &fakeDBTXForBulk{
-		queryRowResults: []*fakeRow{{values: importJobRowValues(t, tenantID, userID, jobID)}},
+		queryRowResults: []*fakeRow{{values: importJobRowValues(t, userID, jobID)}},
 	}
 
 	store := &Store{read: gen.New(fakeDB), write: gen.New(fakeDB)}

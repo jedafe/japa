@@ -27,7 +27,7 @@ type TaskEnqueuer interface {
 // when a studio job is published (§75: "On successful publish the linked
 // intel_records row transitions to status='published'").
 type IntelRecordStatusUpdater interface {
-	UpdateIntelRecordStatus(ctx context.Context, tenantID, id pgtype.UUID, status string) error
+	UpdateIntelRecordStatus(ctx context.Context, id pgtype.UUID, status string) error
 }
 
 // ContentPublisher publishes a content row (sets status='published'). Used
@@ -51,7 +51,7 @@ type HITLReview struct {
 
 // HITLReviewReader loads a single HITL review by tenant + id.
 type HITLReviewReader interface {
-	GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error)
+	GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLReview, error)
 }
 
 // ToolTablePublisher publishes a non-contents draft row when its studio HITL
@@ -138,8 +138,8 @@ func IsHighStakes(guideCategory string) bool {
 }
 
 // CreateJob creates a single studio job and enqueues a generation task.
-func (s *Service) CreateJob(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreateJobInput) (Job, error) {
-	if !s.isEnabled(ctx, tenantID) {
+func (s *Service) CreateJob(ctx context.Context, createdBy pgtype.UUID, in CreateJobInput) (Job, error) {
+	if !s.isEnabled(ctx) {
 		return Job{}, errors.New("studio: feature is disabled")
 	}
 
@@ -152,17 +152,17 @@ func (s *Service) CreateJob(ctx context.Context, tenantID, createdBy pgtype.UUID
 	}
 
 	// Enforce studio.max_concurrent_jobs (ADR-076, §75). Default 3.
-	if err := s.checkConcurrency(ctx, tenantID, 1); err != nil {
+	if err := s.checkConcurrency(ctx, 1); err != nil {
 		return Job{}, err
 	}
 
-	job, err := s.store.CreateJob(ctx, tenantID, createdBy, pgtype.UUID{}, in)
+	job, err := s.store.CreateJob(ctx, createdBy, pgtype.UUID{}, in)
 	if err != nil {
 		return Job{}, fmt.Errorf("studio: create job: %w", err)
 	}
 
 	if err := s.enqueueGeneration(ctx, job); err != nil {
-		_ = s.store.UpdateJobStatus(ctx, tenantID, job.ID, "failed", strPtr(err.Error()))
+		_ = s.store.UpdateJobStatus(ctx, job.ID, "failed", strPtr(err.Error()))
 		return Job{}, fmt.Errorf("studio: enqueue generation: %w", err)
 	}
 
@@ -175,7 +175,7 @@ func (s *Service) CreateJob(ctx context.Context, tenantID, createdBy pgtype.UUID
 // (ADR-076 §2/§7). This avoids flooding the AI gateway and keeps the HTTP
 // request fast — batch generation is inherently asynchronous.
 func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreateBatchInput) (Batch, []Job, error) {
-	if !s.isEnabled(ctx, tenantID) {
+	if !s.isEnabled(ctx) {
 		return Batch{}, nil, errors.New("studio: feature is disabled")
 	}
 
@@ -187,7 +187,7 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 		return Batch{}, nil, errors.New("studio: batch must contain at least one job")
 	}
 
-	batch, err := s.store.CreateBatch(ctx, tenantID, createdBy, in.Name, in.Description)
+	batch, err := s.store.CreateBatch(ctx, createdBy, in.Name, in.Description)
 	if err != nil {
 		return Batch{}, nil, fmt.Errorf("studio: create batch: %w", err)
 	}
@@ -198,7 +198,7 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 	var jobs []Job
 
 	for _, jin := range in.Jobs {
-		job, err := s.store.CreateJob(ctx, tenantID, createdBy, batch.ID, jin)
+		job, err := s.store.CreateJob(ctx, createdBy, batch.ID, jin)
 		if err != nil {
 			slog.Warn("studio: create job in batch failed", "batch_id", batch.ID, "error", err)
 			continue
@@ -221,8 +221,8 @@ func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UU
 }
 
 // GetJob returns a single job by ID.
-func (s *Service) GetJob(ctx context.Context, tenantID, id pgtype.UUID) (Job, error) {
-	return s.store.GetJob(ctx, tenantID, id)
+func (s *Service) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
+	return s.store.GetJob(ctx, id)
 }
 
 // ListJobs lists jobs with optional filters.
@@ -235,12 +235,12 @@ func (s *Service) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListF
 }
 
 // RetryJob resets a failed job to queued and re-enqueues generation.
-func (s *Service) RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error {
-	if !s.isEnabled(ctx, tenantID) {
+func (s *Service) RetryJob(ctx context.Context, id pgtype.UUID) error {
+	if !s.isEnabled(ctx) {
 		return errors.New("studio: feature is disabled")
 	}
 
-	job, err := s.store.GetJob(ctx, tenantID, id)
+	job, err := s.store.GetJob(ctx, id)
 	if err != nil {
 		return fmt.Errorf("studio: get job for retry: %w", err)
 	}
@@ -249,11 +249,11 @@ func (s *Service) RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error 
 		return fmt.Errorf("studio: only failed jobs can be retried (current: %s)", job.Status)
 	}
 	// Enforce studio.max_concurrent_jobs (ADR-076, §75) before enqueuing.
-	if err := s.checkConcurrency(ctx, tenantID, 1); err != nil {
+	if err := s.checkConcurrency(ctx, 1); err != nil {
 		return err
 	}
 
-	if err := s.store.UpdateJobStatus(ctx, tenantID, id, "queued", nil); err != nil {
+	if err := s.store.UpdateJobStatus(ctx, id, "queued", nil); err != nil {
 		return fmt.Errorf("studio: reset job status: %w", err)
 	}
 
@@ -264,45 +264,45 @@ func (s *Service) RetryJob(ctx context.Context, tenantID, id pgtype.UUID) error 
 
 // CancelJob deletes a queued or failed job. Returns ErrJobNotCancellable if
 // the job is in a status that cannot be cancelled.
-func (s *Service) CancelJob(ctx context.Context, tenantID, id pgtype.UUID) error {
-	return s.store.DeleteJob(ctx, tenantID, id)
+func (s *Service) CancelJob(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteJob(ctx, id)
 }
 
 // ListBatches lists batches for a tenant.
-func (s *Service) ListBatches(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]Batch, int64, error) {
+func (s *Service) ListBatches(ctx context.Context, limit, offset int32) ([]Batch, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
 
-	return s.store.ListBatches(ctx, tenantID, limit, offset)
+	return s.store.ListBatches(ctx, limit, offset)
 }
 
 // GetBatch returns a batch with progress stats.
-func (s *Service) GetBatch(ctx context.Context, tenantID, id pgtype.UUID) (Batch, BatchStats, error) {
-	batch, err := s.store.GetBatch(ctx, tenantID, id)
+func (s *Service) GetBatch(ctx context.Context, id pgtype.UUID) (Batch, BatchStats, error) {
+	batch, err := s.store.GetBatch(ctx, id)
 	if err != nil {
 		return Batch{}, BatchStats{}, err
 	}
 
-	stats, err := s.store.GetBatchStats(ctx, tenantID, id)
+	stats, err := s.store.GetBatchStats(ctx, id)
 
 	return batch, stats, err
 }
 
 // RetryBatchFailed retries all failed jobs in a batch.
-func (s *Service) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error) {
-	if !s.isEnabled(ctx, tenantID) {
+func (s *Service) RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error) {
+	if !s.isEnabled(ctx) {
 		return 0, errors.New("studio: feature is disabled")
 	}
 
-	jobs, err := s.store.ListFailedJobs(ctx, tenantID, batchID)
+	jobs, err := s.store.ListFailedJobs(ctx, batchID)
 	if err != nil {
 		return 0, fmt.Errorf("studio: list failed jobs: %w", err)
 	}
 	// Enforce studio.max_concurrent_jobs (ADR-076, §75) — check once for the
 	// batch; individual jobs beyond the limit remain in 'queued' and are
 	// picked up by subsequent run_batch invocations.
-	if err := s.checkConcurrency(ctx, tenantID, len(jobs)); err != nil {
+	if err := s.checkConcurrency(ctx, len(jobs)); err != nil {
 		// If the full batch would exceed the limit, still retry as many as
 		// we can within the limit — the rest stay queued for later pickup.
 		slog.Warn("studio: retry batch: concurrency limit, retrying partial", "batch_id", batchID, "failed_count", len(jobs), "error", err)
@@ -311,7 +311,7 @@ func (s *Service) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype
 	var count int
 
 	for _, job := range jobs {
-		if err := s.store.UpdateJobStatus(ctx, tenantID, job.ID, "queued", nil); err != nil {
+		if err := s.store.UpdateJobStatus(ctx, job.ID, "queued", nil); err != nil {
 			slog.Warn("studio: retry batch: reset status failed", "job_id", job.ID, "error", err)
 			continue
 		}
@@ -329,8 +329,8 @@ func (s *Service) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype
 }
 
 // GetStats returns aggregate studio stats.
-func (s *Service) GetStats(ctx context.Context, tenantID pgtype.UUID) (StudioStats, error) {
-	return s.store.GetStats(ctx, tenantID)
+func (s *Service) GetStats(ctx context.Context) (StudioStats, error) {
+	return s.store.GetStats(ctx)
 }
 
 // ContentTypeInfo describes a content type available in the studio.
@@ -352,13 +352,13 @@ type ContentTypeResponse struct {
 // DefaultPersonaID returns the studio.default_persona_id setting as a UUID.
 // It returns an empty/invalid UUID when the setting is unset or the value is
 // not a valid UUID.
-func (s *Service) DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Service) DefaultPersonaID(ctx context.Context) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if s.settings == nil {
 		return id, nil
 	}
 
-	val, err := s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.default_persona_id")
+	val, err := s.settings.GetSetting(ctx, "studio.default_persona_id")
 	if err != nil || val == "" {
 		return id, err
 	}
@@ -373,7 +373,7 @@ func (s *Service) DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (p
 // ListContentTypes returns the content types available for studio generation
 // along with the studio.default_persona_id setting so the frontend can
 // pre-select a persona in the new-job form (§75 system_settings, ADR-076 §6).
-func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ContentTypeResponse {
+func (s *Service) ListContentTypes(ctx context.Context) ContentTypeResponse {
 	types := []ContentTypeInfo{
 		{Type: "discussion", Label: "Discussion", CanAutoPublish: true},
 		{Type: "page", Label: "Page", CanAutoPublish: true},
@@ -410,7 +410,7 @@ func (s *Service) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) Co
 	// the setting at generation time.
 	defaultPersonaID := ""
 	if s.settings != nil {
-		defaultPersonaID, _ = s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.default_persona_id")
+		defaultPersonaID, _ = s.settings.GetSetting(ctx, "studio.default_persona_id")
 	}
 
 	return ContentTypeResponse{
@@ -494,27 +494,27 @@ func (s *Service) enqueueRetryFailed(ctx context.Context, tenantID, batchID pgty
 }
 
 // isEnabled checks the studio.enabled system setting.
-func (s *Service) isEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) isEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "studio.enabled", true)
+	return s.settings.GetBoolOr(ctx, "studio.enabled", true)
 }
 
 // checkConcurrency enforces studio.max_concurrent_jobs (ADR-076, §75).
 // Returns an error if adding `pending` new jobs would exceed the limit.
-func (s *Service) checkConcurrency(ctx context.Context, tenantID pgtype.UUID, pending int) error {
+func (s *Service) checkConcurrency(ctx context.Context, pending int) error {
 	maxConcurrent := 3
 	if s.settings != nil {
-		maxConcurrent = s.settings.GetIntOr(ctx, pgtype.UUID{}, "studio.max_concurrent_jobs", 3)
+		maxConcurrent = s.settings.GetIntOr(ctx, "studio.max_concurrent_jobs", 3)
 	}
 
 	if maxConcurrent <= 0 {
 		return nil // 0 or negative = unlimited
 	}
 
-	active, err := s.store.CountActiveJobs(ctx, tenantID)
+	active, err := s.store.CountActiveJobs(ctx)
 	if err != nil {
 		slog.Warn("studio: failed to count active jobs, allowing request", "error", err)
 		return nil // fail open on DB error
@@ -550,42 +550,42 @@ func strPtr(s string) *string { return &s }
 // worker already claimed the job — the caller should skip generation. This
 // prevents duplicate draft generation from concurrent content:generate_draft
 // tasks (ADR-076 §1 job idempotency).
-func (s *Service) MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error {
-	return s.store.MarkJobGeneratingCAS(ctx, tenantID, jobID)
+func (s *Service) MarkJobGenerating(ctx context.Context, jobID pgtype.UUID) error {
+	return s.store.MarkJobGeneratingCAS(ctx, jobID)
 }
 
 // MarkJobGenerated sets the draft_content_id and status to 'draft_ready'
 // after the AI gateway has produced the draft content (ADR-076 §2 step 7).
 // aiModel is the provider model that generated the draft (ADR-088).
-func (s *Service) MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error {
-	return s.store.UpdateJobGenerated(ctx, tenantID, jobID, draftContentID, aiModel)
+func (s *Service) MarkJobGenerated(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error {
+	return s.store.UpdateJobGenerated(ctx, jobID, draftContentID, aiModel)
 }
 
 // MarkJobRoutedToReview sets the review_id and status to 'in_review' after
 // the draft has been routed to the content_reviews HITL queue (ADR-076 §2
 // step 8). Called after MarkJobGenerated once the review row exists.
-func (s *Service) MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error {
-	return s.store.UpdateJobRoutedToReview(ctx, tenantID, jobID, reviewID)
+func (s *Service) MarkJobRoutedToReview(ctx context.Context, jobID, reviewID pgtype.UUID) error {
+	return s.store.UpdateJobRoutedToReview(ctx, jobID, reviewID)
 }
 
 // MarkJobFailed sets a job's status to 'failed' with an error message.
 // The transition is guarded: it only applies while the job is still in an
 // active generation state, so a late failure from a redelivered task cannot
 // regress a job that already produced a draft or entered review.
-func (s *Service) MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error {
-	return s.store.MarkJobFailedIfActive(ctx, tenantID, jobID, errMsg)
+func (s *Service) MarkJobFailed(ctx context.Context, jobID pgtype.UUID, errMsg string) error {
+	return s.store.MarkJobFailedIfActive(ctx, jobID, errMsg)
 }
 
 // MarkJobPublished marks a job's draft as auto-published (status='published').
 // Used for content types in studio.auto_publish_types (§75).
 // aiModel is the provider model that generated the draft (ADR-088).
-func (s *Service) MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error {
-	return s.store.UpdateJobPublished(ctx, tenantID, jobID, draftContentID, aiModel)
+func (s *Service) MarkJobPublished(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error {
+	return s.store.UpdateJobPublished(ctx, jobID, draftContentID, aiModel)
 }
 
 // ShouldAutoPublish returns true if the content type can skip review.
 // High-stakes guide categories always return false.
-func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool {
+func (s *Service) ShouldAutoPublish(ctx context.Context, contentType, guideCategory string) bool {
 	if IsHighStakes(guideCategory) {
 		return false
 	}
@@ -596,7 +596,7 @@ func (s *Service) ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, c
 
 	autoPublishCSV := ""
 	if s.settings != nil {
-		autoPublishCSV, _ = s.settings.GetSetting(ctx, pgtype.UUID{}, "studio.auto_publish_types")
+		autoPublishCSV, _ = s.settings.GetSetting(ctx, "studio.auto_publish_types")
 	}
 
 	return parseCSV(autoPublishCSV)[contentType]
@@ -623,10 +623,10 @@ func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) e
 	// max_concurrent_jobs limit.
 	maxConcurrent := 3
 	if s.settings != nil {
-		maxConcurrent = s.settings.GetIntOr(ctx, pgtype.UUID{}, "studio.max_concurrent_jobs", 3)
+		maxConcurrent = s.settings.GetIntOr(ctx, "studio.max_concurrent_jobs", 3)
 	}
 
-	active, err := s.store.CountActiveJobs(ctx, tenantID)
+	active, err := s.store.CountActiveJobs(ctx)
 	if err != nil {
 		slog.Warn("studio: run_batch: count active failed, enqueuing all", "batch_id", batchID, "error", err)
 
@@ -665,8 +665,8 @@ func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) e
 }
 
 // RetryFailed is the processor method called by the studio:retry_failed task.
-func (s *Service) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
-	return s.RetryJob(ctx, tenantID, jobID)
+func (s *Service) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
+	return s.RetryJob(ctx, jobID)
 }
 
 // EnqueueRetryFailed enqueues a studio:retry_failed task for a batch. Called
@@ -679,8 +679,8 @@ func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgty
 // approved (§75, ADR-076 §3). It publishes the draft content or tool-table
 // row, transitions studio_jobs to 'published', and transitions the linked
 // intel_records row to 'published'.
-func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
-	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
+func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
+	job, err := s.store.GetJobByReviewID(ctx, reviewID)
 	if err != nil {
 		return fmt.Errorf("studio: approve: find job by review_id: %w", err)
 	}
@@ -693,7 +693,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 	var targetID pgtype.UUID
 
 	if s.hitlReader != nil {
-		review, herr := s.hitlReader.GetHITLReview(ctx, tenantID, reviewID)
+		review, herr := s.hitlReader.GetHITLReview(ctx, reviewID)
 		if herr != nil {
 			slog.Warn("studio: approve: could not load HITL review, defaulting to contents target", "review_id", reviewID, "error", herr)
 		} else {
@@ -723,7 +723,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 			return errors.New("studio: approve: content publisher not wired")
 		}
 
-		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, tenantID, "published"); perr != nil {
+		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, pgtype.UUID{}, "published"); perr != nil {
 			return fmt.Errorf("studio: approve: publish content: %w", perr)
 		}
 	} else if targetTable != "contents" && targetID.Valid {
@@ -731,7 +731,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 			return fmt.Errorf("studio: approve: tool-table publisher not wired for %s", targetTable)
 		}
 
-		if perr := s.toolTablePub.Publish(ctx, tenantID, reviewerID, targetTable, targetID, ""); perr != nil {
+		if perr := s.toolTablePub.Publish(ctx, pgtype.UUID{}, reviewerID, targetTable, targetID, ""); perr != nil {
 			return fmt.Errorf("studio: approve: publish %s: %w", targetTable, perr)
 		}
 	} else {
@@ -739,12 +739,12 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 	}
 
 	// Transition the studio job to 'published'.
-	if err := s.store.UpdateJobReviewed(ctx, tenantID, job.ID, "published"); err != nil {
+	if err := s.store.UpdateJobReviewed(ctx, job.ID, "published"); err != nil {
 		return fmt.Errorf("studio: approve: update job status: %w", err)
 	}
 
 	// Transition the linked intel_record to 'published' (§75).
-	s.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
+	s.transitionIntelRecordOnPublish(ctx, job.IntelRecordID)
 
 	slog.Info("studio: review approved, job published", "job_id", job.ID, "review_id", reviewID, "target_table", targetTable, "target_id", targetID, "content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
 
@@ -753,13 +753,13 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, tenantID, reviewID
 
 // OnStudioReviewRejected is called when a source='studio' HITL review is
 // rejected (§75: "Reject → job rejected, draft remains as unpublished content").
-func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
-	job, err := s.store.GetJobByReviewID(ctx, tenantID, reviewID)
+func (s *Service) OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
+	job, err := s.store.GetJobByReviewID(ctx, reviewID)
 	if err != nil {
 		return fmt.Errorf("studio: reject: find job by review_id: %w", err)
 	}
 
-	if err := s.store.UpdateJobReviewed(ctx, tenantID, job.ID, "rejected"); err != nil {
+	if err := s.store.UpdateJobReviewed(ctx, job.ID, "rejected"); err != nil {
 		return fmt.Errorf("studio: reject: update job status: %w", err)
 	}
 
@@ -772,12 +772,12 @@ func (s *Service) OnStudioReviewRejected(ctx context.Context, tenantID, reviewID
 // 'published' when the studio job is published (§75: "On successful publish
 // the linked intel_records row transitions to status='published'"). Safe to
 // call when intelRecordID is nil or no updater is wired.
-func (s *Service) transitionIntelRecordOnPublish(ctx context.Context, tenantID, intelRecordID pgtype.UUID) {
+func (s *Service) transitionIntelRecordOnPublish(ctx context.Context, intelRecordID pgtype.UUID) {
 	if !intelRecordID.Valid || s.intelUpdater == nil {
 		return
 	}
 
-	if err := s.intelUpdater.UpdateIntelRecordStatus(ctx, tenantID, intelRecordID, "published"); err != nil {
+	if err := s.intelUpdater.UpdateIntelRecordStatus(ctx, intelRecordID, "published"); err != nil {
 		slog.Warn("studio: transition intel_record to published failed", "intel_record_id", intelRecordID, "error", err)
 	}
 }

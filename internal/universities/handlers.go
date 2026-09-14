@@ -40,34 +40,34 @@ const customFieldEntityTypeSpace = "space"
 
 // SpacesService is the subset of spaces.Service the university handlers need.
 type SpacesService interface {
-	GetSpaceTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.SpaceType, error)
-	ListSpacesByType(ctx context.Context, tenantID, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
-	ListSpacesByTypePaginated(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
-	CountSpacesByType(ctx context.Context, tenantID, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
-	GetSpaceBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetSpaceBySlugRow, error)
-	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
+	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
+	ListSpacesByType(ctx context.Context, viewerUserID, spaceTypeID pgtype.UUID) ([]gen.ListSpacesByTypeRow, error)
+	ListSpacesByTypePaginated(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion, sort string, limit, offset int32) ([]gen.ListSpacesByTypePaginatedRow, error)
+	CountSpacesByType(ctx context.Context, spaceTypeID pgtype.UUID, search, geoCode, region, subregion string) (int64, error)
+	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
+	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
-	UpdateSpaceSlug(ctx context.Context, id, tenantID pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error)
-	DeleteSpace(ctx context.Context, id, tenantID pgtype.UUID) error
+	UpdateSpaceSlug(ctx context.Context, id pgtype.UUID, slug string) (gen.UpdateSpaceSlugRow, error)
+	DeleteSpace(ctx context.Context, id pgtype.UUID) error
 	// ListViewerSpaceRelations batch-resolves membership/pending/follow flags
 	// for a page of space ids — used to stamp is_member/is_pending/is_following
 	// on university cards so follow/join toggles render the correct state.
-	ListViewerSpaceRelations(ctx context.Context, tenantID, viewerUserID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]spaces.ViewerSpaceRelations, error)
+	ListViewerSpaceRelations(ctx context.Context, viewerUserID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]spaces.ViewerSpaceRelations, error)
 }
 
 // CustomFieldsService is the subset of customfields.Service the university
 // handlers need to attach university-specific field values.
 type CustomFieldsService interface {
-	ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
+	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 	// ListFieldValuesWithDefsByEntity returns field values joined with their
 	// definitions (label, key, field_type, options), filtered to
 	// show_in_frontend = true — the display-ready shape used by the public
 	// /universities/{slug} About facts grid (Section 39).
-	ListFieldValuesWithDefsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
+	ListFieldValuesWithDefsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error)
 	// GetCustomFieldByKey looks up a field definition by key within a tenant.
 	// Used to resolve the deterministic initials field without hard-coding UUIDs.
-	GetCustomFieldByKey(ctx context.Context, key string, tenantID pgtype.UUID) (gen.GetCustomFieldByKeyRow, error)
+	GetCustomFieldByKey(ctx context.Context, key string) (gen.GetCustomFieldByKeyRow, error)
 	// UpsertFieldValue stores or updates a single custom field value on an entity.
 	UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error)
 }
@@ -75,7 +75,7 @@ type CustomFieldsService interface {
 // MediaResolver resolves a media ID to an imgproxy-signed URL for the
 // university logo. The media.Service satisfies this. Nil = logo_url omitted.
 type MediaResolver interface {
-	GetMedia(ctx context.Context, tenantID, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
 	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
 }
 
@@ -174,12 +174,12 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 // university space. It looks up the field definition by key and falls back
 // to a deterministic, migration-defined UUID if the lookup fails.
 // Ref: japaconnect-engineering/sections/39-space-types-university.md.
-func (h *Handlers) upsertUniversityInitials(ctx context.Context, tenantID, spaceID pgtype.UUID, initials string) error {
+func (h *Handlers) upsertUniversityInitials(ctx context.Context, spaceID pgtype.UUID, initials string) error {
 	if strings.TrimSpace(initials) == "" {
 		return nil
 	}
 
-	fieldID, err := h.resolveInitialsFieldID(ctx, tenantID)
+	fieldID, err := h.resolveInitialsFieldID(ctx)
 	if err != nil {
 		return err
 	}
@@ -198,8 +198,8 @@ func (h *Handlers) upsertUniversityInitials(ctx context.Context, tenantID, space
 // resolveInitialsFieldID resolves the university_fields.initials definition.
 // It queries by key in the common case, but falls back to the deterministic
 // UUID from migration 000288 so the call never fails for a correctly-migrated DB.
-func (h *Handlers) resolveInitialsFieldID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error) {
-	field, err := h.customFields.GetCustomFieldByKey(ctx, "initials", tenantID)
+func (h *Handlers) resolveInitialsFieldID(ctx context.Context) (pgtype.UUID, error) {
+	field, err := h.customFields.GetCustomFieldByKey(ctx, "initials")
 	if err == nil {
 		return field.ID, nil
 	}
@@ -212,12 +212,12 @@ func (h *Handlers) resolveInitialsFieldID(ctx context.Context, tenantID pgtype.U
 	return fieldID, nil
 }
 
-func (h *Handlers) resolveLogoURL(ctx context.Context, tenantID, logoMediaID pgtype.UUID) string {
+func (h *Handlers) resolveLogoURL(ctx context.Context, logoMediaID pgtype.UUID) string {
 	if !logoMediaID.Valid || h.media == nil {
 		return ""
 	}
 
-	m, err := h.media.GetMedia(ctx, tenantID, logoMediaID)
+	m, err := h.media.GetMedia(ctx, logoMediaID)
 	if err != nil {
 		return ""
 	}
@@ -264,12 +264,12 @@ type universityDetail struct {
 // never loads in full on a single SSR render (Section 39 line 149, ADR-039).
 // [public].
 func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
@@ -293,13 +293,13 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, "", "", sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country, "", "")
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -324,11 +324,11 @@ func (h *Handlers) ListUniversities(w http.ResponseWriter, r *http.Request) {
 	for _, uni := range universities {
 		ids = append(ids, uni.ID)
 		m := universityRowToMap(uni)
-		m["logo_url"] = h.resolveLogoURL(r.Context(), tenantID, uni.LogoMediaID)
+		m["logo_url"] = h.resolveLogoURL(r.Context(), uni.LogoMediaID)
 		items = append(items, m)
 	}
 
-	if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), tenantID, viewerUserID, ids); relErr == nil {
+	if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), viewerUserID, ids); relErr == nil {
 		for _, m := range items {
 			idStr, _ := m["id"].(string)
 			rel := rels[idStr]
@@ -373,12 +373,12 @@ func universityRowToMap[T any](row T) map[string]any {
 // Supports ?page=&limit=&q=&country= query params. Returns {data, meta} with
 // pagination metadata for the admin DataTable. [admin: admin.settings].
 func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
@@ -403,13 +403,13 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 	country := strings.TrimSpace(r.URL.Query().Get("country"))
 	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
 
-	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), tenantID, spaceType.ID, search, country, "", "", sort, limit32, offset)
+	universities, err := h.spaces.ListSpacesByTypePaginated(r.Context(), spaceType.ID, search, country, "", "", sort, limit32, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list universities")
 		return
 	}
 
-	total, err := h.spaces.CountSpacesByType(r.Context(), tenantID, spaceType.ID, search, country, "", "")
+	total, err := h.spaces.CountSpacesByType(r.Context(), spaceType.ID, search, country, "", "")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count universities")
 		return
@@ -434,7 +434,7 @@ func (h *Handlers) ListUniversitiesAdmin(w http.ResponseWriter, r *http.Request)
 // GetUniversity handles GET /api/v1/universities/{slug} — a single university
 // space together with its custom field values. [public].
 func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -445,13 +445,13 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID)
+	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}
 
-	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
@@ -462,7 +462,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID)
+	fields, err := h.customFields.ListFieldValuesByEntity(r.Context(), customFieldEntityTypeSpace, space.ID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university fields")
 		return
@@ -475,7 +475,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// wiki extract). Fire-and-forget resolution keeps the public endpoint fast.
 	displayFields := make([]universityField, 0)
 
-	if rows, derr := h.customFields.ListFieldValuesWithDefsByEntity(r.Context(), tenantID, customFieldEntityTypeSpace, space.ID); derr == nil {
+	if rows, derr := h.customFields.ListFieldValuesWithDefsByEntity(r.Context(), customFieldEntityTypeSpace, space.ID); derr == nil {
 		for _, row := range rows {
 			if dv, ok := resolveDisplayValue(row); ok {
 				displayFields = append(displayFields, universityField{
@@ -493,7 +493,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// Resolve the logo media ID to an imgproxy-signed URL (Section 34 / ADR-039).
 	// Best-effort: a missing or unreachable media service degrades to an empty
 	// logo_url, and the frontend falls back to the GraduationCap icon.
-	logoURL := h.resolveLogoURL(r.Context(), tenantID, space.LogoMediaID)
+	logoURL := h.resolveLogoURL(r.Context(), space.LogoMediaID)
 
 	// Pull initials out of the display-ready fields for convenient top-level use.
 	var initials *string
@@ -510,7 +510,7 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// Viewer-scoped relation flags for the detail page CTA (Join/Follow).
 	isMember, isPending, isFollowing := false, false, false
 	if u := auth.FromContext(r.Context()); u != nil {
-		if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), tenantID, u.UserID, []pgtype.UUID{space.ID}); relErr == nil {
+		if rels, relErr := h.spaces.ListViewerSpaceRelations(r.Context(), u.UserID, []pgtype.UUID{space.ID}); relErr == nil {
 			if rel, ok := rels[space.ID.String()]; ok {
 				isMember = rel.IsMember
 				isPending = rel.IsPending
@@ -726,7 +726,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load university space type")
 		return
@@ -768,7 +768,7 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 		initialsToStore = DeriveInitials(input.Name, nil, nil)
 	}
 
-	if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initialsToStore); err != nil {
+	if err := h.upsertUniversityInitials(r.Context(), space.ID, initialsToStore); err != nil {
 		slog.Warn("universities: failed to upsert initials on create", "space_id", space.ID.String(), "error", err)
 	}
 
@@ -799,7 +799,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	existing, err := h.spaces.GetSpace(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
@@ -861,7 +861,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	if input.Slug != nil {
 		newSlug := strings.TrimSpace(*input.Slug)
 		if newSlug != "" && newSlug != existing.Slug {
-			updated, err := h.spaces.UpdateSpaceSlug(r.Context(), id, tenantID, newSlug)
+			updated, err := h.spaces.UpdateSpaceSlug(r.Context(), id, newSlug)
 			if err != nil {
 				errpkg.WriteError(w, http.StatusConflict, "slug_in_use", "Slug is already in use")
 				return
@@ -873,7 +873,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.Initials != nil {
-		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, *input.Initials); err != nil {
+		if err := h.upsertUniversityInitials(r.Context(), space.ID, *input.Initials); err != nil {
 			slog.Warn("universities: failed to upsert initials on update", "space_id", space.ID.String(), "error", err)
 		}
 	}
@@ -892,7 +892,7 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
 // DeleteUniversity handles DELETE /admin/universities/:id.
 func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -903,7 +903,7 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.spaces.DeleteSpace(r.Context(), id, tenantID); err != nil {
+	if err := h.spaces.DeleteSpace(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
 		return
 	}
@@ -913,7 +913,7 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 
 // VerifyUniversity handles POST /admin/universities/:id/verify.
 func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -924,7 +924,7 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	existing, err := h.spaces.GetSpace(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
@@ -956,7 +956,7 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 // a prior verify by setting status back to "pending" (consistent with
 // CreateUniversity's unverified status). Ref: Section 39, audit finding U-1.
 func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -967,7 +967,7 @@ func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	existing, err := h.spaces.GetSpace(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
@@ -1008,7 +1008,7 @@ var allowedUniversityStatuses = map[string]bool{
 // the space status to one of {active, pending, suspended}. Ref: Section 39,
 // audit finding U-1.
 func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1035,7 +1035,7 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id, tenantID)
+	existing, err := h.spaces.GetSpace(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
@@ -1089,7 +1089,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 	}
 	defer file.Close()
 
-	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug, tenantID)
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
 		return
@@ -1191,7 +1191,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 		// to refine the name-derived guess.
 		adminSuppliedInitials := initialsOK && initialsCol < len(row) && strings.TrimSpace(row[initialsCol]) != ""
 
-		if err := h.upsertUniversityInitials(r.Context(), tenantID, space.ID, initials); err != nil {
+		if err := h.upsertUniversityInitials(r.Context(), space.ID, initials); err != nil {
 			slog.Warn("universities: bulk import failed to set initials", "space_id", space.ID.String(), "error", err)
 		}
 
@@ -1220,7 +1220,7 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 // pre-selected as Item 1 (Section 39 line 152: "comparison matrix link
 // (redirects to /comparisons/universities)"). Ref: audit finding U-5.
 func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1232,7 +1232,7 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verify the university exists so a bad slug 404s rather than redirecting
 	// to a picker with a dead pre-selection.
-	if _, err := h.spaces.GetSpaceBySlug(r.Context(), slug, tenantID); err != nil {
+	if _, err := h.spaces.GetSpaceBySlug(r.Context(), slug); err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}

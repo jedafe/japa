@@ -46,7 +46,7 @@ func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvider
 }
 
 // DeleteProvider deletes a travel provider row by id and tenant.
-func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `DELETE FROM travel_providers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("travel: delete provider: %w", err)
@@ -60,7 +60,7 @@ func (s *Store) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) er
 }
 
 // GetProviderByID fetches a single provider by ID within a tenant.
-func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.TravelProvider, error) {
+func (s *Store) GetProviderByID(ctx context.Context, id pgtype.UUID) (gen.TravelProvider, error) {
 	return s.queries.GetTravelProviderByID(ctx,
 
 		id,
@@ -70,7 +70,7 @@ func (s *Store) GetProviderByID(ctx context.Context, tenantID, id pgtype.UUID) (
 // GetActiveProvider returns the active provider for a given type
 // (flight, hotel, or both). Providers of the exact type are preferred over
 // "both" providers (see the ORDER BY in the SQL).
-func (s *Store) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, providerType string) (gen.TravelProvider, error) {
+func (s *Store) GetActiveProvider(ctx context.Context, providerType string) (gen.TravelProvider, error) {
 	return s.queries.GetActiveTravelProvider(ctx,
 
 		providerType,
@@ -81,7 +81,7 @@ func (s *Store) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, pro
 // filters. isActiveFilter is tri-state: "true" = only active, "false" = only
 // inactive, "" = all. q is an ILIKE search on name/slug (empty = no filter).
 // providerType filters by exact type (empty = all).
-func (s *Store) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiveFilter, providerType, q string) ([]gen.TravelProvider, error) {
+func (s *Store) ListProviders(ctx context.Context, isActiveFilter, providerType, q string) ([]gen.TravelProvider, error) {
 	rows, err := s.queries.ListTravelProviders(ctx, gen.ListTravelProvidersParams{
 
 		IsActiveFilter: isActiveFilter,

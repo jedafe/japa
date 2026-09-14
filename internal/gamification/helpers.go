@@ -15,30 +15,30 @@ import (
 // ---------------------------------------------------------------------------
 
 // badgesEnabled returns whether the badge system is enabled.
-func (s *Service) badgesEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) badgesEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.badges_enabled", true)
+	return s.settings.GetBoolOr(ctx, "gamification.badges_enabled", true)
 }
 
 // challengesEnabled returns whether the challenge system is enabled.
-func (s *Service) challengesEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) challengesEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.challenges_enabled", true)
+	return s.settings.GetBoolOr(ctx, "gamification.challenges_enabled", true)
 }
 
 // leaderboardEnabled returns whether the leaderboard is visible.
-func (s *Service) leaderboardEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) leaderboardEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "gamification.leaderboard_enabled", true)
+	return s.settings.GetBoolOr(ctx, "gamification.leaderboard_enabled", true)
 }
 
 // ---------------------------------------------------------------------------

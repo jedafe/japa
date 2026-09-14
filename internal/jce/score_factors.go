@@ -28,7 +28,7 @@ func newScoreFactorStore(database *db.DB) *scoreFactorStore {
 }
 
 // create inserts a new score factor and returns the populated domain model.
-func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+func (s *scoreFactorStore) create(ctx context.Context, in ScoreFactorInput) (ScoreFactor, error) {
 	cfg := in.Config
 	if cfg.IdealTexts == nil {
 		cfg.IdealTexts = []string{}
@@ -59,7 +59,7 @@ func (s *scoreFactorStore) create(ctx context.Context, tenantID pgtype.UUID, in 
 }
 
 // listByType returns score factors for a comparison type, optionally including global factors.
-func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
+func (s *scoreFactorStore) listByType(ctx context.Context, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error) {
 	include := &includeGlobal
 
 	rows, err := s.read.ListScoreFactorsByType(ctx, gen.ListScoreFactorsByTypeParams{
@@ -87,7 +87,7 @@ func (s *scoreFactorStore) listByType(ctx context.Context, tenantID, comparisonT
 }
 
 // get returns a score factor by id and tenant.
-func (s *scoreFactorStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error) {
+func (s *scoreFactorStore) get(ctx context.Context, id pgtype.UUID) (ScoreFactor, error) {
 	row, err := s.read.GetScoreFactor(ctx,
 		id,
 	)
@@ -99,7 +99,7 @@ func (s *scoreFactorStore) get(ctx context.Context, id, tenantID pgtype.UUID) (S
 }
 
 // update modifies a score factor and returns the updated domain model.
-func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
+func (s *scoreFactorStore) update(ctx context.Context, id pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error) {
 	cfg := in.Config
 	if cfg.IdealTexts == nil {
 		cfg.IdealTexts = []string{}
@@ -130,7 +130,7 @@ func (s *scoreFactorStore) update(ctx context.Context, id, tenantID pgtype.UUID,
 }
 
 // delete removes a score factor.
-func (s *scoreFactorStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *scoreFactorStore) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteScoreFactor(ctx,
 		id,
 	); err != nil {
@@ -146,9 +146,9 @@ func (s *scoreFactorStore) delete(ctx context.Context, id, tenantID pgtype.UUID)
 // The generated GetScoreFactorByKey query uses `comparison_type_id = $2`, which
 // cannot match NULL when $2 is NULL, so global lookups are routed through
 // ListScoreFactorsByType with includeGlobal=true.
-func (s *scoreFactorStore) getByKey(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, factorKey string) (ScoreFactor, error) {
+func (s *scoreFactorStore) getByKey(ctx context.Context, comparisonTypeID pgtype.UUID, factorKey string) (ScoreFactor, error) {
 	if !comparisonTypeID.Valid {
-		factors, err := s.listByType(ctx, tenantID, comparisonTypeID, true)
+		factors, err := s.listByType(ctx, comparisonTypeID, true)
 		if err != nil {
 			return ScoreFactor{}, fmt.Errorf("getting score factor by key: %w", err)
 		}

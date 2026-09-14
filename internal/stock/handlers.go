@@ -54,7 +54,7 @@ func hasPermission(r *http.Request, permKey string) bool {
 		return false
 	}
 
-	return resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey)
+	return resolver.HasPermission(r.Context(), user.UserID, permKey)
 }
 
 // ---------------------------------------------------------------------------

@@ -239,16 +239,16 @@ type agentComparisonAdapter struct {
 	svc *comparison.Service
 }
 
-func (a *agentComparisonAdapter) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
-	return a.svc.ListComparisonTypes(ctx, tenantID, limit, offset)
+func (a *agentComparisonAdapter) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+	return a.svc.ListComparisonTypes(ctx, limit, offset)
 }
 
-func (a *agentComparisonAdapter) GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
-	return a.svc.GetComparisonTypeBySlug(ctx, slug, tenantID)
+func (a *agentComparisonAdapter) GetComparisonTypeBySlug(ctx context.Context, slug string) (gen.GetComparisonTypeBySlugRow, error) {
+	return a.svc.GetComparisonTypeBySlug(ctx, slug)
 }
 
-func (a *agentComparisonAdapter) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input ai.ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error) {
-	return a.svc.CreateComparisonType(ctx, tenantID, comparison.CreateComparisonTypeInput{
+func (a *agentComparisonAdapter) CreateComparisonType(ctx context.Context, input ai.ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error) {
+	return a.svc.CreateComparisonType(ctx, comparison.CreateComparisonTypeInput{
 		Name:         input.Name,
 		Slug:         input.Slug,
 		Description:  input.Description,
@@ -353,8 +353,8 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 	}, nil
 }
 
-func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.UUID) (ai.ComparisonDetail, error) {
-	d, err := a.svc.GetComparisonDetail(ctx, id, tenantID)
+func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id pgtype.UUID) (ai.ComparisonDetail, error) {
+	d, err := a.svc.GetComparisonDetail(ctx, id)
 	if err != nil {
 		return ai.ComparisonDetail{}, err
 	}
@@ -374,8 +374,8 @@ func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id, te
 	}, nil
 }
 
-func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, contentID, tenantID pgtype.UUID) ([]ai.ComparisonMatrixItem, error) {
-	matrix, err := a.svc.GetComparisonMatrix(ctx, contentID, tenantID)
+func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ai.ComparisonMatrixItem, error) {
+	matrix, err := a.svc.GetComparisonMatrix(ctx, contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -404,8 +404,8 @@ func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, conten
 	return out, nil
 }
 
-func (a *agentComparisonAdapter) CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input ai.ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error) {
-	return a.svc.CreateComparisonDimension(ctx, tenantID, comparison.CreateComparisonDimensionInput{
+func (a *agentComparisonAdapter) CreateComparisonDimension(ctx context.Context, input ai.ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error) {
+	return a.svc.CreateComparisonDimension(ctx, comparison.CreateComparisonDimensionInput{
 		ContentID:     input.ContentID,
 		Label:         input.Label,
 		DimensionType: input.DimensionType,
@@ -413,8 +413,8 @@ func (a *agentComparisonAdapter) CreateComparisonDimension(ctx context.Context, 
 	})
 }
 
-func (a *agentComparisonAdapter) UpsertComparisonValueWithMetadata(ctx context.Context, tenantID pgtype.UUID, input ai.ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error) {
-	return a.svc.UpsertComparisonValueWithMetadata(ctx, tenantID, comparison.UpsertComparisonValueInput{
+func (a *agentComparisonAdapter) UpsertComparisonValueWithMetadata(ctx context.Context, input ai.ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error) {
+	return a.svc.UpsertComparisonValueWithMetadata(ctx, comparison.UpsertComparisonValueInput{
 		DimensionID:  input.DimensionID,
 		ItemID:       input.ItemID,
 		Value:        input.Value,
@@ -444,13 +444,13 @@ type agentPersonaAdapter struct {
 // personaUserIDResolver is the subset of *personas.Store the adapter calls.
 // Defined as an interface so the adapter is testable with a stub.
 type personaUserIDResolver interface {
-	GetAIPersonaByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetAIPersonaByIDRow, error)
-	GetPersonaVoiceByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.PersonaVoice, error)
+	GetAIPersonaByID(ctx context.Context, id pgtype.UUID) (gen.GetAIPersonaByIDRow, error)
+	GetPersonaVoiceByID(ctx context.Context, id pgtype.UUID) (gen.PersonaVoice, error)
 }
 
 // GetPersonaUserID returns the backing users.id for the given persona ID.
-func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error) {
-	row, err := a.store.GetAIPersonaByID(ctx, tenantID, personaID)
+func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error) {
+	row, err := a.store.GetAIPersonaByID(ctx, personaID)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
@@ -471,7 +471,7 @@ func (a *agentPersonaAdapter) GetPersonaUserID(ctx context.Context, tenantID, pe
 // role/group granted the node) bypass the HITL review queue for
 // agent-initiated content actions.
 type hitlBypassChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 type agentDraftProcessorAdapter struct {
@@ -563,7 +563,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	}
 
 	// 1. Resolve the persona's backing user_id (the author).
-	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, personaID)
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, personaID)
 	if err != nil {
 		return fmt.Errorf("resolving persona: %w", err)
 	}
@@ -621,7 +621,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	// draft directly. If publish fails (e.g. no primary space was provided),
 	// fall back to creating a HITL review so a human can resolve it.
 	if a.perms != nil && userID.Valid &&
-		a.perms.HasPermission(ctx, userID, tenantID, "agent.skip_hitl") {
+		a.perms.HasPermission(ctx, userID, "agent.skip_hitl") {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr == nil {
 			slog.Info("agent draft: auto-published via agent.skip_hitl", "content_id", row.ID, "user_id", userID)
 			return nil
@@ -664,8 +664,8 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 // a bulk reorder query if performance requires it.
 type agentLearningAdapter struct{ store *learning.Store }
 
-func (a *agentLearningAdapter) ListTracks(ctx context.Context, tenantID pgtype.UUID) ([]ai.LearningTrack, error) {
-	tracks, err := a.store.ListAllTracks(ctx, tenantID)
+func (a *agentLearningAdapter) ListTracks(ctx context.Context) ([]ai.LearningTrack, error) {
+	tracks, err := a.store.ListAllTracks(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -678,8 +678,8 @@ func (a *agentLearningAdapter) ListTracks(ctx context.Context, tenantID pgtype.U
 	return out, nil
 }
 
-func (a *agentLearningAdapter) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input ai.LearningCreateTrackInput) (*ai.LearningTrack, error) {
-	t, err := a.store.CreateTrack(ctx, tenantID, learning.CreateTrackInput{
+func (a *agentLearningAdapter) CreateTrack(ctx context.Context, input ai.LearningCreateTrackInput) (*ai.LearningTrack, error) {
+	t, err := a.store.CreateTrack(ctx, learning.CreateTrackInput{
 		Title:                input.Title,
 		Slug:                 input.Slug,
 		Description:          input.Description,
@@ -699,8 +699,8 @@ func (a *agentLearningAdapter) CreateTrack(ctx context.Context, tenantID pgtype.
 	return &aiT, nil
 }
 
-func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.LearningTrack, error) {
-	t, err := a.store.UpdateTrack(ctx, tenantID, id, learning.UpdateTrackInput{
+func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.LearningTrack, error) {
+	t, err := a.store.UpdateTrack(ctx, id, learning.UpdateTrackInput{
 		Title:                input.Title,
 		Description:          input.Description,
 		Difficulty:           input.Difficulty,
@@ -719,8 +719,8 @@ func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, tenantID, id pgt
 	return &aiT, nil
 }
 
-func (a *agentLearningAdapter) ListLessons(ctx context.Context, tenantID pgtype.UUID) ([]ai.LearningLesson, error) {
-	lessons, err := a.store.ListAllLessons(ctx, tenantID)
+func (a *agentLearningAdapter) ListLessons(ctx context.Context) ([]ai.LearningLesson, error) {
+	lessons, err := a.store.ListAllLessons(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -733,8 +733,8 @@ func (a *agentLearningAdapter) ListLessons(ctx context.Context, tenantID pgtype.
 	return out, nil
 }
 
-func (a *agentLearningAdapter) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.LearningLesson, error) {
-	l, err := a.store.CreateLesson(ctx, tenantID, moduleID, learning.CreateLessonInput{
+func (a *agentLearningAdapter) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.LearningLesson, error) {
+	l, err := a.store.CreateLesson(ctx, moduleID, learning.CreateLessonInput{
 		Title:           input.Title,
 		Slug:            input.Slug,
 		LessonType:      input.LessonType,
@@ -754,8 +754,8 @@ func (a *agentLearningAdapter) CreateLesson(ctx context.Context, tenantID, modul
 	return &aiL, nil
 }
 
-func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.LearningLesson, error) {
-	l, err := a.store.UpdateLesson(ctx, tenantID, id, learning.UpdateLessonInput{
+func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.LearningLesson, error) {
+	l, err := a.store.UpdateLesson(ctx, id, learning.UpdateLessonInput{
 		Title:           input.Title,
 		LessonType:      input.LessonType,
 		Content:         input.Content,
@@ -779,17 +779,17 @@ func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, tenantID, id pg
 // UpdateLesson per entry. A failure on one entry aborts the reorder
 // (the caller can retry). This is acceptable for the AI agent's use
 // case (small batches).
-func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, tenantID pgtype.UUID, entries []ai.LearningReorderEntry) error {
+func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, entries []ai.LearningReorderEntry) error {
 	for _, e := range entries {
 		// Fetch the existing lesson to preserve its fields, then update
 		// only the sort_order. UpdateLessonInput requires Title and
 		// LessonType, so we must read first.
-		lesson, err := a.store.GetLessonByID(ctx, tenantID, e.ID)
+		lesson, err := a.store.GetLessonByID(ctx, e.ID)
 		if err != nil {
 			return fmt.Errorf("reorder: fetching lesson %s: %w", e.ID, err)
 		}
 
-		_, err = a.store.UpdateLesson(ctx, tenantID, e.ID, learning.UpdateLessonInput{
+		_, err = a.store.UpdateLesson(ctx, e.ID, learning.UpdateLessonInput{
 			Title:           lesson.Title,
 			LessonType:      lesson.LessonType,
 			Content:         lesson.Content,
@@ -854,8 +854,8 @@ func derefUUID(p *pgtype.UUID) pgtype.UUID {
 // ai.DocsUpdatePageRequest) to avoid an import cycle with internal/docs.
 type agentDocsAdapter struct{ svc *docs.Service }
 
-func (a *agentDocsAdapter) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]ai.DocsPage, error) {
-	pages, err := a.svc.ListAllDocPages(ctx, tenantID)
+func (a *agentDocsAdapter) ListAllDocPages(ctx context.Context) ([]ai.DocsPage, error) {
+	pages, err := a.svc.ListAllDocPages(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -868,8 +868,8 @@ func (a *agentDocsAdapter) ListAllDocPages(ctx context.Context, tenantID pgtype.
 	return out, nil
 }
 
-func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) (*ai.DocsPage, error) {
-	p, err := a.svc.GetDocPageByID(ctx, tenantID, id)
+func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, id pgtype.UUID) (*ai.DocsPage, error) {
+	p, err := a.svc.GetDocPageByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -923,8 +923,8 @@ func docsPageToAI(p docs.DocPage) ai.DocsPage {
 // (pointer); the adapter dereferences it.
 type agentMenusAdapter struct{ svc *menus.Service }
 
-func (a *agentMenusAdapter) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (ai.MenusListResponse, error) {
-	resp, err := a.svc.ListMenus(ctx, tenantID, q, placement, status, sort, sortDir, limit, offset)
+func (a *agentMenusAdapter) ListMenus(ctx context.Context, q, placement, status, sort, sortDir string, limit, offset int32) (ai.MenusListResponse, error) {
+	resp, err := a.svc.ListMenus(ctx, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		return ai.MenusListResponse{}, err
 	}
@@ -937,8 +937,8 @@ func (a *agentMenusAdapter) ListMenus(ctx context.Context, tenantID pgtype.UUID,
 	}, nil
 }
 
-func (a *agentMenusAdapter) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input ai.MenusCreateMenuItemInput) (gen.CreateMenuItemRow, error) {
-	return a.svc.CreateMenuItem(ctx, tenantID, menus.CreateMenuItemInput{
+func (a *agentMenusAdapter) CreateMenuItem(ctx context.Context, input ai.MenusCreateMenuItemInput) (gen.CreateMenuItemRow, error) {
+	return a.svc.CreateMenuItem(ctx, menus.CreateMenuItemInput{
 		MenuID:           input.MenuID,
 		ParentID:         input.ParentID,
 		Label:            input.Label,
@@ -955,8 +955,8 @@ func (a *agentMenusAdapter) CreateMenuItem(ctx context.Context, tenantID pgtype.
 	})
 }
 
-func (a *agentMenusAdapter) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input ai.MenusUpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
-	return a.svc.UpdateMenuItem(ctx, id, tenantID, menus.UpdateMenuItemInput{
+func (a *agentMenusAdapter) UpdateMenuItem(ctx context.Context, id pgtype.UUID, input ai.MenusUpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
+	return a.svc.UpdateMenuItem(ctx, id, menus.UpdateMenuItemInput{
 		Label:            input.Label,
 		URL:              input.URL,
 		Icon:             input.Icon,
@@ -972,8 +972,8 @@ func (a *agentMenusAdapter) UpdateMenuItem(ctx context.Context, id, tenantID pgt
 	})
 }
 
-func (a *agentMenusAdapter) DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return a.svc.DeleteMenuItem(ctx, id, tenantID)
+func (a *agentMenusAdapter) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
+	return a.svc.DeleteMenuItem(ctx, id)
 }
 
 // agentUsersAdapter bridges users.Service to the ai.UsersService interface.
@@ -982,8 +982,8 @@ func (a *agentMenusAdapter) DeleteMenuItem(ctx context.Context, id, tenantID pgt
 // internal/users. The adapter strips PII from UserProfileResponse.
 type agentUsersAdapter struct{ svc *users.Service }
 
-func (a *agentUsersAdapter) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) (*ai.UserProfile, error) {
-	p, err := a.svc.GetProfile(ctx, tenantID, userID)
+func (a *agentUsersAdapter) GetProfile(ctx context.Context, userID pgtype.UUID) (*ai.UserProfile, error) {
+	p, err := a.svc.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1031,8 +1031,8 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 // load extraction context for Studio generation (Approach B) and to
 // transition linked intel_records to 'published' on successful publish (§75).
 type intelRecordLoader interface {
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
 }
 
 type studioDraftProcessorAdapter struct {
@@ -1064,7 +1064,7 @@ type studioDraftProcessorAdapter struct {
 // campaignItemSyncer is the subset of the campaign service the Studio processor
 // uses to keep campaign_items in sync with their Studio jobs.
 type campaignItemSyncer interface {
-	SyncCampaignItemByStudioJob(ctx context.Context, tenantID, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error
+	SyncCampaignItemByStudioJob(ctx context.Context, studioJobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) error
 }
 
 // arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
@@ -1090,12 +1090,12 @@ type languageTestDraftGenerator interface {
 
 // taxDraftGenerator is the subset of *taxcalculator.Service.
 type taxDraftGenerator interface {
-	GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req taxcalculator.GenerateGuideRequest) (taxcalculator.GenerateGuideResult, error)
+	GenerateGuide(ctx context.Context, req taxcalculator.GenerateGuideRequest) (taxcalculator.GenerateGuideResult, error)
 }
 
 // credentialDraftGenerator is the subset of *credentialchecker.Service.
 type credentialDraftGenerator interface {
-	GeneratePathwayDraft(ctx context.Context, tenantID pgtype.UUID, req credentialchecker.GeneratePathwayRequest) (credentialchecker.GeneratePathwayResponse, error)
+	GeneratePathwayDraft(ctx context.Context, req credentialchecker.GeneratePathwayRequest) (credentialchecker.GeneratePathwayResponse, error)
 	GetProfessionBySlug(ctx context.Context, slug string) (credentialchecker.ProfessionRow, error)
 }
 
@@ -1159,17 +1159,17 @@ func isToolTableType(contentType string) bool {
 
 // studioProcessorService is the subset of *studio.Service the adapter calls.
 type studioProcessorService interface {
-	GetJob(ctx context.Context, tenantID, id pgtype.UUID) (studio.Job, error)
-	DefaultPersonaID(ctx context.Context, tenantID pgtype.UUID) (pgtype.UUID, error)
-	MarkJobGenerating(ctx context.Context, tenantID, jobID pgtype.UUID) error
-	MarkJobGenerated(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error
-	MarkJobRoutedToReview(ctx context.Context, tenantID, jobID, reviewID pgtype.UUID) error
-	MarkJobFailed(ctx context.Context, tenantID, jobID pgtype.UUID, errMsg string) error
-	MarkJobPublished(ctx context.Context, tenantID, jobID, draftContentID pgtype.UUID, aiModel string) error
-	ShouldAutoPublish(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string) bool
+	GetJob(ctx context.Context, id pgtype.UUID) (studio.Job, error)
+	DefaultPersonaID(ctx context.Context) (pgtype.UUID, error)
+	MarkJobGenerating(ctx context.Context, jobID pgtype.UUID) error
+	MarkJobGenerated(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error
+	MarkJobRoutedToReview(ctx context.Context, jobID, reviewID pgtype.UUID) error
+	MarkJobFailed(ctx context.Context, jobID pgtype.UUID, errMsg string) error
+	MarkJobPublished(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error
+	ShouldAutoPublish(ctx context.Context, contentType, guideCategory string) bool
 	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
-	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
-	RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error)
+	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
+	RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error)
 }
 
 // RunBatch delegates to the studio service.
@@ -1179,12 +1179,12 @@ func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, tenantID, ba
 
 // RetryFailed delegates to the studio service.
 func (a *studioDraftProcessorAdapter) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
-	return a.studio.RetryFailed(ctx, tenantID, jobID)
+	return a.studio.RetryFailed(ctx, jobID)
 }
 
 // RetryBatchFailed delegates to the studio service for batch-level retry.
-func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, tenantID, batchID pgtype.UUID) (int, error) {
-	return a.studio.RetryBatchFailed(ctx, tenantID, batchID)
+func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error) {
+	return a.studio.RetryBatchFailed(ctx, batchID)
 }
 
 // GenerateJob runs the §75 single-job generation pipeline:
@@ -1195,7 +1195,7 @@ func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, tena
 // low-stakes types per studio.auto_publish_types (§75).
 // 5. Update the studio job to 'in_review' (or 'published').
 func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
-	job, err := a.studio.GetJob(ctx, tenantID, jobID)
+	job, err := a.studio.GetJob(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("studio: generate: get job: %w", err)
 	}
@@ -1208,7 +1208,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// 1. Mark generating (compare-and-swap: only succeeds if status is still
 	// 'queued'). If another worker already claimed this job, skip silently —
 	// this prevents duplicate draft generation from concurrent tasks.
-	if err := a.studio.MarkJobGenerating(ctx, tenantID, jobID); err != nil {
+	if err := a.studio.MarkJobGenerating(ctx, jobID); err != nil {
 		if errors.Is(err, studio.ErrJobAlreadyGenerating) {
 			slog.Info("studio: generate: job already claimed by another worker, skipping", "job_id", jobID)
 			return nil
@@ -1221,18 +1221,18 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// CAS, so a redelivered or retried task may find that a prior run already
 	// produced a draft/review. Re-running CreateContent would hit the
 	// content_hash dedup and (previously) regress the job to 'failed'.
-	if fresh, ferr := a.studio.GetJob(ctx, tenantID, jobID); ferr == nil &&
+	if fresh, ferr := a.studio.GetJob(ctx, jobID); ferr == nil &&
 		(fresh.DraftContentID.Valid || fresh.ReviewID.Valid) {
 		slog.Info("studio: generate: job already produced a draft, skipping", "job_id", jobID, "draft_content_id", fresh.DraftContentID, "review_id", fresh.ReviewID)
 		return nil
 	}
 
 	// 2. Resolve the persona's backing user (the author) + voice prompt.
-	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, job.PersonaID)
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, job.PersonaID)
 	if err != nil {
 		msg := "persona not found: " + err.Error()
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
-		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+		_ = a.studio.MarkJobFailed(ctx, jobID, msg)
+		a.syncCampaignItem(ctx, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 
 		return fmt.Errorf("studio: generate: resolve persona: %w", err)
 	}
@@ -1241,7 +1241,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	var extractionContext string
 
 	if job.IntelRecordID.Valid && a.intelStore != nil {
-		record, rerr := a.intelStore.GetIntelRecord(ctx, tenantID, job.IntelRecordID)
+		record, rerr := a.intelStore.GetIntelRecord(ctx, job.IntelRecordID)
 		if rerr == nil && len(record.Extracted) > 0 {
 			extractionContext = string(record.Extracted)
 		} else if rerr != nil {
@@ -1257,8 +1257,8 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
 		if gerr != nil {
 			msg := "AI generation failed: " + gerr.Error()
-			_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
-			a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+			_ = a.studio.MarkJobFailed(ctx, jobID, msg)
+			a.syncCampaignItem(ctx, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 
 			return fmt.Errorf("studio: generate: body: %w", gerr)
 		}
@@ -1287,8 +1287,8 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	fvJSON, err := json.Marshal(fieldValues)
 	if err != nil {
 		msg := "encode field values: " + err.Error()
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
-		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+		_ = a.studio.MarkJobFailed(ctx, jobID, msg)
+		a.syncCampaignItem(ctx, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 
 		return fmt.Errorf("studio: generate: encode field values: %w", err)
 	}
@@ -1320,8 +1320,8 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	})
 	if err != nil {
 		msg := "create content: " + err.Error()
-		_ = a.studio.MarkJobFailed(ctx, tenantID, jobID, msg)
-		a.syncCampaignItem(ctx, tenantID, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+		_ = a.studio.MarkJobFailed(ctx, jobID, msg)
+		a.syncCampaignItem(ctx, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
 
 		return fmt.Errorf("studio: generate: create content: %w", err)
 	}
@@ -1331,8 +1331,8 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// and publish directly (same code path as auto-publish — a publish
 	// failure still falls back to HITL below).
 	skipHITL := a.perms != nil && job.CreatedBy.Valid &&
-		a.perms.HasPermission(ctx, job.CreatedBy, tenantID, "agent.skip_hitl")
-	if skipHITL || a.studio.ShouldAutoPublish(ctx, tenantID, job.ContentType, derefStr(job.GuideCategory)) {
+		a.perms.HasPermission(ctx, job.CreatedBy, "agent.skip_hitl")
+	if skipHITL || a.studio.ShouldAutoPublish(ctx, job.ContentType, derefStr(job.GuideCategory)) {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review", "job_id", jobID, "content_id", row.ID, "error", perr)
 			a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
@@ -1340,26 +1340,26 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 			return nil
 		}
 
-		if err := a.studio.MarkJobPublished(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
+		if err := a.studio.MarkJobPublished(ctx, jobID, row.ID, aiModel); err != nil {
 			slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
 		} else {
-			a.syncCampaignItem(ctx, tenantID, jobID, "published", row.ID, pgtype.UUID{}, nil)
+			a.syncCampaignItem(ctx, jobID, "published", row.ID, pgtype.UUID{}, nil)
 		}
 		// Transition the linked intel_record to 'published' (§75: "On
 		// successful publish the linked intel_records row transitions to
 		// status='published'").
-		a.transitionIntelRecordOnPublish(ctx, tenantID, job.IntelRecordID)
+		a.transitionIntelRecordOnPublish(ctx, job.IntelRecordID)
 		slog.Info("studio: generate: auto-published", "job_id", jobID, "content_id", row.ID)
 
 		return nil
 	}
 
 	// Step 7 (ADR-076 §2): mark draft_ready with the draft_content_id.
-	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, row.ID, aiModel); err != nil {
+	if err := a.studio.MarkJobGenerated(ctx, jobID, row.ID, aiModel); err != nil {
 		return fmt.Errorf("studio: generate: mark generated: %w", err)
 	}
 
-	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", row.ID, pgtype.UUID{}, nil)
+	a.syncCampaignItem(ctx, jobID, "draft_ready", row.ID, pgtype.UUID{}, nil)
 
 	// Step 8 (ADR-076 §2): route to the HITL review queue.
 	// NOTE: this path is the contents-creation fallback. Tool-table types
@@ -1377,17 +1377,17 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 // content's identity and slug; if the live body has been manually edited or
 // the type requires HITL, it creates a new draft instead of overwriting.
 func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, tenantID, contentID, intelRecordID pgtype.UUID) error {
-	existing, err := a.contentSvc.GetContent(ctx, contentID, tenantID)
+	existing, err := a.contentSvc.GetContent(ctx, contentID)
 	if err != nil {
 		return fmt.Errorf("regenerate: get content: %w", err)
 	}
 
-	record, err := a.intelStore.GetIntelRecord(ctx, tenantID, intelRecordID)
+	record, err := a.intelStore.GetIntelRecord(ctx, intelRecordID)
 	if err != nil {
 		return fmt.Errorf("regenerate: get intel_record: %w", err)
 	}
 
-	persona, personaID, err := a.resolveRegenerationPersona(ctx, tenantID, existing)
+	persona, personaID, err := a.resolveRegenerationPersona(ctx, existing)
 	if err != nil {
 		return fmt.Errorf("regenerate: resolve persona: %w", err)
 	}
@@ -1431,14 +1431,14 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 		return fmt.Errorf("regenerate: encode field values: %w", err)
 	}
 
-	manual, err := a.hasManualEditSinceAIGeneration(ctx, tenantID, contentID, existing.AiGeneratedAt, persona.UserID)
+	manual, err := a.hasManualEditSinceAIGeneration(ctx, contentID, existing.AiGeneratedAt, persona.UserID)
 	if err != nil {
 		return fmt.Errorf("regenerate: check manual edits: %w", err)
 	}
 
 	guideCategory := derefStr(existing.GuideCategory)
 	highStakes := studio.IsHighStakes(guideCategory)
-	canAutoPublish := a.studio.ShouldAutoPublish(ctx, tenantID, existing.ContentType, guideCategory)
+	canAutoPublish := a.studio.ShouldAutoPublish(ctx, existing.ContentType, guideCategory)
 
 	// If the content is published and either HITL is required or a human has
 	// edited the body since the last AI generation, create a new draft for
@@ -1460,7 +1460,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 			return fmt.Errorf("regenerate: create HITL draft: %w", err)
 		}
 
-		a.createStudioReview(ctx, tenantID, draft.ID, existing.ContentType, fvJSON)
+		a.createStudioReview(ctx, draft.ID, existing.ContentType, fvJSON)
 		slog.Info("regenerate: created HITL draft for manual edit or HITL-required content", "content_id", contentID, "draft_id", draft.ID, "high_stakes", highStakes, "manual_edit", manual)
 
 		return nil
@@ -1492,7 +1492,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	// Transition linked intel_record to 'published' when the regenerated
 	// content is live (mirrors Studio publish flow).
 	if existing.Status == content.StatusPublished {
-		a.transitionIntelRecordOnPublish(ctx, tenantID, intelRecordID)
+		a.transitionIntelRecordOnPublish(ctx, intelRecordID)
 	}
 
 	slog.Info("regenerate: updated content from source", "content_id", contentID, "slug", updated.Slug, "ai_model", aiModel)
@@ -1504,7 +1504,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 // Preference: field_values._ai_provenance.ai_persona_id, then the tenant's
 // studio.default_persona_id setting. The returned persona row carries the
 // backing user_id that will be stamped as the author.
-func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Context, tenantID pgtype.UUID, existing gen.GetContentByIDRow) (gen.GetAIPersonaByIDRow, pgtype.UUID, error) {
+func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Context, existing gen.GetContentByIDRow) (gen.GetAIPersonaByIDRow, pgtype.UUID, error) {
 	var personaID pgtype.UUID
 
 	var empty gen.GetAIPersonaByIDRow
@@ -1521,7 +1521,7 @@ func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Con
 	}
 
 	if !personaID.Valid && a.studio != nil {
-		defaultID, err := a.studio.DefaultPersonaID(ctx, tenantID)
+		defaultID, err := a.studio.DefaultPersonaID(ctx)
 		if err == nil {
 			personaID = defaultID
 		}
@@ -1531,7 +1531,7 @@ func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Con
 		return empty, pgtype.UUID{}, errors.New("no persona available for regeneration")
 	}
 
-	persona, err := a.personaStore.GetAIPersonaByID(ctx, tenantID, personaID)
+	persona, err := a.personaStore.GetAIPersonaByID(ctx, personaID)
 	if err != nil {
 		return empty, pgtype.UUID{}, err
 	}
@@ -1543,8 +1543,8 @@ func (a *studioDraftProcessorAdapter) resolveRegenerationPersona(ctx context.Con
 // that was edited by someone other than the current AI persona after the
 // last AI generation timestamp. It protects human editorial overrides from
 // being silently overwritten by source re-crawls.
-func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context.Context, tenantID, contentID pgtype.UUID, aiGeneratedAt pgtype.Timestamptz, personaUserID pgtype.UUID) (bool, error) {
-	revisions, err := a.contentSvc.ListContentRevisions(ctx, tenantID, contentID)
+func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context.Context, contentID pgtype.UUID, aiGeneratedAt pgtype.Timestamptz, personaUserID pgtype.UUID) (bool, error) {
+	revisions, err := a.contentSvc.ListContentRevisions(ctx, contentID)
 	if err != nil {
 		return false, err
 	}
@@ -1718,7 +1718,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.credentialSvc.GeneratePathwayDraft(ctx, tenantID, credentialchecker.GeneratePathwayRequest{
+		resp, err := a.credentialSvc.GeneratePathwayDraft(ctx, credentialchecker.GeneratePathwayRequest{
 			ProfessionID:       prof.ID,
 			IssuingSpaceID:     destSpaceStr,
 			DestinationSpaceID: destSpaceStr,
@@ -1864,12 +1864,12 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 // syncCampaignItem keeps the campaign_items table in sync with Studio job
 // lifecycle events. It is best-effort and logs failures without failing the
 // job, because a campaign item is metadata around a Studio job.
-func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, tenantID, jobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) {
+func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, jobID pgtype.UUID, status string, contentID, reviewID pgtype.UUID, errMsg *string) {
 	if a.campaignSvc == nil {
 		return
 	}
 
-	if err := a.campaignSvc.SyncCampaignItemByStudioJob(ctx, tenantID, jobID, status, contentID, reviewID, errMsg); err != nil {
+	if err := a.campaignSvc.SyncCampaignItemByStudioJob(ctx, jobID, status, contentID, reviewID, errMsg); err != nil {
 		slog.Warn("studio: sync campaign item failed", "job_id", jobID, "status", status, "error", err)
 	}
 }
@@ -1882,12 +1882,12 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 	targetTable, contentType, aiModel string,
 	fvJSON []byte,
 ) {
-	if err := a.studio.MarkJobGenerated(ctx, tenantID, jobID, draftID, aiModel); err != nil {
+	if err := a.studio.MarkJobGenerated(ctx, jobID, draftID, aiModel); err != nil {
 		slog.Warn("studio: generate: mark generated failed", "job_id", jobID, "draft_id", draftID, "error", err)
 		return
 	}
 
-	a.syncCampaignItem(ctx, tenantID, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
+	a.syncCampaignItem(ctx, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
 
 	if a.aiStore == nil {
 		return
@@ -1907,12 +1907,12 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 		return
 	}
 
-	if err := a.studio.MarkJobRoutedToReview(ctx, tenantID, jobID, review.ID); err != nil {
+	if err := a.studio.MarkJobRoutedToReview(ctx, jobID, review.ID); err != nil {
 		slog.Warn("studio: generate: mark routed to review failed", "job_id", jobID, "review_id", review.ID, "error", err)
 		return
 	}
 
-	a.syncCampaignItem(ctx, tenantID, jobID, "in_review", draftID, review.ID, nil)
+	a.syncCampaignItem(ctx, jobID, "in_review", draftID, review.ID, nil)
 	slog.Info("studio: generate: draft routed to review", "job_id", jobID, "draft_id", draftID, "target_table", targetTable, "review_id", review.ID)
 }
 
@@ -1924,7 +1924,7 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 	voicePrompt := persona.VoicePrompt
 
 	if job.VoiceID.Valid {
-		voice, err := a.personaStore.GetPersonaVoiceByID(ctx, tenantID, job.VoiceID)
+		voice, err := a.personaStore.GetPersonaVoiceByID(ctx, job.VoiceID)
 		if err == nil && voice.VoicePrompt != "" {
 			voicePrompt = voice.VoicePrompt
 		} else if err != nil {
@@ -1979,7 +1979,7 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, te
 }
 
 // createStudioReview is a best-effort HITL review creation helper.
-func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, tenantID, contentID pgtype.UUID, contentType string, fvJSON []byte) {
+func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, contentID pgtype.UUID, contentType string, fvJSON []byte) {
 	_, err := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
 
 		ContentID:   contentID,
@@ -2008,7 +2008,7 @@ func newAgentScholarshipAdapter(svc *scholarships.Service) *agentScholarshipAdap
 
 // FindScholarships implements ai.ScholarshipSearcher by mapping to the
 // scholarships.Service filters and results.
-func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ai.ScholarshipSearchFilters) ([]ai.ScholarshipSearchResult, int64, error) {
+func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, filters ai.ScholarshipSearchFilters) ([]ai.ScholarshipSearchResult, int64, error) {
 	if a == nil || a.svc == nil {
 		return nil, 0, nil
 	}
@@ -2023,7 +2023,7 @@ func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, tenantID
 		Page:         filters.Page,
 	}
 
-	rows, total, err := a.svc.FindScholarships(ctx, tenantID, sf)
+	rows, total, err := a.svc.FindScholarships(ctx, sf)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -2055,12 +2055,12 @@ func (a *agentScholarshipAdapter) FindScholarships(ctx context.Context, tenantID
 // 'published' when the studio job is published (§75: "On successful publish
 // the linked intel_records row transitions to status='published'"). Safe to
 // call when intelRecordID is nil or no intel store is wired.
-func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context.Context, tenantID, intelRecordID pgtype.UUID) {
+func (a *studioDraftProcessorAdapter) transitionIntelRecordOnPublish(ctx context.Context, intelRecordID pgtype.UUID) {
 	if !intelRecordID.Valid || a.intelStore == nil {
 		return
 	}
 
-	if err := a.intelStore.UpdateIntelRecordStatus(ctx, tenantID, gen.UpdateIntelRecordStatusParams{
+	if err := a.intelStore.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 
 		ID:     intelRecordID,
 		Status: "published",
@@ -2199,13 +2199,13 @@ type agentContentTypesAdapter struct {
 	cf *customfields.Service
 }
 
-func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ai.ContentType, error) {
-	groups, err := a.cf.ListFieldGroups(ctx, tenantID)
+func (a *agentContentTypesAdapter) ListContentTypes(ctx context.Context) ([]ai.ContentType, error) {
+	groups, err := a.cf.ListFieldGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	assignments, err := a.cf.ListAllAssignmentsByTenant(ctx, tenantID)
+	assignments, err := a.cf.ListAllAssignmentsByTenant(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2312,8 +2312,8 @@ type agentGuideCategoriesAdapter struct {
 	svc *customfields.Service
 }
 
-func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]ai.GuideCategory, error) {
-	cats, err := a.svc.ListGuideCategories(ctx, tenantID)
+func (a *agentGuideCategoriesAdapter) ListGuideCategories(ctx context.Context) ([]ai.GuideCategory, error) {
+	cats, err := a.svc.ListGuideCategories(ctx)
 	if err != nil {
 		return nil, err
 	}

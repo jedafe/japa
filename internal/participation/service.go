@@ -44,7 +44,7 @@ type TaskEnqueuer interface {
 // to record persona-originated platform events with is_synthetic = true
 // (ADR-068 §4 / P10 — metrics integrity).
 type EventTracker interface {
-	TrackSyntheticEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
+	TrackSyntheticEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) error
 }
 
 // ActionDispatcher is the dependency-inverted interface for dispatching
@@ -71,11 +71,11 @@ type ActionDispatcher interface {
 	// ToggleFollow follows the target entity as the persona.
 	ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 	// AddReaction adds a reaction to the target entity as the persona.
-	AddReaction(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error
+	AddReaction(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error
 	// CreateBookmark bookmarks the target entity as the persona.
 	CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 	// SubmitForm submits a form as the persona.
-	SubmitForm(ctx context.Context, tenantID, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error)
+	SubmitForm(ctx context.Context, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error)
 }
 
 // Service holds the business logic for the Participation Orchestration Engine.
@@ -229,7 +229,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 
 	var tenantUUID pgtype.UUID
 	_ = tenantUUID.Scan(persona.TenantID)
-	globalCap := s.getGlobalDailyCap(ctx, tenantUUID)
+	globalCap := s.getGlobalDailyCap(ctx)
 	globalToday := s.getGlobalDailyCounter(ctx, tenantUUID, today)
 
 	if totalToday >= policy.ActionsPerDay {
@@ -408,7 +408,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 
 	// Record a synthetic platform_event so the persona activity log works
 	// and real-metric materialized views exclude this action (ADR-068 §4, P10).
-	s.trackPersonaEvent(ctx, tenantID, authorID, "persona.action_dispatched", "content", dispatchedEntityID, map[string]any{
+	s.trackPersonaEvent(ctx, authorID, "persona.action_dispatched", "content", dispatchedEntityID, map[string]any{
 		"action_id":   actionID.String(),
 		"reviewer_id": reviewerID.String(),
 		"action_type": p.ActionType,
@@ -453,7 +453,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 	case "follow":
 		return s.dispatcher.ToggleFollow(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
 	case "react":
-		return s.dispatcher.AddReaction(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID, payload.ReactionKey)
+		return s.dispatcher.AddReaction(ctx, personaUserID, payload.TargetEntityType, targetEntityID, payload.ReactionKey)
 	case "bookmark":
 		return s.dispatcher.CreateBookmark(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
 	case "form_submit":
@@ -462,7 +462,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 			_ = json.Unmarshal(payload.Body, &fieldValues)
 		}
 
-		_, err := s.dispatcher.SubmitForm(ctx, tenantID, personaUserID, targetFormID, fieldValues)
+		_, err := s.dispatcher.SubmitForm(ctx, personaUserID, targetFormID, fieldValues)
 
 		return err
 	default:
@@ -488,7 +488,7 @@ func (s *Service) SweepActivePersonas(ctx context.Context) error {
 	// interval hasn't elapsed since the last sweep.
 	intervalMinutes := 60
 	if s.settings != nil {
-		intervalMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "participation.run_interval_minutes", 60)
+		intervalMinutes = s.settings.GetIntOr(ctx, "participation.run_interval_minutes", 60)
 	}
 
 	if intervalMinutes <= 0 {
@@ -903,7 +903,7 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	_ = userID.Scan(persona.UserID)
 
 	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).
-	s.trackPersonaEvent(ctx, tenantID, userID, "persona.action_queued", "content", contentID, map[string]any{
+	s.trackPersonaEvent(ctx, userID, "persona.action_queued", "content", contentID, map[string]any{
 		"action_type":        actionType,
 		"content_type":       actionTypeToContentType(actionType),
 		"target_content_id":  content.ID.String(),
@@ -939,13 +939,13 @@ func actionTypeToContentType(actionType string) string {
 // exclude them (WHERE NOT is_synthetic). If no tracker is wired, the event
 // is silently skipped — the orchestration engine must not fail because of
 // analytics unavailability.
-func (s *Service) trackPersonaEvent(ctx context.Context, tenantID, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
+func (s *Service) trackPersonaEvent(ctx context.Context, userID pgtype.UUID, eventType, entityType string, entityID pgtype.UUID, meta map[string]any) {
 	if s.tracker == nil {
 		slog.Warn("participation: no event tracker configured, synthetic event not recorded", "event_type", eventType)
 		return
 	}
 
-	if err := s.tracker.TrackSyntheticEvent(ctx, tenantID, userID, eventType, entityType, entityID, meta); err != nil {
+	if err := s.tracker.TrackSyntheticEvent(ctx, userID, eventType, entityType, entityID, meta); err != nil {
 		slog.Warn("participation: track synthetic event failed", "event_type", eventType, "error", err)
 	}
 }
@@ -1050,12 +1050,12 @@ func (s *Service) incrementGlobalCounter(ctx context.Context, tenantID pgtype.UU
 	_, _ = pipe.Exec(ctx)
 }
 
-func (s *Service) getGlobalDailyCap(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) getGlobalDailyCap(ctx context.Context) int {
 	if s.settings == nil {
 		return 500
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "participation.global_daily_cap", 500)
+	return s.settings.GetIntOr(ctx, "participation.global_daily_cap", 500)
 }
 
 func (s *Service) isEnabled(ctx context.Context) bool {
@@ -1063,7 +1063,7 @@ func (s *Service) isEnabled(ctx context.Context) bool {
 		return true
 	}
 	// Use the default tenant for the global check.
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "participation.enabled", true)
+	return s.settings.GetBoolOr(ctx, "participation.enabled", true)
 }
 
 func (s *Service) isWithinActiveHours(hours [2]int) bool {

@@ -32,14 +32,14 @@ func RequirePermission(resolver *RBAC, permKey string) func(http.Handler) http.H
 			}
 
 			// Super admins bypass all permission checks.
-			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			if resolver.IsSuperAdmin(r.Context(), user.UserID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
 
 				return
 			}
 
-			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
+			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
@@ -75,7 +75,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 			}
 
 			// Super admins bypass all permission checks.
-			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			if resolver.IsSuperAdmin(r.Context(), user.UserID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
 
@@ -83,7 +83,7 @@ func RequireAnyPermission(resolver *RBAC, permKeys ...string) func(http.Handler)
 			}
 
 			for _, key := range permKeys {
-				if resolver.HasPermission(r.Context(), user.UserID, user.TenantID, key) {
+				if resolver.HasPermission(r.Context(), user.UserID, key) {
 					ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 					next.ServeHTTP(w, r.WithContext(ctx))
 
@@ -120,14 +120,14 @@ func RequirePermissionWithInvalidation(resolver *RBAC, permKey string) func(http
 			}
 
 			// Super admins bypass all permission checks.
-			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			if resolver.IsSuperAdmin(r.Context(), user.UserID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
 
 				return
 			}
 
-			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
+			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
@@ -176,14 +176,14 @@ func OptionalPermission(resolver *RBAC, permKey string) func(http.Handler) http.
 			}
 
 			// Super admins bypass all permission checks.
-			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			if resolver.IsSuperAdmin(r.Context(), user.UserID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
 
 				return
 			}
 
-			if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, permKey) {
+			if !resolver.HasPermission(r.Context(), user.UserID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to view this directory"}}`))
@@ -237,7 +237,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 			}
 
 			// Super admins bypass all permission checks.
-			if resolver.IsSuperAdmin(r.Context(), user.UserID, user.TenantID) {
+			if resolver.IsSuperAdmin(r.Context(), user.UserID) {
 				ctx := context.WithValue(r.Context(), ResolverKey, resolver)
 				next.ServeHTTP(w, r.WithContext(ctx))
 
@@ -258,7 +258,7 @@ func RequireSpacePermission(resolver *RBAC, permKey string) func(http.Handler) h
 				}
 			}
 
-			if !resolver.HasSpacePermission(r.Context(), user.UserID, user.TenantID, spaceID, permKey) {
+			if !resolver.HasSpacePermission(r.Context(), user.UserID, spaceID, permKey) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))

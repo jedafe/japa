@@ -17,8 +17,8 @@ type sourceLinkPreviewAdapter struct {
 	fetcher *linkpreview.Fetcher
 }
 
-func (a *sourceLinkPreviewAdapter) Fetch(ctx context.Context, rawURL string, tenantID pgtype.UUID) (*worker.Preview, error) {
-	p, err := a.fetcher.Fetch(ctx, rawURL, tenantID)
+func (a *sourceLinkPreviewAdapter) Fetch(ctx context.Context, rawURL string) (*worker.Preview, error) {
+	p, err := a.fetcher.Fetch(ctx, rawURL)
 	if err != nil {
 		return nil, err
 	}

@@ -56,9 +56,7 @@ type PushPayload struct {
 type PushDispatcher interface {
 	// Dispatch delivers push to one device token. Returns ErrInvalidToken
 	// when the provider reports the token as invalid/expired.
-	// tenantID is passed so tenant-scoped credentials can be read from
-	// system_settings (hot-reloadable per Rule 3).
-	Dispatch(ctx context.Context, tenantID pgtype.UUID, platform, token string, payload PushPayload) error
+	Dispatch(ctx context.Context, platform, token string, payload PushPayload) error
 }
 
 // ErrInvalidToken is returned by a PushDispatcher when the provider reports
@@ -89,8 +87,8 @@ type DeviceInfo struct {
 // Declared as an interface so the service can be unit-tested with a stub
 // (dependency inversion over the concrete *config.Settings).
 type settingReader interface {
-	GetSetting(ctx context.Context, tenantID pgtype.UUID, key string) (string, error)
-	GetSettingBool(ctx context.Context, tenantID pgtype.UUID, key string) (bool, error)
+	GetSetting(ctx context.Context, key string) (string, error)
+	GetSettingBool(ctx context.Context, key string) (bool, error)
 }
 
 // IsValidPlatform checks if a platform value is valid.
@@ -120,7 +118,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 func (s *Service) SetDispatcher(d PushDispatcher) { s.dispatcher = d }
 
 // RegisterDevice registers or updates a device token for the user.
-func (s *Service) RegisterDevice(ctx context.Context, tenantID, userID pgtype.UUID, input RegisterDeviceInput) (DeviceInfo, error) {
+func (s *Service) RegisterDevice(ctx context.Context, userID pgtype.UUID, input RegisterDeviceInput) (DeviceInfo, error) {
 	if input.DeviceID == "" || input.Token == "" {
 		return DeviceInfo{}, ErrMissingFields
 	}
@@ -150,7 +148,7 @@ func (s *Service) RegisterDevice(ctx context.Context, tenantID, userID pgtype.UU
 }
 
 // DeregisterDevice removes a device token (set is_active = false).
-func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.UUID, deviceID string) error {
+func (s *Service) DeregisterDevice(ctx context.Context, userID pgtype.UUID, deviceID string) error {
 	if deviceID == "" {
 		return ErrMissingFields
 	}
@@ -167,7 +165,7 @@ func (s *Service) DeregisterDevice(ctx context.Context, tenantID, userID pgtype.
 }
 
 // ListDevices returns the user's registered devices as DeviceInfo (no token).
-func (s *Service) ListDevices(ctx context.Context, tenantID, userID pgtype.UUID) ([]DeviceInfo, error) {
+func (s *Service) ListDevices(ctx context.Context, userID pgtype.UUID) ([]DeviceInfo, error) {
 	rows, err := s.store.ListUserTokens(ctx, gen.ListUserDeviceTokensParams{
 
 		UserID:     userID,
@@ -188,8 +186,8 @@ func (s *Service) ListDevices(ctx context.Context, tenantID, userID pgtype.UUID)
 // SendPush dispatches a push notification to all of a user's active devices.
 // This is the terminal dispatch step called by the notification:send_push
 // worker via PushAdapter (BE-007: it does NOT re-enqueue notification:send_push).
-func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, payload PushPayload) error {
-	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "push.enabled")
+func (s *Service) SendPush(ctx context.Context, userID pgtype.UUID, payload PushPayload) error {
+	enabled, err := s.settings.GetSettingBool(ctx, "push.enabled")
 	if err != nil {
 		// BE-008: surface config errors distinctly from the disabled state.
 		return fmt.Errorf("devices: read push.enabled setting: %w", err)
@@ -217,7 +215,7 @@ func (s *Service) SendPush(ctx context.Context, tenantID, userID pgtype.UUID, pa
 	var failed int
 
 	for _, t := range tokens {
-		if dErr := s.dispatcher.Dispatch(ctx, tenantID, t.Platform, t.Token, payload); dErr != nil {
+		if dErr := s.dispatcher.Dispatch(ctx, t.Platform, t.Token, payload); dErr != nil {
 			if errors.Is(dErr, ErrInvalidToken) {
 				if markErr := s.store.MarkTokenInactive(ctx, t.Token); markErr != nil {
 					slog.Warn("devices: mark invalid token inactive failed", "error", markErr)
@@ -248,7 +246,7 @@ func (s *Service) MarkTokenInactive(ctx context.Context, token string) error {
 // It resolves the device token and dispatches directly via PushDispatcher
 // (BE-007: no notification:send_push enqueue, which would carry the wrong
 // payload shape for the worker).
-func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, deviceID string) error {
+func (s *Service) SendTestPush(ctx context.Context, deviceID string) error {
 	if s.dispatcher == nil {
 		return ErrNoDispatcher
 	}
@@ -263,7 +261,7 @@ func (s *Service) SendTestPush(ctx context.Context, tenantID pgtype.UUID, device
 		Body:  "This is a test push notification from JapaConnect.",
 		Data:  map[string]interface{}{"type": "test"},
 	}
-	if err := s.dispatcher.Dispatch(ctx, tenantID, token.Platform, token.Token, payload); err != nil {
+	if err := s.dispatcher.Dispatch(ctx, token.Platform, token.Token, payload); err != nil {
 		if errors.Is(err, ErrInvalidToken) {
 			if markErr := s.store.MarkTokenInactive(ctx, token.Token); markErr != nil {
 				slog.Warn("devices: mark invalid test-push token inactive failed", "error", markErr)

@@ -61,7 +61,7 @@ type TaskEnqueueClient interface {
 type MentionNotifier interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -87,11 +87,11 @@ type Handlers struct {
 // TagSlugResolver resolves tag slugs to tag IDs within a tenant (Section 14).
 // Implemented by tags.Service to avoid an import cycle (tags imports content).
 type TagSlugResolver interface {
-	ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error)
+	ResolveTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error)
 	// GetOrCreateTagSlugs resolves slugs to IDs, creating any slug that does
 	// not yet exist as a new tag. Used by the composer's tag_slugs flow where
 	// users type new tag names that may not exist yet.
-	GetOrCreateTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) (map[string]pgtype.UUID, error)
+	GetOrCreateTagSlugs(ctx context.Context, slugs []string) (map[string]pgtype.UUID, error)
 }
 
 // SpacePostChecker checks whether a user may post into a space, based on the
@@ -106,7 +106,7 @@ type SpacePostChecker interface {
 // the content title, for auto-assigning content to spaces. Implemented by
 // spaces.Service.
 type SpaceKeywordMatcher interface {
-	FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
+	FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
 }
 
 // SetSpacePostChecker injects the space posting-permission checker so the
@@ -137,7 +137,7 @@ type GuideCategory struct {
 // an adapter in server.go wrapping customfields.Service to avoid an import
 // cycle (customfields cannot import content).
 type GuideCategoryLister interface {
-	ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error)
+	ListGuideCategories(ctx context.Context) ([]GuideCategory, error)
 }
 
 // SetGuideCategoryLister injects the guide category lister so ListContentTypes
@@ -205,17 +205,17 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 // corresponding _any node (content.edit_any / content.delete_any) may modify
 // any content. This is the ownership enforcement for the _own/_any RBAC split
 // (BUG-001 / BUG-002 / BUG-003).
-func canModifyContent(r *http.Request, userID, tenantID, authorID pgtype.UUID, anyPerm string) bool {
+func canModifyContent(r *http.Request, userID, authorID pgtype.UUID, anyPerm string) bool {
 	if userID.Valid && authorID.Valid && userID.Bytes == authorID.Bytes {
 		return true
 	}
 
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
-		if resolver.IsSuperAdmin(r.Context(), userID, tenantID) {
+		if resolver.IsSuperAdmin(r.Context(), userID) {
 			return true
 		}
 
-		if resolver.HasPermission(r.Context(), userID, tenantID, anyPerm) {
+		if resolver.HasPermission(r.Context(), userID, anyPerm) {
 			return true
 		}
 	}
@@ -226,14 +226,14 @@ func canModifyContent(r *http.Request, userID, tenantID, authorID pgtype.UUID, a
 // isStoryModerator reports whether the caller may publish/schedule stories
 // directly, bypassing the §79 in_review queue: super-admins and holders of
 // story.verify or content.edit_any.
-func isStoryModerator(r *http.Request, userID, tenantID pgtype.UUID) bool {
+func isStoryModerator(r *http.Request, userID pgtype.UUID) bool {
 	resolver := rbac.FromContext(r.Context())
 	if resolver == nil {
 		return false
 	}
-	return resolver.IsSuperAdmin(r.Context(), userID, tenantID) ||
-		resolver.HasPermission(r.Context(), userID, tenantID, "story.verify") ||
-		resolver.HasPermission(r.Context(), userID, tenantID, "content.edit_any")
+	return resolver.IsSuperAdmin(r.Context(), userID) ||
+		resolver.HasPermission(r.Context(), userID, "story.verify") ||
+		resolver.HasPermission(r.Context(), userID, "content.edit_any")
 }
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP
@@ -293,7 +293,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 		return selectedSpaceID
 	}
 
-	matches, err := h.spaceMatcher.FindSpacesByKeywords(ctx, tenantID, keywords)
+	matches, err := h.spaceMatcher.FindSpacesByKeywords(ctx, keywords)
 	if err != nil {
 		slog.Warn("content: auto-assign space keyword match failed", "error", err)
 		return selectedSpaceID
@@ -330,7 +330,7 @@ func (h *Handlers) autoAssignSpaces(ctx context.Context, tenantID, contentID, se
 	// "Lagos Tech Community" surfaces in Lagos and Nigeria feeds even if the
 	// title has no geo keywords.
 	if selectedSpaceID.Valid {
-		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx, tenantID, selectedSpaceID)
+		parents, err := h.Service.GetSpacePrimaryGeoParents(ctx, tenantID)
 		if err != nil {
 			slog.Warn("content: failed to load source space geo parents", "error", err)
 		} else {
@@ -602,7 +602,7 @@ func (h *Handlers) enqueueRSSRegenerate(tenantID pgtype.UUID) {
 // // Self-mentions (mentioning the content author) are skipped.
 // Privacy filtering (blocks, erased users, private-space membership) is
 // applied via mentions.FilterMentions when checkers are wired (Section 15).
-func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, authorID, contentID, spaceID pgtype.UUID, body string) {
+func (h *Handlers) dispatchMentionNotifications(ctx context.Context, authorID, contentID, spaceID pgtype.UUID, body string) {
 	if h.notifier == nil {
 		return
 	}
@@ -629,7 +629,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 		}
 
 		mentioned, err = mentions.FilterMentions(
-			ctx, mentioned, tenantID, authorID, spaceID, isPrivateSpace,
+			ctx, mentioned, authorID, spaceID, isPrivateSpace,
 			h.mentionCheckers, h.mentionCheckers, h.mentionCheckers,
 		)
 		if err != nil {
@@ -646,7 +646,7 @@ func (h *Handlers) dispatchMentionNotifications(ctx context.Context, tenantID, a
 		}
 
 		if err := h.notifier.DispatchNotification(
-			ctx, tenantID, m.ID,
+			ctx, m.ID,
 			"mention.content", "",
 			authorID,
 			"content", contentID,
@@ -914,8 +914,8 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.ContentType == TypeStory {
 		allowed := false
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
-			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-				resolver.HasPermission(r.Context(), user.UserID, tenantID, "story.create")
+			allowed = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+				resolver.HasPermission(r.Context(), user.UserID, "story.create")
 		}
 		if !allowed {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden",
@@ -952,7 +952,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if input.Status != StatusDraft {
 		minLength := defaultMinLength
 		if h.settings != nil {
-			minLength = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.min_length", defaultMinLength)
+			minLength = h.settings.GetIntOr(r.Context(), "content.min_length", defaultMinLength)
 		}
 
 		if len(strings.TrimSpace(body)) < minLength {
@@ -990,7 +990,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// §79: story moderators may create stories already published/scheduled;
 	// everyone else is clamped to in_review by the service.
 	if input.ContentType == TypeStory {
-		createInput.SkipStoryModeration = isStoryModerator(r, user.UserID, tenantID)
+		createInput.SkipStoryModeration = isStoryModerator(r, user.UserID)
 	}
 
 	if input.SpaceID != nil && *input.SpaceID != "" {
@@ -1068,7 +1068,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	if h.SpamPipeline != nil {
 		clientIP := clientip.FromRequest(r)
 
-		spamResult, err := h.SpamPipeline.Check(r.Context(), tenantID, spam.SpamCheckRequest{
+		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
 			Content:    input.Body,
 			UserID:     user.UserID,
 			IP:         clientIP,
@@ -1101,7 +1101,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// this the jc:spam:rate:{tenant}:{user} sorted set is never populated and
 	// the rate_limit scoring layer always returns 0.
 	if h.SpamPipeline != nil {
-		h.SpamPipeline.RecordContentCreation(r.Context(), tenantID, user.UserID)
+		h.SpamPipeline.RecordContentCreation(r.Context(), user.UserID)
 	}
 
 	// Auto-assign content to primary spaces (country/state/city and public
@@ -1127,7 +1127,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	h.enqueueScholarshipSyncFromGuide(content.ID, tenantID, content.GuideCategory)
 
 	// Dispatch @mention notifications — fire-and-forget (BL-002).
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, content.ID, content.SpaceID, content.Body)
 
 	// Enqueue feed fan-out for published content (BL-005). Scheduled posts
 	// are fanned out by the scheduled-publish handler when they go live.
@@ -1159,7 +1159,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 // GetContent handles GET /api/v1/content/{slug}.
 func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1172,11 +1172,11 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enriched detail row (author/space/tags/images/series) so the reading
 	// page gets the same shape GET /blog/{slug} returns. Ref: §14.
-	content, err := h.Service.GetContentDetailBySlug(r.Context(), slug, tenantID)
+	content, err := h.Service.GetContentDetailBySlug(r.Context(), slug)
 	if err != nil {
 		// Try slug redirect before returning not found.
 		if newSlug, found := h.Service.ResolveSlugRedirect(r.Context(), EntityContent, slug); found {
-			content, err = h.Service.GetContentDetailBySlug(r.Context(), newSlug, tenantID)
+			content, err = h.Service.GetContentDetailBySlug(r.Context(), newSlug)
 		}
 
 		if err != nil {
@@ -1194,7 +1194,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// only visible to the author or a user holding content.edit_any.
 	user := auth.FromContext(r.Context())
 	if content.Status != StatusPublished {
-		if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+		if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 			return
 		}
@@ -1208,7 +1208,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case VisibilityPrivate:
-			if user == nil || !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+			if user == nil || !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 				errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 				return
 			}
@@ -1220,7 +1220,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve template literals in the content title, body, and meta fields.
 	// This is best-effort: failures are logged but do not fail the request.
-	rc := buildRenderContext(r, tenantID, "")
+	rc := buildRenderContext(r, "")
 
 	if err := h.Service.ResolveContentFields(r.Context(), &content, rc); err != nil {
 		slog.Warn("content: failed to resolve content literals", "error", err, "content_id", content.ID.String())
@@ -1243,7 +1243,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 			r.Context(),
 			[]byte(content.Body),
 			content.BodyHtml,
-			tenantID,
+
 			h.mentionCheckers,
 		)
 		if redErr != nil {
@@ -1372,7 +1372,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// public page can render "Visa Guide" instead of the raw `visa` slug —
 	// GET /content-types is auth-required, so guests cannot map it themselves.
 	if content.ContentType == TypeGuide && content.GuideCategory != nil && h.guideCategoryLister != nil {
-		if cats, catErr := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID); catErr == nil {
+		if cats, catErr := h.guideCategoryLister.ListGuideCategories(r.Context()); catErr == nil {
 			for _, cat := range cats {
 				if cat.Slug == *content.GuideCategory {
 					dto["guide_category_label"] = cat.Label
@@ -1394,7 +1394,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 	// interpolating the content's field values. Best-effort: a missing
 	// template or resolution error degrades to no json_ld field. Emitted as
 	// a sibling of `data` for frontend consumption.
-	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), tenantID, content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
+	if jsonLd, jErr := h.Service.ResolveJSONLD(r.Context(), content.ContentType, contentJSONLDFields(content)); jErr == nil && len(jsonLd) > 0 {
 		resp["json_ld"] = json.RawMessage(jsonLd)
 	} else if jErr != nil {
 		slog.Warn("content: JSON-LD template resolution failed", "slug", slug, "content_type", content.ContentType, "error", jErr)
@@ -1447,7 +1447,7 @@ func tsFormat(t pgtype.Timestamptz) string {
 
 // ListContent handles GET /api/v1/content with optional type and space filters.
 func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1509,7 +1509,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if featured {
-		contents, err = h.Service.ListFeaturedContentsByType(r.Context(), tenantID, contentType, offset, limit, filter)
+		contents, err = h.Service.ListFeaturedContentsByType(r.Context(), contentType, offset, limit, filter)
 	} else if spaceIDStr != "" {
 		var spaceID pgtype.UUID
 		if err := spaceID.Scan(spaceIDStr); err != nil {
@@ -1517,7 +1517,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		contents, err = h.Service.ListContentsBySpace(r.Context(), tenantID, spaceID, cursor, limit, filter)
+		contents, err = h.Service.ListContentsBySpace(r.Context(), spaceID, cursor, limit, filter)
 	} else if contentType != "" {
 		// §14: ?sort=popular orders by view_count (offset pagination);
 		// ?sort=roadmap ranks by the resolved VisitorContext journey signals
@@ -1528,19 +1528,19 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 			sort = ""
 		}
 		vctx := visitor.FromContext(r.Context())
-		contents, err = h.Service.ListContentsByType(r.Context(), tenantID, contentType, guideCategory, cursor, cursorID, offset, limit, sort, vctx, filter)
+		contents, err = h.Service.ListContentsByType(r.Context(), contentType, guideCategory, cursor, cursorID, offset, limit, sort, vctx, filter)
 	} else if q != "" && h.Service.HasSearcher() {
 		// Use Meilisearch for full-text search (typo tolerance, ranking)
 		// instead of ILIKE. Falls back to ILIKE on Meilisearch failure.
-		results, searchErr := h.Service.SearchContents(r.Context(), tenantID, q, limit, filter)
+		results, searchErr := h.Service.SearchContents(r.Context(), q, limit, filter)
 		if searchErr != nil {
 			slog.Warn("content: Meilisearch search failed, falling back to ILIKE", "error", searchErr, "query", q)
-			contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit, filter)
+			contents, err = h.Service.ListContents(r.Context(), q, cursor, limit, filter)
 		} else {
 			contents = results
 		}
 	} else {
-		contents, err = h.Service.ListContents(r.Context(), tenantID, q, cursor, limit, filter)
+		contents, err = h.Service.ListContents(r.Context(), q, cursor, limit, filter)
 	}
 
 	if err != nil {
@@ -1549,7 +1549,7 @@ func (h *Handlers) ListContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve template literals in list items best-effort.
-	rc := buildRenderContext(r, tenantID, "")
+	rc := buildRenderContext(r, "")
 
 	if resErr := h.Service.ResolveContentFields(r.Context(), contents, rc); resErr != nil {
 		slog.Warn("content: failed to resolve list literals", "error", resErr)
@@ -1629,7 +1629,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Load the existing row before applying defaults. PATCH updates are
 	// partial, so omitted top-level fields fall back to current values.
-	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+	prevContent, prevErr := h.Service.GetContent(r.Context(), id)
 	if prevErr != nil {
 		handleServiceError(w, prevErr)
 		return
@@ -1663,7 +1663,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if body != "" && input.Status != StatusDraft {
 		minLength := defaultMinLength
 		if h.settings != nil {
-			minLength = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.min_length", defaultMinLength)
+			minLength = h.settings.GetIntOr(r.Context(), "content.min_length", defaultMinLength)
 		}
 
 		if len(strings.TrimSpace(body)) < minLength {
@@ -1770,14 +1770,14 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// BUG-001: enforce author-or-admin before allowing edits. Type-specific
 	// moderator nodes (story.edit_any for §79, comparison.edit_any for §30)
 	// are also honoured so those moderators can use the unified composer.
-	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		letCanEdit := false
 		if resolver := rbac.FromContext(r.Context()); resolver != nil {
 			switch prevContent.ContentType {
 			case "story":
-				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, tenantID, "story.edit_any")
+				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, "story.edit_any")
 			case "comparison":
-				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, tenantID, "comparison.edit_any")
+				letCanEdit = resolver.HasPermission(r.Context(), user.UserID, "comparison.edit_any")
 			}
 		}
 		if !letCanEdit {
@@ -1793,15 +1793,15 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	bypassSpaceCheck := false
 
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
-		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+			resolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
 		bypassSpaceCheck = bypassEditWindow
 	}
 
 	updateInput.BypassSpaceCheck = bypassSpaceCheck
 	// §79: story moderators publish/schedule directly; other callers are
 	// clamped to in_review by the service.
-	updateInput.SkipStoryModeration = isStoryModerator(r, user.UserID, tenantID)
+	updateInput.SkipStoryModeration = isStoryModerator(r, user.UserID)
 
 	content, err := h.Service.UpdateContent(r.Context(), id, tenantID, user.UserID, updateInput, bypassEditWindow)
 	if err != nil {
@@ -1820,7 +1820,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// purge RAG embeddings instead of re-indexing (ADR-069 §2: unpublished
 	// content must not be retrievable in RAG).
 	if prevErr == nil && prevContent.Status == StatusPublished && content.Status != StatusPublished {
-		worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
+		worker.PurgeRAGEntity(r.Context(), "content", id)
 	} else {
 		h.enqueueContentEmbedding(id, tenantID)
 	}
@@ -1840,7 +1840,7 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// (BUG-006). The notification batch system deduplicates by (recipient, type,
 	// subject) so mentions that were already notified on create won't produce
 	// duplicate notifications — the existing batch window is extended instead.
-	h.dispatchMentionNotifications(r.Context(), tenantID, user.UserID, content.ID, content.SpaceID, content.Body)
+	h.dispatchMentionNotifications(r.Context(), user.UserID, content.ID, content.SpaceID, content.Body)
 
 	// Enqueue feed fan-out when content transitions to published (BL-005).
 	// This covers the draft→published path that CreateContent doesn't handle.
@@ -1876,13 +1876,13 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-002: verify authorship before soft-deleting.
-	content, err := h.Service.GetContent(r.Context(), id, tenantID)
+	content, err := h.Service.GetContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.delete_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, "content.delete_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only delete your own content")
 		return
 	}
@@ -1898,7 +1898,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	// BUG-002 fix: purge RAG embeddings on content delete (ADR-069 §2:
 	// "Content is unpublished or deleted — deletes its content_embeddings
 	// rows"). Fire-and-forget — errors are logged, never propagated.
-	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
+	worker.PurgeRAGEntity(r.Context(), "content", id)
 
 	// §73: a deleted guide may still have a scholarships projection. The worker
 	// will see the content is gone and remove the row.
@@ -1932,7 +1932,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Capture previous status to detect draft→published transitions for fan-out.
-	prevContent, prevErr := h.Service.GetContent(r.Context(), id, tenantID)
+	prevContent, prevErr := h.Service.GetContent(r.Context(), id)
 	if prevErr != nil {
 		handleServiceError(w, prevErr)
 		return
@@ -1940,14 +1940,14 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-003: only the author, super-admins, or content.edit_any holders
 	// may publish this content.
-	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only publish your own content")
 		return
 	}
 
 	// §79: author-facing publish of a story lands in in_review (moderation
 	// queue); story moderators publish directly.
-	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID, tenantID) {
+	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID) {
 		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
@@ -2011,13 +2011,13 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-003: only the author, super-admins, or content.edit_any holders
 	// may archive this content.
-	prevContent, err := h.Service.GetContent(r.Context(), id, tenantID)
+	prevContent, err := h.Service.GetContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only archive your own content")
 		return
 	}
@@ -2030,7 +2030,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-002 fix: purge RAG embeddings on archive (ADR-069 §2: content that
 	// is no longer published must not be retrievable in RAG). Fire-and-forget.
-	worker.PurgeRAGEntity(r.Context(), tenantID, "content", id)
+	worker.PurgeRAGEntity(r.Context(), "content", id)
 
 	// §73: archived guides must not appear in the finder.
 	h.enqueueScholarshipSyncFromGuide(id, tenantID, updated.GuideCategory)
@@ -2075,13 +2075,13 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-003: only the author, super-admins, or content.edit_any holders
 	// may schedule this content.
-	prevContent, err := h.Service.GetContent(r.Context(), id, tenantID)
+	prevContent, err := h.Service.GetContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, prevContent.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, prevContent.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only schedule your own content")
 		return
 	}
@@ -2090,7 +2090,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	// bypass the moderation queue when the scheduled_publish task fires.
 	// Author-facing schedule submits for review; story moderators may
 	// schedule directly.
-	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID, tenantID) {
+	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID) {
 		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
@@ -2104,7 +2104,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.Service.ScheduleContent(r.Context(), id, tenantID, input.PublishAt)
+	updated, err := h.Service.ScheduleContent(r.Context(), id, input.PublishAt)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2125,7 +2125,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 // for deduplication. The country_code is resolved server-side from the
 // client IP via the GeoIP middleware (Section 14 — view tracking).
 func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2190,7 +2190,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 		referrerPtr = &referrer
 	}
 
-	if err := h.Service.RecordContentViewWithDetails(r.Context(), id, tenantID, userID, sessionID, countryCode, referrerPtr); err != nil {
+	if err := h.Service.RecordContentViewWithDetails(r.Context(), id, userID, sessionID, countryCode, referrerPtr); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2203,7 +2203,7 @@ func (h *Handlers) RecordContentView(w http.ResponseWriter, r *http.Request) {
 
 // GetContentShareCount handles GET /api/v1/content/{id}/share-count.
 func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2214,7 +2214,7 @@ func (h *Handlers) GetContentShareCount(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	count, err := h.Service.CountContentShares(r.Context(), tenantID, id)
+	count, err := h.Service.CountContentShares(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2257,7 +2257,7 @@ func (h *Handlers) enqueueScheduledPublish(contentID, tenantID pgtype.UUID, publ
 // ListRevisions handles GET /api/v1/content/{id}/revisions.
 // Tenant-scoped and permission-gated (BUG-012).
 func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2268,7 +2268,7 @@ func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	revisions, err := h.Service.ListContentRevisions(r.Context(), tenantID, id)
+	revisions, err := h.Service.ListContentRevisions(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2276,7 +2276,7 @@ func (h *Handlers) ListRevisions(w http.ResponseWriter, r *http.Request) {
 
 	// Defense-in-depth: confirm the content exists and the requester can see it
 	// in this tenant (BUG-012 closes the tenant-scoping gap on the query itself).
-	_, err = h.Service.GetContent(r.Context(), id, tenantID)
+	_, err = h.Service.GetContent(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2296,8 +2296,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2329,7 +2328,7 @@ func (h *Handlers) PinContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pin, err := h.Service.PinContent(r.Context(), tenantID, spaceID, contentID, user.UserID, input.Position)
+	pin, err := h.Service.PinContent(r.Context(), spaceID, contentID, user.UserID, input.Position)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2409,16 +2408,16 @@ func (h *Handlers) AddReaction(w http.ResponseWriter, r *http.Request) {
 	// the reaction_key (emoji) against the curated set. If the setting is
 	// empty or unparseable, fall back to the spec defaults: 🎉 🔥 💪.
 	if h.settings != nil {
-		existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+		existing, err := h.Service.GetContent(r.Context(), contentID)
 		if err == nil && existing.ContentType == TypeAchievement {
-			if !isAllowedAchievementReaction(r.Context(), h.settings, tenantID, input.ReactionKey) {
+			if !isAllowedAchievementReaction(r.Context(), h.settings, input.ReactionKey) {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_reaction_key", "This reaction is not available for achievement posts")
 				return
 			}
 		}
 	}
 
-	reaction, err := h.Service.AddReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, input.ReactionKey)
+	reaction, err := h.Service.AddReaction(r.Context(), EntityContent, contentID, user.UserID, input.ReactionKey)
 	if err != nil {
 		// ON CONFLICT DO NOTHING returns ErrNoRows when the user already has
 		// this reaction — treat as idempotent success, not a 404.
@@ -2458,8 +2457,8 @@ var defaultAchievementReactions = []string{"🎉", "🔥", "💪"}
 // system_settings.achievement_reactions (JSONB array of {emoji, label}
 // pairs); if the setting is empty or unparseable, the spec defaults
 // (🎉 🔥 💪) are used. Ref: §89 Reaction Set.
-func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings, tenantID pgtype.UUID, key string) bool {
-	raw := settings.GetStringOr(ctx, pgtype.UUID{}, "achievement_reactions", "")
+func isAllowedAchievementReaction(ctx context.Context, settings *config.Settings, key string) bool {
+	raw := settings.GetStringOr(ctx, "achievement_reactions", "")
 	if raw != "" && raw != "[]" {
 		var pairs []struct {
 			Emoji string `json:"emoji"`
@@ -2492,8 +2491,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2516,7 +2514,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveReaction(r.Context(), tenantID, EntityContent, contentID, user.UserID, reactionKey); err != nil {
+	if err := h.Service.RemoveReaction(r.Context(), EntityContent, contentID, user.UserID, reactionKey); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2530,7 +2528,7 @@ func (h *Handlers) RemoveReaction(w http.ResponseWriter, r *http.Request) {
 
 // ListReactions handles GET /api/v1/content/{id}/reactions.
 func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2541,7 +2539,7 @@ func (h *Handlers) ListReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	counts, err := h.Service.CountReactionsByEntity(r.Context(), tenantID, EntityContent, contentID)
+	counts, err := h.Service.CountReactionsByEntity(r.Context(), EntityContent, contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2565,8 +2563,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2577,7 +2574,7 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reactions, err := h.Service.GetUserReactions(r.Context(), tenantID, EntityContent, contentID, user.UserID)
+	reactions, err := h.Service.GetUserReactions(r.Context(), EntityContent, contentID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2626,14 +2623,14 @@ func toJSONLDResponse(t gen.ContentTypeJsonldTemplate) jsonldTemplateResponse {
 
 // ListJSONLDTemplates handles GET /api/v1/content/jsonld-templates.
 func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	q := r.URL.Query().Get("q")
 
-	templates, err := h.Service.ListJSONLDTemplates(r.Context(), tenantID, pgtype.Text{String: q, Valid: true})
+	templates, err := h.Service.ListJSONLDTemplates(r.Context(), pgtype.Text{String: q, Valid: true})
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2652,7 +2649,7 @@ func (h *Handlers) ListJSONLDTemplates(w http.ResponseWriter, r *http.Request) {
 
 // UpsertJSONLDTemplate handles PUT /api/v1/content/jsonld-templates.
 func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2673,7 +2670,7 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tmpl, err := h.Service.UpsertJSONLDTemplate(r.Context(), tenantID, input.ContentType, input.Template, input.IsActive)
+	tmpl, err := h.Service.UpsertJSONLDTemplate(r.Context(), input.ContentType, input.Template, input.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2686,7 +2683,7 @@ func (h *Handlers) UpsertJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 // It removes a single JSON-LD template by its primary key, scoped to the
 // caller's tenant (§21 missing CRUD leg, §26 RBAC CRUD completeness).
 func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2697,7 +2694,7 @@ func (h *Handlers) DeleteJSONLDTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.Service.DeleteJSONLDTemplate(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteJSONLDTemplate(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2715,8 +2712,7 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2745,13 +2741,13 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 		}
 		// Validate folder ownership (BL-013): the folder must belong to the
 		// caller and tenant before associating a bookmark with it.
-		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
+		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, user.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
 			return
 		}
 	}
 
-	bm, err := h.Service.CreateBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID, input.Folder, folderID)
+	bm, err := h.Service.CreateBookmark(r.Context(), user.UserID, EntityContent, contentID, input.Folder, folderID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2770,8 +2766,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2782,7 +2777,7 @@ func (h *Handlers) RemoveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.RemoveBookmark(r.Context(), tenantID, user.UserID, EntityContent, contentID); err != nil {
+	if err := h.Service.RemoveBookmark(r.Context(), user.UserID, EntityContent, contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2825,8 +2820,7 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2853,13 +2847,13 @@ func (h *Handlers) MoveBookmark(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Validate folder ownership (BL-013).
-		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, tenantID, user.UserID); err != nil {
+		if err := h.Service.ValidateFolderOwnership(r.Context(), folderID, user.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "folder_not_found", "Bookmark folder not found")
 			return
 		}
 	}
 
-	if err := h.Service.SetBookmarkFolder(r.Context(), tenantID, user.UserID, EntityContent, contentID, folderID); err != nil {
+	if err := h.Service.SetBookmarkFolder(r.Context(), user.UserID, EntityContent, contentID, folderID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2896,8 +2890,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2909,13 +2902,13 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-001: only the content author or content.edit_any holder may tag it.
-	content, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	content, err := h.Service.GetContent(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only tag your own content")
 		return
 	}
@@ -2940,7 +2933,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 		}
 		// Get-or-create: user-typed slugs that don't exist yet are auto-
 		// created as tenant-scoped tags (Section 14 — composer flow).
-		slugMap, err := h.tagResolver.GetOrCreateTagSlugs(r.Context(), tenantID, input.TagSlugs)
+		slugMap, err := h.tagResolver.GetOrCreateTagSlugs(r.Context(), input.TagSlugs)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slugs", "One or more tag slugs could not be resolved")
 			return
@@ -2972,7 +2965,7 @@ func (h *Handlers) AddContentTag(w http.ResponseWriter, r *http.Request) {
 
 	maxTags := defaultMaxTags
 	if h.settings != nil {
-		maxTags = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "content.max_tags", defaultMaxTags)
+		maxTags = h.settings.GetIntOr(r.Context(), "content.max_tags", defaultMaxTags)
 	}
 
 	existing, err := h.Service.ListContentTags(r.Context(), contentID)
@@ -3011,8 +3004,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3024,13 +3016,13 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-001: only the content author or content.edit_any holder may untag it.
-	content, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	content, err := h.Service.GetContent(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, content.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, content.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author", "You can only remove tags from your own content")
 		return
 	}
@@ -3045,7 +3037,7 @@ func (h *Handlers) RemoveContentTag(w http.ResponseWriter, r *http.Request) {
 
 		slug := chi.URLParam(r, "tagId")
 
-		slugMap, rerr := h.tagResolver.ResolveTagSlugs(r.Context(), tenantID, []string{slug})
+		slugMap, rerr := h.tagResolver.ResolveTagSlugs(r.Context(), []string{slug})
 		if rerr != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_tag_slug", "Tag slug could not be resolved")
 			return
@@ -3079,8 +3071,7 @@ func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3091,7 +3082,7 @@ func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.Service.GetContent(r.Context(), contentID, tenantID); err != nil {
+	if _, err := h.Service.GetContent(r.Context(), contentID); err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
 		return
 	}
@@ -3114,7 +3105,7 @@ func (h *Handlers) FeatureContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	featured, err := h.Service.FeatureContent(r.Context(), tenantID, contentID, input.FeaturedOrder, featuredUntil)
+	featured, err := h.Service.FeatureContent(r.Context(), contentID, input.FeaturedOrder, featuredUntil)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3129,8 +3120,7 @@ func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3141,7 +3131,7 @@ func (h *Handlers) UnfeatureContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UnfeatureContent(r.Context(), tenantID, contentID); err != nil {
+	if err := h.Service.UnfeatureContent(r.Context(), contentID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -3159,8 +3149,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3180,7 +3169,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	share, err := h.Service.ShareContent(r.Context(), tenantID, contentID, user.UserID, input.Platform)
+	share, err := h.Service.ShareContent(r.Context(), contentID, user.UserID, input.Platform)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3194,7 +3183,7 @@ func (h *Handlers) ShareContent(w http.ResponseWriter, r *http.Request) {
 
 // GetRelatedContent handles GET /api/v1/content/{id}/related.
 func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3217,7 +3206,7 @@ func (h *Handlers) GetRelatedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contents, err := h.Service.GetRelatedContent(r.Context(), tenantID, contentID, *score.RelevanceEmbedding, limit)
+	contents, err := h.Service.GetRelatedContent(r.Context(), contentID, *score.RelevanceEmbedding, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -3238,7 +3227,7 @@ func (h *Handlers) ListContentTypes(w http.ResponseWriter, r *http.Request) {
 	guideCategories := []map[string]string{}
 
 	if h.guideCategoryLister != nil && tenantID.Valid {
-		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context(), tenantID)
+		cats, err := h.guideCategoryLister.ListGuideCategories(r.Context())
 		if err == nil {
 			for _, c := range cats {
 				guideCategories = append(guideCategories, map[string]string{
@@ -3304,8 +3293,7 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3317,13 +3305,13 @@ func (h *Handlers) GetContentSpaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-005: the author may view/edit spaces; content.edit_any holders may too.
-	existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	existing, err := h.Service.GetContent(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can view space assignments")
 		return
@@ -3395,13 +3383,13 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 
 	// Verify the content exists and belongs to the caller's tenant.
 	// BUG-005: the author may update spaces; content.edit_any holders may too.
-	existing, err := h.Service.GetContent(r.Context(), contentID, tenantID)
+	existing, err := h.Service.GetContent(r.Context(), contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	if !canModifyContent(r, user.UserID, tenantID, existing.AuthorID, "content.edit_any") {
+	if !canModifyContent(r, user.UserID, existing.AuthorID, "content.edit_any") {
 		errpkg.WriteError(w, http.StatusForbidden, "not_author",
 			"Only the author can update space assignments")
 		return
@@ -3422,8 +3410,8 @@ func (h *Handlers) UpdateContentSpaces(w http.ResponseWriter, r *http.Request) {
 
 	bypassSpaceCheck := false
 	if resolver := rbac.FromContext(r.Context()); resolver != nil {
-		bypassSpaceCheck = resolver.IsSuperAdmin(r.Context(), user.UserID, tenantID) ||
-			resolver.HasPermission(r.Context(), user.UserID, tenantID, "content.edit_any")
+		bypassSpaceCheck = resolver.IsSuperAdmin(r.Context(), user.UserID) ||
+			resolver.HasPermission(r.Context(), user.UserID, "content.edit_any")
 	}
 
 	if err := h.Service.UpdateContentSpaces(r.Context(), contentID, tenantID, user.UserID, primarySpaceID, additionalSpaceIDs, bypassSpaceCheck); err != nil {

@@ -125,7 +125,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // Apply handles POST /learn/university/instructor/apply.
 func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -141,7 +141,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.Apply(r.Context(), tenantID, user.UserID, in)
+	prof, err := h.service.Apply(r.Context(), user.UserID, in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -181,11 +181,11 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 	// Enrich with aggregate dashboard stats.
 	var profID pgtype.UUID
 	_ = profID.Scan(prof.ID)
-	summary, _ := h.service.store.DashboardSummary(r.Context(), tenantID, profID)
+	summary, _ := h.service.store.DashboardSummary(r.Context(), profID)
 
 	currency := ""
 	if h.service.settings != nil {
-		currency = h.service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "wallet.default_currency", "")
+		currency = h.service.settings.GetStringOr(r.Context(), "wallet.default_currency", "")
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
@@ -264,7 +264,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 
 // GetPublicInstructor handles GET /learn/university/instructors/{id}.
 func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -274,14 +274,14 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetPublic(r.Context(), tenantID, instructorID)
+	prof, err := h.service.store.GetPublic(r.Context(), instructorID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// List only live marketplace tracks, filtered at the DB level (BUG-017).
-	pubTracks, _ := h.service.store.ListPublishedTracksByInstructor(r.Context(), tenantID, instructorID)
+	pubTracks, _ := h.service.store.ListPublishedTracksByInstructor(r.Context(), instructorID)
 	live := make([]Track, 0, len(pubTracks))
 
 	for _, t := range pubTracks {
@@ -302,7 +302,7 @@ func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
 
 // ListMyTracks handles GET /learn/university/my/tracks.
 func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -312,13 +312,13 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	rows, err := h.service.store.ListTracksByInstructor(r.Context(), tenantID, prof.ID)
+	rows, err := h.service.store.ListTracksByInstructor(r.Context(), prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -334,7 +334,7 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 
 // CreateMyTrack handles POST /learn/university/my/tracks.
 func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -344,7 +344,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -403,7 +403,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	track, err := h.service.CreateTrack(r.Context(), tenantID, prof.ID, in)
+	track, err := h.service.CreateTrack(r.Context(), prof.ID, in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -414,7 +414,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMyTrack handles PATCH /learn/university/my/tracks/{id}.
 func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -429,7 +429,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -479,7 +479,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	track, err := h.service.UpdateTrack(r.Context(), tenantID, trackID, prof.ID, in)
+	track, err := h.service.UpdateTrack(r.Context(), trackID, prof.ID, in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -490,7 +490,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // SubmitMyTrack handles POST /learn/university/my/tracks/{id}/submit.
 func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -505,13 +505,13 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	track, err := h.service.SubmitTrack(r.Context(), tenantID, trackID, prof.ID)
+	track, err := h.service.SubmitTrack(r.Context(), trackID, prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -522,7 +522,7 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 
 // GetMyTrackStats handles GET /learn/university/my/tracks/{id}/stats.
 func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -537,13 +537,13 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	track, err := h.service.store.GetTrackByID(r.Context(), tenantID, trackID)
+	track, err := h.service.store.GetTrackByID(r.Context(), trackID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -554,16 +554,16 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := h.service.store.EarningsSummary(r.Context(), tenantID, prof.ID)
+	summary, err := h.service.store.EarningsSummary(r.Context(), prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	// Track-specific series + completion rate (BUG-007).
-	revSeries, _ := h.service.store.TrackRevenueSeries(r.Context(), tenantID, trackID)
-	enrollSeries, _ := h.service.store.TrackEnrollmentSeries(r.Context(), tenantID, trackID)
-	completion, _ := h.service.store.TrackCompletionRate(r.Context(), tenantID, trackID)
+	revSeries, _ := h.service.store.TrackRevenueSeries(r.Context(), trackID)
+	enrollSeries, _ := h.service.store.TrackEnrollmentSeries(r.Context(), trackID)
+	completion, _ := h.service.store.TrackCompletionRate(r.Context(), trackID)
 
 	var completionRate float64
 	if completion.TotalEnrolled > 0 {
@@ -617,7 +617,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 // contract); the university page Courses tab sends space_id to list linked
 // tracks (ADR-063 §9.2).
 func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -636,13 +636,13 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		f.SpaceID = spaceID
 	}
 
-	rows, err := h.service.store.ListCatalog(r.Context(), tenantID, f, limit, offset)
+	rows, err := h.service.store.ListCatalog(r.Context(), f, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.service.store.CountCatalog(r.Context(), tenantID, f)
+	total, err := h.service.store.CountCatalog(r.Context(), f)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -661,7 +661,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 
 // GetCatalogTrack handles GET /learn/university/catalog/{slug}.
 func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -672,7 +672,7 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.service.store.GetCatalogTrackBySlug(r.Context(), tenantID, slug)
+	track, err := h.service.store.GetCatalogTrackBySlug(r.Context(), slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -690,7 +690,7 @@ func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
 // Returns the earnings summary (open/paid/total) plus a daily revenue_series
 // for the LayerChart (BUG-005).
 func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -700,19 +700,19 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	summary, err := h.service.store.EarningsSummary(r.Context(), tenantID, prof.ID)
+	summary, err := h.service.store.EarningsSummary(r.Context(), prof.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	series, _ := h.service.store.RevenueSeries(r.Context(), tenantID, prof.ID)
+	series, _ := h.service.store.RevenueSeries(r.Context(), prof.ID)
 	revenueSeries := make([]map[string]any, 0, len(series))
 
 	for _, s := range series {
@@ -728,7 +728,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 
 	currency := ""
 	if h.service.settings != nil {
-		currency = h.service.settings.GetStringOr(r.Context(), pgtype.UUID{}, "wallet.default_currency", "")
+		currency = h.service.settings.GetStringOr(r.Context(), "wallet.default_currency", "")
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
@@ -744,7 +744,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 // Returns payouts mapped to a clean DTO with the fields the frontend expects
 // (amount_kobo, requested_at, processed_at, status) (BUG-006).
 func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -756,13 +756,13 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePagination(r)
 
-	prof, err := h.service.store.GetByUser(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	payouts, err := h.service.store.ListPayoutsByInstructor(r.Context(), tenantID, prof.ID, limit, offset)
+	payouts, err := h.service.store.ListPayoutsByInstructor(r.Context(), prof.ID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -813,7 +813,7 @@ func payoutFromRow(p gen.InstructorPayout) payoutDTO {
 // Optional ?space_id= scopes the list to instructors with a track targeted at
 // that space (ADR-063 admin per-university view).
 func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -822,13 +822,13 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListByStatus(r.Context(), tenantID, status, spaceID, limit, offset)
+	rows, err := h.service.store.ListByStatus(r.Context(), status, spaceID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.service.store.CountByStatus(r.Context(), tenantID, status, spaceID)
+	total, err := h.service.store.CountByStatus(r.Context(), status, spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -848,7 +848,7 @@ func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) 
 // AdminGetInstructor handles GET /admin/university/instructors/{id}.
 // Returns the masked instructor profile (payout_method is never exposed raw).
 func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -858,7 +858,7 @@ func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByID(r.Context(), tenantID, instructorID)
+	prof, err := h.service.store.GetByID(r.Context(), instructorID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1008,7 +1008,7 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 // Returns {data, meta{total,limit,offset}} so the admin hub can show the
 // true pending count (not just the page length).
 func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1016,7 +1016,7 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 	limit, offset := parsePagination(r)
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListPendingTracks(r.Context(), tenantID, spaceID, limit, offset)
+	rows, err := h.service.store.ListPendingTracks(r.Context(), spaceID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1026,7 +1026,7 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 		rows = []gen.ListPendingUniversityTracksRow{}
 	}
 
-	total, err := h.service.store.CountPendingTracks(r.Context(), tenantID, spaceID)
+	total, err := h.service.store.CountPendingTracks(r.Context(), spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1065,7 +1065,7 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 // Returns {data, meta{total,limit,offset}} so the admin hub can show the
 // true pending-payout count (not just the page length).
 func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1074,7 +1074,7 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	payouts, err := h.service.store.ListPayoutsByStatus(r.Context(), tenantID, spaceID, status, limit, offset)
+	payouts, err := h.service.store.ListPayoutsByStatus(r.Context(), spaceID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1084,7 +1084,7 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 		payouts = []gen.ListInstructorPayoutsByStatusRow{}
 	}
 
-	total, err := h.service.store.CountPayoutsByStatus(r.Context(), tenantID, spaceID, status)
+	total, err := h.service.store.CountPayoutsByStatus(r.Context(), spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1098,7 +1098,7 @@ func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetPayout handles GET /admin/university/payouts/{id}.
 func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1108,7 +1108,7 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payout, err := h.service.store.GetPayout(r.Context(), tenantID, payoutID)
+	payout, err := h.service.store.GetPayout(r.Context(), payoutID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1119,7 +1119,7 @@ func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
 
 // AdminProcessPayout handles POST /admin/university/payouts/{id}/process.
 func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1129,12 +1129,12 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.SendInstructorPayout(r.Context(), tenantID, payoutID); err != nil {
+	if err := h.service.SendInstructorPayout(r.Context(), payoutID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	payout, err := h.service.store.GetPayout(r.Context(), tenantID, payoutID)
+	payout, err := h.service.store.GetPayout(r.Context(), payoutID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1149,7 +1149,7 @@ func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
 // ?payout_id= ?from= ?to= (RFC 3339, half-open [from,to)) and offset pagination
 // (?page=&limit=). Returns the standard {data, meta{total,page,limit}} envelope.
 func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1183,7 +1183,7 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 		f.ToTs = ts
 	}
 
-	splits, err := h.service.store.ListRevenueSplits(r.Context(), tenantID, f, limit, offset)
+	splits, err := h.service.store.ListRevenueSplits(r.Context(), f, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1193,7 +1193,7 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 		splits = []gen.ListRevenueSplitsRow{}
 	}
 
-	total, err := h.service.store.CountRevenueSplits(r.Context(), tenantID, f)
+	total, err := h.service.store.CountRevenueSplits(r.Context(), f)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1213,7 +1213,7 @@ func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request
 // AdminGetRevenueSplit handles GET /admin/university/revenue-splits/{id}.
 // Read-only single fetch of an immutable revenue-split audit record (ADR-063 §9).
 func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1223,7 +1223,7 @@ func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	split, err := h.service.store.GetRevenueSplitByID(r.Context(), tenantID, splitID)
+	split, err := h.service.store.GetRevenueSplitByID(r.Context(), splitID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1342,7 +1342,7 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 // submission_status (BUG-002). Optional ?space_id= scopes to tracks targeted
 // at that space.
 func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1351,7 +1351,7 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
 
-	rows, err := h.service.store.ListAllTracks(r.Context(), tenantID, spaceID, status, limit, offset)
+	rows, err := h.service.store.ListAllTracks(r.Context(), spaceID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1361,7 +1361,7 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 		rows = []gen.ListAllUniversityTracksRow{}
 	}
 
-	total, err := h.service.store.CountAllTracks(r.Context(), tenantID, spaceID, status)
+	total, err := h.service.store.CountAllTracks(r.Context(), spaceID, status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1375,7 +1375,7 @@ func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetTrack handles GET /admin/university/tracks/{id}.
 func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1385,7 +1385,7 @@ func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.service.store.GetTrackByID(r.Context(), tenantID, trackID)
+	track, err := h.service.store.GetTrackByID(r.Context(), trackID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1397,7 +1397,7 @@ func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
 // AdminRejectTrack handles POST /admin/university/tracks/{id}/reject.
 // Rejects a submitted track with an optional reason (BUG-002, BUG-004).
 func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1413,7 +1413,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	track, err := h.service.store.RejectTrack(r.Context(), tenantID, trackID, body.Reason)
+	track, err := h.service.store.RejectTrack(r.Context(), trackID, body.Reason)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1425,7 +1425,7 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 // AdminFailPayout handles POST /admin/university/payouts/{id}/fail.
 // Marks a payout as failed with an optional reason (BUG-002).
 func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1441,7 +1441,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	payout, err := h.service.store.UpdatePayoutStatus(r.Context(), tenantID, payoutID, "failed", nil, body.Reason)
+	payout, err := h.service.store.UpdatePayoutStatus(r.Context(), payoutID, "failed", nil, body.Reason)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1453,7 +1453,7 @@ func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
 // AdminUpdateInstructor handles PATCH /admin/university/instructors/{id}.
 // Updates an instructor's tier and/or commission override (BUG-002).
 func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1489,7 +1489,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	prof, err := h.service.store.UpdateInstructorAdmin(r.Context(), tenantID, instructorID, tier, commission)
+	prof, err := h.service.store.UpdateInstructorAdmin(r.Context(), instructorID, tier, commission)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1502,7 +1502,7 @@ func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request)
 // Toggles the featured flag on a marketplace track (BUG-012: wires the
 // university.course.feature RBAC node).
 func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1523,7 +1523,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 		featured = *body.Featured
 	}
 
-	track, err := h.service.store.SetTrackFeatured(r.Context(), tenantID, trackID, featured)
+	track, err := h.service.store.SetTrackFeatured(r.Context(), trackID, featured)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1540,7 +1540,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 // AdminListCategories handles GET /admin/university/categories.
 // Supports ?active=true|false and ?search= filters plus ?page=&limit= pagination.
 func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1549,7 +1549,7 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 	active := r.URL.Query().Get("active")
 	search := r.URL.Query().Get("search")
 
-	rows, err := h.service.store.ListTrackCategories(r.Context(), tenantID, active, search, limit, offset)
+	rows, err := h.service.store.ListTrackCategories(r.Context(), active, search, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1559,7 +1559,7 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 		rows = []gen.UniversityTrackCategory{}
 	}
 
-	total, err := h.service.store.CountTrackCategories(r.Context(), tenantID, active, search)
+	total, err := h.service.store.CountTrackCategories(r.Context(), active, search)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1578,7 +1578,7 @@ func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
 
 // AdminCreateCategory handles POST /admin/university/categories.
 func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1610,7 +1610,7 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 		isActive = *body.IsActive
 	}
 
-	cat, err := h.service.store.CreateTrackCategory(r.Context(), tenantID, body.Slug, body.Name, sortOrder, isActive)
+	cat, err := h.service.store.CreateTrackCategory(r.Context(), body.Slug, body.Name, sortOrder, isActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1621,7 +1621,7 @@ func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
 
 // AdminGetCategory handles GET /admin/university/categories/{id}.
 func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1631,7 +1631,7 @@ func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cat, err := h.service.store.GetTrackCategory(r.Context(), tenantID, id)
+	cat, err := h.service.store.GetTrackCategory(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1642,7 +1642,7 @@ func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
 
 // AdminUpdateCategory handles PATCH /admin/university/categories/{id}.
 func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1664,7 +1664,7 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cat, err := h.service.store.UpdateTrackCategory(r.Context(), tenantID, id, body.Name, body.Slug, body.SortOrder, body.IsActive)
+	cat, err := h.service.store.UpdateTrackCategory(r.Context(), id, body.Name, body.Slug, body.SortOrder, body.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1676,7 +1676,7 @@ func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
 // AdminDeleteCategory handles DELETE /admin/university/categories/{id}.
 // Blocked if any learning_tracks still reference the category slug.
 func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1686,13 +1686,13 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Fetch the category first to get the slug for the track reference check.
-	cat, err := h.service.store.GetTrackCategory(r.Context(), tenantID, id)
+	cat, err := h.service.store.GetTrackCategory(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	count, err := h.service.store.CountTracksByCategory(r.Context(), tenantID, cat.Slug)
+	count, err := h.service.store.CountTracksByCategory(r.Context(), cat.Slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1704,7 +1704,7 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.store.DeleteTrackCategory(r.Context(), tenantID, id); err != nil {
+	if err := h.service.store.DeleteTrackCategory(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1715,12 +1715,12 @@ func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
 // PublicListActiveCategories handles GET /learn/university/categories.
 // No auth required — returns only active categories for the catalog dropdown.
 func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	rows, err := h.service.store.ListActiveTrackCategories(r.Context(), tenantID)
+	rows, err := h.service.store.ListActiveTrackCategories(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return

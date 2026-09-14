@@ -229,9 +229,9 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 
 	// If an admin configured a one-time activity point rule for this reason,
 	// only award the first matching credit per user (Section 28).
-	rule, err := s.store.getActivityRuleByKey(ctx, tenantID, p.Reason)
+	rule, err := s.store.getActivityRuleByKey(ctx, p.Reason)
 	if err == nil && rule.OneTime {
-		count, err := s.store.countUserLedgerBySource(ctx, tenantID, userID, p.Reason)
+		count, err := s.store.countUserLedgerBySource(ctx, userID, p.Reason)
 		if err != nil {
 			return fmt.Errorf("wallet:award_points: checking one-time rule: %w", err)
 		}

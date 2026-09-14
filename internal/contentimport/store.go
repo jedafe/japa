@@ -37,7 +37,7 @@ func NewStore(database *db.DB) *Store {
 
 // Create inserts a new content_imports row with status='pending' and
 // returns the full record. The source_url may be nil for ZIP uploads.
-func (s *Store) Create(ctx context.Context, tenantID, userID pgtype.UUID, sourceType string, sourceURL *string) (gen.ContentImport, error) {
+func (s *Store) Create(ctx context.Context, userID pgtype.UUID, sourceType string, sourceURL *string) (gen.ContentImport, error) {
 	imp, err := s.queries.CreateContentImport(ctx, gen.CreateContentImportParams{
 
 		UserID:     userID,
@@ -52,7 +52,7 @@ func (s *Store) Create(ctx context.Context, tenantID, userID pgtype.UUID, source
 }
 
 // GetByID returns a single content_imports row scoped to the tenant.
-func (s *Store) GetByID(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
+func (s *Store) GetByID(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
 	imp, err := s.queries.GetContentImportByID(ctx,
 
 		importID,
@@ -65,7 +65,7 @@ func (s *Store) GetByID(ctx context.Context, tenantID, importID pgtype.UUID) (ge
 }
 
 // ListUserImports returns a page of a user's import history, newest first.
-func (s *Store) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUID, offset, limit int32) ([]gen.ContentImport, error) {
+func (s *Store) ListUserImports(ctx context.Context, userID pgtype.UUID, offset, limit int32) ([]gen.ContentImport, error) {
 	rows, err := s.queries.ListUserContentImports(ctx, gen.ListUserContentImportsParams{
 
 		UserID:     userID,
@@ -80,7 +80,7 @@ func (s *Store) ListUserImports(ctx context.Context, tenantID, userID pgtype.UUI
 }
 
 // CountUserImports returns the total number of imports for a user.
-func (s *Store) CountUserImports(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+func (s *Store) CountUserImports(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	count, err := s.queries.CountUserContentImports(ctx,
 
 		userID,
@@ -94,7 +94,7 @@ func (s *Store) CountUserImports(ctx context.Context, tenantID, userID pgtype.UU
 
 // AdminListImports returns a page of all imports for a tenant, optionally
 // filtered by status. An empty status string returns all statuses.
-func (s *Store) AdminListImports(ctx context.Context, tenantID pgtype.UUID, status string, offset, limit int32) ([]gen.AdminListContentImportsRow, error) {
+func (s *Store) AdminListImports(ctx context.Context, status string, offset, limit int32) ([]gen.AdminListContentImportsRow, error) {
 	rows, err := s.queries.AdminListContentImports(ctx, gen.AdminListContentImportsParams{
 
 		Status:     status,
@@ -110,7 +110,7 @@ func (s *Store) AdminListImports(ctx context.Context, tenantID pgtype.UUID, stat
 
 // AdminCountImports returns the total number of imports for a tenant,
 // optionally filtered by status.
-func (s *Store) AdminCountImports(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+func (s *Store) AdminCountImports(ctx context.Context, status string) (int64, error) {
 	count, err := s.queries.AdminCountContentImports(ctx,
 
 		status,
@@ -125,7 +125,7 @@ func (s *Store) AdminCountImports(ctx context.Context, tenantID pgtype.UUID, sta
 // ResetForRetry resets a failed or partial import back to pending status,
 // zeroing the counts and clearing the error log. Only imports with status
 // 'failed' or 'partial' can be retried.
-func (s *Store) ResetForRetry(ctx context.Context, tenantID, importID pgtype.UUID) (gen.ContentImport, error) {
+func (s *Store) ResetForRetry(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
 	imp, err := s.queries.ResetContentImportForRetry(ctx,
 
 		importID,
@@ -139,7 +139,7 @@ func (s *Store) ResetForRetry(ctx context.Context, tenantID, importID pgtype.UUI
 
 // UpdateStatus updates the status, counts, error log, and completed_at
 // timestamp for an import. Called by the import:process_source task handler.
-func (s *Store) UpdateStatus(ctx context.Context, tenantID, importID pgtype.UUID, status string, totalItems, importedCount, failedCount *int32, errorLog []byte, completedAt pgtype.Timestamptz) (gen.ContentImport, error) {
+func (s *Store) UpdateStatus(ctx context.Context, importID pgtype.UUID, status string, totalItems, importedCount, failedCount *int32, errorLog []byte, completedAt pgtype.Timestamptz) (gen.ContentImport, error) {
 	imp, err := s.queries.UpdateContentImportStatus(ctx, gen.UpdateContentImportStatusParams{
 		Status:        status,
 		TotalItems:    totalItems,

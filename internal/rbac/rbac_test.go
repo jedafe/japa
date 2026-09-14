@@ -121,7 +121,7 @@ func TestCacheHitL1_SkipsDB(t *testing.T) {
 	}
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}
-	tenantID := pgtype.UUID{Bytes: [16]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}}
+	_ = pgtype.UUID{Bytes: [16]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}}
 
 	// Seed L1 cache directly.
 	uc := &UserContext{
@@ -131,7 +131,7 @@ func TestCacheHitL1_SkipsDB(t *testing.T) {
 	r.cacheSet(userID.String(), uc)
 
 	// GetUserContext should return from L1 without calling loadUserContext.
-	got, err := r.GetUserContext(t.Context(), userID, tenantID)
+	got, err := r.GetUserContext(t.Context(), userID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestGracefulDegradation_NilValkey(t *testing.T) {
 	}
 
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}}
-	tenantID := pgtype.UUID{Bytes: [16]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}}
+	_ = pgtype.UUID{Bytes: [16]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}}
 
 	// L1 miss + nil Valkey → should NOT panic (no DB either, so loadUserContext
 	// would fail — but we're testing that the nil Valkey path doesn't crash).
@@ -233,7 +233,7 @@ func TestGracefulDegradation_NilValkey(t *testing.T) {
 	}
 	r.cacheSet(userID.String(), uc)
 
-	got, err := r.GetUserContext(t.Context(), userID, tenantID)
+	got, err := r.GetUserContext(t.Context(), userID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

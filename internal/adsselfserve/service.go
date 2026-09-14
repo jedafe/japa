@@ -60,7 +60,7 @@ type TaskEnqueuer interface {
 type Notifier interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -75,7 +75,7 @@ type Notifier interface {
 // synchronous check prevents unpaid campaigns from entering the review queue.
 // Injected from server.go to avoid an import cycle with the wallet package.
 type BalanceChecker interface {
-	HasSufficientCredits(ctx context.Context, tenantID, orgID pgtype.UUID, amount int) (bool, error)
+	HasSufficientCredits(ctx context.Context, orgID pgtype.UUID, amount int) (bool, error)
 }
 
 // CreateCampaignInput is the request body for creating a self-serve campaign.
@@ -141,8 +141,8 @@ func CalculateCost(flatRate, durationDays int) int {
 }
 
 // ListSlots returns available ad slot types with flat_rate for self-serve.
-func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotInfo, error) {
-	rows, err := s.store.ListAdSlotTypes(ctx, tenantID)
+func (s *Service) ListSlots(ctx context.Context) ([]SlotInfo, error) {
+	rows, err := s.store.ListAdSlotTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -173,17 +173,17 @@ func (s *Service) ListSlots(ctx context.Context, tenantID pgtype.UUID) ([]SlotIn
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Review Gate)
 // //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §3
 func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pgtype.UUID, input CreateCampaignInput) (gen.AdCampaign, error) {
-	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "ads.self_serve_enabled")
+	enabled, err := s.settings.GetSettingBool(ctx, "ads.self_serve_enabled")
 	if err == nil && !enabled {
 		return gen.AdCampaign{}, ErrFeatureDisabled
 	}
 
-	minDays := s.settings.GetIntOr(ctx, pgtype.UUID{}, "ads.min_campaign_days", 3)
+	minDays := s.settings.GetIntOr(ctx, "ads.min_campaign_days", 3)
 	if input.DurationDays < minDays {
 		return gen.AdCampaign{}, fmt.Errorf("%w: must be at least %d days", ErrDurationTooShort, minDays)
 	}
 
-	verified, err := s.store.IsOrgVerified(ctx, tenantID, orgID)
+	verified, err := s.store.IsOrgVerified(ctx, orgID)
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check org verification: %w", err)
 	}
@@ -207,7 +207,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	}
 
 	// Get the slot type's flat_rate.
-	slots, err := s.store.ListAdSlotTypes(ctx, tenantID)
+	slots, err := s.store.ListAdSlotTypes(ctx)
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: list slot types: %w", err)
 	}
@@ -234,7 +234,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 	// the check is skipped — backward-compatible with existing deployments.
 	// Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Payment & Escrow)
 	if s.balanceChecker != nil {
-		sufficient, err := s.balanceChecker.HasSufficientCredits(ctx, tenantID, orgID, cost)
+		sufficient, err := s.balanceChecker.HasSufficientCredits(ctx, orgID, cost)
 		if err != nil {
 			return gen.AdCampaign{}, fmt.Errorf("adsselfserve: check wallet balance: %w", err)
 		}
@@ -338,12 +338,12 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, orgID, userID pg
 }
 
 // GetCampaign returns a single campaign scoped to the org.
-func (s *Service) GetCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
-	return s.store.GetCampaign(ctx, tenantID, orgID, campaignID)
+func (s *Service) GetCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	return s.store.GetCampaign(ctx, orgID, campaignID)
 }
 
 // ListCampaigns returns a paginated list of an org's campaigns.
-func (s *Service) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID, status string, page, limit int) ([]gen.AdCampaign, int64, error) {
+func (s *Service) ListCampaigns(ctx context.Context, orgID pgtype.UUID, status string, page, limit int) ([]gen.AdCampaign, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -353,12 +353,12 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID
 		offset = 0
 	}
 
-	rows, err := s.store.ListCampaigns(ctx, tenantID, orgID, status, int32(limit), int32(offset)) // #nosec
+	rows, err := s.store.ListCampaigns(ctx, orgID, status, int32(limit), int32(offset)) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountCampaigns(ctx, tenantID, orgID, status)
+	total, err := s.store.CountCampaigns(ctx, orgID, status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -367,7 +367,7 @@ func (s *Service) ListCampaigns(ctx context.Context, tenantID, orgID pgtype.UUID
 }
 
 // UpdateCampaignCreative updates the creative content of a pending/paused campaign.
-func (s *Service) UpdateCampaignCreative(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID, content json.RawMessage, targetURL string) (gen.AdCampaign, error) {
+func (s *Service) UpdateCampaignCreative(ctx context.Context, orgID, campaignID pgtype.UUID, content json.RawMessage, targetURL string) (gen.AdCampaign, error) {
 	var contentArg []byte = content
 
 	var targetURLArg *string
@@ -385,18 +385,18 @@ func (s *Service) UpdateCampaignCreative(ctx context.Context, tenantID, orgID, c
 }
 
 // PauseCampaign transitions an active campaign to paused.
-func (s *Service) PauseCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
-	return s.store.PauseCampaign(ctx, tenantID, orgID, campaignID)
+func (s *Service) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	return s.store.PauseCampaign(ctx, orgID, campaignID)
 }
 
 // ResumeCampaign transitions a paused campaign to active.
-func (s *Service) ResumeCampaign(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
-	return s.store.ResumeCampaign(ctx, tenantID, orgID, campaignID)
+func (s *Service) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
+	return s.store.ResumeCampaign(ctx, orgID, campaignID)
 }
 
 // GetCampaignStats returns impression/click/CTR/spend stats for a campaign.
-func (s *Service) GetCampaignStats(ctx context.Context, tenantID, orgID, campaignID pgtype.UUID) (CampaignStats, error) {
-	row, err := s.store.GetCampaignStats(ctx, tenantID, orgID, campaignID)
+func (s *Service) GetCampaignStats(ctx context.Context, orgID, campaignID pgtype.UUID) (CampaignStats, error) {
+	row, err := s.store.GetCampaignStats(ctx, orgID, campaignID)
 	if err != nil {
 		return CampaignStats{}, err
 	}
@@ -418,7 +418,7 @@ func (s *Service) GetCampaignStats(ctx context.Context, tenantID, orgID, campaig
 // Called by the ads:refund_campaign_credits worker task.
 // Honours the ads.credit_refund_on_reject system setting (§61, default true).
 func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
-	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
+	campaign, err := s.store.GetCampaignForRefund(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("adsselfserve: get campaign for refund: %w", err)
 	}
@@ -427,7 +427,7 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 	// When false, the campaign is still marked as refunded (budget zeroed,
 	// status = rejected) but credits are NOT returned to the org wallet.
 	refundEnabled := true
-	if v, err := s.settings.GetSettingBool(ctx, tenantID, "ads.credit_refund_on_reject"); err == nil {
+	if v, err := s.settings.GetSettingBool(ctx, "ads.credit_refund_on_reject"); err == nil {
 		refundEnabled = v
 	}
 
@@ -446,7 +446,7 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 		slog.Info("adsselfserve: credit refund skipped (ads.credit_refund_on_reject=false)", "campaign_id", campaignID.String())
 	}
 
-	return s.store.MarkCampaignRefunded(ctx, tenantID, campaignID)
+	return s.store.MarkCampaignRefunded(ctx, campaignID)
 }
 
 // NotifyCampaignStatus sends a notification to the campaign creator when the
@@ -454,8 +454,8 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, tenantID, campaignI
 // ads:notify_campaign_status worker task.
 // // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks)
 // //	japaconnect-engineering/adr/ADR-079-self-serve-ads.md §7
-func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID pgtype.UUID) error {
-	campaign, err := s.store.GetCampaignForRefund(ctx, tenantID, campaignID)
+func (s *Service) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
+	campaign, err := s.store.GetCampaignForRefund(ctx, campaignID)
 	if err != nil {
 		return fmt.Errorf("adsselfserve: load campaign for notify: %w", err)
 	}
@@ -489,7 +489,7 @@ func (s *Service) NotifyCampaignStatus(ctx context.Context, tenantID, campaignID
 
 	// System-sourced notification (no human actor).
 	if err := s.notifier.DispatchNotification(
-		ctx, tenantID, campaign.CreatedBy,
+		ctx, campaign.CreatedBy,
 		nType, title,
 		pgtype.UUID{}, // no actor — system notification
 		"ad_campaign", campaign.ID,

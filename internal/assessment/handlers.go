@@ -161,7 +161,7 @@ func publicFieldDTOs(fields []AssessmentField) []map[string]any {
 // assessment form with scoring metadata (thresholds only, not weights —
 // weights are internal per ADR-071 §2). Public route.
 func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -173,13 +173,13 @@ func (h *Handlers) HandleGetAssessment(w http.ResponseWriter, r *http.Request) {
 
 	// Check the global toggle (assessment.enabled).
 	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), pgtype.UUID{}, "assessment.enabled", true); !enabled {
+		if enabled := h.settings.GetBoolOr(r.Context(), "assessment.enabled", true); !enabled {
 			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}
 	}
 
-	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
+	form, err := h.service.GetActiveAssessment(r.Context())
 	if err != nil {
 		slog.Error("assessment: get active failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
@@ -238,7 +238,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.settings != nil {
-		if enabled := h.settings.GetBoolOr(r.Context(), pgtype.UUID{}, "assessment.enabled", true); !enabled {
+		if enabled := h.settings.GetBoolOr(r.Context(), "assessment.enabled", true); !enabled {
 			errpkg.WriteError(w, http.StatusNotFound, "assessment_disabled", "Assessment is not available")
 			return
 		}
@@ -259,7 +259,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the active assessment form to resolve the form ID.
-	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
+	form, err := h.service.GetActiveAssessment(r.Context())
 	if err != nil {
 		slog.Error("assessment: submit: get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
@@ -301,7 +301,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 // single assessment result with roadmap. Public if the result has no user_id
 // (anonymous); auth required for user results.
 func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -316,7 +316,7 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.GetResult(r.Context(), tenantID, resultID)
+	result, err := h.service.GetResult(r.Context(), resultID)
 	if err != nil {
 		slog.Error("assessment: get result failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
@@ -355,7 +355,7 @@ func (h *Handlers) HandleGetResult(w http.ResponseWriter, r *http.Request) {
 // and no in-flight scoring is expected (treated as pending here — the caller
 // distinguishes via retry budget on the client).
 func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -370,7 +370,7 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result, err := h.service.GetResultBySubmission(r.Context(), tenantID, submissionID)
+	result, err := h.service.GetResultBySubmission(r.Context(), submissionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Not scored yet — tell the client to keep polling.
@@ -409,7 +409,7 @@ func (h *Handlers) HandleGetResultBySubmission(w http.ResponseWriter, r *http.Re
 // visitor's journey context captured at submission time. Anonymous results are
 // public; user results require the owner.
 func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -429,7 +429,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := h.service.GetResult(r.Context(), tenantID, resultID)
+	result, err := h.service.GetResult(r.Context(), resultID)
 	if err != nil {
 		slog.Error("assessment: get result roadmap: load result failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "result_not_found", "Assessment result not found")
@@ -454,7 +454,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 		requesterID = u.UserID
 	}
 
-	fieldValues, err := h.service.GetSubmissionFieldValues(r.Context(), tenantID, result.SubmissionID)
+	fieldValues, err := h.service.GetSubmissionFieldValues(r.Context(), result.SubmissionID)
 	if err != nil {
 		slog.Error("assessment: get result roadmap: load submission failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submission_lookup_failed", "Failed to load submission")
@@ -501,7 +501,7 @@ func (h *Handlers) HandleGetResultRoadmap(w http.ResponseWriter, r *http.Request
 	page, limit := parsePageParams(r)
 	offset := (page - 1) * limit
 
-	items, err := h.feedService.GetRoadmapFeedWithContext(r.Context(), tenantID, requesterID, slugs, limit, offset, &vc)
+	items, err := h.feedService.GetRoadmapFeedWithContext(r.Context(), requesterID, slugs, limit, offset, &vc)
 	if err != nil {
 		slog.Error("assessment: get result roadmap: feed failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "roadmap_feed_failed", "Failed to load roadmap content")
@@ -569,8 +569,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -582,7 +581,7 @@ func (h *Handlers) HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	results, total, err := h.service.ListHistory(r.Context(), tenantID, u.UserID, page, limit)
+	results, total, err := h.service.ListHistory(r.Context(), u.UserID, page, limit)
 	if err != nil {
 		slog.Error("assessment: history failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "history_failed", "Failed to get history")
@@ -622,8 +621,7 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -633,7 +631,7 @@ func (h *Handlers) HandleAdminGetForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
+	form, err := h.service.GetActiveAssessment(r.Context())
 	if err != nil {
 		slog.Error("assessment: admin get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
@@ -653,8 +651,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -679,7 +676,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Resolve the active form ID.
-	form, err := h.service.GetActiveAssessment(r.Context(), tenantID)
+	form, err := h.service.GetActiveAssessment(r.Context())
 	if err != nil {
 		slog.Error("assessment: admin update: get form failed", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_assessment", "No active assessment form found")
@@ -693,7 +690,7 @@ func (h *Handlers) HandleAdminUpdateForm(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	updated, err := h.service.UpdateFormScoring(r.Context(), tenantID, formID, body.ScoringConfig)
+	updated, err := h.service.UpdateFormScoring(r.Context(), formID, body.ScoringConfig)
 	if err != nil {
 		slog.Error("assessment: admin update form failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update scoring config")
@@ -717,8 +714,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -737,7 +733,7 @@ func (h *Handlers) HandleAdminListResults(w http.ResponseWriter, r *http.Request
 		sortDir = r.URL.Query().Get("order")
 	}
 
-	results, total, err := h.service.AdminListResults(r.Context(), tenantID, minScore, maxScore, page, limit, sortKey, sortDir)
+	results, total, err := h.service.AdminListResults(r.Context(), minScore, maxScore, page, limit, sortKey, sortDir)
 	if err != nil {
 		slog.Error("assessment: admin list results failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list results")
@@ -787,8 +783,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -798,7 +793,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	distribution, err := h.service.AdminScoreDistribution(r.Context(), tenantID)
+	distribution, err := h.service.AdminScoreDistribution(r.Context())
 	if err != nil {
 		slog.Error("assessment: admin stats: distribution failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get score distribution")
@@ -806,7 +801,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	completion, err := h.service.AdminCompletionStats(r.Context(), tenantID)
+	completion, err := h.service.AdminCompletionStats(r.Context())
 	if err != nil {
 		slog.Error("assessment: admin stats: completion failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get completion stats")

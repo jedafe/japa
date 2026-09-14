@@ -257,12 +257,12 @@ func countByCountry(items []radarItem) map[string]int {
 
 // filterBlockedRadarItems removes radar items whose source has been blocked by
 // the caller. It batch-loads source attribution from the intel_record links.
-func (h *Handlers) filterBlockedRadarItems(ctx context.Context, tenantID, userID pgtype.UUID, items []radarItem) ([]radarItem, error) {
+func (h *Handlers) filterBlockedRadarItems(ctx context.Context, userID pgtype.UUID, items []radarItem) ([]radarItem, error) {
 	if !userID.Valid || h.intelSources == nil || h.intelStores == nil {
 		return items, nil
 	}
 
-	blocked, err := h.intelSources.ListBlockedSourceIDs(ctx, tenantID, userID)
+	blocked, err := h.intelSources.ListBlockedSourceIDs(ctx, userID)
 	if err != nil || len(blocked) == 0 {
 		return items, err
 	}
@@ -316,8 +316,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, _ := optionalUser(w, r)
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -342,7 +341,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	schRows, err := h.listRadarScholarships(r.Context(), tenantID, hasCursor, cursorTS, cursorID, spaceID, country, limit, offset)
+	schRows, err := h.listRadarScholarships(r.Context(), hasCursor, cursorTS, cursorID, spaceID, country, limit, offset)
 	if err != nil {
 		slog.Error("intel: radar feed scholarships query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
@@ -366,27 +365,27 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	// not blank the entire radar).
 	items = appendRadarRows(items, domainFilter, "job",
 		func() ([]gen.IntelJob, error) {
-			return h.intelStores.ListIntelJobsKeyset(r.Context(), tenantID, gen.ListIntelJobsKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListIntelJobsKeyset(r.Context(), gen.ListIntelJobsKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, jobToRadarItem, "jobs")
 
 	items = appendRadarRows(items, domainFilter, "visa",
 		func() ([]gen.VisaRoute, error) {
-			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), tenantID, gen.ListVisaRoutesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListVisaRoutesIntelKeyset(r.Context(), gen.ListVisaRoutesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, visaRouteToRadarItem, "visa routes")
 
 	items = appendRadarRows(items, domainFilter, "housing",
 		func() ([]gen.HousingGuide, error) {
-			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), tenantID, gen.ListHousingGuidesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListHousingGuidesIntelKeyset(r.Context(), gen.ListHousingGuidesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, housingGuideToRadarItem, "housing guides")
 
 	items = appendRadarRows(items, domainFilter, "remittance",
 		func() ([]gen.RemittanceRate, error) {
-			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), tenantID, gen.ListRemittanceRatesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListRemittanceRatesIntelKeyset(r.Context(), gen.ListRemittanceRatesIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, remittanceRateToRadarItem, "remittance rates")
 
 	items = appendRadarRows(items, domainFilter, "cost_of_living",
 		func() ([]gen.ComparisonItem, error) {
-			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), tenantID, gen.ListComparisonItemsIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
+			return h.intelStores.ListComparisonItemsIntelKeyset(r.Context(), gen.ListComparisonItemsIntelKeysetParams{Column1: cursorTS, ID: cursorID, Limit: clampInt32(limit)})
 		}, comparisonItemToRadarItem, "cost-of-living")
 
 	// Sort the merged items by created_at desc (stable sort to preserve
@@ -394,7 +393,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 	sortRadarItems(items)
 
 	// Filter out items from sources the caller has blocked (v2 Task 2).
-	items, err = h.filterBlockedRadarItems(r.Context(), tenantID, userID, items)
+	items, err = h.filterBlockedRadarItems(r.Context(), userID, items)
 	if err != nil {
 		slog.Error("intel: radar feed block filter failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "radar_feed_failed", "Failed to load radar feed")
@@ -414,7 +413,7 @@ func (h *Handlers) HandleRadarFeed(w http.ResponseWriter, r *http.Request) {
 		nextCursor = encodeCursor(last.CreatedAt, last.ID)
 	}
 
-	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), tenantID, userID)
+	followedSpaces := h.resolveFollowedSpaceIDs(r.Context(), userID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"items":              items,
@@ -451,28 +450,28 @@ func appendRadarRows[T any](items []radarItem, domainFilter, domain string, list
 // listRadarScholarships runs the appropriate scholarship listing query for the
 // radar feed: keyset when a cursor is present, space/country filter when
 // supplied, otherwise the plain paginated list.
-func (h *Handlers) listRadarScholarships(ctx context.Context, tenantID pgtype.UUID, hasCursor bool, cursorTS pgtype.Timestamptz, cursorID, spaceID pgtype.UUID, country string, limit int, offset int32) ([]gen.Scholarship, error) {
+func (h *Handlers) listRadarScholarships(ctx context.Context, hasCursor bool, cursorTS pgtype.Timestamptz, cursorID, spaceID pgtype.UUID, country string, limit int, offset int32) ([]gen.Scholarship, error) {
 	limit32 := clampInt32(limit)
 
 	switch {
 	case hasCursor:
-		return h.intelStores.ListScholarshipsKeyset(ctx, tenantID, gen.ListScholarshipsKeysetParams{Column1: cursorTS, ID: cursorID,
+		return h.intelStores.ListScholarshipsKeyset(ctx, gen.ListScholarshipsKeysetParams{Column1: cursorTS, ID: cursorID,
 			Limit: limit32,
 		})
 	case spaceID.Valid:
-		return h.intelStores.ListScholarshipsBySpace(ctx, tenantID, gen.ListScholarshipsBySpaceParams{
+		return h.intelStores.ListScholarshipsBySpace(ctx, gen.ListScholarshipsBySpaceParams{
 			CountrySpaceID: spaceID,
 			Limit:          limit32,
 			Offset:         offset,
 		})
 	case country != "":
-		return h.intelStores.ListScholarshipsByCountry(ctx, tenantID, gen.ListScholarshipsByCountryParams{
+		return h.intelStores.ListScholarshipsByCountry(ctx, gen.ListScholarshipsByCountryParams{
 			Country: country,
 			Limit:   limit32,
 			Offset:  offset,
 		})
 	default:
-		return h.intelStores.ListScholarships(ctx, tenantID, gen.ListScholarshipsParams{
+		return h.intelStores.ListScholarships(ctx, gen.ListScholarshipsParams{
 			Limit:  limit32,
 			Offset: offset,
 		})
@@ -516,7 +515,7 @@ func (h *Handlers) HandleRadarCounts(w http.ResponseWriter, r *http.Request) {
 		tenantID = defaultIntelTenantID
 	}
 
-	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context(), tenantID)
+	rows, err := h.intelStores.CountScholarshipsByCountry(r.Context())
 	if err != nil {
 		slog.Error("intel: radar counts query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "counts_failed", "Failed to load radar counts")
@@ -568,20 +567,19 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	_, limit := h.parsePagination(r)
 
-	spaceIDs, followedSpaceStrs, ok := h.resolveRadarFollowedSpaces(w, r, tenantID, userID)
+	spaceIDs, followedSpaceStrs, ok := h.resolveRadarFollowedSpaces(w, r, userID)
 	if !ok {
 		return
 	}
 
-	items, ok := h.listFollowedRadarItems(w, r, tenantID, spaceIDs, limit)
+	items, ok := h.listFollowedRadarItems(w, r, spaceIDs, limit)
 	if !ok {
 		return
 	}
@@ -609,17 +607,17 @@ func (h *Handlers) HandleRadarFollowed(w http.ResponseWriter, r *http.Request) {
 // radar feed, honoring the intel.radar.max_followed_spaces cap (INTEL-016).
 // Returns ok=false (with an error response written) when the follows lookup
 // fails.
-func (h *Handlers) resolveRadarFollowedSpaces(w http.ResponseWriter, r *http.Request, tenantID, userID pgtype.UUID) (spaceIDs []pgtype.UUID, spaceStrs []string, ok bool) {
+func (h *Handlers) resolveRadarFollowedSpaces(w http.ResponseWriter, r *http.Request, userID pgtype.UUID) (spaceIDs []pgtype.UUID, spaceStrs []string, ok bool) {
 	maxFollowed := 100
 	if h.settings != nil {
-		maxFollowed = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_followed_spaces", 100)
+		maxFollowed = h.settings.GetIntOr(r.Context(), "intel.radar.max_followed_spaces", 100)
 	}
 
 	if maxFollowed > math.MaxInt32 {
 		maxFollowed = math.MaxInt32
 	}
 	// #nosec G115 -- maxFollowed is clamped to math.MaxInt32 above.
-	followed, err := h.followsSvc.GetFollowingByType(r.Context(), tenantID, userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
+	followed, err := h.followsSvc.GetFollowingByType(r.Context(), userID, userID, follows.EntityTypeSpace, int32(maxFollowed), 0)
 	if err != nil {
 		slog.Error("intel: radar followed spaces lookup failed", "user_id", userID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "followed_spaces_failed", "Failed to load followed spaces")
@@ -644,11 +642,11 @@ func (h *Handlers) resolveRadarFollowedSpaces(w http.ResponseWriter, r *http.Req
 // followed spaces, sorted by created_at desc and truncated to limit. Job
 // unioning degrades gracefully on error. Returns ok=false (with an error
 // response written) when the scholarship query fails.
-func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, spaceIDs []pgtype.UUID, limit int) ([]radarItem, bool) {
+func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request, spaceIDs []pgtype.UUID, limit int) ([]radarItem, bool) {
 	var items []radarItem
 
 	if len(spaceIDs) > 0 {
-		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), tenantID, gen.ListScholarshipsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)})
+		rows, err := h.intelStores.ListScholarshipsBySpaces(r.Context(), gen.ListScholarshipsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)})
 		if err != nil {
 			slog.Error("intel: radar followed union query failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "followed_feed_failed", "Failed to load followed feed")
@@ -662,7 +660,7 @@ func (h *Handlers) listFollowedRadarItems(w http.ResponseWriter, r *http.Request
 		}
 
 		// Union in jobs from followed spaces (graceful degradation on error).
-		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), tenantID, gen.ListIntelJobsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)}); jerr != nil {
+		if jobRows, jerr := h.intelStores.ListIntelJobsBySpaces(r.Context(), gen.ListIntelJobsBySpacesParams{Column1: spaceIDs, Limit: clampInt32(limit)}); jerr != nil {
 			slog.Warn("intel: radar followed jobs query failed", "error", jerr)
 		} else {
 			for _, j := range jobRows {
@@ -820,7 +818,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
@@ -840,7 +838,7 @@ func (h *Handlers) HandleRadarItemDetail(w http.ResponseWriter, r *http.Request)
 	// nil (omitted) and the button defaults to unsaved.
 	if h.scholarSvc != nil {
 		if uid, ok := optionalUser(w, r); ok {
-			saved, serr := h.scholarSvc.IsSavedScholarship(r.Context(), tenantID, uid, s.GuideID)
+			saved, serr := h.scholarSvc.IsSavedScholarship(r.Context(), uid, s.GuideID)
 			if serr != nil {
 				slog.Warn("intel: radar item saved-status check failed", "item_id", itemID.String(), "error", serr)
 			} else {
@@ -941,7 +939,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the scholarship projection row to get its guide_id — the
 	// saved-scholarship tracker keys on guide_id, not scholarship.id.
-	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
@@ -991,8 +989,7 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1002,7 +999,7 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.intelStores.GetScholarship(r.Context(), tenantID, itemID)
+	s, err := h.intelStores.GetScholarship(r.Context(), itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Radar item not found")
@@ -1015,7 +1012,7 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.scholarSvc.DeleteSavedScholarship(r.Context(), tenantID, userID, s.GuideID); err != nil {
+	if err := h.scholarSvc.DeleteSavedScholarship(r.Context(), userID, s.GuideID); err != nil {
 		slog.Error("intel: radar unsave failed", "item_id", itemID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "unsave_failed", "Failed to unsave opportunity")
 
@@ -1029,12 +1026,12 @@ func (h *Handlers) HandleRadarUnsave(w http.ResponseWriter, r *http.Request) {
 
 // resolveFollowedSpaceIDs returns the set of space IDs the user follows, as
 // a slice of strings. It is best-effort: any error returns an empty slice.
-func (h *Handlers) resolveFollowedSpaceIDs(ctx context.Context, tenantID, userID pgtype.UUID) []string {
+func (h *Handlers) resolveFollowedSpaceIDs(ctx context.Context, userID pgtype.UUID) []string {
 	if h.followsSvc == nil || !userID.Valid {
 		return []string{}
 	}
 
-	followed, err := h.followsSvc.GetFollowingByType(ctx, tenantID, userID, userID, follows.EntityTypeSpace, 100, 0)
+	followed, err := h.followsSvc.GetFollowingByType(ctx, userID, userID, follows.EntityTypeSpace, 100, 0)
 	if err != nil {
 		return []string{}
 	}

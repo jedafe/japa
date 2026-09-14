@@ -619,7 +619,7 @@ LIMIT 1
 // UpdateRequirement applies a tenant-scoped partial update to a
 // language_test_requirements row. Only non-nil/valid fields in the input
 // are changed. It returns the updated row.
-func (s *Store) UpdateRequirement(ctx context.Context, id, tenantID pgtype.UUID, in UpdateRequirementInput) (RequirementRow, error) {
+func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, in UpdateRequirementInput) (RequirementRow, error) {
 	var (
 		sets   []string
 		args   []any
@@ -785,7 +785,7 @@ WHERE id = $1
 
 // ListResources returns published resources for a test, ordered by
 // community rating descending.
-func (s *Store) ListResources(ctx context.Context, tenantID, testID pgtype.UUID, limit, offset int32) ([]ResourceRow, error) {
+func (s *Store) ListResources(ctx context.Context, testID pgtype.UUID, limit, offset int32) ([]ResourceRow, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -837,7 +837,7 @@ LIMIT $2 OFFSET $3
 
 // ListStories returns published score stories for a test, optionally
 // filtered by destination space, ordered by created_at DESC.
-func (s *Store) ListStories(ctx context.Context, tenantID, testID, destSpaceID pgtype.UUID, limit, offset int32) ([]ScoreStoryRow, error) {
+func (s *Store) ListStories(ctx context.Context, testID, destSpaceID pgtype.UUID, limit, offset int32) ([]ScoreStoryRow, error) {
 	if limit <= 0 {
 		limit = 20
 	}

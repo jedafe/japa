@@ -30,7 +30,7 @@ import (
 // select sources whose crawl interval has elapsed. Declaring it as an
 // interface keeps the scheduler testable without a live *db.DB.
 type DueSourceLister interface {
-	ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelSource, error)
+	ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error)
 }
 
 // MaxEffectiveIntervalMins caps how far the auto-tuner can stretch a source's
@@ -66,7 +66,7 @@ func NewScheduler(sourceStore DueSourceLister, rdb valkeycompat.Cmdable, tenantI
 // elapsed (or that have never been crawled), oldest-first. It is a thin pass-
 // through to the source store's ListDueIntelSources query.
 func (s *Scheduler) SelectDue(ctx context.Context, batchSize int32) ([]sources.Source, error) {
-	rows, err := s.sourceStore.ListDue(ctx, s.tenantID, batchSize)
+	rows, err := s.sourceStore.ListDue(ctx, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("scheduler: select due: %w", err)
 	}

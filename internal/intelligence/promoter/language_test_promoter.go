@@ -24,25 +24,25 @@ import (
 // §6.2 transaction boundary).
 type LanguageTestStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetLanguageTestRequirementByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error)
-	CreateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error)
-	UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateLanguageTestRequirementIntelParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetLanguageTestRequirementByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.LanguageTestRequirement, error)
+	CreateLanguageTestRequirementIntel(ctx context.Context, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error)
+	UpdateLanguageTestRequirementIntel(ctx context.Context, arg gen.UpdateLanguageTestRequirementIntelParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp
 	// language_test_requirements.destination_space_id. Returns
 	// (pgtype.UUID{}, nil) when no country space exists yet; the promoter
 	// treats that as a nullable destination_space_id. BUG-005 fix.
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	// GetLanguageTestByName resolves the language_tests(id) FK for a test
 	// name extracted as free text. The extraction may carry a test_name
 	// rather than a test_id UUID; the promoter uses this lookup to resolve
 	// the FK before inserting the projection row. Returns
 	// (gen.LanguageTest{}, error) when no match is found.
-	GetLanguageTestByName(ctx context.Context, tenantID pgtype.UUID, name string) (gen.LanguageTest, error)
+	GetLanguageTestByName(ctx context.Context, name string) (gen.LanguageTest, error)
 	WithTx(ctx context.Context, fn func(LanguageTestTxStore) error) error
 }
 
@@ -52,10 +52,10 @@ type LanguageTestStore interface {
 // *stores.Store satisfies this interface (via WithTx's callback), and the
 // test mock satisfies it directly.
 type LanguageTestTxStore interface {
-	CreateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateLanguageTestRequirementIntel(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateLanguageTestRequirementIntelParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateLanguageTestRequirementIntel(ctx context.Context, arg gen.CreateLanguageTestRequirementIntelParams) (gen.LanguageTestRequirement, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateLanguageTestRequirementIntel(ctx context.Context, arg gen.UpdateLanguageTestRequirementIntelParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // LanguageTestPromoter promotes language_test_requirement intel_records into
@@ -67,7 +67,6 @@ type LanguageTestTxStore interface {
 // Amendment 1).
 type LanguageTestPromoter struct {
 	store    LanguageTestStore
-	tenantID pgtype.UUID
 	authorID pgtype.UUID
 	aiModel  *string // AI model used for extraction (ADR-088, INTEL-003)
 	now      func() time.Time
@@ -89,8 +88,8 @@ func WithLanguageTestAIModel(model string) LanguageTestPromoterOption {
 // NewLanguageTestPromoter creates a promoter backed by the given store. The
 // tenantID and authorID identify the tenant and system author stamped onto
 // the language_test_requirements projection rows created by the create path.
-func NewLanguageTestPromoter(store LanguageTestStore, tenantID, authorID pgtype.UUID, opts ...LanguageTestPromoterOption) *LanguageTestPromoter {
-	p := &LanguageTestPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewLanguageTestPromoter(store LanguageTestStore, authorID pgtype.UUID, opts ...LanguageTestPromoterOption) *LanguageTestPromoter {
+	p := &LanguageTestPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -114,12 +113,12 @@ var ErrLanguageTestIDMissing = errors.New("promoter: language test requirement r
 // language_test_requirements projection row, creating it or updating it in
 // place while respecting editorial overrides.
 func (p *LanguageTestPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.LanguageTestRequirement]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.LanguageTestRequirement]{
 		entityType: p.Entity(),
 		notErr:     ErrNotLanguageTest,
 		loadLabel:  "language test requirement",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.LanguageTestRequirement, error) {
-			return p.store.GetLanguageTestRequirementByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.LanguageTestRequirement, error) {
+			return p.store.GetLanguageTestRequirementByIntelRecord(ctx, pgID)
 		},
 		createPath: p.languageTestCreatePath,
 		updatePath: p.languageTestUpdatePath,
@@ -142,7 +141,7 @@ func (p *LanguageTestPromoter) languageTestCreatePath(ctx context.Context, recor
 	var destinationSpaceID pgtype.UUID
 
 	if countryCode != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, countryCode); err == nil && id.Valid {
 			destinationSpaceID = id
 		}
 	}
@@ -163,12 +162,12 @@ func (p *LanguageTestPromoter) languageTestCreatePath(ctx context.Context, recor
 	var result PromoteResult
 
 	err = p.store.WithTx(ctx, func(tx LanguageTestTxStore) error {
-		req, err := tx.CreateLanguageTestRequirementIntel(ctx, p.tenantID, params)
+		req, err := tx.CreateLanguageTestRequirementIntel(ctx, params)
 		if err != nil {
 			return fmt.Errorf("promoter: create language test requirement: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -210,7 +209,7 @@ func (p *LanguageTestPromoter) languageTestUpdatePath(ctx context.Context, recor
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "language test requirement",
+	return domainUpdateTx(ctx, record, p.authorID, "language test requirement",
 		pgToUUID(existing.ID), uuid.Nil, params, changed, changesJSON,
 		func(ctx context.Context, fn func(LanguageTestTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		LanguageTestTxStore.UpdateLanguageTestRequirementIntel)
@@ -229,7 +228,7 @@ func (p *LanguageTestPromoter) resolveTestID(ctx context.Context, ext extractor.
 	}
 
 	if name := stringField(ext, "test_name"); name != "" {
-		test, err := p.store.GetLanguageTestByName(ctx, p.tenantID, name)
+		test, err := p.store.GetLanguageTestByName(ctx, name)
 		if err == nil && test.ID.Valid {
 			return test.ID, nil
 		}

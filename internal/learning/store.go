@@ -145,7 +145,7 @@ func trackFromFields(
 }
 
 // ListPublishedTracks lists all published tracks for a tenant.
-func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
+func (s *Store) ListPublishedTracks(ctx context.Context) ([]Track, error) {
 	rows, err := s.read.ListPublishedLearningTracks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list published tracks: %w", err)
@@ -161,7 +161,7 @@ func (s *Store) ListPublishedTracks(ctx context.Context, tenantID pgtype.UUID) (
 }
 
 // SearchPublishedTracks searches published tracks by title or slug, tenant-scoped.
-func (s *Store) SearchPublishedTracks(ctx context.Context, tenantID pgtype.UUID, query string, limit int32) ([]Track, error) {
+func (s *Store) SearchPublishedTracks(ctx context.Context, query string, limit int32) ([]Track, error) {
 	const q = `
 SELECT id, title, slug, description, difficulty, cover_media_id,
        is_published, sort_order, created_at, updated_at,
@@ -227,7 +227,7 @@ LIMIT $2
 }
 
 // GetTrackBySlug retrieves a track by its slug.
-func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug string) (*Track, error) {
+func (s *Store) GetTrackBySlug(ctx context.Context, slug string) (*Track, error) {
 	r, err := s.read.GetLearningTrackBySlug(ctx,
 
 		slug,
@@ -242,7 +242,7 @@ func (s *Store) GetTrackBySlug(ctx context.Context, tenantID pgtype.UUID, slug s
 }
 
 // GetTrackByID retrieves a track by its ID.
-func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Track, error) {
+func (s *Store) GetTrackByID(ctx context.Context, id pgtype.UUID) (*Track, error) {
 	r, err := s.read.GetLearningTrackByID(ctx,
 
 		id,
@@ -257,7 +257,7 @@ func (s *Store) GetTrackByID(ctx context.Context, tenantID, id pgtype.UUID) (*Tr
 }
 
 // CreateTrack creates a new learning track.
-func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input CreateTrackInput) (*Track, error) {
+func (s *Store) CreateTrack(ctx context.Context, input CreateTrackInput) (*Track, error) {
 	r, err := s.write.CreateLearningTrack(ctx, gen.CreateLearningTrackParams{
 
 		Title:                input.Title,
@@ -280,7 +280,7 @@ func (s *Store) CreateTrack(ctx context.Context, tenantID pgtype.UUID, input Cre
 }
 
 // UpdateTrack updates an existing learning track.
-func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
+func (s *Store) UpdateTrack(ctx context.Context, id pgtype.UUID, input UpdateTrackInput) (*Track, error) {
 	r, err := s.write.UpdateLearningTrack(ctx, gen.UpdateLearningTrackParams{
 
 		ID:                   id,
@@ -303,7 +303,7 @@ func (s *Store) UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input
 }
 
 // DeleteTrack soft-deletes a learning track.
-func (s *Store) DeleteTrack(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteTrack(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_tracks WHERE id = $1
 	`, id)
@@ -319,7 +319,7 @@ func (s *Store) DeleteTrack(ctx context.Context, tenantID, id pgtype.UUID) error
 }
 
 // PublishTrack sets the published status of a learning track.
-func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPublished bool) error {
+func (s *Store) PublishTrack(ctx context.Context, id pgtype.UUID, isPublished bool) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		UPDATE learning_tracks
 		SET is_published = $1, updated_at = now()
@@ -337,7 +337,7 @@ func (s *Store) PublishTrack(ctx context.Context, tenantID, id pgtype.UUID, isPu
 }
 
 // ListAllTracks lists all tracks including drafts.
-func (s *Store) ListAllTracks(ctx context.Context, tenantID pgtype.UUID) ([]Track, error) {
+func (s *Store) ListAllTracks(ctx context.Context) ([]Track, error) {
 	rows, err := s.read.ListAllLearningTracks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all tracks: %w", err)
@@ -481,7 +481,7 @@ func moduleFromRow(r gen.LearningModule) Module {
 }
 
 // ListModulesByTrack lists all modules for a track.
-func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype.UUID) ([]Module, error) {
+func (s *Store) ListModulesByTrack(ctx context.Context, trackID pgtype.UUID) ([]Module, error) {
 	rows, err := s.read.ListLearningModulesByTrack(ctx,
 
 		trackID,
@@ -506,7 +506,7 @@ func (s *Store) ListModulesByTrack(ctx context.Context, tenantID, trackID pgtype
 // and each module's lessons, then assembles them into a single TrackDetail
 // response with nested ModuleWithLessons. This matches the frontend
 // TrackDetail contract (ADR-060) — NOT the legacy `{track, modules}` envelope.
-func (s *Store) GetTrackDetail(ctx context.Context, tenantID pgtype.UUID, slug string) (*TrackDetail, error) {
+func (s *Store) GetTrackDetail(ctx context.Context, slug string) (*TrackDetail, error) {
 	row, err := s.read.GetLearningTrackDetailBySlug(ctx,
 
 		slug,
@@ -675,7 +675,7 @@ func formatTrackDuration(totalMinutes int) (label, iso string) {
 }
 
 // GetModuleBySlug retrieves a module by its slug.
-func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UUID, slug string) (*Module, error) {
+func (s *Store) GetModuleBySlug(ctx context.Context, trackID pgtype.UUID, slug string) (*Module, error) {
 	r, err := s.read.GetLearningModuleBySlug(ctx, gen.GetLearningModuleBySlugParams{
 
 		TrackID: trackID,
@@ -691,7 +691,7 @@ func (s *Store) GetModuleBySlug(ctx context.Context, tenantID, trackID pgtype.UU
 }
 
 // GetModuleByID retrieves a module by its ID.
-func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*Module, error) {
+func (s *Store) GetModuleByID(ctx context.Context, id pgtype.UUID) (*Module, error) {
 	r, err := s.read.GetLearningModuleByID(ctx,
 
 		id,
@@ -706,7 +706,7 @@ func (s *Store) GetModuleByID(ctx context.Context, tenantID, id pgtype.UUID) (*M
 }
 
 // CreateModule creates a new module in a track.
-func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
+func (s *Store) CreateModule(ctx context.Context, trackID pgtype.UUID, input CreateModuleInput) (*Module, error) {
 	r, err := s.write.CreateLearningModule(ctx, gen.CreateLearningModuleParams{
 
 		TrackID:     trackID,
@@ -725,7 +725,7 @@ func (s *Store) CreateModule(ctx context.Context, tenantID, trackID pgtype.UUID,
 }
 
 // UpdateModule updates an existing module.
-func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
+func (s *Store) UpdateModule(ctx context.Context, id pgtype.UUID, input UpdateModuleInput) (*Module, error) {
 	r, err := s.write.UpdateLearningModule(ctx, gen.UpdateLearningModuleParams{
 
 		ID:          id,
@@ -743,7 +743,7 @@ func (s *Store) UpdateModule(ctx context.Context, tenantID, id pgtype.UUID, inpu
 }
 
 // DeleteModule soft-deletes a module.
-func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteModule(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_modules WHERE id = $1
 	`, id)
@@ -759,7 +759,7 @@ func (s *Store) DeleteModule(ctx context.Context, tenantID, id pgtype.UUID) erro
 }
 
 // ListAllModules returns all modules for a tenant (admin view).
-func (s *Store) ListAllModules(ctx context.Context, tenantID pgtype.UUID) ([]Module, error) {
+func (s *Store) ListAllModules(ctx context.Context) ([]Module, error) {
 	rows, err := s.read.ListAllLearningModules(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all modules: %w", err)
@@ -775,7 +775,7 @@ func (s *Store) ListAllModules(ctx context.Context, tenantID pgtype.UUID) ([]Mod
 }
 
 // ListAllLessons returns all lessons for a tenant (admin view).
-func (s *Store) ListAllLessons(ctx context.Context, tenantID pgtype.UUID) ([]Lesson, error) {
+func (s *Store) ListAllLessons(ctx context.Context) ([]Lesson, error) {
 	rows, err := s.read.ListAllLearningLessons(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list all lessons: %w", err)
@@ -928,7 +928,7 @@ func lessonFromListRow(r gen.ListAllLearningLessonsRow) Lesson {
 }
 
 // ListLessonsByModule lists all lessons for a module.
-func (s *Store) ListLessonsByModule(ctx context.Context, tenantID, moduleID pgtype.UUID) ([]Lesson, error) {
+func (s *Store) ListLessonsByModule(ctx context.Context, moduleID pgtype.UUID) ([]Lesson, error) {
 	rows, err := s.read.ListLearningLessonsByModule(ctx,
 
 		moduleID,
@@ -947,7 +947,7 @@ func (s *Store) ListLessonsByModule(ctx context.Context, tenantID, moduleID pgty
 }
 
 // GetLessonBySlug retrieves a lesson by its slug.
-func (s *Store) GetLessonBySlug(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string) (*Lesson, error) {
+func (s *Store) GetLessonBySlug(ctx context.Context, moduleID pgtype.UUID, slug string) (*Lesson, error) {
 	r, err := s.read.GetLearningLessonBySlug(ctx, gen.GetLearningLessonBySlugParams{
 
 		ModuleID: moduleID,
@@ -990,7 +990,7 @@ type LessonDetail struct {
 // prev/next navigation, suitable for the lesson player (ADR-060). When userID
 // is valid, it also queries lesson_progress to populate IsCompleted so the
 // lesson player can show the "Completed" state on SSR render.
-func (s *Store) GetLessonDetail(ctx context.Context, tenantID, moduleID pgtype.UUID, slug string, userID ...pgtype.UUID) (*LessonDetail, error) {
+func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug string, userID ...pgtype.UUID) (*LessonDetail, error) {
 	r, err := s.read.GetLearningLessonDetailBySlug(ctx, gen.GetLearningLessonDetailBySlugParams{
 
 		ModuleID: moduleID,
@@ -1129,7 +1129,7 @@ func renderLessonContentHTML(content *string) string {
 }
 
 // GetLessonByID retrieves a lesson by its ID.
-func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*Lesson, error) {
+func (s *Store) GetLessonByID(ctx context.Context, id pgtype.UUID) (*Lesson, error) {
 	r, err := s.read.GetLearningLessonByID(ctx,
 
 		id,
@@ -1144,7 +1144,7 @@ func (s *Store) GetLessonByID(ctx context.Context, tenantID, id pgtype.UUID) (*L
 }
 
 // CreateLesson creates a new lesson in a module.
-func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
+func (s *Store) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input CreateLessonInput) (*Lesson, error) {
 	r, err := s.write.CreateLearningLesson(ctx, gen.CreateLearningLessonParams{
 
 		ModuleID:        moduleID,
@@ -1168,7 +1168,7 @@ func (s *Store) CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID
 }
 
 // UpdateLesson updates an existing lesson.
-func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
+func (s *Store) UpdateLesson(ctx context.Context, id pgtype.UUID, input UpdateLessonInput) (*Lesson, error) {
 	r, err := s.write.UpdateLearningLesson(ctx, gen.UpdateLearningLessonParams{
 
 		ID:              id,
@@ -1191,7 +1191,7 @@ func (s *Store) UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, inpu
 }
 
 // DeleteLesson soft-deletes a lesson.
-func (s *Store) DeleteLesson(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) DeleteLesson(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.db.Writer.Exec(ctx, `
 		DELETE FROM learning_lessons WHERE id = $1
 	`, id)
@@ -1247,7 +1247,7 @@ func (s *Store) GetProgress(ctx context.Context, userID, lessonID pgtype.UUID) (
 }
 
 // UpsertProgress creates or updates progress for a lesson.
-func (s *Store) UpsertProgress(ctx context.Context, tenantID, userID, lessonID pgtype.UUID, input UpdateProgressInput) (*Progress, error) {
+func (s *Store) UpsertProgress(ctx context.Context, userID, lessonID pgtype.UUID, input UpdateProgressInput) (*Progress, error) {
 	var completedAt *time.Time
 
 	if input.Status == "completed" {
@@ -1393,7 +1393,7 @@ func (s *Store) GetCertificate(ctx context.Context, userID, trackID pgtype.UUID)
 }
 
 // IssueCertificate issues a certificate for a completed track.
-func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID pgtype.UUID, certificateNumber string) (*Certificate, error) {
+func (s *Store) IssueCertificate(ctx context.Context, userID, trackID pgtype.UUID, certificateNumber string) (*Certificate, error) {
 	r, err := s.write.IssueLearningCertificate(ctx, gen.IssueLearningCertificateParams{
 
 		UserID:            userID,
@@ -1422,7 +1422,7 @@ func (s *Store) IssueCertificate(ctx context.Context, tenantID, userID, trackID 
 }
 
 // ListCertificatesByUser lists a user's certificates, tenant-scoped.
-func (s *Store) ListCertificatesByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Certificate, error) {
+func (s *Store) ListCertificatesByUser(ctx context.Context, userID pgtype.UUID) ([]Certificate, error) {
 	rows, err := s.read.ListLearningCertificatesByUser(ctx,
 
 		userID,
@@ -1508,7 +1508,7 @@ type Enrollment struct {
 // required by the enrollments table FK constraint — omitting it leaves a
 // zero-value UUID that violates enrollments_tenant_id_fkey and surfaces as a
 // 500 db_error.
-func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
+func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
 	r, err := s.write.CreateEnrollment(ctx, gen.CreateEnrollmentParams{
 
 		UserID:     userID,
@@ -1537,7 +1537,7 @@ func (s *Store) EnrollUser(ctx context.Context, tenantID, userID, trackID pgtype
 // (lessons_completed, lessons_total, last_activity_at, next_lesson). This
 // feeds GET /me/enrollments, which the Continue Learning card and lesson
 // player progress ring consume (ADR-060 CSR boundary).
-func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]Enrollment, error) {
+func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) ([]Enrollment, error) {
 	rows, err := s.read.ListEnrollmentsByUserIDWithDetails(ctx,
 		userID,
 	)
@@ -1592,7 +1592,7 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, tenantID, userID pgty
 }
 
 // GetEnrollment retrieves a specific enrollment.
-func (s *Store) GetEnrollment(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (*Enrollment, error) {
+func (s *Store) GetEnrollment(ctx context.Context, userID, trackID pgtype.UUID) (*Enrollment, error) {
 	r, err := s.read.GetEnrollmentByUserAndTrack(ctx, gen.GetEnrollmentByUserAndTrackParams{
 		UserID:  userID,
 		TrackID: trackID,
@@ -1657,7 +1657,7 @@ type EnrollmentRow struct {
 }
 
 // ListEnrollmentsByTrack returns paginated enrollments for a track with user info.
-func (s *Store) ListEnrollmentsByTrack(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
+func (s *Store) ListEnrollmentsByTrack(ctx context.Context, trackID pgtype.UUID, limit, offset int32) ([]EnrollmentRow, error) {
 	rows, err := s.read.ListEnrollmentsByTrackID(ctx, gen.ListEnrollmentsByTrackIDParams{
 
 		TrackID:    trackID,
@@ -1705,7 +1705,7 @@ type QuizQuestion struct {
 // GetQuizQuestions retrieves quiz questions for a lesson WITHOUT answers or
 // explanations. Used by the public GET /learn/quizzes/:id endpoint so users
 // cannot read the correct answers before submitting (§36: "no answers revealed").
-func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+func (s *Store) GetQuizQuestions(ctx context.Context, lessonID pgtype.UUID) ([]QuizQuestion, error) {
 	rows, err := s.read.GetQuizQuestionsByLesson(ctx,
 
 		lessonID,
@@ -1734,7 +1734,7 @@ func (s *Store) GetQuizQuestions(ctx context.Context, tenantID, lessonID pgtype.
 // GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers and
 // explanations for grading (POST /learn/quizzes/:id/submit). This is the only
 // path that includes the Answer field.
-func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, tenantID, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+func (s *Store) GetQuizQuestionsWithAnswers(ctx context.Context, lessonID pgtype.UUID) ([]QuizQuestion, error) {
 	rows, err := s.read.GetQuizQuestionsByLesson(ctx,
 
 		lessonID,
@@ -1795,7 +1795,7 @@ type TrackReviewAggregate struct {
 
 // CreateTrackReview inserts a review for a learning track and updates the
 // review_aggregates rollup (Section 29). AUDIT-BE-ROUTE-040: entity_type=learning_track.
-func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
+func (s *Store) CreateTrackReview(ctx context.Context, trackID, reviewerID pgtype.UUID, rating int16, title, body *string) (TrackReview, error) {
 	row, err := s.write.CreateReview(ctx, gen.CreateReviewParams{
 
 		EntityType:     "learning_track",
@@ -1827,7 +1827,7 @@ func (s *Store) CreateTrackReview(ctx context.Context, tenantID, trackID, review
 // ListTrackReviews lists approved reviews for a learning track, joined to
 // users + user_profiles so author username/display name/avatar are populated
 // for the Reviews tab (ADR-060). Ref: Section 29 polymorphic reviews.
-func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
+func (s *Store) ListTrackReviews(ctx context.Context, trackID pgtype.UUID, limit, offset int32) ([]TrackReview, error) {
 	rows, err := s.read.ListReviewsByEntityWithAuthor(ctx, gen.ListReviewsByEntityWithAuthorParams{
 
 		EntityType: "learning_track",
@@ -1850,7 +1850,7 @@ func (s *Store) ListTrackReviews(ctx context.Context, tenantID, trackID pgtype.U
 // GetTrackReviewAggregate returns the total review count and average rating
 // for a learning track from the review_aggregates rollup table (Section 29).
 // Falls back to zeros when no aggregate row exists yet (no reviews posted).
-func (s *Store) GetTrackReviewAggregate(ctx context.Context, tenantID, trackID pgtype.UUID) (TrackReviewAggregate, error) {
+func (s *Store) GetTrackReviewAggregate(ctx context.Context, trackID pgtype.UUID) (TrackReviewAggregate, error) {
 	agg, err := s.read.GetReviewAggregate(ctx, gen.GetReviewAggregateParams{
 
 		EntityType: "learning_track",
@@ -1913,7 +1913,7 @@ func trackReviewWithAuthorFromRow(r gen.ListReviewsByEntityWithAuthorRow) TrackR
 // with the Pro = all model) OR explicitly includes the track.
 // // Returns (false, "") when the user has no active subscription or the plan
 // does not cover the track.
-func (s *Store) CheckSubscriptionAccess(ctx context.Context, tenantID, userID, trackID pgtype.UUID) (bool, string) {
+func (s *Store) CheckSubscriptionAccess(ctx context.Context, userID, trackID pgtype.UUID) (bool, string) {
 	// 1. Get the user's active subscription plan text (e.g. "pro_monthly").
 	var planText string
 

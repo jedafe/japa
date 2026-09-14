@@ -36,15 +36,15 @@ type stubContentService struct {
 	getContentErr      error
 }
 
-func (s *stubContentService) ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
+func (s *stubContentService) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
 	return s.searchResults, s.searchErr
 }
 
-func (s *stubContentService) SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error) {
+func (s *stubContentService) SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error) {
 	return s.spaceSearchResults, s.spaceSearchErr
 }
 
-func (s *stubContentService) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (s *stubContentService) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	return s.content, s.getContentErr
 }
 
@@ -70,19 +70,19 @@ type stubContentTypesService struct {
 	typesErr error
 }
 
-func (s *stubCustomFieldsService) ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
+func (s *stubCustomFieldsService) ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error) {
 	return s.fields, s.fieldsErr
 }
 
-func (s *stubCustomFieldsService) ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
+func (s *stubCustomFieldsService) ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error) {
 	return s.cfvs, s.cfvsErr
 }
 
-func (s *stubGuideCategoryService) ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error) {
+func (s *stubGuideCategoryService) ListGuideCategories(ctx context.Context) ([]GuideCategory, error) {
 	return s.cats, s.catsErr
 }
 
-func (s *stubContentTypesService) ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ContentType, error) {
+func (s *stubContentTypesService) ListContentTypes(ctx context.Context) ([]ContentType, error) {
 	return s.types, s.typesErr
 }
 
@@ -105,7 +105,7 @@ type stubPrivacyChecker struct {
 	err    error
 }
 
-func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	return s.exempt, s.err
 }
 
@@ -114,7 +114,7 @@ type selectivePrivacyChecker struct {
 	exemptIDs map[string]bool
 }
 
-func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	if !entityID.Valid {
 		return false, nil
 	}
@@ -951,7 +951,7 @@ type stubSettingsReader struct {
 	intVal    int
 }
 
-func (s *stubSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string {
+func (s *stubSettingsReader) GetStringOr(ctx context.Context, key, fallback string) string {
 	if s.stringVal != "" {
 		return s.stringVal
 	}
@@ -959,7 +959,7 @@ func (s *stubSettingsReader) GetStringOr(ctx context.Context, tenantID pgtype.UU
 	return fallback
 }
 
-func (s *stubSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int {
+func (s *stubSettingsReader) GetIntOr(ctx context.Context, key string, fallback int) int {
 	if s.intVal != 0 {
 		return s.intVal
 	}
@@ -967,11 +967,11 @@ func (s *stubSettingsReader) GetIntOr(ctx context.Context, tenantID pgtype.UUID,
 	return fallback
 }
 
-func (s *stubSettingsReader) GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64 {
+func (s *stubSettingsReader) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	return fallback
 }
 
-func (s *stubSettingsReader) GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool {
+func (s *stubSettingsReader) GetBoolOr(ctx context.Context, key string, fallback bool) bool {
 	return fallback
 }
 
@@ -1007,7 +1007,7 @@ type stubRAGService struct {
 	err    error
 }
 
-func (s *stubRAGService) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (s *stubRAGService) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
 	return s.chunks, s.err
 }
 

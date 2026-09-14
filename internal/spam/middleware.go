@@ -49,7 +49,7 @@ func IPBlockMiddleware(database *db.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			blockType, err := store.GetIPBlockTypeForIP(r.Context(), pgtype.UUID{}, ip)
+			blockType, err := store.GetIPBlockTypeForIP(r.Context(), ip)
 			if err != nil {
 				// Log but don't block on check failure — degrade gracefully
 				slog.Warn("ip block check failed", "ip", ip, "error", err)

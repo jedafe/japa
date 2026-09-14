@@ -26,7 +26,7 @@ var (
 // system_settings at runtime (Rule 3). Defining it locally avoids an import
 // cycle on internal/config.
 type SettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // PreflightChecker enforces robots.txt, rate-limit, license, and crawl-lock
@@ -78,8 +78,8 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 	rateLimitPerMin := 10
 
 	if p.settings != nil {
-		crawlLockTTL = p.settings.GetIntOr(ctx, p.defaultTenantID, "intel.crawl_lock_ttl_secs", 3600)
-		rateLimitPerMin = p.settings.GetIntOr(ctx, p.defaultTenantID, "intel.ratelimit_default_per_min", 10)
+		crawlLockTTL = p.settings.GetIntOr(ctx, "intel.crawl_lock_ttl_secs", 3600)
+		rateLimitPerMin = p.settings.GetIntOr(ctx, "intel.ratelimit_default_per_min", 10)
 	}
 
 	// 1. Crawl lock. Use the source UUID string as the lock key suffix; only

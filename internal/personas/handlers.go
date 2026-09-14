@@ -130,8 +130,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -169,7 +168,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePagination(r)
 
-	items, total, err := h.service.ListPersonas(r.Context(), tenantID, status, search, sort, dir, limit, offset)
+	items, total, err := h.service.ListPersonas(r.Context(), status, search, sort, dir, limit, offset)
 	if err != nil {
 		slog.Error("personas: list failed", "error", err)
 		handleServiceError(w, err)
@@ -245,8 +244,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -261,7 +259,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := h.service.GetPersona(r.Context(), tenantID, id)
+	detail, err := h.service.GetPersona(r.Context(), id)
 	if err != nil {
 		slog.Error("personas: get failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
@@ -278,8 +276,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -317,7 +314,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		Status:         body.Status,
 	}
 
-	persona, err := h.service.UpdatePersona(r.Context(), tenantID, id, in)
+	persona, err := h.service.UpdatePersona(r.Context(), id, in)
 	if err != nil {
 		slog.Error("personas: update failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
@@ -338,8 +335,7 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -351,7 +347,7 @@ func (h *Handlers) HandleListVoices(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePaginationWithMax(r, 5000)
 
-	items, total, err := h.service.ListPersonaVoices(r.Context(), tenantID, limit, offset)
+	items, total, err := h.service.ListPersonaVoices(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("personas: list voices failed", "error", err)
 		handleServiceError(w, err)
@@ -372,8 +368,7 @@ func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -389,7 +384,7 @@ func (h *Handlers) HandleCreateVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voice, err := h.service.CreatePersonaVoice(r.Context(), tenantID, user.UserID, in)
+	voice, err := h.service.CreatePersonaVoice(r.Context(), user.UserID, in)
 	if err != nil {
 		slog.Error("personas: create voice failed", "error", err)
 		handleServiceError(w, err)
@@ -406,8 +401,7 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -422,7 +416,7 @@ func (h *Handlers) HandleGetVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voice, err := h.service.GetPersonaVoice(r.Context(), tenantID, id)
+	voice, err := h.service.GetPersonaVoice(r.Context(), id)
 	if err != nil {
 		slog.Error("personas: get voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
@@ -439,8 +433,7 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -461,7 +454,7 @@ func (h *Handlers) HandleUpdateVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voice, err := h.service.UpdatePersonaVoice(r.Context(), tenantID, id, in)
+	voice, err := h.service.UpdatePersonaVoice(r.Context(), id, in)
 	if err != nil {
 		slog.Error("personas: update voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
@@ -478,8 +471,7 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -494,7 +486,7 @@ func (h *Handlers) HandleDeleteVoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeletePersonaVoice(r.Context(), tenantID, id); err != nil {
+	if err := h.service.DeletePersonaVoice(r.Context(), id); err != nil {
 		slog.Error("personas: delete voice failed", "error", err, "id", id.String())
 		handleServiceError(w, err)
 
@@ -511,8 +503,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -529,7 +520,7 @@ func (h *Handlers) HandleActivity(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePagination(r)
 
-	entries, total, err := h.service.GetPersonaActivity(r.Context(), tenantID, id, limit, offset)
+	entries, total, err := h.service.GetPersonaActivity(r.Context(), id, limit, offset)
 	if err != nil {
 		slog.Error("personas: activity failed", "error", err, "id", id.String())
 		handleServiceError(w, err)

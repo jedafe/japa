@@ -103,7 +103,7 @@ RETURNING id
 }
 
 // GetEdition returns a single digest edition by id within a tenant.
-func (s *Store) GetEdition(ctx context.Context, id, tenantID pgtype.UUID) (DigestEdition, error) {
+func (s *Store) GetEdition(ctx context.Context, id pgtype.UUID) (DigestEdition, error) {
 	const q = `
 SELECT id, space_id, cadence, status, scheduled_for, published_at,
        content, email_sent, email_sent_at, generated_by, reviewed_by, created_at
@@ -295,7 +295,7 @@ LIMIT $%d OFFSET $%d
 // row. Only non-nil fields in the input are written. The updated row is
 // returned. It returns pgx.ErrNoRows when the row does not exist for the
 // tenant.
-func (s *Store) UpdateEdition(ctx context.Context, id, tenantID pgtype.UUID, in UpdateEditionInput) (EditionRow, error) {
+func (s *Store) UpdateEdition(ctx context.Context, id pgtype.UUID, in UpdateEditionInput) (EditionRow, error) {
 	var (
 		sets   []string
 		args   []any
@@ -399,7 +399,7 @@ RETURNING id, space_id, cadence, status, scheduled_for, published_at,
 
 // DeleteEdition hard-deletes a single digest edition scoped to a tenant.
 // It returns pgx.ErrNoRows if the row does not exist for the tenant.
-func (s *Store) DeleteEdition(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteEdition(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 DELETE FROM digest_editions
 WHERE id = $1
@@ -449,7 +449,7 @@ LIMIT 1
 
 // PublishEdition marks an edition as published and stamps the reviewer.
 // Accepts editions in draft or review status (§84 lifecycle).
-func (s *Store) PublishEdition(ctx context.Context, id, tenantID, reviewerID pgtype.UUID) error {
+func (s *Store) PublishEdition(ctx context.Context, id, reviewerID pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET status = 'published', published_at = now(), reviewed_by = $2
@@ -508,7 +508,7 @@ RETURNING id
 
 // MarkEmailSent stamps email_sent=true and email_sent_at=now() on a
 // published edition after the digest:send_email task completes.
-func (s *Store) MarkEmailSent(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) MarkEmailSent(ctx context.Context, id pgtype.UUID) error {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET email_sent = true, email_sent_at = now()
@@ -760,7 +760,7 @@ WHERE c.content_type = 'story'
 // digest_enabled=true for the given tenant. Used by SendEditionEmail to
 // dispatch the published digest (§84 email channel, reuses §62 Newsletter
 // subscriber infrastructure).
-func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.UUID) ([]string, error) {
+func (s *Store) GetDigestSubscriberEmails(ctx context.Context) ([]string, error) {
 	q := gen.New(s.pool.Reader)
 
 	var emails []string
@@ -801,7 +801,7 @@ func (s *Store) GetDigestSubscriberEmails(ctx context.Context, tenantID pgtype.U
 // and creates a one-click unsubscribe token, returning the token string.
 // Returns ("", nil) if the subscriber is not found (best-effort — the email
 // is still sent without an unsubscribe header).
-func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, tenantID pgtype.UUID, emailAddr string) (string, error) {
+func (s *Store) CreateUnsubscribeTokenForEmail(ctx context.Context, emailAddr string) (string, error) {
 	q := gen.New(s.pool.Reader)
 
 	sub, err := q.GetSubscriberByEmail(ctx,

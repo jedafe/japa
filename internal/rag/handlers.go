@@ -76,8 +76,7 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -87,7 +86,7 @@ func (h *Handlers) HandleReindex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.QueueReindex(r.Context(), tenantID); err != nil {
+	if err := h.service.QueueReindex(r.Context()); err != nil {
 		slog.Error("rag: reindex failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reindex_failed", "Failed to queue re-index")
 
@@ -107,8 +106,7 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -118,7 +116,7 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.service.GetStats(r.Context(), tenantID)
+	stats, err := h.service.GetStats(r.Context())
 	if err != nil {
 		slog.Error("rag: status failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get RAG stats")
@@ -143,8 +141,7 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -163,7 +160,7 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 	// Sentinel "all" → purge every embedding for this entity_type.
 	idParam := chi.URLParam(r, "id")
 	if idParam == "all" {
-		if err := h.service.PurgeEntityType(r.Context(), tenantID, entityType); err != nil {
+		if err := h.service.PurgeEntityType(r.Context(), entityType); err != nil {
 			slog.Error("rag: purge by type failed", "error", err, "entity_type", entityType)
 			errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity type embeddings")
 
@@ -184,7 +181,7 @@ func (h *Handlers) HandlePurgeEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.PurgeEntity(r.Context(), tenantID, entityType, entityID); err != nil {
+	if err := h.service.PurgeEntity(r.Context(), entityType, entityID); err != nil {
 		slog.Error("rag: purge failed", "error", err, "entity_type", entityType)
 		errpkg.WriteError(w, http.StatusInternalServerError, "purge_failed", "Failed to purge entity embeddings")
 
@@ -218,10 +215,10 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	settings := map[string]any{
-		"rag.enabled":          h.settings.GetBoolOr(ctx, pgtype.UUID{}, "rag.enabled", true),
-		"rag.embedding_model":  h.settings.GetStringOr(ctx, pgtype.UUID{}, "rag.embedding_model", "text-embedding-3-small"),
-		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.retrieval_top_k", 5),
-		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, pgtype.UUID{}, "rag.chunk_max_tokens", 400),
+		"rag.enabled":          h.settings.GetBoolOr(ctx, "rag.enabled", true),
+		"rag.embedding_model":  h.settings.GetStringOr(ctx, "rag.embedding_model", "text-embedding-3-small"),
+		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, "rag.retrieval_top_k", 5),
+		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, "rag.chunk_max_tokens", 400),
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -242,8 +239,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -333,7 +329,7 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 		pending["rag."+key] = valueJSON
 	}
 
-	if err := h.settings.UpdateSettingsBatch(ctx, tenantID, pending); err != nil {
+	if err := h.settings.UpdateSettingsBatch(ctx, pending); err != nil {
 		slog.Error("rag: failed to save settings", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 

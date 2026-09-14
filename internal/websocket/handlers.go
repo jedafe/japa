@@ -92,7 +92,7 @@ func (h *Handlers) GetWSTicket(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Insert ticket into DB and get the generated ticket ID.
-	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID, pgtype.UUID{})
+	ticket, err := h.service.store.CreateWSTicket(ctx, user.UserID)
 	if err != nil {
 		slog.Error("creating ws ticket", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create ticket")
@@ -192,7 +192,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Mark ticket as used in DB, validating alongside user_id so a
 	// ticket minted in tenant A cannot be consumed in tenant B (BUG-019).
-	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID, tenantID); err != nil {
+	if _, err := h.service.store.UseWSTicket(ctx, ticketID, userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to consume ticket")
 		return
 	}
@@ -341,7 +341,7 @@ func (c *Client) readPump(dmSvc *DMService) {
 // Defining it as an interface allows tests to inject a mock without a DB
 // dependency. *DMService satisfies this interface.
 type typingLookup interface {
-	GetOtherParticipant(ctx context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error)
+	GetOtherParticipant(ctx context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error)
 }
 
 // handleTypingEvent parses a typing indicator from the client, looks up the
@@ -376,8 +376,7 @@ func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
 	if err := convID.Scan(payload.ConversationID); err != nil {
 		return
 	}
-
-	tenantID := pgtype.UUID{}
+	_ = pgtype.UUID{}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(c.UserID); err != nil {
@@ -387,7 +386,7 @@ func (c *Client) handleTypingEvent(dmSvc typingLookup, event WSEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	otherID, err := dmSvc.GetOtherParticipant(ctx, tenantID, convID, userID)
+	otherID, err := dmSvc.GetOtherParticipant(ctx, convID, userID)
 	if err != nil {
 		// Not a participant or conversation doesn't exist — silently drop
 		// so membership is not leaked to the sender.

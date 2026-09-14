@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -13,7 +12,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // ListSharePlatforms returns all share platforms for a tenant, ordered by position.
-func (s *Service) ListSharePlatforms(ctx context.Context, tenantID pgtype.UUID) ([]gen.SharePlatform, error) {
+func (s *Service) ListSharePlatforms(ctx context.Context) ([]gen.SharePlatform, error) {
 	platforms, err := s.read.ListSharePlatforms(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing share platforms: %w", err)
@@ -23,7 +22,7 @@ func (s *Service) ListSharePlatforms(ctx context.Context, tenantID pgtype.UUID) 
 }
 
 // ListEnabledSharePlatforms returns only enabled share platforms for a tenant.
-func (s *Service) ListEnabledSharePlatforms(ctx context.Context, tenantID pgtype.UUID) ([]gen.SharePlatform, error) {
+func (s *Service) ListEnabledSharePlatforms(ctx context.Context) ([]gen.SharePlatform, error) {
 	platforms, err := s.read.ListEnabledSharePlatforms(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing enabled share platforms: %w", err)
@@ -33,7 +32,7 @@ func (s *Service) ListEnabledSharePlatforms(ctx context.Context, tenantID pgtype
 }
 
 // CreateSharePlatform creates a new share platform.
-func (s *Service) CreateSharePlatform(ctx context.Context, tenantID pgtype.UUID, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
+func (s *Service) CreateSharePlatform(ctx context.Context, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
 	p, err := s.write.CreateSharePlatform(ctx, gen.CreateSharePlatformParams{
 
 		Key:         key,
@@ -52,7 +51,7 @@ func (s *Service) CreateSharePlatform(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // UpdateSharePlatform updates an existing share platform by key.
-func (s *Service) UpdateSharePlatform(ctx context.Context, tenantID pgtype.UUID, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
+func (s *Service) UpdateSharePlatform(ctx context.Context, key, label, icon, urlTemplate, color string, enabled bool, position int32) (gen.SharePlatform, error) {
 	p, err := s.write.UpdateSharePlatform(ctx, gen.UpdateSharePlatformParams{
 
 		Key:         key,
@@ -71,7 +70,7 @@ func (s *Service) UpdateSharePlatform(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // DeleteSharePlatform removes a share platform by tenant and key.
-func (s *Service) DeleteSharePlatform(ctx context.Context, tenantID pgtype.UUID, key string) error {
+func (s *Service) DeleteSharePlatform(ctx context.Context, key string) error {
 	if err := s.write.DeleteSharePlatform(ctx,
 
 		key,

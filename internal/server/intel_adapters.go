@@ -34,8 +34,8 @@ type intelSchedulerSourceAdapter struct {
 	tenantID pgtype.UUID
 }
 
-func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, tenantID pgtype.UUID, limit int32) ([]gen.IntelSource, error) {
-	return a.store.ListDue(ctx, tenantID, limit)
+func (a *intelSchedulerSourceAdapter) ListDue(ctx context.Context, limit int32) ([]gen.IntelSource, error) {
+	return a.store.ListDue(ctx, limit)
 }
 
 // intelExtractorPortAdapter wraps *extractor.Extractor so it satisfies the
@@ -405,7 +405,7 @@ type studioAutoPromoterAdapter struct {
 // intel_record_id. It is called by HandleIntelPromote when
 // studio.auto_promote_intel_records is true and the record's confidence
 // meets the intel.extraction_confidence_auto threshold.
-func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, tenantID, recordID pgtype.UUID, entityType string, extractedJSON []byte) error {
+func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, recordID pgtype.UUID, entityType string, extractedJSON []byte) error {
 	contentType, ok := intelEntityTypeToStudioContentType[entityType]
 	if !ok || contentType == "" {
 		return nil // unmapped entity type — skip silently
@@ -420,12 +420,12 @@ func (a *studioAutoPromoterAdapter) AutoPromoteIntelRecord(ctx context.Context, 
 	var personaID pgtype.UUID
 
 	if a.settings != nil {
-		if pidStr := a.settings.GetStringOr(ctx, pgtype.UUID{}, "studio.default_persona_id", ""); pidStr != "" {
+		if pidStr := a.settings.GetStringOr(ctx, "studio.default_persona_id", ""); pidStr != "" {
 			_ = personaID.Scan(pidStr)
 		}
 	}
 
-	_, err := a.svc.CreateJob(ctx, tenantID, a.authorID, studio.CreateJobInput{
+	_, err := a.svc.CreateJob(ctx, a.authorID, studio.CreateJobInput{
 		PersonaID:     personaID,
 		ContentType:   contentType,
 		TopicPrompt:   topic,

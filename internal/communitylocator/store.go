@@ -219,7 +219,7 @@ type UpdateOrgInput struct {
 // UpdateOrg applies a tenant-scoped partial update to a community
 // organisation. Only non-nil input fields are written; the updated row is
 // re-fetched and returned.
-func (s *Store) UpdateOrg(ctx context.Context, id, tenantID pgtype.UUID, in UpdateOrgInput) (OrgRow, error) {
+func (s *Store) UpdateOrg(ctx context.Context, id pgtype.UUID, in UpdateOrgInput) (OrgRow, error) {
 	var (
 		sets   []string
 		args   []any
@@ -609,7 +609,7 @@ WHERE %s
 }
 
 // GetBySlug returns a single community organisation by its slug.
-func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (OrgRow, error) {
+func (s *Store) GetBySlug(ctx context.Context, slug string) (OrgRow, error) {
 	const q = `
 SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,

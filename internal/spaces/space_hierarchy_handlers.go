@@ -22,8 +22,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -48,7 +47,7 @@ func (h *Handlers) AddParentSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Verify the parent space exists and belongs to the same tenant.
-	parent, err := h.Service.GetSpace(r.Context(), parentID, tenantID)
+	parent, err := h.Service.GetSpace(r.Context(), parentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -109,13 +108,12 @@ func (h *Handlers) ListParentSpaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	parents, err := h.Service.GetParentSpaces(r.Context(), space.ID, tenantID)
+	parents, err := h.Service.GetParentSpaces(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

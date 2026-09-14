@@ -47,7 +47,7 @@ func SpaceResolver(service *Service) func(http.Handler) http.Handler {
 				return
 			}
 
-			space, err := service.GetSpaceBySlug(r.Context(), slug, t.ID)
+			space, err := service.GetSpaceBySlug(r.Context(), slug)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")

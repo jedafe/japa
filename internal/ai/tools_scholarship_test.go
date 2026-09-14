@@ -16,7 +16,7 @@ type stubScholarshipSearcher struct {
 	err     error
 }
 
-func (s *stubScholarshipSearcher) FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error) {
+func (s *stubScholarshipSearcher) FindScholarships(ctx context.Context, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error) {
 	s.called = true
 	s.filters = filters
 

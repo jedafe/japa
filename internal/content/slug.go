@@ -69,13 +69,13 @@ const MaxSlugAttempts = 100
 // tenant. If it is, a numeric suffix is appended (-2, -3, ...) until a
 // unique slug is found. The check is limited to MaxSlugAttempts iterations
 // to prevent infinite loops.
-func (s *Service) EnsureUniqueSlug(ctx context.Context, slug string, tenantID pgtype.UUID) (string, error) {
-	return s.ensureUniqueSlugWithQueries(ctx, s.read, slug, tenantID)
+func (s *Service) EnsureUniqueSlug(ctx context.Context, slug string) (string, error) {
+	return s.ensureUniqueSlugWithQueries(ctx, s.read, slug)
 }
 
 // ensureUniqueSlugWithQueries is the shared slug-uniqueness check that
 // accepts a *gen.Queries so it can run inside a transaction (BUG-001).
-func (s *Service) ensureUniqueSlugWithQueries(ctx context.Context, q *gen.Queries, slug string, tenantID pgtype.UUID) (string, error) {
+func (s *Service) ensureUniqueSlugWithQueries(ctx context.Context, q *gen.Queries, slug string) (string, error) {
 	base := slug
 	for i := 2; i <= MaxSlugAttempts; i++ {
 		candidate := base

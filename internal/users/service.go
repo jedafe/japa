@@ -68,7 +68,7 @@ type sourceManager interface {
 // folderResolver resolves a default bookmark folder for an entity/content
 // type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
 type folderResolver interface {
-	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+	Resolve(ctx context.Context, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 // SetEnqueuer injects the Asynq enqueuer for async user tasks (search index
@@ -106,14 +106,14 @@ func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
 // MediaResolver resolves a media UUID to a presigned URL.
 // Implemented by the media package; injected at server wiring time.
 type MediaResolver interface {
-	ResolveMediaURL(ctx context.Context, tenantID, mediaID pgtype.UUID) (string, error)
+	ResolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error)
 }
 
 // PointsProvider returns a user's Points balance. Implemented by wallet.Service.
 // Used by GetPublicProfileByUsername to surface points on a public profile when
 // the user has opted in via show_points_publicly (Section 28).
 type PointsProvider interface {
-	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -128,8 +128,8 @@ func NewService(database *db.DB) *Service {
 }
 
 // GetProfile returns the user profile for the given user within a tenant.
-func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) (*UserProfileResponse, error) {
-	p, err := s.store.getProfile(ctx, tenantID, userID)
+func (s *Service) GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProfileResponse, error) {
+	p, err := s.store.getProfile(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("getting profile: %w", err)
 	}
@@ -163,22 +163,22 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 	// so the feed header can render the inline geo control without an extra
 	// round-trip. A failure degrades to an empty string (frontend falls back
 	// to the GeoIP-resolved country).
-	contentCountry, _ := s.GetContentCountry(ctx, tenantID, userID)
+	contentCountry, _ := s.GetContentCountry(ctx, userID)
 
 	// ADR-064a: best-effort fetch of origin/destination country custom field
 	// values so the settings/location page can pre-populate. A failure
 	// degrades to empty strings (the dropdowns show "Not set").
-	originCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_country")
-	originStateID, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_state_id")
-	originCityID, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "origin_city_id")
-	destCountry, _ := s.store.getGeoCustomField(ctx, tenantID, userID, "destination_country")
+	originCountry, _ := s.store.getGeoCustomField(ctx, userID, "origin_country")
+	originStateID, _ := s.store.getGeoCustomField(ctx, userID, "origin_state_id")
+	originCityID, _ := s.store.getGeoCustomField(ctx, userID, "origin_city_id")
+	destCountry, _ := s.store.getGeoCustomField(ctx, userID, "destination_country")
 
 	// ADR-064 Option A: best-effort fetch of the user's current_geo_space_id
 	// so sidebar widgets can pass it to geo-aware content endpoints without
 	// an extra round-trip. A failure degrades to an empty string (widgets
 	// fetch global content).
 	currentGeoSpaceID := ""
-	if geoSpace, gErr := s.store.getCurrentGeoSpace(ctx, tenantID, userID); gErr == nil && geoSpace.CurrentGeoSpaceID.Valid {
+	if geoSpace, gErr := s.store.getCurrentGeoSpace(ctx, userID); gErr == nil && geoSpace.CurrentGeoSpaceID.Valid {
 		currentGeoSpaceID = geoSpace.CurrentGeoSpaceID.String()
 	}
 
@@ -224,8 +224,8 @@ func (s *Service) GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) 
 }
 
 // GetProfileByUsername returns the user profile for the given username within a tenant.
-func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*UserProfileResponse, error) {
-	p, err := s.store.getUserByUsername(ctx, tenantID, username)
+func (s *Service) GetProfileByUsername(ctx context.Context, username string) (*UserProfileResponse, error) {
+	p, err := s.store.getUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("getting profile by username: %w", err)
 	}
@@ -259,8 +259,8 @@ func (s *Service) GetProfileByUsername(ctx context.Context, tenantID pgtype.UUID
 // // When the user has opted in via show_points_publicly (Section 28) and a
 // PointsProvider is wired, the response includes the user's Points balance.
 // Credits are never included.
-func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (*PublicProfileResponse, error) {
-	p, err := s.store.getPublicProfileByUsername(ctx, tenantID, username)
+func (s *Service) GetPublicProfileByUsername(ctx context.Context, username string) (*PublicProfileResponse, error) {
+	p, err := s.store.getPublicProfileByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("getting public profile by username: %w", err)
 	}
@@ -286,7 +286,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 	// resolution failure degrades to no banner rather than failing the
 	// profile response.
 	if p.BannerMediaID.Valid && s.MediaResolver != nil {
-		if url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, p.BannerMediaID); err == nil && url != "" {
+		if url, err := s.MediaResolver.ResolveMediaURL(ctx, p.BannerMediaID); err == nil && url != "" {
 			resp.BannerURL = &url
 		}
 	}
@@ -294,7 +294,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, tenantID pgtyp
 	// Conditionally include Points if the user has consented (Section 28).
 	// Credits are never exposed publicly.
 	if p.ShowPointsPublicly && s.PointsProvider != nil {
-		points, perr := s.PointsProvider.GetPointsBalance(ctx, tenantID, p.UserID)
+		points, perr := s.PointsProvider.GetPointsBalance(ctx, p.UserID)
 		if perr == nil {
 			resp.Points = &points
 		}
@@ -317,7 +317,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Read current profile to preserve existing values for omitted fields.
 		// The FOR UPDATE lock is held until commit.
-		current, err := s.store.getProfileForUpdateTx(ctx, q, tenantID, userID)
+		current, err := s.store.getProfileForUpdateTx(ctx, q, userID)
 		if err != nil {
 			// First-time profile edit: no user_profiles row exists yet.
 			// The upsert below will INSERT it. Use zero values for the merge.
@@ -367,7 +367,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 				avatarMediaID = mid
 				// Resolve to URL if a MediaResolver is wired.
 				if s.MediaResolver != nil {
-					url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+					url, err := s.MediaResolver.ResolveMediaURL(ctx, mid)
 					if err == nil {
 						avatarURL = &url
 					}
@@ -387,7 +387,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 				headerMediaID = mid
 				// Resolve to URL if a MediaResolver is wired.
 				if s.MediaResolver != nil {
-					url, err := s.MediaResolver.ResolveMediaURL(ctx, tenantID, mid)
+					url, err := s.MediaResolver.ResolveMediaURL(ctx, mid)
 					if err == nil {
 						coverURL = &url
 					}
@@ -395,7 +395,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 			}
 		}
 
-		if err := s.store.upsertProfileTx(ctx, q, tenantID, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
+		if err := s.store.upsertProfileTx(ctx, q, userID, displayName, avatarURL, coverURL, bio, timezone, avatarMediaID, headerMediaID); err != nil {
 			return fmt.Errorf("updating profile: %w", err)
 		}
 
@@ -404,22 +404,22 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 		// user_profile entity. These are saved after the profile upsert to
 		// ensure the profile row exists.
 		if req.OriginCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
 				return fmt.Errorf("saving origin_country: %w", err)
 			}
 		}
 		if req.OriginStateID != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_state_id", strings.TrimSpace(*req.OriginStateID)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "origin_state_id", strings.TrimSpace(*req.OriginStateID)); err != nil {
 				return fmt.Errorf("saving origin_state_id: %w", err)
 			}
 		}
 		if req.OriginCityID != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_city_id", strings.TrimSpace(*req.OriginCityID)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "origin_city_id", strings.TrimSpace(*req.OriginCityID)); err != nil {
 				return fmt.Errorf("saving origin_city_id: %w", err)
 			}
 		}
 		if req.DestinationCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
 				return fmt.Errorf("saving destination_country: %w", err)
 			}
 		}
@@ -442,35 +442,35 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 // profile (origin_country, destination_country, japa_status, visa_route,
 // purpose, planned_travel_date). All fields are optional partial updates.
 // Ref: docs/superpowers/specs/2026-08-21-journey-aware-recommendations-design.md.
-func (s *Service) UpdateJourney(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateJourneyRequest) error {
+func (s *Service) UpdateJourney(ctx context.Context, userID pgtype.UUID, req *UpdateJourneyRequest) error {
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		if req.OriginCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "origin_country", normalizeCountryCode(*req.OriginCountry)); err != nil {
 				return fmt.Errorf("saving origin_country: %w", err)
 			}
 		}
 		if req.DestinationCountry != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "destination_country", normalizeCountryCode(*req.DestinationCountry)); err != nil {
 				return fmt.Errorf("saving destination_country: %w", err)
 			}
 		}
 		if req.JapaStage != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "japa_status", normalizeJourneyValue(*req.JapaStage)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "japa_status", normalizeJourneyValue(*req.JapaStage)); err != nil {
 				return fmt.Errorf("saving japa_status: %w", err)
 			}
 		}
 		if req.VisaRoute != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "visa_route", normalizeJourneyValue(*req.VisaRoute)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "visa_route", normalizeJourneyValue(*req.VisaRoute)); err != nil {
 				return fmt.Errorf("saving visa_route: %w", err)
 			}
 		}
 		if req.Purpose != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "purpose", normalizeJourneyValue(*req.Purpose)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "purpose", normalizeJourneyValue(*req.Purpose)); err != nil {
 				return fmt.Errorf("saving purpose: %w", err)
 			}
 		}
 		if req.TravelDate != nil {
-			if err := s.store.setGeoCustomFieldTx(ctx, q, tenantID, userID, "planned_travel_date", strings.TrimSpace(*req.TravelDate)); err != nil {
+			if err := s.store.setGeoCustomFieldTx(ctx, q, userID, "planned_travel_date", strings.TrimSpace(*req.TravelDate)); err != nil {
 				return fmt.Errorf("saving planned_travel_date: %w", err)
 			}
 		}
@@ -501,8 +501,8 @@ func normalizeJourneyValue(s string) string {
 
 // GetPreferences returns user preferences. If no preferences exist yet,
 // returns the system defaults (dark_mode='system', language='en-NG').
-func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UUID) (*UserPreferencesResponse, error) {
-	pref, err := s.store.getPreferences(ctx, tenantID, userID)
+func (s *Service) GetPreferences(ctx context.Context, userID pgtype.UUID) (*UserPreferencesResponse, error) {
+	pref, err := s.store.getPreferences(ctx, userID)
 	if err != nil {
 		// If no preferences exist yet, return defaults.
 		return &UserPreferencesResponse{ //nolint:nilerr // intentional: missing prefs return defaults
@@ -523,11 +523,11 @@ func (s *Service) GetPreferences(ctx context.Context, tenantID, userID pgtype.UU
 // UPDATE lock on the user_preferences row so two concurrent PUT
 // /me/preferences calls cannot both read the same baseline and the second
 // write overwrite the first (lost update).
-func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePreferencesRequest) error {
+func (s *Service) UpdatePreferences(ctx context.Context, userID pgtype.UUID, req *UpdatePreferencesRequest) error {
 	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Read current preferences to preserve existing values for omitted
 		// fields. The FOR UPDATE lock is held until commit.
-		current, err := s.store.getPreferencesForUpdateTx(ctx, q, tenantID, userID)
+		current, err := s.store.getPreferencesForUpdateTx(ctx, q, userID)
 		darkMode := "system"
 		language := "en-NG"
 
@@ -547,7 +547,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 			language = *req.Language
 		}
 
-		if err := s.store.upsertPreferencesTx(ctx, q, tenantID, userID, darkMode, language); err != nil {
+		if err := s.store.upsertPreferencesTx(ctx, q, userID, darkMode, language); err != nil {
 			return fmt.Errorf("updating preferences: %w", err)
 		}
 
@@ -557,20 +557,20 @@ func (s *Service) UpdatePreferences(ctx context.Context, tenantID, userID pgtype
 
 // SetContentCountry updates the user's content_country_preference.
 // An empty country clears the preference (falls back to GeoIP).
-func (s *Service) SetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID, country string) error {
-	return s.store.SetContentCountryPreference(ctx, tenantID, userID, country)
+func (s *Service) SetContentCountry(ctx context.Context, userID pgtype.UUID, country string) error {
+	return s.store.SetContentCountryPreference(ctx, userID, country)
 }
 
 // GetContentCountry returns the user's content_country_preference.
-func (s *Service) GetContentCountry(ctx context.Context, tenantID, userID pgtype.UUID) (string, error) {
-	return s.store.GetContentCountryPreference(ctx, tenantID, userID)
+func (s *Service) GetContentCountry(ctx context.Context, userID pgtype.UUID) (string, error) {
+	return s.store.GetContentCountryPreference(ctx, userID)
 }
 
 // SetCurrentGeoSpace updates the user's current_geo_space_id (ADR-064a).
 // This is the user's declared current location (city/state/country Space).
 // The VisitorContext resolver reads this to override GeoIP-based CurrentCountry.
-func (s *Service) SetCurrentGeoSpace(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
-	return s.store.updateGeoSpace(ctx, tenantID, userID, spaceID)
+func (s *Service) SetCurrentGeoSpace(ctx context.Context, userID, spaceID pgtype.UUID) error {
+	return s.store.updateGeoSpace(ctx, userID, spaceID)
 }
 
 // GetUserModerationConfig returns the platform's valid user statuses, profile
@@ -634,7 +634,7 @@ func (s *Service) GetUserModerationConfig(ctx context.Context) (*UserModerationC
 
 // ListUsers returns a paginated list of users for admin use, with optional
 // search filtering by username/email, status filter, and group slug filter.
-func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, status, groupSlug string, limit, offset int32) (*ListUsersResponse, error) {
+func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug string, limit, offset int32) (*ListUsersResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -643,12 +643,12 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, s
 		offset = 0
 	}
 
-	users, err := s.store.listUsers(ctx, tenantID, search, status, groupSlug, limit, offset)
+	users, err := s.store.listUsers(ctx, search, status, groupSlug, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
 
-	total, err := s.store.countUsers(ctx, tenantID, search, status, groupSlug)
+	total, err := s.store.countUsers(ctx, search, status, groupSlug)
 	if err != nil {
 		return nil, fmt.Errorf("counting users: %w", err)
 	}
@@ -691,7 +691,7 @@ func (s *Service) ListUsers(ctx context.Context, tenantID pgtype.UUID, search, s
 // users first. Returns items + pagination metadata (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
-func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, search, profileType string, limit, offset int32) (*PublicUserListResponse, error) {
+func (s *Service) ListPublicUsers(ctx context.Context, search, profileType string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -700,7 +700,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, sea
 		offset = 0
 	}
 
-	rows, err := s.store.listPublicUsers(ctx, tenantID, search, profileType, limit, offset)
+	rows, err := s.store.listPublicUsers(ctx, search, profileType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing public users: %w", err)
 	}
@@ -724,7 +724,7 @@ func (s *Service) ListPublicUsers(ctx context.Context, tenantID pgtype.UUID, sea
 		}
 	}
 
-	total, err := s.store.countPublicUsers(ctx, tenantID, search, profileType)
+	total, err := s.store.countPublicUsers(ctx, search, profileType)
 	if err != nil {
 		return nil, fmt.Errorf("counting public users: %w", err)
 	}
@@ -786,8 +786,8 @@ func (s *Service) GetPrivacyOptions(_ context.Context) *PrivacyOptions {
 }
 
 // GetPrivacySettings returns the user's privacy settings.
-func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID) (*PrivacySettings, error) {
-	settings, err := s.store.getUserPrivacySettings(ctx, tenantID, userID)
+func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*PrivacySettings, error) {
+	settings, err := s.store.getUserPrivacySettings(ctx, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &PrivacySettings{
@@ -821,7 +821,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, tenantID, userID pgtyp
 func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Read current settings with FOR UPDATE lock held until commit.
-		current, err := s.store.getUserPrivacySettingsForUpdateTx(ctx, q, tenantID, userID)
+		current, err := s.store.getUserPrivacySettingsForUpdateTx(ctx, q, userID)
 		dmPrivacy := "followers"
 		profileVisibility := "public"
 		var searchIndexable, showOnlineStatus, showActivity, showPointsPublicly bool
@@ -856,7 +856,7 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 			showPointsPublicly = *req.ShowPointsPublicly
 		}
 
-		return s.store.upsertUserPrivacySettingsTx(ctx, q, tenantID, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly)
+		return s.store.upsertUserPrivacySettingsTx(ctx, q, userID, dmPrivacy, profileVisibility, searchIndexable, showOnlineStatus, showActivity, showPointsPublicly)
 	}); err != nil {
 		return err
 	}
@@ -894,8 +894,8 @@ func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
 // jc_refresh cookie); it is used to flag the current session so the frontend
 // can show a "current" badge and omit the revoke button on it.
 // Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
-func (s *Service) ListSessions(ctx context.Context, tenantID, userID, currentSessionID pgtype.UUID) ([]SessionInfo, error) {
-	sessions, err := s.store.listUserSessions(ctx, tenantID, userID)
+func (s *Service) ListSessions(ctx context.Context, userID, currentSessionID pgtype.UUID) ([]SessionInfo, error) {
+	sessions, err := s.store.listUserSessions(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
@@ -929,13 +929,13 @@ func (s *Service) ListSessions(ctx context.Context, tenantID, userID, currentSes
 
 // ListUserActivity returns a merged feed of the user's authored content and
 // comments, newest first, plus the total count across both sources.
-func (s *Service) ListUserActivity(ctx context.Context, tenantID, userID pgtype.UUID, limit int32) (*UserActivityResponse, error) {
-	rows, err := s.store.listUserActivity(ctx, tenantID, userID, limit)
+func (s *Service) ListUserActivity(ctx context.Context, userID pgtype.UUID, limit int32) (*UserActivityResponse, error) {
+	rows, err := s.store.listUserActivity(ctx, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing user activity: %w", err)
 	}
 
-	total, err := s.store.countUserActivity(ctx, tenantID, userID)
+	total, err := s.store.countUserActivity(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("counting user activity: %w", err)
 	}
@@ -953,8 +953,8 @@ func (s *Service) ListUserActivity(ctx context.Context, tenantID, userID pgtype.
 }
 
 // RevokeSession revokes a specific session.
-func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, sessionID pgtype.UUID) error {
-	return s.store.revokeUserSession(ctx, tenantID, sessionID, userID)
+func (s *Service) RevokeSession(ctx context.Context, userID, sessionID pgtype.UUID) error {
+	return s.store.revokeUserSession(ctx, sessionID, userID)
 }
 
 // RevokeAllSessions revokes all sessions except the current one. The current
@@ -962,13 +962,13 @@ func (s *Service) RevokeSession(ctx context.Context, tenantID, userID, sessionID
 // handler and passed here — NOT inferred from created_at DESC, which would
 // keep the wrong session if the user has multiple concurrent sessions.
 // Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md.
-func (s *Service) RevokeAllSessions(ctx context.Context, tenantID, userID, currentSessionID pgtype.UUID) error {
-	return s.store.revokeAllUserSessions(ctx, tenantID, userID, currentSessionID)
+func (s *Service) RevokeAllSessions(ctx context.Context, userID, currentSessionID pgtype.UUID) error {
+	return s.store.revokeAllUserSessions(ctx, userID, currentSessionID)
 }
 
 // ListConnectedAccounts returns the user's linked OAuth accounts.
-func (s *Service) ListConnectedAccounts(ctx context.Context, tenantID, userID pgtype.UUID) ([]ConnectedAccountInfo, error) {
-	accounts, err := s.store.listOAuthAccounts(ctx, tenantID, userID)
+func (s *Service) ListConnectedAccounts(ctx context.Context, userID pgtype.UUID) ([]ConnectedAccountInfo, error) {
+	accounts, err := s.store.listOAuthAccounts(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing connected accounts: %w", err)
 	}
@@ -985,19 +985,19 @@ func (s *Service) ListConnectedAccounts(ctx context.Context, tenantID, userID pg
 }
 
 // DisconnectAccount removes a linked OAuth provider.
-func (s *Service) DisconnectAccount(ctx context.Context, tenantID, userID pgtype.UUID, provider string) error {
-	return s.store.disconnectOAuthAccount(ctx, tenantID, userID, provider)
+func (s *Service) DisconnectAccount(ctx context.Context, userID pgtype.UUID, provider string) error {
+	return s.store.disconnectOAuthAccount(ctx, userID, provider)
 }
 
 // ListUserContentByStatus returns the user's content filtered by status,
 // content_type, and an optional free-text search over title/slug.
 // sort="" defaults to newest. Used by /me/content, /me/drafts, and /me/scheduled.
-func (s *Service) ListUserContentByStatus(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
-	return s.listUserContentInternal(ctx, tenantID, userID, status, contentType, q, sort, limit, offset)
+func (s *Service) ListUserContentByStatus(ctx context.Context, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
+	return s.listUserContentInternal(ctx, userID, status, contentType, q, sort, limit, offset)
 }
 
-func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
-	content, err := s.store.listUserContent(ctx, tenantID, userID, status, contentType, q, sort, limit, offset)
+func (s *Service) listUserContentInternal(ctx context.Context, userID pgtype.UUID, status, contentType, q, sort string, limit, offset int32) ([]ContentListItem, error) {
+	content, err := s.store.listUserContent(ctx, userID, status, contentType, q, sort, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user content: %w", err)
 	}
@@ -1025,8 +1025,8 @@ func (s *Service) listUserContentInternal(ctx context.Context, tenantID, userID 
 // missing, not a draft, or owned by another user/tenant. FieldValues is
 // emitted as a json.RawMessage so the JSONB column round-trips as a JSON
 // object.
-func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (*DraftResponse, error) {
-	row, err := s.store.getUserDraft(ctx, tenantID, userID, contentID)
+func (s *Service) GetUserDraft(ctx context.Context, userID, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getUserDraft(ctx, userID, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("getting user draft: %w", err)
 	}
@@ -1076,8 +1076,8 @@ func (s *Service) GetUserDraft(ctx context.Context, tenantID, userID, contentID 
 // editing. Returns pgx.ErrNoRows (→ 404) when the content is missing or owned
 // by another user/tenant. The response shape is identical to GetUserDraft so
 // the composer's ContentRecord consumes it without branching.
-func (s *Service) GetUserContent(ctx context.Context, tenantID, userID, contentID pgtype.UUID) (*DraftResponse, error) {
-	row, err := s.store.getUserContent(ctx, tenantID, userID, contentID)
+func (s *Service) GetUserContent(ctx context.Context, userID, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getUserContent(ctx, userID, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("getting user content: %w", err)
 	}
@@ -1091,8 +1091,8 @@ func (s *Service) GetUserContent(ctx context.Context, tenantID, userID, contentI
 // checking permissions before calling this — it is NOT author-scoped.
 // Returns pgx.ErrNoRows (→ 404) when the content is missing or belongs to a
 // different tenant. The response shape is identical to GetUserContent.
-func (s *Service) GetContentForEditor(ctx context.Context, tenantID, contentID pgtype.UUID) (*DraftResponse, error) {
-	row, err := s.store.getContentByIDForEditor(ctx, tenantID, contentID)
+func (s *Service) GetContentForEditor(ctx context.Context, contentID pgtype.UUID) (*DraftResponse, error) {
+	row, err := s.store.getContentByIDForEditor(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("getting content for editor: %w", err)
 	}
@@ -1175,8 +1175,8 @@ func tsPtr(t pgtype.Timestamptz) *string {
 // When folderID is valid, results are filtered to that folder (BL-002).
 // When entityTypes is non-empty, results are filtered to those entity types
 // (e.g. the learn app requests only 'learning_track' bookmarks).
-func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
-	bookmarks, err := s.store.listUserBookmarks(ctx, tenantID, userID, folderID, entityTypes, limit, offset)
+func (s *Service) ListUserBookmarks(ctx context.Context, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
+	bookmarks, err := s.store.listUserBookmarks(ctx, userID, folderID, entityTypes, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing user bookmarks: %w", err)
 	}
@@ -1202,7 +1202,7 @@ func (s *Service) ListUserBookmarks(ctx context.Context, tenantID, userID, folde
 // CreateBookmark adds a polymorphic bookmark for the given entity.
 // It is idempotent — an existing bookmark updates the folder/folder_id.
 // Ref: §50 (bookmarks), DOC-013 (doc_page bookmark creation support).
-func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
+func (s *Service) CreateBookmark(ctx context.Context, userID, entityID, folderID pgtype.UUID, entityType, folder string) (gen.CreateBookmarkRow, error) {
 	// Normalize legacy forum entity types to the consolidated names.
 	switch entityType {
 	case "thread":
@@ -1241,7 +1241,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 				}
 			}
 
-			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
+			f, err := s.folderResolver.Resolve(ctx, userID, entityType, contentType)
 			if err == nil && f.ID != "" {
 				folder = f.Name
 
@@ -1278,7 +1278,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID, entityID
 // scoped — returns ErrNotFound when the bookmark doesn't exist or belongs to
 // another user/tenant. Works polymorphically across all entity types in the
 // unified bookmarks table (§08/§50).
-func (s *Service) DeleteBookmarkByID(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteBookmarkByID(ctx context.Context, id, userID pgtype.UUID) error {
 	affected, err := s.store.write.DeleteBookmarkByID(ctx, gen.DeleteBookmarkByIDParams{
 		ID: id,
 
@@ -1363,7 +1363,7 @@ type ReaderByCountry struct {
 // scoped to a date range for period-based engagement metrics.
 // Uses SQL COUNT queries instead of row iteration (BUG-012).
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
-func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, from, to *time.Time) (*UserAnalytics, error) {
+func (s *Service) GetUserAnalytics(ctx context.Context, userID pgtype.UUID, from, to *time.Time) (*UserAnalytics, error) {
 	fromTs := pgtype.Timestamptz{}
 	toTs := pgtype.Timestamptz{}
 
@@ -1394,61 +1394,61 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 
 	g.Go(func() error {
 		var err error
-		contentCounts, err = s.store.countUserContent(ctx, tenantID, userID)
+		contentCounts, err = s.store.countUserContent(ctx, userID)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		contentCreated, err = s.store.countUserContentCreatedInPeriod(ctx, tenantID, userID, fromTs, toTs)
+		contentCreated, err = s.store.countUserContentCreatedInPeriod(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		bookmarkCount, err = s.store.countUserBookmarks(ctx, tenantID, userID)
+		bookmarkCount, err = s.store.countUserBookmarks(ctx, userID)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		followStats, err = s.store.countUserFollowStats(ctx, tenantID, userID)
+		followStats, err = s.store.countUserFollowStats(ctx, userID)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		engagement, err = s.store.getUserPeriodEngagement(ctx, tenantID, userID, fromTs, toTs)
+		engagement, err = s.store.getUserPeriodEngagement(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		followersGained, err = s.store.countUserFollowersGained(ctx, tenantID, userID, fromTs, toTs)
+		followersGained, err = s.store.countUserFollowersGained(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		pointsEarned, err = s.store.countUserPointsEarned(ctx, tenantID, userID, fromTs, toTs)
+		pointsEarned, err = s.store.countUserPointsEarned(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		dailyImpressions, err = s.store.getUserDailyImpressions(ctx, tenantID, userID, fromTs, toTs)
+		dailyImpressions, err = s.store.getUserDailyImpressions(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		readersByCountry, err = s.store.getUserReadersByCountry(ctx, tenantID, userID, fromTs, toTs)
+		readersByCountry, err = s.store.getUserReadersByCountry(ctx, userID, fromTs, toTs)
 
 		return err
 	})
 	g.Go(func() error {
 		var err error
-		topContent, err = s.store.getUserTopContentByPeriod(ctx, tenantID, userID, fromTs, toTs)
+		topContent, err = s.store.getUserTopContentByPeriod(ctx, userID, fromTs, toTs)
 
 		return err
 	})
@@ -1497,21 +1497,21 @@ func (s *Service) GetUserAnalytics(ctx context.Context, tenantID, userID pgtype.
 }
 
 // DeactivateAccount soft-deactivates the user account.
-func (s *Service) DeactivateAccount(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.store.deactivateUser(ctx, tenantID, userID)
+func (s *Service) DeactivateAccount(ctx context.Context, userID pgtype.UUID) error {
+	return s.store.deactivateUser(ctx, userID)
 }
 
 // SoftDeleteUser soft-deletes a user account (status = 'deleted').
-func (s *Service) SoftDeleteUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.store.SoftDeleteUser(ctx, tenantID, userID)
+func (s *Service) SoftDeleteUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.store.SoftDeleteUser(ctx, userID)
 }
 
 // UpdateProfileType changes a user's unified tier and syncs the denormalized
 // users.profile_type to regular/pro/business. If the tier service is wired,
 // group membership is updated at the same time.
-func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype.UUID, profileType string) error {
+func (s *Service) UpdateProfileType(ctx context.Context, userID pgtype.UUID, profileType string) error {
 	if s.tierService != nil {
-		return s.tierService.SetUserTier(ctx, tenantID, userID, profileType)
+		return s.tierService.SetUserTier(ctx, userID, profileType)
 	}
 
 	return s.store.write.UpdateUserProfileType(ctx, gen.UpdateUserProfileTypeParams{
@@ -1523,32 +1523,32 @@ func (s *Service) UpdateProfileType(ctx context.Context, tenantID, userID pgtype
 
 // ActiveUserExists reports whether an active user with this id exists in the
 // tenant. Used by the public profile gate to 404 non-active users.
-func (s *Service) ActiveUserExists(ctx context.Context, tenantID, userID pgtype.UUID) (bool, error) {
-	return s.store.activeUserExistsByID(ctx, tenantID, userID)
+func (s *Service) ActiveUserExists(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	return s.store.activeUserExistsByID(ctx, userID)
 }
 
 // GetUserContentAnalytics returns per-content analytics for the authenticated user.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
-func (s *Service) GetUserContentAnalytics(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
-	return s.store.getUserContentAnalytics(ctx, tenantID, userID, limit, offset)
+func (s *Service) GetUserContentAnalytics(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserContentAnalyticsRow, error) {
+	return s.store.getUserContentAnalytics(ctx, userID, limit, offset)
 }
 
 // GetUserContentByPeriod returns a paginated, period-scored list of the user's
 // content. Used by GET /me/analytics/content when a period is supplied.
-func (s *Service) GetUserContentByPeriod(ctx context.Context, tenantID, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
-	return s.store.getUserContentByPeriod(ctx, tenantID, userID, from, to, limit, offset)
+func (s *Service) GetUserContentByPeriod(ctx context.Context, userID pgtype.UUID, from, to pgtype.Timestamptz, limit, offset int32) ([]gen.GetUserContentByPeriodRow, error) {
+	return s.store.getUserContentByPeriod(ctx, userID, from, to, limit, offset)
 }
 
 // GetUserFollowerGrowth returns daily follower growth for the authenticated user.
 // Ref: japaconnect-engineering/sections/40-platform-analytics-site-reports.md.
-func (s *Service) GetUserFollowerGrowth(ctx context.Context, tenantID, userID pgtype.UUID, days int) ([]gen.GetUserFollowerGrowthRow, error) {
+func (s *Service) GetUserFollowerGrowth(ctx context.Context, userID pgtype.UUID, days int) ([]gen.GetUserFollowerGrowthRow, error) {
 	if days <= 0 {
 		days = 30
 	}
 
 	from := pgtype.Date{Time: time.Now().AddDate(0, 0, -days), Valid: true}
 
-	return s.store.getUserFollowerGrowth(ctx, tenantID, userID, &from, nil)
+	return s.store.getUserFollowerGrowth(ctx, userID, &from, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -1565,12 +1565,12 @@ const defaultUsernameCooldownDays = 30
 // from system_settings (users.username_cooldown_days), falling back to the
 // compiled-in default when the settings reader is not wired or the key is
 // unset (BUG-005, Rule 3).
-func (s *Service) usernameCooldownDaysFor(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) usernameCooldownDaysFor(ctx context.Context) int {
 	if s.authSettings == nil {
 		return defaultUsernameCooldownDays
 	}
 
-	return s.authSettings.GetIntOr(ctx, pgtype.UUID{}, "users.username_cooldown_days", defaultUsernameCooldownDays)
+	return s.authSettings.GetIntOr(ctx, "users.username_cooldown_days", defaultUsernameCooldownDays)
 }
 
 // ErrUsernameCooldown is returned when the user attempts to change their
@@ -1607,7 +1607,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 
 		// Row-lock the user for the duration of the transaction to prevent
 		// concurrent account edits from racing on uniqueness checks.
-		acct, err := s.store.getUserAccountForUpdateTx(ctx, q, tenantID, userID)
+		acct, err := s.store.getUserAccountForUpdateTx(ctx, q, userID)
 		if err != nil {
 			return nil, fmt.Errorf("getting account for update: %w", err)
 		}
@@ -1624,14 +1624,14 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 				// users.username_cooldown_days; default 30 per §50).
 				if acct.UsernameChangedAt.Valid {
 					elapsed := time.Since(acct.UsernameChangedAt.Time)
-					cooldown := time.Duration(s.usernameCooldownDaysFor(ctx, tenantID)) * 24 * time.Hour
+					cooldown := time.Duration(s.usernameCooldownDaysFor(ctx)) * 24 * time.Hour
 
 					if elapsed < cooldown {
 						return nil, ErrUsernameCooldown
 					}
 				}
 				// Check uniqueness within the tenant.
-				count, err := s.store.usernameExistsForTenantTx(ctx, q, tenantID, userID, newUsername)
+				count, err := s.store.usernameExistsForTenantTx(ctx, q, userID, newUsername)
 				if err != nil {
 					return nil, fmt.Errorf("checking username uniqueness: %w", err)
 				}
@@ -1640,7 +1640,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 					return nil, ErrUsernameTaken
 				}
 
-				if err := s.store.updateUsernameTx(ctx, q, tenantID, userID, newUsername); err != nil {
+				if err := s.store.updateUsernameTx(ctx, q, userID, newUsername); err != nil {
 					return nil, fmt.Errorf("updating username: %w", err)
 				}
 
@@ -1657,7 +1657,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 
 			if newEmail != acct.Email {
 				// Check uniqueness within the tenant.
-				count, err := s.store.emailExistsForTenantTx(ctx, q, tenantID, userID, newEmail)
+				count, err := s.store.emailExistsForTenantTx(ctx, q, userID, newEmail)
 				if err != nil {
 					return nil, fmt.Errorf("checking email uniqueness: %w", err)
 				}
@@ -1666,7 +1666,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 					return nil, ErrEmailTaken
 				}
 
-				if err := s.store.updateEmailTx(ctx, q, tenantID, userID, newEmail); err != nil {
+				if err := s.store.updateEmailTx(ctx, q, userID, newEmail); err != nil {
 					return nil, fmt.Errorf("updating email: %w", err)
 				}
 
@@ -1679,7 +1679,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 		// transaction so the FOR UPDATE lock covers this write too) ---
 		if req.DisplayName != nil {
 			newDisplayName := strings.TrimSpace(*req.DisplayName)
-			if err := s.store.upsertProfileTx(ctx, q, tenantID, userID, &newDisplayName, nil, nil, nil, nil, pgtype.UUID{}, pgtype.UUID{}); err != nil {
+			if err := s.store.upsertProfileTx(ctx, q, userID, &newDisplayName, nil, nil, nil, nil, pgtype.UUID{}, pgtype.UUID{}); err != nil {
 				return nil, fmt.Errorf("updating display name: %w", err)
 			}
 
@@ -1705,7 +1705,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 // EnsureSyntheticUser returns an existing synthetic user by username or creates
 // one with the supplied channel metadata. It is used by the video import flow
 // to represent external channels as tenant-scoped users.
-func (s *Service) EnsureSyntheticUser(ctx context.Context, tenantID pgtype.UUID, input SyntheticUserInput) (pgtype.UUID, error) {
+func (s *Service) EnsureSyntheticUser(ctx context.Context, input SyntheticUserInput) (pgtype.UUID, error) {
 	var userID pgtype.UUID
 
 	err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {

@@ -37,7 +37,7 @@ func safeInt32(n int) int32 {
 
 // ListJCEComparisons — listJCEComparisons handles GET /api/v1/jce/comparisons.
 func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -75,7 +75,7 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if typeSlug != "" {
-		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), typeSlug, tenantID)
+		td, err := h.Service.GetComparisonTypeBySlug(r.Context(), typeSlug)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				errpkg.WriteError(w, http.StatusNotFound, "type_not_found", "Comparison type not found")
@@ -142,7 +142,7 @@ func (h *Handlers) ListJCEComparisons(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := h.Service.ListJCEComparisons(r.Context(), tenantID, filter)
+	res, err := h.Service.ListJCEComparisons(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -170,19 +170,18 @@ func (h *Handlers) ListJCEComparisonsAdmin(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	filter, err := h.buildListComparisonsFilter(r, tenantID)
+	filter, err := h.buildListComparisonsFilter(r)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), tenantID, filter)
+	comparisons, err := h.Service.ListComparisonsAdmin(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -347,7 +346,7 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // GetJCEComparison handles GET /api/v1/jce/comparisons/{id|slug}.
 func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -358,7 +357,7 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmp, err := h.Service.GetJCEComparison(r.Context(), idOrSlug, tenantID)
+	cmp, err := h.Service.GetJCEComparison(r.Context(), idOrSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
@@ -382,7 +381,7 @@ func (h *Handlers) GetJCEComparison(w http.ResponseWriter, r *http.Request) {
 	// §14 Global Template Literals — resolve {{...}} placeholders against the
 	// comparison's own geo metadata (never the reader's context).
 	if h.Service.contentSvc != nil {
-		rc := literals.NewRequestContext(r, tenantID, "")
+		rc := literals.NewRequestContext(r, "")
 		_ = h.Service.contentSvc.ResolveContentFields(r.Context(), &cmp.Content, rc)
 	}
 
@@ -546,7 +545,7 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 
 // GetJCEComparisonMatrix handles GET /api/v1/jce/comparisons/{id|slug}/matrix.
 func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -558,7 +557,7 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 	}
 
 	// Resolve content + metadata to enforce visibility.
-	cmp, err := h.Service.GetJCEComparison(r.Context(), idOrSlug, tenantID)
+	cmp, err := h.Service.GetJCEComparison(r.Context(), idOrSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Comparison not found")
@@ -578,7 +577,7 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	matrix, err := h.Service.GetJCEComparisonMatrix(r.Context(), cmp.Content.ID, tenantID)
+	matrix, err := h.Service.GetJCEComparisonMatrix(r.Context(), cmp.Content.ID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -589,7 +588,7 @@ func (h *Handlers) GetJCEComparisonMatrix(w http.ResponseWriter, r *http.Request
 
 // SearchJCEEntities handles GET /api/v1/jce/entities/{type}.
 func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -648,7 +647,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, total, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, tenantID, limit, offset)
+	items, total, err := h.Service.SearchJCEEntities(r.Context(), entityType, search, filters, limit, offset)
 	if err != nil {
 		if err.Error() == "resolver not configured" {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Entity resolver not configured")
@@ -675,7 +674,7 @@ func (h *Handlers) SearchJCEEntities(w http.ResponseWriter, r *http.Request) {
 
 // ResolveJCEEntity handles GET /api/v1/jce/entities/{type}/{id}.
 func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -688,7 +687,7 @@ func (h *Handlers) ResolveJCEEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.Service.ResolveJCEEntity(r.Context(), entityType, idOrSlug, tenantID)
+	item, err := h.Service.ResolveJCEEntity(r.Context(), entityType, idOrSlug)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 		return

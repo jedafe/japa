@@ -498,7 +498,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -543,7 +543,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
@@ -551,7 +551,7 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 
 // UpdateSystemSetting is an exported method.
 func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -600,7 +600,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
@@ -608,7 +608,7 @@ func (h *Handlers) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 
 // ResetSystemSetting is an exported method.
 func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -628,7 +628,7 @@ func (h *Handlers) ResetSystemSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 	// Look up the default value from the catalog; if not found, the setting was
 	// deleted but had no catalog entry — return an empty default.
@@ -760,7 +760,7 @@ func (h *Handlers) GetTenantSettings(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTenantSettings handles PATCH /control/tenants/:id/settings (bulk).
 func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	_, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
@@ -803,7 +803,7 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "updated"}})
@@ -811,7 +811,7 @@ func (h *Handlers) UpdateTenantSettings(w http.ResponseWriter, r *http.Request) 
 
 // UpdateTenantSettingKey handles PATCH /control/tenants/:id/settings/:key.
 func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	_, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
@@ -860,7 +860,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
@@ -868,7 +868,7 @@ func (h *Handlers) UpdateTenantSettingKey(w http.ResponseWriter, r *http.Request
 
 // ResetTenantSetting handles POST /control/tenants/:id/settings/:key/reset.
 func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := parseUUIDParam(r, "id")
+	_, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
 		return
@@ -889,7 +889,7 @@ func (h *Handlers) ResetTenantSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	defaultValue := ""
@@ -1911,10 +1911,9 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 	if h.RBAC != nil {
 		h.RBAC.InvalidateAllCache(r.Context())
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if ok && h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1928,12 +1927,12 @@ func (h *Handlers) FlushCache(w http.ResponseWriter, r *http.Request) {
 
 // SecurityOverview is an exported method.
 func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	blocks, err := h.SpamStore.GetActiveIPBlocks(r.Context(), tenantID)
+	blocks, err := h.SpamStore.GetActiveIPBlocks(r.Context())
 	if err != nil {
 		slog.Error("control: security overview", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch security overview")
@@ -1950,12 +1949,12 @@ func (h *Handlers) SecurityOverview(w http.ResponseWriter, r *http.Request) {
 
 // ListIPBlocks is an exported method.
 func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	blocks, err := h.SpamStore.ListIPBlocks(r.Context(), tenantID, 200, pgtype.Timestamptz{})
+	blocks, err := h.SpamStore.ListIPBlocks(r.Context(), 200, pgtype.Timestamptz{})
 	if err != nil {
 		slog.Error("control: list ip blocks", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
@@ -2164,7 +2163,7 @@ func (h *Handlers) CreateIPBlock(w http.ResponseWriter, r *http.Request) {
 
 // DeleteIPBlock is an exported method.
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2175,7 +2174,7 @@ func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.SpamStore.DeleteIPBlock(r.Context(), id, tenantID); err != nil {
+	if err := h.SpamStore.DeleteIPBlock(r.Context(), id); err != nil {
 		slog.Error("control: delete ip block", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete IP block")
 
@@ -2230,7 +2229,7 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 	threshold := 0.0
 
 	if h.Settings != nil {
-		if v, err := h.Settings.GetSetting(r.Context(), pgtype.UUID{}, aiBudgetThresholdKey); err == nil {
+		if v, err := h.Settings.GetSetting(r.Context(), aiBudgetThresholdKey); err == nil {
 			threshold = parseBudgetUSD(v)
 		}
 	}
@@ -2315,7 +2314,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	// Re-aggregate spend so the response reflects the current state.
@@ -2681,7 +2680,7 @@ func (h *Handlers) ClearAuditLogs(w http.ResponseWriter, r *http.Request) {
 		if input.Confirm {
 			where = "" // clear everything
 		} else {
-			retentionDays := h.Settings.GetIntOr(r.Context(), pgtype.UUID{}, "audit.log_retention_days", 365)
+			retentionDays := h.Settings.GetIntOr(r.Context(), "audit.log_retention_days", 365)
 			cutoff := time.Now().AddDate(0, 0, -retentionDays)
 			where = "created_at < $1"
 			args = []any{cutoff}
@@ -3688,7 +3687,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 		if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
 			enabled = h.FeatureChecker.IsEnabled(r.Context(), tenantID, ext.FeatureFlagKey)
 
-			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), tenantID, ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
+			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
 				rollout = cfg.RolloutPercentage
 			}
 		} else if ext.SettingKey != "" && h.Settings != nil {
@@ -3698,7 +3697,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 				settingKey = "extensions." + ext.Key + ".enabled"
 			}
 
-			enabled = h.Settings.GetBoolOr(r.Context(), pgtype.UUID{}, settingKey, enabled)
+			enabled = h.Settings.GetBoolOr(r.Context(), settingKey, enabled)
 		}
 
 		ext.Enabled = enabled
@@ -3722,8 +3721,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3739,7 +3737,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if input.Enabled != nil {
-		if err := h.setExtensionEnabled(r, tenantID, ext, *input.Enabled); err != nil {
+		if err := h.setExtensionEnabled(r, ext, *input.Enabled); err != nil {
 			slog.Error("control: update extension", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
 
@@ -3762,13 +3760,12 @@ func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.setExtensionEnabled(r, tenantID, ext, true); err != nil {
+	if err := h.setExtensionEnabled(r, ext, true); err != nil {
 		slog.Error("control: enable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
 
@@ -3790,13 +3787,12 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.setExtensionEnabled(r, tenantID, ext, false); err != nil {
+	if err := h.setExtensionEnabled(r, ext, false); err != nil {
 		slog.Error("control: disable extension", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
 
@@ -3828,8 +3824,7 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 		errpkg.WriteError(w, http.StatusBadRequest, "no_feature_flag", "This extension does not support rollout percentage")
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -3858,7 +3853,7 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 	}
 
 	updatedBy := authUserFromContext(r)
-	if err := h.FeatureChecker.SetRolloutPercentage(r.Context(), tenantID, ext.FeatureFlagKey, percentage, updatedBy); err != nil {
+	if err := h.FeatureChecker.SetRolloutPercentage(r.Context(), ext.FeatureFlagKey, percentage, updatedBy); err != nil {
 		slog.Error("control: update rollout", "error", err, "key", ext.FeatureFlagKey)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update rollout percentage")
 
@@ -3874,14 +3869,14 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 // invalidates the feature flag cache. When it does not (legacy extensions
 // without a feature_flags mapping), it falls back to writing system_settings
 // via the SettingKey and invalidating the settings cache.
-func (h *Handlers) setExtensionEnabled(r *http.Request, tenantID pgtype.UUID, ext *extensionEntry, enabled bool) error {
+func (h *Handlers) setExtensionEnabled(r *http.Request, ext *extensionEntry, enabled bool) error {
 	if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
 		updatedBy := authUserFromContext(r)
-		if err := h.FeatureChecker.SetEnabled(r.Context(), tenantID, ext.FeatureFlagKey, enabled, updatedBy); err != nil {
+		if err := h.FeatureChecker.SetEnabled(r.Context(), ext.FeatureFlagKey, enabled, updatedBy); err != nil {
 			return fmt.Errorf("setting feature flag %s: %w", ext.FeatureFlagKey, err)
 		}
 
-		h.FeatureChecker.ClearCacheForTenant(tenantID.String())
+		h.FeatureChecker.ClearCacheForTenant()
 
 		return nil
 	}
@@ -3898,7 +3893,7 @@ func (h *Handlers) setExtensionEnabled(r *http.Request, tenantID pgtype.UUID, ex
 	}
 
 	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context(), tenantID)
+		h.Settings.InvalidateSettings(r.Context())
 	}
 
 	return nil

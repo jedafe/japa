@@ -135,12 +135,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleListTests handles GET /language-tests — list all language tests.
 func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -160,12 +160,12 @@ func (h *Handlers) HandleListTests(w http.ResponseWriter, r *http.Request) {
 // required tests + minimum scores for a destination/visa combination.
 // Query params: ?dest=&visa=.
 func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -180,7 +180,7 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 
 	visaCategory := r.URL.Query().Get("visa")
 
-	requirements, err := h.service.ListRequirements(r.Context(), tenantID, destSpaceID, visaCategory)
+	requirements, err := h.service.ListRequirements(r.Context(), destSpaceID, visaCategory)
 	if err != nil {
 		slog.Error("languagetesthub: list requirements failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
@@ -195,12 +195,12 @@ func (h *Handlers) HandleListRequirements(w http.ResponseWriter, r *http.Request
 // returning the test details plus a summary of resources and score
 // stories.
 func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -224,7 +224,7 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resources, err := h.service.ListResources(r.Context(), tenantID, test.ID, 1, 5)
+	resources, err := h.service.ListResources(r.Context(), test.ID, 1, 5)
 	if err != nil {
 		slog.Error("languagetesthub: get test resources failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
@@ -232,7 +232,7 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stories, err := h.service.ListStories(r.Context(), tenantID, test.ID, pgtype.UUID{}, 1, 5)
+	stories, err := h.service.ListStories(r.Context(), test.ID, pgtype.UUID{}, 1, 5)
 	if err != nil {
 		slog.Error("languagetesthub: get test stories failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get language test")
@@ -252,12 +252,12 @@ func (h *Handlers) HandleGetTest(w http.ResponseWriter, r *http.Request) {
 // HandleListResources handles GET /language-tests/:test_slug/resources —
 // list prep resources for a test.
 func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -283,7 +283,7 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	resources, err := h.service.ListResources(r.Context(), tenantID, test.ID, page, limit)
+	resources, err := h.service.ListResources(r.Context(), test.ID, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: list resources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list resources")
@@ -303,12 +303,12 @@ func (h *Handlers) HandleListResources(w http.ResponseWriter, r *http.Request) {
 // HandleListStories handles GET /language-tests/:test_slug/stories — list
 // published score stories for a test. Query params: ?dest=&page=&limit=.
 func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -342,7 +342,7 @@ func (h *Handlers) HandleListStories(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	stories, err := h.service.ListStories(r.Context(), tenantID, test.ID, destSpaceID, page, limit)
+	stories, err := h.service.ListStories(r.Context(), test.ID, destSpaceID, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: list stories failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list stories")
@@ -367,13 +367,12 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "language_test_hub_disabled", "Language test hub is not available")
 		return
 	}
@@ -395,7 +394,7 @@ func (h *Handlers) HandleCreateStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	story, err := h.service.CreateStory(r.Context(), tenantID, user.UserID, slug, input)
+	story, err := h.service.CreateStory(r.Context(), user.UserID, slug, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")
@@ -423,8 +422,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -450,7 +448,7 @@ func (h *Handlers) HandleAdminListRequirements(w http.ResponseWriter, r *http.Re
 		limit = 200
 	}
 
-	requirements, total, err := h.service.AdminListRequirements(r.Context(), tenantID, destSpaceID, status, q, page, limit)
+	requirements, total, err := h.service.AdminListRequirements(r.Context(), destSpaceID, status, q, page, limit)
 	if err != nil {
 		slog.Error("languagetesthub: admin list requirements failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list requirements")
@@ -475,8 +473,7 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -507,7 +504,7 @@ func (h *Handlers) HandleAdminCreateRequirement(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	requirement, err := h.service.CreateRequirement(r.Context(), tenantID, input)
+	requirement, err := h.service.CreateRequirement(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "test_not_found", "Language test not found")

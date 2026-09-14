@@ -75,7 +75,7 @@ type RateProvider interface {
 // Notifier is the minimal interface for dispatching rate-alert notifications.
 // The notifications.Service satisfies this. Used by CheckAndDispatchAlerts.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // Service holds the business logic for the Remittance Rate Tracker.
@@ -292,46 +292,46 @@ func rfc3339Date(d pgtype.Date) string {
 // ---------------------------------------------------------------------------
 
 // IsEnabled returns whether the remittance tracker is globally enabled.
-func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return true
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "remittance.enabled", true)
+	return s.settings.GetBoolOr(ctx, "remittance.enabled", true)
 }
 
 // manualStaleHours returns the configured manual-staleness threshold.
-func (s *Service) manualStaleHours(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) manualStaleHours(ctx context.Context) int {
 	if s.settings == nil {
 		return 24
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "remittance.manual_stale_hours", 24)
+	return s.settings.GetIntOr(ctx, "remittance.manual_stale_hours", 24)
 }
 
 // HistoryRetentionDays returns the configured history retention period.
-func (s *Service) HistoryRetentionDays(ctx context.Context, tenantID pgtype.UUID) int {
+func (s *Service) HistoryRetentionDays(ctx context.Context) int {
 	if s.settings == nil {
 		return 365
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "remittance.history_retention_days", 365)
+	return s.settings.GetIntOr(ctx, "remittance.history_retention_days", 365)
 }
 
 // DefaultSendCurrency returns the pre-selected send currency for the UI.
-func (s *Service) DefaultSendCurrency(ctx context.Context, tenantID pgtype.UUID) string {
+func (s *Service) DefaultSendCurrency(ctx context.Context) string {
 	if s.settings == nil {
 		return "GBP"
 	}
 
-	return s.settings.GetStringOr(ctx, pgtype.UUID{}, "remittance.default_send_currency", "GBP")
+	return s.settings.GetStringOr(ctx, "remittance.default_send_currency", "GBP")
 }
 
 // IsManualRateStale returns true if a manual rate's fetched_at is older than
 // the configured manual_stale_hours threshold.
 func (s *Service) IsManualRateStale(fetchedAt time.Time) bool {
 	ctx := context.Background()
-	staleHours := s.manualStaleHours(ctx, pgtype.UUID{})
+	staleHours := s.manualStaleHours(ctx)
 
 	return time.Since(fetchedAt) > time.Duration(staleHours)*time.Hour
 }
@@ -362,7 +362,7 @@ func bestCacheKey(tenantID pgtype.UUID, sendCurrency, receiveCurrency string) st
 // providers. Results are cached in Valkey (jc:remit:rates:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]RateInfo, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
@@ -376,7 +376,7 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 		}
 	}
 
-	rows, err := s.store.GetLatestRates(ctx, tenantID, sendCurrency, receiveCurrency)
+	rows, err := s.store.GetLatestRates(ctx, sendCurrency, receiveCurrency)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: get rates: %w", err)
 	}
@@ -438,7 +438,7 @@ func (s *Service) GetRates(ctx context.Context, tenantID pgtype.UUID, sendCurren
 // a corridor. Results are cached in Valkey (jc:remit:best:{tenant}:{send}:{receive},
 // 15-min TTL) and fall back to a live DB query on cache miss.
 func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) (*BestRate, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
@@ -490,7 +490,7 @@ func (s *Service) GetBestRate(ctx context.Context, tenantID pgtype.UUID, sendCur
 // total fees, and effective rate for a given send amount. Reads from the
 // Valkey cache of latest rates, falling back to a live DB query.
 func (s *Service) Calculate(ctx context.Context, tenantID pgtype.UUID, sendAmount float64, sendCurrency, receiveCurrency string) (*CalculateResult, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
@@ -575,12 +575,12 @@ func computeProviderCalculation(r RateInfo, sendAmount float64) ProviderCalculat
 
 // GetHistory returns a time-series of the best rate per day for a corridor
 // over the past N days (default 30, max 365).
-func (s *Service) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string, days int) ([]HistoryPoint, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) GetHistory(ctx context.Context, sendCurrency, receiveCurrency string, days int) ([]HistoryPoint, error) {
+	if !s.IsEnabled(ctx) {
 		return nil, errors.New("remittance: tracker disabled")
 	}
 
-	maxDays := s.HistoryRetentionDays(ctx, tenantID)
+	maxDays := s.HistoryRetentionDays(ctx)
 
 	if days <= 0 {
 		days = 30
@@ -592,7 +592,7 @@ func (s *Service) GetHistory(ctx context.Context, tenantID pgtype.UUID, sendCurr
 
 	fromDate := time.Now().UTC().AddDate(0, 0, -days)
 
-	rows, err := s.store.GetHistory(ctx, tenantID, sendCurrency, receiveCurrency, fromDate)
+	rows, err := s.store.GetHistory(ctx, sendCurrency, receiveCurrency, fromDate)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: get history: %w", err)
 	}
@@ -648,8 +648,8 @@ func interfaceToFloat64(v interface{}) float64 {
 }
 
 // GetProviders lists remittance providers, optionally filtering to active only.
-func (s *Service) GetProviders(ctx context.Context, tenantID pgtype.UUID, activeOnly bool) ([]ProviderInfo, error) {
-	rows, err := s.store.ListProviders(ctx, tenantID, activeOnly)
+func (s *Service) GetProviders(ctx context.Context, activeOnly bool) ([]ProviderInfo, error) {
+	rows, err := s.store.ListProviders(ctx, activeOnly)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: get providers: %w", err)
 	}
@@ -672,8 +672,8 @@ func (s *Service) GetProviders(ctx context.Context, tenantID pgtype.UUID, active
 }
 
 // GetCorridors returns the supported send/receive currency pairs.
-func (s *Service) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]Corridor, error) {
-	rows, err := s.store.GetCorridors(ctx, tenantID)
+func (s *Service) GetCorridors(ctx context.Context) ([]Corridor, error) {
+	rows, err := s.store.GetCorridors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: get corridors: %w", err)
 	}
@@ -694,7 +694,7 @@ func (s *Service) GetCorridors(ctx context.Context, tenantID pgtype.UUID) ([]Cor
 // ---------------------------------------------------------------------------
 
 // CreateAlert creates a new rate alert for a user.
-func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID, sendCurrency, receiveCurrency, direction string, targetRate float64) (AlertInfo, error) {
+func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, sendCurrency, receiveCurrency, direction string, targetRate float64) (AlertInfo, error) {
 	if direction != DirectionAbove && direction != DirectionBelow {
 		return AlertInfo{}, fmt.Errorf("remittance: invalid direction %q", direction)
 	}
@@ -720,7 +720,7 @@ func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID,
 
 // UpdateAlert updates a rate alert's mutable fields. Only non-nil fields are
 // updated (COALESCE in the SQL).
-func (s *Service) UpdateAlert(ctx context.Context, tenantID, userID, alertID pgtype.UUID, targetRate *float64, direction *string, isActive *bool) (AlertInfo, error) {
+func (s *Service) UpdateAlert(ctx context.Context, userID, alertID pgtype.UUID, targetRate *float64, direction *string, isActive *bool) (AlertInfo, error) {
 	if direction != nil && *direction != DirectionAbove && *direction != DirectionBelow {
 		return AlertInfo{}, fmt.Errorf("remittance: invalid direction %q", *direction)
 	}
@@ -760,8 +760,8 @@ func (s *Service) DeleteAlert(ctx context.Context, userID, alertID pgtype.UUID) 
 }
 
 // ListUserAlerts lists a user's rate alerts.
-func (s *Service) ListUserAlerts(ctx context.Context, tenantID, userID pgtype.UUID) ([]AlertInfo, error) {
-	alerts, err := s.store.ListUserAlerts(ctx, tenantID, userID, false)
+func (s *Service) ListUserAlerts(ctx context.Context, userID pgtype.UUID) ([]AlertInfo, error) {
+	alerts, err := s.store.ListUserAlerts(ctx, userID, false)
 	if err != nil {
 		return nil, fmt.Errorf("remittance: list alerts: %w", err)
 	}
@@ -828,7 +828,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 
 // InsertManualRate inserts a manual rate for a provider and invalidates the
 // corridor's rate cache.
-func (s *Service) InsertManualRate(ctx context.Context, tenantID, providerID pgtype.UUID, sendCurrency, receiveCurrency string, rate, feeFlat, feePct float64, transferTime, sourceURL *string) (gen.RemittanceRate, error) {
+func (s *Service) InsertManualRate(ctx context.Context, providerID pgtype.UUID, sendCurrency, receiveCurrency string, rate, feeFlat, feePct float64, transferTime, sourceURL *string) (gen.RemittanceRate, error) {
 	arg := gen.InsertRemittanceRateParams{
 
 		ProviderID:      providerID,
@@ -877,7 +877,7 @@ type UpdateRateInput UpdateRateStoreInput
 
 // CreateRate inserts a new remittance rate snapshot for a provider. The rate
 // is marked as manual because it is being entered through the admin tool writer.
-func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input CreateRateInput) (RateInfo, error) {
+func (s *Service) CreateRate(ctx context.Context, input CreateRateInput) (RateInfo, error) {
 	if !input.ProviderID.Valid {
 		return RateInfo{}, errors.New("provider_id is required")
 	}
@@ -890,7 +890,7 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 		return RateInfo{}, errors.New("rate must be positive")
 	}
 
-	provider, err := s.store.GetProviderByID(ctx, tenantID, input.ProviderID)
+	provider, err := s.store.GetProviderByID(ctx, input.ProviderID)
 	if err != nil {
 		return RateInfo{}, fmt.Errorf("remittance: create rate: get provider: %w", err)
 	}
@@ -945,7 +945,7 @@ func (s *Service) CreateRate(ctx context.Context, tenantID pgtype.UUID, input Cr
 }
 
 // UpdateRate updates an existing remittance rate snapshot.
-func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, input UpdateRateInput) (RateInfo, error) {
+func (s *Service) UpdateRate(ctx context.Context, id pgtype.UUID, input UpdateRateInput) (RateInfo, error) {
 	if input.Rate != nil && *input.Rate <= 0 {
 		return RateInfo{}, errors.New("rate must be positive")
 	}
@@ -963,7 +963,7 @@ func (s *Service) UpdateRate(ctx context.Context, id, tenantID pgtype.UUID, inpu
 		return RateInfo{}, fmt.Errorf("remittance: update rate: %w", err)
 	}
 
-	provider, err := s.store.GetProviderByID(ctx, tenantID, r.ProviderID)
+	provider, err := s.store.GetProviderByID(ctx, r.ProviderID)
 	if err != nil {
 		return RateInfo{}, fmt.Errorf("remittance: update rate: get provider: %w", err)
 	}
@@ -1007,8 +1007,8 @@ func (s *Service) DeleteRate(ctx context.Context, id pgtype.UUID) error {
 }
 
 // ListProvidersPaginated returns a page of providers and the total count.
-func (s *Service) ListProvidersPaginated(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, limit, offset int32) ([]ProviderInfo, int64, error) {
-	rows, total, err := s.store.ListProvidersPaginated(ctx, tenantID, activeOnly, limit, offset)
+func (s *Service) ListProvidersPaginated(ctx context.Context, activeOnly bool, limit, offset int32) ([]ProviderInfo, int64, error) {
+	rows, total, err := s.store.ListProvidersPaginated(ctx, activeOnly, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1054,8 +1054,8 @@ func DecryptAPIConfig(p gen.RemittanceProvider) ([]byte, error) {
 // FindAlertsNeedingNotifications returns active alerts for a corridor that are
 // eligible for notification (last_triggered_at is null or > 24h ago). Used by
 // the remittance:check_alerts task.
-func (s *Service) FindAlertsNeedingNotifications(ctx context.Context, tenantID pgtype.UUID, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
-	return s.store.ListActiveAlertsForCorridor(ctx, tenantID, sendCurrency, receiveCurrency)
+func (s *Service) FindAlertsNeedingNotifications(ctx context.Context, sendCurrency, receiveCurrency string) ([]gen.RemittanceRateAlert, error) {
+	return s.store.ListActiveAlertsForCorridor(ctx, sendCurrency, receiveCurrency)
 }
 
 // MarkAlertTriggered sets last_triggered_at to now() for the given alert.
@@ -1065,8 +1065,8 @@ func (s *Service) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error 
 
 // PruneOldRates deletes rate rows older than the cutoff, keeping one snapshot
 // per provider per corridor per day. Used by the remittance:prune_old_rates task.
-func (s *Service) PruneOldRates(ctx context.Context, tenantID pgtype.UUID, cutoffDate time.Time) error {
-	return s.store.PruneOldRates(ctx, tenantID, cutoffDate)
+func (s *Service) PruneOldRates(ctx context.Context, cutoffDate time.Time) error {
+	return s.store.PruneOldRates(ctx, cutoffDate)
 }
 
 // InvalidateRateCache deletes the tenant-scoped Valkey cache keys for a
@@ -1114,8 +1114,8 @@ func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.
 // remittance:fetch_rates task handler (ADR-075 §2). For manual providers
 // (data_source='manual'), this is a no-op — manual rates are entered by
 // admins via InsertManualRate.
-func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID pgtype.UUID) error {
-	provider, err := s.store.GetProviderByID(ctx, tenantID, providerID)
+func (s *Service) FetchProviderRates(ctx context.Context, providerID pgtype.UUID) error {
+	provider, err := s.store.GetProviderByID(ctx, providerID)
 	if err != nil {
 		return fmt.Errorf("remittance: fetch provider rates: get provider: %w", err)
 	}
@@ -1144,7 +1144,7 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 
 	// Fetch all configured corridors for this tenant so the provider adapter
 	// can fetch rates for each one.
-	corridors, err := s.GetCorridors(ctx, tenantID)
+	corridors, err := s.GetCorridors(ctx)
 	if err != nil {
 		return fmt.Errorf("remittance: fetch provider rates: get corridors: %w", err)
 	}
@@ -1204,8 +1204,8 @@ func (s *Service) FetchProviderRates(ctx context.Context, tenantID, providerID p
 // tenant and fetches their rates. Called by the scheduler sweep. Manual
 // providers are skipped. Returns the number of providers processed.
 // Ref: ADR-075 §2, §8.
-func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUID) (int, error) {
-	providers, err := s.store.ListProviders(ctx, tenantID, true)
+func (s *Service) FetchAllProviderRates(ctx context.Context) (int, error) {
+	providers, err := s.store.ListProviders(ctx, true)
 	if err != nil {
 		return 0, fmt.Errorf("remittance: fetch all provider rates: list providers: %w", err)
 	}
@@ -1217,7 +1217,7 @@ func (s *Service) FetchAllProviderRates(ctx context.Context, tenantID pgtype.UUI
 			continue // skip manual providers
 		}
 
-		if err := s.FetchProviderRates(ctx, tenantID, p.ID); err != nil {
+		if err := s.FetchProviderRates(ctx, p.ID); err != nil {
 			slog.Warn("remittance: fetch all provider rates: provider failed", "provider_id", p.ID.String(), "slug", p.Slug, "error", err)
 			continue
 		}
@@ -1241,7 +1241,7 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 	// Query all active alerts for this tenant that are eligible for
 	// notification (last_triggered_at is null or > 24h ago). Group by
 	// corridor so we fetch the best rate once per corridor.
-	alerts, err := s.store.ListAllActiveAlertsForTenant(ctx, tenantID)
+	alerts, err := s.store.ListAllActiveAlertsForTenant(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("remittance: check alerts: list alerts: %w", err)
 	}
@@ -1295,7 +1295,7 @@ func (s *Service) CheckAndDispatchAlerts(ctx context.Context, tenantID pgtype.UU
 		actionURL := "/tools/remittance"
 
 		var zeroUUID pgtype.UUID
-		if err := s.notifier.CreateNotification(ctx, tenantID, alert.UserID,
+		if err := s.notifier.CreateNotification(ctx, alert.UserID,
 			"remittance_alert", "", zeroUUID,
 			"remittance_corridor", alert.ID,
 			title, body, actionURL); err != nil {

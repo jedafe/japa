@@ -10,7 +10,7 @@ import "context"
 // the spam/moderation pipeline — checking for violations, spam, and
 // policy breaches.
 type ModerationProcessor interface {
-	ScanContent(ctx context.Context, entityType, entityID, tenantID string) error
+	ScanContent(ctx context.Context, entityType, entityID string) error
 }
 
 var moderationProcessor ModerationProcessor

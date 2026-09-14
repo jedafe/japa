@@ -36,7 +36,7 @@ type AIDispatcher interface {
 // destination jurisdiction, and document type. *Service implements this
 // interface, but it can be swapped in tests.
 type Researcher interface {
-	Research(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error)
+	Research(ctx context.Context, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error)
 }
 
 // PathwayDTO is the API response shape for a single attestation pathway.
@@ -143,25 +143,25 @@ func (s *Service) SetHTTPClient(c *http.Client) { s.httpClient = c }
 
 // Enabled reads the attestation_guide.enabled system_setting toggle
 // (§97 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "attestation_guide.enabled", false)
+	return s.settings.GetBoolOr(ctx, "attestation_guide.enabled", false)
 }
 
 // Research runs grounded web research for the given issuing jurisdiction,
 // destination jurisdiction, and document type. It returns a formatted
 // "GROUNDED RESEARCH" section and a list of source URLs to append to the
 // generation prompt. Errors are returned so the caller can log and fall back.
-func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error) {
+func (s *Service) Research(ctx context.Context, destSpaceID, issuingSpaceID pgtype.UUID, documentType string) (string, []string, error) {
 	client := s.httpClient
 	if client == nil {
 		client = http.DefaultClient
 	}
 
-	destName, err := s.store.GetSpaceName(ctx, destSpaceID, tenantID)
+	destName, err := s.store.GetSpaceName(ctx, destSpaceID, pgtype.UUID{})
 	if err != nil {
 		return "", nil, err
 	}
@@ -171,7 +171,7 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSp
 		dest = destSpaceID.String()
 	}
 
-	issuingName, err := s.store.GetSpaceName(ctx, issuingSpaceID, tenantID)
+	issuingName, err := s.store.GetSpaceName(ctx, issuingSpaceID, pgtype.UUID{})
 	if err != nil {
 		return "", nil, err
 	}
@@ -192,14 +192,14 @@ func (s *Service) Research(ctx context.Context, tenantID, destSpaceID, issuingSp
 		fmt.Sprintf("current attestation requirements for %s from %s to %s 2026", doc, issuing, dest),
 	}
 
-	return s.runWebResearch(ctx, client, tenantID, queries)
+	return s.runWebResearch(ctx, client, queries)
 }
 
 // runWebResearch executes the provided queries through the configured
 // external search provider and formats the results for the generation
 // prompt. It returns the full grounded research section and a deduplicated
 // list of citation URLs.
-func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenantID pgtype.UUID, queries []string) (string, []string, error) {
+func (s *Service) runWebResearch(ctx context.Context, client *http.Client, queries []string) (string, []string, error) {
 	var sections []string
 
 	seenCitations := make(map[string]bool)
@@ -207,7 +207,7 @@ func (s *Service) runWebResearch(ctx context.Context, client *http.Client, tenan
 	var citations []string
 
 	for _, q := range queries {
-		provider, results, err := ai.SearchWeb(ctx, client, s.settings, tenantID, q, 5)
+		provider, results, err := ai.SearchWeb(ctx, client, s.settings, q, 5)
 		if err != nil {
 			return "", nil, err
 		}
@@ -296,12 +296,12 @@ func buildGroundedResearchSection(query, provider string, results []ai.WebSearch
 // member per the attestation_guide.hague_members system_setting (§97 Hague
 // Convention section). The setting is a JSON array of space IDs. Returns false
 // on any error (fail-safe: no apostille required if lookup fails).
-func (s *Service) isHagueMember(ctx context.Context, tenantID, destSpaceID pgtype.UUID) bool {
+func (s *Service) isHagueMember(ctx context.Context, destSpaceID pgtype.UUID) bool {
 	if s.settings == nil || !destSpaceID.Valid {
 		return false
 	}
 
-	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "attestation_guide.hague_members", "[]")
+	raw := s.settings.GetStringOr(ctx, "attestation_guide.hague_members", "[]")
 
 	var members []string
 
@@ -321,7 +321,7 @@ func (s *Service) isHagueMember(ctx context.Context, tenantID, destSpaceID pgtyp
 
 // List returns a paginated, filtered list of published attestation
 // pathways. Anonymous-accessible.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, issuingSpaceID pgtype.UUID, documentType string, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, issuingSpaceID pgtype.UUID, documentType string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -404,7 +404,7 @@ func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input Create
 	// on the destination country. Fix BUG-002.
 	apostilleRequired := input.ApostilleRequired
 	if !apostilleRequired {
-		apostilleRequired = s.isHagueMember(ctx, tenantID, destSpaceID)
+		apostilleRequired = s.isHagueMember(ctx, destSpaceID)
 	}
 
 	p := Pathway{
@@ -509,7 +509,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input
 	// Augment the prompt with grounded web research. If research fails, log
 	// a warning and continue with the original prompt (graceful degradation).
 	if s.researcher != nil {
-		researchText, _, researchErr := s.researcher.Research(ctx, tenantID, destSpaceID, issuingSpaceID, input.DocumentType)
+		researchText, _, researchErr := s.researcher.Research(ctx, destSpaceID, issuingSpaceID, input.DocumentType)
 		if researchErr != nil {
 			slog.Warn("attestationguide: web research failed, continuing with original prompt", "error", researchErr)
 		} else if researchText != "" {
@@ -616,7 +616,7 @@ func (s *Service) Approve(ctx context.Context, id, tenantID, reviewerID pgtype.U
 		return PathwayDTO{}, fmt.Errorf("attestationguide: approve: lookup: %w", err)
 	}
 
-	apostilleRequired := s.isHagueMember(ctx, tenantID, row.DestinationSpaceID)
+	apostilleRequired := s.isHagueMember(ctx, row.DestinationSpaceID)
 
 	var notesPtr *string
 	if notes != "" {
@@ -718,7 +718,7 @@ func (s *Service) ReviewCommunityUpdate(ctx context.Context, updateID, tenantID,
 // AdminList returns all attestation pathways (any status) for the
 // moderation queue. Admin-only (attestation_guide.manage permission).
 // Supports search (q) and sort (sortBy/sortDir) per BUG-004.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, documentType string, isActive *bool, search, sortBy, sortDir string, page, limit int32) ([]PathwayDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status, documentType string, isActive *bool, search, sortBy, sortDir string, page, limit int32) ([]PathwayDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -755,7 +755,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 
 // AdminListUpdates returns pending (or filtered) community updates for the
 // admin moderation queue (BUG-005). Admin-only (attestation_guide.manage).
-func (s *Service) AdminListUpdates(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int32) ([]CommunityUpdateDTO, int64, error) {
+func (s *Service) AdminListUpdates(ctx context.Context, status string, page, limit int32) ([]CommunityUpdateDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

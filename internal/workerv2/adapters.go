@@ -110,8 +110,8 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 
 	var total int
 
-	for _, tid := range tenantIDs {
-		n, err := a.svc.ExpireListingsPastDeadline(ctx, tid)
+	for range tenantIDs {
+		n, err := a.svc.ExpireListingsPastDeadline(ctx)
 		if err != nil {
 			slog.Warn("task:jobs:expire_listings: tenant sweep failed", "error", err)
 			continue
@@ -128,18 +128,18 @@ func (a *JobsAdapter) ExpireListingsPastDeadline(ctx context.Context) (int, erro
 // HTTP handler before the task was enqueued; this method only sends the
 // notification (§63, ADR-081).
 func (a *JobsAdapter) NotifyApplicationStatus(ctx context.Context, applicationID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "job_applications", "id", applicationID)
+	_, err := lookupTenantIDByEntity(ctx, a.db, "job_applications", "id", applicationID)
 	if err != nil {
 		return err
 	}
 
-	app, err := a.svc.GetApplicationForNotification(ctx, tid, applicationID)
+	app, err := a.svc.GetApplicationForNotification(ctx, applicationID)
 	if err != nil {
 		return fmt.Errorf("jobs: notify application status: fetch application: %w", err)
 	}
 
 	if a.notif != nil {
-		if err := a.notif.CreateNotification(ctx, tid, app.ApplicantID,
+		if err := a.notif.CreateNotification(ctx, app.ApplicantID,
 			"job_application_status_update", "system", pgtype.UUID{},
 			"job_application", applicationID,
 			"Job Application Update",
@@ -179,8 +179,8 @@ func (a *GamificationAdapter) ExpireChallenges(ctx context.Context) (int, error)
 
 	var total int
 
-	for _, tid := range tenantIDs {
-		n, err := a.svc.ExpireChallenges(ctx, tid)
+	for range tenantIDs {
+		n, err := a.svc.ExpireChallenges(ctx)
 		if err != nil {
 			slog.Warn("task:gamification:expire_challenges: tenant sweep failed", "error", err)
 			continue
@@ -301,7 +301,7 @@ func (a *AssessmentAdapter) ScoreSubmission(ctx context.Context, submissionID, t
 		actionURL := "/tools/readiness?result=" + resultID.String()
 		if err := a.notif.CreateNotification(
 			ctx,
-			tenantID,
+
 			userID,
 			"assessment_complete",
 			"system",
@@ -411,7 +411,7 @@ func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, tenantID pgty
 
 	return a.notif.CreateNotification(
 		ctx,
-		tenantID,
+
 		r.UserID,
 		"scholarship.deadline_reminder",
 		"system",
@@ -448,12 +448,12 @@ func NewRemittanceAdapter(svc *remittance.Service, database *db.DB) *RemittanceA
 // enqueues this task), and the scheduler enqueues it on the configured
 // interval.
 func (a *RemittanceAdapter) FetchRates(ctx context.Context, providerID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "remittance_providers", "id", providerID)
+	_, err := lookupTenantIDByEntity(ctx, a.db, "remittance_providers", "id", providerID)
 	if err != nil {
 		return err
 	}
 
-	return a.svc.FetchProviderRates(ctx, tid, providerID)
+	return a.svc.FetchProviderRates(ctx, providerID)
 }
 
 // FetchAllRates iterates all active API-sourced providers across all tenants
@@ -469,7 +469,7 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 	var total int
 
 	for _, tid := range tenantIDs {
-		n, err := a.svc.FetchAllProviderRates(ctx, tid)
+		n, err := a.svc.FetchAllProviderRates(ctx)
 		if err != nil {
 			slog.Warn("task:remittance:fetch_rates: tenant sweep failed", "error", err)
 			continue
@@ -519,12 +519,12 @@ func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 
 	var total int
 
-	for _, tid := range tenantIDs {
+	for range tenantIDs {
 		// Read the per-tenant retention setting (Rule 3 — never hardcode).
-		retentionDays := a.svc.HistoryRetentionDays(ctx, tid)
+		retentionDays := a.svc.HistoryRetentionDays(ctx)
 
 		cutoff := time.Now().AddDate(0, 0, -retentionDays)
-		if err := a.svc.PruneOldRates(ctx, tid, cutoff); err != nil {
+		if err := a.svc.PruneOldRates(ctx, cutoff); err != nil {
 			slog.Warn("task:remittance:prune_old_rates: tenant sweep failed", "error", err)
 			continue
 		}
@@ -614,12 +614,12 @@ func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaig
 // advertiser of the review decision (approved/rejected).
 // Ref: japaconnect-engineering/sections/61-self-serve-ads.md (Asynq Tasks).
 func (a *AdsSelfServeAdapter) NotifyCampaignStatus(ctx context.Context, campaignID pgtype.UUID) error {
-	tid, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
+	_, err := lookupTenantIDByEntity(ctx, a.db, "ad_campaigns", "id", campaignID)
 	if err != nil {
 		return err
 	}
 
-	return a.svc.NotifyCampaignStatus(ctx, tid, campaignID)
+	return a.svc.NotifyCampaignStatus(ctx, campaignID)
 }
 
 // ---------------------------------------------------------------------------
@@ -665,7 +665,7 @@ func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenI
 		return fmt.Errorf("looking up notification: %w", err)
 	}
 
-	return a.svc.SendPush(ctx, tenantID, userID, devices.PushPayload{
+	return a.svc.SendPush(ctx, userID, devices.PushPayload{
 		Title: title,
 		Body:  body,
 		Data: map[string]interface{}{

@@ -20,7 +20,7 @@ func NewStore(read, write *gen.Queries) *Store {
 }
 
 // getBySlug returns a published doc page by audience and slug.
-func (s *Store) getBySlug(ctx context.Context, tenantID pgtype.UUID, audience, slug string) (gen.DocPage, error) {
+func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPage, error) {
 	row, err := s.read.GetDocPageBySlug(ctx, gen.GetDocPageBySlugParams{
 
 		Audience: audience,
@@ -49,7 +49,7 @@ func (s *Store) getBySlug(ctx context.Context, tenantID pgtype.UUID, audience, s
 }
 
 // getByID returns a doc page by ID.
-func (s *Store) getByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.DocPage, error) {
+func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (gen.DocPage, error) {
 	row, err := s.read.GetDocPageByID(ctx,
 		id,
 	)
@@ -76,7 +76,7 @@ func (s *Store) getByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.DocP
 }
 
 // listByAudience returns published doc pages for an audience.
-func (s *Store) listByAudience(ctx context.Context, tenantID pgtype.UUID, audience string) ([]gen.ListDocPagesByAudienceRow, error) {
+func (s *Store) listByAudience(ctx context.Context, audience string) ([]gen.ListDocPagesByAudienceRow, error) {
 	rows, err := s.read.ListDocPagesByAudience(ctx,
 
 		audience,
@@ -89,7 +89,7 @@ func (s *Store) listByAudience(ctx context.Context, tenantID pgtype.UUID, audien
 }
 
 // listAllByAudience returns all doc pages (any status) for an audience.
-func (s *Store) listAllByAudience(ctx context.Context, tenantID pgtype.UUID, audience string) ([]gen.ListAllDocPagesByAudienceRow, error) {
+func (s *Store) listAllByAudience(ctx context.Context, audience string) ([]gen.ListAllDocPagesByAudienceRow, error) {
 	rows, err := s.read.ListAllDocPagesByAudience(ctx,
 
 		audience,
@@ -102,7 +102,7 @@ func (s *Store) listAllByAudience(ctx context.Context, tenantID pgtype.UUID, aud
 }
 
 // listAll returns all doc pages (any status, any audience) for admin listing.
-func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListAllDocPagesRow, error) {
+func (s *Store) listAll(ctx context.Context) ([]gen.ListAllDocPagesRow, error) {
 	rows, err := s.read.ListAllDocPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing all doc pages: %w", err)
@@ -112,7 +112,7 @@ func (s *Store) listAll(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListAl
 }
 
 // listPublished returns all published doc pages across audiences.
-func (s *Store) listPublished(ctx context.Context, tenantID pgtype.UUID) ([]gen.ListPublishedDocPagesRow, error) {
+func (s *Store) listPublished(ctx context.Context) ([]gen.ListPublishedDocPagesRow, error) {
 	rows, err := s.read.ListPublishedDocPages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing published doc pages: %w", err)
@@ -123,7 +123,7 @@ func (s *Store) listPublished(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 
 // search returns published doc pages matching the query by title or content.
 // When audience is non-nil, results are filtered to that audience section.
-func (s *Store) search(ctx context.Context, tenantID pgtype.UUID, query string, audience *string, limit int32) ([]gen.SearchDocPagesRow, error) {
+func (s *Store) search(ctx context.Context, query string, audience *string, limit int32) ([]gen.SearchDocPagesRow, error) {
 	rows, err := s.read.SearchDocPages(ctx, gen.SearchDocPagesParams{
 
 		Audience:    audience,
@@ -176,7 +176,7 @@ func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (string, error) {
 }
 
 // delete removes a doc page.
-func (s *Store) delete(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteDocPage(ctx,
 		id,
 	); err != nil {
@@ -187,7 +187,7 @@ func (s *Store) delete(ctx context.Context, tenantID, id pgtype.UUID) error {
 }
 
 // incrementHelpful increments the aggregate helpful_yes / helpful_no counters.
-func (s *Store) incrementHelpful(ctx context.Context, tenantID pgtype.UUID, audience, slug, vote string) error {
+func (s *Store) incrementHelpful(ctx context.Context, audience, slug, vote string) error {
 	if err := s.write.IncrementDocPageHelpful(ctx, gen.IncrementDocPageHelpfulParams{
 
 		Audience: audience,

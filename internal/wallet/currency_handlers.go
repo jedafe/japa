@@ -39,12 +39,12 @@ func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {
 // ListCreditPacks handles GET /api/v1/wallet/credit-packs.
 // Returns all active credit packs for the tenant.
 func (h *Handlers) ListCreditPacks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	packs, err := h.Service.listActiveCreditPacks(r.Context(), tenantID)
+	packs, err := h.Service.listActiveCreditPacks(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -288,12 +288,12 @@ func (h *Handlers) ControlDeleteCurrency(w http.ResponseWriter, r *http.Request)
 
 // AdminListCreditPacks handles GET /api/v1/admin/wallet/credit-packs.
 func (h *Handlers) AdminListCreditPacks(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	packs, err := h.Service.listAllCreditPacks(r.Context(), tenantID)
+	packs, err := h.Service.listAllCreditPacks(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -425,7 +425,7 @@ func (h *Handlers) AdminUpdateCreditPack(w http.ResponseWriter, r *http.Request)
 // AdminDeleteCreditPack handles DELETE /api/v1/admin/wallet/credit-packs/{id}.
 // Soft-deletes by setting is_active=false.
 func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -436,7 +436,7 @@ func (h *Handlers) AdminDeleteCreditPack(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.Service.deactivateCreditPack(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.deactivateCreditPack(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

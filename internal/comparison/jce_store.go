@@ -20,7 +20,7 @@ func (s *Store) insertComparisonContentMetadata(ctx context.Context, p gen.Inser
 	return nil
 }
 
-func (s *Store) getComparisonContentMetadata(ctx context.Context, contentID, tenantID pgtype.UUID) (gen.ComparisonContentMetadatum, error) {
+func (s *Store) getComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) (gen.ComparisonContentMetadatum, error) {
 	row, err := s.read.GetComparisonContentMetadata(ctx,
 		contentID,
 	)
@@ -39,7 +39,7 @@ func (s *Store) updateComparisonContentMetadata(ctx context.Context, p gen.Updat
 	return nil
 }
 
-func (s *Store) deleteComparisonContentMetadata(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+func (s *Store) deleteComparisonContentMetadata(ctx context.Context, contentID pgtype.UUID) error {
 	if err := s.write.DeleteComparisonContentMetadata(ctx,
 		contentID,
 	); err != nil {
@@ -67,7 +67,7 @@ func (s *Store) countComparisonsWithFilters(ctx context.Context, p gen.CountComp
 	return count, nil
 }
 
-func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slug *string, tenantID pgtype.UUID) (gen.GetComparisonBySlugOrIDRow, error) {
+func (s *Store) getComparisonBySlugOrID(ctx context.Context, id pgtype.UUID, slug *string) (gen.GetComparisonBySlugOrIDRow, error) {
 	row, err := s.read.GetComparisonBySlugOrID(ctx, gen.GetComparisonBySlugOrIDParams{
 		ID:   id,
 		Slug: slug,

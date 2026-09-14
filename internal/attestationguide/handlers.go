@@ -109,12 +109,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /attestation — lookup published attestation
 // pathways with filters. Query params: ?dest=&doc_type=&issuing=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -139,7 +139,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	pathways, total, err := h.service.List(r.Context(), tenantID, destSpaceID, issuingSpaceID, documentType, page, limit)
+	pathways, total, err := h.service.List(r.Context(), destSpaceID, issuingSpaceID, documentType, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list attestation pathways")
@@ -165,7 +165,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -203,7 +203,7 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -261,7 +261,7 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -302,8 +302,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -341,7 +340,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pathways, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, status, documentType, activePtr, search, sortBy, sortDir, page, limit)
+	pathways, total, err := h.service.AdminList(r.Context(), destSpaceID, status, documentType, activePtr, search, sortBy, sortDir, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list attestation pathways")
@@ -367,8 +366,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -385,7 +383,7 @@ func (h *Handlers) HandleAdminListUpdates(w http.ResponseWriter, r *http.Request
 		limit = 100
 	}
 
-	updates, total, err := h.service.AdminListUpdates(r.Context(), tenantID, status, page, limit)
+	updates, total, err := h.service.AdminListUpdates(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("attestationguide: admin list updates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_updates_failed", "Failed to list community updates")
@@ -416,7 +414,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -468,7 +466,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}
@@ -574,7 +572,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "attestation_guide_disabled", "Attestation guide is not available")
 		return
 	}

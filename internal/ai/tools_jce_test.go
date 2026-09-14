@@ -40,7 +40,7 @@ type stubJCEService struct {
 	lastSourceKind *string
 }
 
-func (s *stubJCEService) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
+func (s *stubJCEService) Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
 	s.analyzeCalled = true
 	s.lastContentID = contentID
 	s.lastProfileID = profileID
@@ -49,7 +49,7 @@ func (s *stubJCEService) Analyze(ctx context.Context, contentID, tenantID, userI
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
+func (s *stubJCEService) Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
 	s.rankCalled = true
 	s.lastContentID = contentID
 	s.lastProfileID = profileID
@@ -57,7 +57,7 @@ func (s *stubJCEService) Rank(ctx context.Context, contentID, tenantID, userID, 
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
+func (s *stubJCEService) Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
 	s.explainCalled = true
 	s.lastContentID = contentID
 	s.lastItemID = itemID
@@ -68,7 +68,7 @@ func (s *stubJCEService) Explain(ctx context.Context, contentID, itemID, tenantI
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
+func (s *stubJCEService) Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
 	s.recommendCalled = true
 	s.lastContentID = contentID
 	s.lastProfileID = profileID
@@ -76,7 +76,7 @@ func (s *stubJCEService) Recommend(ctx context.Context, contentID, tenantID, use
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
+func (s *stubJCEService) Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
 	s.refreshCalled = true
 	s.lastContentID = contentID
 	s.lastSourceKind = sourceKind
@@ -89,7 +89,7 @@ type stubJCEPermissionChecker struct {
 	allowed map[string]bool
 }
 
-func (s *stubJCEPermissionChecker) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool {
+func (s *stubJCEPermissionChecker) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {
 	return s.allowed[permKey]
 }
 

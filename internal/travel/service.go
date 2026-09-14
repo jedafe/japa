@@ -359,21 +359,21 @@ func (s *Service) SetAPIClient(c TravelAPIClient) { s.api = c }
 // IsEnabled returns whether the travel surface is globally enabled. Reads
 // the travel.enabled system_setting (default false — off until a provider is
 // configured, per ADR-085 §4).
-func (s *Service) IsEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) IsEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "travel.enabled", false)
+	return s.settings.GetBoolOr(ctx, "travel.enabled", false)
 }
 
 // cacheTTL returns the configured cache TTL, falling back to 5 min.
-func (s *Service) cacheTTL(ctx context.Context, tenantID pgtype.UUID) time.Duration {
+func (s *Service) cacheTTL(ctx context.Context) time.Duration {
 	if s.settings == nil {
 		return defaultCacheTTL
 	}
 
-	secs := s.settings.GetIntOr(ctx, pgtype.UUID{}, "travel.cache_ttl_seconds", 300)
+	secs := s.settings.GetIntOr(ctx, "travel.cache_ttl_seconds", 300)
 	if secs <= 0 {
 		return defaultCacheTTL
 	}
@@ -559,7 +559,7 @@ func injectAffiliateIntoHotels(results []HotelResult, affiliateConfig json.RawMe
 // booking URLs, (5) cache the result, (6) return. If travel.enabled is false,
 // returns ErrTravelDisabled (the handler maps this to 503).
 func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, params FlightSearchParams) (*SearchResponse, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return nil, ErrTravelDisabled
 	}
 
@@ -586,7 +586,7 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 	}
 
 	// (2) Get the active provider.
-	provider, err := s.store.GetActiveProvider(ctx, tenantID, ProviderTypeFlight)
+	provider, err := s.store.GetActiveProvider(ctx, ProviderTypeFlight)
 	if err != nil {
 		return nil, fmt.Errorf("travel: get active flight provider: %w", err)
 	}
@@ -609,7 +609,7 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 	// (5) Cache the result.
 	if s.cache != nil && len(results) > 0 {
 		if data, err := json.Marshal(results); err == nil {
-			if err := s.cache.Set(ctx, cacheKey, data, s.cacheTTL(ctx, tenantID)).Err(); err != nil {
+			if err := s.cache.Set(ctx, cacheKey, data, s.cacheTTL(ctx)).Err(); err != nil {
 				slog.Warn("travel: flight search: cache set failed", "error", err)
 			}
 		}
@@ -631,7 +631,7 @@ func (s *Service) SearchFlights(ctx context.Context, tenantID pgtype.UUID, param
 // SearchHotels proxies a hotel search query to the configured hotel provider
 // API. Same flow as SearchFlights.
 func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params HotelSearchParams) (*SearchResponse, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+	if !s.IsEnabled(ctx) {
 		return nil, ErrTravelDisabled
 	}
 
@@ -658,7 +658,7 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 	}
 
 	// (2) Get the active provider.
-	provider, err := s.store.GetActiveProvider(ctx, tenantID, ProviderTypeHotel)
+	provider, err := s.store.GetActiveProvider(ctx, ProviderTypeHotel)
 	if err != nil {
 		return nil, fmt.Errorf("travel: get active hotel provider: %w", err)
 	}
@@ -681,7 +681,7 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 	// (5) Cache the result.
 	if s.cache != nil && len(results) > 0 {
 		if data, err := json.Marshal(results); err == nil {
-			if err := s.cache.Set(ctx, cacheKey, data, s.cacheTTL(ctx, tenantID)).Err(); err != nil {
+			if err := s.cache.Set(ctx, cacheKey, data, s.cacheTTL(ctx)).Err(); err != nil {
 				slog.Warn("travel: hotel search: cache set failed", "error", err)
 			}
 		}
@@ -706,8 +706,8 @@ func (s *Service) SearchHotels(ctx context.Context, tenantID pgtype.UUID, params
 
 // GetActiveProvider returns the active provider for a given type. Used by the
 // search proxy and exposed for admin introspection.
-func (s *Service) GetActiveProvider(ctx context.Context, tenantID pgtype.UUID, providerType string) (ProviderInfo, error) {
-	p, err := s.store.GetActiveProvider(ctx, tenantID, providerType)
+func (s *Service) GetActiveProvider(ctx context.Context, providerType string) (ProviderInfo, error) {
+	p, err := s.store.GetActiveProvider(ctx, providerType)
 	if err != nil {
 		return ProviderInfo{}, fmt.Errorf("travel: get active provider: %w", err)
 	}
@@ -753,8 +753,8 @@ func (s *Service) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProvid
 // DeleteProvider deletes a travel provider by id (admin).
 // Invalidates the tenant's search result cache so searches no longer use a
 // deleted provider.
-func (s *Service) DeleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeleteProvider(ctx, id, tenantID); err != nil {
+func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeleteProvider(ctx, id); err != nil {
 		return fmt.Errorf("travel: delete provider: %w", err)
 	}
 
@@ -802,8 +802,8 @@ func (s *Service) invalidateSearchCache(ctx context.Context) {
 // ListProviders lists travel providers for a tenant (admin). isActiveFilter
 // is tri-state: "true" = only active, "false" = only inactive, "" = all. q
 // is an ILIKE search on name/slug (empty = no filter).
-func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, isActiveFilter, providerType, q string) ([]ProviderInfo, error) {
-	rows, err := s.store.ListProviders(ctx, tenantID, isActiveFilter, providerType, q)
+func (s *Service) ListProviders(ctx context.Context, isActiveFilter, providerType, q string) ([]ProviderInfo, error) {
+	rows, err := s.store.ListProviders(ctx, isActiveFilter, providerType, q)
 	if err != nil {
 		return nil, err
 	}
@@ -819,8 +819,8 @@ func (s *Service) ListProviders(ctx context.Context, tenantID pgtype.UUID, isAct
 // ListPublicProviders lists active travel providers for a tenant in a
 // public-safe shape. Only active providers are returned, and affiliate/api
 // config are omitted.
-func (s *Service) ListPublicProviders(ctx context.Context, tenantID pgtype.UUID) ([]PublicProviderInfo, error) {
-	rows, err := s.store.ListProviders(ctx, tenantID, "true", "", "")
+func (s *Service) ListPublicProviders(ctx context.Context) ([]PublicProviderInfo, error) {
+	rows, err := s.store.ListProviders(ctx, "true", "", "")
 	if err != nil {
 		return nil, err
 	}

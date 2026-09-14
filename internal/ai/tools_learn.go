@@ -46,7 +46,7 @@ func LearnTracksListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
 
-		tracks, err := deps.Learning.ListTracks(ctx, tenantID)
+		tracks, err := deps.Learning.ListTracks(ctx)
 		if err != nil {
 			return errorToolResult("learn_tracks_list_failed", err.Error()), nil
 		}
@@ -113,7 +113,7 @@ func LearnTracksCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_cover_media_id", "cover_media_id is not a valid UUID"), nil
 		}
 
-		track, err := deps.Learning.CreateTrack(ctx, tenantID, LearningCreateTrackInput{
+		track, err := deps.Learning.CreateTrack(ctx, LearningCreateTrackInput{
 			Title:                a.Title,
 			Slug:                 a.Slug,
 			Description:          a.Description,
@@ -189,7 +189,7 @@ func LearnTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_cover_media_id", "cover_media_id is not a valid UUID"), nil
 		}
 
-		track, err := deps.Learning.UpdateTrack(ctx, tenantID, trackID, LearningUpdateTrackInput{
+		track, err := deps.Learning.UpdateTrack(ctx, trackID, LearningUpdateTrackInput{
 			Title:                a.Title,
 			Description:          a.Description,
 			Difficulty:           difficulty,
@@ -225,7 +225,7 @@ func LearnLessonsListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
 
-		lessons, err := deps.Learning.ListLessons(ctx, tenantID)
+		lessons, err := deps.Learning.ListLessons(ctx)
 		if err != nil {
 			return errorToolResult("learn_lessons_list_failed", err.Error()), nil
 		}
@@ -299,7 +299,7 @@ func LearnLessonsCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_media_id", "media_id is not a valid UUID"), nil
 		}
 
-		lesson, err := deps.Learning.CreateLesson(ctx, tenantID, moduleID, LearningCreateLessonInput{
+		lesson, err := deps.Learning.CreateLesson(ctx, moduleID, LearningCreateLessonInput{
 			Title:           a.Title,
 			Slug:            a.Slug,
 			LessonType:      lessonType,
@@ -375,7 +375,7 @@ func LearnLessonsUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_media_id", "media_id is not a valid UUID"), nil
 		}
 
-		lesson, err := deps.Learning.UpdateLesson(ctx, tenantID, lessonID, LearningUpdateLessonInput{
+		lesson, err := deps.Learning.UpdateLesson(ctx, lessonID, LearningUpdateLessonInput{
 			Title:           a.Title,
 			LessonType:      lessonType,
 			Content:         a.Content,
@@ -445,7 +445,7 @@ func LearnLessonsReorderHandler(deps *ToolDeps) ToolHandler {
 			})
 		}
 
-		if err := deps.Learning.ReorderLessons(ctx, tenantID, entries); err != nil {
+		if err := deps.Learning.ReorderLessons(ctx, entries); err != nil {
 			return errorToolResult("learn_lessons_reorder_failed", err.Error()), nil
 		}
 

@@ -29,7 +29,7 @@ func requireActiveProfileUser(usersSvc *users.Service, paramKey string) func(htt
 				return
 			}
 
-			exists, err := usersSvc.ActiveUserExists(r.Context(), t.ID, userID)
+			exists, err := usersSvc.ActiveUserExists(r.Context(), userID)
 			if err != nil {
 				writeProfileGateError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve profile")
 				return

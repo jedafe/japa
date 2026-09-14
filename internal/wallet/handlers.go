@@ -127,13 +127,12 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	points, credits, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	points, credits, err := h.Service.GetBalance(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -141,7 +140,7 @@ func (h *Handlers) GetBalance(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-W-003: include lifetime_points per Section 28 spec
 	// ({ points_balance, credits_balance, lifetime_points }).
-	lifetimePoints, err := h.Service.GetLifetimePoints(r.Context(), tenantID, user.UserID)
+	lifetimePoints, err := h.Service.GetLifetimePoints(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -167,13 +166,12 @@ func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	points, _, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	points, _, err := h.Service.GetBalance(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -183,7 +181,7 @@ func (h *Handlers) GetPointsBalance(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	entries, err := h.Service.ListLedgerEntries(r.Context(), tenantID, user.UserID, &lt, limit, offset)
+	entries, err := h.Service.ListLedgerEntries(r.Context(), user.UserID, &lt, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -206,13 +204,12 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	_, credits, err := h.Service.GetBalance(r.Context(), tenantID, user.UserID)
+	_, credits, err := h.Service.GetBalance(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -222,7 +219,7 @@ func (h *Handlers) GetCreditsBalance(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	entries, err := h.Service.ListLedgerEntries(r.Context(), tenantID, user.UserID, &lt, limit, offset)
+	entries, err := h.Service.ListLedgerEntries(r.Context(), user.UserID, &lt, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -242,8 +239,7 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -257,7 +253,7 @@ func (h *Handlers) GetLedger(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	entries, err := h.Service.ListLedgerEntries(r.Context(), tenantID, user.UserID, ledgerType, limit, offset)
+	entries, err := h.Service.ListLedgerEntries(r.Context(), user.UserID, ledgerType, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -317,13 +313,12 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context(), tenantID)
+	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -353,13 +348,12 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context(), tenantID)
+	settings, minConvert, err := h.Service.GetWalletSettingsWithMinConvert(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -370,7 +364,7 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	// hardcoding the minimum (BUG-011, Rule 16).
 	minPurchaseCredits := 100
 	if h.Service.settings != nil {
-		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), pgtype.UUID{}, "wallet.min_purchase_credits", 100)
+		minPurchaseCredits = h.Service.settings.GetIntOr(r.Context(), "wallet.min_purchase_credits", 100)
 	}
 
 	// min_withdrawal_credits from system_settings (default 1000, Section 58).
@@ -378,7 +372,7 @@ func (h *Handlers) GetMemberSettings(w http.ResponseWriter, r *http.Request) {
 	// hardcoding the minimum (Rule 16).
 	minWithdrawalCredits := 1000
 	if h.Service.settings != nil {
-		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), pgtype.UUID{}, "wallet.min_withdrawal_credits", 1000)
+		minWithdrawalCredits = h.Service.settings.GetIntOr(r.Context(), "wallet.min_withdrawal_credits", 1000)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -397,8 +391,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -419,7 +412,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := h.Service.UpdateWalletSettings(r.Context(), tenantID, UpdateWalletSettingsInput{
+	settings, err := h.Service.UpdateWalletSettings(r.Context(), UpdateWalletSettingsInput{
 		PointsToCreditsRate: input.PointsToCreditsRate,
 		DailyEarningCap:     input.DailyEarningCap,
 		EnableEarning:       input.EnableEarning,
@@ -438,8 +431,7 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -447,7 +439,7 @@ func (h *Handlers) ListRules(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	rules, err := h.Service.ListActivityRules(r.Context(), tenantID, limit, offset)
+	rules, err := h.Service.ListActivityRules(r.Context(), limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -462,8 +454,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -488,7 +479,7 @@ func (h *Handlers) CreateOrUpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rule, err := h.Service.CreateOrUpdateActivityRule(r.Context(), tenantID, CreateOrUpdateActivityRuleInput{
+	rule, err := h.Service.CreateOrUpdateActivityRule(r.Context(), CreateOrUpdateActivityRuleInput{
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   input.IsEnabled,
@@ -514,8 +505,7 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -541,7 +531,7 @@ func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rule, err := h.Service.UpdateActivityRuleByID(r.Context(), id, tenantID, CreateOrUpdateActivityRuleInput{
+	rule, err := h.Service.UpdateActivityRuleByID(r.Context(), id, CreateOrUpdateActivityRuleInput{
 		ActivityKey: input.ActivityKey,
 		PointValue:  input.PointValue,
 		IsEnabled:   input.IsEnabled,
@@ -564,8 +554,7 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -576,7 +565,7 @@ func (h *Handlers) ToggleRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rule, err := h.Service.ToggleActivityRule(r.Context(), id, tenantID)
+	rule, err := h.Service.ToggleActivityRule(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -591,8 +580,7 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -603,7 +591,7 @@ func (h *Handlers) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteActivityRule(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteActivityRule(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -684,8 +672,7 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -696,7 +683,7 @@ func (h *Handlers) AdminGetUserBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username, points, credits, err := h.Service.GetUserBalanceWithInfo(r.Context(), tenantID, userID)
+	username, points, credits, err := h.Service.GetUserBalanceWithInfo(r.Context(), userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -720,8 +707,7 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -736,7 +722,7 @@ func (h *Handlers) CalculateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.CalculateWithdrawal(r.Context(), tenantID, user.UserID, CalculateWithdrawalInput{
+	result, err := h.Service.CalculateWithdrawal(r.Context(), user.UserID, CalculateWithdrawalInput{
 		CreditAmount: input.CreditAmount,
 		CurrencyCode: input.CurrencyCode,
 	})
@@ -812,8 +798,7 @@ func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -832,7 +817,7 @@ func (h *Handlers) CreateWithdrawalMethod(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	method, err := h.Service.CreateWithdrawalMethod(r.Context(), tenantID, user.UserID, CreateWithdrawalMethodInput{
+	method, err := h.Service.CreateWithdrawalMethod(r.Context(), user.UserID, CreateWithdrawalMethodInput{
 		Provider:     input.Provider,
 		Label:        input.Label,
 		Account:      input.Account,
@@ -854,13 +839,12 @@ func (h *Handlers) ListWithdrawalMethods(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	methods, err := h.Service.ListWithdrawalMethods(r.Context(), tenantID, user.UserID)
+	methods, err := h.Service.ListWithdrawalMethods(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -875,8 +859,7 @@ func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -886,7 +869,7 @@ func (h *Handlers) AdminListWithdrawals(w http.ResponseWriter, r *http.Request) 
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	withdrawals, count, err := h.Service.AdminListWithdrawals(r.Context(), tenantID, status, userID, limit, offset)
+	withdrawals, count, err := h.Service.AdminListWithdrawals(r.Context(), status, userID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -904,8 +887,7 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -925,9 +907,9 @@ func (h *Handlers) ProcessWithdrawal(w http.ResponseWriter, r *http.Request) {
 
 	var result WithdrawalResult
 	if body.Action == "reject" {
-		result, err = h.Service.RejectWithdrawal(r.Context(), tenantID, user.UserID, id, body.AdminNote)
+		result, err = h.Service.RejectWithdrawal(r.Context(), user.UserID, id, body.AdminNote)
 	} else {
-		result, err = h.Service.ProcessWithdrawal(r.Context(), tenantID, user.UserID, id)
+		result, err = h.Service.ProcessWithdrawal(r.Context(), user.UserID, id)
 	}
 
 	if err != nil {
@@ -946,8 +928,7 @@ func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -955,7 +936,7 @@ func (h *Handlers) ListWithdrawals(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
-	withdrawals, err := h.Service.ListWithdrawals(r.Context(), tenantID, user.UserID, limit, offset)
+	withdrawals, err := h.Service.ListWithdrawals(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

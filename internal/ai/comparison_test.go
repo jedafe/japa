@@ -64,11 +64,11 @@ func newStubComparisonService() *stubComparisonService {
 	}
 }
 
-func (s *stubComparisonService) ListComparisonTypes(_ context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+func (s *stubComparisonService) ListComparisonTypes(_ context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
 	return s.types, nil
 }
 
-func (s *stubComparisonService) GetComparisonTypeBySlug(_ context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
+func (s *stubComparisonService) GetComparisonTypeBySlug(_ context.Context, slug string) (gen.GetComparisonTypeBySlugRow, error) {
 	td, ok := s.typeBySlug[slug]
 	if !ok {
 		return gen.GetComparisonTypeBySlugRow{}, pgx.ErrNoRows
@@ -77,11 +77,11 @@ func (s *stubComparisonService) GetComparisonTypeBySlug(_ context.Context, slug 
 	return td, nil
 }
 
-func (s *stubComparisonService) CreateComparisonType(_ context.Context, tenantID pgtype.UUID, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error) {
+func (s *stubComparisonService) CreateComparisonType(_ context.Context, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error) {
 	return s.createdType, nil
 }
 
-func (s *stubComparisonService) CreateComparison(_ context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
+func (s *stubComparisonService) CreateComparison(_ context.Context, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
 	if s.createComparisonErr != nil {
 		return ComparisonCreateResult{}, s.createComparisonErr
 	}
@@ -89,19 +89,19 @@ func (s *stubComparisonService) CreateComparison(_ context.Context, tenantID, us
 	return s.createComparisonResult, nil
 }
 
-func (s *stubComparisonService) GetComparisonDetail(_ context.Context, id, tenantID pgtype.UUID) (ComparisonDetail, error) {
+func (s *stubComparisonService) GetComparisonDetail(_ context.Context, id pgtype.UUID) (ComparisonDetail, error) {
 	return s.detail, nil
 }
 
-func (s *stubComparisonService) GetComparisonMatrix(_ context.Context, contentID, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error) {
+func (s *stubComparisonService) GetComparisonMatrix(_ context.Context, contentID pgtype.UUID) ([]ComparisonMatrixItem, error) {
 	return s.matrix, nil
 }
 
-func (s *stubComparisonService) CreateComparisonDimension(_ context.Context, tenantID pgtype.UUID, input ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error) {
+func (s *stubComparisonService) CreateComparisonDimension(_ context.Context, input ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error) {
 	return s.createdDimension, nil
 }
 
-func (s *stubComparisonService) UpsertComparisonValueWithMetadata(_ context.Context, tenantID pgtype.UUID, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error) {
+func (s *stubComparisonService) UpsertComparisonValueWithMetadata(_ context.Context, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error) {
 	if s.upsertErr != nil {
 		return gen.ComparisonValue{}, s.upsertErr
 	}

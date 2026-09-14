@@ -11,7 +11,7 @@ import (
 // Implemented by *rbac.RBAC; kept as an interface so the spaces package does
 // not import rbac directly (avoids an import cycle).
 type PermissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // UserVerifiedChecker returns true if the user's email is verified. The
@@ -39,14 +39,14 @@ func (s *Service) CanPostInSpace(
 	case PermOpen:
 		return true
 	case PermMembers:
-		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
 			return false
 		}
 
 		return true
 	case PermVerified:
-		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
 			return false
 		}
@@ -62,7 +62,7 @@ func (s *Service) CanPostInSpace(
 
 		return true
 	case PermModerators:
-		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
+		isMod, err := s.IsModerator(ctx, space.ID, userID)
 		if err != nil || !isMod {
 			return false
 		}
@@ -73,7 +73,7 @@ func (s *Service) CanPostInSpace(
 			return false
 		}
 
-		return permChecker.HasPermission(ctx, userID, tenantID, "spaces.moderate.any")
+		return permChecker.HasPermission(ctx, userID, "spaces.moderate.any")
 	default:
 		return false
 	}
@@ -121,14 +121,14 @@ func canActInSpace(
 	case PermOpen:
 		return true
 	case PermMembers:
-		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
 			return false
 		}
 
 		return true
 	case PermVerified:
-		isMember, err := s.IsMember(ctx, space.ID, userID, tenantID)
+		isMember, err := s.IsMember(ctx, space.ID, userID)
 		if err != nil || !isMember {
 			return false
 		}
@@ -144,7 +144,7 @@ func canActInSpace(
 
 		return true
 	case PermModerators:
-		isMod, err := s.IsModerator(ctx, space.ID, userID, tenantID)
+		isMod, err := s.IsModerator(ctx, space.ID, userID)
 		if err != nil || !isMod {
 			return false
 		}
@@ -155,7 +155,7 @@ func canActInSpace(
 			return false
 		}
 
-		return permChecker.HasPermission(ctx, userID, tenantID, "spaces.moderate.any")
+		return permChecker.HasPermission(ctx, userID, "spaces.moderate.any")
 	default:
 		return false
 	}

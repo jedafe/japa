@@ -101,7 +101,7 @@ type imageAttrs struct {
 // media URL, and saves the updated body.
 func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
 	// 1. Read the current content body.
-	item, err := a.content.GetContent(ctx, contentID, tenantID)
+	item, err := a.content.GetContent(ctx, contentID)
 	if err != nil {
 		return fmt.Errorf("reading content for media fetch: %w", err)
 	}
@@ -204,7 +204,7 @@ func (a *mediaFetcherAdapter) fetchAndStore(ctx context.Context, tenantID, userI
 		return "", false
 	}
 
-	m, err := a.media.GetMedia(ctx, tenantID, mediaID)
+	m, err := a.media.GetMedia(ctx, mediaID)
 	if err != nil {
 		return "", false
 	}

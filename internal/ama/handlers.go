@@ -111,7 +111,7 @@ func parseCursor(r *http.Request) pgtype.Timestamptz {
 // Supports the geo-aware ?dest= and ?profession= filters (§88 / §§79–101)
 // and cursor-based pagination (?page_size=, ?cursor_created_at=).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -121,7 +121,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	pageSize := parsePageSize(r)
 	cursor := parseCursor(r)
 
-	dtos, err := h.service.ListActive(r.Context(), tenantID, dest, profession, pageSize, cursor)
+	dtos, err := h.service.ListActive(r.Context(), dest, profession, pageSize, cursor)
 	if err != nil {
 		slog.Error("ama: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")
@@ -134,7 +134,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /forum/ama/:id — single AMA thread.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -144,7 +144,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thread, err := h.service.GetByID(r.Context(), threadID, tenantID)
+	thread, err := h.service.GetByID(r.Context(), threadID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
@@ -168,8 +168,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -216,7 +215,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	dto, err := h.service.CreateAMA(r.Context(), tenantID, user.UserID, CreateAMAInput{
+	dto, err := h.service.CreateAMA(r.Context(), user.UserID, CreateAMAInput{
 		Title:                    input.Title,
 		Slug:                     input.Slug,
 		Body:                     input.Body,

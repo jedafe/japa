@@ -28,11 +28,11 @@ type RecordLister interface {
 	// GetIntelRecordByExternalKey fetches a single intel record by the
 	// (source_id, external_key) natural key. It returns pgx.ErrNoRows
 	// (wrapped) when no record exists for that key pair.
-	GetIntelRecordByExternalKey(ctx context.Context, tenantID pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error)
+	GetIntelRecordByExternalKey(ctx context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error)
 	// ListIntelRecordsByExternalKey fetches all intel records matching the
 	// given external_key across ALL sources. Used by CheckAcrossSources to
 	// detect cross-source conflicts (BUG-20 fix).
-	ListIntelRecordsByExternalKey(ctx context.Context, tenantID pgtype.UUID, externalKey string) ([]gen.IntelRecord, error)
+	ListIntelRecordsByExternalKey(ctx context.Context, externalKey string) ([]gen.IntelRecord, error)
 }
 
 // Service wraps a RecordLister and exposes the dedup decision logic. It is
@@ -92,7 +92,7 @@ func (r CheckResult) String() string {
 // is handled by CheckAcrossSources. Any error other than "no rows" is
 // returned to the caller unchanged.
 func (s *Service) Check(ctx context.Context, sourceID pgtype.UUID, externalKey string) (CheckResult, error) {
-	_, err := s.store.GetIntelRecordByExternalKey(ctx, s.tenantID, gen.GetIntelRecordByExternalKeyParams{
+	_, err := s.store.GetIntelRecordByExternalKey(ctx, gen.GetIntelRecordByExternalKeyParams{
 		SourceID:    sourceID,
 		ExternalKey: externalKey,
 	})
@@ -117,7 +117,7 @@ func (s *Service) Check(ctx context.Context, sourceID pgtype.UUID, externalKey s
 // source. If any record has a different source_id than the candidate, it is
 // a cross-source conflict.
 func (s *Service) CheckAcrossSources(ctx context.Context, sourceID pgtype.UUID, externalKey string) (CheckResult, error) {
-	records, err := s.store.ListIntelRecordsByExternalKey(ctx, s.tenantID, externalKey)
+	records, err := s.store.ListIntelRecordsByExternalKey(ctx, externalKey)
 	if err != nil {
 		return 0, fmt.Errorf("dedup: cross-source check: %w", err)
 	}

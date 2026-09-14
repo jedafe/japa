@@ -34,7 +34,7 @@ func (s *Store) createProvider(ctx context.Context, p gen.CreateAffiliateProvide
 	return rowToProvider(row), nil
 }
 
-func (s *Store) getProviderByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.AffiliateProvider, error) {
+func (s *Store) getProviderByID(ctx context.Context, id pgtype.UUID) (gen.AffiliateProvider, error) {
 	row, err := s.read.GetAffiliateProviderByID(ctx, id)
 	if err != nil {
 		return gen.AffiliateProvider{}, err
@@ -43,7 +43,7 @@ func (s *Store) getProviderByID(ctx context.Context, id, tenantID pgtype.UUID) (
 	return rowToProvider(row), nil
 }
 
-func (s *Store) listProviders(ctx context.Context, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
+func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProvidersByTenant(ctx, gen.ListAffiliateProvidersByTenantParams{
 
 		IsActive:   isActive,
@@ -71,7 +71,7 @@ func (s *Store) updateProvider(ctx context.Context, p gen.UpdateAffiliateProvide
 	return rowToProvider(row), nil
 }
 
-func (s *Store) deleteProvider(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteProvider(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteAffiliateProvider(ctx, id)
 }
 
@@ -85,15 +85,15 @@ func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen
 	return s.write.CreateCoupon(ctx, c)
 }
 
-func (s *Store) getCouponByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponByIDRow, error) {
+func (s *Store) getCouponByID(ctx context.Context, id pgtype.UUID) (gen.GetCouponByIDRow, error) {
 	return s.read.GetCouponByID(ctx, id)
 }
 
-func (s *Store) getCouponByCode(ctx context.Context, code string, tenantID pgtype.UUID) (gen.GetCouponByCodeRow, error) {
+func (s *Store) getCouponByCode(ctx context.Context, code string) (gen.GetCouponByCodeRow, error) {
 	return s.read.GetCouponByCode(ctx, code)
 }
 
-func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
+func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByTenantRow, error) {
 	return s.read.ListCouponsByTenant(ctx, gen.ListCouponsByTenantParams{
 
 		Status:     status,
@@ -105,7 +105,7 @@ func (s *Store) listCoupons(ctx context.Context, tenantID pgtype.UUID, status, c
 	})
 }
 
-func (s *Store) listActiveCoupons(ctx context.Context, tenantID, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
+func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsByTenantRow, error) {
 	return s.read.ListActiveCouponsByTenant(ctx, gen.ListActiveCouponsByTenantParams{
 
 		ProviderID: providerID,
@@ -120,7 +120,7 @@ func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen
 	return s.write.UpdateCoupon(ctx, c)
 }
 
-func (s *Store) deleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteCoupon(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteCoupon(ctx, id)
 }
 
@@ -132,17 +132,17 @@ func (s *Store) createCouponEvent(ctx context.Context, e gen.CreateCouponEventPa
 
 // ── Render Helpers ──────────────────────────────────────────────────
 
-func (s *Store) getCouponForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetCouponForRenderRow, error) {
+func (s *Store) getCouponForRender(ctx context.Context, id pgtype.UUID) (gen.GetCouponForRenderRow, error) {
 	return s.read.GetCouponForRender(ctx, id)
 }
 
-func (s *Store) getAffiliateProviderForRender(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetAffiliateProviderForRenderRow, error) {
+func (s *Store) getAffiliateProviderForRender(ctx context.Context, id pgtype.UUID) (gen.GetAffiliateProviderForRenderRow, error) {
 	return s.read.GetAffiliateProviderForRender(ctx, id)
 }
 
 // ── Count ───────────────────────────────────────────────────────────
 
-func (s *Store) countCouponsByTenant(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) countCouponsByTenant(ctx context.Context) (int64, error) {
 	return s.read.CountCouponsByTenant(ctx)
 }
 

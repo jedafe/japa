@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -21,7 +20,7 @@ import (
 // *config.Settings satisfies this structurally. When nil, compiled-in
 // defaults are used (preserving the pre-settings behaviour).
 type rateLimitSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // SlidingWindowRateLimit returns middleware that enforces per-API-key rate
@@ -71,7 +70,7 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 				return
 			}
 
-			limit := resolveTierLimit(r.Context(), effectiveTier, key.TenantID, sr)
+			limit := resolveTierLimit(r.Context(), effectiveTier, sr)
 			now := time.Now()
 			windowStart := now.Add(-windowSize)
 

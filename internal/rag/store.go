@@ -87,7 +87,7 @@ func NewStore(database *db.DB) *Store {
 
 // UpsertChunk inserts or replaces a single chunk embedding (ADR-069: UPSERT,
 // never raw INSERT — re-indexing replaces chunks, never duplicates).
-func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, chunk Chunk, language string) error {
+func (s *Store) UpsertChunk(ctx context.Context, entityType string, entityID pgtype.UUID, chunk Chunk, language string) error {
 	vec := pgvector.NewVector(chunk.Vector)
 
 	_, err := s.queries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
@@ -108,7 +108,7 @@ func (s *Store) UpsertChunk(ctx context.Context, tenantID pgtype.UUID, entityTyp
 
 // DeleteEntityEmbeddings removes all chunks for a specific entity.
 // Used on unpublish/delete and by the admin DELETE route.
-func (s *Store) DeleteEntityEmbeddings(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Store) DeleteEntityEmbeddings(ctx context.Context, entityType string, entityID pgtype.UUID) error {
 	return s.queries.DeleteContentEmbeddingsByEntity(ctx, gen.DeleteContentEmbeddingsByEntityParams{
 
 		EntityType: entityType,
@@ -118,7 +118,7 @@ func (s *Store) DeleteEntityEmbeddings(ctx context.Context, tenantID pgtype.UUID
 
 // DeleteEmbeddingsByType removes all chunks for every entity of the given
 // type within a tenant. Used by the admin by-type aggregate purge.
-func (s *Store) DeleteEmbeddingsByType(ctx context.Context, tenantID pgtype.UUID, entityType string) error {
+func (s *Store) DeleteEmbeddingsByType(ctx context.Context, entityType string) error {
 	return s.queries.DeleteContentEmbeddingsByType(ctx,
 
 		entityType,
@@ -127,7 +127,7 @@ func (s *Store) DeleteEmbeddingsByType(ctx context.Context, tenantID pgtype.UUID
 
 // DeleteStaleTail removes chunks with chunk_index >= maxIndex for an entity.
 // Called after a re-index that produced fewer chunks than the previous index.
-func (s *Store) DeleteStaleTail(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID, maxIndex int32) error {
+func (s *Store) DeleteStaleTail(ctx context.Context, entityType string, entityID pgtype.UUID, maxIndex int32) error {
 	return s.queries.DeleteContentEmbeddingsAboveIndex(ctx, gen.DeleteContentEmbeddingsAboveIndexParams{
 
 		EntityType: entityType,
@@ -137,7 +137,7 @@ func (s *Store) DeleteStaleTail(ctx context.Context, tenantID pgtype.UUID, entit
 }
 
 // CountEntityChunks returns the number of chunks stored for an entity.
-func (s *Store) CountEntityChunks(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) (int64, error) {
+func (s *Store) CountEntityChunks(ctx context.Context, entityType string, entityID pgtype.UUID) (int64, error) {
 	return s.queries.CountContentEmbeddingsByEntity(ctx, gen.CountContentEmbeddingsByEntityParams{
 
 		EntityType: entityType,
@@ -154,7 +154,7 @@ type PublishedContentID struct {
 // ListPublishedContentIDs returns a batch of published content IDs for
 // full corpus re-indexing. Uses offset pagination to avoid loading all IDs
 // into memory at once.
-func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListPublishedContentIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListPublishedContentIDsForReindex(ctx, gen.ListPublishedContentIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -176,7 +176,7 @@ func (s *Store) ListPublishedContentIDs(ctx context.Context, tenantID pgtype.UUI
 
 // ListForumThreadIDs returns a batch of non-deleted forum thread IDs for
 // full corpus re-indexing (ADR-069 §2: forum threads are part of the corpus).
-func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListForumThreadIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListForumThreadIDsForReindex(ctx, gen.ListForumThreadIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -198,7 +198,7 @@ func (s *Store) ListForumThreadIDs(ctx context.Context, tenantID pgtype.UUID, li
 
 // ListSpaceIDs returns a batch of active space IDs for full corpus
 // re-indexing (ADR-069 §2: spaces are part of the corpus).
-func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListSpaceIDsForReindex(ctx, gen.ListSpaceIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -220,7 +220,7 @@ func (s *Store) ListSpaceIDs(ctx context.Context, tenantID pgtype.UUID, limit, o
 
 // ListLearningTrackIDs returns a batch of published learning track IDs for
 // full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
-func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]PublishedContentID, error) {
+func (s *Store) ListLearningTrackIDs(ctx context.Context, limit, offset int32) ([]PublishedContentID, error) {
 	rows, err := s.queries.ListLearningTrackIDsForReindex(ctx, gen.ListLearningTrackIDsForReindexParams{
 
 		PageLimit:  limit,
@@ -242,7 +242,7 @@ func (s *Store) ListLearningTrackIDs(ctx context.Context, tenantID pgtype.UUID, 
 
 // Search performs HNSW cosine similarity retrieval against content_embeddings.
 // language may be empty to skip the language filter.
-func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []float32, language string, topK int32) ([]RetrievedChunk, error) {
+func (s *Store) Search(ctx context.Context, queryVector []float32, language string, topK int32) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
 
 	rows, err := s.queries.SearchContentEmbeddings(ctx, gen.SearchContentEmbeddingsParams{
@@ -286,7 +286,7 @@ func (s *Store) Search(ctx context.Context, tenantID pgtype.UUID, queryVector []
 // are excluded when a geo scope is supplied. geoSpaceID must be non-nil
 // and valid — callers dispatch to Search (unfiltered) when no geo scope
 // is resolved. language may be empty to skip the language filter.
-func (s *Store) SearchGeoFiltered(ctx context.Context, tenantID pgtype.UUID, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID) ([]RetrievedChunk, error) {
+func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
 
 	rows, err := s.queries.SearchContentEmbeddingsGeoFiltered(ctx, gen.SearchContentEmbeddingsGeoFilteredParams{
@@ -331,7 +331,7 @@ type EntityTypeStats struct {
 }
 
 // GetStats returns aggregate index statistics for a tenant.
-func (s *Store) GetStats(ctx context.Context, tenantID pgtype.UUID) (IndexStats, error) {
+func (s *Store) GetStats(ctx context.Context) (IndexStats, error) {
 	row, err := s.queries.GetContentEmbeddingStats(ctx)
 	if err != nil {
 		return IndexStats{}, fmt.Errorf("rag: get stats: %w", err)

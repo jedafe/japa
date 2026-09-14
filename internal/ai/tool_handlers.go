@@ -59,12 +59,12 @@ func (h *ToolHandlers) requireTenant(w http.ResponseWriter, r *http.Request) (pg
 // ListTools returns all AI tools for the tenant.
 // GET /admin/ai/tools.
 func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	tools, err := h.Registry.ListTools(r.Context(), tenantID)
+	tools, err := h.Registry.ListTools(r.Context())
 	if err != nil {
 		slog.Error("listing ai tools", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tools")
@@ -81,7 +81,7 @@ func (h *ToolHandlers) ListTools(w http.ResponseWriter, r *http.Request) {
 // GetTool returns a single AI tool by ID.
 // GET /admin/ai/tools/{id}.
 func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -92,7 +92,7 @@ func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tool, err := h.Registry.GetTool(r.Context(), tenantID, id)
+	tool, err := h.Registry.GetTool(r.Context(), id)
 	if err != nil {
 		toolWriteError(w, http.StatusNotFound, "not_found", "Tool not found")
 		return
@@ -104,7 +104,7 @@ func (h *ToolHandlers) GetTool(w http.ResponseWriter, r *http.Request) {
 // UpdateTool updates an existing AI tool's configuration.
 // PUT /admin/ai/tools/{id}.
 func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -127,7 +127,7 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tool, err := h.Registry.UpdateTool(r.Context(), tenantID, id, UpdateToolInput{
+	tool, err := h.Registry.UpdateTool(r.Context(), id, UpdateToolInput{
 		Description:        input.Description,
 		Config:             input.Config,
 		IsEnabled:          input.IsEnabled,
@@ -146,7 +146,7 @@ func (h *ToolHandlers) UpdateTool(w http.ResponseWriter, r *http.Request) {
 // DeleteTool removes an AI tool by ID.
 // DELETE /admin/ai/tools/{id}.
 func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -157,7 +157,7 @@ func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Registry.DeleteTool(r.Context(), tenantID, id); err != nil {
+	if err := h.Registry.DeleteTool(r.Context(), id); err != nil {
 		slog.Error("deleting ai tool", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tool")
 
@@ -214,7 +214,7 @@ func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.Registry.GetToolUsageStats(r.Context(), tenantID, toolID, since)
+	stats, err := h.Registry.GetToolUsageStats(r.Context(), toolID, since)
 	if err != nil {
 		slog.Error("fetching tool usage stats", "error", err)
 		toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch usage stats")

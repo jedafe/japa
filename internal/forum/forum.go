@@ -80,7 +80,7 @@ const (
 // the _any moderator-override nodes (§26). Local interface so forum does not
 // import rbac.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // permCacheInvalidator invalidates a user's permission cache after a
@@ -93,7 +93,7 @@ type permCacheInvalidator interface {
 // webhookEmitter fans a forum.* event out to all subscribed webhook
 // endpoints for the tenant (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {
-	EmitEvent(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any)
+	EmitEvent(ctx context.Context, eventType string, payload any)
 }
 
 // spaceBroadcaster publishes a live update to a space's WebSocket room
@@ -164,7 +164,7 @@ type viewIncrement struct {
 // folderResolver resolves a default bookmark folder for an entity/content
 // type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
 type folderResolver interface {
-	Resolve(ctx context.Context, tenantID, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+	Resolve(ctx context.Context, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -224,7 +224,7 @@ func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
 type NotificationDispatcher interface {
 	DispatchNotification(
 		ctx context.Context,
-		tenantID, recipientID pgtype.UUID,
+		recipientID pgtype.UUID,
 		nType, subjectTitle string,
 		actorID pgtype.UUID,
 		subjectType string,
@@ -244,7 +244,7 @@ func (s *Service) SetNotificationDispatcher(n NotificationDispatcher) { s.notifi
 // the host, the forum service calls MarkPending to hold the question for
 // host approval.
 type AMAQuestionHandler interface {
-	MarkReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error
+	MarkReplyPending(ctx context.Context, replyID pgtype.UUID) error
 }
 
 // SetAMAQuestionHandler injects the AMA question-approval hook (§88).
@@ -253,12 +253,12 @@ func (s *Service) SetAMAQuestionHandler(h AMAQuestionHandler) { s.amaQuestions =
 
 // emitWebhook fires a forum.* event fire-and-forget (Rule 8). Errors are
 // never returned to the caller; a missing emitter is a no-op.
-func (s *Service) emitWebhook(ctx context.Context, tenantID pgtype.UUID, eventType string, payload any) {
+func (s *Service) emitWebhook(ctx context.Context, eventType string, payload any) {
 	if s.webhooks == nil {
 		return
 	}
 
-	s.webhooks.EmitEvent(ctx, tenantID, eventType, payload)
+	s.webhooks.EmitEvent(ctx, eventType, payload)
 }
 
 // broadcastSpace publishes a live update to a space's WebSocket room. No-op when
@@ -278,7 +278,7 @@ func (s *Service) broadcastSpace(tenantID, spaceID pgtype.UUID, eventType string
 func (s *Service) drainViewIncrements() {
 	for inc := range s.viewChan {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := s.store.incrementThreadViewCount(ctx, inc.threadID, inc.tenantID, 1); err != nil { // #nosec G118 -- background worker, no request context
+		if err := s.store.incrementThreadViewCount(ctx, inc.threadID, 1); err != nil { // #nosec G118 -- background worker, no request context
 			slog.Warn("forum: failed to increment thread view count",
 				"thread_id", inc.threadID.String(), "error", err)
 		}
@@ -371,7 +371,7 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 			continue
 		}
 
-		if err := s.store.incrementThreadViewCount(ctx, threadID, tenantID, int32(count)); err != nil {
+		if err := s.store.incrementThreadViewCount(ctx, threadID, int32(count)); err != nil {
 			slog.Warn("forum: failed to flush view count to database",
 				"thread_id", threadID.String(), "delta", count, "error", err)
 		}

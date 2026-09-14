@@ -39,15 +39,15 @@ type ResolvedItem struct {
 
 // Resolver knows how to resolve and search one entity type.
 type Resolver interface {
-	Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error)
+	Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error)
+	Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error)
 }
 
 // Counter is implemented by resolvers that can report a total count for the
 // same query and filters used by Search. A return value of -1 means the
 // resolver does not support counting.
 type Counter interface {
-	Count(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error)
+	Count(ctx context.Context, query string, filters map[string]any) (int64, error)
 }
 
 // Registry maps entity types to resolvers.
@@ -78,7 +78,7 @@ func (r *Registry) Register(entityType string, resolver Resolver) {
 }
 
 // Resolve resolves an item_ref for the type declared in ref["type"].
-func (r *Registry) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, error) {
+func (r *Registry) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, error) {
 	if r == nil || r.resolvers == nil {
 		return ResolvedItem{}, errors.New("resolver registry not initialized")
 	}
@@ -93,7 +93,7 @@ func (r *Registry) Resolve(ctx context.Context, ref map[string]any, tenantID pgt
 		return ResolvedItem{}, fmt.Errorf("unsupported item_ref type: %s", typ)
 	}
 
-	item, found, err := res.Resolve(ctx, ref, tenantID)
+	item, found, err := res.Resolve(ctx, ref)
 	if err != nil {
 		return ResolvedItem{}, fmt.Errorf("resolving %s: %w", typ, err)
 	}
@@ -108,7 +108,7 @@ func (r *Registry) Resolve(ctx context.Context, ref map[string]any, tenantID pgt
 }
 
 // Search searches for items of a given entity type.
-func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.resolvers == nil {
 		return nil, errors.New("resolver registry not initialized")
 	}
@@ -118,7 +118,7 @@ func (r *Registry) Search(ctx context.Context, entityType, query string, filters
 		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
 	}
 
-	items, err := res.Search(ctx, query, filters, tenantID, limit, offset)
+	items, err := res.Search(ctx, query, filters, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("searching %s: %w", entityType, err)
 	}
@@ -132,7 +132,7 @@ func (r *Registry) Search(ctx context.Context, entityType, query string, filters
 
 // Count returns the total number of matching items for the given entity type,
 // or -1 if the resolver does not implement counting.
-func (r *Registry) Count(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID) (int64, error) {
+func (r *Registry) Count(ctx context.Context, entityType, query string, filters map[string]any) (int64, error) {
 	if r == nil || r.resolvers == nil {
 		return -1, errors.New("resolver registry not initialized")
 	}
@@ -147,7 +147,7 @@ func (r *Registry) Count(ctx context.Context, entityType, query string, filters 
 		return -1, nil
 	}
 
-	total, err := c.Count(ctx, query, filters, tenantID)
+	total, err := c.Count(ctx, query, filters)
 	if err != nil {
 		return -1, fmt.Errorf("counting %s: %w", entityType, err)
 	}

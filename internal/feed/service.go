@@ -143,7 +143,7 @@ func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgt
 // GetFeed returns paginated feed items for the specified timeline and sort.
 // timeline: "explore", "primary", "space", "profile"
 // sort: "latest", "top", "rising", "relevant"
-func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32, visitorCountryCode, visitorRegion string) ([]FeedItem, error) {
+func (s *Service) GetFeed(ctx context.Context, timeline string, userID, spaceID, authorID *pgtype.UUID, sort string, limit, offset int32, visitorCountryCode, visitorRegion string) ([]FeedItem, error) {
 	// Clamp pagination limits.
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
@@ -158,13 +158,13 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 
 	switch timeline {
 	case "explore":
-		items, err = s.getExploreFeed(ctx, tenantID, sort, visitorCountryCode, visitorRegion, limit, offset)
+		items, err = s.getExploreFeed(ctx, sort, visitorCountryCode, visitorRegion, limit, offset)
 	case "primary":
 		if userID == nil {
 			return nil, errors.New("primary feed requires user_id")
 		}
 
-		items, err = s.getPrimaryFeedItems(ctx, tenantID, *userID, sort, limit, offset)
+		items, err = s.getPrimaryFeedItems(ctx, *userID, sort, limit, offset)
 	case "space":
 		if spaceID == nil {
 			return nil, errors.New("space feed requires space_id")
@@ -177,7 +177,7 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 			viewerID = *userID
 		}
 
-		items, err = s.getSpaceFeedItems(ctx, tenantID, *spaceID, viewerID, sort, limit, offset)
+		items, err = s.getSpaceFeedItems(ctx, *spaceID, viewerID, sort, limit, offset)
 	case "profile":
 		if authorID == nil {
 			return nil, errors.New("profile feed requires author_id")
@@ -190,7 +190,7 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 			viewerID = *userID
 		}
 
-		items, err = s.getProfileFeedItems(ctx, tenantID, *authorID, viewerID, sort, limit, offset)
+		items, err = s.getProfileFeedItems(ctx, *authorID, viewerID, sort, limit, offset)
 	default:
 		return nil, fmt.Errorf("unknown timeline: %s", timeline)
 	}
@@ -199,13 +199,13 @@ func (s *Service) GetFeed(ctx context.Context, tenantID pgtype.UUID, timeline st
 		return nil, err
 	}
 
-	return s.attachSources(ctx, tenantID, items)
+	return s.attachSources(ctx, items)
 }
 
 // attachSources enriches feed items with source attribution for any content
 // promoted from the intelligence spine. Missing or invalid UUIDs are skipped
 // silently so the feed never fails because of one bad ID.
-func (s *Service) attachSources(ctx context.Context, tenantID pgtype.UUID, items []FeedItem) ([]FeedItem, error) {
+func (s *Service) attachSources(ctx context.Context, items []FeedItem) ([]FeedItem, error) {
 	if len(items) == 0 {
 		return items, nil
 	}
@@ -224,7 +224,7 @@ func (s *Service) attachSources(ctx context.Context, tenantID pgtype.UUID, items
 		contentIDs = append(contentIDs, u)
 	}
 
-	sources, err := s.store.listSourcesByContentIDs(ctx, tenantID, contentIDs)
+	sources, err := s.store.listSourcesByContentIDs(ctx, contentIDs)
 	if err != nil {
 		// Source attribution is optional — log and return the original feed.
 		slog.Warn("feed: failed to attach source attribution", "error", err)
@@ -251,17 +251,17 @@ func (s *Service) attachSources(ctx context.Context, tenantID pgtype.UUID, items
 }
 
 // getExploreFeed returns the explore feed with the given sort mode.
-func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) getExploreFeed(ctx context.Context, sort, visitorCountryCode, visitorRegion string, limit, offset int32) ([]FeedItem, error) {
 	switch sort {
 	case SortTop:
-		rows, err := s.store.getTopFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
 
 		return topRowsToItems(rows), nil
 	case SortRising:
-		rows, err := s.store.getRisingFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getRisingFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -273,14 +273,14 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 		// requires a $user_embedding). Fall back to the top feed (7-day
 		// rolling window) as the closest relevance proxy for guests.
 		// The for-you feed handles true pgvector relevance for authed users.
-		rows, err := s.store.getTopFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getTopFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
 
 		return topRowsToItems(rows), nil
 	default: // "latest" uses velocity_score DESC
-		rows, err := s.store.getExploreFeed(ctx, tenantID, visitorCountryCode, visitorRegion, limit, offset)
+		rows, err := s.store.getExploreFeed(ctx, visitorCountryCode, visitorRegion, limit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -292,8 +292,8 @@ func (s *Service) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, sort
 // getPrimaryFeedItems returns the user's personalized feed with sort.
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
-func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getPrimaryFeed(ctx, tenantID, userID, sort, limit, offset)
+func (s *Service) getPrimaryFeedItems(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getPrimaryFeed(ctx, userID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -305,8 +305,8 @@ func (s *Service) getPrimaryFeedItems(ctx context.Context, tenantID, userID pgty
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
-func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getSpaceFeed(ctx, tenantID, spaceID, viewerID, sort, limit, offset)
+func (s *Service) getSpaceFeedItems(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getSpaceFeed(ctx, spaceID, viewerID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -318,8 +318,8 @@ func (s *Service) getSpaceFeedItems(ctx context.Context, tenantID, spaceID, view
 // sort: 'latest' (default), 'top' (vote_score DESC), 'rising' (velocity_score DESC).
 // 'relevant' falls back to latest (pgvector relevance is only in the for-you feed).
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
-func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
-	rows, err := s.store.getProfileFeed(ctx, tenantID, authorID, viewerID, sort, limit, offset)
+func (s *Service) getProfileFeedItems(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]FeedItem, error) {
+	rows, err := s.store.getProfileFeed(ctx, authorID, viewerID, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -330,8 +330,8 @@ func (s *Service) getProfileFeedItems(ctx context.Context, tenantID, authorID, v
 // UpdateVelocityScores batch updates velocity scores for published content
 // < 30 days old. gravity is the decay exponent (default 1.8), hot-reloadable
 // via the feed.velocity.gravity system setting.
-func (s *Service) UpdateVelocityScores(ctx context.Context, tenantID pgtype.UUID, gravity float64) error {
-	return s.store.updateVelocityScores(ctx, tenantID, gravity)
+func (s *Service) UpdateVelocityScores(ctx context.Context, gravity float64) error {
+	return s.store.updateVelocityScores(ctx, gravity)
 }
 
 // UpdateContentScore updates a single content's score.
@@ -347,18 +347,18 @@ func (s *Service) UpdateContentScore(ctx context.Context, contentID pgtype.UUID,
 }
 
 // DeleteFeedItemsByContent removes all feed rows for a content ID (tenant-scoped).
-func (s *Service) DeleteFeedItemsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
-	return s.store.deleteFeedItemsByContent(ctx, tenantID, contentID)
+func (s *Service) DeleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByContent(ctx, contentID)
 }
 
 // DeleteFeedItemsByUser removes all feed rows for a user (tenant-scoped).
-func (s *Service) DeleteFeedItemsByUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
-	return s.store.deleteFeedItemsByUser(ctx, tenantID, userID)
+func (s *Service) DeleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.store.deleteFeedItemsByUser(ctx, userID)
 }
 
 // GetFeedItemCount returns the total number of feed items for a user (tenant-scoped).
-func (s *Service) GetFeedItemCount(ctx context.Context, tenantID, userID pgtype.UUID) (int, error) {
-	count, err := s.store.getFeedItemCount(ctx, tenantID, userID)
+func (s *Service) GetFeedItemCount(ctx context.Context, userID pgtype.UUID) (int, error) {
+	count, err := s.store.getFeedItemCount(ctx, userID)
 	if err != nil {
 		return 0, err
 	}
@@ -557,7 +557,7 @@ func roadmapRowsToItems(rows []gen.ListContentsBySlugsRow) []FeedItem {
 // order returned by the assessment. Empty roadmap slugs produce an empty list.
 // Public/members content is returned; private content is only returned for the
 // author or someone with can_see_private.
-func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]FeedItem, error) {
+func (s *Service) GetRoadmapFeed(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -566,7 +566,7 @@ func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgty
 		return []FeedItem{}, nil
 	}
 
-	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, slugs, limit, offset)
+	rows, err := s.store.getContentsBySlugs(ctx, requesterID, slugs, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -579,13 +579,13 @@ func (s *Service) GetRoadmapFeed(ctx context.Context, tenantID, requesterID pgty
 // This is used by the public assessment result roadmap endpoint to surface
 // destination-, stage-, and visa-relevant content first while preserving the
 // roadmap's overall order as a tie-breaker.
-func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32, vc *visitor.VisitorContext) ([]FeedItem, error) {
+func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32, vc *visitor.VisitorContext) ([]FeedItem, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
 
 	if vc == nil || (vc.DestinationCountry == "" && vc.JourneyStage == "" && vc.VisaRoute == "" && vc.OriginCountry == "") {
-		return s.GetRoadmapFeed(ctx, tenantID, requesterID, slugs, limit, offset)
+		return s.GetRoadmapFeed(ctx, requesterID, slugs, limit, offset)
 	}
 
 	// Only the result's own roadmap slugs are returned — the numbered "next
@@ -616,7 +616,7 @@ func (s *Service) GetRoadmapFeedWithContext(ctx context.Context, tenantID, reque
 		fetchLimit = MaxPageSize
 	}
 
-	rows, err := s.store.getContentsBySlugs(ctx, tenantID, requesterID, merged, fetchLimit, 0)
+	rows, err := s.store.getContentsBySlugs(ctx, requesterID, merged, fetchLimit, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1015,24 +1015,24 @@ const (
 // loadAffinity fetches the user's followed authors, spaces (followed ∪ member),
 // and followed tags as ID arrays for the candidate query.
 func (s *Service) loadAffinity(
-	ctx context.Context, tenantID, userID pgtype.UUID,
+	ctx context.Context, userID pgtype.UUID,
 ) (authorIDs, spaceIDs, tagIDs []pgtype.UUID, err error) {
-	authorIDs, err = s.store.getFollowedEntityIDs(ctx, tenantID, userID, "user")
+	authorIDs, err = s.store.getFollowedEntityIDs(ctx, userID, "user")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	followedSpaces, err := s.store.getFollowedEntityIDs(ctx, tenantID, userID, "space")
+	followedSpaces, err := s.store.getFollowedEntityIDs(ctx, userID, "space")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	memberSpaces, err := s.store.getMemberSpaceIDs(ctx, tenantID, userID)
+	memberSpaces, err := s.store.getMemberSpaceIDs(ctx, userID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	tagIDs, err = s.store.getFollowedEntityIDs(ctx, tenantID, userID, "tag")
+	tagIDs, err = s.store.getFollowedEntityIDs(ctx, userID, "tag")
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1043,7 +1043,7 @@ func (s *Service) loadAffinity(
 	// with thousands of followed spaces from making the candidate query
 	// unbounded. Hot-reloadable via feed.max_followed_spaces_in_feed.
 	if s.settings != nil {
-		maxSpaces := s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.max_followed_spaces_in_feed", 50)
+		maxSpaces := s.settings.GetIntOr(ctx, "feed.max_followed_spaces_in_feed", 50)
 		if maxSpaces > 0 && len(spaceIDs) > maxSpaces {
 			spaceIDs = spaceIDs[:maxSpaces]
 		}
@@ -1082,7 +1082,7 @@ func (s *Service) GetForYouFeed(
 	// BUG-007: honor geo_personalization.enabled. When disabled, clear
 	// contentCountry/contentRegion so no geo boost is applied. Ref: Section 32 L147–149.
 	if s.settings != nil && (contentCountry != "" || contentRegion != "") {
-		if !s.settings.GetBoolOr(ctx, pgtype.UUID{}, "geo_personalization.enabled", true) {
+		if !s.settings.GetBoolOr(ctx, "geo_personalization.enabled", true) {
 			contentCountry = ""
 			contentRegion = ""
 		}
@@ -1103,21 +1103,21 @@ func (s *Service) GetForYouFeed(
 	// defaultRankingWeights() so new tenants work without explicit config.
 	w := defaultRankingWeights()
 	if s.settings != nil {
-		w.Velocity = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_velocity", w.Velocity)
-		w.Author = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_author", w.Author)
-		w.Space = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_space", w.Space)
-		w.Tag = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_tag", w.Tag)
-		w.Recency = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_weight_recency", w.Recency)
-		w.Geo = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_geo_weight", w.Geo)
-		w.GeoBoostCap = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_geo_boost_cap", w.GeoBoostCap)
-		w.JourneyDest = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_destination", w.JourneyDest)
-		w.JourneyStage = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_stage", w.JourneyStage)
-		w.JourneyVisa = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_visa", w.JourneyVisa)
-		w.JourneySource = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_source", w.JourneySource)
-		w.JourneyRoad = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_weight_roadmap", w.JourneyRoad)
-		w.JourneyCap = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_journey_boost_cap", w.JourneyCap)
-		w.TagOverlapCap = s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.for_you_tag_overlap_cap", w.TagOverlapCap)
-		w.HalfLifeHours = s.settings.GetFloatOr(ctx, tenantID, "feed.for_you_half_life_hours", w.HalfLifeHours)
+		w.Velocity = s.settings.GetFloatOr(ctx, "feed.for_you_weight_velocity", w.Velocity)
+		w.Author = s.settings.GetFloatOr(ctx, "feed.for_you_weight_author", w.Author)
+		w.Space = s.settings.GetFloatOr(ctx, "feed.for_you_weight_space", w.Space)
+		w.Tag = s.settings.GetFloatOr(ctx, "feed.for_you_weight_tag", w.Tag)
+		w.Recency = s.settings.GetFloatOr(ctx, "feed.for_you_weight_recency", w.Recency)
+		w.Geo = s.settings.GetFloatOr(ctx, "feed.for_you_geo_weight", w.Geo)
+		w.GeoBoostCap = s.settings.GetFloatOr(ctx, "feed.for_you_geo_boost_cap", w.GeoBoostCap)
+		w.JourneyDest = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_destination", w.JourneyDest)
+		w.JourneyStage = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_stage", w.JourneyStage)
+		w.JourneyVisa = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_visa", w.JourneyVisa)
+		w.JourneySource = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_source", w.JourneySource)
+		w.JourneyRoad = s.settings.GetFloatOr(ctx, "feed.for_you_journey_weight_roadmap", w.JourneyRoad)
+		w.JourneyCap = s.settings.GetFloatOr(ctx, "feed.for_you_journey_boost_cap", w.JourneyCap)
+		w.TagOverlapCap = s.settings.GetIntOr(ctx, "feed.for_you_tag_overlap_cap", w.TagOverlapCap)
+		w.HalfLifeHours = s.settings.GetFloatOr(ctx, "feed.for_you_half_life_hours", w.HalfLifeHours)
 	}
 
 	key := forYouCacheKey(tenantID, userID, sortMode, vc)
@@ -1130,11 +1130,11 @@ func (s *Service) GetForYouFeed(
 
 	windowDays := forYouWindowDaysDefault
 	if s.settings != nil {
-		windowDays = s.settings.GetIntOr(ctx, pgtype.UUID{}, "feed.for_you_window_days", forYouWindowDaysDefault)
+		windowDays = s.settings.GetIntOr(ctx, "feed.for_you_window_days", forYouWindowDaysDefault)
 	}
 
 	ranked, err := vkcache.GetOrComputeCompat(ctx, s.vk, key, cacheTTL, func(ctx context.Context) ([]FeedItem, error) {
-		authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, tenantID, userID)
+		authorIDs, spaceIDs, tagIDs, err := s.loadAffinity(ctx, userID)
 		if err != nil {
 			return nil, err
 		}

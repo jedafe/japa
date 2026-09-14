@@ -173,7 +173,7 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok := h.requireUniqueLiteralKey(r.Context(), w, tenantID, req.Key); !ok {
+	if ok := h.requireUniqueLiteralKey(r.Context(), w, req.Key); !ok {
 		return
 	}
 
@@ -245,7 +245,7 @@ func (h *Handlers) parseCreateRequest(w http.ResponseWriter, r *http.Request) (L
 	return req, true
 }
 
-func (h *Handlers) requireUniqueLiteralKey(ctx context.Context, w http.ResponseWriter, tenantID pgtype.UUID, key string) bool {
+func (h *Handlers) requireUniqueLiteralKey(ctx context.Context, w http.ResponseWriter, key string) bool {
 	_, err := h.Queries.GetTemplateLiteralByKey(ctx,
 
 		key,
@@ -309,7 +309,7 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, existing, ok := h.loadLiteralForUpdate(w, r, tenantID)
+	id, existing, ok := h.loadLiteralForUpdate(w, r)
 	if !ok {
 		return
 	}
@@ -320,7 +320,7 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, ok := h.buildUpdateParams(w, tenantID, id, existing, req)
+	params, ok := h.buildUpdateParams(w, id, existing, req)
 	if !ok {
 		return
 	}
@@ -336,7 +336,7 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{responseKeyData: lit})
 }
 
-func (h *Handlers) loadLiteralForUpdate(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID) (uuid.UUID, gen.TemplateLiteral, bool) {
+func (h *Handlers) loadLiteralForUpdate(w http.ResponseWriter, r *http.Request) (uuid.UUID, gen.TemplateLiteral, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid literal ID")
@@ -366,7 +366,7 @@ func (h *Handlers) loadLiteralForUpdate(w http.ResponseWriter, r *http.Request, 
 	return id, existing, true
 }
 
-func (h *Handlers) buildUpdateParams(w http.ResponseWriter, tenantID pgtype.UUID, id uuid.UUID, existing gen.TemplateLiteral, req LiteralRequest) (gen.UpdateTemplateLiteralParams, bool) {
+func (h *Handlers) buildUpdateParams(w http.ResponseWriter, id uuid.UUID, existing gen.TemplateLiteral, req LiteralRequest) (gen.UpdateTemplateLiteralParams, bool) {
 	kind := coalesceString(req.Kind, existing.Kind)
 	if kind != literalKindExpression && kind != literalKindStatic {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_kind", "Kind must be 'expression' or 'static'")

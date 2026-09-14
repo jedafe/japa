@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -133,7 +132,7 @@ func LLMsHandler(store *Store, rdb *valkey.Client, siteName, siteDescription str
 		}
 
 		// Fetch real data from the database
-		data, err := store.GetLLMsData(r.Context(), pgtype.UUID{})
+		data, err := store.GetLLMsData(r.Context())
 		if err != nil {
 			slog.Error("llms: failed to load data", "error", err)
 			w.Header().Set("Content-Type", "text/plain")

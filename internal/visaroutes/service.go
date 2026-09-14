@@ -142,16 +142,16 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 
 // Enabled reads the visa_routes.enabled system_setting toggle (§90
 // feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "visa_routes.enabled", false)
+	return s.settings.GetBoolOr(ctx, "visa_routes.enabled", false)
 }
 
 // List returns a paginated, filtered list of published+active visa routes.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession, education string, experienceYears, page, limit int32) ([]RouteDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -184,7 +184,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID pgtype.UUID, p
 }
 
 // Compare returns up to 4 visa routes by ID for side-by-side comparison.
-func (s *Service) Compare(ctx context.Context, tenantID pgtype.UUID, ids []pgtype.UUID) ([]RouteDTO, error) {
+func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, error) {
 	if len(ids) == 0 {
 		return []RouteDTO{}, nil
 	}
@@ -243,7 +243,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (RouteDTO, error) 
 }
 
 // AdminList returns all visa routes (any status) for the admin view.
-func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UUID, status, visaCategory, q, sort, order string, isActive *bool, page, limit int32) ([]RouteDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status, visaCategory, q, sort, order string, isActive *bool, page, limit int32) ([]RouteDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -279,7 +279,7 @@ func (s *Service) AdminList(ctx context.Context, tenantID, destSpaceID pgtype.UU
 }
 
 // Create creates a new visa route (admin).
-func (s *Service) Create(ctx context.Context, tenantID pgtype.UUID, input CreateRouteInput) (RouteDTO, error) {
+func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO, error) {
 	if input.Name == "" {
 		return RouteDTO{}, errors.New("name is required")
 	}

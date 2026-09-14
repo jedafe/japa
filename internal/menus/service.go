@@ -18,7 +18,7 @@ import (
 // rules — "the public endpoint calls rbac.GetUserContext for authenticated
 // users. This is already cached").
 type PermissionResolver interface {
-	UserPermissions(ctx context.Context, userID, tenantID pgtype.UUID) (map[string]bool, error)
+	UserPermissions(ctx context.Context, userID pgtype.UUID) (map[string]bool, error)
 }
 
 // FeatureChecker resolves tenant-level feature flags so the menu resolver can
@@ -72,13 +72,13 @@ type ListMenusResponse struct {
 }
 
 // ListMenus is an exported method.
-func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (*ListMenusResponse, error) {
-	menus, err := s.store.listMenus(ctx, tenantID, q, placement, status, sort, sortDir, limit, offset)
+func (s *Service) ListMenus(ctx context.Context, q, placement, status, sort, sortDir string, limit, offset int32) (*ListMenusResponse, error) {
+	menus, err := s.store.listMenus(ctx, q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing menus: %w", err)
 	}
 
-	total, err := s.store.countMenus(ctx, tenantID, q, placement, status)
+	total, err := s.store.countMenus(ctx, q, placement, status)
 	if err != nil {
 		return nil, fmt.Errorf("counting menus: %w", err)
 	}
@@ -92,13 +92,13 @@ func (s *Service) ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placem
 }
 
 // GetMenu is an exported method.
-func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuResponse, error) {
-	menu, err := s.store.getMenuByID(ctx, id, tenantID)
+func (s *Service) GetMenu(ctx context.Context, id pgtype.UUID) (*MenuResponse, error) {
+	menu, err := s.store.getMenuByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu: %w", err)
 	}
 
-	items, err := s.store.listMenuItems(ctx, tenantID, menu.ID)
+	items, err := s.store.listMenuItems(ctx, menu.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
@@ -118,12 +118,12 @@ func (s *Service) GetMenu(ctx context.Context, id, tenantID pgtype.UUID) (*MenuR
 
 // GetMenuBySlug is an exported method.
 func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug string, userGroupIDs map[string]bool, isAuthenticated bool, userID pgtype.UUID) (*MenuResponse, error) {
-	menu, err := s.store.getMenuBySlug(ctx, tenantID, slug)
+	menu, err := s.store.getMenuBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("getting menu by slug: %w", err)
 	}
 
-	items, err := s.store.listMenuItems(ctx, tenantID, menu.ID)
+	items, err := s.store.listMenuItems(ctx, menu.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing menu items: %w", err)
 	}
@@ -139,7 +139,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 	var userPerms map[string]bool
 
 	if isAuthenticated && userID.Valid && s.perms != nil {
-		perms, err := s.perms.UserPermissions(ctx, userID, tenantID)
+		perms, err := s.perms.UserPermissions(ctx, userID)
 		if err == nil {
 			userPerms = perms
 		}
@@ -167,7 +167,7 @@ func (s *Service) GetMenuBySlug(ctx context.Context, tenantID pgtype.UUID, slug 
 }
 
 // CreateMenu is an exported method.
-func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, name, placement, status string) (gen.Menu, error) {
+func (s *Service) CreateMenu(ctx context.Context, slug, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
 	}
@@ -186,7 +186,7 @@ func (s *Service) CreateMenu(ctx context.Context, tenantID pgtype.UUID, slug, na
 }
 
 // UpdateMenu is an exported method.
-func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name, placement, status string) (gen.Menu, error) {
+func (s *Service) UpdateMenu(ctx context.Context, id pgtype.UUID, name, placement, status string) (gen.Menu, error) {
 	if !ValidPlacement(placement) {
 		return gen.Menu{}, ErrInvalidPlacement
 	}
@@ -201,8 +201,8 @@ func (s *Service) UpdateMenu(ctx context.Context, id, tenantID pgtype.UUID, name
 }
 
 // DeleteMenu is an exported method.
-func (s *Service) DeleteMenu(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteMenu(ctx, id, tenantID)
+func (s *Service) DeleteMenu(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteMenu(ctx, id)
 }
 
 // ── Menu Item CRUD ────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ type UpdateMenuItemInput struct {
 }
 
 // CreateMenuItem is an exported method.
-func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input CreateMenuItemInput) (gen.CreateMenuItemRow, error) {
+func (s *Service) CreateMenuItem(ctx context.Context, input CreateMenuItemInput) (gen.CreateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.CreateMenuItemRow{}, ErrInvalidVisibility
 	}
@@ -269,7 +269,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 	// creating the item. Without this, a non-existent menu_id hits the FK
 	// constraint and surfaces as a generic 500 instead of 404 (Rule 5).
 	// Ref: ADR-054.
-	if _, err := s.store.getMenuByID(ctx, menuID, tenantID); err != nil {
+	if _, err := s.store.getMenuByID(ctx, menuID); err != nil {
 		return gen.CreateMenuItemRow{}, err
 	}
 
@@ -314,7 +314,7 @@ func (s *Service) CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, inpu
 }
 
 // UpdateMenuItem is an exported method.
-func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
+func (s *Service) UpdateMenuItem(ctx context.Context, id pgtype.UUID, input UpdateMenuItemInput) (gen.UpdateMenuItemRow, error) {
 	if !ValidVisibility(input.Visibility) {
 		return gen.UpdateMenuItemRow{}, ErrInvalidVisibility
 	}
@@ -375,15 +375,15 @@ func (s *Service) UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, 
 }
 
 // DeleteMenuItem is an exported method.
-func (s *Service) DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteMenuItem(ctx, id, tenantID)
+func (s *Service) DeleteMenuItem(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteMenuItem(ctx, id)
 }
 
 // GetMenuItem returns a single menu item by ID, scoped to the tenant.
 // Used by handlers to verify an item belongs to a specific menu before
 // performing scoped operations (update/delete/reorder). Ref: ADR-054.
-func (s *Service) GetMenuItem(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetMenuItemRow, error) {
-	return s.store.getMenuItem(ctx, id, tenantID)
+func (s *Service) GetMenuItem(ctx context.Context, id pgtype.UUID) (gen.GetMenuItemRow, error) {
+	return s.store.getMenuItem(ctx, id)
 }
 
 // ReorderInput is an exported type.
@@ -398,7 +398,7 @@ type ReorderItem struct {
 }
 
 // ReorderMenuItems is an exported method.
-func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, items []ReorderItem) error {
+func (s *Service) ReorderMenuItems(ctx context.Context, items []ReorderItem) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -415,7 +415,7 @@ func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, it
 		sortOrders[i] = int32(item.SortOrder) // #nosec
 	}
 
-	if err := s.store.bulkUpdateMenuItemSortOrder(ctx, tenantID, ids, sortOrders); err != nil {
+	if err := s.store.bulkUpdateMenuItemSortOrder(ctx, ids, sortOrders); err != nil {
 		slog.Error("reorder menu items failed", "error", err)
 		return err
 	}
@@ -425,13 +425,13 @@ func (s *Service) ReorderMenuItems(ctx context.Context, tenantID pgtype.UUID, it
 
 // GetUserGroupIDs returns the set of user group IDs the user belongs to.
 // Used for group-based menu item visibility filtering.
-func (s *Service) GetUserGroupIDs(ctx context.Context, tenantID pgtype.UUID, userID string) ([]string, error) {
+func (s *Service) GetUserGroupIDs(ctx context.Context, userID string) ([]string, error) {
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return nil, fmt.Errorf("invalid user_id: %w", err)
 	}
 
-	return s.store.getUserGroupIDs(ctx, tenantID, uid)
+	return s.store.getUserGroupIDs(ctx, uid)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────

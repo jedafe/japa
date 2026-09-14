@@ -60,7 +60,7 @@ func NewStore(database *db.DB) *Store {
 // the service to build human-readable, location-specific web research queries.
 // If the space is missing, not valid, or soft-deleted, it returns an empty
 // string with no error.
-func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+func (s *Store) GetSpaceName(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	if !spaceID.Valid {
 		return "", nil
 	}
@@ -295,7 +295,7 @@ WHERE %s
 }
 
 // GetGuideByID returns a single housing guide by its id.
-func (s *Store) GetGuideByID(ctx context.Context, id, tenantID pgtype.UUID) (GuideRow, error) {
+func (s *Store) GetGuideByID(ctx context.Context, id pgtype.UUID) (GuideRow, error) {
 	const q = `
 SELECT hg.id, hg.destination_space_id, hg.city_space_id,
        hg.accommodation_type, hg.search_platforms, hg.landlord_requirements,
@@ -388,7 +388,7 @@ RETURNING id
 
 // UpdateGuide updates the mutable fields on a housing_guides row. Only
 // the fields set on UpdateGuideInput are applied.
-func (s *Store) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, input UpdateGuideInput) error {
+func (s *Store) UpdateGuide(ctx context.Context, id pgtype.UUID, input UpdateGuideInput) error {
 	var (
 		sets   []string
 		args   []any
@@ -495,7 +495,7 @@ WHERE id = $%d
 // ApproveGuide marks a housing guide as reviewed and published by an
 // admin (HITL approval). Sets hitl_reviewed_by, hitl_reviewed_at=now(),
 // status='published', and optional review notes.
-func (s *Store) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+func (s *Store) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE housing_guides
 SET hitl_reviewed_by = $2,
@@ -522,7 +522,7 @@ WHERE id = $1
 // and recording the reviewer and review notes. A guide may be rejected
 // from any non-published, non-rejected status (draft, ai_draft, pending)
 // per the ADR-088 lifecycle.
-func (s *Store) RejectGuide(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+func (s *Store) RejectGuide(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE housing_guides
 SET hitl_reviewed_by = $2,

@@ -80,7 +80,7 @@ type contentMeta struct {
 // invalid, the content does not exist, or the content is private /
 // non-indexable (Section 26: private content must not leak its title via
 // a publicly served OG image).
-func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string, tenantID pgtype.UUID) *contentMeta {
+func (h *OGImageHandler) lookupContent(ctx context.Context, idStr string) *contentMeta {
 	id, err := uuid.Parse(idStr)
 	if err != nil {
 		return nil
@@ -149,7 +149,7 @@ func (h *OGImageHandler) ServeOGImage(w http.ResponseWriter, r *http.Request) {
 	isBrandFallback := false
 
 	if t != nil {
-		if meta := h.lookupContent(r.Context(), idStr, t.ID); meta != nil {
+		if meta := h.lookupContent(r.Context(), idStr); meta != nil {
 			title = cleanTitle(meta.Title)
 			subtitle = humanizeContentType(meta.ContentType)
 		}

@@ -114,7 +114,7 @@ func RobotsHandler(store *Store, rdb *valkey.Client) http.HandlerFunc {
 		}
 
 		// Generate from bot registry
-		bots, err := store.GetAllBots(r.Context(), t.ID)
+		bots, err := store.GetAllBots(r.Context())
 		if err != nil {
 			slog.Error("robots: failed to load bots", "error", err)
 			w.Header().Set("Content-Type", "text/plain")

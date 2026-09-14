@@ -83,11 +83,11 @@ type ReviewClaimInput struct {
 	ResolutionNote string `json:"resolution_note,omitempty"`
 }
 
-func (s *Service) sourceAutoCreateEnabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) sourceAutoCreateEnabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
-	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "sources.auto_create_for_organizations")
+	enabled, err := s.settings.GetSettingBool(ctx, "sources.auto_create_for_organizations")
 	if err != nil {
 		return false
 	}
@@ -134,9 +134,9 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		maxPerUser := -1
 		perTierKey := "organizations.max_per_user." + tier
 
-		if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, perTierKey); err == nil {
+		if v, err := s.settings.GetSettingInt(ctx, perTierKey); err == nil {
 			maxPerUser = v
-		} else if v, err := s.settings.GetSettingInt(ctx, pgtype.UUID{}, "organizations.max_per_user"); err == nil {
+		} else if v, err := s.settings.GetSettingInt(ctx, "organizations.max_per_user"); err == nil {
 			maxPerUser = v
 		}
 
@@ -145,7 +145,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		}
 
 		if maxPerUser > 0 {
-			count, err := s.store.CountOrganizationsByOwner(ctx, userID, tenantID)
+			count, err := s.store.CountOrganizationsByOwner(ctx, userID)
 			if err != nil {
 				return gen.Organization{}, fmt.Errorf("checking org count: %w", err)
 			}
@@ -211,7 +211,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 
 	// v2 source directory: auto-create an intel_sources row for the organization
 	// when the tenant setting is enabled (default false).
-	if s.sources != nil && s.sourceAutoCreateEnabled(ctx, tenantID) {
+	if s.sources != nil && s.sourceAutoCreateEnabled(ctx) {
 		category := "community_organisation"
 		if org.OrgType == "university" {
 			category = "university"
@@ -222,7 +222,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		if sErr != nil {
 			slog.Warn("organizations: failed to create source for org", "org_id", org.ID, "error", sErr)
 		} else {
-			if err := s.store.UpdateSourceID(ctx, tenantID, org.ID, source.ID); err != nil {
+			if err := s.store.UpdateSourceID(ctx, org.ID, source.ID); err != nil {
 				slog.Warn("organizations: failed to link org source_id", "org_id", org.ID, "source_id", source.ID, "error", err)
 			}
 		}
@@ -233,7 +233,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 	// destination_country custom field so the geo-aware personalization
 	// system picks it up. Non-fatal — org creation succeeds regardless.
 	if input.CountryCode != "" {
-		if err := s.setDestinationCountry(ctx, tenantID, userID, input.CountryCode); err != nil {
+		if err := s.setDestinationCountry(ctx, userID, input.CountryCode); err != nil {
 			slog.Warn("organizations: failed to set destination_country from org creation", "error", err)
 		}
 	}
@@ -242,8 +242,8 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 }
 
 // GetOrganization returns an organization by ID.
-func (s *Service) GetOrganization(ctx context.Context, id, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.store.GetOrganizationByID(ctx, id, tenantID)
+func (s *Service) GetOrganization(ctx context.Context, id pgtype.UUID) (gen.Organization, error) {
+	return s.store.GetOrganizationByID(ctx, id)
 }
 
 // IsMember reports whether the given user is a member of the organization.
@@ -260,8 +260,8 @@ type MyOrganization struct {
 
 // ListMyOrganizations returns orgs the user is a member of, with the member's
 // role projected through. Used by GET /me/organizations.
-func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]MyOrganization, error) {
-	rows, err := s.store.ListOrganizationsByMember(ctx, tenantID, userID, limit, offset)
+func (s *Service) ListMyOrganizations(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]MyOrganization, error) {
+	rows, err := s.store.ListOrganizationsByMember(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing organizations by member: %w", err)
 	}
@@ -286,18 +286,18 @@ func (s *Service) ListMyOrganizations(ctx context.Context, tenantID, userID pgty
 }
 
 // GetOrganizationBySlug returns an organization by slug.
-func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.store.GetOrganizationBySlug(ctx, slug, tenantID)
+func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string) (gen.Organization, error) {
+	return s.store.GetOrganizationBySlug(ctx, slug)
 }
 
 // ListOrganizations returns organizations filtered by type, country, search, and verified status.
-func (s *Service) ListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, tenantID, orgType, countryCode, search, verified, limit, offset)
+func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
+	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -344,7 +344,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 	// destination_country custom field (geo-aware personalization).
 	// Non-fatal — the org update succeeds regardless.
 	if input.CountryCode != "" {
-		if err := s.setDestinationCountry(ctx, tenantID, userID, input.CountryCode); err != nil {
+		if err := s.setDestinationCountry(ctx, userID, input.CountryCode); err != nil {
 			slog.Warn("organizations: failed to set destination_country from org update", "error", err)
 		}
 	}
@@ -368,7 +368,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 		return fmt.Errorf("%w: only the owner can delete an organization", errpkg.ErrForbidden)
 	}
 
-	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
+	if err := s.store.SoftDeleteOrganization(ctx, id); err != nil {
 		return err
 	}
 
@@ -438,7 +438,7 @@ func (s *Service) InviteMember(ctx context.Context, orgID, _, invitedBy pgtype.U
 
 // ListInvitations returns pending invitations for an organization.
 // Tenant-scoped for defense-in-depth (BUG-005).
-func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+func (s *Service) ListInvitations(ctx context.Context, orgID, userID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
 	role, err := s.store.GetMemberRole(ctx, orgID, userID)
 	if err != nil {
 		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
@@ -453,7 +453,7 @@ func (s *Service) ListInvitations(ctx context.Context, orgID, userID, tenantID p
 		return nil, fmt.Errorf("%w: insufficient permissions", errpkg.ErrForbidden)
 	}
 
-	return s.store.ListInvitations(ctx, orgID, tenantID)
+	return s.store.ListInvitations(ctx, orgID)
 }
 
 // RevokeInvitation revokes a pending invitation. Only owner or admin can revoke.
@@ -481,7 +481,7 @@ func (s *Service) RevokeInvitation(ctx context.Context, orgID, userID, invitatio
 // in a single transaction so a partial failure cannot leave an accepted-but-
 // unjoined invitation (BUG-008). The accepting user's email must match the
 // invited email (BUG-003).
-func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID, tenantID pgtype.UUID) (string, error) {
+func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID pgtype.UUID) (string, error) {
 	inv, err := s.store.GetInvitationByToken(ctx, tokenHash)
 	if err != nil {
 		return "", fmt.Errorf("finding invitation: %w", err)
@@ -494,7 +494,7 @@ func (s *Service) AcceptInvitation(ctx context.Context, tokenHash string, userID
 	}
 
 	// Verify the accepting user's email matches the invited email (BUG-003).
-	userEmail, err := s.store.GetUserEmail(ctx, userID, pgtype.UUID{})
+	userEmail, err := s.store.GetUserEmail(ctx, userID)
 	if err != nil {
 		return "", fmt.Errorf("fetching user email: %w", err)
 	}
@@ -702,8 +702,8 @@ func (s *Service) RemoveMember(ctx context.Context, orgID, removedBy, targetUser
 
 // ListMembers returns all members of an organization. Tenant-scoped for
 // defense-in-depth (BUG-004).
-func (s *Service) ListMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID, tenantID)
+func (s *Service) ListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, orgID)
 }
 
 // UpdateMemberRole changes a member's role. Only owner can change roles.
@@ -744,9 +744,9 @@ func (s *Service) UpdateMemberRole(ctx context.Context, orgID, updatedBy, target
 // (2) the user doesn't already have a pending claim for this org (BUG-010),
 // and (3) when a form submission is linked, its status is 'new' (BUG-009).
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pgtype.UUID, input ClaimOwnershipInput) (gen.OwnershipClaim, error) {
+func (s *Service) ClaimOwnership(ctx context.Context, userID, orgID pgtype.UUID, input ClaimOwnershipInput) (gen.OwnershipClaim, error) {
 	// BUG-012: Verify the org exists and is active.
-	active, err := s.store.ActiveOrgExistsByID(ctx, tenantID, orgID)
+	active, err := s.store.ActiveOrgExistsByID(ctx, orgID)
 	if err != nil {
 		return gen.OwnershipClaim{}, fmt.Errorf("checking organization: %w", err)
 	}
@@ -756,7 +756,7 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 	}
 
 	// BUG-010: Check for existing pending claim by this user for this org.
-	if _, err := s.store.GetPendingClaimByClaimant(ctx, orgID, tenantID, userID); err == nil {
+	if _, err := s.store.GetPendingClaimByClaimant(ctx, orgID, userID); err == nil {
 		return gen.OwnershipClaim{}, fmt.Errorf("%w: you already have a pending claim for this organization", errpkg.ErrDuplicate)
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return gen.OwnershipClaim{}, fmt.Errorf("checking existing claims: %w", err)
@@ -767,7 +767,7 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 		formSubmissionID = *input.FormSubmissionID
 
 		// BUG-009: Verify the linked form submission has status='new'.
-		submission, err := s.store.GetFormSubmissionByID(ctx, formSubmissionID, tenantID)
+		submission, err := s.store.GetFormSubmissionByID(ctx, formSubmissionID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return gen.OwnershipClaim{}, fmt.Errorf("%w: form submission not found", errpkg.ErrNotFound)
@@ -792,8 +792,8 @@ func (s *Service) ClaimOwnership(ctx context.Context, tenantID, userID, orgID pg
 }
 
 // ListOwnershipClaims returns claims filtered by status (admin).
-func (s *Service) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
-	return s.store.ListOwnershipClaims(ctx, tenantID, status, limit, offset)
+func (s *Service) ListOwnershipClaims(ctx context.Context, status string, limit, offset int32) ([]gen.ListOwnershipClaimsRow, error) {
+	return s.store.ListOwnershipClaims(ctx, status, limit, offset)
 }
 
 // ListMyClaims returns all claims filed by the requesting user
@@ -801,26 +801,26 @@ func (s *Service) ListOwnershipClaims(ctx context.Context, tenantID pgtype.UUID,
 // claimant can discover their claim IDs to use GET/DELETE
 // /claim-ownership/{id}.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) ListMyClaims(ctx context.Context, tenantID, claimantUserID pgtype.UUID) ([]gen.ListOwnershipClaimsByClaimantRow, error) {
-	return s.store.ListOwnershipClaimsByClaimant(ctx, tenantID, claimantUserID)
+func (s *Service) ListMyClaims(ctx context.Context, claimantUserID pgtype.UUID) ([]gen.ListOwnershipClaimsByClaimantRow, error) {
+	return s.store.ListOwnershipClaimsByClaimant(ctx, claimantUserID)
 }
 
 // GetPendingOwnershipClaims returns pending claims with details (admin).
-func (s *Service) GetPendingOwnershipClaims(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetPendingOwnershipClaimsRow, error) {
-	return s.store.GetPendingOwnershipClaims(ctx, tenantID)
+func (s *Service) GetPendingOwnershipClaims(ctx context.Context) ([]gen.GetPendingOwnershipClaimsRow, error) {
+	return s.store.GetPendingOwnershipClaims(ctx)
 }
 
 // GetOwnershipClaimByID returns a single claim by ID. The caller must verify
 // the requesting user is the claimant or an admin (handler enforces this).
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) GetOwnershipClaimByID(ctx context.Context, claimID, tenantID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
-	return s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
+func (s *Service) GetOwnershipClaimByID(ctx context.Context, claimID pgtype.UUID) (gen.GetOwnershipClaimByIDRow, error) {
+	return s.store.GetOwnershipClaimByID(ctx, claimID)
 }
 
 // WithdrawOwnershipClaim withdraws a pending claim by the claimant.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, tenantID, claimantUserID pgtype.UUID) error {
-	return s.store.WithdrawOwnershipClaim(ctx, claimID, tenantID, claimantUserID)
+func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, claimantUserID pgtype.UUID) error {
+	return s.store.WithdrawOwnershipClaim(ctx, claimID, claimantUserID)
 }
 
 // ReviewOwnershipClaim approves or rejects a claim (admin). When approving,
@@ -835,7 +835,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	// approval the claimant_user_id and organization_id drive the ownership
 	// transfer, so a failed fetch must abort the review — otherwise the claim
 	// could be marked approved while the transfer is silently skipped.
-	claim, err := s.store.GetOwnershipClaimByID(ctx, claimID, tenantID)
+	claim, err := s.store.GetOwnershipClaimByID(ctx, claimID)
 	if err != nil {
 		return fmt.Errorf("fetching claim for review: %w", err)
 	}
@@ -898,7 +898,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	}
 
 	if eventType != "" {
-		s.emitWebhook(ctx, tenantID, eventType, map[string]any{
+		s.emitWebhook(ctx, eventType, map[string]any{
 			"claim_id":    claimID,
 			"entity_type": "organization",
 			"entity_id":   claim.OrganizationID,
@@ -914,18 +914,18 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 // administrator who performed the verification (for the webhook payload).
 func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
 	// Fetch the org name for the webhook payload (best-effort).
-	org, err := s.store.GetOrganizationByID(ctx, id, tenantID)
+	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
 		slog.Warn("organizations: fetch org for verify webhook payload", "org_id", id.String(), "error", err)
 	}
 
-	if err := s.store.VerifyOrganization(ctx, id, tenantID); err != nil {
+	if err := s.store.VerifyOrganization(ctx, id); err != nil {
 		return fmt.Errorf("verifying organization: %w", err)
 	}
 
 	s.InvalidateOrgCache(ctx, tenantID)
 
-	s.emitWebhook(ctx, tenantID, "organization.verified", map[string]any{
+	s.emitWebhook(ctx, "organization.verified", map[string]any{
 		"organization_id": id,
 		"name":            org.Name,
 		"verified_by":     adminID,
@@ -939,13 +939,13 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID 
 // verification_type as well (BUG-016). adminID is the administrator who
 // performed the unverification (for the webhook payload).
 func (s *Service) UnverifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
-	if err := s.store.UnverifyOrganization(ctx, id, tenantID); err != nil {
+	if err := s.store.UnverifyOrganization(ctx, id); err != nil {
 		return fmt.Errorf("unverifying organization: %w", err)
 	}
 
 	s.InvalidateOrgCache(ctx, tenantID)
 
-	s.emitWebhook(ctx, tenantID, "organization.unverified", map[string]any{
+	s.emitWebhook(ctx, "organization.unverified", map[string]any{
 		"organization_id": id,
 		"unverified_by":   adminID,
 	})
@@ -955,8 +955,8 @@ func (s *Service) UnverifyOrganization(ctx context.Context, id, tenantID, adminI
 
 // ActiveOrgExists reports whether an ACTIVE, non-deleted org with this id
 // exists in the tenant. Powers the public profile gate.
-func (s *Service) ActiveOrgExists(ctx context.Context, tenantID, id pgtype.UUID) (bool, error) {
-	return s.store.ActiveOrgExistsByID(ctx, tenantID, id)
+func (s *Service) ActiveOrgExists(ctx context.Context, id pgtype.UUID) (bool, error) {
+	return s.store.ActiveOrgExistsByID(ctx, id)
 }
 
 // GetPublicOrganizationBySlug returns an active org for the public profile header.
@@ -968,14 +968,14 @@ func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, 
 }
 
 // ListPublicMembers returns the org's ACTIVE members for the public Members tab.
-func (s *Service) ListPublicMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
-	return s.store.ListPublicMembers(ctx, orgID, tenantID)
+func (s *Service) ListPublicMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListPublicOrganizationMembersRow, error) {
+	return s.store.ListPublicMembers(ctx, orgID)
 }
 
 // GetOrgOwnerPublicProfile returns the org owner's public identity for the
 // "Org Leader" sidebar widget.
-func (s *Service) GetOrgOwnerPublicProfile(ctx context.Context, orgID, tenantID pgtype.UUID) (gen.GetOrgOwnerPublicProfileRow, error) {
-	return s.store.GetOrgOwnerPublicProfile(ctx, orgID, tenantID)
+func (s *Service) GetOrgOwnerPublicProfile(ctx context.Context, orgID pgtype.UUID) (gen.GetOrgOwnerPublicProfileRow, error) {
+	return s.store.GetOrgOwnerPublicProfile(ctx, orgID)
 }
 
 // ListPublicOrganizations returns active orgs for the public Discover list.
@@ -1018,20 +1018,20 @@ func NowForTest() time.Time {
 
 // GetOrganizationAnalytics returns aggregated analytics for a single org.
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID, tenantID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
-	return s.store.GetOrganizationAnalytics(ctx, orgID, tenantID, periodDays)
+func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUID, periodDays int32) (gen.GetOrganizationAnalyticsRow, error) {
+	return s.store.GetOrganizationAnalytics(ctx, orgID, periodDays)
 }
 
 // ─── Admin methods (bypass ownership checks) ─────────────────────────────
 
 // AdminListOrganizations lists all organisations for admin view (no ownership filter).
-func (s *Service) AdminListOrganizations(ctx context.Context, tenantID pgtype.UUID, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
-	items, err := s.store.ListOrganizations(ctx, tenantID, orgType, countryCode, search, verified, limit, offset)
+func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
+	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.CountOrganizations(ctx, tenantID, orgType, countryCode, search, verified)
+	total, err := s.store.CountOrganizations(ctx, orgType, countryCode, search, verified)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1040,8 +1040,8 @@ func (s *Service) AdminListOrganizations(ctx context.Context, tenantID pgtype.UU
 }
 
 // AdminGetOrganization retrieves a single organisation by ID (no ownership check).
-func (s *Service) AdminGetOrganization(ctx context.Context, id, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.store.GetOrganizationByID(ctx, id, tenantID)
+func (s *Service) AdminGetOrganization(ctx context.Context, id pgtype.UUID) (gen.Organization, error) {
+	return s.store.GetOrganizationByID(ctx, id)
 }
 
 // AdminUpdateOrganization updates an organisation without checking membership role.
@@ -1070,7 +1070,7 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 
 // AdminDeleteOrganization soft-deletes an organisation without checking ownership.
 func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.SoftDeleteOrganization(ctx, id, tenantID); err != nil {
+	if err := s.store.SoftDeleteOrganization(ctx, id); err != nil {
 		return err
 	}
 
@@ -1081,14 +1081,14 @@ func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgty
 
 // AdminListMembers lists members of an organisation (no membership check).
 // Tenant-scoped for defense-in-depth (BUG-004/005).
-func (s *Service) AdminListMembers(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
-	return s.store.ListMembers(ctx, orgID, tenantID)
+func (s *Service) AdminListMembers(ctx context.Context, orgID pgtype.UUID) ([]gen.ListOrganizationMembersRow, error) {
+	return s.store.ListMembers(ctx, orgID)
 }
 
 // AdminListInvitations lists invitations for an organisation (no membership check).
 // Tenant-scoped for defense-in-depth (BUG-005).
-func (s *Service) AdminListInvitations(ctx context.Context, orgID, tenantID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
-	return s.store.ListInvitations(ctx, orgID, tenantID)
+func (s *Service) AdminListInvitations(ctx context.Context, orgID pgtype.UUID) ([]gen.OrganizationInvitation, error) {
+	return s.store.ListInvitations(ctx, orgID)
 }
 
 // setDestinationCountry saves the given ISO 3166-1 alpha-2 code as the
@@ -1097,7 +1097,7 @@ func (s *Service) AdminListInvitations(ctx context.Context, orgID, tenantID pgty
 // geo-aware signal — creating or editing an org in a country means the user
 // is operationally tied to that country, so we feed it into the geo-aware
 // personalization system. Mirrors users.Store.setGeoCustomField.
-func (s *Service) setDestinationCountry(ctx context.Context, tenantID, userID pgtype.UUID, geoCode string) error {
+func (s *Service) setDestinationCountry(ctx context.Context, userID pgtype.UUID, geoCode string) error {
 	code := strings.ToUpper(strings.TrimSpace(geoCode))
 	if code == "" {
 		return nil

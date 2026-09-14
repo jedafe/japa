@@ -44,7 +44,7 @@ const isFollowingCacheTTL = 60 * time.Second
 // fire-and-forget per Rule 8 — the follow operation must not block on
 // notification delivery. Ref: japaconnect-engineering/sections/35-notification-system.md.
 type NotificationDispatcher interface {
-	DispatchFollowNotification(ctx context.Context, tenantID, recipientID, actorID pgtype.UUID, entityType string, entityID pgtype.UUID)
+	DispatchFollowNotification(ctx context.Context, recipientID, actorID pgtype.UUID, entityType string, entityID pgtype.UUID)
 }
 
 // Service provides follow operations with reader/writer pool separation.
@@ -94,7 +94,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	event, err := s.activity.EmitActivityEvent(ctx, tenantID, userID, wallet.EmitActivityEventInput{
+	event, err := s.activity.EmitActivityEvent(ctx, userID, wallet.EmitActivityEventInput{
 		ActivityKey: key,
 		Reference:   reference,
 		Payload:     payload,

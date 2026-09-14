@@ -29,7 +29,7 @@ import (
 // needs to check the cv_formatter.unlimited permission (premium bypass).
 // Local interface so cvformatter does not import rbac directly.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
@@ -144,12 +144,12 @@ func (s *Service) SetCache(c Cache) { s.cache = c }
 
 // Enabled reads the cv_formatter.enabled system_setting toggle
 // (§95 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "cv_formatter.enabled", false)
+	return s.settings.GetBoolOr(ctx, "cv_formatter.enabled", false)
 }
 
 // CheckQuota returns nil if the user may submit a new format request,
@@ -159,14 +159,14 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 // system_setting (default 3). The counter is tracked in Valkey via
 // jc:cv_quota:{user_id}:{YYYY-MM} with TTL=end-of-month (§95, ADR-103).
 // Falls back to DB count when no cache is wired (development/tests).
-func (s *Service) CheckQuota(ctx context.Context, userID, tenantID pgtype.UUID) error {
-	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, tenantID, "cv_formatter.unlimited") {
+func (s *Service) CheckQuota(ctx context.Context, userID pgtype.UUID) error {
+	if s.rbac != nil && s.rbac.HasPermission(ctx, userID, "cv_formatter.unlimited") {
 		return nil
 	}
 
 	limit := 3
 	if s.settings != nil {
-		limit = s.settings.GetIntOr(ctx, pgtype.UUID{}, "cv_formatter.quota_standard", 3)
+		limit = s.settings.GetIntOr(ctx, "cv_formatter.quota_standard", 3)
 	}
 
 	if limit <= 0 {
@@ -316,7 +316,7 @@ func (s *Service) UpsertStandard(ctx context.Context, input StandardInput) (Stan
 // CreateSession creates a new CV format session with status='pending',
 // then enqueues the cv_format:process Asynq task (fire-and-forget, Rule 8).
 // The caller must have already verified the feature flag and quota.
-func (s *Service) CreateSession(ctx context.Context, tenantID, userID pgtype.UUID, input FormatInput) (SessionDTO, error) {
+func (s *Service) CreateSession(ctx context.Context, userID pgtype.UUID, input FormatInput) (SessionDTO, error) {
 	if input.DestinationSpaceID == "" {
 		return SessionDTO{}, errors.New("destination_space_id is required")
 	}

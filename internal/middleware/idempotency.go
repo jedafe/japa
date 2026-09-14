@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -58,7 +57,7 @@ func IdempotencyKeyFromContext(ctx context.Context) string {
 // idempotencySettingsReader is the subset of config.Settings the
 // idempotency middleware needs.
 type idempotencySettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // releaseLockScript atomically deletes the processing lock only if the
@@ -166,7 +165,7 @@ func IdempotencyMiddleware(rdb valkeycompat.Cmdable, settings idempotencySetting
 			ttlHours := idempotencyTTLDefault
 
 			if settings != nil {
-				ttlHours = settings.GetIntOr(ctx, pgtype.UUID{}, "api.idempotency_ttl_hours", idempotencyTTLDefault)
+				ttlHours = settings.GetIntOr(ctx, "api.idempotency_ttl_hours", idempotencyTTLDefault)
 			}
 
 			ttl := time.Duration(ttlHours) * time.Hour

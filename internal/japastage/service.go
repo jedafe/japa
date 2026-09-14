@@ -73,14 +73,14 @@ type UpdateStageInput struct {
 // avoid an import cycle (notifications → worker → japastage).
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 type Notifier interface {
-	CreateNotification(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
+	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
 // AssessmentChecker reports whether a user has any completed Readiness
 // Assessment results. Satisfied by *assessment.Store; declared here to
 // avoid an import cycle. Ref: §71/§91 Readiness Assessment.
 type AssessmentChecker interface {
-	CountUserAssessmentResults(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+	CountUserAssessmentResults(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // Service holds the business logic for Japa Stage Progress Profiles.
@@ -115,12 +115,12 @@ func (s *Service) WithHoncho(c *honcho.Client) *Service { s.honcho = c; return s
 func (s *Service) WithAssessmentChecker(a AssessmentChecker) *Service { s.assess = a; return s }
 
 // Enabled reads the japa_stage.enabled system_setting toggle (§87 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "japa_stage.enabled", false)
+	return s.settings.GetBoolOr(ctx, "japa_stage.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoint.
@@ -238,7 +238,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 
 	// (1) Tool recommendation notification.
 	if s.notifier != nil {
-		tools := s.resolveToolSlugs(ctx, tenantID, stage)
+		tools := s.resolveToolSlugs(ctx, stage)
 		title := "Recommended tools for your stage"
 
 		body := "Based on your japa stage, these tools may help next."
@@ -247,7 +247,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 		}
 
 		zero := pgtype.UUID{}
-		if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.recommend", "system", zero, "japa_stage", userID, title, body, "/japa-stage/me"); err != nil {
+		if err := s.notifier.CreateNotification(ctx, userID, "japa_stage.recommend", "system", zero, "japa_stage", userID, title, body, "/japa-stage/me"); err != nil {
 			slog.Warn("japastage: recommend notification failed", "error", err)
 		}
 	}
@@ -265,12 +265,12 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 
 	// (3) Readiness Assessment prompt (stage=planning, no completed result).
 	if stage == "planning" && s.assess != nil {
-		count, err := s.assess.CountUserAssessmentResults(ctx, tenantID, userID)
+		count, err := s.assess.CountUserAssessmentResults(ctx, userID)
 		if err != nil {
 			slog.Warn("japastage: assessment count failed", "error", err)
 		} else if count == 0 && s.notifier != nil {
 			zero := pgtype.UUID{}
-			if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.readiness_prompt", "system", zero, "japa_stage", userID, "Ready to plan? Take the Readiness Assessment", "Complete the Readiness Assessment to get a personalised roadmap.", "/tools/readiness"); err != nil {
+			if err := s.notifier.CreateNotification(ctx, userID, "japa_stage.readiness_prompt", "system", zero, "japa_stage", userID, "Ready to plan? Take the Readiness Assessment", "Complete the Readiness Assessment to get a personalised roadmap.", "/tools/readiness"); err != nil {
 				slog.Warn("japastage: readiness prompt notification failed", "error", err)
 			}
 		}
@@ -280,12 +280,12 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 	// Ref: §87 Integration — "stage advance to relocated or settled triggers
 	// an opt-in prompt to post to the achievement feed."
 	if (stage == "relocated" || stage == "settled") && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, pgtype.UUID{}, "achievement.enabled", false) {
+		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
 		zero := pgtype.UUID{}
 		title := "Share your milestone in the Achievement Feed"
 		body := "You've reached a major relocation milestone. Share your win with the community to inspire others on the same journey."
 
-		if err := s.notifier.CreateNotification(ctx, tenantID, userID, "japa_stage.achievement_prompt", "system", zero, "japa_stage", userID, title, body, "/achievements/new"); err != nil {
+		if err := s.notifier.CreateNotification(ctx, userID, "japa_stage.achievement_prompt", "system", zero, "japa_stage", userID, title, body, "/achievements/new"); err != nil {
 			slog.Warn("japastage: achievement prompt notification failed", "error", err)
 		}
 	}
@@ -298,8 +298,8 @@ func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype
 // ADR-064a: exact "{archetype}:{stage}" → "{archetype}:*" → "*:{stage}" →
 // "*:*". The archetype is resolved by the recommendations resolver (§50);
 // here only the stage-only fallbacks ("*:{stage}" and "*:*") are used.
-func (s *Service) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, stage string) []string {
-	raw := s.settings.GetStringOr(ctx, pgtype.UUID{}, "geo_personalization.stage_tool_matrix", "")
+func (s *Service) resolveToolSlugs(ctx context.Context, stage string) []string {
+	raw := s.settings.GetStringOr(ctx, "geo_personalization.stage_tool_matrix", "")
 	if raw == "" {
 		return nil
 	}
@@ -325,7 +325,7 @@ func (s *Service) resolveToolSlugs(ctx context.Context, tenantID pgtype.UUID, st
 // stage, when non-empty, filters to that stage; when empty, all public
 // profiles with a set stage are returned. destSpaceID, when non-empty,
 // further filters by destination (geo-aware ?dest= filter, §87).
-func (s *Service) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
+func (s *Service) ListByStage(ctx context.Context, stage, destSpaceID string, page, limit int32) ([]PublicProfileDTO, int64, error) {
 	if stage != "" && !ValidStage(stage) {
 		return nil, 0, fmt.Errorf("invalid stage %q; must be one of: %s", stage, JoinStages())
 	}
@@ -351,7 +351,7 @@ func (s *Service) ListByStage(ctx context.Context, tenantID pgtype.UUID, stage, 
 		}
 	}
 
-	rows, total, err := s.store.ListByStage(ctx, tenantID, stage, dest, limit, offset)
+	rows, total, err := s.store.ListByStage(ctx, stage, dest, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("japastage: list by stage: %w", err)
 	}

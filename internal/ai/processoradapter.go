@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -55,10 +53,10 @@ func (a *WorkerAdapter) ProcessAITask(ctx context.Context, taskType, prompt, mod
 	// so the global ai.humanize.* setting alone decides. The zero tenant UUID
 	// matches the global-setting read pattern used by participation.isEnabled.
 	if a.settings != nil {
-		enabled := a.settings.GetBoolOr(ctx, pgtype.UUID{}, "ai.humanize.enabled", false)
+		enabled := a.settings.GetBoolOr(ctx, "ai.humanize.enabled", false)
 
 		level := HumanizeMedium
-		if lvl := a.settings.GetStringOr(ctx, pgtype.UUID{}, "ai.humanize.level", "medium"); lvl != "" {
+		if lvl := a.settings.GetStringOr(ctx, "ai.humanize.level", "medium"); lvl != "" {
 			level = HumanizeLevel(lvl)
 		}
 

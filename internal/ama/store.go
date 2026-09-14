@@ -74,7 +74,7 @@ type CreateAMAParams struct {
 // and profession filters implement the geo-aware tool pattern (§88 /
 // §§79–101): dest matches ama_config->>'host_dest_country_id' and profession
 // matches ama_config->>'host_profession' (case-insensitive).
-func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThread, error) {
+func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThread, error) {
 	if pageSize <= 0 {
 		pageSize = 20
 	}
@@ -103,7 +103,7 @@ func (s *Store) ListActive(ctx context.Context, tenantID pgtype.UUID, dest, prof
 }
 
 // GetByID returns a single AMA thread by its ID.
-func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThread, error) {
+func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (AMAThread, error) {
 	r, err := s.read.GetAMAByID(ctx, id)
 	if err != nil {
 		return AMAThread{}, err
@@ -115,14 +115,14 @@ func (s *Store) GetByID(ctx context.Context, id, tenantID pgtype.UUID) (AMAThrea
 // GetAuthorID returns the author (author_user_id) of an AMA thread, used by
 // the close handler to authorize the host (thread author) to close their own
 // AMA without holding forum.ama.moderate (§88 "host or moderator").
-func (s *Store) GetAuthorID(ctx context.Context, threadID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Store) GetAuthorID(ctx context.Context, threadID pgtype.UUID) (pgtype.UUID, error) {
 	return s.read.GetAMAAuthorID(ctx, threadID)
 }
 
 // HasActiveAMA returns true if the user already has an open AMA session
 // (closes_at IS NULL or in the future). Enforces the "one active AMA per
 // host" rate limit (§88 Rate Limiting).
-func (s *Store) HasActiveAMA(ctx context.Context, userID, tenantID pgtype.UUID) (bool, error) {
+func (s *Store) HasActiveAMA(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	return s.read.HasActiveAMA(ctx, userID)
 }
 
@@ -161,7 +161,7 @@ func (s *Store) CreateAMA(ctx context.Context, p CreateAMAParams) (AMAThread, er
 // UpdateAMA updates the title, body and anonymity flag of an AMA thread and
 // returns the updated row. The query is scoped to rows with ama_config IS NOT
 // NULL and deleted_at IS NULL.
-func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, title string, body []byte, isAnonymous bool) (AMAThread, error) {
+func (s *Store) UpdateAMA(ctx context.Context, threadID pgtype.UUID, title string, body []byte, isAnonymous bool) (AMAThread, error) {
 	r, err := s.write.UpdateAMA(ctx, gen.UpdateAMAParams{
 		ID: threadID,
 
@@ -177,7 +177,7 @@ func (s *Store) UpdateAMA(ctx context.Context, threadID, tenantID pgtype.UUID, t
 }
 
 // CloseAMA sets the closes_at field in ama_config to now(), closing the AMA.
-func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) error {
+func (s *Store) CloseAMA(ctx context.Context, threadID pgtype.UUID) error {
 	return s.write.CloseAMA(ctx, threadID)
 }
 
@@ -185,13 +185,13 @@ func (s *Store) CloseAMA(ctx context.Context, threadID, tenantID pgtype.UUID) er
 // by the forum service when the parent thread is an AMA with
 // question_approval_required = true and the reply author is not the host
 // (§88 question_approval_required).
-func (s *Store) SetReplyPending(ctx context.Context, replyID, tenantID pgtype.UUID) error {
+func (s *Store) SetReplyPending(ctx context.Context, replyID pgtype.UUID) error {
 	return s.write.SetReplyAMAPending(ctx, replyID)
 }
 
 // ApproveQuestion approves a pending AMA question (host or moderator).
 // Returns pgx.ErrNoRows if the reply is not a pending AMA question.
-func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID pgtype.UUID) error {
+func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID pgtype.UUID) error {
 	return s.write.ApproveAMAQuestion(ctx, gen.ApproveAMAQuestionParams{
 		ReplyID:  replyID,
 		ThreadID: threadID,
@@ -200,7 +200,7 @@ func (s *Store) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID
 
 // CheckCooldown returns true if the user has created an AMA within the
 // cooldown period (default 30 days, configurable via ama_cooldown_days).
-func (s *Store) CheckCooldown(ctx context.Context, userID, tenantID pgtype.UUID, cooldownDays int) (bool, error) {
+func (s *Store) CheckCooldown(ctx context.Context, userID pgtype.UUID, cooldownDays int) (bool, error) {
 	if cooldownDays <= 0 {
 		return false, nil
 	}

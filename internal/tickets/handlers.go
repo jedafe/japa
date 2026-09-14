@@ -146,8 +146,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -184,7 +183,7 @@ func (h *Handlers) CreateTicket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ticket, err := h.Service.CreateTicket(r.Context(), tenantID, CreateTicketInput{
+	ticket, err := h.Service.CreateTicket(r.Context(), CreateTicketInput{
 		TypeID:          typeID,
 		Subject:         input.Subject,
 		Description:     input.Description,
@@ -208,8 +207,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +216,7 @@ func (h *Handlers) ListMyTickets(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageSizeOffset(r)
 	status := r.URL.Query().Get("status")
 
-	tickets, err := h.Service.ListTicketsBySubmitter(r.Context(), tenantID, user.UserID, status, limit, offset)
+	tickets, err := h.Service.ListTicketsBySubmitter(r.Context(), user.UserID, status, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -233,8 +231,7 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -245,7 +242,7 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticket, err := h.Service.GetTicket(r.Context(), id, tenantID)
+	ticket, err := h.Service.GetTicket(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -284,8 +281,7 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -297,7 +293,7 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the user is the submitter.
-	ticket, err := h.Service.GetTicket(r.Context(), id, tenantID)
+	ticket, err := h.Service.GetTicket(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -345,8 +341,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -372,7 +367,7 @@ func (h *Handlers) ListTickets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tickets, err := h.Service.ListTickets(r.Context(), tenantID, status, priority, typeID, assignedTo, search, limit, offset)
+	tickets, err := h.Service.ListTickets(r.Context(), status, priority, typeID, assignedTo, search, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -387,8 +382,7 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -399,7 +393,7 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticket, err := h.Service.GetTicket(r.Context(), id, tenantID)
+	ticket, err := h.Service.GetTicket(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -437,8 +431,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -464,7 +457,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 	// Handle subject update.
 	if input.Subject != "" {
-		ticket, err := h.Service.UpdateTicketSubject(r.Context(), id, tenantID, UpdateTicketSubjectInput{
+		ticket, err := h.Service.UpdateTicketSubject(r.Context(), id, UpdateTicketSubjectInput{
 			Subject: input.Subject,
 			UserID:  user.UserID,
 		})
@@ -480,7 +473,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 	// Handle status update.
 	if input.Status != "" {
-		ticket, err := h.Service.UpdateTicketStatus(r.Context(), id, tenantID, UpdateTicketStatusInput{
+		ticket, err := h.Service.UpdateTicketStatus(r.Context(), id, UpdateTicketStatusInput{
 			Status:         input.Status,
 			ResolutionNote: input.ResolutionNote,
 			UserID:         user.UserID,
@@ -497,7 +490,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 
 	// Handle priority update.
 	if input.Priority != "" {
-		ticket, err := h.Service.UpdateTicketPriority(r.Context(), id, tenantID, UpdateTicketPriorityInput{
+		ticket, err := h.Service.UpdateTicketPriority(r.Context(), id, UpdateTicketPriorityInput{
 			Priority: input.Priority,
 			UserID:   user.UserID,
 		})
@@ -519,7 +512,7 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		ticket, err := h.Service.AssignTicket(r.Context(), id, tenantID, AssignTicketInput{
+		ticket, err := h.Service.AssignTicket(r.Context(), id, AssignTicketInput{
 			AssignedTo: assignedTo,
 			UserID:     user.UserID,
 		})
@@ -545,8 +538,7 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -558,7 +550,7 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the ticket belongs to the caller's tenant before mutating.
-	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -607,8 +599,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -620,7 +611,7 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the ticket belongs to the caller's tenant before mutating.
-	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -667,8 +658,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -680,7 +670,7 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the ticket belongs to the caller's tenant before listing events.
-	if _, err := h.Service.GetTicket(r.Context(), id, tenantID); err != nil {
+	if _, err := h.Service.GetTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -700,8 +690,7 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -726,7 +715,7 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticket, err := h.Service.ResolveTicket(r.Context(), id, tenantID, ResolveTicketInput{
+	ticket, err := h.Service.ResolveTicket(r.Context(), id, ResolveTicketInput{
 		ResolutionNote: input.ResolutionNote,
 		UserID:         user.UserID,
 	})
@@ -740,7 +729,7 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTicket handles DELETE /api/v1/admin/tickets/:id.
 func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -751,7 +740,7 @@ func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTicket(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteTicket(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -769,8 +758,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -785,7 +773,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 		isPublic = &b
 	}
 
-	types, err := h.Service.ListTicketTypes(r.Context(), tenantID, limit, offset, isPublic)
+	types, err := h.Service.ListTicketTypes(r.Context(), limit, offset, isPublic)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -803,8 +791,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -816,7 +803,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the ticket belongs to the caller's tenant before mutating.
-	if _, err := h.Service.GetTicket(r.Context(), ticketID, tenantID); err != nil {
+	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -862,8 +849,7 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -875,7 +861,7 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the ticket belongs to the caller's tenant before listing.
-	if _, err := h.Service.GetTicket(r.Context(), ticketID, tenantID); err != nil {
+	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -895,8 +881,7 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -947,7 +932,7 @@ func (h *Handlers) CreateTicketType(w http.ResponseWriter, r *http.Request) {
 		isPublic = *input.IsPublic
 	}
 
-	result, err := h.Service.CreateTicketType(r.Context(), tenantID, CreateTicketTypeInput{
+	result, err := h.Service.CreateTicketType(r.Context(), CreateTicketTypeInput{
 		Name:              input.Name,
 		Slug:              input.Slug,
 		Description:       input.Description,
@@ -971,8 +956,7 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1023,7 +1007,7 @@ func (h *Handlers) UpdateTicketType(w http.ResponseWriter, r *http.Request) {
 		isPublic = *input.IsPublic
 	}
 
-	result, err := h.Service.UpdateTicketType(r.Context(), id, tenantID, UpdateTicketTypeInput{
+	result, err := h.Service.UpdateTicketType(r.Context(), id, UpdateTicketTypeInput{
 		Name:              input.Name,
 		Description:       input.Description,
 		FieldGroupID:      fieldGroupID,
@@ -1046,8 +1030,7 @@ func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1058,7 +1041,7 @@ func (h *Handlers) DeleteTicketType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteTicketType(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteTicketType(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

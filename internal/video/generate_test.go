@@ -181,12 +181,11 @@ func TestEnqueueGenerateSummary_Payload(t *testing.T) {
 	svc := NewService(nil, nil, nil, nil)
 	svc.SetEnqueuer(enq)
 	svc.SetSettings(&fakeSettingsForGenerate{})
-
-	tenantID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	_ = pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	userID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 	sourceID := pgtype.UUID{Bytes: [16]byte{3}, Valid: true}
 
-	err := svc.EnqueueGenerateSummary(t.Context(), tenantID, userID, sourceID)
+	err := svc.EnqueueGenerateSummary(t.Context(), userID, sourceID)
 	if err != nil {
 		t.Fatalf("EnqueueGenerateSummary: %v", err)
 	}

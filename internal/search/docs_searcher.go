@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/docs"
 )
 
@@ -36,7 +35,7 @@ func NewDocPagesSearchAdapter(engine Engine) *DocPagesSearchAdapter {
 // SearchDocPages searches the doc_pages index for published pages matching the
 // query, scoped to the tenant and audience list. Empty query returns all
 // published pages in the audiences (limited by limit).
-func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]docs.DocSearchResult, error) {
+func (a *DocPagesSearchAdapter) SearchDocPages(ctx context.Context, query string, audiences []string, limit int32) ([]docs.DocSearchResult, error) {
 	if a.engine == nil {
 		return nil, errors.New("search engine not configured")
 	}

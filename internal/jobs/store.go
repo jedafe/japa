@@ -52,7 +52,7 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 
 // CreateJobApplication inserts a job_applications row. The ON CONFLICT clause
 // in the generated query ensures a user can only apply once per job.
-func (s *Store) CreateJobApplication(ctx context.Context, tenantID, jobID, applicantID, submissionID pgtype.UUID) (gen.JobApplication, error) {
+func (s *Store) CreateJobApplication(ctx context.Context, jobID, applicantID, submissionID pgtype.UUID) (gen.JobApplication, error) {
 	app, err := s.queries.CreateJobApplication(ctx, gen.CreateJobApplicationParams{
 
 		JobID:        jobID,
@@ -67,7 +67,7 @@ func (s *Store) CreateJobApplication(ctx context.Context, tenantID, jobID, appli
 }
 
 // GetJobApplicationByID returns a single application by ID.
-func (s *Store) GetJobApplicationByID(ctx context.Context, tenantID, appID pgtype.UUID) (gen.JobApplication, error) {
+func (s *Store) GetJobApplicationByID(ctx context.Context, appID pgtype.UUID) (gen.JobApplication, error) {
 	app, err := s.queries.GetJobApplicationByID(ctx,
 
 		appID,
@@ -81,7 +81,7 @@ func (s *Store) GetJobApplicationByID(ctx context.Context, tenantID, appID pgtyp
 
 // UpdateJobApplicationStatus updates the status and employer notes of an
 // application.
-func (s *Store) UpdateJobApplicationStatus(ctx context.Context, tenantID, appID pgtype.UUID, status string, employerNotes *string) (gen.JobApplication, error) {
+func (s *Store) UpdateJobApplicationStatus(ctx context.Context, appID pgtype.UUID, status string, employerNotes *string) (gen.JobApplication, error) {
 	app, err := s.queries.UpdateJobApplicationStatus(ctx, gen.UpdateJobApplicationStatusParams{
 		Status:        status,
 		EmployerNotes: employerNotes,
@@ -97,7 +97,7 @@ func (s *Store) UpdateJobApplicationStatus(ctx context.Context, tenantID, appID 
 
 // ListJobApplicationsByJob returns applications for a specific job (employer
 // view), optionally filtered by status.
-func (s *Store) ListJobApplicationsByJob(ctx context.Context, tenantID, jobID pgtype.UUID, status string, pageOffset, pageLimit int32) ([]gen.ListJobApplicationsByJobRow, error) {
+func (s *Store) ListJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID, status string, pageOffset, pageLimit int32) ([]gen.ListJobApplicationsByJobRow, error) {
 	rows, err := s.queries.ListJobApplicationsByJob(ctx, gen.ListJobApplicationsByJobParams{
 
 		JobID:      jobID,
@@ -114,7 +114,7 @@ func (s *Store) ListJobApplicationsByJob(ctx context.Context, tenantID, jobID pg
 
 // CountJobApplicationsByJob returns the total number of applications for a
 // job, optionally filtered by status.
-func (s *Store) CountJobApplicationsByJob(ctx context.Context, tenantID, jobID pgtype.UUID, status string) (int64, error) {
+func (s *Store) CountJobApplicationsByJob(ctx context.Context, jobID pgtype.UUID, status string) (int64, error) {
 	return s.queries.CountJobApplicationsByJob(ctx, gen.CountJobApplicationsByJobParams{
 
 		JobID:  jobID,
@@ -123,7 +123,7 @@ func (s *Store) CountJobApplicationsByJob(ctx context.Context, tenantID, jobID p
 }
 
 // ListUserJobApplications returns an applicant's application history.
-func (s *Store) ListUserJobApplications(ctx context.Context, tenantID, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.ListUserJobApplicationsRow, error) {
+func (s *Store) ListUserJobApplications(ctx context.Context, userID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.ListUserJobApplicationsRow, error) {
 	rows, err := s.queries.ListUserJobApplications(ctx, gen.ListUserJobApplicationsParams{
 
 		UserID:     userID,
@@ -139,7 +139,7 @@ func (s *Store) ListUserJobApplications(ctx context.Context, tenantID, userID pg
 
 // CountUserJobApplications returns the total number of applications submitted
 // by a user.
-func (s *Store) CountUserJobApplications(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+func (s *Store) CountUserJobApplications(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	return s.queries.CountUserJobApplications(ctx,
 
 		userID,
@@ -148,7 +148,7 @@ func (s *Store) CountUserJobApplications(ctx context.Context, tenantID, userID p
 
 // AdminListJobApplications returns all applications across all jobs, optionally
 // filtered by status.
-func (s *Store) AdminListJobApplications(ctx context.Context, tenantID pgtype.UUID, status string, pageOffset, pageLimit int32) ([]gen.AdminListJobApplicationsRow, error) {
+func (s *Store) AdminListJobApplications(ctx context.Context, status string, pageOffset, pageLimit int32) ([]gen.AdminListJobApplicationsRow, error) {
 	rows, err := s.queries.AdminListJobApplications(ctx, gen.AdminListJobApplicationsParams{
 
 		Status:     status,
@@ -164,7 +164,7 @@ func (s *Store) AdminListJobApplications(ctx context.Context, tenantID pgtype.UU
 
 // AdminCountJobApplications returns the total number of applications for a
 // tenant, optionally filtered by status.
-func (s *Store) AdminCountJobApplications(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+func (s *Store) AdminCountJobApplications(ctx context.Context, status string) (int64, error) {
 	return s.queries.AdminCountJobApplications(ctx,
 
 		status,
@@ -173,7 +173,7 @@ func (s *Store) AdminCountJobApplications(ctx context.Context, tenantID pgtype.U
 
 // AdminApplicationStatusDistribution returns the count of applications grouped
 // by status.
-func (s *Store) AdminApplicationStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminJobApplicationStatusDistributionRow, error) {
+func (s *Store) AdminApplicationStatusDistribution(ctx context.Context) ([]gen.AdminJobApplicationStatusDistributionRow, error) {
 	rows, err := s.queries.AdminJobApplicationStatusDistribution(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("jobs: admin status distribution: %w", err)
@@ -185,7 +185,7 @@ func (s *Store) AdminApplicationStatusDistribution(ctx context.Context, tenantID
 // ExpireListingsPastDeadline archives published job_listing content whose
 // application_deadline custom field value is in the past. Returns the number
 // of rows affected.
-func (s *Store) ExpireListingsPastDeadline(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) ExpireListingsPastDeadline(ctx context.Context) (int64, error) {
 	n, err := s.queries.ExpireJobListingsPastDeadline(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: expire listings: %w", err)

@@ -32,19 +32,19 @@ import (
 type ContentService interface {
 	// ListContents returns a tenant-wide text-filtered page of content.
 	// cursor is a zero/invalid pgtype.Timestamptz for the first page.
-	ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error)
+	ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error)
 	// SearchContentsBySpace returns content within a space whose title
 	// matches the query.
-	SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
+	SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error)
 	// GetContent returns a single content row by ID.
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 }
 
 // CustomFieldsService is the subset of internal/customfields.Service the
 // field tools call.
 type CustomFieldsService interface {
-	ListFieldsByGroup(ctx context.Context, groupID, tenantID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
-	ListFieldValuesByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
+	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
+	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 	UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error)
 }
 
@@ -61,20 +61,20 @@ type RAGService interface {
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 type ComparisonService interface {
 	// Type definitions.
-	ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error)
-	GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error)
-	CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error)
+	ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error)
+	GetComparisonTypeBySlug(ctx context.Context, slug string) (gen.GetComparisonTypeBySlugRow, error)
+	CreateComparisonType(ctx context.Context, input ComparisonTypeCreateInput) (gen.CreateComparisonTypeRow, error)
 
 	// Comparison content (creates a content_type='comparison' row + items + dimensions).
 	CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error)
-	GetComparisonDetail(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonDetail, error)
-	GetComparisonMatrix(ctx context.Context, contentID, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error)
+	GetComparisonDetail(ctx context.Context, id pgtype.UUID) (ComparisonDetail, error)
+	GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ComparisonMatrixItem, error)
 
 	// Dimensions.
-	CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error)
+	CreateComparisonDimension(ctx context.Context, input ComparisonDimensionCreateInput) (gen.CreateComparisonDimensionRow, error)
 
 	// Values (with provenance metadata for AI-filled values).
-	UpsertComparisonValueWithMetadata(ctx context.Context, tenantID pgtype.UUID, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
+	UpsertComparisonValueWithMetadata(ctx context.Context, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
 
 	// Cache invalidation for JCE freshness/advisor after value mutations.
 	DeleteJCEComparisonCaches(ctx context.Context, contentID, tenantID pgtype.UUID)
@@ -87,10 +87,10 @@ type ComparisonService interface {
 // // Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine).
 type JCEService interface {
-	Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
-	Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
-	Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
-	Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error)
+	Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
+	Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
+	Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
+	Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
 	Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
 }
 
@@ -206,10 +206,10 @@ type RAGChunk struct {
 // SettingsReader is the subset of internal/config.Settings the tool handlers
 // need for hot-reloadable system_settings lookups (Rule 3).
 type SettingsReader interface {
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetFloatOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback float64) float64
-	GetBoolOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback bool) bool
+	GetStringOr(ctx context.Context, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
+	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
 // CacheClient is the minimal Valkey client interface the external.search tool
@@ -229,7 +229,7 @@ type PersonaResolver interface {
 	// GetPersonaUserID returns the backing users.id for the given persona
 	// ID, scoped to the tenant. Returns pgx.ErrNoRows when the persona
 	// does not exist in this tenant.
-	GetPersonaUserID(ctx context.Context, tenantID, personaID pgtype.UUID) (pgtype.UUID, error)
+	GetPersonaUserID(ctx context.Context, personaID pgtype.UUID) (pgtype.UUID, error)
 }
 
 // HITLStore is the subset of *Store the content.create_draft tool uses to
@@ -250,11 +250,11 @@ type HITLStore interface {
 // the wiring layer can assign the concrete service directly.
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Space/geo tools).
 type SpacesService interface {
-	FindCitySpaceByName(ctx context.Context, tenantID pgtype.UUID, cityName string) (gen.FindCitySpaceByNameRow, error)
-	GetSpaceByGeoCode(ctx context.Context, tenantID pgtype.UUID, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
-	FindSpacesByKeywords(ctx context.Context, tenantID pgtype.UUID, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
-	GetSpace(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetSpaceByIDRow, error)
-	ListSpaces(ctx context.Context, tenantID, viewerUserID pgtype.UUID) ([]gen.ListSpacesByTenantRow, error)
+	FindCitySpaceByName(ctx context.Context, cityName string) (gen.FindCitySpaceByNameRow, error)
+	GetSpaceByGeoCode(ctx context.Context, countryCode string) (gen.GetSpaceByGeoCodeRow, error)
+	FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
+	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
+	ListSpaces(ctx context.Context, viewerUserID pgtype.UUID) ([]gen.ListSpacesByTenantRow, error)
 	CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error)
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 }
@@ -267,13 +267,13 @@ type SpacesService interface {
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
 // Ref: japaconnect-engineering/sections/36-learning-platform.md.
 type LearningStore interface {
-	ListTracks(ctx context.Context, tenantID pgtype.UUID) ([]LearningTrack, error)
-	CreateTrack(ctx context.Context, tenantID pgtype.UUID, input LearningCreateTrackInput) (*LearningTrack, error)
-	UpdateTrack(ctx context.Context, tenantID, id pgtype.UUID, input LearningUpdateTrackInput) (*LearningTrack, error)
-	ListLessons(ctx context.Context, tenantID pgtype.UUID) ([]LearningLesson, error)
-	CreateLesson(ctx context.Context, tenantID, moduleID pgtype.UUID, input LearningCreateLessonInput) (*LearningLesson, error)
-	UpdateLesson(ctx context.Context, tenantID, id pgtype.UUID, input LearningUpdateLessonInput) (*LearningLesson, error)
-	ReorderLessons(ctx context.Context, tenantID pgtype.UUID, entries []LearningReorderEntry) error
+	ListTracks(ctx context.Context) ([]LearningTrack, error)
+	CreateTrack(ctx context.Context, input LearningCreateTrackInput) (*LearningTrack, error)
+	UpdateTrack(ctx context.Context, id pgtype.UUID, input LearningUpdateTrackInput) (*LearningTrack, error)
+	ListLessons(ctx context.Context) ([]LearningLesson, error)
+	CreateLesson(ctx context.Context, moduleID pgtype.UUID, input LearningCreateLessonInput) (*LearningLesson, error)
+	UpdateLesson(ctx context.Context, id pgtype.UUID, input LearningUpdateLessonInput) (*LearningLesson, error)
+	ReorderLessons(ctx context.Context, entries []LearningReorderEntry) error
 }
 
 // LearningTrack mirrors learning.Track (the subset the AI tools surface).
@@ -370,8 +370,8 @@ type LearningReorderEntry struct {
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Docs tools)
 // Ref: japaconnect-engineering/sections/44-documentation-system.md.
 type DocsService interface {
-	ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]DocsPage, error)
-	GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) (*DocsPage, error)
+	ListAllDocPages(ctx context.Context) ([]DocsPage, error)
+	GetDocPageByID(ctx context.Context, id pgtype.UUID) (*DocsPage, error)
 	CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req DocsCreatePageRequest) (pgtype.UUID, error)
 	UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, req DocsUpdatePageRequest) error
 }
@@ -429,10 +429,10 @@ type DocsOrganizeEntry struct {
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Menu tools)
 // Ref: japaconnect-engineering/sections/054-menu-system.md (ADR-054).
 type MenusService interface {
-	ListMenus(ctx context.Context, tenantID pgtype.UUID, q, placement, status, sort, sortDir string, limit, offset int32) (MenusListResponse, error)
-	CreateMenuItem(ctx context.Context, tenantID pgtype.UUID, input MenusCreateMenuItemInput) (gen.CreateMenuItemRow, error)
-	UpdateMenuItem(ctx context.Context, id, tenantID pgtype.UUID, input MenusUpdateMenuItemInput) (gen.UpdateMenuItemRow, error)
-	DeleteMenuItem(ctx context.Context, id, tenantID pgtype.UUID) error
+	ListMenus(ctx context.Context, q, placement, status, sort, sortDir string, limit, offset int32) (MenusListResponse, error)
+	CreateMenuItem(ctx context.Context, input MenusCreateMenuItemInput) (gen.CreateMenuItemRow, error)
+	UpdateMenuItem(ctx context.Context, id pgtype.UUID, input MenusUpdateMenuItemInput) (gen.UpdateMenuItemRow, error)
+	DeleteMenuItem(ctx context.Context, id pgtype.UUID) error
 }
 
 // MenusListResponse mirrors menus.ListMenusResponse.
@@ -481,7 +481,7 @@ type MenusUpdateMenuItemInput struct {
 // users-package types, so mirror types are defined below.
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (User tools).
 type UsersService interface {
-	GetProfile(ctx context.Context, tenantID, userID pgtype.UUID) (*UserProfile, error)
+	GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProfile, error)
 	UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UserProfileUpdateRequest) error
 }
 
@@ -517,9 +517,9 @@ type UserProfileUpdateRequest struct {
 type CustomFieldDefsService interface {
 	CreateField(ctx context.Context, params gen.CreateCustomFieldParams) (gen.CreateCustomFieldRow, error)
 	UpdateField(ctx context.Context, params gen.UpdateCustomFieldParams) (gen.UpdateCustomFieldRow, error)
-	ListFieldGroups(ctx context.Context, tenantID pgtype.UUID) ([]gen.CustomFieldGroup, error)
-	ListFieldGroupsByEntityClass(ctx context.Context, tenantID pgtype.UUID, entityClass string) ([]gen.CustomFieldGroup, error)
-	CreateFieldGroup(ctx context.Context, tenantID pgtype.UUID, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error)
+	ListFieldGroups(ctx context.Context) ([]gen.CustomFieldGroup, error)
+	ListFieldGroupsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroup, error)
+	CreateFieldGroup(ctx context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error)
 }
 
 // GuideCategory describes an evergreen guide category (relocation, visa,
@@ -539,7 +539,7 @@ type GuideCategory struct {
 // customfields.Service.ListGuideCategories.
 // // Ref: .jeos/adr/ADR-111-ai-agent-executor.md.
 type GuideCategoryService interface {
-	ListGuideCategories(ctx context.Context, tenantID pgtype.UUID) ([]GuideCategory, error)
+	ListGuideCategories(ctx context.Context) ([]GuideCategory, error)
 }
 
 // ContentType describes a JapaConnect content type and the custom field
@@ -561,7 +561,7 @@ type ContentType struct {
 // the content package constants and the custom field group assignments.
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 type ContentTypesService interface {
-	ListContentTypes(ctx context.Context, tenantID pgtype.UUID) ([]ContentType, error)
+	ListContentTypes(ctx context.Context) ([]ContentType, error)
 }
 
 // ContentLifecycleService is the subset of internal/content.Service the
@@ -571,7 +571,7 @@ type ContentTypesService interface {
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools).
 type ContentLifecycleService interface {
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
-	ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
+	ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 }
 
@@ -717,9 +717,9 @@ type CampaignService interface {
 // Ref: japaconnect-engineering/sections/78-tools-web-surface.md.
 type ToolsRegistryService interface {
 	// ListTools returns the catalog of available Japa tools with counts.
-	ListTools(ctx context.Context, tenantID pgtype.UUID) ([]ToolCatalogEntry, error)
+	ListTools(ctx context.Context) ([]ToolCatalogEntry, error)
 	// ReadTool reads a single record from a tool table by type + ID.
-	ReadTool(ctx context.Context, tenantID pgtype.UUID, toolType, id string) (map[string]any, error)
+	ReadTool(ctx context.Context, toolType, id string) (map[string]any, error)
 	// ToolTypes returns the tool_type values in the catalog.
 	ToolTypes() []string
 	// CreateTool creates a new record in the named tool table.
@@ -762,7 +762,7 @@ type IntelQuerier interface {
 // // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelSourceManager interface {
 	Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error)
-	GetByURL(ctx context.Context, tenantID pgtype.UUID, sourceURL string) (gen.IntelSource, error)
+	GetByURL(ctx context.Context, sourceURL string) (gen.IntelSource, error)
 }
 
 // ScholarshipSearchFilters is the argument shape for a scholarship search.
@@ -807,7 +807,7 @@ type ScholarshipSearchResult struct {
 // scholarship.search AI Agent handler calls.
 // // Ref: japaconnect-engineering/sections/73-scholarship-finder.md.
 type ScholarshipSearcher interface {
-	FindScholarships(ctx context.Context, tenantID pgtype.UUID, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
+	FindScholarships(ctx context.Context, filters ScholarshipSearchFilters) ([]ScholarshipSearchResult, int64, error)
 }
 
 // NewToolDeps creates an empty ToolDeps. Fields are set directly or via the

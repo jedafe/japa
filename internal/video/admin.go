@@ -82,7 +82,7 @@ func (h *AdminHandlers) runAdminList(w http.ResponseWriter, r *http.Request, typ
 // ListClaims handles GET /api/v1/admin/video-claims.
 func (h *AdminHandlers) ListClaims(w http.ResponseWriter, r *http.Request) {
 	h.runAdminList(w, r, "claim_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
-		return h.Service.ListClaimsForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
+		return h.Service.ListClaimsForAdmin(ctx, status, typeFilter, q, sort, dir, limit, offset)
 	})
 }
 
@@ -109,8 +109,7 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -141,7 +140,7 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 		resolutionNote = *input.ResolutionNote
 	}
 
-	claim, err := h.Service.ReviewClaim(r.Context(), tenantID, user.UserID, id, input.Status, resolutionNote)
+	claim, err := h.Service.ReviewClaim(r.Context(), user.UserID, id, input.Status, resolutionNote)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -153,7 +152,7 @@ func (h *AdminHandlers) ReviewClaim(w http.ResponseWriter, r *http.Request) {
 // ListSources handles GET /api/v1/admin/video-sources.
 func (h *AdminHandlers) ListSources(w http.ResponseWriter, r *http.Request) {
 	h.runAdminList(w, r, "source_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
-		return h.Service.ListSourcesForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
+		return h.Service.ListSourcesForAdmin(ctx, status, typeFilter, q, sort, dir, limit, offset)
 	})
 }
 
@@ -189,7 +188,7 @@ func (h *AdminHandlers) runAdminGet(w http.ResponseWriter, r *http.Request, notF
 // GetSource handles GET /api/v1/admin/video-sources/{id}.
 func (h *AdminHandlers) GetSource(w http.ResponseWriter, r *http.Request) {
 	h.runAdminGet(w, r, "Invalid source ID", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
-		return h.Service.GetSourceForAdmin(ctx, tenantID, id)
+		return h.Service.GetSourceForAdmin(ctx, id)
 	})
 }
 
@@ -198,8 +197,7 @@ func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -224,7 +222,7 @@ func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, err := h.Service.UpdateSourceStatus(r.Context(), tenantID, id, *input.Status)
+	source, err := h.Service.UpdateSourceStatus(r.Context(), id, *input.Status)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -236,14 +234,14 @@ func (h *AdminHandlers) PatchSource(w http.ResponseWriter, r *http.Request) {
 // ListImportJobs handles GET /api/v1/admin/video-import-jobs.
 func (h *AdminHandlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
 	h.runAdminList(w, r, "source_type", func(ctx context.Context, tenantID pgtype.UUID, status, typeFilter, q, sort, dir string, limit, offset int32) (any, int32, error) {
-		return h.Service.ListImportJobsForAdmin(ctx, tenantID, status, typeFilter, q, sort, dir, limit, offset)
+		return h.Service.ListImportJobsForAdmin(ctx, status, typeFilter, q, sort, dir, limit, offset)
 	})
 }
 
 // GetImportJob handles GET /api/v1/admin/video-import-jobs/{id}.
 func (h *AdminHandlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 	h.runAdminGet(w, r, "Invalid import job ID", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
-		return h.Service.GetImportJobForAdmin(ctx, tenantID, id)
+		return h.Service.GetImportJobForAdmin(ctx, id)
 	})
 }
 
@@ -253,8 +251,7 @@ func (h *AdminHandlers) RetryImportJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -265,7 +262,7 @@ func (h *AdminHandlers) RetryImportJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := h.Service.RetryImportJob(r.Context(), tenantID, id, user.UserID)
+	job, err := h.Service.RetryImportJob(r.Context(), id, user.UserID)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return

@@ -72,8 +72,8 @@ func normalizeBulkSourceType(sourceType string) (string, error) {
 
 // StartBulkImport validates the request, creates a pending import job, and
 // enqueues the background worker.
-func (s *Service) StartBulkImport(ctx context.Context, tenantID, userID pgtype.UUID, req BulkImportRequest) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) StartBulkImport(ctx context.Context, userID pgtype.UUID, req BulkImportRequest) (gen.VideoImportJob, error) {
+	if !s.IsEnabled(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -82,17 +82,17 @@ func (s *Service) StartBulkImport(ctx context.Context, tenantID, userID pgtype.U
 		return gen.VideoImportJob{}, err
 	}
 
-	targetAuthorID, err := s.resolveTargetAuthor(ctx, tenantID, req.TargetUsername)
+	targetAuthorID, err := s.resolveTargetAuthor(ctx, req.TargetUsername)
 	if err != nil {
 		return gen.VideoImportJob{}, err
 	}
 
-	job, err := s.createBulkImportJob(ctx, tenantID, userID, dbSourceType, sourceURL, query, targetAuthorID, req.AutoPublish)
+	job, err := s.createBulkImportJob(ctx, userID, dbSourceType, sourceURL, query, targetAuthorID, req.AutoPublish)
 	if err != nil {
 		return gen.VideoImportJob{}, err
 	}
 
-	return s.enqueueBulkImport(ctx, job, tenantID, userID)
+	return s.enqueueBulkImport(ctx, job, userID)
 }
 
 // validateBulkRequest normalizes the bulk import request.
@@ -120,12 +120,12 @@ func validateBulkRequest(req BulkImportRequest) (dbSourceType, sourceURL, query 
 }
 
 // resolveTargetAuthor resolves an optional target username to a real user ID.
-func (s *Service) resolveTargetAuthor(ctx context.Context, tenantID pgtype.UUID, targetUsername *string) (pgtype.UUID, error) {
+func (s *Service) resolveTargetAuthor(ctx context.Context, targetUsername *string) (pgtype.UUID, error) {
 	if targetUsername == nil || strings.TrimSpace(*targetUsername) == "" {
 		return pgtype.UUID{}, nil
 	}
 
-	u, err := s.store.GetUserByUsername(ctx, tenantID, strings.TrimSpace(*targetUsername))
+	u, err := s.store.GetUserByUsername(ctx, strings.TrimSpace(*targetUsername))
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolving target username: %w", err)
 	}
@@ -134,7 +134,7 @@ func (s *Service) resolveTargetAuthor(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // createBulkImportJob persists a pending import job record.
-func (s *Service) createBulkImportJob(ctx context.Context, tenantID, userID pgtype.UUID, dbSourceType, sourceURL, query string, targetAuthorID pgtype.UUID, autoPublish bool) (gen.VideoImportJob, error) {
+func (s *Service) createBulkImportJob(ctx context.Context, userID pgtype.UUID, dbSourceType, sourceURL, query string, targetAuthorID pgtype.UUID, autoPublish bool) (gen.VideoImportJob, error) {
 	errorLog, _ := json.Marshal([]bulkErrorLogEntry{})
 
 	return s.store.CreateImportJob(ctx, gen.CreateVideoImportJobParams{
@@ -154,7 +154,7 @@ func (s *Service) createBulkImportJob(ctx context.Context, tenantID, userID pgty
 }
 
 // enqueueBulkImport serializes and enqueues the bulk import worker payload.
-func (s *Service) enqueueBulkImport(_ context.Context, job gen.VideoImportJob, tenantID, userID pgtype.UUID) (gen.VideoImportJob, error) {
+func (s *Service) enqueueBulkImport(_ context.Context, job gen.VideoImportJob, userID pgtype.UUID) (gen.VideoImportJob, error) {
 	if s.enqueuer == nil {
 		return gen.VideoImportJob{}, errors.New("no task enqueuer configured")
 	}
@@ -387,8 +387,8 @@ type BulkImportPreview struct {
 // would be imported (capped by video.import.max_items_per_run) and a sample of
 // the first video so the user can confirm before starting.
 // Ref: .jeos/sections/106-video-content-and-import.md.
-func (s *Service) PreviewBulkImport(ctx context.Context, tenantID, _ pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) PreviewBulkImport(ctx context.Context, _ pgtype.UUID, req BulkImportRequest) (BulkImportPreview, error) {
+	if !s.IsEnabled(ctx) {
 		return BulkImportPreview{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -456,12 +456,12 @@ func (s *Service) PreviewBulkImport(ctx context.Context, tenantID, _ pgtype.UUID
 // RetryMyImportJob re-enqueues an existing import job that the user owns and
 // that is not currently running or pending.
 // Ref: .jeos/sections/106-video-content-and-import.md.
-func (s *Service) RetryMyImportJob(ctx context.Context, tenantID, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) RetryMyImportJob(ctx context.Context, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
+	if !s.IsEnabled(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
-	job, err := s.GetImportJob(ctx, tenantID, userID, id)
+	job, err := s.GetImportJob(ctx, userID, id)
 	if err != nil {
 		return gen.VideoImportJob{}, err
 	}
@@ -470,12 +470,12 @@ func (s *Service) RetryMyImportJob(ctx context.Context, tenantID, userID, id pgt
 		return gen.VideoImportJob{}, fmt.Errorf("%w: cannot retry a job that is %s", errpkg.ErrInvalidStatusTransition, job.Status)
 	}
 
-	return s.RetryImportJob(ctx, tenantID, id, userID)
+	return s.RetryImportJob(ctx, id, userID)
 }
 
 // GetImportJob returns a single import job scoped to the user and tenant.
-func (s *Service) GetImportJob(ctx context.Context, tenantID, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
-	if !s.IsEnabled(ctx, tenantID) {
+func (s *Service) GetImportJob(ctx context.Context, userID, id pgtype.UUID) (gen.VideoImportJob, error) {
+	if !s.IsEnabled(ctx) {
 		return gen.VideoImportJob{}, errpkg.ErrFeatureDisabled
 	}
 
@@ -521,7 +521,7 @@ func (s *Service) maxItemsPerRun(ctx context.Context) int {
 		return 50
 	}
 
-	return s.settings.GetIntOr(ctx, pgtype.UUID{}, "video.import.max_items_per_run", 50)
+	return s.settings.GetIntOr(ctx, "video.import.max_items_per_run", 50)
 }
 
 func (s *Service) getYouTubeAPIKey(ctx context.Context) (string, error) {
@@ -529,9 +529,9 @@ func (s *Service) getYouTubeAPIKey(ctx context.Context) (string, error) {
 	if s.settings != nil {
 		// Canonical key is video.import.youtube_api_key (§106). Fallback to the
 		// legacy youtube.data_api_key key for compatibility with earlier installs.
-		key = s.settings.GetStringOr(ctx, pgtype.UUID{}, "video.import.youtube_api_key", "")
+		key = s.settings.GetStringOr(ctx, "video.import.youtube_api_key", "")
 		if key == "" {
-			key = s.settings.GetStringOr(ctx, pgtype.UUID{}, "youtube.data_api_key", "")
+			key = s.settings.GetStringOr(ctx, "youtube.data_api_key", "")
 		}
 	}
 
@@ -585,7 +585,7 @@ func (s *Service) createVideoContent(ctx context.Context, tenantID, userID pgtyp
 	spaceID := pgtype.UUID{}
 
 	if job.AutoPublish {
-		spaceID, _ = s.store.GetDefaultSpaceForUser(ctx, tenantID, authorID)
+		spaceID, _ = s.store.GetDefaultSpaceForUser(ctx, authorID)
 		if spaceID.Valid {
 			status = content.StatusPublished
 		} else {

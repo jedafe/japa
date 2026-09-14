@@ -33,7 +33,7 @@ func (s *Store) createTicketType(ctx context.Context, p gen.CreateTicketTypePara
 	return row, nil
 }
 
-func (s *Store) getTicketTypeByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.TicketType, error) {
+func (s *Store) getTicketTypeByID(ctx context.Context, id pgtype.UUID) (gen.TicketType, error) {
 	row, err := s.read.GetTicketTypeByID(ctx, id)
 	if err != nil {
 		return gen.TicketType{}, fmt.Errorf("getting ticket type by ID: %w", err)
@@ -42,7 +42,7 @@ func (s *Store) getTicketTypeByID(ctx context.Context, id, tenantID pgtype.UUID)
 	return row, nil
 }
 
-func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.TicketType, error) {
+func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string) (gen.TicketType, error) {
 	row, err := s.read.GetTicketTypeBySlug(ctx, slug)
 	if err != nil {
 		return gen.TicketType{}, fmt.Errorf("getting ticket type by slug: %w", err)
@@ -51,7 +51,7 @@ func (s *Store) getTicketTypeBySlug(ctx context.Context, slug string, tenantID p
 	return row, nil
 }
 
-func (s *Store) listTicketTypesByTenant(ctx context.Context, tenantID pgtype.UUID, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
+func (s *Store) listTicketTypesByTenant(ctx context.Context, limit, offset int32, isPublic *bool) (ListTicketTypesResponse, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -101,7 +101,7 @@ func (s *Store) updateTicketType(ctx context.Context, p gen.UpdateTicketTypePara
 	return row, nil
 }
 
-func (s *Store) deleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteTicketType(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteTicketType(ctx, id); err != nil {
 		return fmt.Errorf("deleting ticket type: %w", err)
 	}
@@ -110,7 +110,7 @@ func (s *Store) deleteTicketType(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // countTicketsByType returns the number of tickets using the given type.
-func (s *Store) countTicketsByType(ctx context.Context, typeID, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) countTicketsByType(ctx context.Context, typeID pgtype.UUID) (int64, error) {
 	return s.read.CountTicketsByType(ctx, typeID)
 }
 
@@ -127,7 +127,7 @@ func (s *Store) createTicket(ctx context.Context, p gen.CreateTicketParams) (gen
 	return row, nil
 }
 
-func (s *Store) getTicketByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetTicketByIDRow, error) {
+func (s *Store) getTicketByID(ctx context.Context, id pgtype.UUID) (gen.GetTicketByIDRow, error) {
 	row, err := s.read.GetTicketByID(ctx, id)
 	if err != nil {
 		return gen.GetTicketByIDRow{}, fmt.Errorf("getting ticket by ID: %w", err)
@@ -225,7 +225,7 @@ func (s *Store) resolveTicket(ctx context.Context, p gen.ResolveTicketParams) (g
 	return row, nil
 }
 
-func (s *Store) closeTicket(ctx context.Context, id, tenantID pgtype.UUID) (gen.Ticket, error) {
+func (s *Store) closeTicket(ctx context.Context, id pgtype.UUID) (gen.Ticket, error) {
 	row, err := s.write.CloseTicket(ctx, id)
 	if err != nil {
 		return gen.Ticket{}, fmt.Errorf("closing ticket: %w", err)
@@ -243,7 +243,7 @@ func (s *Store) updateTicketSubject(ctx context.Context, p gen.UpdateTicketSubje
 	return row, nil
 }
 
-func (s *Store) deleteTicket(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deleteTicket(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteTicket(ctx, id); err != nil {
 		return fmt.Errorf("deleting ticket: %w", err)
 	}
@@ -251,7 +251,7 @@ func (s *Store) deleteTicket(ctx context.Context, id, tenantID pgtype.UUID) erro
 	return nil
 }
 
-func (s *Store) getLeastLoadedStaffInGroup(ctx context.Context, groupID, tenantID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Store) getLeastLoadedStaffInGroup(ctx context.Context, groupID pgtype.UUID) (pgtype.UUID, error) {
 	userID, err := s.read.GetLeastLoadedStaffInGroup(ctx,
 		groupID,
 	)
@@ -263,7 +263,7 @@ func (s *Store) getLeastLoadedStaffInGroup(ctx context.Context, groupID, tenantI
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) getOpenTicketCountByAssignee(ctx context.Context, tenantID pgtype.UUID) ([]gen.GetOpenTicketCountByAssigneeRow, error) {
+func (s *Store) getOpenTicketCountByAssignee(ctx context.Context) ([]gen.GetOpenTicketCountByAssigneeRow, error) {
 	rows, err := s.read.GetOpenTicketCountByAssignee(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting open ticket counts: %w", err)
@@ -350,7 +350,7 @@ func (s *Store) listTicketEvents(ctx context.Context, ticketID pgtype.UUID) ([]g
 }
 
 //nolint:unused // reserved for future features
-func (s *Store) countTicketsByStatus(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+func (s *Store) countTicketsByStatus(ctx context.Context, status string) (int64, error) {
 	count, err := s.read.CountTicketsByStatus(ctx,
 
 		status,

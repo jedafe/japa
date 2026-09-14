@@ -137,17 +137,17 @@ func NewService(store *Store, settings *config.Settings) *Service {
 
 // Enabled reads the tax_calculator.enabled system_setting toggle
 // (§100 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "tax_calculator.enabled", false)
+	return s.settings.GetBoolOr(ctx, "tax_calculator.enabled", false)
 }
 
 // List returns a paginated, filtered list of published, active tax
 // obligation guides. Anonymous-accessible.
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID pgtype.UUID, employmentStatus string, page, limit int32) ([]GuideDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UUID, employmentStatus string, page, limit int32) ([]GuideDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -181,8 +181,8 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, originSpaceID
 
 // GetTreaty returns the treaty status for an origin/destination pair.
 // Anonymous-accessible. Returns pgx.ErrNoRows when no treaty record exists.
-func (s *Service) GetTreaty(ctx context.Context, tenantID, originSpaceID, destSpaceID pgtype.UUID) (TreatyDTO, error) {
-	row, err := s.store.GetTreatyByPair(ctx, tenantID, originSpaceID, destSpaceID)
+func (s *Service) GetTreaty(ctx context.Context, originSpaceID, destSpaceID pgtype.UUID) (TreatyDTO, error) {
+	row, err := s.store.GetTreatyByPair(ctx, originSpaceID, destSpaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return TreatyDTO{}, pgx.ErrNoRows
@@ -196,7 +196,7 @@ func (s *Service) GetTreaty(ctx context.Context, tenantID, originSpaceID, destSp
 
 // CreateGuide creates a new tax obligation guide (admin). The caller must
 // have the tax_calculator.manage permission (checked at route level).
-func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req CreateGuideRequest) (GuideDTO, error) {
+func (s *Service) CreateGuide(ctx context.Context, req CreateGuideRequest) (GuideDTO, error) {
 	if req.EmploymentStatus == "" {
 		return GuideDTO{}, errors.New("employment_status is required")
 	}
@@ -255,7 +255,7 @@ func (s *Service) CreateGuide(ctx context.Context, tenantID pgtype.UUID, req Cre
 }
 
 // UpdateGuide updates the mutable fields on an existing guide (admin).
-func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
+func (s *Service) UpdateGuide(ctx context.Context, id pgtype.UUID, req UpdateGuideRequest) (GuideDTO, error) {
 	var checklist []byte
 
 	if req.ActionChecklist != nil {
@@ -267,7 +267,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		checklist = c
 	}
 
-	if err := s.store.UpdateGuide(ctx, id, tenantID, UpdateGuideInput{
+	if err := s.store.UpdateGuide(ctx, id, UpdateGuideInput{
 		ResidencyTrigger:     req.ResidencyTrigger,
 		WorldwideIncomeTaxed: req.WorldwideIncomeTaxed,
 		FirstYearObligations: req.FirstYearObligations,
@@ -282,7 +282,7 @@ func (s *Service) UpdateGuide(ctx context.Context, id, tenantID pgtype.UUID, req
 		return GuideDTO{}, fmt.Errorf("taxcalculator: update guide: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("taxcalculator: update guide: reload: %w", err)
 	}
@@ -320,7 +320,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 		return GuideDTO{}, fmt.Errorf("taxcalculator: approve guide: %w", err)
 	}
 
-	row, err := s.store.GetGuideByID(ctx, id, tenantID)
+	row, err := s.store.GetGuideByID(ctx, id)
 	if err != nil {
 		return GuideDTO{}, fmt.Errorf("taxcalculator: approve guide: reload: %w", err)
 	}
@@ -333,7 +333,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, tenantID, reviewerID pgt
 // ai_model='content_agent_v1' and ai_prompt_hash=SHA256(prompt). It
 // requires HITL approval (ApproveGuide) before publication. Admin-only
 // (tax_calculator.manage permission checked at route level).
-func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResult, error) {
+func (s *Service) GenerateGuide(ctx context.Context, req GenerateGuideRequest) (GenerateGuideResult, error) {
 	if req.EmploymentStatus == "" {
 		return GenerateGuideResult{}, errors.New("employment_status is required")
 	}
@@ -398,7 +398,7 @@ func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req G
 // UpsertTreaty creates or updates a tax treaty pair (admin). Uses
 // ON CONFLICT DO UPDATE so repeated calls for the same pair update the
 // mutable fields.
-func (s *Service) UpsertTreaty(ctx context.Context, tenantID pgtype.UUID, req UpsertTreatyRequest) (TreatyDTO, error) {
+func (s *Service) UpsertTreaty(ctx context.Context, req UpsertTreatyRequest) (TreatyDTO, error) {
 	var originSpaceID pgtype.UUID
 	if err := originSpaceID.Scan(req.OriginSpaceID); err != nil {
 		return TreatyDTO{}, fmt.Errorf("invalid origin_space_id: %w", err)
@@ -433,7 +433,7 @@ func (s *Service) UpsertTreaty(ctx context.Context, tenantID pgtype.UUID, req Up
 
 // AdminList returns all guides (any status) plus all treaty pairs for the
 // admin management view.
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, employmentStatus, q string, destSpaceID, originSpaceID pgtype.UUID, page, limit int32) ([]GuideDTO, []TreatyDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, employmentStatus, q string, destSpaceID, originSpaceID pgtype.UUID, page, limit int32) ([]GuideDTO, []TreatyDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}

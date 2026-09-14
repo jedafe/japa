@@ -25,7 +25,7 @@ type CreateTagInput struct {
 }
 
 // CreateTag creates a new forum tag.
-func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input CreateTagInput) (gen.ForumTag, error) {
+func (s *Service) CreateTag(ctx context.Context, input CreateTagInput) (gen.ForumTag, error) {
 	if input.Name == "" {
 		return gen.ForumTag{}, errors.New("tag name is required")
 	}
@@ -67,27 +67,27 @@ func (s *Service) CreateTag(ctx context.Context, tenantID pgtype.UUID, input Cre
 }
 
 // GetTagByID retrieves a tag by ID.
-func (s *Service) GetTagByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.ForumTag, error) {
-	return s.store.getTagByID(ctx, id, tenantID)
+func (s *Service) GetTagByID(ctx context.Context, id pgtype.UUID) (gen.ForumTag, error) {
+	return s.store.getTagByID(ctx, id)
 }
 
 // GetTagBySlug retrieves a tag by slug.
-func (s *Service) GetTagBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.ForumTag, error) {
-	return s.store.getTagBySlug(ctx, slug, tenantID)
+func (s *Service) GetTagBySlug(ctx context.Context, slug string) (gen.ForumTag, error) {
+	return s.store.getTagBySlug(ctx, slug)
 }
 
 // ListTags returns paginated tags.
-func (s *Service) ListTags(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ForumTag, error) {
-	return s.store.listTags(ctx, tenantID, limit, offset)
+func (s *Service) ListTags(ctx context.Context, limit, offset int32) ([]gen.ForumTag, error) {
+	return s.store.listTags(ctx, limit, offset)
 }
 
 // maxTagsForThread resolves the per-thread tag cap from system_settings
 // (content.max_tags), falling back to MaxTagsPerThread when settings are
 // not wired. Ref: AGENTS.md Rule 3, Section 08 Tags.
-func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) int32 {
+func (s *Service) maxTagsForThread(ctx context.Context) int32 {
 	if s.settings != nil {
 		// #nosec G115 // value bounded by caller
-		return int32(s.settings.GetIntOr(ctx, pgtype.UUID{}, "content.max_tags", int(MaxTagsPerThread)))
+		return int32(s.settings.GetIntOr(ctx, "content.max_tags", int(MaxTagsPerThread)))
 	}
 
 	return MaxTagsPerThread
@@ -95,9 +95,9 @@ func (s *Service) maxTagsForThread(ctx context.Context, tenantID pgtype.UUID) in
 
 // AddThreadTag adds a tag to a thread. Enforces the per-thread tag cap.
 // Ref: Section 08 Tags (max 5 tags per post).
-func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pgtype.UUID) error {
+func (s *Service) AddThreadTag(ctx context.Context, threadID, tagID pgtype.UUID) error {
 	// Enforce the per-thread tag cap before inserting.
-	maxTags := s.maxTagsForThread(ctx, tenantID)
+	maxTags := s.maxTagsForThread(ctx)
 
 	count, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pg
 		return fmt.Errorf("adding tag to thread: %w", err)
 	}
 	// Increment the tag's follower count.
-	if err := s.store.updateTagFollowerCount(ctx, tagID, tenantID, 1); err != nil {
+	if err := s.store.updateTagFollowerCount(ctx, tagID, 1); err != nil {
 		slog.Warn("failed to increment tag follower count", "error", err)
 	}
 
@@ -122,8 +122,8 @@ func (s *Service) AddThreadTag(ctx context.Context, tenantID, threadID, tagID pg
 // AddThreadTagsBulk adds multiple tags to a thread in one call
 // (POST /forum/{id}/tags). Enforces the per-thread tag cap across the
 // combined set. Ref: api-routes-catalog L596.
-func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
-	maxTags := s.maxTagsForThread(ctx, tenantID)
+func (s *Service) AddThreadTagsBulk(ctx context.Context, threadID pgtype.UUID, tagIDs []pgtype.UUID) error {
+	maxTags := s.maxTagsForThread(ctx)
 
 	existing, err := s.store.countThreadTags(ctx, threadID)
 	if err != nil {
@@ -157,7 +157,7 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 			return fmt.Errorf("adding tag to thread: %w", err)
 		}
 
-		if err := s.store.updateTagFollowerCount(ctx, tagID, tenantID, 1); err != nil {
+		if err := s.store.updateTagFollowerCount(ctx, tagID, 1); err != nil {
 			slog.Warn("failed to increment tag follower count", "error", err)
 		}
 	}
@@ -166,12 +166,12 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, tenantID, threadID pgty
 }
 
 // RemoveThreadTag removes a tag from a thread.
-func (s *Service) RemoveThreadTag(ctx context.Context, tenantID, threadID, tagID pgtype.UUID) error {
+func (s *Service) RemoveThreadTag(ctx context.Context, threadID, tagID pgtype.UUID) error {
 	if err := s.store.removeThreadTag(ctx, threadID, tagID); err != nil {
 		return fmt.Errorf("removing tag from thread: %w", err)
 	}
 	// Decrement the tag's follower count.
-	if err := s.store.updateTagFollowerCount(ctx, tagID, tenantID, -1); err != nil {
+	if err := s.store.updateTagFollowerCount(ctx, tagID, -1); err != nil {
 		slog.Warn("failed to decrement tag follower count", "error", err)
 	}
 
@@ -189,9 +189,9 @@ type UpdateTagInput struct {
 }
 
 // UpdateTag updates a forum tag's mutable fields.
-func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input UpdateTagInput) (gen.ForumTag, error) {
+func (s *Service) UpdateTag(ctx context.Context, id pgtype.UUID, input UpdateTagInput) (gen.ForumTag, error) {
 	// Load existing tag to fill in unchanged fields.
-	existing, err := s.store.getTagByID(ctx, id, tenantID)
+	existing, err := s.store.getTagByID(ctx, id)
 	if err != nil {
 		return gen.ForumTag{}, fmt.Errorf("getting tag for update: %w", err)
 	}
@@ -234,7 +234,7 @@ func (s *Service) UpdateTag(ctx context.Context, id, tenantID pgtype.UUID, input
 		moderatorUserID = input.ModeratorUserID
 	}
 
-	updated, err := s.store.updateTag(ctx, id, tenantID, name, slug, description, rules, coverImageID, moderatorUserID)
+	updated, err := s.store.updateTag(ctx, id, name, slug, description, rules, coverImageID, moderatorUserID)
 	if err != nil {
 		return gen.ForumTag{}, err
 	}
@@ -272,8 +272,8 @@ func uuidEqual(a, b pgtype.UUID) bool {
 }
 
 // DeleteTag soft-deletes a forum tag.
-func (s *Service) DeleteTag(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.softDeleteTag(ctx, id, tenantID)
+func (s *Service) DeleteTag(ctx context.Context, id pgtype.UUID) error {
+	return s.store.softDeleteTag(ctx, id)
 }
 
 // strPtr returns a *string. Returns nil for empty strings.

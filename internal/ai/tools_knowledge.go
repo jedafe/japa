@@ -220,7 +220,7 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// Search the web.
-		provider, results, err := SearchWeb(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
+		provider, results, err := SearchWeb(ctx, deps.httpClient(), deps.Settings, a.Query, int(a.Limit))
 		if err != nil {
 			slog.Warn("ai: external search failed", "error", err)
 
@@ -292,10 +292,10 @@ var (
 // provider (tavily, brave, or perplexity) for the tenant. It is exported so
 // non-agent callers (e.g. guide services) can reuse the same provider wiring
 // and API-key management. The cache is the caller's responsibility.
-func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
-	provider := settings.GetStringOr(ctx, pgtype.UUID{}, "agent.external_search_provider", "tavily")
+func SearchWeb(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
+	provider := settings.GetStringOr(ctx, "agent.external_search_provider", "tavily")
 
-	apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, pgtype.UUID{}, "agent.external_search_api_key", ""))
+	apiKey := decryptSettingIfNeeded(settings.GetStringOr(ctx, "agent.external_search_api_key", ""))
 	if apiKey == "" {
 		return "", nil, errExternalSearchUnavailable
 	}

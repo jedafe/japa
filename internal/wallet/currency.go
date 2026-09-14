@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -79,7 +78,7 @@ func (r *CurrencyResolver) DefaultCurrency() string {
 // GeoCountry → spaces.currency_code > default.
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (r *CurrencyResolver) ResolveCurrency(ctx context.Context, tenantID pgtype.UUID, cc CurrencyContext) (string, error) {
+func (r *CurrencyResolver) ResolveCurrency(ctx context.Context, cc CurrencyContext) (string, error) {
 	// 1. Explicit user preference.
 	if cc.PreferredCurrency != "" {
 		active, err := r.isCurrencyActive(ctx, cc.PreferredCurrency)
@@ -90,14 +89,14 @@ func (r *CurrencyResolver) ResolveCurrency(ctx context.Context, tenantID pgtype.
 
 	// 2. VisitorContext.ContentCountry → country space → currency_code.
 	if cc.ContentCountry != "" {
-		if code, err := r.store.getCurrencyByCountryCode(ctx, cc.ContentCountry, tenantID); err == nil {
+		if code, err := r.store.getCurrencyByCountryCode(ctx, cc.ContentCountry); err == nil {
 			return code, nil
 		}
 	}
 
 	// 3. GeoContext.CountryCode → country space → currency_code.
 	if cc.GeoCountry != "" {
-		if code, err := r.store.getCurrencyByCountryCode(ctx, cc.GeoCountry, tenantID); err == nil {
+		if code, err := r.store.getCurrencyByCountryCode(ctx, cc.GeoCountry); err == nil {
 			return code, nil
 		}
 	}

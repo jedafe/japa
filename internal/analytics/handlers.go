@@ -136,7 +136,7 @@ func parseDays(r *http.Request, defaultDays int) int32 {
 
 // TrackEvent handles POST /api/v1/analytics/events.
 func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -168,7 +168,7 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	event, err := h.Service.TrackEvent(r.Context(), tenantID, TrackEventInput{
+	event, err := h.Service.TrackEvent(r.Context(), TrackEventInput{
 		EventType:   EventType(input.EventType),
 		UserID:      user.UserID,
 		EntityType:  input.EntityType,
@@ -189,7 +189,7 @@ func (h *Handlers) TrackEvent(w http.ResponseWriter, r *http.Request) {
 // Supports period presets (24h, 7d, 30d, 90d), explicit from/to dates,
 // and the legacy days query parameter.
 func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -205,7 +205,7 @@ func (h *Handlers) GetUserDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dashboard, err := h.Service.GetUserDashboardData(r.Context(), tenantID, user.UserID, &from, to)
+	dashboard, err := h.Service.GetUserDashboardData(r.Context(), user.UserID, &from, to)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -242,7 +242,7 @@ func (h *Handlers) GetAdminOverview(w http.ResponseWriter, r *http.Request) {
 	cacheKey := analyticsCacheKey(tenantID, "overview", period)
 
 	dashboard, err := vkcache.GetOrComputeCompat(r.Context(), h.cache, cacheKey, analyticsCacheTTL, func(ctx context.Context) (any, error) {
-		return h.Service.GetAdminDashboardData(ctx, tenantID, from, to)
+		return h.Service.GetAdminDashboardData(ctx, from, to)
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -321,7 +321,7 @@ func parseFlexibleTime(s string) (time.Time, error) {
 
 // ListEvents handles GET /api/v1/admin/analytics/events.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -346,7 +346,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := h.Service.ListEvents(r.Context(), tenantID, filter)
+	events, err := h.Service.ListEvents(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -357,7 +357,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 
 // ListSecurityScanResults handles GET /api/v1/admin/analytics/security.
 func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -369,7 +369,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		Limit:      parsePageSize(r),
 	}
 
-	results, err := h.Service.ListSecurityScanResults(r.Context(), tenantID, filter)
+	results, err := h.Service.ListSecurityScanResults(r.Context(), filter)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -380,7 +380,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 
 // ResolveSecurityScanResult handles POST /api/v1/admin/analytics/security/{id}/resolve.
 func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -391,7 +391,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.Service.ResolveScanResult(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.ResolveScanResult(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -403,7 +403,7 @@ func (h *Handlers) ResolveSecurityScanResult(w http.ResponseWriter, r *http.Requ
 // Permanently removes a scan finding (typically a resolved one) from the
 // control panel audit view. Tenant-scoped.
 func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -414,7 +414,7 @@ func (h *Handlers) DeleteSecurityScanResult(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.Service.DeleteScanResult(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteScanResult(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -504,7 +504,7 @@ func parseTimeParam(s string) (time.Time, error) {
 
 // GetRevenueAnalytics handles GET /admin/analytics/revenue (P5.6).
 func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -515,7 +515,7 @@ func (h *Handlers) GetRevenueAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.GetRevenueAnalytics(r.Context(), tenantID, from, to)
+	result, err := h.Service.GetRevenueAnalytics(r.Context(), from, to)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -582,7 +582,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 			endDate = to
 		}
 
-		results, err := h.Service.store.GetSearchAnalytics(ctx, tenantID, startDate, endDate, 50)
+		results, err := h.Service.store.GetSearchAnalytics(ctx, startDate, endDate, 50)
 		if err != nil {
 			return nil, err
 		}
@@ -608,7 +608,7 @@ func (h *Handlers) GetSearchAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetSpaceAnalytics handles GET /admin/analytics/spaces (P5.6).
 func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -626,7 +626,7 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	spaceStats, err := h.Service.store.GetDailySpaceStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -662,12 +662,12 @@ func (h *Handlers) GetSpaceAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetUserAnalytics handles GET /admin/analytics/users (P5.6).
 func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	ua, err := h.Service.GetUserAnalytics(r.Context(), tenantID)
+	ua, err := h.Service.GetUserAnalytics(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -682,7 +682,7 @@ func (h *Handlers) GetUserAnalytics(w http.ResponseWriter, r *http.Request) {
 // Access is restricted to the content owner or admins holding analytics.admin
 // (Ref: api-routes-catalog.md — owner and admin only).
 func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -699,7 +699,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-ANALYTICS-03 fix: verify the caller is the content owner or an admin.
-	authorID, err := h.Service.store.GetContentAuthorID(r.Context(), contentID, tenantID)
+	authorID, err := h.Service.store.GetContentAuthorID(r.Context(), contentID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "content_not_found", "Content not found")
 		return
@@ -709,7 +709,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		// Non-owner: require analytics.admin permission. The route is under a
 		// general auth group (not an admin group), so the permission check is
 		// done inline here. Ref: api-routes-catalog.md — owner and admin only.
-		if h.rbacResolver == nil || !h.rbacResolver.HasPermission(r.Context(), user.UserID, tenantID, "analytics.admin") {
+		if h.rbacResolver == nil || !h.rbacResolver.HasPermission(r.Context(), user.UserID, "analytics.admin") {
 			errpkg.WriteError(w, http.StatusForbidden, "analytics_forbidden", "Only the content owner or an admin can view analytics")
 			return
 		}
@@ -728,7 +728,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	stats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, contentID)
+	stats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, contentID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -758,7 +758,7 @@ func (h *Handlers) GetContentAnalytics(w http.ResponseWriter, r *http.Request) {
 
 // GetAdminContentAnalytics handles GET /admin/analytics/content.
 func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -776,7 +776,7 @@ func (h *Handlers) GetAdminContentAnalytics(w http.ResponseWriter, r *http.Reque
 		endDate = &pgtype.Date{Time: *to, Valid: true}
 	}
 
-	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), tenantID, &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
+	contentStats, err := h.Service.store.GetDailyContentStats(r.Context(), &startDate, endDate, pgtype.UUID{Bytes: [16]byte{}, Valid: true})
 	if err != nil {
 		handleServiceError(w, err)
 		return

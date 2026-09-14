@@ -39,7 +39,7 @@ type DiscussionSummary struct {
 
 // ListDiscussions returns the discussion threads linked to a content item
 // (Section 49 — blog/non-forum ↔ discussion cross-links).
-func (s *Service) ListDiscussions(ctx context.Context, tenantID, contentID pgtype.UUID, limit, offset int32) ([]DiscussionSummary, int32, error) {
+func (s *Service) ListDiscussions(ctx context.Context, contentID pgtype.UUID, limit, offset int32) ([]DiscussionSummary, int32, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -97,7 +97,7 @@ type StartConversationResult struct {
 // (or links an existing thread when ThreadID is supplied) and records the
 // content_thread_links cross-link. Returns the link and the newly created
 // thread (if any).
-func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, userID pgtype.UUID, input StartConversationInput) (StartConversationResult, error) {
+func (s *Service) StartConversation(ctx context.Context, contentID, userID pgtype.UUID, input StartConversationInput) (StartConversationResult, error) {
 	var threadID pgtype.UUID
 
 	var createdThread gen.CreateContentRow
@@ -162,7 +162,7 @@ func (s *Service) StartConversation(ctx context.Context, tenantID, contentID, us
 
 // ListDiscussions handles GET /api/v1/content/{id}/discussions.
 func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -185,7 +185,7 @@ func (h *Handlers) ListDiscussions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	discussions, total, err := h.Service.ListDiscussions(r.Context(), tenantID, contentID, limit, offset)
+	discussions, total, err := h.Service.ListDiscussions(r.Context(), contentID, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -235,7 +235,7 @@ func (h *Handlers) StartConversation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.Service.StartConversation(r.Context(), tenantID, contentID, user.UserID, in)
+	result, err := h.Service.StartConversation(r.Context(), contentID, user.UserID, in)
 	if err != nil {
 		// GetContentByID returns ErrNotFound / pgx.ErrNoRows when the thread/content is missing.
 		if errors.Is(err, errpkg.ErrNotFound) || errors.Is(err, pgx.ErrNoRows) {

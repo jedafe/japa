@@ -18,23 +18,23 @@ import (
 // *stores.Store satisfies this interface; tests substitute a mock.
 type JobStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetIntelJobByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.IntelJob, error)
-	CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
-	UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetIntelJobByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.IntelJob, error)
+	CreateIntelJob(ctx context.Context, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
+	UpdateIntelJob(ctx context.Context, arg gen.UpdateIntelJobParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	WithTx(ctx context.Context, fn func(JobTxStore) error) error
 }
 
 // JobTxStore is the subset of JobStore needed inside a transaction.
 type JobTxStore interface {
-	CreateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateIntelJob(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelJobParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateIntelJob(ctx context.Context, arg gen.CreateIntelJobParams) (gen.IntelJob, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelJob(ctx context.Context, arg gen.UpdateIntelJobParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // JobPromoter promotes job intel_records into the intel_jobs projection
@@ -45,7 +45,6 @@ type JobTxStore interface {
 // (ADR-076 Amendment 1).
 type JobPromoter struct {
 	store    JobStore
-	tenantID pgtype.UUID
 	authorID pgtype.UUID
 	aiModel  *string // AI model used for extraction (ADR-088, INTEL-003)
 	now      func() time.Time
@@ -65,8 +64,8 @@ func WithJobAIModel(model string) JobPromoterOption {
 }
 
 // NewJobPromoter creates a promoter backed by the given store.
-func NewJobPromoter(store JobStore, tenantID, authorID pgtype.UUID, opts ...JobPromoterOption) *JobPromoter {
-	p := &JobPromoter{store: store, tenantID: tenantID, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewJobPromoter(store JobStore, authorID pgtype.UUID, opts ...JobPromoterOption) *JobPromoter {
+	p := &JobPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -84,12 +83,12 @@ var ErrNotJob = errors.New("promoter: intel record is not a job")
 // projection row, creating or updating it while respecting editorial
 // overrides.
 func (p *JobPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
-	return promoteDomain(ctx, p.store, p.tenantID, recordID, domainPromoteOps[gen.IntelJob]{
+	return promoteDomain(ctx, p.store, recordID, domainPromoteOps[gen.IntelJob]{
 		entityType: p.Entity(),
 		notErr:     ErrNotJob,
 		loadLabel:  "job",
-		getExisting: func(ctx context.Context, tenantID, pgID pgtype.UUID) (gen.IntelJob, error) {
-			return p.store.GetIntelJobByIntelRecord(ctx, tenantID, pgID)
+		getExisting: func(ctx context.Context, pgID pgtype.UUID) (gen.IntelJob, error) {
+			return p.store.GetIntelJobByIntelRecord(ctx, pgID)
 		},
 		createPath: p.jobCreatePath,
 		updatePath: p.jobUpdatePath,
@@ -106,7 +105,7 @@ func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord,
 	var countrySpaceID pgtype.UUID
 
 	if countryCode != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, countryCode); err == nil && id.Valid {
 			countrySpaceID = id
 		}
 	}
@@ -117,12 +116,12 @@ func (p *JobPromoter) jobCreatePath(ctx context.Context, record gen.IntelRecord,
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx JobTxStore) error {
-		job, err := tx.CreateIntelJob(ctx, p.tenantID, jobParams)
+		job, err := tx.CreateIntelJob(ctx, jobParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create job: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+		if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 			ID:     record.ID,
 			Status: "extracted",
 		}); err != nil {
@@ -159,7 +158,7 @@ func (p *JobPromoter) jobUpdatePath(ctx context.Context, record gen.IntelRecord,
 		}
 	}
 
-	return domainUpdateTx(ctx, record, p.authorID, p.tenantID, "job",
+	return domainUpdateTx(ctx, record, p.authorID, "job",
 		pgToUUID(existing.ID), pgToUUID(existing.GuideID), params, changed, changesJSON,
 		func(ctx context.Context, fn func(JobTxStore) error) error { return p.store.WithTx(ctx, fn) },
 		JobTxStore.UpdateIntelJob)

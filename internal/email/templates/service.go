@@ -32,13 +32,13 @@ type ListTemplatesResponse struct {
 }
 
 // ListTemplates is an exported method.
-func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filterType, filterIsActive string, limit, offset int32) (*ListTemplatesResponse, error) {
-	templates, err := s.store.listTemplates(ctx, tenantID, filterType, filterIsActive, limit, offset)
+func (s *Service) ListTemplates(ctx context.Context, filterType, filterIsActive string, limit, offset int32) (*ListTemplatesResponse, error) {
+	templates, err := s.store.listTemplates(ctx, filterType, filterIsActive, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing templates: %w", err)
 	}
 
-	total, err := s.store.countTemplates(ctx, tenantID, filterType, filterIsActive)
+	total, err := s.store.countTemplates(ctx, filterType, filterIsActive)
 	if err != nil {
 		return nil, fmt.Errorf("counting templates: %w", err)
 	}
@@ -52,8 +52,8 @@ func (s *Service) ListTemplates(ctx context.Context, tenantID pgtype.UUID, filte
 }
 
 // GetTemplate is an exported method.
-func (s *Service) GetTemplate(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetEmailTemplateRow, error) {
-	return s.store.getTemplate(ctx, id, tenantID)
+func (s *Service) GetTemplate(ctx context.Context, id pgtype.UUID) (gen.GetEmailTemplateRow, error) {
+	return s.store.getTemplate(ctx, id)
 }
 
 // GetTemplateByType is an exported method.
@@ -62,7 +62,7 @@ func (s *Service) GetTemplateByType(ctx context.Context, templateType string) (g
 }
 
 // UpdateTemplate is an exported method.
-func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, subject, htmlBody, plainTextBody string, isActive bool) (gen.UpdateEmailTemplateRow, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, subject, htmlBody, plainTextBody string, isActive bool) (gen.UpdateEmailTemplateRow, error) {
 	status := "inactive"
 	if isActive {
 		status = "active"
@@ -80,6 +80,6 @@ func (s *Service) UpdateTemplate(ctx context.Context, id, tenantID pgtype.UUID, 
 }
 
 // ResetTemplate is an exported method.
-func (s *Service) ResetTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.resetTemplate(ctx, id, tenantID)
+func (s *Service) ResetTemplate(ctx context.Context, id pgtype.UUID) error {
+	return s.store.resetTemplate(ctx, id)
 }

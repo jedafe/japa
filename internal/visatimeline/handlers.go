@@ -41,7 +41,7 @@ import (
 // anti-gaming reputation gate on shared timelines (§83: contribute to
 // aggregate stats requires reputation ≥ visa_timeline.min_reputation).
 type pointsChecker interface {
-	GetPointsBalance(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error)
+	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // Handlers exposes the visa-timeline endpoints.
@@ -116,12 +116,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleStats handles GET /visa-timelines/stats — public aggregated
 // processing-time statistics. Query params: ?origin=&dest=&visa=&consulate=&months=.
 func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -152,7 +152,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats, err := h.service.GetStats(r.Context(), tenantID, originSpaceID, destSpaceID, visaCategory, consulate, months)
+	stats, err := h.service.GetStats(r.Context(), originSpaceID, destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		slog.Error("visatimeline: stats failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", "Failed to get stats")
@@ -166,12 +166,12 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 // HandleTrend handles GET /visa-timelines/stats/trend — public monthly trend.
 // Query params: ?dest=&visa=&consulate=&months= (default 12).
 func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -194,7 +194,7 @@ func (h *Handlers) HandleTrend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	points, err := h.service.GetTrend(r.Context(), tenantID, destSpaceID, visaCategory, consulate, months)
+	points, err := h.service.GetTrend(r.Context(), destSpaceID, visaCategory, consulate, months)
 	if err != nil {
 		slog.Error("visatimeline: trend failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "trend_failed", "Failed to get trend")
@@ -217,18 +217,17 @@ func (h *Handlers) HandleListOwn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
 
-	timelines, err := h.service.ListOwn(r.Context(), user.UserID, tenantID)
+	timelines, err := h.service.ListOwn(r.Context(), user.UserID)
 	if err != nil {
 		slog.Error("visatimeline: list own failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list timelines")
@@ -246,13 +245,12 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -282,7 +280,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	// than rejecting the whole request, so members can still track their
 	// own journey privately.
 	if input.IsShared {
-		if !h.checkAntiGaming(w, r, tenantID, user.UserID) {
+		if !h.checkAntiGaming(w, r, user.UserID) {
 			// Gate failed — the helper already wrote the error response
 			// when the check itself errored. If the thresholds simply
 			// aren't met, downgrade to private and continue.
@@ -292,7 +290,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	timeline, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
+	timeline, err := h.service.Create(r.Context(), user.UserID, input)
 	if err != nil {
 		slog.Error("visatimeline: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create timeline")
@@ -310,19 +308,19 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 // thresholds are not met (the caller should downgrade is_shared to false) or
 // if the check itself failed (the caller should also downgrade + the error
 // has already been written to the response).
-func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenantID, userID pgtype.UUID) bool {
+func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, userID pgtype.UUID) bool {
 	minAgeDays := 30
 	if h.settings != nil {
-		minAgeDays = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "visa_timeline.min_account_age_days", 30)
+		minAgeDays = h.settings.GetIntOr(r.Context(), "visa_timeline.min_account_age_days", 30)
 	}
 
 	minReputation := 50
 	if h.settings != nil {
-		minReputation = h.settings.GetIntOr(r.Context(), pgtype.UUID{}, "visa_timeline.min_reputation", 50)
+		minReputation = h.settings.GetIntOr(r.Context(), "visa_timeline.min_reputation", 50)
 	}
 
 	// Account-age check via the store.
-	createdAt, err := h.service.store.UserAccountAge(r.Context(), tenantID, userID)
+	createdAt, err := h.service.store.UserAccountAge(r.Context(), userID)
 	if err != nil {
 		slog.Error("visatimeline: account age check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify account age")
@@ -339,7 +337,7 @@ func (h *Handlers) checkAntiGaming(w http.ResponseWriter, r *http.Request, tenan
 
 	// Reputation check via the wallet points balance.
 	if h.points != nil && minReputation > 0 {
-		points, err := h.points.GetPointsBalance(r.Context(), tenantID, userID)
+		points, err := h.points.GetPointsBalance(r.Context(), userID)
 		if err != nil {
 			slog.Error("visatimeline: reputation check failed", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "anti_gaming_check_failed", "Failed to verify reputation")
@@ -374,7 +372,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -425,7 +423,7 @@ func (h *Handlers) HandleAddMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -491,7 +489,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "visa_timeline_disabled", "Visa Timeline Tracker is not available")
 		return
 	}
@@ -533,8 +531,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -589,7 +586,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	filter.Limit = limit
 	filter.Offset = (page - 1) * limit
 
-	timelines, total, err := h.service.AdminList(r.Context(), tenantID, filter)
+	timelines, total, err := h.service.AdminList(r.Context(), filter)
 	if err != nil {
 		slog.Error("visatimeline: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list timelines")

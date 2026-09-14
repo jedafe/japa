@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/geoip"
 	"github.com/jedafe/japa/internal/literals/countrydata"
 	"github.com/jedafe/japa/internal/visitor"
@@ -15,7 +14,7 @@ import (
 // UTC now, Accept-Language primary tag, tenant name/id, and the geo fields
 // filled by FillRequestContext. Use this in any handler that renders
 // {{...}} placeholders so all surfaces resolve identically.
-func NewRequestContext(r *http.Request, tenantID pgtype.UUID, tenantName string) RenderContext {
+func NewRequestContext(r *http.Request, tenantName string) RenderContext {
 	rc := RenderContext{
 		Now:        time.Now().UTC(),
 		Locale:     requestLocale(r),

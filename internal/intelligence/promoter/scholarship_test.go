@@ -79,7 +79,7 @@ func (m *mockStore) GetPersonaUserID(_ context.Context, _, _ pgtype.UUID) (pgtyp
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockStore) CreateContent(_ context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
+func (m *mockStore) CreateContent(_ context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error) {
 	m.createContentCalls = append(m.createContentCalls, arg)
 	if m.failCreateContent {
 		return gen.CreateContentRow{}, errors.New("mock: create content failed")
@@ -88,7 +88,7 @@ func (m *mockStore) CreateContent(_ context.Context, tenantID pgtype.UUID, arg g
 	return gen.CreateContentRow{ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
-func (m *mockStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (m *mockStore) GetContentByID(_ context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	m.getContentByIDCalls = append(m.getContentByIDCalls, id)
 	if m.contentReturn != nil {
 		return *m.contentReturn, nil
@@ -117,7 +117,7 @@ func (m *mockStore) ContentSlugExists(_ context.Context, slug string) (bool, err
 	return exists, nil
 }
 
-func (m *mockStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+func (m *mockStore) UpdateContent(_ context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID, Title: arg.Title, Slug: arg.Slug}, nil
 }

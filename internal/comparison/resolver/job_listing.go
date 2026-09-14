@@ -27,7 +27,7 @@ func NewJobListingResolver(svc *content.Service) *JobListingResolver {
 }
 
 // Resolve fetches a job listing by id or slug.
-func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if r == nil || r.svc == nil {
 		return ResolvedItem{}, false, errors.New("job_listing resolver not initialized")
 	}
@@ -38,7 +38,7 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 			return ResolvedItem{}, false, err
 		}
 
-		row, err := r.svc.GetContent(ctx, id, tenantID)
+		row, err := r.svc.GetContent(ctx, id)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
@@ -60,7 +60,7 @@ func (r *JobListingResolver) Resolve(ctx context.Context, ref map[string]any, te
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
-		row, err := r.svc.GetContentBySlug(ctx, slug, tenantID)
+		row, err := r.svc.GetContentBySlug(ctx, slug)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
@@ -104,7 +104,7 @@ func (r *JobListingResolver) contentTags(ctx context.Context, contentID pgtype.U
 }
 
 // Search lists published, public job listings matching the query.
-func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *JobListingResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("job_listing resolver not initialized")
 	}
@@ -128,7 +128,7 @@ func (r *JobListingResolver) Search(ctx context.Context, query string, filters m
 		fetchLimit = content.MaxPageSize
 	}
 
-	items, err := r.svc.ListContentsByType(ctx, tenantID, "job_listing", "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, visibility.VisibilityFilter{})
+	items, err := r.svc.ListContentsByType(ctx, "job_listing", "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, visibility.VisibilityFilter{})
 	if err != nil {
 		return nil, fmt.Errorf("listing job listings: %w", err)
 	}

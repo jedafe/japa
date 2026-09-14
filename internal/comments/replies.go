@@ -17,7 +17,7 @@ import (
 // parent-content title/slug for context) plus the total count, paginated.
 // Powers the public profile Replies tab. Public-safe: comments on draft/private
 // content and soft-deleted comments are excluded by the query.
-func (s *Service) ListByAuthor(ctx context.Context, tenantID, authorID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByAuthorRow, int32, error) {
+func (s *Service) ListByAuthor(ctx context.Context, authorID pgtype.UUID, limit, offset int32) ([]gen.ListCommentsByAuthorRow, int32, error) {
 	rows, err := s.read.ListCommentsByAuthor(ctx, gen.ListCommentsByAuthorParams{
 
 		AuthorUserID: authorID,
@@ -43,7 +43,7 @@ func (s *Service) ListByAuthor(ctx context.Context, tenantID, authorID pgtype.UU
 // Public-safe: only replies on published+public content; non-active users are
 // already 404'd by the requireActiveProfileUser gate on the route.
 func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -64,7 +64,7 @@ func (h *Handlers) ListByAuthor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items, total, err := h.Service.ListByAuthor(r.Context(), tenantID, authorID, limit, offset)
+	items, total, err := h.Service.ListByAuthor(r.Context(), authorID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to list replies")
 		return

@@ -49,7 +49,7 @@ type VisaGuideField struct {
 // destination_country, visa_type, required_documents). The query joins
 // contents with custom_field_values + custom_fields so tenancy is enforced
 // transitively via custom_fields. (BUG-014 pattern).
-func (s *Store) ListPublishedVisaGuideFields(ctx context.Context, tenantID pgtype.UUID, fieldKeys []string) ([]VisaGuideField, error) {
+func (s *Store) ListPublishedVisaGuideFields(ctx context.Context, fieldKeys []string) ([]VisaGuideField, error) {
 	if len(fieldKeys) == 0 {
 		return nil, nil
 	}
@@ -109,7 +109,7 @@ type CountrySpace struct {
 
 // ListCountrySpaces returns all country-level Geo Spaces for the tenant,
 // ordered by name. Used to populate the origin selector (§70 step 1).
-func (s *Store) ListCountrySpaces(ctx context.Context, tenantID pgtype.UUID) ([]CountrySpace, error) {
+func (s *Store) ListCountrySpaces(ctx context.Context) ([]CountrySpace, error) {
 	const q = `
 SELECT id, name, slug
 FROM spaces
@@ -143,7 +143,7 @@ ORDER BY name ASC
 
 // GetVisaGuideField returns a single field value for a specific guide + key.
 // Used by GetChecklistItems to fetch the required_documents field.
-func (s *Store) GetVisaGuideField(ctx context.Context, tenantID, guideID pgtype.UUID, fieldKey string) (VisaGuideField, error) {
+func (s *Store) GetVisaGuideField(ctx context.Context, guideID pgtype.UUID, fieldKey string) (VisaGuideField, error) {
 	const q = `
 SELECT c.id, cf.key, cfv.value_text, cfv.value_json
 FROM contents c
@@ -182,7 +182,7 @@ LIMIT 1
 
 // GetVisaGuideTitle returns the title of a published visa guide. Used by
 // GetGuide to populate the ChecklistGuideResult title (§70 contract).
-func (s *Store) GetVisaGuideTitle(ctx context.Context, tenantID, guideID pgtype.UUID) (string, error) {
+func (s *Store) GetVisaGuideTitle(ctx context.Context, guideID pgtype.UUID) (string, error) {
 	const q = `
 SELECT c.title
 FROM contents c
@@ -207,7 +207,7 @@ LIMIT 1
 }
 
 // ListChecklistProgress returns all progress rows for a user + guide.
-func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) ([]gen.ChecklistProgress, error) {
+func (s *Store) ListChecklistProgress(ctx context.Context, userID, guideID pgtype.UUID) ([]gen.ChecklistProgress, error) {
 	return s.queries.ListChecklistProgressByUserGuide(ctx, gen.ListChecklistProgressByUserGuideParams{
 
 		UserID:  userID,
@@ -218,7 +218,7 @@ func (s *Store) ListChecklistProgress(ctx context.Context, tenantID, userID, gui
 // GetSingleProgress returns a single progress row for a user + guide +
 // item_key. Used by UpsertProgress to resolve the existing completed state
 // for a note-only PATCH (where completed is nil in the request body).
-func (s *Store) GetSingleProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string) (gen.ChecklistProgress, error) {
+func (s *Store) GetSingleProgress(ctx context.Context, userID, guideID pgtype.UUID, itemKey string) (gen.ChecklistProgress, error) {
 	return s.queries.GetSingleChecklistProgress(ctx, gen.GetSingleChecklistProgressParams{
 
 		UserID:  userID,
@@ -233,7 +233,7 @@ func (s *Store) UpsertChecklistProgress(ctx context.Context, arg gen.UpsertCheck
 }
 
 // DeleteChecklistProgress resets all progress for a user + guide.
-func (s *Store) DeleteChecklistProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID) error {
+func (s *Store) DeleteChecklistProgress(ctx context.Context, userID, guideID pgtype.UUID) error {
 	return s.queries.DeleteChecklistProgressByUserGuide(ctx, gen.DeleteChecklistProgressByUserGuideParams{
 
 		UserID:  userID,
@@ -243,7 +243,7 @@ func (s *Store) DeleteChecklistProgress(ctx context.Context, tenantID, userID, g
 
 // CountCompletedChecklistItems returns the number of completed items for a
 // user + guide (used for the full-completion check before awarding points).
-func (s *Store) CountCompletedChecklistItems(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (int64, error) {
+func (s *Store) CountCompletedChecklistItems(ctx context.Context, userID, guideID pgtype.UUID) (int64, error) {
 	return s.queries.CountCompletedChecklistItems(ctx, gen.CountCompletedChecklistItemsParams{
 
 		UserID:  userID,
@@ -259,7 +259,7 @@ func (s *Store) AdminListChecklistProgress(ctx context.Context, arg gen.AdminLis
 
 // AdminCountChecklistProgress returns the total count for the admin list
 // (with the same guide_id/user_id filters applied).
-func (s *Store) AdminCountChecklistProgress(ctx context.Context, tenantID, guideID, userID pgtype.UUID) (int64, error) {
+func (s *Store) AdminCountChecklistProgress(ctx context.Context, guideID, userID pgtype.UUID) (int64, error) {
 	return s.queries.AdminCountChecklistProgress(ctx, gen.AdminCountChecklistProgressParams{
 
 		GuideID: guideID,
@@ -268,7 +268,7 @@ func (s *Store) AdminCountChecklistProgress(ctx context.Context, tenantID, guide
 }
 
 // AdminCompletionStats returns per-guide completion aggregates (admin).
-func (s *Store) AdminCompletionStats(ctx context.Context, tenantID pgtype.UUID, pageOffset, pageLimit int32) ([]gen.AdminChecklistCompletionStatsRow, error) {
+func (s *Store) AdminCompletionStats(ctx context.Context, pageOffset, pageLimit int32) ([]gen.AdminChecklistCompletionStatsRow, error) {
 	return s.queries.AdminChecklistCompletionStats(ctx, gen.AdminChecklistCompletionStatsParams{
 
 		PageOffset: pageOffset,

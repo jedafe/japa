@@ -34,7 +34,7 @@ type AIDispatcher interface {
 // DocPagesSearcher is the contract for Meilisearch-backed doc page search.
 // Implementations live in the search package (SEARCH-001, DOC-003).
 type DocPagesSearcher interface {
-	SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]DocSearchResult, error)
+	SearchDocPages(ctx context.Context, query string, audiences []string, limit int32) ([]DocSearchResult, error)
 }
 
 // Service provides business logic for documentation pages.
@@ -96,7 +96,7 @@ func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, au
 		}
 	}
 
-	page, err := s.store.getBySlug(ctx, tenantID, audience, slug)
+	page, err := s.store.getBySlug(ctx, audience, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +114,8 @@ func (s *Service) GetDocPageBySlug(ctx context.Context, tenantID pgtype.UUID, au
 }
 
 // GetDocPageByID returns a page by ID.
-func (s *Service) GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) (*DocPage, error) {
-	page, err := s.store.getByID(ctx, tenantID, id)
+func (s *Service) GetDocPageByID(ctx context.Context, id pgtype.UUID) (*DocPage, error) {
+	page, err := s.store.getByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +124,8 @@ func (s *Service) GetDocPageByID(ctx context.Context, tenantID, id pgtype.UUID) 
 }
 
 // ListDocPagesByAudience returns published pages for an audience.
-func (s *Service) ListDocPagesByAudience(ctx context.Context, tenantID pgtype.UUID, audience string) ([]DocPageSummary, error) {
-	rows, err := s.store.listByAudience(ctx, tenantID, audience)
+func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) ([]DocPageSummary, error) {
+	rows, err := s.store.listByAudience(ctx, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +148,8 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, tenantID pgtype.UU
 }
 
 // ListAllDocPagesByAudience returns all pages (any status) for admin listing.
-func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype.UUID, audience string) ([]DocPage, error) {
-	rows, err := s.store.listAllByAudience(ctx, tenantID, audience)
+func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string) ([]DocPage, error) {
+	rows, err := s.store.listAllByAudience(ctx, audience)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +176,8 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, tenantID pgtype
 }
 
 // ListAllDocPages returns all pages (any status, any audience) for admin listing.
-func (s *Service) ListAllDocPages(ctx context.Context, tenantID pgtype.UUID) ([]DocPage, error) {
-	rows, err := s.store.listAll(ctx, tenantID)
+func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
+	rows, err := s.store.listAll(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (s *Service) GetDocNav(ctx context.Context, tenantID pgtype.UUID, allowedAu
 		}
 	}
 
-	rows, err := s.store.listPublished(ctx, tenantID)
+	rows, err := s.store.listPublished(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -260,14 +260,14 @@ func filterNavTrees(trees []DocNavTree, allowed []string) []DocNavTree {
 // SearchDocPages returns published pages matching the query, with a plain-text excerpt.
 // When audience is non-empty, results are filtered to that audience section.
 // Uses Meilisearch when a searcher is wired, otherwise falls back to SQL.
-func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, query, audience string, limit int32) ([]DocSearchResult, error) {
+func (s *Service) SearchDocPages(ctx context.Context, query, audience string, limit int32) ([]DocSearchResult, error) {
 	audiences := []string{}
 	if audience != "" {
 		audiences = []string{audience}
 	}
 
 	if s.searcher != nil {
-		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
+		return s.searcher.SearchDocPages(ctx, query, audiences, limit)
 	}
 
 	var audiencePtr *string
@@ -275,7 +275,7 @@ func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, quer
 		audiencePtr = &audience
 	}
 
-	rows, err := s.store.search(ctx, tenantID, query, audiencePtr, limit)
+	rows, err := s.store.search(ctx, query, audiencePtr, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +297,13 @@ func (s *Service) SearchDocPages(ctx context.Context, tenantID pgtype.UUID, quer
 // SearchDocPagesInAudiences returns published pages matching the query,
 // restricted to the given set of audiences (§44 — audience-filtered search).
 // Uses Meilisearch when a searcher is wired, otherwise falls back to SQL.
-func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype.UUID, query string, audiences []string, limit int32) ([]DocSearchResult, error) {
+func (s *Service) SearchDocPagesInAudiences(ctx context.Context, query string, audiences []string, limit int32) ([]DocSearchResult, error) {
 	if len(audiences) == 0 {
 		return []DocSearchResult{}, nil
 	}
 
 	if s.searcher != nil {
-		return s.searcher.SearchDocPages(ctx, tenantID, query, audiences, limit)
+		return s.searcher.SearchDocPages(ctx, query, audiences, limit)
 	}
 
 	allResults := make([]DocSearchResult, 0, limit)
@@ -311,7 +311,7 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 	for _, aud := range audiences {
 		audPtr := &aud
 
-		rows, err := s.store.search(ctx, tenantID, query, audPtr, limit)
+		rows, err := s.store.search(ctx, query, audPtr, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -341,7 +341,7 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, tenantID pgtype
 
 // SubmitDocPageFeedback increments the aggregate helpful/unhelpful counter for
 // a published doc page (DOC-011). Vote must be "up" or "down".
-func (s *Service) SubmitDocPageFeedback(ctx context.Context, tenantID pgtype.UUID, audience, slug, vote string) error {
+func (s *Service) SubmitDocPageFeedback(ctx context.Context, audience, slug, vote string) error {
 	if vote != "up" && vote != "down" {
 		return fmt.Errorf("invalid vote: %s", vote)
 	}
@@ -350,7 +350,7 @@ func (s *Service) SubmitDocPageFeedback(ctx context.Context, tenantID pgtype.UUI
 		return fmt.Errorf("invalid audience: %s", audience)
 	}
 
-	return s.store.incrementHelpful(ctx, tenantID, audience, slug, vote)
+	return s.store.incrementHelpful(ctx, audience, slug, vote)
 }
 
 // ListAudiences returns the canonical ordered list of documentation audience slugs.
@@ -591,7 +591,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 	// do NOT double-encode with json.Marshal(string(...)).
 	contentBytes := req.Content
 	if contentBytes == nil {
-		existing, err := s.store.getByID(ctx, tenantID, id)
+		existing, err := s.store.getByID(ctx, id)
 		if err != nil {
 			return fmt.Errorf("fetching existing page for content merge: %w", err)
 		}
@@ -600,7 +600,7 @@ func (s *Service) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, r
 	}
 
 	// Fetch existing page for title fallback and cache invalidation.
-	existing, err := s.store.getByID(ctx, tenantID, id)
+	existing, err := s.store.getByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("fetching existing page: %w", err)
 	}
@@ -639,7 +639,7 @@ func (s *Service) ApproveDocPage(ctx context.Context, tenantID, id, reviewerID p
 	}
 
 	// Invalidate caches for this page.
-	existing, err := s.store.getByID(ctx, tenantID, id)
+	existing, err := s.store.getByID(ctx, id)
 	if err == nil {
 		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
 	} else {
@@ -671,7 +671,7 @@ func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID p
 	}
 
 	// Invalidate caches for this page.
-	existing, err := s.store.getByID(ctx, tenantID, id)
+	existing, err := s.store.getByID(ctx, id)
 	if err == nil {
 		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
 	} else {
@@ -684,14 +684,14 @@ func (s *Service) PublishDocPage(ctx context.Context, tenantID, id, reviewerID p
 // DeleteDocPage removes a documentation page.
 func (s *Service) DeleteDocPage(ctx context.Context, tenantID, id pgtype.UUID) error {
 	// Fetch the page before deleting so we can invalidate its cache.
-	existing, err := s.store.getByID(ctx, tenantID, id)
+	existing, err := s.store.getByID(ctx, id)
 	if err == nil {
 		s.invalidateCache(ctx, tenantID, existing.Audience, existing.Slug)
 	} else {
 		s.invalidateAllPageCaches(ctx, tenantID)
 	}
 
-	if err := s.store.delete(ctx, tenantID, id); err != nil {
+	if err := s.store.delete(ctx, id); err != nil {
 		return err
 	}
 

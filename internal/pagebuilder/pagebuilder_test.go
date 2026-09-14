@@ -13,7 +13,7 @@ func TestCreateBlockInputValidation(t *testing.T) {
 	svc := &Service{store: nil}
 
 	// Empty name should fail
-	_, err := svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
+	_, err := svc.CreateBlock(t.Context(), CreateBlockInput{
 		Name:      "",
 		Slug:      "test",
 		Component: "Test.svelte",
@@ -23,7 +23,7 @@ func TestCreateBlockInputValidation(t *testing.T) {
 	}
 
 	// Empty slug should fail
-	_, err = svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
+	_, err = svc.CreateBlock(t.Context(), CreateBlockInput{
 		Name:      "Test",
 		Slug:      "",
 		Component: "Test.svelte",
@@ -33,7 +33,7 @@ func TestCreateBlockInputValidation(t *testing.T) {
 	}
 
 	// Empty component should fail
-	_, err = svc.CreateBlock(t.Context(), testTenantID(), CreateBlockInput{
+	_, err = svc.CreateBlock(t.Context(), CreateBlockInput{
 		Name:      "Test",
 		Slug:      "test",
 		Component: "",
@@ -48,7 +48,7 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
+	_, err := svc.CreateTemplate(t.Context(), CreateTemplateInput{
 		Name: "",
 		Slug: "test",
 	})
@@ -62,7 +62,7 @@ func TestCreateTemplateInputValidation(t *testing.T) {
 	func() {
 		defer func() { recover() }() // swallow the nil-store panic
 
-		_, err = svc.CreateTemplate(t.Context(), testTenantID(), CreateTemplateInput{
+		_, err = svc.CreateTemplate(t.Context(), CreateTemplateInput{
 			Name: "Test",
 			Slug: "",
 		})
@@ -77,7 +77,7 @@ func TestCreateThemeInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.CreateTheme(t.Context(), testTenantID(), CreateThemeInput{
+	_, err := svc.CreateTheme(t.Context(), CreateThemeInput{
 		Name: "",
 		Slug: "test",
 	})
@@ -85,7 +85,7 @@ func TestCreateThemeInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.CreateTheme(t.Context(), testTenantID(), CreateThemeInput{
+	_, err = svc.CreateTheme(t.Context(), CreateThemeInput{
 		Name: "Test",
 		Slug: "",
 	})
@@ -99,7 +99,7 @@ func TestCreatePageInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
+	_, err := svc.CreatePage(t.Context(), testUserID(), CreatePageInput{
 		Title: "",
 		Slug:  "test",
 	})
@@ -113,7 +113,7 @@ func TestCreatePageInputValidation(t *testing.T) {
 	func() {
 		defer func() { recover() }() // swallow the nil-store panic
 
-		_, err = svc.CreatePage(t.Context(), testTenantID(), testUserID(), CreatePageInput{
+		_, err = svc.CreatePage(t.Context(), testUserID(), CreatePageInput{
 			Title: "Test",
 			Slug:  "",
 		})
@@ -128,7 +128,7 @@ func TestUpdateBlockInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateBlock(t.Context(), testID(), testTenantID(), UpdateBlockInput{
+	_, err := svc.UpdateBlock(t.Context(), testID(), UpdateBlockInput{
 		Name:      "",
 		Component: "Test.svelte",
 	})
@@ -136,7 +136,7 @@ func TestUpdateBlockInputValidation(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 
-	_, err = svc.UpdateBlock(t.Context(), testID(), testTenantID(), UpdateBlockInput{
+	_, err = svc.UpdateBlock(t.Context(), testID(), UpdateBlockInput{
 		Name:      "Test",
 		Component: "",
 	})
@@ -150,7 +150,7 @@ func TestUpdateTemplateInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateTemplate(t.Context(), testID(), testTenantID(), UpdateTemplateInput{
+	_, err := svc.UpdateTemplate(t.Context(), testID(), UpdateTemplateInput{
 		Name: "",
 	})
 	if err == nil {
@@ -163,7 +163,7 @@ func TestUpdateThemeInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdateTheme(t.Context(), testID(), testTenantID(), UpdateThemeInput{
+	_, err := svc.UpdateTheme(t.Context(), testID(), UpdateThemeInput{
 		Name: "",
 	})
 	if err == nil {

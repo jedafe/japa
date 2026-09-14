@@ -214,7 +214,7 @@ func (h *Handlers) HandleStats(w http.ResponseWriter, r *http.Request) {
 	// Global daily cap from system_settings (BUG-013 — was hardcoded 500).
 	globalCap := 500
 	if h.settings != nil {
-		globalCap = h.settings.GetIntOr(r.Context(), t.ID, "participation.global_daily_cap", 500)
+		globalCap = h.settings.GetIntOr(r.Context(), "participation.global_daily_cap", 500)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

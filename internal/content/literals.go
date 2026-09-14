@@ -324,6 +324,6 @@ func setStringField(fv reflect.Value, value string, isMeta bool) {
 // Geo fields come from the ADR-064 VisitorContext (profile origin_country /
 // destination_country custom fields, jc_journey_token for guests, GeoIP
 // fallback) and the GeoIP middleware context (detected country name/code).
-func buildRenderContext(r *http.Request, tenantID pgtype.UUID, tenantName string) literals.RenderContext {
-	return literals.NewRequestContext(r, tenantID, tenantName)
+func buildRenderContext(r *http.Request, tenantName string) literals.RenderContext {
+	return literals.NewRequestContext(r, tenantName)
 }

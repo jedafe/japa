@@ -40,7 +40,7 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // ListFolders handles GET /api/v1/me/bookmark-folders.
 func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -50,7 +50,7 @@ func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	folders, err := h.service.ListFolders(r.Context(), tenantID, user.UserID)
+	folders, err := h.service.ListFolders(r.Context(), user.UserID)
 	if err != nil {
 		slog.Warn("list bookmark folders failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list bookmark folders")
@@ -63,7 +63,7 @@ func (h *Handlers) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 // CreateFolder handles POST /api/v1/me/bookmark-folders.
 func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -92,7 +92,7 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	folder, err := h.service.CreateFolder(r.Context(), tenantID, user.UserID, input.Name)
+	folder, err := h.service.CreateFolder(r.Context(), user.UserID, input.Name)
 	if err != nil {
 		if errors.Is(err, errpkg.ErrDuplicate) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_bookmark_folder", "A folder with this name already exists")
@@ -110,7 +110,7 @@ func (h *Handlers) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 // UpdateFolder handles PATCH /api/v1/me/bookmark-folders/{id}.
 func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -145,7 +145,7 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	folder, err := h.service.UpdateFolder(r.Context(), id, tenantID, user.UserID, input.Name)
+	folder, err := h.service.UpdateFolder(r.Context(), id, user.UserID, input.Name)
 	if err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
@@ -168,7 +168,7 @@ func (h *Handlers) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFolder handles DELETE /api/v1/me/bookmark-folders/{id}.
 func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -184,7 +184,7 @@ func (h *Handlers) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteFolder(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteFolder(r.Context(), id, user.UserID); err != nil {
 		if errors.Is(err, errpkg.ErrNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Bookmark folder not found")
 			return
@@ -213,7 +213,7 @@ func parseUUIDParam(r *http.Request, name string) (pgtype.UUID, error) {
 // position. Unknown/non-owned folder IDs are silently skipped (the UPDATE
 // is tenant+owner scoped). BUG-008: §08 spec supports manual folder ordering.
 func (h *Handlers) ReorderFolders(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -249,7 +249,7 @@ func (h *Handlers) ReorderFolders(w http.ResponseWriter, r *http.Request) {
 		folderIDs = append(folderIDs, fid)
 	}
 
-	if err := h.service.ReorderFolders(r.Context(), tenantID, user.UserID, folderIDs); err != nil {
+	if err := h.service.ReorderFolders(r.Context(), user.UserID, folderIDs); err != nil {
 		slog.Warn("reorder bookmark folders failed", "error", err, "user_id", user.UserID)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to reorder bookmark folders")
 

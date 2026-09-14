@@ -38,7 +38,7 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 				}
 			} else {
 				// JWT auth: use RBAC like the rest of the API.
-				if !resolver.HasPermission(r.Context(), user.UserID, user.TenantID, agentUsePermission) {
+				if !resolver.HasPermission(r.Context(), user.UserID, agentUsePermission) {
 					http.Error(w, `{"error":{"code":"forbidden","message":"You do not have permission to use the agent"}}`, http.StatusForbidden)
 					return
 				}

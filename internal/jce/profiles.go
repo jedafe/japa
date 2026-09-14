@@ -28,12 +28,12 @@ func newProfileStore(database *db.DB) *profileStore {
 }
 
 // create inserts a new comparison profile and returns the populated domain model.
-func (s *profileStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
-	return s.createWithTx(ctx, s.write, tenantID, userID, in)
+func (s *profileStore) create(ctx context.Context, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	return s.createWithTx(ctx, s.write, userID, in)
 }
 
 // createWithTx creates a profile inside an existing transaction.
-func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
 	row, err := q.CreateComparisonProfile(ctx, gen.CreateComparisonProfileParams{
 
 		UserID:         userID,
@@ -54,7 +54,7 @@ func (s *profileStore) createWithTx(ctx context.Context, q *gen.Queries, tenantI
 }
 
 // listByUser returns a user's profiles (non-template), ordered by default first, then updated_at desc.
-func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.UUID) ([]ComparisonProfile, error) {
+func (s *profileStore) listByUser(ctx context.Context, userID pgtype.UUID) ([]ComparisonProfile, error) {
 	rows, err := s.read.ListComparisonProfilesByUser(ctx,
 
 		userID,
@@ -82,7 +82,7 @@ func (s *profileStore) listByUser(ctx context.Context, tenantID, userID pgtype.U
 }
 
 // listByTenant returns all non-deleted profiles for the tenant, ordered by default first, then updated_at desc.
-func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
+func (s *profileStore) listByTenant(ctx context.Context) ([]ComparisonProfile, error) {
 	rows, err := s.read.ListComparisonProfilesByTenant(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profiles by tenant: %w", err)
@@ -103,7 +103,7 @@ func (s *profileStore) listByTenant(ctx context.Context, tenantID pgtype.UUID) (
 }
 
 // listTemplates returns all tenant-level profile templates, ordered by title.
-func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]ComparisonProfile, error) {
+func (s *profileStore) listTemplates(ctx context.Context) ([]ComparisonProfile, error) {
 	rows, err := s.read.ListComparisonProfileTemplates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing comparison profile templates: %w", err)
@@ -124,7 +124,7 @@ func (s *profileStore) listTemplates(ctx context.Context, tenantID pgtype.UUID) 
 }
 
 // get returns a profile by id and tenant.
-func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonProfile, error) {
+func (s *profileStore) get(ctx context.Context, id pgtype.UUID) (ComparisonProfile, error) {
 	row, err := s.read.GetComparisonProfile(ctx,
 		id,
 	)
@@ -136,12 +136,12 @@ func (s *profileStore) get(ctx context.Context, id, tenantID pgtype.UUID) (Compa
 }
 
 // update modifies a profile and returns the updated domain model.
-func (s *profileStore) update(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
-	return s.updateWithTx(ctx, s.write, id, tenantID, userID, in)
+func (s *profileStore) update(ctx context.Context, id, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+	return s.updateWithTx(ctx, s.write, id, userID, in)
 }
 
 // updateWithTx updates a profile inside an existing transaction.
-func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
+func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error) {
 	_ = userID // userID is enforced at the service/handler layer; not used by the update query.
 
 	row, err := q.UpdateComparisonProfile(ctx, gen.UpdateComparisonProfileParams{
@@ -163,7 +163,7 @@ func (s *profileStore) updateWithTx(ctx context.Context, q *gen.Queries, id, ten
 }
 
 // delete soft-deletes a profile.
-func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *profileStore) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteComparisonProfile(ctx,
 		id,
 	); err != nil {
@@ -174,13 +174,13 @@ func (s *profileStore) delete(ctx context.Context, id, tenantID pgtype.UUID) err
 }
 
 // setDefault clears any existing default for the user and marks the target profile as default.
-func (s *profileStore) setDefault(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	return s.setDefaultWithTx(ctx, s.write, id, tenantID, userID)
+func (s *profileStore) setDefault(ctx context.Context, id, userID pgtype.UUID) error {
+	return s.setDefaultWithTx(ctx, s.write, id, userID)
 }
 
 // setDefaultWithTx clears existing defaults and marks the target profile as the
 // default inside an existing transaction.
-func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id, tenantID, userID pgtype.UUID) error {
+func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id, userID pgtype.UUID) error {
 	if err := q.ClearDefaultProfileForUser(ctx, gen.ClearDefaultProfileForUserParams{
 
 		UserID:    userID,
@@ -214,7 +214,7 @@ func (s *profileStore) setDefaultWithTx(ctx context.Context, q *gen.Queries, id,
 }
 
 // countBySourceSpace returns the number of non-template profiles per source space.
-func (s *profileStore) countBySourceSpace(ctx context.Context, tenantID, userID pgtype.UUID) ([]ProfileStat, error) {
+func (s *profileStore) countBySourceSpace(ctx context.Context, userID pgtype.UUID) ([]ProfileStat, error) {
 	rows, err := s.read.CountComparisonProfilesBySourceSpace(ctx,
 
 		userID,

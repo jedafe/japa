@@ -26,16 +26,11 @@ func NewWorkerAdapter(p *SpamPipeline) *WorkerAdapter {
 // ScanContent runs the moderation pipeline on the given entity.
 // For content entities, it looks up the body text from the database
 // and runs the full spam pipeline against it.
-func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, tenantID string) error {
+func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID string) error {
 	if a.pipeline == nil {
 		slog.Warn("spam:worker_adapter: no pipeline configured, skipping",
 			"entity_type", entityType, "entity_id", entityID)
 		return nil
-	}
-
-	var tid pgtype.UUID
-	if err := tid.Scan(tenantID); err != nil {
-		return fmt.Errorf("spam: invalid tenant_id %q: %w", tenantID, err)
 	}
 
 	// Look up the entity body so the pipeline scores real text instead of
@@ -67,7 +62,7 @@ func (a *WorkerAdapter) ScanContent(ctx context.Context, entityType, entityID, t
 		}
 	}
 
-	result, err := a.pipeline.Check(ctx, tid, SpamCheckRequest{
+	result, err := a.pipeline.Check(ctx, SpamCheckRequest{
 		EntityType: entityType,
 		Content:    body,
 	})

@@ -216,20 +216,20 @@ func (s *Service) CreateExport(ctx context.Context, tenantID, userID pgtype.UUID
 }
 
 // GetExport retrieves a single export by ID.
-func (s *Service) GetExport(ctx context.Context, id, tenantID pgtype.UUID) (gen.PlatformDataExport, error) {
-	return s.store.Get(ctx, id, tenantID)
+func (s *Service) GetExport(ctx context.Context, id pgtype.UUID) (gen.PlatformDataExport, error) {
+	return s.store.Get(ctx, id)
 }
 
 // ListExports returns paginated exports for a tenant.
-func (s *Service) ListExports(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.PlatformDataExport, int64, error) {
+func (s *Service) ListExports(ctx context.Context, status string, page, limit int) ([]gen.PlatformDataExport, int64, error) {
 	offset := int32((page - 1) * limit) // #nosec
 
-	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset) // #nosec
+	rows, err := s.store.List(ctx, status, int32(limit), offset) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.Count(ctx, tenantID, status)
+	total, err := s.store.Count(ctx, status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -238,8 +238,8 @@ func (s *Service) ListExports(ctx context.Context, tenantID pgtype.UUID, status 
 }
 
 // DeleteExport removes an export record.
-func (s *Service) DeleteExport(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.Delete(ctx, id, tenantID)
+func (s *Service) DeleteExport(ctx context.Context, id pgtype.UUID) error {
+	return s.store.Delete(ctx, id)
 }
 
 // ProcessExport is called by the Asynq worker. It queries the relevant data,
@@ -614,8 +614,8 @@ func sanitizeFilename(name string) string {
 // by the download handler to serve the file. The filename is reconstructed
 // from the export record's name and ID using the same sanitization logic as
 // generateFile.
-func (s *Service) GetFilePath(ctx context.Context, id, tenantID pgtype.UUID) (string, error) {
-	exp, err := s.store.Get(ctx, id, tenantID)
+func (s *Service) GetFilePath(ctx context.Context, id pgtype.UUID) (string, error) {
+	exp, err := s.store.Get(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("fetching export: %w", err)
 	}

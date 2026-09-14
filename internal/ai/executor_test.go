@@ -534,7 +534,7 @@ type stubPerms struct {
 	granted map[string]bool
 }
 
-func (s *stubPerms) HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool {
+func (s *stubPerms) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {
 	if s == nil {
 		return false
 	}
@@ -547,7 +547,7 @@ type stubPrivacy struct {
 	err    error
 }
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	if s == nil {
 		return false, nil
 	}
@@ -556,7 +556,7 @@ func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType
 }
 
 // stubSuccessHandler is a ToolHandler that always succeeds.
-func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 	return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"ok":true}`}, nil
 }
 

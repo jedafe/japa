@@ -165,8 +165,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -174,7 +173,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 	page, limit := parsePagination(r)
 	status := r.URL.Query().Get("status")
 
-	exports, total, err := h.service.ListExports(r.Context(), tenantID, status, page, limit)
+	exports, total, err := h.service.ListExports(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("dataexport: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_list_failed", "Failed to list exports")
@@ -199,8 +198,7 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -210,7 +208,7 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exp, err := h.service.GetExport(r.Context(), id, tenantID)
+	exp, err := h.service.GetExport(r.Context(), id)
 	if err != nil {
 		// Distinguish "not found" from a real DB failure so 5xx errors are
 		// not masked as 404s (BUG-009).
@@ -233,8 +231,7 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -244,7 +241,7 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteExport(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteExport(r.Context(), id); err != nil {
 		slog.Error("dataexport: delete failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_delete_failed", "Failed to delete export")
 
@@ -262,8 +259,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -273,7 +269,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	filePath, err := h.service.GetFilePath(r.Context(), id, tenantID)
+	filePath, err := h.service.GetFilePath(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
@@ -286,7 +282,7 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Determine content type from the export format.
-	exp, err := h.service.GetExport(r.Context(), id, tenantID)
+	exp, err := h.service.GetExport(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
 		return

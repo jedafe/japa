@@ -116,7 +116,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListMenus is an exported method.
 func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -133,7 +133,7 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 		sortDir = "asc"
 	}
 
-	result, err := h.Service.ListMenus(r.Context(), tenantID, q, placement, status, sort, sortDir, limit, offset)
+	result, err := h.Service.ListMenus(r.Context(), q, placement, status, sort, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -144,7 +144,7 @@ func (h *Handlers) ListMenus(w http.ResponseWriter, r *http.Request) {
 
 // GetMenu is an exported method.
 func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	menu, err := h.Service.GetMenu(r.Context(), id, tenantID)
+	menu, err := h.Service.GetMenu(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -166,7 +166,7 @@ func (h *Handlers) GetMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenu is an exported method.
 func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -188,7 +188,7 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	menu, err := h.Service.CreateMenu(r.Context(), tenantID, input.Slug, input.Name, input.Placement, input.Status)
+	menu, err := h.Service.CreateMenu(r.Context(), input.Slug, input.Name, input.Placement, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -199,7 +199,7 @@ func (h *Handlers) CreateMenu(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenu is an exported method.
 func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -226,7 +226,7 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	menu, err := h.Service.UpdateMenu(r.Context(), id, tenantID, input.Name, input.Placement, input.Status)
+	menu, err := h.Service.UpdateMenu(r.Context(), id, input.Name, input.Placement, input.Status)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -237,7 +237,7 @@ func (h *Handlers) UpdateMenu(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenu is an exported method.
 func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -248,7 +248,7 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteMenu(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteMenu(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -260,7 +260,7 @@ func (h *Handlers) DeleteMenu(w http.ResponseWriter, r *http.Request) {
 
 // CreateMenuItem is an exported method.
 func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -283,7 +283,7 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.Service.CreateMenuItem(r.Context(), tenantID, input)
+	item, err := h.Service.CreateMenuItem(r.Context(), input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -294,7 +294,7 @@ func (h *Handlers) CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // UpdateMenuItem is an exported method.
 func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -313,7 +313,7 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	// Verify the item belongs to the menu {id} in the path before updating.
 	// Without this, an admin could update an item from a different menu by
 	// its itemId — a cross-menu authorization gap. Ref: ADR-054.
-	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
+	if err := h.requireItemInMenu(r.Context(), id, menuID, w); err != nil {
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.Service.UpdateMenuItem(r.Context(), id, tenantID, input)
+	item, err := h.Service.UpdateMenuItem(r.Context(), id, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -339,7 +339,7 @@ func (h *Handlers) UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMenuItem is an exported method.
 func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -357,11 +357,11 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verify the item belongs to the menu {id} in the path before deleting.
 	// Ref: ADR-054.
-	if err := h.requireItemInMenu(r.Context(), id, menuID, tenantID, w); err != nil {
+	if err := h.requireItemInMenu(r.Context(), id, menuID, w); err != nil {
 		return
 	}
 
-	if err := h.Service.DeleteMenuItem(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteMenuItem(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -371,7 +371,7 @@ func (h *Handlers) DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 
 // ReorderMenuItems is an exported method.
 func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -402,12 +402,12 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := h.requireItemInMenu(r.Context(), itemID, menuID, tenantID, w); err != nil {
+		if err := h.requireItemInMenu(r.Context(), itemID, menuID, w); err != nil {
 			return
 		}
 	}
 
-	if err := h.Service.ReorderMenuItems(r.Context(), tenantID, input.Items); err != nil {
+	if err := h.Service.ReorderMenuItems(r.Context(), input.Items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -418,8 +418,8 @@ func (h *Handlers) ReorderMenuItems(w http.ResponseWriter, r *http.Request) {
 // requireItemInMenu verifies that the item with the given ID belongs to the
 // menu with the given menuID (and tenant). On mismatch it writes a 404 and
 // returns a non-nil error so the caller can return early. Ref: ADR-054.
-func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID, tenantID pgtype.UUID, w http.ResponseWriter) error {
-	item, err := h.Service.GetMenuItem(ctx, itemID, tenantID)
+func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID pgtype.UUID, w http.ResponseWriter) error {
+	item, err := h.Service.GetMenuItem(ctx, itemID)
 	if err != nil {
 		handleServiceError(w, err)
 		return err
@@ -458,7 +458,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		isAuthenticated = true
 		userID = user.UserID
 		// Resolve the user's group memberships for group-based menu item gating.
-		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), tenantID, user.UserID.String())
+		groupIDs, err := h.Service.GetUserGroupIDs(r.Context(), user.UserID.String())
 		if err == nil {
 			for _, gid := range groupIDs {
 				userGroupIDs[gid] = true

@@ -46,7 +46,7 @@ func DocsListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
 		}
 
-		pages, err := deps.Docs.ListAllDocPages(ctx, tenantID)
+		pages, err := deps.Docs.ListAllDocPages(ctx)
 		if err != nil {
 			return errorToolResult("docs_list_failed", err.Error()), nil
 		}
@@ -89,7 +89,7 @@ func DocsReadHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
 		}
 
-		page, err := deps.Docs.GetDocPageByID(ctx, tenantID, docID)
+		page, err := deps.Docs.GetDocPageByID(ctx, docID)
 		if err != nil {
 			return errorToolResult("doc_not_found", fmt.Sprintf("doc not found: %v", err)), nil
 		}

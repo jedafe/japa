@@ -81,8 +81,8 @@ func (h *Handlers) SetLiteralCatalog(c *literals.Catalog) { h.Catalog = c }
 // ModerateItem updates content_reviews but studio_jobs stays 'in_review'
 // forever — the same defect class as the persona_action BUG-001 fix.
 type StudioReviewHook interface {
-	OnStudioReviewApproved(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
-	OnStudioReviewRejected(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
+	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 }
 
 // TaskEnqueuer is the subset of the worker enqueuer that admin needs to
@@ -706,8 +706,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -789,7 +788,7 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		isPublic[fullKey] = control.IsPublicSetting(fullKey)
 	}
 
-	if err := h.Settings.UpdateSettingsBatchWithPublic(ctx, tenantID, pending, isPublic); err != nil {
+	if err := h.Settings.UpdateSettingsBatchWithPublic(ctx, pending, isPublic); err != nil {
 		slog.Error("admin: failed to save settings", "category", category, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 

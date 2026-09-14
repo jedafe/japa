@@ -26,13 +26,13 @@ func (s *Store) createMember(ctx context.Context, m gen.CreateAffiliateMemberPar
 	return s.write.CreateAffiliateMember(ctx, m)
 }
 
-func (s *Store) getMember(ctx context.Context, userID, tenantID pgtype.UUID) (gen.AffiliateProgramMember, error) {
+func (s *Store) getMember(ctx context.Context, userID pgtype.UUID) (gen.AffiliateProgramMember, error) {
 	return s.read.GetAffiliateMember(ctx, userID)
 }
 
 // getUserCreatedAt returns the user's created_at timestamp for the enrollment
 // minimum-account-age eligibility check (Section 56).
-func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UUID) (pgtype.Timestamptz, error) {
+func (s *Store) getUserCreatedAt(ctx context.Context, userID pgtype.UUID) (pgtype.Timestamptz, error) {
 	row, err := s.read.GetUserByID(ctx, userID)
 	if err != nil {
 		return pgtype.Timestamptz{}, err
@@ -44,7 +44,7 @@ func (s *Store) getUserCreatedAt(ctx context.Context, userID, tenantID pgtype.UU
 // lookupUsername returns the username for a user id (tenant-scoped). Returns
 // nil when the user no longer exists (e.g. anonymized) so the admin UI shows
 // the id fallback rather than erroring.
-func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID) (*string, error) {
+func (s *Store) lookupUsername(ctx context.Context, userID pgtype.UUID) (*string, error) {
 	row, err := s.read.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (s *Store) lookupUsername(ctx context.Context, userID, tenantID pgtype.UUID
 	return &row.Username, nil
 }
 
-func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
+func (s *Store) listMembers(ctx context.Context, status string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembers(ctx, gen.ListAffiliateMembersParams{
 
 		PageOffset: offset,
@@ -61,7 +61,7 @@ func (s *Store) listMembers(ctx context.Context, tenantID pgtype.UUID, status st
 	})
 }
 
-func (s *Store) updateMemberStatus(ctx context.Context, userID, tenantID pgtype.UUID, status string, notes *string) (gen.AffiliateProgramMember, error) {
+func (s *Store) updateMemberStatus(ctx context.Context, userID pgtype.UUID, status string, notes *string) (gen.AffiliateProgramMember, error) {
 	return s.write.UpdateAffiliateMemberStatus(ctx, gen.UpdateAffiliateMemberStatusParams{
 		UserID: userID, Status: status, Notes: notes,
 	})
@@ -83,7 +83,7 @@ func (s *Store) createLink(ctx context.Context, l gen.CreateAffiliateLinkParams)
 	return s.write.CreateAffiliateLink(ctx, l)
 }
 
-func (s *Store) getLinkByID(ctx context.Context, id, tenantID pgtype.UUID) (gen.UserAffiliateLink, error) {
+func (s *Store) getLinkByID(ctx context.Context, id pgtype.UUID) (gen.UserAffiliateLink, error) {
 	return s.read.GetAffiliateLinkByID(ctx, id)
 }
 
@@ -91,13 +91,13 @@ func (s *Store) getLinkByCode(ctx context.Context, code string) (gen.UserAffilia
 	return s.read.GetAffiliateLinkByCode(ctx, code)
 }
 
-func (s *Store) listLinksByUser(ctx context.Context, userID, tenantID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.UserAffiliateLink, error) {
+func (s *Store) listLinksByUser(ctx context.Context, userID pgtype.UUID, isActive bool, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAffiliateLinksByUser(ctx, gen.ListAffiliateLinksByUserParams{
 		UserID: userID, IsActive: isActive, PageLimit: limit, PageOffset: offset,
 	})
 }
 
-func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.UserAffiliateLink, error) {
+func (s *Store) listAllLinks(ctx context.Context, limit, offset int32) ([]gen.UserAffiliateLink, error) {
 	return s.read.ListAllAffiliateLinks(ctx, gen.ListAllAffiliateLinksParams{
 
 		PageLimit:  limit,
@@ -107,7 +107,7 @@ func (s *Store) listAllLinks(ctx context.Context, tenantID pgtype.UUID, limit, o
 
 // listMembersFiltered is the admin list with an optional status filter
 // (Section 56 / catalog ?status). Tenant-scoped, paginated.
-func (s *Store) listMembersFiltered(ctx context.Context, tenantID pgtype.UUID, status *string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
+func (s *Store) listMembersFiltered(ctx context.Context, status *string, limit, offset int32) ([]gen.AffiliateProgramMember, error) {
 	return s.read.ListAffiliateMembersFiltered(ctx, gen.ListAffiliateMembersFilteredParams{
 		Status: status, PageLimit: limit, PageOffset: offset,
 	})
@@ -122,19 +122,19 @@ func (s *Store) listAllLinksFiltered(ctx context.Context, params gen.ListAllAffi
 
 // deactivateLinkAdmin deactivates a link by id + tenant (admin scope, no
 // ownership check). Soft-delete only — retained for audit (Section 56).
-func (s *Store) deactivateLinkAdmin(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) deactivateLinkAdmin(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeactivateAffiliateLinkAdmin(ctx,
 		id,
 	)
 }
 
-func (s *Store) updateLink(ctx context.Context, id, userID, tenantID pgtype.UUID, description *string, isActive bool) (gen.UserAffiliateLink, error) {
+func (s *Store) updateLink(ctx context.Context, id, userID pgtype.UUID, description *string, isActive bool) (gen.UserAffiliateLink, error) {
 	return s.write.UpdateAffiliateLink(ctx, gen.UpdateAffiliateLinkParams{
 		ID: id, UserID: userID, Description: description, IsActive: isActive,
 	})
 }
 
-func (s *Store) deactivateLink(ctx context.Context, id, userID, tenantID pgtype.UUID) error {
+func (s *Store) deactivateLink(ctx context.Context, id, userID pgtype.UUID) error {
 	return s.write.DeactivateAffiliateLink(ctx, gen.DeactivateAffiliateLinkParams{
 		ID: id, UserID: userID,
 	})
@@ -166,22 +166,22 @@ func (s *Store) incrementLinkConversions(ctx context.Context, linkID pgtype.UUID
 
 // ── Earnings ────────────────────────────────────────────────────────
 
-func (s *Store) getUserEarnings(ctx context.Context, userID, tenantID pgtype.UUID) (gen.GetUserAffiliateEarningsRow, error) {
+func (s *Store) getUserEarnings(ctx context.Context, userID pgtype.UUID) (gen.GetUserAffiliateEarningsRow, error) {
 	return s.read.GetUserAffiliateEarnings(ctx, userID)
 }
 
-func (s *Store) getUserEarningsByProduct(ctx context.Context, userID, tenantID pgtype.UUID) ([]gen.GetUserAffiliateEarningsByProductRow, error) {
+func (s *Store) getUserEarningsByProduct(ctx context.Context, userID pgtype.UUID) ([]gen.GetUserAffiliateEarningsByProductRow, error) {
 	return s.read.GetUserAffiliateEarningsByProduct(ctx, userID)
 }
 
-func (s *Store) getRecentEvents(ctx context.Context, userID, tenantID pgtype.UUID, limit int32) ([]gen.GetRecentAffiliateEventsRow, error) {
+func (s *Store) getRecentEvents(ctx context.Context, userID pgtype.UUID, limit int32) ([]gen.GetRecentAffiliateEventsRow, error) {
 	return s.read.GetRecentAffiliateEvents(ctx, gen.GetRecentAffiliateEventsParams{UserID: userID, PageLimit: limit})
 }
 
 // getProgramStats returns program-wide totals for the admin overview
 // endpoint GET /admin/affiliate-program (Section 56 Admin management).
 // Tenant-scoped.
-func (s *Store) getProgramStats(ctx context.Context, tenantID pgtype.UUID) (gen.GetAffiliateProgramStatsRow, error) {
+func (s *Store) getProgramStats(ctx context.Context) (gen.GetAffiliateProgramStatsRow, error) {
 	return s.read.GetAffiliateProgramStats(ctx)
 }
 

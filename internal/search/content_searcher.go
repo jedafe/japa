@@ -30,7 +30,7 @@ func NewContentSearchAdapter(engine Engine) *ContentSearchAdapter {
 
 // SearchContentIDs searches the posts index for content matching the query,
 // scoped to the given tenant, and returns the matching content IDs.
-func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, tenantID pgtype.UUID, query string, limit int) ([]pgtype.UUID, error) {
+func (a *ContentSearchAdapter) SearchContentIDs(ctx context.Context, query string, limit int) ([]pgtype.UUID, error) {
 	if a.engine == nil {
 		return nil, errors.New("search engine not configured")
 	}

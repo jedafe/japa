@@ -23,8 +23,8 @@ func NewToolAdapter(svc *Service) ai.JCEService {
 }
 
 // Analyze implements ai.JCEService by delegating to Service.Analyze.
-func (a *ToolAdapter) Analyze(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
-	res, err := a.svc.Analyze(ctx, contentID, tenantID, userID, profileID, question)
+func (a *ToolAdapter) Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
+	res, err := a.svc.Analyze(ctx, contentID, userID, profileID, question)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +33,8 @@ func (a *ToolAdapter) Analyze(ctx context.Context, contentID, tenantID, userID, 
 }
 
 // Rank implements ai.JCEService by delegating to Service.Rank.
-func (a *ToolAdapter) Rank(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
-	res, err := a.svc.Rank(ctx, contentID, tenantID, userID, profileID)
+func (a *ToolAdapter) Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
+	res, err := a.svc.Rank(ctx, contentID, userID, profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,8 +43,8 @@ func (a *ToolAdapter) Rank(ctx context.Context, contentID, tenantID, userID, pro
 }
 
 // Explain implements ai.JCEService by delegating to Service.Explain.
-func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, tenantID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
-	res, err := a.svc.Explain(ctx, contentID, itemID, tenantID, userID, profileID, factorKey, question)
+func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
+	res, err := a.svc.Explain(ctx, contentID, itemID, userID, profileID, factorKey, question)
 	if err != nil {
 		return nil, err
 	}
@@ -53,8 +53,8 @@ func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, tenantID, 
 }
 
 // Recommend implements ai.JCEService by delegating to Service.Recommend.
-func (a *ToolAdapter) Recommend(ctx context.Context, contentID, tenantID, userID, profileID pgtype.UUID) (map[string]any, error) {
-	res, err := a.svc.Recommend(ctx, contentID, tenantID, userID, profileID)
+func (a *ToolAdapter) Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
+	res, err := a.svc.Recommend(ctx, contentID, userID, profileID)
 	if err != nil {
 		return nil, err
 	}

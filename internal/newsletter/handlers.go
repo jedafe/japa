@@ -120,13 +120,13 @@ func NewHandlers(service *Service) *Handlers {
 // newsletter. Gated by feature.newsletter at the route level.
 // Ref: conventions/api-routes-catalog.md (POST /newsletter/subscribe).
 func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	// Global killswitch (newsletter.enabled, ADR-080 §62).
-	if !h.Service.Enabled(r.Context(), tenantID) {
+	if !h.Service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
 		return
 	}
@@ -177,7 +177,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) {
 		userID = &u.UserID
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, userID, source)
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), email, userID, source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber (public)", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to subscribe")
@@ -258,7 +258,7 @@ func parseOffset(r *http.Request) int32 {
 // CreateSubscriber adds a new newsletter subscriber.
 // POST /admin/newsletter/subscribers.
 func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -293,7 +293,7 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriber, err := h.Service.CreateSubscriber(r.Context(), tenantID, input.Email, nil, input.Source)
+	subscriber, err := h.Service.CreateSubscriber(r.Context(), input.Email, nil, input.Source)
 	if err != nil {
 		slog.Error("creating newsletter subscriber", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create subscriber")
@@ -309,7 +309,7 @@ func (h *Handlers) CreateSubscriber(w http.ResponseWriter, r *http.Request) {
 // (§62 RBAC, ADR-080 §6). Each email is upserted with source='import'.
 // Returns the count of imported and skipped (invalid) emails.
 func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -338,7 +338,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if _, err := h.Service.CreateSubscriber(r.Context(), tenantID, email, nil, SourceImport); err != nil {
+		if _, err := h.Service.CreateSubscriber(r.Context(), email, nil, SourceImport); err != nil {
 			slog.Warn("newsletter import: skip email", "email", email, "error", err)
 
 			skipped++
@@ -361,7 +361,7 @@ func (h *Handlers) ImportSubscribers(w http.ResponseWriter, r *http.Request) {
 // optionally filtered by ?status= (subscribed|unsubscribed|bounced|complained).
 // GET /admin/newsletter/subscribers.
 func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -383,7 +383,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), tenantID, status, search, limit, offset)
+	subscribers, err := h.Service.ListSubscribersFiltered(r.Context(), status, search, limit, offset)
 	if err != nil {
 		slog.Error("listing newsletter subscribers", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list subscribers")
@@ -398,7 +398,7 @@ func (h *Handlers) ListSubscribers(w http.ResponseWriter, r *http.Request) {
 // GET /admin/newsletter/subscribers/{id}.
 func (h *Handlers) GetSubscriber(w http.ResponseWriter, r *http.Request) {
 	getByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
-		return h.Service.GetSubscriber(ctx, tenantID, id)
+		return h.Service.GetSubscriber(ctx, id)
 	})
 }
 
@@ -406,7 +406,7 @@ func (h *Handlers) GetSubscriber(w http.ResponseWriter, r *http.Request) {
 // DELETE /admin/newsletter/subscribers/{id}.
 func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 	deleteByID(w, r, "subscriber", func(ctx context.Context, tenantID, id pgtype.UUID) error {
-		return h.Service.DeleteSubscriber(ctx, tenantID, id)
+		return h.Service.DeleteSubscriber(ctx, id)
 	})
 }
 
@@ -419,7 +419,7 @@ func (h *Handlers) DeleteSubscriber(w http.ResponseWriter, r *http.Request) {
 // Returns the standard paginated envelope {items, total, total_pages} so the
 // admin DataTable can render serverSide pagination (§22, ADR-080 §3).
 func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -445,7 +445,7 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 		page = (offset / limit) + 1
 	}
 
-	campaigns, total, err := h.Service.AdminListCampaigns(r.Context(), tenantID, status, page, limit)
+	campaigns, total, err := h.Service.AdminListCampaigns(r.Context(), status, page, limit)
 	if err != nil {
 		slog.Error("listing newsletter campaigns", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list campaigns")
@@ -472,14 +472,14 @@ func (h *Handlers) ListCampaigns(w http.ResponseWriter, r *http.Request) {
 // GET /admin/newsletter/campaigns/{id}.
 func (h *Handlers) GetCampaign(w http.ResponseWriter, r *http.Request) {
 	getByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) (any, error) {
-		return h.Service.GetCampaign(ctx, tenantID, id)
+		return h.Service.GetCampaign(ctx, id)
 	})
 }
 
 // CreateCampaign creates a new newsletter campaign.
 // POST /admin/newsletter/campaigns.
 func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -541,7 +541,7 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		input.HTML = content.SanitizeHTML(input.HTML)
 	}
 
-	campaign, err := h.Service.CreateCampaign(r.Context(), tenantID, u.UserID, input)
+	campaign, err := h.Service.CreateCampaign(r.Context(), u.UserID, input)
 	if err != nil {
 		slog.Error("creating newsletter campaign", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create campaign")
@@ -561,7 +561,7 @@ func jsonString(s string) string {
 // UpdateCampaign updates an existing newsletter campaign.
 // PATCH /admin/newsletter/campaigns/{id}.
 func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -604,7 +604,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	// The PATCH endpoint may not jump to 'sending' or 'sent' directly —
 	// those transitions are owned by the send endpoint and worker.
 	if body.Status != nil && *body.Status != "" {
-		existing, err := h.Service.GetCampaign(r.Context(), tenantID, id)
+		existing, err := h.Service.GetCampaign(r.Context(), id)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 			return
@@ -629,7 +629,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	campaign, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
+	campaign, err := h.Service.UpdateCampaign(r.Context(), id, UpdateCampaignInput{
 		Name:        body.Name,
 		Subject:     body.Subject,
 		HTML:        body.HTML,
@@ -653,7 +653,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 // UpdateSubscriber updates a subscriber's status.
 // PATCH /admin/newsletter/subscribers/{id}.
 func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -677,7 +677,7 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subscriber, err := h.Service.UpdateSubscriberStatus(r.Context(), tenantID, id, body.Status)
+	subscriber, err := h.Service.UpdateSubscriberStatus(r.Context(), id, body.Status)
 	if err != nil {
 		slog.Error("updating newsletter subscriber", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update subscriber")
@@ -692,7 +692,7 @@ func (h *Handlers) UpdateSubscriber(w http.ResponseWriter, r *http.Request) {
 // DELETE /admin/newsletter/campaigns/{id}.
 func (h *Handlers) DeleteCampaign(w http.ResponseWriter, r *http.Request) {
 	deleteByID(w, r, "campaign", func(ctx context.Context, tenantID, id pgtype.UUID) error {
-		return h.Service.DeleteCampaign(ctx, tenantID, id)
+		return h.Service.DeleteCampaign(ctx, id)
 	})
 }
 
@@ -711,13 +711,13 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Global killswitch (newsletter.enabled, ADR-080 §62).
-	if !h.Service.Enabled(r.Context(), tenantID) {
+	if !h.Service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "newsletter_disabled", "Newsletter is not available")
 		return
 	}
 
 	// Fetch the campaign and verify it's in a sendable state.
-	campaign, err := h.Service.GetCampaign(r.Context(), tenantID, id)
+	campaign, err := h.Service.GetCampaign(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Campaign not found")
 		return
@@ -744,7 +744,7 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 	// task (idempotent on campaign ID), so the send is not lost — the
 	// campaign row just lags behind and can be reconciled manually.
 	sendingStatus := CampaignSending
-	if _, err := h.Service.UpdateCampaign(r.Context(), tenantID, id, UpdateCampaignInput{
+	if _, err := h.Service.UpdateCampaign(r.Context(), id, UpdateCampaignInput{
 		Status: &sendingStatus,
 	}); err != nil {
 		slog.Error("updating campaign status to sending", "error", err)
@@ -767,14 +767,14 @@ func (h *Handlers) HandleSendCampaign(w http.ResponseWriter, r *http.Request) {
 // HandleUnsubscribe handles one-click unsubscribe via token or email.
 // DELETE /newsletter/unsubscribe.
 func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	token := r.URL.Query().Get("token")
 	if token != "" {
-		if err := h.Service.UnsubscribeByToken(r.Context(), tenantID, token); err != nil {
+		if err := h.Service.UnsubscribeByToken(r.Context(), token); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 			return
 		}
@@ -790,7 +790,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.Unsubscribe(r.Context(), tenantID, email); err != nil {
+	if err := h.Service.Unsubscribe(r.Context(), email); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "unsubscribe_failed", err.Error())
 		return
 	}
@@ -801,7 +801,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 // HandleGetPreferences returns subscriber preferences.
 // GET /newsletter/preferences.
 func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -812,7 +812,7 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
+	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
@@ -824,7 +824,7 @@ func (h *Handlers) HandleGetPreferences(w http.ResponseWriter, r *http.Request) 
 // HandleUpdatePreferences updates subscriber preferences.
 // PATCH /newsletter/preferences.
 func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -835,7 +835,7 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), tenantID, u.UserID)
+	subscriber, err := h.Service.GetPreferencesByUserID(r.Context(), u.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "No subscription found")
 		return
@@ -851,7 +851,7 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	updated, err := h.Service.UpdatePreferences(r.Context(), tenantID, subscriber.ID, body.DigestEnabled, body.CampaignEnabled)
+	updated, err := h.Service.UpdatePreferences(r.Context(), subscriber.ID, body.DigestEnabled, body.CampaignEnabled)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "update_failed", err.Error())
 		return
@@ -863,7 +863,7 @@ func (h *Handlers) HandleUpdatePreferences(w http.ResponseWriter, r *http.Reques
 // HandleAdminStats returns newsletter stats.
 // GET /admin/newsletter/stats.
 func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -873,7 +873,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.Service.AdminSubscriberStats(r.Context(), tenantID)
+	stats, err := h.Service.AdminSubscriberStats(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
@@ -893,7 +893,7 @@ func (h *Handlers) HandleAdminStats(w http.ResponseWriter, r *http.Request) {
 //
 //	japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -926,14 +926,14 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	switch payload.EventType {
 	case "bounce":
-		if err := h.Service.MarkBounced(r.Context(), tenantID, payload.Email); err != nil {
+		if err := h.Service.MarkBounced(r.Context(), payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark bounced", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark bounced")
 
 			return
 		}
 	case "complaint":
-		if err := h.Service.MarkComplained(r.Context(), tenantID, payload.Email); err != nil {
+		if err := h.Service.MarkComplained(r.Context(), payload.Email); err != nil {
 			slog.Error("newsletter webhook: mark complained", "email", payload.Email, "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mark complained")
 
@@ -945,13 +945,13 @@ func (h *Handlers) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		// payload; if absent, acknowledge to avoid provider retries but log.
 		if payload.CampaignID == "" {
 			slog.Warn("newsletter webhook: open event missing campaign_id", "email", payload.Email)
-		} else if err := h.Service.IncrementCampaignOpens(r.Context(), tenantID, payload.CampaignID); err != nil {
+		} else if err := h.Service.IncrementCampaignOpens(r.Context(), payload.CampaignID); err != nil {
 			slog.Error("newsletter webhook: increment opens", "campaign_id", payload.CampaignID, "error", err)
 		}
 	case "click":
 		if payload.CampaignID == "" {
 			slog.Warn("newsletter webhook: click event missing campaign_id", "email", payload.Email)
-		} else if err := h.Service.IncrementCampaignClicks(r.Context(), tenantID, payload.CampaignID); err != nil {
+		} else if err := h.Service.IncrementCampaignClicks(r.Context(), payload.CampaignID); err != nil {
 			slog.Error("newsletter webhook: increment clicks", "campaign_id", payload.CampaignID, "error", err)
 		}
 	case "delivered":

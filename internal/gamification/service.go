@@ -111,7 +111,7 @@ func (s *Service) EvaluateForWallet(ctx context.Context, tenantID, userID pgtype
 
 	// lifetime_points badges — idempotent re-check of thresholds against the
 	// current lifetime total (sum of positive points earns, Section 28).
-	lifetime, err := s.store.GetUserLifetimePoints(ctx, tenantID, userID)
+	lifetime, err := s.store.GetUserLifetimePoints(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("gamification: lifetime points lookup: %w", err)
 	}

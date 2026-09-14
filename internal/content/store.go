@@ -77,7 +77,7 @@ type CreateContentInput struct {
 // resolveSpaceCountryCode walks a space's parent_id chain until it reaches
 // a country and returns its 2-letter geo_code. Returns "" for non-geo spaces
 // or when the chain has no country.
-func resolveSpaceCountryCode(ctx context.Context, q *gen.Queries, tenantID, spaceID pgtype.UUID) (string, error) {
+func resolveSpaceCountryCode(ctx context.Context, q *gen.Queries, spaceID pgtype.UUID) (string, error) {
 	const maxDepth = 5
 
 	currentID := spaceID
@@ -177,7 +177,7 @@ func contentGeoFromFieldValues(fieldValues []byte) (source, target string) {
 // structured fields come from field_values (the story_fields group). The
 // wall requires a destination — when none resolves, the meta row is skipped
 // until a destination is provided.
-func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, contentID pgtype.UUID, source, target *string, fieldValues []byte) {
+func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, contentID pgtype.UUID, source, target *string, fieldValues []byte) {
 	if target == nil {
 		return
 	}
@@ -339,7 +339,7 @@ func (s *Service) syncStoryMeta(ctx context.Context, q *gen.Queries, tenantID, c
 // country keys, then the primary space's geo_code (which itself may have
 // been auto-assigned from the title's country/state/city keywords via
 // FindSpacesByKeywords). The author's profile is never used.
-func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input *CreateContentInput) {
+func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Queries, input *CreateContentInput) {
 	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
 
 	src, dst := contentGeoFromFieldValues(input.FieldValues)
@@ -356,7 +356,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 	}
 
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && primarySpaceID.Valid {
-		code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+		code, err := resolveSpaceCountryCode(ctx, q, primarySpaceID)
 		if err == nil && code != "" {
 			input.TargetCountry = &code
 		}
@@ -402,7 +402,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 		slug = Slugify(input.Title)
 	}
 
-	uniqueSlug, err := s.ensureUniqueSlugWithQueries(ctx, readQ, slug, tenantID)
+	uniqueSlug, err := s.ensureUniqueSlugWithQueries(ctx, readQ, slug)
 	if err != nil {
 		return gen.CreateContentRow{}, fmt.Errorf("ensuring unique slug: %w", err)
 	}
@@ -511,7 +511,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// content's own field_values and the primary space when not explicitly
 	// set. The author's profile is never a source — authors can write about
 	// destinations unrelated to their own journey.
-	s.inferJourneyMetadataForCreate(ctx, readQ, tenantID, &input)
+	s.inferJourneyMetadataForCreate(ctx, readQ, &input)
 
 	// §79: when the caller did not pick a space, file the story into its
 	// destination country space (same behaviour as POST /stories).
@@ -610,10 +610,10 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// §79: keep the story_meta companion row in sync for stories written
 	// through the generic contents pipeline.
 	if input.ContentType == TypeStory {
-		s.syncStoryMeta(ctx, writeQ, tenantID, content.ID, input.SourceCountry, input.TargetCountry, fieldValues)
+		s.syncStoryMeta(ctx, writeQ, content.ID, input.SourceCountry, input.TargetCountry, fieldValues)
 	}
 
-	s.emitWebhook(ctx, tenantID, "content.created", map[string]any{
+	s.emitWebhook(ctx, "content.created", map[string]any{
 		"content_id": content.ID,
 		"slug":       content.Slug,
 		"title":      content.Title,
@@ -626,7 +626,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 	// would otherwise miss this content. The content_scores row and affiliate
 	// scan are handled by the CreateContent handler (§32, §55).
 	if content.Status == StatusPublished {
-		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
+		s.emitWebhook(ctx, "content.published", map[string]any{
 			"content_id": content.ID,
 			"slug":       content.Slug,
 			"title":      content.Title,
@@ -638,7 +638,7 @@ func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries,
 }
 
 // GetContent returns the content with the given ID, scoped to the tenant.
-func (s *Service) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (s *Service) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	content, err := s.read.GetContentByID(ctx,
 		id,
 	)
@@ -651,7 +651,7 @@ func (s *Service) GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen
 
 // GetContentBySlug returns the content matching the given slug, scoped to
 // the tenant.
-func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentBySlugRow, error) {
+func (s *Service) GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error) {
 	content, err := s.read.GetContentBySlug(ctx,
 		slug,
 	)
@@ -667,7 +667,7 @@ func (s *Service) GetContentBySlug(ctx context.Context, slug string, tenantID pg
 // name/slug, tag slugs, featured + header image storage refs, and blog_series
 // navigation. Mirrors the blog package's GetBlogPostDetail for non-blog
 // content types (guide, page, comparison, discussion, …).
-func (s *Service) GetContentDetailBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetContentDetailBySlugRow, error) {
+func (s *Service) GetContentDetailBySlug(ctx context.Context, slug string) (gen.GetContentDetailBySlugRow, error) {
 	content, err := s.read.GetContentDetailBySlug(ctx,
 		slug,
 	)
@@ -680,7 +680,7 @@ func (s *Service) GetContentDetailBySlug(ctx context.Context, slug string, tenan
 
 // GetContentDetailBySlugAndType returns the enriched single-content row for the
 // public /post/{content_type}/{slug} social page. Disambiguates by content_type.
-func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType, slug string, tenantID pgtype.UUID) (gen.GetContentDetailBySlugAndTypeRow, error) {
+func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType, slug string) (gen.GetContentDetailBySlugAndTypeRow, error) {
 	content, err := s.read.GetContentDetailBySlugAndType(ctx, gen.GetContentDetailBySlugAndTypeParams{
 		ContentType: contentType,
 		Slug:        slug,
@@ -696,7 +696,7 @@ func (s *Service) GetContentDetailBySlugAndType(ctx context.Context, contentType
 // Pass a zero-value CursorCreatedAt for the first page. When q is non-empty,
 // results are filtered by case-insensitive match on title, slug, or body.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
+func (s *Service) ListContents(ctx context.Context, q string, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByTenantRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -725,7 +725,7 @@ func (s *Service) ListContents(ctx context.Context, tenantID pgtype.UUID, q stri
 // Returns the same column set as ListContents but with Meilisearch-grade
 // full-text search (typo tolerance, relevance ranking) instead of ILIKE.
 // Call this when a ContentSearcher is wired and q is non-empty.
-func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q string, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByIDsRow, error) {
+func (s *Service) SearchContents(ctx context.Context, q string, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsByIDsRow, error) {
 	if s.searcher == nil {
 		return nil, errors.New("no content searcher configured")
 	}
@@ -734,7 +734,7 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 		limit = DefaultPageSize
 	}
 
-	ids, err := s.searcher.SearchContentIDs(ctx, tenantID, q, int(limit))
+	ids, err := s.searcher.SearchContentIDs(ctx, q, int(limit))
 	if err != nil {
 		return nil, fmt.Errorf("searching content via Meilisearch: %w", err)
 	}
@@ -759,7 +759,7 @@ func (s *Service) SearchContents(ctx context.Context, tenantID pgtype.UUID, q st
 // ListFeaturedContentsByType returns rows from the generic content_featured
 // junction (Section 14 — generic featured list powering the Featured tabs
 // on /guides, /stories, /forum). contentType ” means all types.
-func (s *Service) ListFeaturedContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType string, offset, limit int32, filter visibility.VisibilityFilter) ([]gen.ListFeaturedContentsByTypeRow, error) {
+func (s *Service) ListFeaturedContentsByType(ctx context.Context, contentType string, offset, limit int32, filter visibility.VisibilityFilter) ([]gen.ListFeaturedContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -785,7 +785,7 @@ func (s *Service) ListFeaturedContentsByType(ctx context.Context, tenantID pgtyp
 
 // FeatureContent adds a content row to the shared content_featured junction
 // (Section 14 — generic featuring; gated by the content.feature node).
-func (s *Service) FeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID, order int32, until pgtype.Timestamptz) (gen.ContentFeatured, error) {
+func (s *Service) FeatureContent(ctx context.Context, contentID pgtype.UUID, order int32, until pgtype.Timestamptz) (gen.ContentFeatured, error) {
 	return s.write.FeatureContent(ctx, gen.FeatureContentParams{
 
 		ContentID:     contentID,
@@ -795,7 +795,7 @@ func (s *Service) FeatureContent(ctx context.Context, tenantID, contentID pgtype
 }
 
 // UnfeatureContent removes a content row from content_featured.
-func (s *Service) UnfeatureContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+func (s *Service) UnfeatureContent(ctx context.Context, contentID pgtype.UUID) error {
 	return s.write.UnfeatureContent(ctx,
 
 		contentID,
@@ -809,7 +809,7 @@ func (s *Service) UnfeatureContent(ctx context.Context, tenantID, contentID pgty
 // default created_at order); sort='roadmap' ranks by the visitor's journey
 // signals (stage > destination > visa > origin) then canonical §87 stage
 // order — empty signals degrade to plain stage order.
-func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
+func (s *Service) ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -843,7 +843,7 @@ func (s *Service) ListContentsByType(ctx context.Context, tenantID pgtype.UUID, 
 
 // ListContentsBySpace returns a page of content filtered by space_id.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
+func (s *Service) ListContentsBySpace(ctx context.Context, spaceID pgtype.UUID, cursor pgtype.Timestamptz, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -871,7 +871,7 @@ func (s *Service) ListContentsBySpace(ctx context.Context, tenantID, spaceID pgt
 // query (case-insensitive substring). Used by the space search tab
 // (GET /spaces/{slug}/content?q=...). Offset-paginated.
 // Visibility is gated by the supplied filter.
-func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error) {
+func (s *Service) SearchContentsBySpace(ctx context.Context, spaceID pgtype.UUID, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsBySpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -903,7 +903,7 @@ func (s *Service) SearchContentsBySpace(ctx context.Context, tenantID, spaceID p
 // SearchContentsByTypeAndSpace returns content of a specific type within a
 // space whose title matches the query. Used by the JCE picker when a content
 // leaf is scoped to a geo or entity space. Offset-paginated.
-func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, tenantID, spaceID pgtype.UUID, contentType, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsByTypeAndSpaceRow, error) {
+func (s *Service) SearchContentsByTypeAndSpace(ctx context.Context, spaceID pgtype.UUID, contentType, query string, limit, offset int32, filter visibility.VisibilityFilter) ([]gen.SearchContentsByTypeAndSpaceRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -981,7 +981,7 @@ type UpdateContentInput struct {
 // own geo signals: field_values country keys (the caller's payload when sent,
 // else the stored values), then the primary space's geo_code. The author's
 // profile is never used — an author can write about other destinations.
-func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, existing gen.GetContentByIDRow, input *UpdateContentInput) {
+func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Queries, existing gen.GetContentByIDRow, input *UpdateContentInput) {
 	normalizeJourneyFields(&input.JourneyStage, &input.VisaRoute, &input.SourceCountry, &input.TargetCountry)
 
 	fieldValues := input.FieldValues
@@ -1011,7 +1011,7 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 	}
 
 	if (input.TargetCountry == nil || *input.TargetCountry == "") && primarySpaceID.Valid {
-		code, err := resolveSpaceCountryCode(ctx, q, tenantID, primarySpaceID)
+		code, err := resolveSpaceCountryCode(ctx, q, primarySpaceID)
 		if err == nil && code != "" {
 			input.TargetCountry = &code
 		}
@@ -1038,7 +1038,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		existing.AuthorID.Bytes == editedBy.Bytes {
 		windowMinutes := defaultEditWindowMinutes
 		if s.settings != nil {
-			windowMinutes = s.settings.GetIntOr(ctx, pgtype.UUID{}, "content.edit_window_minutes", defaultEditWindowMinutes)
+			windowMinutes = s.settings.GetIntOr(ctx, "content.edit_window_minutes", defaultEditWindowMinutes)
 		}
 
 		if windowMinutes > 0 {
@@ -1085,7 +1085,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 	if newSlug == "" {
 		newSlug = existing.Slug
 	} else if newSlug != existing.Slug {
-		uniqueSlug, err := s.EnsureUniqueSlug(ctx, newSlug, tenantID)
+		uniqueSlug, err := s.EnsureUniqueSlug(ctx, newSlug)
 		if err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("ensuring unique slug on update: %w", err)
 		}
@@ -1182,7 +1182,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 
 	// Journey-aware recommendations: infer source/target country for this
 	// content when the update leaves them unset.
-	s.inferJourneyMetadataForUpdate(ctx, s.read, tenantID, existing, &input)
+	s.inferJourneyMetadataForUpdate(ctx, s.read, existing, &input)
 
 	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
 		OrganizationID:  input.OrganizationID,
@@ -1256,7 +1256,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		if dst == nil {
 			dst = existing.TargetCountry
 		}
-		s.syncStoryMeta(ctx, s.write, tenantID, content.ID, src, dst, fieldValues)
+		s.syncStoryMeta(ctx, s.write, content.ID, src, dst, fieldValues)
 	}
 
 	// Record slug change for 301 redirect.
@@ -1274,7 +1274,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 		return gen.UpdateContentRow{}, fmt.Errorf("creating revision: %w", err)
 	}
 
-	s.emitWebhook(ctx, tenantID, "content.updated", map[string]any{
+	s.emitWebhook(ctx, "content.updated", map[string]any{
 		"content_id": content.ID,
 		"slug":       content.Slug,
 		"title":      content.Title,
@@ -1325,7 +1325,7 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 				"content_id", content.ID.String(), "error", err)
 		}
 
-		s.emitWebhook(ctx, tenantID, "content.published", map[string]any{
+		s.emitWebhook(ctx, "content.published", map[string]any{
 			"content_id": content.ID,
 			"slug":       content.Slug,
 			"title":      content.Title,
@@ -1341,7 +1341,7 @@ func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.U
 // /content/:id/schedule). Callers must also enqueue the scheduled_publish
 // Asynq task with ProcessAt=publishAt for the actual publish to happen.
 // Scheduled content must have a primary space (Section 14 / BUG-007).
-func (s *Service) ScheduleContent(ctx context.Context, id, tenantID pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
+func (s *Service) ScheduleContent(ctx context.Context, id pgtype.UUID, publishAt time.Time) (gen.ScheduleContentRow, error) {
 	_, err := s.read.GetContentByID(ctx, id)
 	if err != nil {
 		return gen.ScheduleContentRow{}, fmt.Errorf("getting content for scheduling: %w", err)
@@ -1363,7 +1363,7 @@ func (s *Service) ScheduleContent(ctx context.Context, id, tenantID pgtype.UUID,
 }
 
 // IncrementContentView increments the view count of a content row.
-func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) IncrementContentView(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.IncrementContentView(ctx,
 		id,
 	); err != nil {
@@ -1385,7 +1385,7 @@ func (s *Service) IncrementContentView(ctx context.Context, id, tenantID pgtype.
 // (content.viewed) is also written so Section 40 analytics (traffic sources,
 // engagement) can source real-time data. The optional referrer is captured
 // from the request header/body and stored in the event meta.
-func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID, userID pgtype.UUID, sessionID, countryCode, referrer *string) error {
+func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, userID pgtype.UUID, sessionID, countryCode, referrer *string) error {
 	tag, err := s.write.RecordContentView(ctx, gen.RecordContentViewParams{
 		ContentID:   id,
 		UserID:      userID,
@@ -1440,7 +1440,7 @@ func (s *Service) RecordContentViewWithDetails(ctx context.Context, id, tenantID
 // IncrementContentCommentCount increments the denormalized comment_count on a
 // content row. Called when a comment is created so feed cards (which read
 // contents.comment_count) show accurate counts immediately. Ref: Section 32.
-func (s *Service) IncrementContentCommentCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) IncrementContentCommentCount(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.IncrementContentCommentCount(ctx,
 		id,
 	); err != nil {
@@ -1452,7 +1452,7 @@ func (s *Service) IncrementContentCommentCount(ctx context.Context, id, tenantID
 
 // DecrementContentCommentCount decrements the denormalized comment_count on a
 // content row (clamped at 0). Called when a comment is removed.
-func (s *Service) DecrementContentCommentCount(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DecrementContentCommentCount(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DecrementContentCommentCount(ctx,
 		id,
 	); err != nil {
@@ -1493,7 +1493,7 @@ func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) e
 		return fmt.Errorf("deleting content: %w", err)
 	}
 
-	s.emitWebhook(ctx, tenantID, "content.deleted", map[string]any{
+	s.emitWebhook(ctx, "content.deleted", map[string]any{
 		"content_id": id,
 		"slug":       existing.Slug,
 		"title":      existing.Title,
@@ -1509,7 +1509,7 @@ func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) e
 
 // ListContentRevisions returns the full revision history for a content row,
 // newest first. Tenant-scoped for defense-in-depth (BUG-012).
-func (s *Service) ListContentRevisions(ctx context.Context, tenantID, contentID pgtype.UUID) ([]gen.ContentRevision, error) {
+func (s *Service) ListContentRevisions(ctx context.Context, contentID pgtype.UUID) ([]gen.ContentRevision, error) {
 	revisions, err := s.read.ListContentRevisions(ctx,
 
 		contentID,
@@ -1523,7 +1523,7 @@ func (s *Service) ListContentRevisions(ctx context.Context, tenantID, contentID 
 
 // GetContentRevision returns a specific revision by ID. Tenant-scoped for
 // defense-in-depth (BUG-012).
-func (s *Service) GetContentRevision(ctx context.Context, tenantID, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
+func (s *Service) GetContentRevision(ctx context.Context, id, contentID pgtype.UUID) (gen.ContentRevision, error) {
 	revision, err := s.read.GetContentRevision(ctx, gen.GetContentRevisionParams{
 
 		ID:        id,
@@ -1543,10 +1543,10 @@ func (s *Service) GetContentRevision(ctx context.Context, tenantID, id, contentI
 // PinContent pins a content row to a space. The pinnedBy user and position
 // are recorded. If the content is already pinned, the unique constraint
 // prevents a duplicate.
-func (s *Service) PinContent(ctx context.Context, tenantID, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error) {
+func (s *Service) PinContent(ctx context.Context, spaceID, contentID, pinnedBy pgtype.UUID, position int32) (gen.SpacePinnedPost, error) {
 	maxPinned := 5
 	if s.settings != nil {
-		maxPinned = s.settings.GetIntOr(ctx, pgtype.UUID{}, "spaces.max_pinned_posts", 5)
+		maxPinned = s.settings.GetIntOr(ctx, "spaces.max_pinned_posts", 5)
 	}
 
 	if maxPinned > 0 {
@@ -1613,7 +1613,7 @@ func (s *Service) IsContentPinned(ctx context.Context, spaceID, contentID pgtype
 // ---------------------------------------------------------------------------
 
 // ListReactionTypes returns all reaction types for a tenant, ordered by position.
-func (s *Service) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) ([]gen.ReactionType, error) {
+func (s *Service) ListReactionTypes(ctx context.Context) ([]gen.ReactionType, error) {
 	types, err := s.read.ListReactionTypes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing reaction types: %w", err)
@@ -1623,7 +1623,7 @@ func (s *Service) ListReactionTypes(ctx context.Context, tenantID pgtype.UUID) (
 }
 
 // GetReactionType returns a single reaction type by tenant and key.
-func (s *Service) GetReactionType(ctx context.Context, tenantID pgtype.UUID, key string) (gen.ReactionType, error) {
+func (s *Service) GetReactionType(ctx context.Context, key string) (gen.ReactionType, error) {
 	rt, err := s.read.GetReactionType(ctx,
 
 		key,
@@ -1637,7 +1637,7 @@ func (s *Service) GetReactionType(ctx context.Context, tenantID pgtype.UUID, key
 
 // CreateReactionType creates a new reaction type with the given key, emoji,
 // label, and position for a specific tenant.
-func (s *Service) CreateReactionType(ctx context.Context, tenantID pgtype.UUID, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
+func (s *Service) CreateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.CreateReactionType(ctx, gen.CreateReactionTypeParams{
 
 		Key:      key,
@@ -1654,7 +1654,7 @@ func (s *Service) CreateReactionType(ctx context.Context, tenantID pgtype.UUID, 
 }
 
 // UpdateReactionType updates an existing reaction type by tenant and key.
-func (s *Service) UpdateReactionType(ctx context.Context, tenantID pgtype.UUID, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
+func (s *Service) UpdateReactionType(ctx context.Context, key, emoji, label string, enabled bool, position int32) (gen.ReactionType, error) {
 	rt, err := s.write.UpdateReactionType(ctx, gen.UpdateReactionTypeParams{
 		Emoji:    emoji,
 		Label:    label,
@@ -1672,7 +1672,7 @@ func (s *Service) UpdateReactionType(ctx context.Context, tenantID pgtype.UUID, 
 
 // DeleteReactionType removes a reaction type by tenant and key. Existing reactions
 // referencing the key are cascade-deleted by the FK constraint.
-func (s *Service) DeleteReactionType(ctx context.Context, tenantID pgtype.UUID, key string) error {
+func (s *Service) DeleteReactionType(ctx context.Context, key string) error {
 	if err := s.write.DeleteReactionType(ctx,
 
 		key,
@@ -1685,7 +1685,7 @@ func (s *Service) DeleteReactionType(ctx context.Context, tenantID pgtype.UUID, 
 
 // AddReaction adds a reaction from a user to an entity. Idempotent — if the
 // user already reacted with the same key, nothing changes (ON CONFLICT DO NOTHING).
-func (s *Service) AddReaction(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
+func (s *Service) AddReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) (gen.Reaction, error) {
 	reaction, err := s.write.AddReaction(ctx, gen.AddReactionParams{
 
 		EntityType:  entityType,
@@ -1701,7 +1701,7 @@ func (s *Service) AddReaction(ctx context.Context, tenantID pgtype.UUID, entityT
 }
 
 // RemoveReaction removes a user's reaction from an entity.
-func (s *Service) RemoveReaction(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
+func (s *Service) RemoveReaction(ctx context.Context, entityType string, entityID, userID pgtype.UUID, reactionKey string) error {
 	if err := s.write.RemoveReaction(ctx, gen.RemoveReactionParams{
 
 		EntityType:  entityType,
@@ -1716,7 +1716,7 @@ func (s *Service) RemoveReaction(ctx context.Context, tenantID pgtype.UUID, enti
 }
 
 // ListReactionsByEntity returns all reactions for a given entity.
-func (s *Service) ListReactionsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
+func (s *Service) ListReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.ListReactionsByEntity(ctx, gen.ListReactionsByEntityParams{
 
 		EntityType: entityType,
@@ -1730,7 +1730,7 @@ func (s *Service) ListReactionsByEntity(ctx context.Context, tenantID pgtype.UUI
 }
 
 // CountReactionsByEntity returns reaction counts grouped by reaction key.
-func (s *Service) CountReactionsByEntity(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) ([]gen.CountReactionsByEntityRow, error) {
+func (s *Service) CountReactionsByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CountReactionsByEntityRow, error) {
 	counts, err := s.read.CountReactionsByEntity(ctx, gen.CountReactionsByEntityParams{
 
 		EntityType: entityType,
@@ -1744,7 +1744,7 @@ func (s *Service) CountReactionsByEntity(ctx context.Context, tenantID pgtype.UU
 }
 
 // GetUserReactions returns all reactions a specific user has on an entity.
-func (s *Service) GetUserReactions(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
+func (s *Service) GetUserReactions(ctx context.Context, entityType string, entityID, userID pgtype.UUID) ([]gen.Reaction, error) {
 	reactions, err := s.read.GetUserReactions(ctx, gen.GetUserReactionsParams{
 
 		EntityType: entityType,
@@ -1764,7 +1764,7 @@ func (s *Service) GetUserReactions(ctx context.Context, tenantID pgtype.UUID, en
 
 // GetJSONLDTemplate returns the active JSON-LD template for a content type
 // within a tenant.
-func (s *Service) GetJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, contentType string) (gen.ContentTypeJsonldTemplate, error) {
+func (s *Service) GetJSONLDTemplate(ctx context.Context, contentType string) (gen.ContentTypeJsonldTemplate, error) {
 	tmpl, err := s.read.GetJSONLDTemplate(ctx,
 
 		contentType,
@@ -1781,8 +1781,8 @@ func (s *Service) GetJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, c
 // {{field_key}} placeholders, and returns the ready-to-emit JSON-LD. When no
 // active template exists for the content type, it returns (nil, nil) so the
 // caller can fall back to a hardcoded generator (Section 14, Section 26).
-func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, contentType string, fields map[string]string) (json.RawMessage, error) {
-	tmpl, err := s.GetJSONLDTemplate(ctx, tenantID, contentType)
+func (s *Service) ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error) {
+	tmpl, err := s.GetJSONLDTemplate(ctx, contentType)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -1801,7 +1801,7 @@ func (s *Service) ResolveJSONLD(ctx context.Context, tenantID pgtype.UUID, conte
 
 // ListJSONLDTemplates returns all JSON-LD templates for a tenant, optionally
 // filtered by q (matches content_type or template body).
-func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
+func (s *Service) ListJSONLDTemplates(ctx context.Context, q pgtype.Text) ([]gen.ContentTypeJsonldTemplate, error) {
 	templates, err := s.read.ListJSONLDTemplates(ctx, q.String)
 	if err != nil {
 		return nil, fmt.Errorf("listing JSON-LD templates: %w", err)
@@ -1812,7 +1812,7 @@ func (s *Service) ListJSONLDTemplates(ctx context.Context, tenantID pgtype.UUID,
 
 // UpsertJSONLDTemplate creates or updates a JSON-LD template for a content
 // type within a tenant.
-func (s *Service) UpsertJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID, contentType string, template []byte, isActive bool) (gen.ContentTypeJsonldTemplate, error) {
+func (s *Service) UpsertJSONLDTemplate(ctx context.Context, contentType string, template []byte, isActive bool) (gen.ContentTypeJsonldTemplate, error) {
 	tmpl, err := s.write.UpsertJSONLDTemplate(ctx, gen.UpsertJSONLDTemplateParams{
 
 		ContentType: contentType,
@@ -1827,7 +1827,7 @@ func (s *Service) UpsertJSONLDTemplate(ctx context.Context, tenantID pgtype.UUID
 }
 
 // DeleteJSONLDTemplate removes a JSON-LD template by ID, scoped to tenant.
-func (s *Service) DeleteJSONLDTemplate(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteJSONLDTemplate(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteJSONLDTemplate(ctx,
 		id,
 	); err != nil {
@@ -1930,7 +1930,7 @@ func (s *Service) ListContentTags(ctx context.Context, contentID pgtype.UUID) ([
 // The cursor is a composite (created_at, id) pair to avoid skipping items
 // that share the same created_at timestamp. Ref: §4.1.
 // Visibility is gated by the supplied filter.
-func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentByTagRow, error) {
+func (s *Service) ListContentByTag(ctx context.Context, tagID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, cursorID pgtype.UUID, limit int32, filter visibility.VisibilityFilter) ([]gen.ListContentByTagRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -1960,7 +1960,7 @@ func (s *Service) ListContentByTag(ctx context.Context, tenantID, tagID pgtype.U
 // ---------------------------------------------------------------------------
 
 // ShareContent records a share event and returns the created share.
-func (s *Service) ShareContent(ctx context.Context, tenantID, contentID, userID pgtype.UUID, platform string) (gen.ContentShare, error) {
+func (s *Service) ShareContent(ctx context.Context, contentID, userID pgtype.UUID, platform string) (gen.ContentShare, error) {
 	if platform == "" {
 		platform = "link"
 	}
@@ -1979,7 +1979,7 @@ func (s *Service) ShareContent(ctx context.Context, tenantID, contentID, userID 
 }
 
 // CountContentShares returns the total share count for content.
-func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pgtype.UUID) (int32, error) {
+func (s *Service) CountContentShares(ctx context.Context, contentID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountContentShares(ctx,
 
 		contentID,
@@ -1999,7 +1999,7 @@ func (s *Service) CountContentShares(ctx context.Context, tenantID, contentID pg
 // folder. folderID is the optional FK to bookmark_folders (BL-011); pass a
 // zero pgtype.UUID for "unfiled". When folder is empty, the default folder
 // is resolved from the entity/content type and created lazily.
-func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
+func (s *Service) CreateBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, folder string, folderID pgtype.UUID) (gen.CreateBookmarkRow, error) {
 	if folder == "" {
 		contentType := ""
 
@@ -2019,7 +2019,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 		}
 
 		if s.folderResolver != nil {
-			f, err := s.folderResolver.Resolve(ctx, tenantID, userID, entityType, contentType)
+			f, err := s.folderResolver.Resolve(ctx, userID, entityType, contentType)
 			if err == nil && f.ID != "" {
 				folder = f.Name
 
@@ -2055,7 +2055,7 @@ func (s *Service) CreateBookmark(ctx context.Context, tenantID, userID pgtype.UU
 // SetBookmarkFolder moves an existing bookmark into a folder (BL-011).
 // Pass a zero pgtype.UUID to unfile the bookmark. Tenant-scoped for
 // defense-in-depth (BE-05).
-func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID, folderID pgtype.UUID) error {
+func (s *Service) SetBookmarkFolder(ctx context.Context, userID pgtype.UUID, entityType string, entityID, folderID pgtype.UUID) error {
 	if err := s.write.SetBookmarkFolder(ctx, gen.SetBookmarkFolderParams{
 		FolderID: folderID,
 
@@ -2073,7 +2073,7 @@ func (s *Service) SetBookmarkFolder(ctx context.Context, tenantID, userID pgtype
 // user and tenant. Returns nil if the folder exists and is owned by the user.
 // Returns ErrNotFound if the folder does not exist or is owned by another user.
 // A zero/invalid folderID is treated as "unfiled" and returns nil (BL-013).
-func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, tenantID, userID pgtype.UUID) error {
+func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, userID pgtype.UUID) error {
 	if !folderID.Valid || folderID.Bytes == [16]byte{} {
 		return nil
 	}
@@ -2092,7 +2092,7 @@ func (s *Service) ValidateFolderOwnership(ctx context.Context, folderID, tenantI
 
 // RemoveBookmark deletes a user's bookmark for the given entity.
 // Tenant-scoped for defense-in-depth (BE-05).
-func (s *Service) RemoveBookmark(ctx context.Context, tenantID, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Service) RemoveBookmark(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	if err := s.write.DeleteBookmark(ctx, gen.DeleteBookmarkParams{
 
 		UserID:     userID,
@@ -2120,7 +2120,7 @@ func (s *Service) IsBookmarked(ctx context.Context, userID pgtype.UUID, entityTy
 }
 
 // ListBookmarks returns all bookmarks for a user.
-func (s *Service) ListBookmarks(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) ([]gen.ListBookmarksByUserRow, error) {
+func (s *Service) ListBookmarks(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListBookmarksByUserRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -2144,7 +2144,7 @@ func (s *Service) ListBookmarks(ctx context.Context, tenantID, userID pgtype.UUI
 
 // GetRelatedContent returns up to limit content items most similar to the given
 // content, ranked by cosine distance on the relevance_embedding vector.
-func (s *Service) GetRelatedContent(ctx context.Context, tenantID, excludeID pgtype.UUID, embedding pgvector.Vector, limit int32) ([]gen.GetRelatedContentRow, error) {
+func (s *Service) GetRelatedContent(ctx context.Context, excludeID pgtype.UUID, embedding pgvector.Vector, limit int32) ([]gen.GetRelatedContentRow, error) {
 	if limit <= 0 || limit > 12 {
 		limit = 12
 	}

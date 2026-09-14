@@ -99,7 +99,7 @@ func (s *Store) CreateHITLReview(ctx context.Context, review HITLReview) (HITLRe
 
 // ApproveHITLReview sets the review status to 'approved' with the reviewer identity.
 // The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
-func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID) error {
+func (s *Store) ApproveHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
 		SET status = 'approved', reviewer_id = $2, reviewed_at = now()
@@ -118,7 +118,7 @@ func (s *Store) ApproveHITLReview(ctx context.Context, tenantID, reviewID, revie
 
 // RejectHITLReview sets the review status to 'rejected' with a reason.
 // The filter prevents cross-tenant approve/reject (Section 09 multi-tenancy).
-func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, reviewerID pgtype.UUID, reason string) error {
+func (s *Store) RejectHITLReview(ctx context.Context, reviewID, reviewerID pgtype.UUID, reason string) error {
 	tag, err := s.write.Exec(ctx, `
 		UPDATE ai_hitl_reviews
 		SET status = 'rejected', reviewer_id = $2, reviewed_at = now(), reason = $3
@@ -138,7 +138,7 @@ func (s *Store) RejectHITLReview(ctx context.Context, tenantID, reviewID, review
 // ListPendingHITLReviews returns pending reviews for a tenant with offset
 // pagination. When sourceFilter is non-empty, only reviews with that source
 // are returned (e.g. "studio" for the Studio tab, §75 Review Routing).
-func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
+func (s *Store) ListPendingHITLReviews(ctx context.Context, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -189,7 +189,7 @@ func (s *Store) ListPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID
 
 // GetHITLReview returns a single HITL review by tenant + review ID. Used by
 // the Studio review hook to discover target_table for tool-table drafts.
-func (s *Store) GetHITLReview(ctx context.Context, tenantID, reviewID pgtype.UUID) (HITLReview, error) {
+func (s *Store) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLReview, error) {
 	var r HITLReview
 
 	err := s.read.QueryRow(ctx, `
@@ -353,7 +353,7 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 
 // RecordAIUsage inserts a single ai_usage_log row. Called after every AI
 // gateway dispatch so admin usage monitoring stays current.
-func (s *Store) RecordAIUsage(ctx context.Context, tenantID, userID pgtype.UUID, provider, model, taskType, requestRef string, promptTokens, completionTokens, totalTokens int32, costUSD float64) error {
+func (s *Store) RecordAIUsage(ctx context.Context, userID pgtype.UUID, provider, model, taskType, requestRef string, promptTokens, completionTokens, totalTokens int32, costUSD float64) error {
 	var userIDArg any
 	if userID.Valid {
 		userIDArg = userID
@@ -378,7 +378,7 @@ func (s *Store) RecordAIUsage(ctx context.Context, tenantID, userID pgtype.UUID,
 // successful tool execution so admin tool-usage stats stay current (§20).
 // tokensUsed and costCents are 0 for internal tools that don't make LLM
 // calls — the row records that the tool was invoked.
-func (s *Store) RecordToolUsage(ctx context.Context, tenantID, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) error {
+func (s *Store) RecordToolUsage(ctx context.Context, toolID pgtype.UUID, userID *pgtype.UUID, tokensUsed, costCents int32) error {
 	var userIDArg any
 	if userID != nil && userID.Valid {
 		userIDArg = *userID
@@ -399,7 +399,7 @@ func (s *Store) RecordToolUsage(ctx context.Context, tenantID, toolID pgtype.UUI
 // UserBelongsToTenant reports whether the given user id exists within the
 // given tenant. Used by the admin AI-context handlers to prevent cross-tenant
 // access to a user's Honcho memory (ADR-027, §9 multi-tenancy).
-func (s *Store) UserBelongsToTenant(ctx context.Context, tenantID pgtype.UUID, userID string) (bool, error) {
+func (s *Store) UserBelongsToTenant(ctx context.Context, userID string) (bool, error) {
 	var uid pgtype.UUID
 	if err := uid.Scan(userID); err != nil {
 		return false, fmt.Errorf("invalid user id %q: %w", userID, err)

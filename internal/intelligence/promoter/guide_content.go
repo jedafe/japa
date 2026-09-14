@@ -29,19 +29,19 @@ var _ = content.Slugify
 // provenance.
 type GuideContentStore interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	WithTx(ctx context.Context, fn func(GuideContentTxStore) error) error
 }
 
 // GuideContentTxStore is the transactional subset.
 type GuideContentTxStore interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // GuideContentPromoter promotes guide content type intel_records into
@@ -61,7 +61,6 @@ type GuideContentTxStore interface {
 // individual custom fields.
 type GuideContentPromoter struct {
 	store         GuideContentStore
-	tenantID      pgtype.UUID
 	authorID      pgtype.UUID
 	entityType    string  // e.g. "travel_routes", "grants", ...
 	guideCategory string  // e.g. "travel_routes", "grants", ...
@@ -86,8 +85,8 @@ func WithGuideContentAIModel(model string) GuideContentPromoterOption {
 // type. entityType is the intel_records.entity_type value;
 // guideCategory is the contents.guide_category value (they are usually
 // the same, e.g. "travel_routes" → "travel_routes").
-func NewGuideContentPromoter(store GuideContentStore, tenantID, authorID pgtype.UUID, entityType, guideCategory string, opts ...GuideContentPromoterOption) *GuideContentPromoter {
-	p := &GuideContentPromoter{store: store, tenantID: tenantID, authorID: authorID, entityType: entityType, guideCategory: guideCategory, aiModel: ptr("gpt-4o-mini"), now: time.Now}
+func NewGuideContentPromoter(store GuideContentStore, authorID pgtype.UUID, entityType, guideCategory string, opts ...GuideContentPromoterOption) *GuideContentPromoter {
+	p := &GuideContentPromoter{store: store, authorID: authorID, entityType: entityType, guideCategory: guideCategory, aiModel: ptr("gpt-4o-mini"), now: time.Now}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -102,7 +101,7 @@ func (p *GuideContentPromoter) Entity() string { return p.entityType }
 func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
+	record, err := p.store.GetIntelRecord(ctx, pgID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
@@ -116,7 +115,7 @@ func (p *GuideContentPromoter) Promote(ctx context.Context, recordID uuid.UUID) 
 		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
 	}
 
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
+	source, err := p.store.GetIntelSource(ctx, record.SourceID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
 	}
@@ -144,7 +143,7 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 
 	contentParams := gen.CreateContentParams{
 
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		FieldValues:     []byte(`{}`),
 		ContentType:     "guide",
 		Title:           title,
@@ -175,12 +174,12 @@ func (p *GuideContentPromoter) guideCreatePath(ctx context.Context, record gen.I
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx GuideContentTxStore) error {
-		contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+		contentRow, err := tx.CreateContent(ctx, contentParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create guide content: %w", err)
 		}
 
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+		if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
 			ID:               record.ID,
 			PromotedRecordID: contentRow.ID,
 		}); err != nil {
@@ -223,7 +222,7 @@ func (p *GuideContentPromoter) guideUpdatePath(ctx context.Context, record gen.I
 	var result PromoteResult
 
 	err := p.store.WithTx(ctx, func(tx GuideContentTxStore) error {
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, reviewLogParams); err != nil {
+		if err := tx.CreateIntelReviewLog(ctx, reviewLogParams); err != nil {
 			return fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
 

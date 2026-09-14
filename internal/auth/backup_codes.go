@@ -14,7 +14,7 @@ import (
 
 // consumeBackupCode checks a candidate code against stored hashed backup codes,
 // removes it if matched, and persists the updated set. Returns (matched, codes_remaining, error).
-func consumeBackupCode(ctx context.Context, dbConn *db.DB, cred *gen.TotpCredential, code string, tenantID, userID pgtype.UUID) (bool, int, error) {
+func consumeBackupCode(ctx context.Context, dbConn *db.DB, cred *gen.TotpCredential, code string, userID pgtype.UUID) (bool, int, error) {
 	code = sanitizeCode(code)
 
 	stored := parseBackupHashes(cred.BackupCodes)

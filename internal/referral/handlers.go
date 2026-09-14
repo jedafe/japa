@@ -121,12 +121,12 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, param string) (pgtype
 // GetProgram returns the referral program settings for the tenant.
 // GET /admin/referral/program.
 func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	program, err := h.Service.GetProgram(r.Context(), tenantID)
+	program, err := h.Service.GetProgram(r.Context())
 	if err != nil {
 		slog.Error("getting referral program", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get program")
@@ -140,7 +140,7 @@ func (h *Handlers) GetProgram(w http.ResponseWriter, r *http.Request) {
 // UpdateProgram updates the referral program settings.
 // PUT /admin/referral/program.
 func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	program, err := h.Service.UpdateProgram(r.Context(), tenantID, input.ReferrerRewardCents, input.RefereeRewardCents, input.MaxReferrals, input.CookieDays, input.IsActive, input.Description)
+	program, err := h.Service.UpdateProgram(r.Context(), input.ReferrerRewardCents, input.RefereeRewardCents, input.MaxReferrals, input.CookieDays, input.IsActive, input.Description)
 	if err != nil {
 		slog.Error("updating referral program", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update program")
@@ -195,7 +195,7 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 // GetReferral returns a single referral by ID (legacy).
 // GET /admin/referral/referrals/{id}.
 func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -206,7 +206,7 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	referral, err := h.Service.GetReferral(r.Context(), tenantID, id)
+	referral, err := h.Service.GetReferral(r.Context(), id)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
 		return
@@ -218,7 +218,7 @@ func (h *Handlers) GetReferral(w http.ResponseWriter, r *http.Request) {
 // DeleteReferral soft-deletes a referral by setting status to 'rejected'.
 // DELETE /admin/referral/referrals/{id}.
 func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -229,7 +229,7 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReferral(r.Context(), tenantID, id); err != nil {
+	if err := h.Service.DeleteReferral(r.Context(), id); err != nil {
 		slog.Error("deleting referral", "error", err)
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Referral not found")
 
@@ -246,7 +246,7 @@ func (h *Handlers) DeleteReferral(w http.ResponseWriter, r *http.Request) {
 // HandleGetMyCode returns the user's referral code and stats.
 // GET /me/referral.
 func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -258,12 +258,12 @@ func (h *Handlers) HandleGetMyCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Global killswitch (referral.enabled, ADR-078 §60).
-	if !h.Service.Enabled(r.Context(), tenantID) {
+	if !h.Service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
 		return
 	}
 
-	stats, err := h.Service.GetReferralStats(r.Context(), tenantID, u.UserID)
+	stats, err := h.Service.GetReferralStats(r.Context(), u.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
@@ -284,7 +284,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	// Global killswitch (referral.enabled, ADR-078 §60). When disabled, the
 	// redirect still resolves the code but does not track clicks or set the
 	// attribution cookie — the user is simply sent to the homepage.
-	if tenantID, ok := h.tenantID(r); ok && !h.Service.Enabled(r.Context(), tenantID) {
+	if _, ok := h.tenantID(r); ok && !h.Service.Enabled(r.Context()) {
 		http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 		return
 	}
@@ -321,7 +321,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 // HandleMyHistory returns the user's referral history.
 // GET /me/referral/history.
 func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -333,7 +333,7 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Global killswitch (referral.enabled, ADR-078 §60).
-	if !h.Service.Enabled(r.Context(), tenantID) {
+	if !h.Service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "referral_disabled", "Referral program is not available")
 		return
 	}
@@ -342,7 +342,7 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, total, err := h.Service.ListReferralHistory(r.Context(), tenantID, u.UserID, status, page, limit)
+	rows, total, err := h.Service.ListReferralHistory(r.Context(), u.UserID, status, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
@@ -361,7 +361,7 @@ func (h *Handlers) HandleMyHistory(w http.ResponseWriter, r *http.Request) {
 // HandleAdminListReferrals returns all referrals for admin oversight.
 // GET /admin/referrals.
 func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -375,7 +375,7 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, total, err := h.Service.AdminListReferrals(r.Context(), tenantID, status, page, limit)
+	rows, total, err := h.Service.AdminListReferrals(r.Context(), status, page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
@@ -390,7 +390,7 @@ func (h *Handlers) HandleAdminListReferrals(w http.ResponseWriter, r *http.Reque
 // HandleAdminResolveFlagged resolves a flagged referral.
 // PATCH /admin/referrals/{id}/resolve.
 func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -419,7 +419,7 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.Service.AdminResolveFlagged(r.Context(), tenantID, referralID, body.Action); err != nil {
+	if err := h.Service.AdminResolveFlagged(r.Context(), referralID, body.Action); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "resolve_failed", err.Error())
 		return
 	}
@@ -430,7 +430,7 @@ func (h *Handlers) HandleAdminResolveFlagged(w http.ResponseWriter, r *http.Requ
 // HandleAdminReferralStats returns referral stats by status.
 // GET /admin/referrals/stats.
 func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -440,7 +440,7 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	stats, err := h.Service.AdminReferralStats(r.Context(), tenantID)
+	stats, err := h.Service.AdminReferralStats(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "stats_failed", err.Error())
 		return
@@ -452,7 +452,7 @@ func (h *Handlers) HandleAdminReferralStats(w http.ResponseWriter, r *http.Reque
 // HandleAdminFlagged returns the flagged referral queue.
 // GET /admin/referrals/flagged.
 func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -465,7 +465,7 @@ func (h *Handlers) HandleAdminFlagged(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, total, err := h.Service.AdminListFlagged(r.Context(), tenantID, page, limit)
+	rows, total, err := h.Service.AdminListFlagged(r.Context(), page, limit)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return

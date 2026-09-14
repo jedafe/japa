@@ -38,7 +38,7 @@ import (
 
 // updater is the subset of Service methods used by the public edit handler.
 type updater interface {
-	Enabled(ctx context.Context, tenantID pgtype.UUID) bool
+	Enabled(ctx context.Context) bool
 	Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error)
 }
 
@@ -114,12 +114,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // BUG-009: categories are served via the API (Rule 16), not hardcoded in
 // the frontend.
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	cats := h.service.Categories(r.Context(), tenantID)
+	cats := h.service.Categories(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 
@@ -127,7 +127,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // optional filters (dest, origin, category, from, to, view). Also accepts
 // ?destination_space_id= as legacy alias.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -191,7 +191,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		userID = u.UserID
 	}
 
-	entries, total, err := h.service.List(r.Context(), tenantID, destSpaceID, originSpaceID, category, from, to, page, limit, userID)
+	entries, total, err := h.service.List(r.Context(), destSpaceID, originSpaceID, category, from, to, page, limit, userID)
 	if err != nil {
 		slog.Error("calendar: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list calendar entries")
@@ -218,8 +218,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -229,7 +228,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	entries, total, err := h.service.ListSaved(r.Context(), user.UserID, tenantID, int(page), int(limit))
+	entries, total, err := h.service.ListSaved(r.Context(), user.UserID, int(page), int(limit))
 	if err != nil {
 		slog.Error("calendar: list saved failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_saved_failed", "Failed to list saved calendar entries")
@@ -255,7 +254,7 @@ func (h *Handlers) HandleListSaved(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /calendar/:id — single approved calendar entry.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -270,7 +269,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		userID = u.UserID
 	}
 
-	entry, err := h.service.Get(r.Context(), entryID, tenantID, userID)
+	entry, err := h.service.Get(r.Context(), entryID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
@@ -365,7 +364,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.updater == nil || !h.updater.Enabled(r.Context(), tenantID) {
+	if h.updater == nil || !h.updater.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "calendar_disabled", "Calendar is not available")
 		return
 	}
@@ -425,8 +424,7 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -436,7 +434,7 @@ func (h *Handlers) HandleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Save(r.Context(), user.UserID, entryID, tenantID); err != nil {
+	if err := h.service.Save(r.Context(), user.UserID, entryID); err != nil {
 		slog.Error("calendar: save failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to save calendar entry")
 
@@ -452,8 +450,7 @@ func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -463,7 +460,7 @@ func (h *Handlers) HandleUnsave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Unsave(r.Context(), user.UserID, entryID, tenantID); err != nil {
+	if err := h.service.Unsave(r.Context(), user.UserID, entryID); err != nil {
 		slog.Error("calendar: unsave failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "unsave_failed", "Failed to unsave calendar entry")
 
@@ -480,8 +477,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -510,7 +506,7 @@ func (h *Handlers) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Subscribe(r.Context(), user.UserID, tenantID, destSpaceID, input.Category); err != nil {
+	if err := h.service.Subscribe(r.Context(), user.UserID, destSpaceID, input.Category); err != nil {
 		slog.Error("calendar: subscribe failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "subscribe_failed", "Failed to subscribe")
 
@@ -528,8 +524,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -573,7 +568,7 @@ func (h *Handlers) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.Unsubscribe(r.Context(), user.UserID, tenantID, destSpaceID, category); err != nil {
+	if err := h.service.Unsubscribe(r.Context(), user.UserID, destSpaceID, category); err != nil {
 		slog.Error("calendar: unsubscribe failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "unsubscribe_failed", "Failed to unsubscribe")
 
@@ -594,8 +589,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -665,7 +659,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	entries, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, originSpaceID, category, status, q, from, to, sort, order, page, limit)
+	entries, total, err := h.service.AdminList(r.Context(), destSpaceID, originSpaceID, category, status, q, from, to, sort, order, page, limit)
 	if err != nil {
 		slog.Error("calendar: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list calendar entries")
@@ -697,8 +691,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -719,7 +712,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminUpdate(r.Context(), entryID, tenantID, user.UserID, input.Status, input.Reason); err != nil {
+	if err := h.service.AdminUpdate(r.Context(), entryID, user.UserID, input.Status, input.Reason); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return
@@ -754,8 +747,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -765,7 +757,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminSoftDelete(r.Context(), entryID, tenantID); err != nil {
+	if err := h.service.AdminSoftDelete(r.Context(), entryID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "entry_not_found", "Calendar entry not found")
 			return

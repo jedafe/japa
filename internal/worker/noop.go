@@ -29,7 +29,7 @@ func (noopAIProcessor) ProcessAITask(_ context.Context, taskType, _, _, requestI
 // noopModerationProcessor is a no-op ModerationProcessor that logs and returns nil.
 type noopModerationProcessor struct{}
 
-func (noopModerationProcessor) ScanContent(_ context.Context, entityType, entityID, _ string) error {
+func (noopModerationProcessor) ScanContent(_ context.Context, entityType, entityID string) error {
 	slog.Debug("worker: noop moderation processor", "entity_type", entityType, "entity_id", entityID)
 	return nil
 }
@@ -53,12 +53,12 @@ func (noopAITranslateProcessor) TranslatePack(_ context.Context, packID, sourceL
 // noopLearningProcessor is a no-op LearningProcessor that logs and returns nil.
 type noopLearningProcessor struct{}
 
-func (noopLearningProcessor) UpdateTrackCompletion(_ context.Context, userID, trackID, _ string) error {
+func (noopLearningProcessor) UpdateTrackCompletion(_ context.Context, userID, trackID string) error {
 	slog.Debug("worker: noop learning processor: update track completion", "user_id", userID, "track_id", trackID)
 	return nil
 }
 
-func (noopLearningProcessor) IssueCertificate(_ context.Context, userID, trackID, _, courseName string) error {
+func (noopLearningProcessor) IssueCertificate(_ context.Context, userID, trackID, courseName string) error {
 	slog.Debug("worker: noop learning processor: issue certificate", "user_id", userID, "track_id", trackID, "course_name", courseName)
 	return nil
 }

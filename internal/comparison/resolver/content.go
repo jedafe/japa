@@ -24,7 +24,7 @@ func NewContentResolver(svc *content.Service) *ContentResolver {
 }
 
 // Resolve fetches a content item by id or slug.
-func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
+func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 	if r == nil || r.svc == nil {
 		return ResolvedItem{}, false, errors.New("content resolver not initialized")
 	}
@@ -35,7 +35,7 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 			return ResolvedItem{}, false, err
 		}
 
-		row, err := r.svc.GetContent(ctx, id, tenantID)
+		row, err := r.svc.GetContent(ctx, id)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
@@ -53,7 +53,7 @@ func (r *ContentResolver) Resolve(ctx context.Context, ref map[string]any, tenan
 	}
 
 	if slug, ok := ref["slug"].(string); ok && slug != "" {
-		row, err := r.svc.GetContentBySlug(ctx, slug, tenantID)
+		row, err := r.svc.GetContentBySlug(ctx, slug)
 		if err != nil {
 			if IsNotFound(err) {
 				return ResolvedItem{}, false, nil
@@ -96,7 +96,7 @@ func (r *ContentResolver) contentTags(ctx context.Context, contentID pgtype.UUID
 // When a scope filter (country_id/state_id/city_id/university_id/geo_space_id)
 // is present, results are limited to content linked to that space via
 // content_spaces (or geo_space_id for the content table resolver).
-func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+func (r *ContentResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.svc == nil {
 		return nil, errors.New("content resolver not initialized")
 	}
@@ -130,7 +130,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 
 	switch {
 	case contentType != "" && geoSpaceID.Valid:
-		items, err := r.svc.SearchContentsByTypeAndSpace(ctx, tenantID, geoSpaceID, contentType, query, fetchLimit, 0, filter)
+		items, err := r.svc.SearchContentsByTypeAndSpace(ctx, geoSpaceID, contentType, query, fetchLimit, 0, filter)
 		if err != nil {
 			return nil, fmt.Errorf("searching contents by type and space: %w", err)
 		}
@@ -139,7 +139,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			rows = append(rows, it)
 		}
 	case contentType != "":
-		items, err := r.svc.ListContentsByType(ctx, tenantID, contentType, "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, filter)
+		items, err := r.svc.ListContentsByType(ctx, contentType, "", emptyCursor, pgtype.UUID{}, 0, fetchLimit, "", visitor.VisitorContext{}, filter)
 		if err != nil {
 			return nil, fmt.Errorf("listing contents by type: %w", err)
 		}
@@ -151,7 +151,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 		}
 	case geoSpaceID.Valid:
 		if query != "" {
-			items, err := r.svc.SearchContentsBySpace(ctx, tenantID, geoSpaceID, query, fetchLimit, 0, filter)
+			items, err := r.svc.SearchContentsBySpace(ctx, geoSpaceID, query, fetchLimit, 0, filter)
 			if err != nil {
 				return nil, fmt.Errorf("searching contents by space: %w", err)
 			}
@@ -160,7 +160,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 				rows = append(rows, it)
 			}
 		} else {
-			items, err := r.svc.ListContentsBySpace(ctx, tenantID, geoSpaceID, emptyCursor, fetchLimit, filter)
+			items, err := r.svc.ListContentsBySpace(ctx, geoSpaceID, emptyCursor, fetchLimit, filter)
 			if err != nil {
 				return nil, fmt.Errorf("listing contents by space: %w", err)
 			}
@@ -170,7 +170,7 @@ func (r *ContentResolver) Search(ctx context.Context, query string, filters map[
 			}
 		}
 	default:
-		items, err := r.svc.ListContents(ctx, tenantID, query, emptyCursor, fetchLimit, filter)
+		items, err := r.svc.ListContents(ctx, query, emptyCursor, fetchLimit, filter)
 		if err != nil {
 			return nil, fmt.Errorf("listing contents: %w", err)
 		}

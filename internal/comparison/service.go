@@ -33,7 +33,7 @@ type CreateComparisonTypeInput struct {
 }
 
 // CreateComparisonType creates a new admin-defined comparison type.
-func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonTypeInput) (gen.CreateComparisonTypeRow, error) {
+func (s *Service) CreateComparisonType(ctx context.Context, input CreateComparisonTypeInput) (gen.CreateComparisonTypeRow, error) {
 	if input.Name == "" {
 		return gen.CreateComparisonTypeRow{}, errors.New("name is required")
 	}
@@ -95,13 +95,13 @@ func (s *Service) CreateComparisonType(ctx context.Context, tenantID pgtype.UUID
 }
 
 // GetComparisonType retrieves a comparison type by ID.
-func (s *Service) GetComparisonType(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetComparisonTypeByIDRow, error) {
-	return s.store.getComparisonTypeByID(ctx, id, tenantID)
+func (s *Service) GetComparisonType(ctx context.Context, id pgtype.UUID) (gen.GetComparisonTypeByIDRow, error) {
+	return s.store.getComparisonTypeByID(ctx, id)
 }
 
 // GetComparisonTypeBySlug retrieves a comparison type by slug.
-func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.GetComparisonTypeBySlugRow, error) {
-	return s.store.getComparisonTypeBySlug(ctx, slug, tenantID)
+func (s *Service) GetComparisonTypeBySlug(ctx context.Context, slug string) (gen.GetComparisonTypeBySlugRow, error) {
+	return s.store.getComparisonTypeBySlug(ctx, slug)
 }
 
 // ComparisonTypeDimension is the dimension (custom field) projection shown in
@@ -163,8 +163,8 @@ func (d ComparisonTypeDetail) MarshalJSON() ([]byte, error) {
 // count of comparison items linked to the type.
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tenantID pgtype.UUID) (ComparisonTypeDetail, error) {
-	typeDef, err := s.store.getComparisonTypeBySlug(ctx, slug, tenantID)
+func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string) (ComparisonTypeDetail, error) {
+	typeDef, err := s.store.getComparisonTypeBySlug(ctx, slug)
 	if err != nil {
 		return ComparisonTypeDetail{}, err
 	}
@@ -172,7 +172,7 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tena
 	dimensions := make([]ComparisonTypeDimension, 0)
 
 	if typeDef.FieldGroupID.Valid {
-		fields, err := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID, tenantID)
+		fields, err := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID)
 		if err != nil {
 			return ComparisonTypeDetail{}, fmt.Errorf("listing type dimensions: %w", err)
 		}
@@ -187,7 +187,7 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string, tena
 		}
 	}
 
-	itemCount, err := s.store.countComparisonItemsByType(ctx, typeDef.ID, tenantID)
+	itemCount, err := s.store.countComparisonItemsByType(ctx, typeDef.ID)
 	if err != nil {
 		return ComparisonTypeDetail{}, fmt.Errorf("counting comparison items: %w", err)
 	}
@@ -242,8 +242,8 @@ func (i ComparisonTypeListItem) MarshalJSON() ([]byte, error) {
 // each enriched with its field count (dimensions) and item count.
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]ComparisonTypeListItem, error) {
-	types, err := s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
+func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, limit, offset int32) ([]ComparisonTypeListItem, error) {
+	types, err := s.store.listComparisonTypesByTenant(ctx, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pg
 		var fieldCount int32
 
 		if td.FieldGroupID.Valid {
-			fields, err := s.cfSvc.ListFieldsByGroup(ctx, td.FieldGroupID, tenantID)
+			fields, err := s.cfSvc.ListFieldsByGroup(ctx, td.FieldGroupID)
 			if err != nil {
 				return nil, fmt.Errorf("listing fields for type %s: %w", td.Slug, err)
 			}
@@ -262,7 +262,7 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pg
 			fieldCount = toInt32(len(fields))
 		}
 
-		itemCount, err := s.store.countComparisonItemsByType(ctx, td.ID, tenantID)
+		itemCount, err := s.store.countComparisonItemsByType(ctx, td.ID)
 		if err != nil {
 			return nil, fmt.Errorf("counting items for type %s: %w", td.Slug, err)
 		}
@@ -278,8 +278,8 @@ func (s *Service) ListComparisonTypesWithCounts(ctx context.Context, tenantID pg
 }
 
 // ListComparisonTypes returns all comparison types for a tenant.
-func (s *Service) ListComparisonTypes(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
-	return s.store.listComparisonTypesByTenant(ctx, tenantID, limit, offset)
+func (s *Service) ListComparisonTypes(ctx context.Context, limit, offset int32) ([]gen.ListComparisonTypesByTenantRow, error) {
+	return s.store.listComparisonTypesByTenant(ctx, limit, offset)
 }
 
 // ComparisonItemInput is a single item passed by the create wizard.
@@ -361,12 +361,12 @@ const defaultAutoDimensionHintsJSON = `{"default":["Overview","Key features","Pr
 // without a deploy (Rule 3 / Rule 16).
 //
 // Ref: japaconnect-engineering/sections/16-comparisons.md (Phase 16.05 — HITL).
-func (s *Service) SuggestDimensions(ctx context.Context, tenantID pgtype.UUID, items []string) ([]string, error) {
+func (s *Service) SuggestDimensions(ctx context.Context, items []string) ([]string, error) {
 	if s.settingsSvc == nil {
 		return nil, errors.New("settings service not configured")
 	}
 
-	raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "comparison.auto_dimension_hints", defaultAutoDimensionHintsJSON)
+	raw := s.settingsSvc.GetStringOr(ctx, "comparison.auto_dimension_hints", defaultAutoDimensionHintsJSON)
 
 	var hints autoDimensionHints
 	if err := json.Unmarshal([]byte(raw), &hints); err != nil {
@@ -399,8 +399,8 @@ func (s *Service) SuggestDimensions(ctx context.Context, tenantID pgtype.UUID, i
 // can_create grants. A type with no access rows is unrestricted for backward
 // compatibility (system types are seeded without access rows). A row with a
 // NULL user_group_id is treated as a wildcard grant.
-func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID, tenantID pgtype.UUID) (bool, error) {
-	access, err := s.store.listComparisonTypeAccess(ctx, typeID, tenantID)
+func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID pgtype.UUID) (bool, error) {
+	access, err := s.store.listComparisonTypeAccess(ctx, typeID)
 	if err != nil {
 		return false, fmt.Errorf("listing comparison type access: %w", err)
 	}
@@ -409,7 +409,7 @@ func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID
 		return true, nil
 	}
 
-	groupIDs, err := s.store.listUserGroupIDsForUser(ctx, userID, tenantID)
+	groupIDs, err := s.store.listUserGroupIDsForUser(ctx, userID)
 	if err != nil {
 		return false, fmt.Errorf("getting user groups: %w", err)
 	}
@@ -468,14 +468,14 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	var typeDef *gen.GetComparisonTypeByIDRow
 
 	if input.TypeID.Valid {
-		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID, tenantID)
+		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID)
 		if err != nil {
 			return CreateComparisonResult{}, fmt.Errorf("resolving comparison type: %w", err)
 		}
 
 		typeDef = &td
 
-		allowed, aerr := s.canCreateComparisonForType(ctx, input.TypeID, userID, tenantID)
+		allowed, aerr := s.canCreateComparisonForType(ctx, input.TypeID, userID)
 		if aerr != nil {
 			return CreateComparisonResult{}, fmt.Errorf("checking comparison type access: %w", aerr)
 		}
@@ -490,7 +490,7 @@ func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.
 	var autoFields []gen.ListCustomFieldsByGroupRow
 
 	if len(input.Dimensions) == 0 && typeDef != nil && typeDef.FieldGroupID.Valid {
-		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID, tenantID)
+		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID)
 		if ferr != nil {
 			return CreateComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
 		}
@@ -611,7 +611,7 @@ type UpdateComparisonInput struct {
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonInput, bypassOwnership bool) (gen.UpdateContentRow, error) {
-	existing, err := s.contentSvc.GetContent(ctx, id, tenantID)
+	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("getting comparison for update: %w", err)
 	}
@@ -647,7 +647,7 @@ func (s *Service) UpdateComparison(ctx context.Context, id, tenantID pgtype.UUID
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 func (s *Service) DeleteComparison(ctx context.Context, id, tenantID, deletedBy pgtype.UUID, bypassOwnership bool) error {
-	existing, err := s.contentSvc.GetContent(ctx, id, tenantID)
+	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting comparison for delete: %w", err)
 	}
@@ -688,8 +688,8 @@ type ComparisonDetail struct {
 // detail page needs.
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.UUID) (ComparisonDetail, error) {
-	contentRow, err := s.contentSvc.GetContent(ctx, id, tenantID)
+func (s *Service) GetComparisonDetail(ctx context.Context, id pgtype.UUID) (ComparisonDetail, error) {
+	contentRow, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return ComparisonDetail{}, fmt.Errorf("getting comparison content: %w", err)
 	}
@@ -698,7 +698,7 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 		return ComparisonDetail{}, pgx.ErrNoRows
 	}
 
-	items, err := s.store.listComparisonItemsByContent(ctx, id, tenantID)
+	items, err := s.store.listComparisonItemsByContent(ctx, id)
 	if err != nil {
 		return ComparisonDetail{}, fmt.Errorf("listing comparison items: %w", err)
 	}
@@ -707,7 +707,7 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 		items = []gen.ListComparisonItemsByContentRow{}
 	}
 
-	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, id, tenantID)
+	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, id)
 	if err != nil {
 		return ComparisonDetail{}, fmt.Errorf("listing comparison dimensions: %w", err)
 	}
@@ -742,13 +742,13 @@ func (s *Service) GetComparisonDetail(ctx context.Context, id, tenantID pgtype.U
 // leak through the comparison API (BUG-001).
 //
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
-func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier string, tenantID pgtype.UUID) (pgtype.UUID, error) {
+func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier string) (pgtype.UUID, error) {
 	// Fast path: identifier is a UUID. We still verify the content row
 	// is actually a comparison so a blog/forum UUID cannot leak through
 	// this API.
 	var id pgtype.UUID
 	if err := id.Scan(identifier); err == nil {
-		contentRow, err := s.contentSvc.GetContent(ctx, id, tenantID)
+		contentRow, err := s.contentSvc.GetContent(ctx, id)
 		if err != nil {
 			return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, err)
 		}
@@ -761,7 +761,7 @@ func (s *Service) ResolveComparisonContentID(ctx context.Context, identifier str
 	}
 
 	// Slug path: look up the content row by slug, scoped to the tenant.
-	contentRow, err := s.contentSvc.GetContentBySlug(ctx, identifier, tenantID)
+	contentRow, err := s.contentSvc.GetContentBySlug(ctx, identifier)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("resolving comparison identifier %q: %w", identifier, err)
 	}
@@ -788,7 +788,7 @@ type UpdateComparisonTypeInput struct {
 }
 
 // UpdateComparisonType updates an existing comparison type.
-func (s *Service) UpdateComparisonType(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonTypeInput) (gen.UpdateComparisonTypeRow, error) {
+func (s *Service) UpdateComparisonType(ctx context.Context, id pgtype.UUID, input UpdateComparisonTypeInput) (gen.UpdateComparisonTypeRow, error) {
 	if input.Name == "" {
 		return gen.UpdateComparisonTypeRow{}, errors.New("name is required")
 	}
@@ -859,12 +859,12 @@ var ErrNotOwner = errors.New("only the author can modify this comparison")
 // comparison identified by contentID, or that bypassOwnership is true (set
 // when the caller has comparison.edit_any). Returns ErrNotOwner if the user
 // is not the author and bypass is false. Ref: §5.3 RBAC escape, BUG-003.
-func (s *Service) VerifyComparisonOwnership(ctx context.Context, contentID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) VerifyComparisonOwnership(ctx context.Context, contentID, userID pgtype.UUID, bypassOwnership bool) error {
 	if bypassOwnership {
 		return nil
 	}
 
-	existing, err := s.contentSvc.GetContent(ctx, contentID, tenantID)
+	existing, err := s.contentSvc.GetContent(ctx, contentID)
 	if err != nil {
 		return fmt.Errorf("getting comparison for ownership check: %w", err)
 	}
@@ -878,22 +878,22 @@ func (s *Service) VerifyComparisonOwnership(ctx context.Context, contentID, user
 
 // VerifyComparisonItemOwnership resolves the parent comparison from an item
 // ID and then verifies ownership. Ref: §5.3 RBAC escape, BUG-003.
-func (s *Service) VerifyComparisonItemOwnership(ctx context.Context, itemID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) VerifyComparisonItemOwnership(ctx context.Context, itemID, userID pgtype.UUID, bypassOwnership bool) error {
 	if bypassOwnership {
 		return nil
 	}
 
-	item, err := s.store.getComparisonItemByID(ctx, itemID, tenantID)
+	item, err := s.store.getComparisonItemByID(ctx, itemID)
 	if err != nil {
 		return fmt.Errorf("getting comparison item for ownership check: %w", err)
 	}
 
-	return s.VerifyComparisonOwnership(ctx, item.ContentID, userID, tenantID, false)
+	return s.VerifyComparisonOwnership(ctx, item.ContentID, userID, false)
 }
 
 // VerifyComparisonDimensionOwnership resolves the parent comparison from a
 // dimension ID and then verifies ownership. Ref: §5.3 RBAC escape, BUG-003.
-func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimensionID, userID, tenantID pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimensionID, userID pgtype.UUID, bypassOwnership bool) error {
 	if bypassOwnership {
 		return nil
 	}
@@ -903,15 +903,15 @@ func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimens
 		return fmt.Errorf("getting comparison dimension for ownership check: %w", err)
 	}
 
-	return s.VerifyComparisonOwnership(ctx, dim.ContentID, userID, tenantID, false)
+	return s.VerifyComparisonOwnership(ctx, dim.ContentID, userID, false)
 }
 
 // DeleteComparisonType removes a comparison type and its cascaded children.
 // It refuses to delete a type that is still referenced by comparison_items
 // (Section 30 — in-use guard, BUG-006). System types (is_system=true) are
 // also protected from deletion.
-func (s *Service) DeleteComparisonType(ctx context.Context, id, tenantID pgtype.UUID) error {
-	td, err := s.store.getComparisonTypeByID(ctx, id, tenantID)
+func (s *Service) DeleteComparisonType(ctx context.Context, id pgtype.UUID) error {
+	td, err := s.store.getComparisonTypeByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("resolving comparison type: %w", err)
 	}
@@ -920,7 +920,7 @@ func (s *Service) DeleteComparisonType(ctx context.Context, id, tenantID pgtype.
 		return errors.New("system comparison types cannot be deleted")
 	}
 
-	count, err := s.store.countComparisonItemsByType(ctx, id, tenantID)
+	count, err := s.store.countComparisonItemsByType(ctx, id)
 	if err != nil {
 		return fmt.Errorf("checking comparison type usage: %w", err)
 	}
@@ -929,7 +929,7 @@ func (s *Service) DeleteComparisonType(ctx context.Context, id, tenantID pgtype.
 		return ErrComparisonTypeInUse
 	}
 
-	return s.store.deleteComparisonType(ctx, id, tenantID)
+	return s.store.deleteComparisonType(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -947,8 +947,8 @@ type SetComparisonTypeAccessInput struct {
 // SetComparisonTypeAccess upserts access permissions for a user group on a type.
 // The type is first verified to belong to the caller's tenant so a guessed or
 // leaked type_id UUID cannot read/write another tenant's access rows.
-func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID, input SetComparisonTypeAccessInput) error {
-	if _, err := s.store.getComparisonTypeByID(ctx, typeID, tenantID); err != nil {
+func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID, input SetComparisonTypeAccessInput) error {
+	if _, err := s.store.getComparisonTypeByID(ctx, typeID); err != nil {
 		return fmt.Errorf("verifying comparison type ownership: %w", err)
 	}
 
@@ -963,17 +963,17 @@ func (s *Service) SetComparisonTypeAccess(ctx context.Context, typeID, tenantID 
 
 // ListComparisonTypeAccess returns all access entries for a type. The type is
 // first verified to belong to the caller's tenant (cross-tenant guard).
-func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID, tenantID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
-	if _, err := s.store.getComparisonTypeByID(ctx, typeID, tenantID); err != nil {
+func (s *Service) ListComparisonTypeAccess(ctx context.Context, typeID pgtype.UUID) ([]gen.ListComparisonTypeAccessRow, error) {
+	if _, err := s.store.getComparisonTypeByID(ctx, typeID); err != nil {
 		return nil, fmt.Errorf("verifying comparison type ownership: %w", err)
 	}
 
-	return s.store.listComparisonTypeAccess(ctx, typeID, tenantID)
+	return s.store.listComparisonTypeAccess(ctx, typeID)
 }
 
 // DeleteComparisonTypeAccess removes an access entry for a user group.
-func (s *Service) DeleteComparisonTypeAccess(ctx context.Context, typeID, tenantID, userGroupID pgtype.UUID) error {
-	return s.store.deleteComparisonTypeAccess(ctx, typeID, tenantID, userGroupID)
+func (s *Service) DeleteComparisonTypeAccess(ctx context.Context, typeID, userGroupID pgtype.UUID) error {
+	return s.store.deleteComparisonTypeAccess(ctx, typeID, userGroupID)
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,12 +1003,12 @@ func ensureItemRef(ref []byte) []byte {
 }
 
 // CreateComparisonItem adds a new item to a comparison.
-func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonItemInput) (gen.CreateComparisonItemRow, error) {
+func (s *Service) CreateComparisonItem(ctx context.Context, input CreateComparisonItemInput) (gen.CreateComparisonItemRow, error) {
 	if input.Title == "" {
 		return gen.CreateComparisonItemRow{}, errors.New("title is required")
 	}
 
-	parent, err := s.contentSvc.GetContent(ctx, input.ContentID, tenantID)
+	parent, err := s.contentSvc.GetContent(ctx, input.ContentID)
 	if err != nil {
 		return gen.CreateComparisonItemRow{}, fmt.Errorf("getting comparison for item: %w", err)
 	}
@@ -1035,8 +1035,8 @@ func (s *Service) CreateComparisonItem(ctx context.Context, tenantID pgtype.UUID
 }
 
 // ListComparisonItems returns all items for a comparison.
-func (s *Service) ListComparisonItems(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonItemsByContentRow, error) {
-	return s.store.listComparisonItemsByContent(ctx, contentID, tenantID)
+func (s *Service) ListComparisonItems(ctx context.Context, contentID pgtype.UUID) ([]gen.ListComparisonItemsByContentRow, error) {
+	return s.store.listComparisonItemsByContent(ctx, contentID)
 }
 
 // UpdateComparisonItemInput holds parameters for updating a comparison item.
@@ -1050,7 +1050,7 @@ type UpdateComparisonItemInput struct {
 }
 
 // UpdateComparisonItem updates an existing comparison item.
-func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonItemInput) (gen.UpdateComparisonItemRow, error) {
+func (s *Service) UpdateComparisonItem(ctx context.Context, id pgtype.UUID, input UpdateComparisonItemInput) (gen.UpdateComparisonItemRow, error) {
 	if input.Title == "" {
 		return gen.UpdateComparisonItemRow{}, errors.New("title is required")
 	}
@@ -1073,8 +1073,8 @@ func (s *Service) UpdateComparisonItem(ctx context.Context, id, tenantID pgtype.
 }
 
 // DeleteComparisonItem removes a comparison item.
-func (s *Service) DeleteComparisonItem(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.deleteComparisonItem(ctx, id, tenantID)
+func (s *Service) DeleteComparisonItem(ctx context.Context, id pgtype.UUID) error {
+	return s.store.deleteComparisonItem(ctx, id)
 }
 
 // ReorderComparisonItem changes the position of a comparison item.
@@ -1132,7 +1132,7 @@ type CreateComparisonDimensionInput struct {
 }
 
 // CreateComparisonDimension adds a new dimension to a comparison.
-func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype.UUID, input CreateComparisonDimensionInput) (gen.CreateComparisonDimensionRow, error) {
+func (s *Service) CreateComparisonDimension(ctx context.Context, input CreateComparisonDimensionInput) (gen.CreateComparisonDimensionRow, error) {
 	if input.Label == "" {
 		return gen.CreateComparisonDimensionRow{}, errors.New("label is required")
 	}
@@ -1141,7 +1141,7 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype
 		return gen.CreateComparisonDimensionRow{}, fmt.Errorf("invalid dimension type: %s", input.DimensionType)
 	}
 
-	parent, err := s.contentSvc.GetContent(ctx, input.ContentID, tenantID)
+	parent, err := s.contentSvc.GetContent(ctx, input.ContentID)
 	if err != nil {
 		return gen.CreateComparisonDimensionRow{}, fmt.Errorf("getting comparison for dimension: %w", err)
 	}
@@ -1160,8 +1160,8 @@ func (s *Service) CreateComparisonDimension(ctx context.Context, tenantID pgtype
 }
 
 // ListComparisonDimensions returns all dimensions for a comparison.
-func (s *Service) ListComparisonDimensions(ctx context.Context, contentID, tenantID pgtype.UUID) ([]gen.ListComparisonDimensionsByContentRow, error) {
-	return s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
+func (s *Service) ListComparisonDimensions(ctx context.Context, contentID pgtype.UUID) ([]gen.ListComparisonDimensionsByContentRow, error) {
+	return s.store.listComparisonDimensionsByContent(ctx, contentID)
 }
 
 // UpdateComparisonDimensionInput holds parameters for updating a dimension.
@@ -1172,7 +1172,7 @@ type UpdateComparisonDimensionInput struct {
 }
 
 // UpdateComparisonDimension updates an existing dimension.
-func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID, input UpdateComparisonDimensionInput) (gen.UpdateComparisonDimensionRow, error) {
+func (s *Service) UpdateComparisonDimension(ctx context.Context, id pgtype.UUID, input UpdateComparisonDimensionInput) (gen.UpdateComparisonDimensionRow, error) {
 	if input.Label == "" {
 		return gen.UpdateComparisonDimensionRow{}, errors.New("label is required")
 	}
@@ -1191,18 +1191,18 @@ func (s *Service) UpdateComparisonDimension(ctx context.Context, id, tenantID pg
 }
 
 // DeleteComparisonDimension removes a comparison dimension and its values.
-func (s *Service) DeleteComparisonDimension(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteComparisonDimension(ctx context.Context, id pgtype.UUID) error {
 	// Delete values first (FK cascade handles this, but explicit for clarity).
-	if err := s.store.deleteComparisonValuesByDimension(ctx, id, tenantID); err != nil {
+	if err := s.store.deleteComparisonValuesByDimension(ctx, id); err != nil {
 		return fmt.Errorf("deleting dimension values: %w", err)
 	}
 
-	return s.store.deleteComparisonDimension(ctx, id, tenantID)
+	return s.store.deleteComparisonDimension(ctx, id)
 }
 
 // ReorderComparisonDimension changes the position of a dimension.
-func (s *Service) ReorderComparisonDimension(ctx context.Context, id, contentID, tenantID pgtype.UUID, position int32) error {
-	return s.store.reorderComparisonDimensions(ctx, id, contentID, tenantID, position)
+func (s *Service) ReorderComparisonDimension(ctx context.Context, id, contentID pgtype.UUID, position int32) error {
+	return s.store.reorderComparisonDimensions(ctx, id, contentID, position)
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,7 +1229,7 @@ type UpsertComparisonValueInput struct {
 }
 
 // UpsertComparisonValue creates or updates a value at a dimension×item intersection.
-func (s *Service) UpsertComparisonValue(ctx context.Context, tenantID pgtype.UUID, input UpsertComparisonValueInput) (gen.ComparisonValue, error) {
+func (s *Service) UpsertComparisonValue(ctx context.Context, input UpsertComparisonValueInput) (gen.ComparisonValue, error) {
 	var value *string
 	if input.Value != "" {
 		value = &input.Value
@@ -1346,7 +1346,7 @@ RETURNING dimension_id, item_id, value, value_rating, value_boolean, created_at,
 // added by migration 000373.
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Provenance).
-func (s *Service) UpsertComparisonValueWithMetadata(ctx context.Context, tenantID pgtype.UUID, input UpsertComparisonValueInput, metadata []byte) (gen.ComparisonValue, error) {
+func (s *Service) UpsertComparisonValueWithMetadata(ctx context.Context, input UpsertComparisonValueInput, metadata []byte) (gen.ComparisonValue, error) {
 	var value *string
 	if input.Value != "" {
 		value = &input.Value
@@ -1377,13 +1377,13 @@ func (s *Service) UpsertComparisonValueWithMetadata(ctx context.Context, tenantI
 }
 
 // ListComparisonValuesByDimension returns all values for a dimension with item titles.
-func (s *Service) ListComparisonValuesByDimension(ctx context.Context, dimensionID, tenantID pgtype.UUID) ([]gen.ListComparisonValuesByDimensionRow, error) {
-	return s.store.listComparisonValuesByDimension(ctx, dimensionID, tenantID)
+func (s *Service) ListComparisonValuesByDimension(ctx context.Context, dimensionID pgtype.UUID) ([]gen.ListComparisonValuesByDimensionRow, error) {
+	return s.store.listComparisonValuesByDimension(ctx, dimensionID)
 }
 
 // GetComparisonValue returns a single value at a dimension×item intersection.
-func (s *Service) GetComparisonValue(ctx context.Context, dimensionID, itemID, tenantID pgtype.UUID) (gen.ComparisonValue, error) {
-	return s.store.getComparisonValue(ctx, dimensionID, itemID, tenantID)
+func (s *Service) GetComparisonValue(ctx context.Context, dimensionID, itemID pgtype.UUID) (gen.ComparisonValue, error) {
+	return s.store.getComparisonValue(ctx, dimensionID, itemID)
 }
 
 // ---------------------------------------------------------------------------
@@ -1409,15 +1409,15 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 // GetComparisonMatrix assembles the full items×dimensions matrix for a comparison.
 // Duplicate item or dimension rows (same position + title/label) are collapsed and
 // their values are merged so the matrix never renders repeated columns or rows.
-func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error) {
-	items, err := s.store.listComparisonItemsByContent(ctx, contentID, tenantID)
+func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ComparisonMatrixItem, error) {
+	items, err := s.store.listComparisonItemsByContent(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("listing items for matrix: %w", err)
 	}
 
 	dedupedItems, itemIDMap := dedupeComparisonItems(items)
 
-	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID, tenantID)
+	dimensions, err := s.store.listComparisonDimensionsByContent(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("listing dimensions for matrix: %w", err)
 	}
@@ -1425,7 +1425,7 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID, tenantID p
 	dedupedDimensions, dimIDMap := dedupeComparisonDimensions(dimensions)
 
 	// Fetch all values in a single query instead of M×N individual lookups.
-	values, err := s.store.getComparisonValuesByContent(ctx, contentID, tenantID)
+	values, err := s.store.getComparisonValuesByContent(ctx, contentID)
 	if err != nil {
 		return nil, fmt.Errorf("listing values for matrix: %w", err)
 	}
@@ -1501,7 +1501,7 @@ type ListComparisonsFilter struct {
 // ListComparisons returns a page of comparison content rows for the tenant,
 // optionally filtered by type_id and space_id (Section 30, BUG-007/BUG-008).
 // Pagination is offset-based per conventions/api-response-format.md.
-func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredRow, error) {
+func (s *Service) ListComparisons(ctx context.Context, f ListComparisonsFilter) ([]gen.ListComparisonsFilteredRow, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
@@ -1524,7 +1524,7 @@ func (s *Service) ListComparisons(ctx context.Context, tenantID pgtype.UUID, f L
 // This is used by the admin comparison manager and includes drafts, private, and
 // unpublished rows. It uses the JCE filtered list so depth and promoted_from
 // metadata are available.
-func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID, f ListComparisonsFilter) ([]gen.ListComparisonsWithFiltersRow, error) {
+func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFilter) ([]gen.ListComparisonsWithFiltersRow, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
@@ -1533,7 +1533,7 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, tenantID pgtype.UUID
 		f.Offset = 0
 	}
 
-	res, err := s.ListJCEComparisons(ctx, tenantID, JCEComparisonFilter{
+	res, err := s.ListJCEComparisons(ctx, JCEComparisonFilter{
 		SpaceID:    f.SpaceID,
 		TypeID:     f.TypeID,
 		Depth:      f.Depth,

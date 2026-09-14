@@ -201,7 +201,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingContentRow, error) {
 		// Always fetch the max pool so the cache serves any ?limit= value.
-		rows, err := h.Store.GetTrendingContent(ctx, tenantID, window, geoCode, maxLimit)
+		rows, err := h.Store.GetTrendingContent(ctx, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +209,7 @@ func (h *Handlers) GetTrendingContent(w http.ResponseWriter, r *http.Request) {
 		// Geo fallback: a visitor whose country has no scoped snapshots gets
 		// the global list rather than an empty widget.
 		if len(rows) == 0 && geoCode != "" {
-			rows, err = h.Store.GetTrendingContent(ctx, tenantID, window, "", maxLimit)
+			rows, err = h.Store.GetTrendingContent(ctx, window, "", maxLimit)
 			if err != nil {
 				return nil, err
 			}
@@ -275,7 +275,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 	cacheKey := vkcache.MustKey("trending:tags:%s:%s:%s", tenantStr, geoCode, window)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingTagsRow, error) {
-		rows, err := h.Store.GetTrendingTags(ctx, tenantID, window, geoCode, maxLimit)
+		rows, err := h.Store.GetTrendingTags(ctx, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +283,7 @@ func (h *Handlers) GetTrendingTags(w http.ResponseWriter, r *http.Request) {
 		// Geo fallback: a visitor whose country has no scoped snapshots gets
 		// the global list rather than an empty widget.
 		if len(rows) == 0 && geoCode != "" {
-			rows, err = h.Store.GetTrendingTags(ctx, tenantID, window, "", maxLimit)
+			rows, err = h.Store.GetTrendingTags(ctx, window, "", maxLimit)
 			if err != nil {
 				return nil, err
 			}
@@ -339,7 +339,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, trendingCacheTTL, func(ctx context.Context) ([]gen.GetTrendingSpacesRow, error) {
 		// Always fetch the max pool so the cache serves any ?limit= value.
-		rows, err := h.Store.GetTrendingSpaces(ctx, tenantID, window, geoCode, maxLimit)
+		rows, err := h.Store.GetTrendingSpaces(ctx, window, geoCode, maxLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -347,7 +347,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 		// Geo fallback: a visitor whose country has no scoped snapshots gets
 		// the global list rather than an empty widget.
 		if len(rows) == 0 && geoCode != "" {
-			rows, err = h.Store.GetTrendingSpaces(ctx, tenantID, window, "", maxLimit)
+			rows, err = h.Store.GetTrendingSpaces(ctx, window, "", maxLimit)
 			if err != nil {
 				return nil, err
 			}
@@ -362,7 +362,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 				ids = append(ids, item.ID_2)
 			}
 
-			levels, err := h.Store.GetSpaceLevels(ctx, tenantID, ids)
+			levels, err := h.Store.GetSpaceLevels(ctx, ids)
 			if err != nil {
 				return nil, err
 			}
@@ -402,7 +402,7 @@ func (h *Handlers) GetTrendingSpaces(w http.ResponseWriter, r *http.Request) {
 
 // GetTrendingUsers handles GET /api/v1/trending/users.
 func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -411,7 +411,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 	geoCode := parseGeoCode(r)
 	limit := parseLimit(r)
 
-	data, err := h.Store.GetTrendingUsers(r.Context(), tenantID, window, geoCode, limit)
+	data, err := h.Store.GetTrendingUsers(r.Context(), window, geoCode, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -420,7 +420,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 	// Geo fallback: a visitor whose country has no scoped snapshots gets the
 	// global list rather than an empty widget.
 	if len(data) == 0 && geoCode != "" {
-		data, err = h.Store.GetTrendingUsers(r.Context(), tenantID, window, "", limit)
+		data, err = h.Store.GetTrendingUsers(r.Context(), window, "", limit)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -442,7 +442,7 @@ func (h *Handlers) GetTrendingUsers(w http.ResponseWriter, r *http.Request) {
 // ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
 // ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -461,7 +461,7 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 	cacheKey := vkcache.MustKey("suggestions:users:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedUsersRow, error) {
-		rows, err := h.Store.GetSuggestedUsers(ctx, user.UserID, tenantID, limit, geoCode)
+		rows, err := h.Store.GetSuggestedUsers(ctx, user.UserID, limit, geoCode)
 		if err != nil {
 			return nil, err
 		}
@@ -484,7 +484,7 @@ func (h *Handlers) GetSuggestedUsers(w http.ResponseWriter, r *http.Request) {
 // ADR-064 / roadmap task 38.04: defaults ?geo= to the VisitorContext's
 // ContentCountry when omitted; explicit ?geo= (including "all") overrides.
 func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -503,7 +503,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	cacheKey := vkcache.MustKey("suggestions:spaces:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedSpacesRow, error) {
-		rows, err := h.Store.GetSuggestedSpaces(ctx, user.UserID, tenantID, limit, geoCode)
+		rows, err := h.Store.GetSuggestedSpaces(ctx, user.UserID, limit, geoCode)
 		if err != nil {
 			return nil, err
 		}
@@ -525,7 +525,7 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 // GetSuggestedTags handles GET /api/v1/suggestions/tags.
 // ADR-064: accepts ?geo= to re-weight tags from the visitor's geo region.
 func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -538,7 +538,7 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
-	data, err := h.Store.GetSuggestedTags(r.Context(), user.UserID, tenantID, limit, geoCode)
+	data, err := h.Store.GetSuggestedTags(r.Context(), user.UserID, limit, geoCode)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -556,7 +556,7 @@ func (h *Handlers) GetSuggestedTags(w http.ResponseWriter, r *http.Request) {
 // ?seed_content_id is provided; falls back to top trending content otherwise.
 // BUG-003: previously wired to GetTrendingContent which ignored the seed.
 func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -579,7 +579,7 @@ func (h *Handlers) GetSuggestedContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data, err := h.Store.GetSuggestedContent(r.Context(), tenantID, window, geoCode, seedContentID, limit)
+	data, err := h.Store.GetSuggestedContent(r.Context(), window, geoCode, seedContentID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return

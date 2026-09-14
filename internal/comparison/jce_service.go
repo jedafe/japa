@@ -257,7 +257,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 	var typeCfg jceTypeConfig
 
 	if input.TypeID.Valid {
-		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID, tenantID)
+		td, err := s.store.getComparisonTypeByID(ctx, input.TypeID)
 		if err != nil {
 			return JCEComparisonResult{}, fmt.Errorf("resolving comparison type: %w", err)
 		}
@@ -271,7 +271,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 
 		typeCfg = cfg
 
-		allowed, aerr := s.canCreateComparisonForType(ctx, input.TypeID, userID, tenantID)
+		allowed, aerr := s.canCreateComparisonForType(ctx, input.TypeID, userID)
 		if aerr != nil {
 			return JCEComparisonResult{}, fmt.Errorf("checking comparison type access: %w", aerr)
 		}
@@ -288,7 +288,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 	var autoFields []gen.ListCustomFieldsByGroupRow
 
 	if len(input.Dimensions) == 0 && typeDef != nil && typeDef.FieldGroupID.Valid {
-		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID, tenantID)
+		fields, ferr := s.cfSvc.ListFieldsByGroup(ctx, typeDef.FieldGroupID)
 		if ferr != nil {
 			return JCEComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
 		}
@@ -308,7 +308,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 		}
 
 		for i, item := range input.Items {
-			resolved, err := s.resolveItemRef(ctx, item, tenantID)
+			resolved, err := s.resolveItemRef(ctx, item)
 			if err != nil {
 				return JCEComparisonResult{}, fmt.Errorf("resolving item ref %d: %w", i, err)
 			}
@@ -419,7 +419,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 
 // resolveItemRef attempts to resolve an item reference into a ResolvedItem.
 // It returns (nil, nil) when the item has no resolvable ref.
-func (s *Service) resolveItemRef(ctx context.Context, item JCEItemInput, tenantID pgtype.UUID) (*resolver.ResolvedItem, error) {
+func (s *Service) resolveItemRef(ctx context.Context, item JCEItemInput) (*resolver.ResolvedItem, error) {
 	if s.resolver == nil || len(item.ItemRef) == 0 {
 		return nil, nil
 	}
@@ -433,7 +433,7 @@ func (s *Service) resolveItemRef(ctx context.Context, item JCEItemInput, tenantI
 		return nil, nil
 	}
 
-	resolved, err := s.resolver.Resolve(ctx, ref, tenantID)
+	resolved, err := s.resolver.Resolve(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +443,7 @@ func (s *Service) resolveItemRef(ctx context.Context, item JCEItemInput, tenantI
 
 // GetJCEComparison returns a comparison plus metadata.
 // Callers must enforce visibility before returning to users.
-func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantID pgtype.UUID) (JCEComparison, error) {
+func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string) (JCEComparison, error) {
 	var id pgtype.UUID
 
 	var slug *string
@@ -454,24 +454,24 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 		slug = &idOrSlug
 	}
 
-	contentRow, err := s.store.getComparisonBySlugOrID(ctx, id, slug, tenantID)
+	contentRow, err := s.store.getComparisonBySlugOrID(ctx, id, slug)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("getting comparison: %w", err)
 	}
 
-	metadata, err := s.store.getComparisonContentMetadata(ctx, contentRow.ID, tenantID)
+	metadata, err := s.store.getComparisonContentMetadata(ctx, contentRow.ID)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("getting comparison metadata: %w", err)
 	}
 
-	items, err := s.store.listComparisonItemsByContent(ctx, contentRow.ID, tenantID)
+	items, err := s.store.listComparisonItemsByContent(ctx, contentRow.ID)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("listing comparison items: %w", err)
 	}
 
 	items, _ = dedupeComparisonItems(items)
 
-	dims, err := s.store.listComparisonDimensionsByContent(ctx, contentRow.ID, tenantID)
+	dims, err := s.store.listComparisonDimensionsByContent(ctx, contentRow.ID)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("listing comparison dimensions: %w", err)
 	}
@@ -487,7 +487,7 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 
 	for _, it := range items {
 		if it.TypeID.Valid {
-			typeRow, err := s.store.getComparisonTypeByID(ctx, it.TypeID, tenantID)
+			typeRow, err := s.store.getComparisonTypeByID(ctx, it.TypeID)
 			if err == nil {
 				cmp.TypeSlug = typeRow.Slug
 			}
@@ -500,7 +500,7 @@ func (s *Service) GetJCEComparison(ctx context.Context, idOrSlug string, tenantI
 }
 
 // ListJCEComparisons returns a filtered, paged list of comparisons with metadata.
-func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, f JCEComparisonFilter) (JCEComparisonListResult, error) {
+func (s *Service) ListJCEComparisons(ctx context.Context, f JCEComparisonFilter) (JCEComparisonListResult, error) {
 	if f.Limit <= 0 || f.Limit > MaxPageSize {
 		f.Limit = DefaultPageSize
 	}
@@ -578,14 +578,14 @@ func (s *Service) ListJCEComparisons(ctx context.Context, tenantID pgtype.UUID, 
 	sortOptions := []string{"created_at", "title", "popularity"}
 
 	if s.settingsSvc != nil {
-		raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
+		raw := s.settingsSvc.GetStringOr(ctx, "jce.comparisons.sort_options", `["created_at","title","popularity"]`)
 		_ = json.Unmarshal([]byte(raw), &sortOptions)
 	}
 
 	pageSizeOptions := []int32{12, 24, 48, 96}
 
 	if s.settingsSvc != nil {
-		raw := s.settingsSvc.GetStringOr(ctx, pgtype.UUID{}, "jce.comparisons.page_size_options", `[12,24,48,96]`)
+		raw := s.settingsSvc.GetStringOr(ctx, "jce.comparisons.page_size_options", `[12,24,48,96]`)
 		_ = json.Unmarshal([]byte(raw), &pageSizeOptions)
 	}
 
@@ -612,7 +612,7 @@ type UpdateJCEComparisonInput struct {
 // UpdateJCEComparison updates the content and metadata of a JCE comparison.
 // Only the author or users with comparison.edit_any may update.
 func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateJCEComparisonInput, bypassOwnership bool) (JCEComparison, error) {
-	existing, err := s.contentSvc.GetContent(ctx, id, tenantID)
+	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("getting comparison for update: %w", err)
 	}
@@ -621,7 +621,7 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 		return JCEComparison{}, errpkg.ErrForbidden
 	}
 
-	metadata, err := s.store.getComparisonContentMetadata(ctx, id, tenantID)
+	metadata, err := s.store.getComparisonContentMetadata(ctx, id)
 	if err != nil {
 		return JCEComparison{}, fmt.Errorf("getting comparison metadata: %w", err)
 	}
@@ -684,12 +684,12 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 		}
 	}
 
-	return s.GetJCEComparison(ctx, id.String(), tenantID)
+	return s.GetJCEComparison(ctx, id.String())
 }
 
 // DeleteJCEComparison soft-deletes a JCE comparison.
 func (s *Service) DeleteJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
-	existing, err := s.contentSvc.GetContent(ctx, id, tenantID)
+	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting comparison for delete: %w", err)
 	}
@@ -707,7 +707,7 @@ func (s *Service) DeleteJCEComparison(ctx context.Context, id, tenantID, userID 
 
 // PromoteJCEComparison promotes a quick comparison to a new detailed draft.
 func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, bypassOwnership bool) (JCEComparisonResult, error) {
-	existing, err := s.GetJCEComparison(ctx, id.String(), tenantID)
+	existing, err := s.GetJCEComparison(ctx, id.String())
 	if err != nil {
 		return JCEComparisonResult{}, fmt.Errorf("getting comparison for promotion: %w", err)
 	}
@@ -873,7 +873,7 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 
 // SearchJCEEntities returns candidate items of the given entity type and, when
 // the resolver supports it, the total number of matching items.
-func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]resolver.ResolvedItem, int64, error) {
+func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query string, filters map[string]any, limit, offset int32) ([]resolver.ResolvedItem, int64, error) {
 	if s.resolver == nil {
 		return nil, -1, errors.New("resolver not configured")
 	}
@@ -884,7 +884,7 @@ func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query strin
 
 	g.Go(func() error {
 		var err error
-		items, err = s.resolver.Search(ctx, entityType, query, filters, tenantID, limit, offset)
+		items, err = s.resolver.Search(ctx, entityType, query, filters, limit, offset)
 
 		return err
 	})
@@ -894,7 +894,7 @@ func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query strin
 	g.Go(func() error {
 		var err error
 
-		total, err = s.resolver.Count(ctx, entityType, query, filters, tenantID)
+		total, err = s.resolver.Count(ctx, entityType, query, filters)
 		if err != nil {
 			slog.ErrorContext(ctx, "jce entity count failed", "type", entityType, "error", err)
 
@@ -912,7 +912,7 @@ func (s *Service) SearchJCEEntities(ctx context.Context, entityType, query strin
 }
 
 // ResolveJCEEntity resolves a single entity reference by id or slug.
-func (s *Service) ResolveJCEEntity(ctx context.Context, entityType, idOrSlug string, tenantID pgtype.UUID) (resolver.ResolvedItem, error) {
+func (s *Service) ResolveJCEEntity(ctx context.Context, entityType, idOrSlug string) (resolver.ResolvedItem, error) {
 	if s.resolver == nil {
 		return resolver.ResolvedItem{}, errors.New("resolver not configured")
 	}
@@ -924,12 +924,12 @@ func (s *Service) ResolveJCEEntity(ctx context.Context, entityType, idOrSlug str
 		ref["slug"] = idOrSlug
 	}
 
-	return s.resolver.Resolve(ctx, ref, tenantID)
+	return s.resolver.Resolve(ctx, ref)
 }
 
 // GetJCEComparisonMatrix returns the assembled matrix with items, dimensions, and values.
-func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id, tenantID pgtype.UUID) ([]ComparisonMatrixItem, error) {
-	return s.GetComparisonMatrix(ctx, id, tenantID)
+func (s *Service) GetJCEComparisonMatrix(ctx context.Context, id pgtype.UUID) ([]ComparisonMatrixItem, error) {
+	return s.GetComparisonMatrix(ctx, id)
 }
 
 // defaultSelectionTokenTTL is the fallback lifetime of a guest comparison selection token (15 minutes).
@@ -981,7 +981,7 @@ func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectio
 
 	ttl := defaultSelectionTokenTTL
 	if s.settingsSvc != nil {
-		ttl = time.Duration(s.settingsSvc.GetIntOr(ctx, input.TenantID, "jce.selection_token_ttl_minutes", 15)) * time.Minute
+		ttl = time.Duration(s.settingsSvc.GetIntOr(ctx, "jce.selection_token_ttl_minutes", 15)) * time.Minute
 	}
 
 	if err := s.vk.Set(ctx, selectionTokenKey(token), data, ttl).Err(); err != nil {
@@ -1025,7 +1025,7 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, tenantID, us
 		}
 
 		if s.resolver != nil && len(ref) > 0 {
-			resolved, rerr := s.resolver.Resolve(ctx, ref, tenantID)
+			resolved, rerr := s.resolver.Resolve(ctx, ref)
 			if rerr == nil {
 				item.Title = resolved.Title
 				item.Description = resolved.Description

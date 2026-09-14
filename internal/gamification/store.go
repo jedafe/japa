@@ -40,7 +40,7 @@ func NewStore(database *db.DB) *Store {
 
 // ListBadgeDefinitions lists badge definitions for a tenant, optionally
 // filtering to active only.
-func (s *Store) ListBadgeDefinitions(ctx context.Context, tenantID pgtype.UUID, activeOnly bool) ([]gen.BadgeDefinition, error) {
+func (s *Store) ListBadgeDefinitions(ctx context.Context, activeOnly bool) ([]gen.BadgeDefinition, error) {
 	return s.queries.ListBadgeDefinitions(ctx,
 
 		activeOnly,
@@ -49,7 +49,7 @@ func (s *Store) ListBadgeDefinitions(ctx context.Context, tenantID pgtype.UUID, 
 
 // ListBadgeDefinitionsPaginated returns a page of badge definitions and the
 // total count for pagination metadata.
-func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, tenantID pgtype.UUID, activeOnly bool, limit, offset int32) ([]gen.BadgeDefinition, int64, error) {
+func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, activeOnly bool, limit, offset int32) ([]gen.BadgeDefinition, int64, error) {
 	rows, err := s.queries.ListBadgeDefinitionsPaginated(ctx, gen.ListBadgeDefinitionsPaginatedParams{
 
 		ActiveOnly: activeOnly,
@@ -72,7 +72,7 @@ func (s *Store) ListBadgeDefinitionsPaginated(ctx context.Context, tenantID pgty
 }
 
 // GetBadgeDefinitionByID fetches a single badge definition by ID within a tenant.
-func (s *Store) GetBadgeDefinitionByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.BadgeDefinition, error) {
+func (s *Store) GetBadgeDefinitionByID(ctx context.Context, id pgtype.UUID) (gen.BadgeDefinition, error) {
 	return s.queries.GetBadgeDefinitionByID(ctx,
 
 		id,
@@ -91,7 +91,7 @@ func (s *Store) UpdateBadgeDefinition(ctx context.Context, arg gen.UpdateBadgeDe
 
 // DeleteBadgeDefinition deletes a non-system badge definition. Returns the
 // number of rows affected (0 if the badge was not found or is a system badge).
-func (s *Store) DeleteBadgeDefinition(ctx context.Context, tenantID, id pgtype.UUID) (int64, error) {
+func (s *Store) DeleteBadgeDefinition(ctx context.Context, id pgtype.UUID) (int64, error) {
 	return s.queries.DeleteBadgeDefinition(ctx,
 
 		id,
@@ -108,7 +108,7 @@ func (s *Store) AwardBadge(ctx context.Context, arg gen.AwardBadgeParams) (gen.U
 }
 
 // GetUserBadge fetches a single user_badge row, if it exists.
-func (s *Store) GetUserBadge(ctx context.Context, tenantID, userID, badgeID pgtype.UUID) (gen.UserBadge, error) {
+func (s *Store) GetUserBadge(ctx context.Context, userID, badgeID pgtype.UUID) (gen.UserBadge, error) {
 	return s.queries.GetUserBadge(ctx, gen.GetUserBadgeParams{
 
 		UserID:  userID,
@@ -117,7 +117,7 @@ func (s *Store) GetUserBadge(ctx context.Context, tenantID, userID, badgeID pgty
 }
 
 // ListUserBadges lists a user's earned badges with badge definition details.
-func (s *Store) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListUserBadgesRow, error) {
+func (s *Store) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]gen.ListUserBadgesRow, error) {
 	return s.queries.ListUserBadges(ctx,
 
 		userID,
@@ -126,7 +126,7 @@ func (s *Store) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UUID
 
 // ListUserBadgesByUsername lists a user's earned badges by username — used
 // for the public profile badge display.
-func (s *Store) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.UUID, username string) ([]gen.ListUserBadgesByUsernameRow, error) {
+func (s *Store) ListUserBadgesByUsername(ctx context.Context, username string) ([]gen.ListUserBadgesByUsernameRow, error) {
 	return s.queries.ListUserBadgesByUsername(ctx,
 
 		username,
@@ -138,12 +138,12 @@ func (s *Store) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.UU
 // =====================================================================
 
 // ListActiveChallenges lists active challenges within their date range.
-func (s *Store) ListActiveChallenges(ctx context.Context, tenantID pgtype.UUID) ([]gen.ChallengeDefinition, error) {
+func (s *Store) ListActiveChallenges(ctx context.Context) ([]gen.ChallengeDefinition, error) {
 	return s.queries.ListActiveChallenges(ctx)
 }
 
 // ListAllChallenges lists all challenges for a tenant (admin view), paginated.
-func (s *Store) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, limit, offset int32) ([]gen.ChallengeDefinition, int64, error) {
+func (s *Store) ListAllChallenges(ctx context.Context, limit, offset int32) ([]gen.ChallengeDefinition, int64, error) {
 	rows, err := s.queries.ListAllChallenges(ctx, gen.ListAllChallengesParams{
 
 		PageOffset: offset,
@@ -162,7 +162,7 @@ func (s *Store) ListAllChallenges(ctx context.Context, tenantID pgtype.UUID, lim
 }
 
 // GetChallengeByID fetches a single challenge definition by ID within a tenant.
-func (s *Store) GetChallengeByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.ChallengeDefinition, error) {
+func (s *Store) GetChallengeByID(ctx context.Context, id pgtype.UUID) (gen.ChallengeDefinition, error) {
 	return s.queries.GetChallengeByID(ctx,
 
 		id,
@@ -181,7 +181,7 @@ func (s *Store) UpdateChallenge(ctx context.Context, arg gen.UpdateChallengePara
 
 // DeleteChallenge deletes a challenge definition. Returns the number of rows
 // affected (0 if the challenge was not found).
-func (s *Store) DeleteChallenge(ctx context.Context, tenantID, id pgtype.UUID) (int64, error) {
+func (s *Store) DeleteChallenge(ctx context.Context, id pgtype.UUID) (int64, error) {
 	return s.queries.DeleteChallenge(ctx,
 
 		id,
@@ -190,7 +190,7 @@ func (s *Store) DeleteChallenge(ctx context.Context, tenantID, id pgtype.UUID) (
 
 // ExpireChallengesPastEndDate deactivates challenges whose ends_at is in the
 // past. Returns the number of rows affected.
-func (s *Store) ExpireChallengesPastEndDate(ctx context.Context, tenantID pgtype.UUID) (int64, error) {
+func (s *Store) ExpireChallengesPastEndDate(ctx context.Context) (int64, error) {
 	return s.queries.ExpireChallengesPastEndDate(ctx)
 }
 
@@ -205,7 +205,7 @@ func (s *Store) UpsertChallengeProgress(ctx context.Context, arg gen.UpsertChall
 }
 
 // GetChallengeProgress fetches a user's progress on a specific challenge.
-func (s *Store) GetChallengeProgress(ctx context.Context, tenantID, userID, challengeID pgtype.UUID) (gen.UserChallengeProgress, error) {
+func (s *Store) GetChallengeProgress(ctx context.Context, userID, challengeID pgtype.UUID) (gen.UserChallengeProgress, error) {
 	return s.queries.GetChallengeProgress(ctx, gen.GetChallengeProgressParams{
 
 		UserID:      userID,
@@ -215,7 +215,7 @@ func (s *Store) GetChallengeProgress(ctx context.Context, tenantID, userID, chal
 
 // ListUserChallengeProgress lists a user's challenge progress with challenge
 // definition details.
-func (s *Store) ListUserChallengeProgress(ctx context.Context, tenantID, userID pgtype.UUID) ([]gen.ListUserChallengeProgressRow, error) {
+func (s *Store) ListUserChallengeProgress(ctx context.Context, userID pgtype.UUID) ([]gen.ListUserChallengeProgressRow, error) {
 	return s.queries.ListUserChallengeProgress(ctx,
 
 		userID,
@@ -234,7 +234,7 @@ func (s *Store) MarkChallengeRewardClaimed(ctx context.Context, id pgtype.UUID) 
 // LeaderboardAllTime returns the all-time points leaderboard from
 // wallet_ledger. spaceID is optional — when valid, only members of that
 // space are ranked (per-space scope, Section 64).
-func (s *Store) LeaderboardAllTime(ctx context.Context, tenantID, spaceID pgtype.UUID, topN int32) ([]gen.LeaderboardAllTimeRow, error) {
+func (s *Store) LeaderboardAllTime(ctx context.Context, spaceID pgtype.UUID, topN int32) ([]gen.LeaderboardAllTimeRow, error) {
 	return s.queries.LeaderboardAllTime(ctx, gen.LeaderboardAllTimeParams{
 
 		SpaceID: spaceID,
@@ -245,7 +245,7 @@ func (s *Store) LeaderboardAllTime(ctx context.Context, tenantID, spaceID pgtype
 // LeaderboardByPeriod returns the period-scoped points leaderboard from
 // wallet_ledger earns since fromDate. spaceID is optional — when valid,
 // only members of that space are ranked.
-func (s *Store) LeaderboardByPeriod(ctx context.Context, tenantID, spaceID pgtype.UUID, fromDate pgtype.Timestamptz, topN int32) ([]gen.LeaderboardByPeriodRow, error) {
+func (s *Store) LeaderboardByPeriod(ctx context.Context, spaceID pgtype.UUID, fromDate pgtype.Timestamptz, topN int32) ([]gen.LeaderboardByPeriodRow, error) {
 	return s.queries.LeaderboardByPeriod(ctx, gen.LeaderboardByPeriodParams{
 
 		SpaceID:  spaceID,
@@ -260,7 +260,7 @@ func (s *Store) LeaderboardByPeriod(ctx context.Context, tenantID, spaceID pgtyp
 
 // GetBadgesByActivityTrigger returns active activity_count badges for a
 // specific activity_key.
-func (s *Store) GetBadgesByActivityTrigger(ctx context.Context, tenantID pgtype.UUID, activityKey string) ([]gen.BadgeDefinition, error) {
+func (s *Store) GetBadgesByActivityTrigger(ctx context.Context, activityKey string) ([]gen.BadgeDefinition, error) {
 	return s.queries.GetBadgesByActivityTrigger(ctx,
 
 		&activityKey,
@@ -268,13 +268,13 @@ func (s *Store) GetBadgesByActivityTrigger(ctx context.Context, tenantID pgtype.
 }
 
 // GetBadgesByPointsTrigger returns active lifetime_points badges.
-func (s *Store) GetBadgesByPointsTrigger(ctx context.Context, tenantID pgtype.UUID) ([]gen.BadgeDefinition, error) {
+func (s *Store) GetBadgesByPointsTrigger(ctx context.Context) ([]gen.BadgeDefinition, error) {
 	return s.queries.GetBadgesByPointsTrigger(ctx)
 }
 
 // CountUserActivityByKey counts a user's platform_events for a specific
 // activity_key (non-synthetic only).
-func (s *Store) CountUserActivityByKey(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) (int64, error) {
+func (s *Store) CountUserActivityByKey(ctx context.Context, userID pgtype.UUID, activityKey string) (int64, error) {
 	return s.queries.CountUserActivityByKey(ctx, gen.CountUserActivityByKeyParams{
 
 		UserID:      userID,
@@ -284,7 +284,7 @@ func (s *Store) CountUserActivityByKey(ctx context.Context, tenantID, userID pgt
 
 // GetUserLifetimePoints returns the sum of positive points earns for a user —
 // the lifetime-points counter used by lifetime_points badge triggers (§28).
-func (s *Store) GetUserLifetimePoints(ctx context.Context, tenantID, userID pgtype.UUID) (int64, error) {
+func (s *Store) GetUserLifetimePoints(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	return s.queries.GetLifetimePoints(ctx,
 
 		userID,
@@ -292,7 +292,7 @@ func (s *Store) GetUserLifetimePoints(ctx context.Context, tenantID, userID pgty
 }
 
 // GetChallengesByActivityKey returns active challenges matching an activity_key.
-func (s *Store) GetChallengesByActivityKey(ctx context.Context, tenantID pgtype.UUID, activityKey string) ([]gen.ChallengeDefinition, error) {
+func (s *Store) GetChallengesByActivityKey(ctx context.Context, activityKey string) ([]gen.ChallengeDefinition, error) {
 	return s.queries.GetChallengesByActivityKey(ctx,
 
 		activityKey,

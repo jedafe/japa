@@ -134,12 +134,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /planning-groups — list public planning groups.
 // Query params: ?dest=&visa=&page=&limit= (also accepts ?destination_space_id= as legacy alias).
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -161,7 +161,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	visaCategory := r.URL.Query().Get("visa")
 	page, limit := parsePageParams(r)
 
-	groups, total, err := h.service.List(r.Context(), tenantID, destSpaceID, visaCategory, page, limit)
+	groups, total, err := h.service.List(r.Context(), destSpaceID, visaCategory, page, limit)
 	if err != nil {
 		slog.Error("planninggroups: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list planning groups")
@@ -181,12 +181,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /planning-groups/:id — single planning group (public).
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -196,7 +196,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := h.service.Get(r.Context(), groupID, tenantID)
+	group, err := h.service.Get(r.Context(), groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
@@ -229,7 +229,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -279,7 +279,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -330,7 +330,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -356,7 +356,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the requesting user is the group owner.
-	group, err := h.service.Get(r.Context(), groupID, tenantID)
+	group, err := h.service.Get(r.Context(), groupID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
@@ -398,8 +398,7 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -409,12 +408,12 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
-	if err := h.service.Leave(r.Context(), groupID, user.UserID, tenantID); err != nil {
+	if err := h.service.Leave(r.Context(), groupID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "membership_not_found", "You are not a member of this group")
 			return
@@ -442,7 +441,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -451,7 +450,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.service.GetMembers(r.Context(), groupID, tenantID)
+	members, err := h.service.GetMembers(r.Context(), groupID)
 	if err != nil {
 		slog.Error("planninggroups: get members failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "members_failed", "Failed to get group members")
@@ -473,8 +472,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -484,7 +482,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -495,7 +493,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := h.service.UpdateOwn(r.Context(), groupID, tenantID, user.UserID, input)
+	group, err := h.service.UpdateOwn(r.Context(), groupID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
@@ -524,8 +522,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -535,12 +532,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
 
-	if err := h.service.DeleteOwn(r.Context(), groupID, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteOwn(r.Context(), groupID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return
@@ -578,7 +575,7 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -612,7 +609,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -636,7 +633,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	milestone, err := h.service.CreateMilestone(r.Context(), groupID, user.UserID, tenantID, body.Title)
+	milestone, err := h.service.CreateMilestone(r.Context(), groupID, user.UserID, body.Title)
 	if err != nil {
 		slog.Error("planninggroups: create milestone failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_milestone_failed", "Failed to create milestone")
@@ -671,7 +668,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -718,7 +715,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -727,7 +724,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	checkins, err := h.service.ListCheckins(r.Context(), groupID, tenantID)
+	checkins, err := h.service.ListCheckins(r.Context(), groupID)
 	if err != nil {
 		slog.Error("planninggroups: list checkins failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_checkins_failed", "Failed to list check-ins")
@@ -751,7 +748,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -775,7 +772,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	checkin, err := h.service.CreateCheckin(r.Context(), groupID, user.UserID, tenantID, body.Note)
+	checkin, err := h.service.CreateCheckin(r.Context(), groupID, user.UserID, body.Note)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrAlreadyCheckedIn):
@@ -804,13 +801,12 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -860,8 +856,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -871,7 +866,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "planning_groups_disabled", "Planning groups are not available")
 		return
 	}
@@ -887,7 +882,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Days != nil && *body.Days > 0 {
-		if err := h.service.AdminExtendExpiryByDays(r.Context(), groupID, tenantID, *body.Days); err != nil {
+		if err := h.service.AdminExtendExpiryByDays(r.Context(), groupID, *body.Days); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 				return
@@ -909,7 +904,7 @@ func (h *Handlers) HandleAdminExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminExtendExpiry(r.Context(), groupID, tenantID, body.ExpiresAt); err != nil {
+	if err := h.service.AdminExtendExpiry(r.Context(), groupID, body.ExpiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
 			return

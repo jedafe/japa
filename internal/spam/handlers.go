@@ -67,7 +67,7 @@ func NewHandlersWithCache(store *Store, rdb *valkey.Client) *Handlers {
 // invalidateCensoredCache is a best-effort cache invalidation helper. It logs
 // failures but never returns an error to the caller — a stale cache (1h TTL)
 // is preferable to failing an otherwise-successful admin mutation.
-func (h *Handlers) invalidateCensoredCache(ctx context.Context, tenantID pgtype.UUID) {
+func (h *Handlers) invalidateCensoredCache(ctx context.Context) {
 	if h.rdb == nil {
 		return
 	}
@@ -184,8 +184,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -194,7 +193,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	blockType := parseOptionalStringParam(r, "block_type")
 
-	blocks, err := h.Store.ListIPBlocksPaginated(r.Context(), tenantID, limit, offset, blockType)
+	blocks, err := h.Store.ListIPBlocksPaginated(r.Context(), limit, offset, blockType)
 	if err != nil {
 		slog.Error("listing ip blocks", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list IP blocks")
@@ -202,7 +201,7 @@ func (h *Handlers) ListIPBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.Store.CountIPBlocks(r.Context(), tenantID, blockType)
+	count, err := h.Store.CountIPBlocks(r.Context(), blockType)
 	if err != nil {
 		slog.Error("counting ip blocks", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count IP blocks")
@@ -294,8 +293,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -335,7 +333,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 		expiresAt = &ts
 	}
 
-	block, err := h.Store.UpdateIPBlock(r.Context(), id, tenantID, UpdateIPBlockInput{
+	block, err := h.Store.UpdateIPBlock(r.Context(), id, UpdateIPBlockInput{
 		CIDR:      input.CIDR,
 		BlockType: input.BlockType,
 		Reason:    input.Reason,
@@ -355,7 +353,7 @@ func (h *Handlers) UpdateIPBlock(w http.ResponseWriter, r *http.Request) {
 // DeleteIPBlock handles DELETE /admin/spam/ip-blocks/{id}.
 func (h *Handlers) DeleteIPBlock(w http.ResponseWriter, r *http.Request) {
 	deleteByID(w, r, "IP block", func(ctx context.Context, id, tenantID pgtype.UUID) error {
-		return h.Store.DeleteIPBlock(ctx, id, tenantID)
+		return h.Store.DeleteIPBlock(ctx, id)
 	})
 }
 
@@ -370,8 +368,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -380,7 +377,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 	offset := parsePageOffset(r)
 	action := parseOptionalStringParam(r, "action")
 
-	words, err := h.Store.ListCensoredWordsPaginated(r.Context(), tenantID, limit, offset, action)
+	words, err := h.Store.ListCensoredWordsPaginated(r.Context(), limit, offset, action)
 	if err != nil {
 		slog.Error("listing censored words", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list censored words")
@@ -388,7 +385,7 @@ func (h *Handlers) ListCensoredWords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.Store.CountCensoredWords(r.Context(), tenantID, action)
+	count, err := h.Store.CountCensoredWords(r.Context(), action)
 	if err != nil {
 		slog.Error("counting censored words", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count censored words")
@@ -414,8 +411,7 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -464,7 +460,7 @@ func (h *Handlers) CreateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.invalidateCensoredCache(r.Context(), tenantID)
+	h.invalidateCensoredCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": word})
 }
@@ -474,8 +470,7 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -507,7 +502,7 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	word, err := h.Store.UpdateCensoredWord(r.Context(), id, tenantID, UpdateCensoredWordInput{
+	word, err := h.Store.UpdateCensoredWord(r.Context(), id, UpdateCensoredWordInput{
 		Pattern:     input.Pattern,
 		Action:      input.Action,
 		Replacement: input.Replacement,
@@ -519,7 +514,7 @@ func (h *Handlers) UpdateCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.invalidateCensoredCache(r.Context(), tenantID)
+	h.invalidateCensoredCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": word})
 }
@@ -529,8 +524,7 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -541,14 +535,14 @@ func (h *Handlers) DeleteCensoredWord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.DeleteCensoredWord(r.Context(), id, tenantID); err != nil {
+	if err := h.Store.DeleteCensoredWord(r.Context(), id); err != nil {
 		slog.Error("deleting censored word", "error", err)
 		handleServiceError(w, err)
 
 		return
 	}
 
-	h.invalidateCensoredCache(r.Context(), tenantID)
+	h.invalidateCensoredCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }
@@ -564,8 +558,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -573,7 +566,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	blocks, err := h.Store.ListAllUserBlocksPaginated(r.Context(), tenantID, limit, offset)
+	blocks, err := h.Store.ListAllUserBlocksPaginated(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("listing user blocks", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list user blocks")
@@ -581,7 +574,7 @@ func (h *Handlers) ListUserBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.Store.CountAllUserBlocks(r.Context(), tenantID)
+	count, err := h.Store.CountAllUserBlocks(r.Context())
 	if err != nil {
 		slog.Error("counting user blocks", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count user blocks")
@@ -607,8 +600,7 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -625,7 +617,7 @@ func (h *Handlers) DeleteUserBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.DeleteUserBlock(r.Context(), tenantID, blockerID, blockedID); err != nil {
+	if err := h.Store.DeleteUserBlock(r.Context(), blockerID, blockedID); err != nil {
 		slog.Error("deleting user block", "error", err)
 		handleServiceError(w, err)
 

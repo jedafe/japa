@@ -128,7 +128,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 // ListTemplates is an exported method.
 func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -138,7 +138,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	result, err := h.Service.ListTemplates(r.Context(), tenantID, filterType, filterIsActive, limit, offset)
+	result, err := h.Service.ListTemplates(r.Context(), filterType, filterIsActive, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -149,7 +149,7 @@ func (h *Handlers) ListTemplates(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplate is an exported method.
 func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -160,7 +160,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
+	tmpl, err := h.Service.GetTemplate(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -171,7 +171,7 @@ func (h *Handlers) GetTemplate(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTemplate is an exported method.
 func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -194,7 +194,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, tenantID, input.Subject, input.HtmlBody, input.PlainTextBody, input.IsActive)
+	tmpl, err := h.Service.UpdateTemplate(r.Context(), id, input.Subject, input.HtmlBody, input.PlainTextBody, input.IsActive)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -205,7 +205,7 @@ func (h *Handlers) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
 
 // ResetTemplate is an exported method.
 func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -216,7 +216,7 @@ func (h *Handlers) ResetTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.ResetTemplate(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.ResetTemplate(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handlers) TestTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpl, err := h.Service.GetTemplate(r.Context(), id, tenantID)
+	tmpl, err := h.Service.GetTemplate(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -107,7 +107,7 @@ type WikiRevision struct {
 }
 
 // GetWikiPageBySlug returns a wiki page by space slug + page slug.
-func (s *Store) GetWikiPageBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageWithSpace, error) {
+func (s *Store) GetWikiPageBySlug(ctx context.Context, spaceSlug, pageSlug string) (WikiPageWithSpace, error) {
 	const q = `
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
@@ -141,7 +141,7 @@ LIMIT 1
 
 // ListWikiPagesBySpace returns all active wiki pages for a space, with the
 // associated space slug and name (Rule 16 — avoid a second API round-trip).
-func (s *Store) ListWikiPagesBySpace(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) ([]WikiPageWithSpace, error) {
+func (s *Store) ListWikiPagesBySpace(ctx context.Context, spaceSlug string) ([]WikiPageWithSpace, error) {
 	const q = `
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
@@ -185,7 +185,7 @@ ORDER BY wp.category, wp.title
 
 // ListWikiPagesBySpaceID returns all active wiki pages for a space by its ID.
 // Used by the ?dest= geo-aware query parameter (ADR-086 geo-aware pattern).
-func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, tenantID, spaceID pgtype.UUID) ([]WikiPageWithSpace, error) {
+func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, spaceID pgtype.UUID) ([]WikiPageWithSpace, error) {
 	const q = `
 SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        wp.is_active, wp.is_featured, wp.is_locked, wp.created_by,
@@ -242,7 +242,7 @@ func isDestinationLevel(level string) bool {
 // with their active wiki page count. Optional level, parent and region filters
 // narrow the result. When hasWiki is true, only spaces with at least one active
 // wiki page are returned; otherwise all destination spaces are included.
-func (s *Store) ListWikiDestinations(ctx context.Context, tenantID pgtype.UUID, level, parentSlug, region string, hasWiki bool) ([]WikiDestination, error) {
+func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region string, hasWiki bool) ([]WikiDestination, error) {
 	var conds []string
 
 	var args []any
@@ -426,7 +426,7 @@ var ErrDuplicateContent = errors.New("wiki: duplicate content")
 // BUG-002: computes content_hash (Rule 12) and rejects duplicate no-op edits
 // with ErrDuplicateContent when the unique index idx_wiki_revisions_page_hash
 // conflicts.
-func (s *Store) SubmitRevision(ctx context.Context, tenantID, pageID, userID pgtype.UUID, body []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
+func (s *Store) SubmitRevision(ctx context.Context, pageID, userID pgtype.UUID, body []byte, summary string, aiGenerated bool, aiModel, aiPromptHash string) (pgtype.UUID, error) {
 	var revID pgtype.UUID
 
 	var summaryPtr *string
@@ -470,7 +470,7 @@ RETURNING id
 // ApproveRevision marks a revision as approved and stamps the reviewer.
 // Also updates the wiki_page's updated_at. Returns the approved revision's
 // content (TipTap JSON) so the caller can enqueue RAG indexing (B8).
-func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, tenantID, reviewerID pgtype.UUID, reviewNotes string) ([]byte, error) {
+func (s *Store) ApproveRevision(ctx context.Context, revID, pageID, reviewerID pgtype.UUID, reviewNotes string) ([]byte, error) {
 	tx, err := s.pool.Writer.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("wiki: approve: begin tx: %w", err)
@@ -514,7 +514,7 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1
 }
 
 // RejectRevision marks a revision as rejected and stamps the reviewer.
-func (s *Store) RejectRevision(ctx context.Context, revID, tenantID, reviewerID pgtype.UUID, reviewNotes string) error {
+func (s *Store) RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, reviewNotes string) error {
 	var notesPtr *string
 	if reviewNotes != "" {
 		notesPtr = &reviewNotes
@@ -534,7 +534,7 @@ WHERE id = $1 AND status = 'pending'
 }
 
 // UpdatePage updates wiki page admin-managed fields (lock, feature, active).
-func (s *Store) UpdatePage(ctx context.Context, pageID, tenantID pgtype.UUID, isLocked, isFeatured, isActive *bool) error {
+func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, isFeatured, isActive *bool) error {
 	var (
 		conditions []string
 		args       []any
@@ -585,7 +585,7 @@ UPDATE wiki_pages SET %s WHERE id = $%d
 // GetSpaceBySlug resolves a destination (country/state/city) space slug to its
 // ID and level within a tenant. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
-func (s *Store) GetSpaceBySlug(ctx context.Context, tenantID pgtype.UUID, spaceSlug string) (pgtype.UUID, string, error) {
+func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, string, error) {
 	var id pgtype.UUID
 
 	var level string
@@ -609,7 +609,7 @@ LIMIT 1`, spaceSlug).Scan(&id, &level)
 // GetSpaceByID resolves a destination (country/state/city) space ID to its
 // slug and level within a tenant. Returns pgx.ErrNoRows if the space does not
 // exist or is not a destination space.
-func (s *Store) GetSpaceByID(ctx context.Context, tenantID, spaceID pgtype.UUID) (slug, level string, err error) {
+func (s *Store) GetSpaceByID(ctx context.Context, spaceID pgtype.UUID) (slug, level string, err error) {
 	err = s.pool.Reader.QueryRow(ctx, `
 SELECT slug, level
 FROM spaces
@@ -628,7 +628,7 @@ LIMIT 1`, spaceID).Scan(&slug, &level)
 
 // CreatePage creates a new wiki page. Used by the admin generate endpoint
 // and the space activation seed job.
-func (s *Store) CreatePage(ctx context.Context, tenantID, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
+func (s *Store) CreatePage(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (pgtype.UUID, error) {
 	var pageID pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(ctx, `

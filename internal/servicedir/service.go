@@ -32,7 +32,7 @@ import (
 // narrow contract, not the full content service.
 type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
-	GetContent(ctx context.Context, id, tenantID pgtype.UUID) (gen.GetContentByIDRow, error)
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
 }
@@ -126,12 +126,12 @@ func NewService(store *Store, contentSvc ContentService, settings *config.Settin
 
 // Enabled reads the service_directory.enabled system_setting toggle
 // (§98 feature flag).
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.settings == nil {
 		return false
 	}
 
-	return s.settings.GetBoolOr(ctx, pgtype.UUID{}, "service_directory.enabled", false)
+	return s.settings.GetBoolOr(ctx, "service_directory.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoints.
@@ -269,8 +269,8 @@ func (s *Service) Create(ctx context.Context, tenantID, authorID pgtype.UUID, in
 
 // GetBySlug returns a single published service listing by its slug.
 // Anonymous-accessible.
-func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (ServiceDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug, tenantID)
+func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceDTO{}, pgx.ErrNoRows
@@ -285,7 +285,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UU
 // List returns a paginated, filtered list of published service listings.
 // destSpaceID, citySpaceID, serviceCategory, originCommunity are optional
 // geo-aware filters (§98: ?dest=&city=&category=&origin=&verified=&sort=).
-func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -326,7 +326,7 @@ func (s *Service) List(ctx context.Context, tenantID, destSpaceID, citySpaceID p
 // RequireAnyPermission) bypasses the ownership check (BUG-008, BUG-009).
 // Only the provided (non-nil) fields are updated.
 func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditServiceInput, isEditAny bool) (ServiceDTO, error) {
-	existing, err := s.content.GetContent(ctx, contentID, tenantID)
+	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ServiceDTO{}, pgx.ErrNoRows
@@ -474,7 +474,7 @@ func (s *Service) Claim(ctx context.Context, contentID, tenantID, userID, orgID 
 // AdminList returns all service listings (any status) for the moderation
 // queue. Supports optional dest filter (BUG-011: geo-aware pattern on
 // admin list endpoints).
-func (s *Service) AdminList(ctx context.Context, tenantID pgtype.UUID, status, claimStatus, serviceCategory, q string, isVerified *bool, destSpaceID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
+func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCategory, q string, isVerified *bool, destSpaceID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -567,7 +567,7 @@ func (s *Service) AdminResolveClaim(ctx context.Context, contentID, tenantID, or
 // getServiceDTOByID fetches a service listing by content_id and converts
 // to DTO.
 func (s *Service) getServiceDTOByID(ctx context.Context, contentID, tenantID pgtype.UUID) (ServiceDTO, error) {
-	contentRow, err := s.content.GetContent(ctx, contentID, tenantID)
+	contentRow, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: get by id: %w", err)
 	}

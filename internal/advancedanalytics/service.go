@@ -42,7 +42,7 @@ func NewService(store *Store, settings *config.Settings) *Service {
 }
 
 // GetTopContent returns top content by engagement score.
-func (s *Service) GetTopContent(ctx context.Context, tenantID pgtype.UUID, period, contentType string, limit int) ([]gen.AdvancedAnalyticsTopContentRow, error) {
+func (s *Service) GetTopContent(ctx context.Context, period, contentType string, limit int) ([]gen.AdvancedAnalyticsTopContentRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -71,7 +71,7 @@ func periodToDays(period string) int {
 }
 
 // GetRevenueStreams returns monthly revenue breakdown by stream.
-func (s *Service) GetRevenueStreams(ctx context.Context, tenantID pgtype.UUID, period string) ([]gen.MvRevenueStream, error) {
+func (s *Service) GetRevenueStreams(ctx context.Context, period string) ([]gen.MvRevenueStream, error) {
 	// Default: last 12 months
 	fromMonth := pgtype.Date{Time: time.Now().AddDate(-1, 0, 0), Valid: true}
 	if period == "quarterly" {
@@ -82,7 +82,7 @@ func (s *Service) GetRevenueStreams(ctx context.Context, tenantID pgtype.UUID, p
 }
 
 // GetAdPerformance returns ad campaign aggregate performance.
-func (s *Service) GetAdPerformance(ctx context.Context, tenantID pgtype.UUID, status string, limit int) ([]gen.AdvancedAnalyticsAdPerformanceRow, error) {
+func (s *Service) GetAdPerformance(ctx context.Context, status string, limit int) ([]gen.AdvancedAnalyticsAdPerformanceRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -95,7 +95,7 @@ func (s *Service) GetAdPerformance(ctx context.Context, tenantID pgtype.UUID, st
 }
 
 // GetNewsletterEngagement returns newsletter open/click rates.
-func (s *Service) GetNewsletterEngagement(ctx context.Context, tenantID pgtype.UUID, limit int) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
+func (s *Service) GetNewsletterEngagement(ctx context.Context, limit int) ([]gen.AdvancedAnalyticsNewsletterEngagementRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -104,12 +104,12 @@ func (s *Service) GetNewsletterEngagement(ctx context.Context, tenantID pgtype.U
 }
 
 // GetSubscriberGrowth returns newsletter subscriber counts per list.
-func (s *Service) GetSubscriberGrowth(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
-	return s.store.SubscriberGrowth(ctx, tenantID)
+func (s *Service) GetSubscriberGrowth(ctx context.Context) ([]gen.AdvancedAnalyticsSubscriberGrowthRow, error) {
+	return s.store.SubscriberGrowth(ctx)
 }
 
 // GetRetentionCohorts returns D1/D7/D30 retention cohorts.
-func (s *Service) GetRetentionCohorts(ctx context.Context, tenantID pgtype.UUID, limit int) ([]gen.AdvancedAnalyticsRetentionCohortsRow, error) {
+func (s *Service) GetRetentionCohorts(ctx context.Context, limit int) ([]gen.AdvancedAnalyticsRetentionCohortsRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 30
 	}
@@ -124,15 +124,15 @@ func (s *Service) GetRetentionCohorts(ctx context.Context, tenantID pgtype.UUID,
 }
 
 // ExportCSV exports analytics data as CSV.
-func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, period string) (string, []string, error) {
-	enabled, err := s.settings.GetSettingBool(ctx, tenantID, "analytics.export_enabled")
+func (s *Service) ExportCSV(ctx context.Context, metric, period string) (string, []string, error) {
+	enabled, err := s.settings.GetSettingBool(ctx, "analytics.export_enabled")
 	if err != nil || !enabled {
 		return "", nil, errors.New("advancedanalytics: CSV export is disabled")
 	}
 
 	switch metric {
 	case "top_content":
-		rows, err := s.GetTopContent(ctx, tenantID, period, "", 100)
+		rows, err := s.GetTopContent(ctx, period, "", 100)
 		if err != nil {
 			return "", nil, err
 		}
@@ -167,7 +167,7 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		}), headers, nil
 
 	case "revenue_streams":
-		rows, err := s.GetRevenueStreams(ctx, tenantID, period)
+		rows, err := s.GetRevenueStreams(ctx, period)
 		if err != nil {
 			return "", nil, err
 		}
@@ -192,7 +192,7 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		}), headers, nil
 
 	case "ad_performance":
-		rows, err := s.GetAdPerformance(ctx, tenantID, "", 100)
+		rows, err := s.GetAdPerformance(ctx, "", 100)
 		if err != nil {
 			return "", nil, err
 		}
@@ -212,7 +212,7 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		}), headers, nil
 
 	case "newsletter":
-		campaigns, err := s.GetNewsletterEngagement(ctx, tenantID, 100)
+		campaigns, err := s.GetNewsletterEngagement(ctx, 100)
 		if err != nil {
 			return "", nil, err
 		}
@@ -238,7 +238,7 @@ func (s *Service) ExportCSV(ctx context.Context, tenantID pgtype.UUID, metric, p
 		}), headers, nil
 
 	case "retention":
-		cohorts, err := s.GetRetentionCohorts(ctx, tenantID, 100)
+		cohorts, err := s.GetRetentionCohorts(ctx, 100)
 		if err != nil {
 			return "", nil, err
 		}
@@ -294,7 +294,7 @@ func NewHandlers(svc *Service) *Handlers { return &Handlers{svc: svc} }
 // HandleTopContent returns top content by engagement.
 // GET /admin/analytics/top-content.
 func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
@@ -307,7 +307,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 	contentType := r.URL.Query().Get("type")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetTopContent(r.Context(), user.TenantID, period, contentType, limit)
+	rows, err := h.svc.GetTopContent(r.Context(), period, contentType, limit)
 	if err != nil {
 		slog.Error("advancedanalytics: top content query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve top content")
@@ -321,7 +321,7 @@ func (h *Handlers) HandleTopContent(w http.ResponseWriter, r *http.Request) {
 // HandleRevenueStreams returns revenue breakdown.
 // GET /admin/analytics/revenue-streams.
 func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
@@ -331,7 +331,7 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 		period = "monthly"
 	}
 
-	rows, err := h.svc.GetRevenueStreams(r.Context(), user.TenantID, period)
+	rows, err := h.svc.GetRevenueStreams(r.Context(), period)
 	if err != nil {
 		slog.Error("advancedanalytics: revenue streams query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve revenue streams")
@@ -345,7 +345,7 @@ func (h *Handlers) HandleRevenueStreams(w http.ResponseWriter, r *http.Request) 
 // HandleAdPerformance returns ad campaign aggregate stats.
 // GET /admin/analytics/ads.
 func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
@@ -353,7 +353,7 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetAdPerformance(r.Context(), user.TenantID, status, limit)
+	rows, err := h.svc.GetAdPerformance(r.Context(), status, limit)
 	if err != nil {
 		slog.Error("advancedanalytics: ad performance query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve ad performance")
@@ -367,14 +367,14 @@ func (h *Handlers) HandleAdPerformance(w http.ResponseWriter, r *http.Request) {
 // HandleNewsletterEngagement returns newsletter open/click rates.
 // GET /admin/analytics/newsletter.
 func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), user.TenantID, limit)
+	campaigns, err := h.svc.GetNewsletterEngagement(r.Context(), limit)
 	if err != nil {
 		slog.Error("advancedanalytics: newsletter engagement query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve newsletter engagement")
@@ -382,7 +382,7 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	lists, err := h.svc.GetSubscriberGrowth(r.Context(), user.TenantID)
+	lists, err := h.svc.GetSubscriberGrowth(r.Context())
 	if err != nil {
 		slog.Error("advancedanalytics: subscriber growth query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve subscriber growth")
@@ -399,14 +399,14 @@ func (h *Handlers) HandleNewsletterEngagement(w http.ResponseWriter, r *http.Req
 // HandleRetention returns retention cohorts.
 // GET /admin/analytics/retention.
 func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 
-	rows, err := h.svc.GetRetentionCohorts(r.Context(), user.TenantID, limit)
+	rows, err := h.svc.GetRetentionCohorts(r.Context(), limit)
 	if err != nil {
 		slog.Error("advancedanalytics: retention cohorts query failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "query_failed", "Failed to retrieve retention cohorts")
@@ -420,7 +420,7 @@ func (h *Handlers) HandleRetention(w http.ResponseWriter, r *http.Request) {
 // HandleExport exports analytics as CSV.
 // GET /admin/analytics/export.
 func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireAuthUser(w, r)
+	_, ok := requireAuthUser(w, r)
 	if !ok {
 		return
 	}
@@ -433,7 +433,7 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csvData, _, err := h.svc.ExportCSV(r.Context(), user.TenantID, metric, period)
+	csvData, _, err := h.svc.ExportCSV(r.Context(), metric, period)
 	if err != nil {
 		slog.Error("advancedanalytics: CSV export failed", "error", err, "metric", metric)
 		errpkg.WriteError(w, http.StatusBadRequest, "export_failed", "Export unavailable")

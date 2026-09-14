@@ -29,15 +29,15 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 	// activity_count badges — gated by gamification.badges_enabled only. The
 	// challenge increment below is gated separately by challenges_enabled so
 	// disabling badges does not silently stop challenge progress.
-	if s.badgesEnabled(ctx, tenantID) {
+	if s.badgesEnabled(ctx) {
 		// Get the current activity count for this activity_key.
-		currentCount, err := s.store.CountUserActivityByKey(ctx, tenantID, userID, activityKey)
+		currentCount, err := s.store.CountUserActivityByKey(ctx, userID, activityKey)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: count user activity: %w", err)
 		}
 
 		// Get all activity_count badges for this activity_key.
-		badges, err := s.store.GetBadgesByActivityTrigger(ctx, tenantID, activityKey)
+		badges, err := s.store.GetBadgesByActivityTrigger(ctx, activityKey)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: get badges by activity trigger: %w", err)
 		}
@@ -53,7 +53,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 			}
 
 			// Check if the user already has this badge.
-			_, err := s.store.GetUserBadge(ctx, tenantID, userID, b.ID)
+			_, err := s.store.GetUserBadge(ctx, userID, b.ID)
 			if err == nil {
 				continue // already awarded
 			}
@@ -97,7 +97,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 
 	// Increment challenge progress for matching challenges — independent of
 	// the badges toggle.
-	if s.challengesEnabled(ctx, tenantID) {
+	if s.challengesEnabled(ctx) {
 		if err := s.incrementChallengeProgress(ctx, tenantID, userID, activityKey); err != nil {
 			slog.Error("gamification: evaluate: increment challenge progress",
 				"activity_key", activityKey, "error", err)
@@ -112,7 +112,7 @@ func (s *Service) EvaluateBadges(ctx context.Context, tenantID, userID pgtype.UU
 // grants the configured rewards — reward badge, reward points, and a
 // completion notification — and marks the reward claimed.
 func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error {
-	challenges, err := s.store.GetChallengesByActivityKey(ctx, tenantID, activityKey)
+	challenges, err := s.store.GetChallengesByActivityKey(ctx, activityKey)
 	if err != nil {
 		return fmt.Errorf("get challenges by activity key: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *Service) incrementChallengeProgress(ctx context.Context, tenantID, user
 		// Read the prior progress row so a fresh completion can be told apart
 		// from increments that land after the challenge already completed —
 		// without this the reward would fire on every subsequent event.
-		prior, priorErr := s.store.GetChallengeProgress(ctx, tenantID, userID, c.ID)
+		prior, priorErr := s.store.GetChallengeProgress(ctx, userID, c.ID)
 		wasCompleted := priorErr == nil && prior.Completed
 
 		progress, err := s.store.UpsertChallengeProgress(ctx, gen.UpsertChallengeProgressParams{
@@ -173,7 +173,7 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 
 	if c.RewardBadgeID.Valid {
 		// Skip when the user already holds the reward badge.
-		_, err := s.store.GetUserBadge(ctx, tenantID, userID, c.RewardBadgeID)
+		_, err := s.store.GetUserBadge(ctx, userID, c.RewardBadgeID)
 		switch {
 		case err == nil:
 			// already held
@@ -226,11 +226,11 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 // EvaluatePointsBadges checks lifetime_points badges against the user's
 // current lifetime points and awards any newly-earned badges.
 func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgtype.UUID, currentLifetimePoints int64) ([]BadgeWithDetails, error) {
-	if !s.badgesEnabled(ctx, tenantID) {
+	if !s.badgesEnabled(ctx) {
 		return nil, nil
 	}
 
-	badges, err := s.store.GetBadgesByPointsTrigger(ctx, tenantID)
+	badges, err := s.store.GetBadgesByPointsTrigger(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: get points badges: %w", err)
 	}
@@ -247,7 +247,7 @@ func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgt
 			continue
 		}
 
-		_, err := s.store.GetUserBadge(ctx, tenantID, userID, b.ID)
+		_, err := s.store.GetUserBadge(ctx, userID, b.ID)
 		if err == nil {
 			continue
 		}

@@ -441,7 +441,7 @@ WHERE %s
 
 // GetBySlug returns a single service listing by its slug, joining contents +
 // service_listing_meta + spaces + organizations + users.
-func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (ServiceRow, error) {
+func (s *Store) GetBySlug(ctx context.Context, slug string) (ServiceRow, error) {
 	const q = `
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,

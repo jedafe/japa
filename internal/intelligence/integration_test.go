@@ -116,7 +116,7 @@ func (m *mockPromoterStore) CreateContent(_ context.Context, _ pgtype.UUID, arg 
 	return gen.CreateContentRow{ID: id, GuideCategory: arg.GuideCategory}, nil
 }
 
-func (m *mockPromoterStore) GetContentByID(_ context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+func (m *mockPromoterStore) GetContentByID(_ context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
 	return gen.GetContentByIDRow{
 		ID: id,
 
@@ -136,7 +136,7 @@ func (m *mockPromoterStore) ContentSlugExists(_ context.Context, _ string) (bool
 	return false, nil
 }
 
-func (m *mockPromoterStore) UpdateContent(_ context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
+func (m *mockPromoterStore) UpdateContent(_ context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error) {
 	m.updateContentCalls = append(m.updateContentCalls, arg)
 	return gen.UpdateContentRow{ID: arg.ID}, nil
 }

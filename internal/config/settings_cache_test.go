@@ -72,7 +72,7 @@ func TestGetSettingCachesMissing(t *testing.T) {
 		t.Errorf("GetIntOr fallback not returned for missing setting: got %d, want 42", got)
 	}
 
-	if got := s.GetBoolOr(t.Context(), tid, "missing_key", true); !got {
+	if got := s.GetBoolOr(t.Context(), "missing_key", true); !got {
 		t.Errorf("GetBoolOr fallback not returned for missing setting: got %v, want true", got)
 	}
 

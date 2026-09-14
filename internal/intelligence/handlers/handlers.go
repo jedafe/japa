@@ -47,32 +47,32 @@ const TaskIntelFetchSource = "intel:fetch_source"
 // system_settings at runtime (Rule 3, INTEL-016). Defining it locally
 // avoids an import cycle on internal/config.
 type SettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // videoStore is the small surface of the video store needed for source item
 // feeds that include linked video sources (v2 source directory, Task 3).
 type videoStore interface {
-	ListBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error)
+	ListBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.VideoSource, int64, error)
 }
 
 // contentStore is the small surface of the content service needed for source
 // item feeds that include linked comparison contents.
 type contentStore interface {
-	ListComparisonContentsBySourceID(ctx context.Context, tenantID, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error)
+	ListComparisonContentsBySourceID(ctx context.Context, sourceID pgtype.UUID, limit, offset int32) ([]gen.ListComparisonContentsBySourceIDRow, int64, error)
 }
 
 // reportService creates a user report for an entity (content, source, etc).
 // *reports.Service satisfies this interface.
 type reportService interface {
-	CreateReport(ctx context.Context, tenantID, reporterUserID pgtype.UUID, input reports.CreateReportInput) (gen.ContentReport, error)
+	CreateReport(ctx context.Context, reporterUserID pgtype.UUID, input reports.CreateReportInput) (gen.ContentReport, error)
 }
 
 // tagService resolves and creates directory tags from source keywords so
 // keyword chips can link to /tags/{slug} without 404ing.
 type tagService interface {
-	ResolveTagSlugs(ctx context.Context, tenantID pgtype.UUID, slugs []string) ([]gen.GetTagsBySlugsRow, error)
-	CreateTag(ctx context.Context, tenantID pgtype.UUID, input tags.CreateTagInput) (gen.CreateTagRow, error)
+	ResolveTagSlugs(ctx context.Context, slugs []string) ([]gen.GetTagsBySlugsRow, error)
+	CreateTag(ctx context.Context, input tags.CreateTagInput) (gen.CreateTagRow, error)
 }
 
 // Handlers exposes the /api/v1/intel/* HTTP routes.
@@ -224,8 +224,8 @@ func (h *Handlers) parsePagination(r *http.Request) (int, int) {
 	maxSize := 100
 
 	if h.settings != nil {
-		defaultSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.default_page_size", 20)
-		maxSize = h.settings.GetIntOr(r.Context(), h.defaultTenant, "intel.radar.max_page_size", 100)
+		defaultSize = h.settings.GetIntOr(r.Context(), "intel.radar.default_page_size", 20)
+		maxSize = h.settings.GetIntOr(r.Context(), "intel.radar.max_page_size", 100)
 	}
 
 	q := r.URL.Query()

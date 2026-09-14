@@ -26,18 +26,18 @@ type freshnessSettings struct {
 }
 
 // loadFreshnessSettings loads the freshness-related system_settings for the tenant.
-func (s *Service) loadFreshnessSettings(ctx context.Context, tenantID pgtype.UUID) freshnessSettings {
+func (s *Service) loadFreshnessSettings(ctx context.Context) freshnessSettings {
 	if s.settings == nil {
 		return defaultFreshnessSettings()
 	}
 
 	return freshnessSettings{
-		staleHours:       s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_stale_hours", 168),
-		decayPerHour:     s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_decay_per_hour", 2),
-		officialWeight:   s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_official_weight", 100),
-		thirdPartyWeight: s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_third_party_weight", 75),
-		aiEstimateWeight: s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_ai_estimate_weight", 50),
-		cacheTTLMinutes:  s.settings.GetIntOr(ctx, pgtype.UUID{}, "jce.freshness_cache_ttl_minutes", 10),
+		staleHours:       s.settings.GetIntOr(ctx, "jce.freshness_stale_hours", 168),
+		decayPerHour:     s.settings.GetIntOr(ctx, "jce.freshness_decay_per_hour", 2),
+		officialWeight:   s.settings.GetIntOr(ctx, "jce.freshness_official_weight", 100),
+		thirdPartyWeight: s.settings.GetIntOr(ctx, "jce.freshness_third_party_weight", 75),
+		aiEstimateWeight: s.settings.GetIntOr(ctx, "jce.freshness_ai_estimate_weight", 50),
+		cacheTTLMinutes:  s.settings.GetIntOr(ctx, "jce.freshness_cache_ttl_minutes", 10),
 	}
 }
 
@@ -161,7 +161,7 @@ func (s *Service) cellFreshness(
 // scores. The result is cached in Valkey under jc:jce:freshness:{}:{content_id}.
 func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
 	// Load the comparison and enforce visibility before reading cache or matrix.
-	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String(), tenantID)
+	cmp, err := s.compSvc.GetJCEComparison(ctx, contentID.String())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return FreshnessSummary{}, fmt.Errorf("%w: comparison not found", errpkg.ErrNotFound)
@@ -185,9 +185,9 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		}
 	}
 
-	settings := s.loadFreshnessSettings(ctx, tenantID)
+	settings := s.loadFreshnessSettings(ctx)
 
-	matrix, err := s.compSvc.GetJCEComparisonMatrix(ctx, contentID, tenantID)
+	matrix, err := s.compSvc.GetJCEComparisonMatrix(ctx, contentID)
 	if err != nil {
 		return FreshnessSummary{}, fmt.Errorf("loading comparison matrix: %w", err)
 	}
@@ -209,7 +209,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 		valueIndex[valueKey{v.ItemID.Bytes, v.DimensionID.Bytes}] = v
 	}
 
-	sources, _, err := s.dataSources.list(ctx, tenantID, nil, nil, 0, 0)
+	sources, _, err := s.dataSources.list(ctx, nil, nil, 0, 0)
 	if err != nil {
 		return FreshnessSummary{}, fmt.Errorf("loading data sources: %w", err)
 	}
@@ -272,7 +272,7 @@ func (s *Service) FreshnessForComparison(ctx context.Context, contentID, tenantI
 				// The matrix projection does not include comparison_dimensions.slug,
 				// so we use the dimension label as the slug for source matching.
 				// MatchDataSource falls back through scoped to global passes.
-				matched, err := s.MatchDataSource(ctx, tenantID, entityType, entityID, dim.Label, sourceName, nil)
+				matched, err := s.MatchDataSource(ctx, entityType, entityID, dim.Label, sourceName, nil)
 				if err == nil && matched != nil {
 					source = matched
 				}

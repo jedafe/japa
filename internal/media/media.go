@@ -9,7 +9,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -40,8 +39,8 @@ const (
 // system_settings (Rule 3 — no hardcoded config). Implemented by
 // *config.Settings.
 type SettingsProvider interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
-	GetStringOr(ctx context.Context, tenantID pgtype.UUID, key, fallback string) string
+	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
 // MediaAttribution carries stock photo source metadata for attribution display.
@@ -101,22 +100,22 @@ func (s *Service) SetSettings(sp SettingsProvider) {
 // so callers degrade gracefully. Call once after SetSettings during server
 // wiring; the settings are hot-reloadable so a subsequent call picks up
 // Control Panel changes.
-func (s *Service) ReconfigureS3FromSettings(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) ReconfigureS3FromSettings(ctx context.Context) {
 	if s.settings == nil {
 		return
 	}
 
-	endpoint := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.endpoint", "")
-	accessKey := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.access_key", "")
-	secretKey := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.secret_key", "")
+	endpoint := s.settings.GetStringOr(ctx, "media.storage.endpoint", "")
+	accessKey := s.settings.GetStringOr(ctx, "media.storage.access_key", "")
+	secretKey := s.settings.GetStringOr(ctx, "media.storage.secret_key", "")
 
 	if endpoint == "" || accessKey == "" || secretKey == "" {
 		// Not configured via settings — keep the env-var-based client.
 		return
 	}
 
-	region := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.region", "us-east-1")
-	bucket := s.settings.GetStringOr(ctx, pgtype.UUID{}, "media.storage.bucket", DefaultBucket)
+	region := s.settings.GetStringOr(ctx, "media.storage.region", "us-east-1")
+	bucket := s.settings.GetStringOr(ctx, "media.storage.bucket", DefaultBucket)
 	s.s3 = NewS3ClientFromConfig(S3Config{
 		Endpoint:  endpoint,
 		AccessKey: accessKey,

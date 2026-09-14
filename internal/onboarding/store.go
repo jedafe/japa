@@ -20,7 +20,7 @@ func NewStore(read, write *gen.Queries) *Store {
 }
 
 // getState returns the onboarding state for a user, or false if not found.
-func (s *Store) getState(ctx context.Context, tenantID, userID pgtype.UUID) (gen.OnboardingState, error) {
+func (s *Store) getState(ctx context.Context, userID pgtype.UUID) (gen.OnboardingState, error) {
 	row, err := s.read.GetOnboardingState(ctx,
 
 		userID,
@@ -33,7 +33,7 @@ func (s *Store) getState(ctx context.Context, tenantID, userID pgtype.UUID) (gen
 }
 
 // upsertState inserts or updates the onboarding state.
-func (s *Store) upsertState(ctx context.Context, tenantID, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool) error {
+func (s *Store) upsertState(ctx context.Context, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool) error {
 	if err := s.write.UpsertOnboardingState(ctx, gen.UpsertOnboardingStateParams{
 
 		UserID:        userID,
@@ -49,7 +49,7 @@ func (s *Store) upsertState(ctx context.Context, tenantID, userID pgtype.UUID, c
 }
 
 // completeOnboarding marks the onboarding as completed.
-func (s *Store) completeOnboarding(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (s *Store) completeOnboarding(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.CompleteOnboarding(ctx,
 
 		userID,
@@ -61,7 +61,7 @@ func (s *Store) completeOnboarding(ctx context.Context, tenantID, userID pgtype.
 }
 
 // dismissTour marks the product tour as dismissed.
-func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (s *Store) dismissTour(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DismissTour(ctx,
 
 		userID,
@@ -73,7 +73,7 @@ func (s *Store) dismissTour(ctx context.Context, tenantID, userID pgtype.UUID) e
 }
 
 // listTemplates returns all onboarding templates for a tenant.
-func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.OnboardingTemplate, error) {
+func (s *Store) listTemplates(ctx context.Context) ([]gen.OnboardingTemplate, error) {
 	rows, err := s.read.ListOnboardingTemplates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing onboarding templates: %w", err)
@@ -83,7 +83,7 @@ func (s *Store) listTemplates(ctx context.Context, tenantID pgtype.UUID) ([]gen.
 }
 
 // getTemplate retrieves a single onboarding template by ID.
-func (s *Store) getTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.OnboardingTemplate, error) {
+func (s *Store) getTemplate(ctx context.Context, id pgtype.UUID) (gen.OnboardingTemplate, error) {
 	row, err := s.read.GetOnboardingTemplate(ctx,
 		id,
 	)
@@ -95,7 +95,7 @@ func (s *Store) getTemplate(ctx context.Context, tenantID, id pgtype.UUID) (gen.
 }
 
 // createTemplate inserts a new onboarding template.
-func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
+func (s *Store) createTemplate(ctx context.Context, name, description string, steps []byte, isActive, isSystem bool) (gen.OnboardingTemplate, error) {
 	row, err := s.write.CreateOnboardingTemplate(ctx, gen.CreateOnboardingTemplateParams{
 
 		Name:        name,
@@ -112,7 +112,7 @@ func (s *Store) createTemplate(ctx context.Context, tenantID pgtype.UUID, name, 
 }
 
 // updateTemplate updates an existing onboarding template.
-func (s *Store) updateTemplate(ctx context.Context, tenantID, id pgtype.UUID, name, description string, steps []byte, isActive bool) error {
+func (s *Store) updateTemplate(ctx context.Context, id pgtype.UUID, name, description string, steps []byte, isActive bool) error {
 	return s.write.UpdateOnboardingTemplate(ctx, gen.UpdateOnboardingTemplateParams{
 
 		ID:          id,
@@ -124,7 +124,7 @@ func (s *Store) updateTemplate(ctx context.Context, tenantID, id pgtype.UUID, na
 }
 
 // deleteTemplate removes an onboarding template.
-func (s *Store) deleteTemplate(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) deleteTemplate(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteOnboardingTemplate(ctx,
 
 		id,

@@ -66,7 +66,7 @@ func GenerateVerificationToken() (token, hash string, err error) {
 
 // InvalidateAllUserSessions revokes all active refresh tokens for a user.
 // This forces the user to re-authenticate on all devices after a password reset.
-func InvalidateAllUserSessions(ctx context.Context, queries *gen.Queries, userID, tenantID pgtype.UUID) error {
+func InvalidateAllUserSessions(ctx context.Context, queries *gen.Queries, userID pgtype.UUID) error {
 	// Revoke all non-revoked refresh tokens for this user.
 	return queries.RevokeAllUserRefreshTokens(ctx,
 		userID,

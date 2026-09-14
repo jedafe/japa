@@ -202,7 +202,7 @@ const (
 // media.video.upload for video MIME types). This avoids importing the full
 // rbac package and keeps the handler testable with a stub.
 type permissionChecker interface {
-	HasPermission(ctx context.Context, userID, tenantID pgtype.UUID, permKey string) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // Handlers holds dependencies for media HTTP handlers.
@@ -359,7 +359,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 	// The route middleware already checks media.upload; this is a secondary
 	// gate for video content specifically (MEDIA-007).
 	if isVideoMIME(CanonicalMIMEType(input.MimeType)) && h.perms != nil {
-		if !h.perms.HasPermission(r.Context(), user.UserID, tenantID, "media.video.upload") {
+		if !h.perms.HasPermission(r.Context(), user.UserID, "media.video.upload") {
 			errpkg.WriteError(w, http.StatusForbidden, "video_upload_forbidden",
 				"You do not have permission to upload video files")
 			return
@@ -395,7 +395,7 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 
 	// BUG-004: pass the uploader ID so ConfirmUpload can verify only the
 	// user who initiated the upload can confirm it (§34 two-step upload).
-	if err := h.service.ConfirmUpload(r.Context(), tenantID, mediaID, user.UserID); err != nil {
+	if err := h.service.ConfirmUpload(r.Context(), mediaID, user.UserID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		return
 	}
@@ -414,7 +414,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, tenantID, mediaID pgty
 	}
 
 	// Fetch media record to get MIME type for routing.
-	m, err := h.service.GetMedia(ctx, tenantID, mediaID)
+	m, err := h.service.GetMedia(ctx, mediaID)
 	if err != nil {
 		slog.Warn("media: failed to fetch media for task enqueue", "media_id", mediaID.String(), "error", err)
 		return
@@ -490,8 +490,7 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -505,7 +504,7 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m, err := h.service.GetMedia(r.Context(), tenantID, mediaID)
+	m, err := h.service.GetMedia(r.Context(), mediaID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 		return
@@ -518,7 +517,7 @@ func (h *Handlers) GetMedia(w http.ResponseWriter, r *http.Request) {
 	// store's ownership-scoped methods.
 	if m.UploaderUserID != user.UserID {
 		canViewAll := h.perms != nil &&
-			h.perms.HasPermission(r.Context(), user.UserID, tenantID, "media.view_all")
+			h.perms.HasPermission(r.Context(), user.UserID, "media.view_all")
 		if !canViewAll {
 			errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 			return
@@ -552,8 +551,7 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -586,13 +584,13 @@ func (h *Handlers) updateMetadataHandler(w http.ResponseWriter, r *http.Request,
 
 	if ownOnly {
 		// User-facing update — scoped to the uploader (MEDIA-003).
-		if err := h.service.UpdateMetadataOwn(r.Context(), tenantID, user.UserID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
+		if err := h.service.UpdateMetadataOwn(r.Context(), user.UserID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
 			errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 			return
 		}
 	} else {
 		// Admin update — no ownership filter (gated by media.edit_any).
-		if err := h.service.UpdateMetadata(r.Context(), tenantID, mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
+		if err := h.service.UpdateMetadata(r.Context(), mediaID, input.AltText, input.Caption, input.Width, input.Height, input.Duration, userGroupID); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "update_error", "Failed to update media")
 			return
 		}
@@ -619,8 +617,7 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -632,7 +629,7 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 
 	// Use the ownership-scoped delete so a user with media.delete_own can
 	// only delete their own uploads (MEDIA-001).
-	if err := h.service.DeleteMediaOwn(r.Context(), tenantID, user.UserID, mediaID); err != nil {
+	if err := h.service.DeleteMediaOwn(r.Context(), user.UserID, mediaID); err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
 		return
 	}
@@ -647,8 +644,7 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -658,7 +654,7 @@ func (h *Handlers) AdminDeleteMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteMedia(r.Context(), tenantID, mediaID); err != nil {
+	if err := h.service.DeleteMedia(r.Context(), mediaID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_error", "Failed to delete media")
 		return
 	}
@@ -674,8 +670,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -715,7 +710,7 @@ func (h *Handlers) ListMedia(w http.ResponseWriter, r *http.Request) {
 		flagged = &fl
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), tenantID, uploaderID, mimeType, query, status, flagged, limit, offset)
+	items, total, err := h.service.ListMedia(r.Context(), uploaderID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -743,8 +738,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -772,7 +766,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 		flagged = &fl
 	}
 
-	items, total, err := h.service.ListMedia(r.Context(), tenantID, &user.UserID, mimeType, query, status, flagged, limit, offset)
+	items, total, err := h.service.ListMedia(r.Context(), &user.UserID, mimeType, query, status, flagged, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -795,7 +789,7 @@ func (h *Handlers) ListMyMedia(w http.ResponseWriter, r *http.Request) {
 
 // ListByUser handles GET /users/{id}/media — the public profile Media tab.
 func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -809,7 +803,7 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, total, err := h.service.ListByUser(r.Context(), tenantID, uploaderID, limit, offset)
+	items, total, err := h.service.ListByUser(r.Context(), uploaderID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -824,7 +818,7 @@ func (h *Handlers) ListByUser(w http.ResponseWriter, r *http.Request) {
 // ListByOrganization handles GET /organizations/{id}/media — the org profile
 // Media tab. Non-active orgs are already 404'd by the requireActiveOrgByID gate.
 func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -838,7 +832,7 @@ func (h *Handlers) ListByOrganization(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, total, err := h.service.ListByOrganization(r.Context(), tenantID, orgID, limit, offset)
+	items, total, err := h.service.ListByOrganization(r.Context(), orgID, limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_error", "Failed to load media")
 		return
@@ -861,8 +855,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -870,7 +863,7 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 
-	items, err := h.service.ListQuarantined(r.Context(), tenantID, limit, offset)
+	items, err := h.service.ListQuarantined(r.Context(), limit, offset)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_quarantined_error", "Failed to load quarantined media")
 		return
@@ -882,12 +875,12 @@ func (h *Handlers) ListQuarantined(w http.ResponseWriter, r *http.Request) {
 // ApproveQuarantined handles POST /admin/media/{id}/approve.
 // Clears quarantine and confirms the media item as safe.
 func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
-	userID, tenantID, mediaID, ok := h.requireMediaAuth(w, r)
+	userID, _, mediaID, ok := h.requireMediaAuth(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.service.ApproveMedia(r.Context(), mediaID, tenantID, userID); err != nil {
+	if err := h.service.ApproveMedia(r.Context(), mediaID, userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_error", "Failed to approve media")
 		return
 	}
@@ -898,12 +891,12 @@ func (h *Handlers) ApproveQuarantined(w http.ResponseWriter, r *http.Request) {
 // RejectQuarantined handles POST /admin/media/{id}/reject.
 // Soft-deletes the quarantined media after admin review.
 func (h *Handlers) RejectQuarantined(w http.ResponseWriter, r *http.Request) {
-	userID, tenantID, mediaID, ok := h.requireMediaAuth(w, r)
+	userID, _, mediaID, ok := h.requireMediaAuth(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.service.RejectMedia(r.Context(), mediaID, tenantID, userID); err != nil {
+	if err := h.service.RejectMedia(r.Context(), mediaID, userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_error", "Failed to reject media")
 		return
 	}
@@ -926,8 +919,7 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -960,7 +952,7 @@ func (h *Handlers) AdminUpdateMediaStatus(w http.ResponseWriter, r *http.Request
 		quarantineReason = &reason
 	}
 
-	if err := h.service.AdminUpdateStatus(r.Context(), tenantID, mediaID, user.UserID, confirmed, quarantineReason); err != nil {
+	if err := h.service.AdminUpdateStatus(r.Context(), mediaID, user.UserID, confirmed, quarantineReason); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "status_update_error", "Failed to update media status")
 		return
 	}
@@ -995,7 +987,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	if header.Size > h.service.MaxUploadBytes(r.Context(), tenantID) {
+	if header.Size > h.service.MaxUploadBytes(r.Context()) {
 		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "file_too_large", "File exceeds the configured upload size limit")
 		return
 	}
@@ -1054,7 +1046,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mediaID, err := h.service.DirectUpload(r.Context(), tenantID, user.UserID, header.Filename, contentType, written, localPath, storagePath)
+	mediaID, err := h.service.DirectUpload(r.Context(), user.UserID, header.Filename, contentType, written, localPath, storagePath)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save media record")
 		return
@@ -1081,8 +1073,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1122,7 +1113,7 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Use the ownership-scoped bulk delete so a user with media.delete_own
 	// can only delete their own uploads (MEDIA-002).
-	if err := h.service.BulkDeleteOwn(r.Context(), tenantID, user.UserID, ids); err != nil {
+	if err := h.service.BulkDeleteOwn(r.Context(), user.UserID, ids); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "bulk_delete_error", "Failed to delete media")
 		return
 	}

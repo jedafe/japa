@@ -126,7 +126,7 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 }
 
 // AdminStatusDistribution returns per-status scholarship counts for the admin dashboard.
-func (s *Store) AdminStatusDistribution(ctx context.Context, tenantID pgtype.UUID) ([]gen.AdminScholarshipStatusDistributionRow, error) {
+func (s *Store) AdminStatusDistribution(ctx context.Context) ([]gen.AdminScholarshipStatusDistributionRow, error) {
 	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("scholarships: admin status distribution: %w", err)
@@ -190,7 +190,7 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 // the admin management page. q is an optional case-insensitive search over
 // title/university/country; status is an optional verification_status filter.
 // The tenantID is stamped into the query params.
-func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
+func (s *Store) AdminListScholarships(ctx context.Context, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.AdminListScholarships(ctx, arg)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *Store) AdminListScholarships(ctx context.Context, tenantID pgtype.UUID,
 // AdminCountScholarships returns the total row count for the admin management
 // list with the same q + status filter as AdminListScholarships, so the admin
 // panel can compute total pages.
-func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID, arg gen.AdminCountScholarshipsParams) (int64, error) {
+func (s *Store) AdminCountScholarships(ctx context.Context, arg gen.AdminCountScholarshipsParams) (int64, error) {
 
 	count, err := s.queries.AdminCountScholarships(ctx, arg)
 	if err != nil {
@@ -215,7 +215,7 @@ func (s *Store) AdminCountScholarships(ctx context.Context, tenantID pgtype.UUID
 
 // AdminGetScholarship returns a single scholarship by ID for the admin
 // management page.
-func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+func (s *Store) AdminGetScholarship(ctx context.Context, id pgtype.UUID) (gen.Scholarship, error) {
 	row, err := s.queries.GetScholarship(ctx,
 
 		id,
@@ -229,7 +229,7 @@ func (s *Store) AdminGetScholarship(ctx context.Context, tenantID, id pgtype.UUI
 
 // AdminCreateScholarship creates a new scholarship record. The tenantID is
 // stamped into the query params.
-func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 
 	row, err := s.queries.CreateScholarship(ctx, arg)
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *Store) AdminCreateScholarship(ctx context.Context, tenantID pgtype.UUID
 
 // AdminUpdateScholarship updates an existing scholarship record. The
 // tenantID is stamped into the query params.
-func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+func (s *Store) AdminUpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
 
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
 		return fmt.Errorf("scholarships: admin update: %w", err)
@@ -255,7 +255,7 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, tenantID pgtype.UUID
 // hard-deleted). The tenantID is stamped into the query params for tenant
 // isolation. The guide content row is soft-deleted so it stops appearing in the
 // finder and content listings without losing audit history.
-func (s *Store) AdminDeleteScholarship(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *Store) AdminDeleteScholarship(ctx context.Context, id pgtype.UUID) error {
 	sch, err := s.queries.GetScholarship(ctx,
 
 		id,
@@ -526,7 +526,7 @@ func (s *Store) UpdateScholarship(ctx context.Context, id pgtype.UUID, in Update
 
 // DeleteScholarship removes a scholarship projection row and soft-deletes the
 // linked guide content row for tenant isolation.
-func (s *Store) DeleteScholarship(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteScholarship(ctx context.Context, id pgtype.UUID) error {
 	sch, err := s.queries.GetScholarship(ctx,
 
 		id,

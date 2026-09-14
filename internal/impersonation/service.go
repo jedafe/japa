@@ -28,7 +28,7 @@ var ErrTargetNotFound = errors.New("target user not found")
 // AdminCapabilityChecker is the RBAC resolver interface used to detect
 // admin-level users. Implemented by *rbac.RBAC.
 type AdminCapabilityChecker interface {
-	HasAdminCapability(ctx context.Context, userID, tenantID pgtype.UUID) bool
+	HasAdminCapability(ctx context.Context, userID pgtype.UUID) bool
 }
 
 // Service provides business logic for admin impersonation.
@@ -54,12 +54,12 @@ func (s *Service) SetRBAC(rbac AdminCapabilityChecker) { s.rbac = rbac }
 // the action to audit_logs FIRST for compliance (Rule 10), then sets the
 // Valkey key with a 30-minute TTL. A failed audit log write aborts the
 // impersonation — we never proceed without an audit trail.
-func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, targetUserID pgtype.UUID, ipAddress string) error {
+func (s *Service) StartImpersonation(ctx context.Context, adminID, targetUserID pgtype.UUID, ipAddress string) error {
 	// Verify the target user exists before proceeding. Section 46 implies
 	// the target must be a real non-admin user. Without this check, an admin
 	// could start impersonating a non-existent UUID, leaving a dangling
 	// Valkey key that breaks downstream handlers using EffectiveUserID.
-	if _, err := s.GetTargetProfile(ctx, tenantID, targetUserID); err != nil {
+	if _, err := s.GetTargetProfile(ctx, targetUserID); err != nil {
 		slog.Warn("impersonation refused: target user not found", "admin_id", adminID.String(), "target_id", targetUserID.String(), "error", err)
 		return ErrTargetNotFound
 	}
@@ -67,7 +67,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	// Safety: refuse to impersonate any user with admin-level permissions.
 	// Section 46: "A user with admin.impersonate cannot impersonate another
 	// user who holds any admin-level role."
-	if s.rbac != nil && s.rbac.HasAdminCapability(ctx, targetUserID, tenantID) {
+	if s.rbac != nil && s.rbac.HasAdminCapability(ctx, targetUserID) {
 		slog.Warn("impersonation refused: target is admin-level", "admin_id", adminID.String(), "target_id", targetUserID.String())
 		return ErrTargetIsAdmin
 	}
@@ -77,7 +77,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 	// the termination."). The audit entry is written before overwriting.
 	existing, _ := s.store.GetImpersonation(ctx, adminID)
 	if existing != "" {
-		if err := s.auditLog(ctx, tenantID, adminID, &existing, "impersonate.terminate_previous", ipAddress, map[string]string{
+		if err := s.auditLog(ctx, adminID, &existing, "impersonate.terminate_previous", ipAddress, map[string]string{
 			"admin_id":        adminID.String(),
 			"previous_target": existing,
 			"new_target":      targetUserID.String(),
@@ -88,7 +88,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 
 	// Log to audit_logs FIRST — Rule 10 requires this before setting state.
 	targetIDStr := targetUserID.String()
-	if err := s.auditLog(ctx, tenantID, adminID, &targetIDStr, "impersonate.start", ipAddress, map[string]string{
+	if err := s.auditLog(ctx, adminID, &targetIDStr, "impersonate.start", ipAddress, map[string]string{
 		"admin_id":    adminID.String(),
 		"target_id":   targetUserID.String(),
 		"ttl_seconds": strconv.FormatInt(int64(DefaultImpersonationTTL.Seconds()), 10),
@@ -111,7 +111,7 @@ func (s *Service) StartImpersonation(ctx context.Context, tenantID, adminID, tar
 // for an admin, then logs the end action with the correct impersonated_user_id
 // (Section 46, Rule 10). The target_id is captured via GetDel before the
 // audit log is written so the end event is always linked to the right user.
-func (s *Service) EndImpersonation(ctx context.Context, tenantID, adminID pgtype.UUID, ipAddress string) (string, error) {
+func (s *Service) EndImpersonation(ctx context.Context, adminID pgtype.UUID, ipAddress string) (string, error) {
 	// Atomically get-and-delete so we capture the target_id for the audit log.
 	targetID, err := s.store.GetDelImpersonation(ctx, adminID)
 	if err != nil {
@@ -124,7 +124,7 @@ func (s *Service) EndImpersonation(ctx context.Context, tenantID, adminID pgtype
 
 	// Log the end of impersonation with the correct impersonated_user_id
 	// (Rule 10 — audit trail required, actor=admin, impersonated=target).
-	if err := s.auditLog(ctx, tenantID, adminID, &targetID, "impersonate.end", ipAddress, map[string]string{
+	if err := s.auditLog(ctx, adminID, &targetID, "impersonate.end", ipAddress, map[string]string{
 		"admin_id":  adminID.String(),
 		"target_id": targetID,
 	}); err != nil {
@@ -163,7 +163,7 @@ func (s *Service) GetImpersonationStatus(ctx context.Context, adminID pgtype.UUI
 // target's username instead of a raw UUID (Section 46 "UI Banner").
 // tenantID is required to fetch the profile; if the profile lookup fails,
 // a nil profile is returned (the session is still active).
-func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID, adminID pgtype.UUID) (string, bool, int64, *TargetProfile, error) {
+func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, adminID pgtype.UUID) (string, bool, int64, *TargetProfile, error) {
 	targetID, active, ttlSeconds, err := s.GetImpersonationStatus(ctx, adminID)
 	if err != nil {
 		return "", false, 0, nil, err
@@ -179,7 +179,7 @@ func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID
 		return targetID, true, ttlSeconds, nil, nil
 	}
 
-	profile, profileErr := s.GetTargetProfile(ctx, tenantID, targetUUID)
+	profile, profileErr := s.GetTargetProfile(ctx, targetUUID)
 	if profileErr != nil {
 		slog.Warn("impersonation status: failed to fetch target profile", "error", profileErr, "target_id", targetID)
 	}
@@ -192,12 +192,12 @@ func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, tenantID
 // resolver is configured (defensive — production wiring is required).
 //
 // Ref: japaconnect-engineering/sections/46-impersonation.md.
-func (s *Service) IsAdmin(ctx context.Context, userID, tenantID pgtype.UUID) bool {
+func (s *Service) IsAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	if s.rbac == nil {
 		return false
 	}
 
-	return s.rbac.HasAdminCapability(ctx, userID, tenantID)
+	return s.rbac.HasAdminCapability(ctx, userID)
 }
 
 // auditLog inserts a row into audit_logs for an impersonation action.
@@ -205,7 +205,7 @@ func (s *Service) IsAdmin(ctx context.Context, userID, tenantID pgtype.UUID) boo
 // metadata is serialized to JSON via encoding/json (safe against injection).
 // ipAddress is the client IP from clientip.FromRequest; an empty string is
 // passed as NULL so the inet column doesn't reject it (Section 46).
-func (s *Service) auditLog(ctx context.Context, tenantID, adminID pgtype.UUID, impersonatedUserID *string, actionType, ipAddress string, metadata map[string]string) error {
+func (s *Service) auditLog(ctx context.Context, adminID pgtype.UUID, impersonatedUserID *string, actionType, ipAddress string, metadata map[string]string) error {
 	metaJSON := []byte("{}")
 
 	if len(metadata) > 0 {
@@ -248,7 +248,7 @@ type TargetProfile struct {
 
 // GetTargetProfile fetches the id, username, and email of the target user
 // for the StartImpersonation response (Section 46: target: {id, username, email}).
-func (s *Service) GetTargetProfile(ctx context.Context, tenantID, targetUserID pgtype.UUID) (*TargetProfile, error) {
+func (s *Service) GetTargetProfile(ctx context.Context, targetUserID pgtype.UUID) (*TargetProfile, error) {
 	var tp TargetProfile
 
 	err := s.dbPool.QueryRow(ctx, `

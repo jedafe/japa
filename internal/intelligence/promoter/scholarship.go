@@ -30,25 +30,25 @@ import (
 // boundary).
 type Store interface {
 	PersonaResolver
-	GetIntelRecord(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error)
-	GetIntelSource(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelSource, error)
-	GetScholarshipByIntelRecord(ctx context.Context, tenantID, intelRecordID pgtype.UUID) (gen.Scholarship, error)
-	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
-	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
+	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
+	GetScholarshipByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (gen.Scholarship, error)
+	CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
+	UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 	// GetCountrySpace resolves the country-level geo space (§05) id for an
 	// ISO-3 country code, so the promoter can stamp scholarships.country_space_id.
 	// Returns (pgtype.UUID{}, nil) when no country space exists yet; the
 	// promoter treats that as a nullable country_space_id (spec §455). BUG-005 fix.
-	GetCountrySpace(ctx context.Context, tenantID pgtype.UUID, countryCode string) (pgtype.UUID, error)
+	GetCountrySpace(ctx context.Context, countryCode string) (pgtype.UUID, error)
 	// Content operations for creating and updating the guide entry.
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
-	GetContentByID(ctx context.Context, tenantID, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	GetContentByID(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
 	ContentSlugExists(ctx context.Context, slug string) (bool, error)
-	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
+	UpdateContent(ctx context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
 	WithTx(ctx context.Context, fn func(TxStore) error) error
 }
 
@@ -58,15 +58,15 @@ type Store interface {
 // interface (via WithTx's callback), and the test mock satisfies it
 // directly.
 type TxStore interface {
-	CreateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
-	UpdateIntelRecordStatus(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error
-	UpdateIntelRecordPromoted(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error
-	UpdateScholarship(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateScholarshipParams) error
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateContentParams) (gen.CreateContentRow, error)
+	CreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error)
+	UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntelRecordStatusParams) error
+	UpdateIntelRecordPromoted(ctx context.Context, arg gen.UpdateIntelRecordPromotedParams) error
+	UpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error
+	CreateContent(ctx context.Context, arg gen.CreateContentParams) (gen.CreateContentRow, error)
 	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
 	ContentSlugExists(ctx context.Context, slug string) (bool, error)
-	UpdateContent(ctx context.Context, tenantID pgtype.UUID, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
-	CreateIntelReviewLog(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelReviewLogParams) error
+	UpdateContent(ctx context.Context, arg gen.UpdateContentParams) (gen.UpdateContentRow, error)
+	CreateIntelReviewLog(ctx context.Context, arg gen.CreateIntelReviewLogParams) error
 }
 
 // Default freshness score for a freshly promoted / re-verified row. The
@@ -83,7 +83,6 @@ const freshScore int32 = 100
 // human edit always wins over a re-crawl.
 type ScholarshipPromoter struct {
 	store                Store
-	tenantID             pgtype.UUID // tenant the generated guide rows are stamped with
 	authorID             pgtype.UUID // system/automation user credited as the guide author
 	aiModel              *string     // AI model used for extraction; set by WithAIModel
 	autoThreshold        float64     // intel.extraction_confidence_auto, set by WithConfidenceThresholds
@@ -118,12 +117,11 @@ func WithConfidenceThresholds(auto, review float64) ScholarshipPromoterOption {
 }
 
 // NewScholarshipPromoter creates a promoter backed by the given store. The
-// tenantID and authorID identify the tenant and system author used for
-// review-log actor stamps on the update path.
-func NewScholarshipPromoter(store Store, tenantID, authorID pgtype.UUID, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
+// authorID identifies the system author used for review-log actor stamps on
+// the update path.
+func NewScholarshipPromoter(store Store, authorID pgtype.UUID, opts ...ScholarshipPromoterOption) *ScholarshipPromoter {
 	p := &ScholarshipPromoter{
 		store:    store,
-		tenantID: tenantID,
 		authorID: authorID,
 		// Thresholds and the AI model are intentionally not defaulted here.
 		// AGENTS.md Rule 3 prohibits hard-coding config values; the server
@@ -156,7 +154,7 @@ var ErrThresholdsNotConfigured = errors.New("promoter: confidence thresholds not
 func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (PromoteResult, error) {
 	pgID := uuidToPg(recordID)
 
-	record, err := p.store.GetIntelRecord(ctx, p.tenantID, pgID)
+	record, err := p.store.GetIntelRecord(ctx, pgID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel record: %w", err)
 	}
@@ -174,14 +172,14 @@ func (p *ScholarshipPromoter) Promote(ctx context.Context, recordID uuid.UUID) (
 		return PromoteResult{}, fmt.Errorf("promoter: parse extracted: %w", err)
 	}
 
-	source, err := p.store.GetIntelSource(ctx, p.tenantID, record.SourceID)
+	source, err := p.store.GetIntelSource(ctx, record.SourceID)
 	if err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: load intel source: %w", err)
 	}
 
 	// Does a projection row already exist for this intel record? A not-found
 	// error means we take the create path; any other error propagates.
-	existing, err := p.store.GetScholarshipByIntelRecord(ctx, p.tenantID, pgID)
+	existing, err := p.store.GetScholarshipByIntelRecord(ctx, pgID)
 	if err != nil {
 		if isNotFound(err) {
 			return p.createPath(ctx, record, source, ext)
@@ -208,7 +206,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 	var countrySpaceID pgtype.UUID
 
 	if countryCode != "" {
-		if id, err := p.store.GetCountrySpace(ctx, p.tenantID, countryCode); err == nil && id.Valid {
+		if id, err := p.store.GetCountrySpace(ctx, countryCode); err == nil && id.Valid {
 			countrySpaceID = id
 		}
 	}
@@ -247,13 +245,13 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 		scholarshipParams := buildCreateParams(record, source, guideID, ext, verificationStatus, overrideSource)
 		scholarshipParams.CountrySpaceID = countrySpaceID
 
-		scholarship, err := tx.CreateScholarship(ctx, p.tenantID, scholarshipParams)
+		scholarship, err := tx.CreateScholarship(ctx, scholarshipParams)
 		if err != nil {
 			return fmt.Errorf("promoter: create scholarship: %w", err)
 		}
 
 		if intelStatus == statusPublished {
-			if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+			if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
 				ID:               record.ID,
 				PromotedRecordID: scholarship.ID,
 			}); err != nil {
@@ -266,7 +264,7 @@ func (p *ScholarshipPromoter) createPath(ctx context.Context, record gen.IntelRe
 				Action:    ActionCreated,
 			}
 		} else {
-			if err := tx.UpdateIntelRecordStatus(ctx, p.tenantID, gen.UpdateIntelRecordStatusParams{
+			if err := tx.UpdateIntelRecordStatus(ctx, gen.UpdateIntelRecordStatusParams{
 				ID:     record.ID,
 				Status: "review_required",
 			}); err != nil {
@@ -316,7 +314,7 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 
 	contentParams := gen.CreateContentParams{
 
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		ContentType:     "guide",
 		Title:           title,
 		Slug:            slug,
@@ -344,7 +342,7 @@ func (p *ScholarshipPromoter) createScholarshipGuide(ctx context.Context, tx TxS
 		contentParams.HitlReviewedAt = pgtype.Timestamptz{Time: now, Valid: true}
 	}
 
-	contentRow, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+	contentRow, err := tx.CreateContent(ctx, contentParams)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("promoter: create guide content: %w", err)
 	}
@@ -384,7 +382,7 @@ func (p *ScholarshipPromoter) updatePath(ctx context.Context, record gen.IntelRe
 
 	var contentRow gen.GetContentByIDRow
 	if existing.GuideID.Valid {
-		contentRow, err = p.store.GetContentByID(ctx, p.tenantID, existing.GuideID)
+		contentRow, err = p.store.GetContentByID(ctx, existing.GuideID)
 		if err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: load existing guide content: %w", err)
 		}
@@ -426,12 +424,12 @@ func (p *ScholarshipPromoter) applyUpdateTx(ctx context.Context, tx TxStore, rec
 		}
 	}
 
-	if err := tx.UpdateScholarship(ctx, p.tenantID, *params); err != nil {
+	if err := tx.UpdateScholarship(ctx, *params); err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: update scholarship: %w", err)
 	}
 
 	if approving {
-		if err := tx.UpdateIntelRecordPromoted(ctx, p.tenantID, gen.UpdateIntelRecordPromotedParams{
+		if err := tx.UpdateIntelRecordPromoted(ctx, gen.UpdateIntelRecordPromotedParams{
 			ID:               record.ID,
 			PromotedRecordID: existing.ID,
 		}); err != nil {
@@ -440,7 +438,7 @@ func (p *ScholarshipPromoter) applyUpdateTx(ctx context.Context, tx TxStore, rec
 	}
 
 	if reviewLogParams != nil {
-		if err := tx.CreateIntelReviewLog(ctx, p.tenantID, *reviewLogParams); err != nil {
+		if err := tx.CreateIntelReviewLog(ctx, *reviewLogParams); err != nil {
 			return PromoteResult{}, fmt.Errorf("promoter: write auto_update review log: %w", err)
 		}
 	}
@@ -463,7 +461,7 @@ func (p *ScholarshipPromoter) applyUpdateTx(ctx context.Context, tx TxStore, rec
 // skipped, only last_verified_at + freshness_score move.
 func (p *ScholarshipPromoter) bumpFreshness(ctx context.Context, existing gen.Scholarship, params gen.UpdateScholarshipParams) (PromoteResult, error) {
 	if err := p.store.WithTx(ctx, func(tx TxStore) error {
-		return tx.UpdateScholarship(ctx, p.tenantID, params)
+		return tx.UpdateScholarship(ctx, params)
 	}); err != nil {
 		return PromoteResult{}, fmt.Errorf("promoter: bump scholarship freshness: %w", err)
 	}
@@ -523,7 +521,7 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 
 	contentParams := gen.CreateContentParams{
 
-		AuthorID:        resolveAuthorID(ctx, p.store, source, p.tenantID, p.authorID),
+		AuthorID:        resolveAuthorID(ctx, p.store, source, p.authorID),
 		ContentType:     "guide",
 		Title:           params.Title,
 		Slug:            slug,
@@ -547,7 +545,7 @@ func (p *ScholarshipPromoter) createGuideOnApprove(ctx context.Context, tx TxSto
 		HitlReviewedAt:  pgtype.Timestamptz{Time: now, Valid: true},
 	}
 
-	newContent, err := tx.CreateContent(ctx, p.tenantID, contentParams)
+	newContent, err := tx.CreateContent(ctx, contentParams)
 	if err != nil {
 		return fmt.Errorf("promoter: create guide content on approve: %w", err)
 	}
@@ -579,7 +577,7 @@ func (p *ScholarshipPromoter) syncGuideContent(ctx context.Context, tx TxStore, 
 		return nil
 	}
 
-	if _, err := tx.UpdateContent(ctx, p.tenantID, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
+	if _, err := tx.UpdateContent(ctx, buildContentUpdateParams(contentRow, newTitle, newSlug, newBody, newHash)); err != nil {
 		return fmt.Errorf("promoter: update guide content: %w", err)
 	}
 

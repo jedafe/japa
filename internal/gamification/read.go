@@ -18,12 +18,12 @@ import (
 
 // ListBadges returns all active badge definitions for a tenant. Returns
 // ErrGamificationDisabled when gamification.badges_enabled is off.
-func (s *Service) ListBadges(ctx context.Context, tenantID pgtype.UUID) ([]BadgeInfo, error) {
-	if !s.badgesEnabled(ctx, tenantID) {
+func (s *Service) ListBadges(ctx context.Context) ([]BadgeInfo, error) {
+	if !s.badgesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
-	badges, err := s.store.ListBadgeDefinitions(ctx, tenantID, true)
+	badges, err := s.store.ListBadgeDefinitions(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: list badges: %w", err)
 	}
@@ -38,12 +38,12 @@ func (s *Service) ListBadges(ctx context.Context, tenantID pgtype.UUID) ([]Badge
 
 // ListActiveChallenges returns active challenges within their date range.
 // Returns ErrGamificationDisabled when gamification.challenges_enabled is off.
-func (s *Service) ListActiveChallenges(ctx context.Context, tenantID pgtype.UUID) ([]ChallengeInfo, error) {
-	if !s.challengesEnabled(ctx, tenantID) {
+func (s *Service) ListActiveChallenges(ctx context.Context) ([]ChallengeInfo, error) {
+	if !s.challengesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
-	challenges, err := s.store.ListActiveChallenges(ctx, tenantID)
+	challenges, err := s.store.ListActiveChallenges(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: list active challenges: %w", err)
 	}
@@ -112,7 +112,7 @@ func periodStartDate(period string) time.Time {
 // Scope: "global" or "space:{uuid}". Period: "all_time", "monthly", "weekly".
 // Returns ErrGamificationDisabled when gamification.leaderboard_enabled is off.
 func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scope, period string, limit int32) ([]LeaderboardEntry, error) {
-	if !s.leaderboardEnabled(ctx, tenantID) {
+	if !s.leaderboardEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
@@ -147,7 +147,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 	var entries []LeaderboardEntry
 
 	if period == PeriodAllTime {
-		rows, err := s.store.LeaderboardAllTime(ctx, tenantID, spaceID, topN)
+		rows, err := s.store.LeaderboardAllTime(ctx, spaceID, topN)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard all_time: %w", err)
 		}
@@ -166,7 +166,7 @@ func (s *Service) GetLeaderboard(ctx context.Context, tenantID pgtype.UUID, scop
 	} else {
 		fromDate := periodStartDate(period)
 
-		rows, err := s.store.LeaderboardByPeriod(ctx, tenantID, spaceID, pgtype.Timestamptz{Time: fromDate, Valid: true}, topN)
+		rows, err := s.store.LeaderboardByPeriod(ctx, spaceID, pgtype.Timestamptz{Time: fromDate, Valid: true}, topN)
 		if err != nil {
 			return nil, fmt.Errorf("gamification: leaderboard by period: %w", err)
 		}
@@ -208,12 +208,12 @@ func sliceLeaderboard(entries []LeaderboardEntry, limit int32) []LeaderboardEntr
 // ListUserBadges returns a user's earned badges with badge definition
 // details. Returns ErrGamificationDisabled when gamification.badges_enabled
 // is off.
-func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UUID) ([]BadgeWithDetails, error) {
-	if !s.badgesEnabled(ctx, tenantID) {
+func (s *Service) ListUserBadges(ctx context.Context, userID pgtype.UUID) ([]BadgeWithDetails, error) {
+	if !s.badgesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
-	rows, err := s.store.ListUserBadges(ctx, tenantID, userID)
+	rows, err := s.store.ListUserBadges(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: list user badges: %w", err)
 	}
@@ -244,12 +244,12 @@ func (s *Service) ListUserBadges(ctx context.Context, tenantID, userID pgtype.UU
 // ListUserBadgesByUsername returns a user's earned badges by username — used
 // for the public profile badge display. Returns ErrGamificationDisabled when
 // gamification.badges_enabled is off.
-func (s *Service) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.UUID, username string) ([]BadgeWithDetails, error) {
-	if !s.badgesEnabled(ctx, tenantID) {
+func (s *Service) ListUserBadgesByUsername(ctx context.Context, username string) ([]BadgeWithDetails, error) {
+	if !s.badgesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
-	rows, err := s.store.ListUserBadgesByUsername(ctx, tenantID, username)
+	rows, err := s.store.ListUserBadgesByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: list user badges by username: %w", err)
 	}
@@ -271,12 +271,12 @@ func (s *Service) ListUserBadgesByUsername(ctx context.Context, tenantID pgtype.
 // ListUserChallengeProgress returns a user's challenge progress with
 // details. Returns ErrGamificationDisabled when
 // gamification.challenges_enabled is off.
-func (s *Service) ListUserChallengeProgress(ctx context.Context, tenantID, userID pgtype.UUID) ([]ChallengeWithProgress, error) {
-	if !s.challengesEnabled(ctx, tenantID) {
+func (s *Service) ListUserChallengeProgress(ctx context.Context, userID pgtype.UUID) ([]ChallengeWithProgress, error) {
+	if !s.challengesEnabled(ctx) {
 		return nil, ErrGamificationDisabled
 	}
 
-	rows, err := s.store.ListUserChallengeProgress(ctx, tenantID, userID)
+	rows, err := s.store.ListUserChallengeProgress(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("gamification: list user challenge progress: %w", err)
 	}

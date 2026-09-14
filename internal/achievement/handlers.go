@@ -97,12 +97,12 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleList handles GET /achievements — list published achievements with
 // filters. Query params: ?dest=&milestone=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -125,7 +125,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	achievements, total, err := h.service.List(r.Context(), tenantID, destSpaceID, milestoneType, sort, page, limit)
+	achievements, total, err := h.service.List(r.Context(), destSpaceID, milestoneType, sort, page, limit)
 	if err != nil {
 		slog.Error("achievement: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list achievements")
@@ -152,7 +152,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -203,7 +203,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -273,7 +273,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -334,7 +334,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -366,12 +366,12 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // HandleListBySpace handles GET /spaces/:slug/achievements — published
 // achievements filed in the given Space, for the Space widget.
 func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "achievement_disabled", "Achievement feed is not available")
 		return
 	}
@@ -390,7 +390,7 @@ func (h *Handlers) HandleListBySpace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	achievements, err := h.service.ListBySpace(r.Context(), spaceSlug, tenantID, limit)
+	achievements, err := h.service.ListBySpace(r.Context(), spaceSlug, limit)
 	if err != nil {
 		slog.Error("achievement: list by space failed", "space_slug", spaceSlug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_by_space_failed", "Failed to list achievements for space")
@@ -412,8 +412,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -432,7 +431,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	achievements, total, err := h.service.AdminList(r.Context(), tenantID, status, milestoneType, q, page, limit)
+	achievements, total, err := h.service.AdminList(r.Context(), status, milestoneType, q, page, limit)
 	if err != nil {
 		slog.Error("achievement: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list achievements")

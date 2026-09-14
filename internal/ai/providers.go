@@ -110,7 +110,7 @@ func (s *ProviderStore) scanProviderConfig(row interface {
 
 // ListProviders returns all AI provider configs for a tenant, ordered by
 // priority ascending then name.
-func (s *ProviderStore) ListProviders(ctx context.Context, tenantID pgtype.UUID) ([]ProviderConfig, error) {
+func (s *ProviderStore) ListProviders(ctx context.Context) ([]ProviderConfig, error) {
 	rows, err := s.read.Query(ctx, `
 		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
@@ -138,7 +138,7 @@ func (s *ProviderStore) ListProviders(ctx context.Context, tenantID pgtype.UUID)
 }
 
 // GetProvider returns a single AI provider config by ID, scoped to the tenant.
-func (s *ProviderStore) GetProvider(ctx context.Context, tenantID, id pgtype.UUID) (ProviderConfig, error) {
+func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (ProviderConfig, error) {
 	row := s.read.QueryRow(ctx, `
 		SELECT id, name, provider_type, api_key_encrypted,
 		       base_url, model, categories, priority, enabled, created_at, updated_at
@@ -275,7 +275,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 }
 
 // DeleteProvider removes a provider config by ID, scoped to the tenant.
-func (s *ProviderStore) DeleteProvider(ctx context.Context, tenantID, id pgtype.UUID) error {
+func (s *ProviderStore) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 	tag, err := s.write.Exec(ctx, `DELETE FROM ai_providers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting ai_provider: %w", err)
@@ -291,7 +291,7 @@ func (s *ProviderStore) DeleteProvider(ctx context.Context, tenantID, id pgtype.
 // GetDecryptedAPIKey returns the plaintext API key for a provider. Used
 // internally by the dispatcher wiring to construct the provider at startup
 // or on hot-reload. Returns empty string if no key is stored.
-func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, tenantID, id pgtype.UUID) (string, error) {
+func (s *ProviderStore) GetDecryptedAPIKey(ctx context.Context, id pgtype.UUID) (string, error) {
 	var encrypted string
 
 	err := s.read.QueryRow(ctx, `
@@ -445,8 +445,8 @@ func NewProviderFromConfig(cfg ProviderConfig, apiKey string) (Provider, error) 
 // left untouched (so env-var-registered providers from startup remain).
 // // This is called at startup (after env-var providers are registered) and
 // on hot-reload when a provider config is created/updated/deleted.
-func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher, tenantID pgtype.UUID) error {
-	providers, err := store.ListProviders(ctx, tenantID)
+func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatcher *Dispatcher) error {
+	providers, err := store.ListProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("loading providers from db: %w", err)
 	}
@@ -464,7 +464,7 @@ func LoadAndRegisterProviders(ctx context.Context, store *ProviderStore, dispatc
 			continue
 		}
 
-		apiKey, err := store.GetDecryptedAPIKey(ctx, tenantID, pc.ID)
+		apiKey, err := store.GetDecryptedAPIKey(ctx, pc.ID)
 		if err != nil {
 			slog.Warn("ai: skipping provider, failed to decrypt api key", "provider", pc.Name, "error", err)
 			continue

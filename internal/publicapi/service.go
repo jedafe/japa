@@ -425,7 +425,7 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 // *config.Settings satisfies this structurally. When nil, the compiled-in
 // default of 5 is used (Section 47 line 218).
 type keyCountSettingsReader interface {
-	GetIntOr(ctx context.Context, tenantID pgtype.UUID, key string, fallback int) int
+	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
 // maxKeysPerUser is the compiled-in fallback when no settings reader is wired.
@@ -439,7 +439,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID pgtype.UUID, input Cr
 	// Enforce max keys per user (Section 47: api.keys.max_per_user, default 5).
 	limit := maxKeysPerUser
 	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, pgtype.UUID{}, "api.keys.max_per_user", maxKeysPerUser)
+		limit = s.keyCountReader.GetIntOr(ctx, "api.keys.max_per_user", maxKeysPerUser)
 	}
 
 	var currentCount int
@@ -1018,7 +1018,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, keyID pgtype.UUID) (
 	// until the grace expiry). The new key adds 1 to the active count.
 	limit := maxKeysPerUser
 	if s.keyCountReader != nil {
-		limit = s.keyCountReader.GetIntOr(ctx, pgtype.UUID{}, "api.keys.max_per_user", maxKeysPerUser)
+		limit = s.keyCountReader.GetIntOr(ctx, "api.keys.max_per_user", maxKeysPerUser)
 	}
 
 	var currentCount int

@@ -98,17 +98,17 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 // HandleSelector handles GET /arrival-checklist/selector — returns the
 // available destination + visa category combinations. Anonymous-accessible.
 func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
-	selectors, err := h.service.ListSelectors(r.Context(), tenantID)
+	selectors, err := h.service.ListSelectors(r.Context())
 	if err != nil {
 		slog.Error("arrivalchecklist: selector failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "selector_failed", "Failed to list selectors")
@@ -122,12 +122,12 @@ func (h *Handlers) HandleSelector(w http.ResponseWriter, r *http.Request) {
 // HandleGetGuide handles GET /arrival-checklist/:guide_id — returns the
 // checklist items for a guide. Anonymous-accessible.
 func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
@@ -137,7 +137,7 @@ func (h *Handlers) HandleGetGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.service.GetGuideItems(r.Context(), guideID, tenantID)
+	items, err := h.service.GetGuideItems(r.Context(), guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
@@ -164,18 +164,17 @@ func (h *Handlers) HandleListMyChecklists(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
 
-	checklists, err := h.service.ListUserChecklists(r.Context(), tenantID, user.UserID)
+	checklists, err := h.service.ListUserChecklists(r.Context(), user.UserID)
 	if err != nil {
 		slog.Error("arrivalchecklist: list my checklists failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list checklists")
@@ -194,13 +193,12 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
@@ -210,7 +208,7 @@ func (h *Handlers) HandleGetMyChecklist(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	items, err := h.service.GetUserChecklistItems(r.Context(), tenantID, user.UserID, guideID)
+	items, err := h.service.GetUserChecklistItems(r.Context(), user.UserID, guideID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
@@ -233,13 +231,12 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
@@ -255,7 +252,7 @@ func (h *Handlers) HandleStartChecklist(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	guide, err := h.service.StartChecklist(r.Context(), tenantID, user.UserID, input)
+	guide, err := h.service.StartChecklist(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
@@ -278,8 +275,7 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -295,7 +291,7 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "arrival_checklist_disabled", "Arrival checklist is not available")
 		return
 	}
@@ -306,7 +302,7 @@ func (h *Handlers) HandleTickItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.TickItem(r.Context(), tenantID, user.UserID, guideID, itemID, input); err != nil {
+	if err := h.service.TickItem(r.Context(), user.UserID, guideID, itemID, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
 			return
@@ -332,8 +328,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -363,7 +358,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	guides, total, err := h.service.AdminList(r.Context(), tenantID, destSpaceID, visaCategory, applicantType, status, q, sort, order, page, limit)
+	guides, total, err := h.service.AdminList(r.Context(), destSpaceID, visaCategory, applicantType, status, q, sort, order, page, limit)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list guides")
@@ -394,8 +389,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -416,7 +410,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.CreateGuide(r.Context(), tenantID, input)
+	guide, err := h.service.CreateGuide(r.Context(), input)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create guide")
@@ -476,8 +470,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -498,7 +491,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.ApproveGuide(r.Context(), id, tenantID, user.UserID, input)
+	guide, err := h.service.ApproveGuide(r.Context(), id, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "guide_not_found", "Arrival checklist guide not found")
@@ -521,8 +514,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -543,7 +535,7 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	guide, err := h.service.UpdateGuide(r.Context(), id, tenantID, input)
+	guide, err := h.service.UpdateGuide(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, ErrPublishViaUpdate) {
 			errpkg.WriteError(w, http.StatusBadRequest, "publish_via_update_blocked",

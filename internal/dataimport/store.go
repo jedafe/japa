@@ -35,7 +35,7 @@ func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataImportP
 }
 
 // Get retrieves a single import by ID within a tenant.
-func (s *Store) Get(ctx context.Context, id, tenantID pgtype.UUID) (gen.PlatformDataImport, error) {
+func (s *Store) Get(ctx context.Context, id pgtype.UUID) (gen.PlatformDataImport, error) {
 	return s.queries.GetPlatformDataImport(ctx,
 		id,
 	)
@@ -48,7 +48,7 @@ func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (gen.PlatformDataIm
 }
 
 // List returns paginated imports for a tenant, optionally filtered by status.
-func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, limit, offset int32) ([]gen.PlatformDataImport, error) {
+func (s *Store) List(ctx context.Context, status string, limit, offset int32) ([]gen.PlatformDataImport, error) {
 	return s.queries.ListPlatformDataImports(ctx, gen.ListPlatformDataImportsParams{
 
 		Status:    status,
@@ -58,7 +58,7 @@ func (s *Store) List(ctx context.Context, tenantID pgtype.UUID, status string, l
 }
 
 // Count returns the total number of imports for a tenant, optionally filtered.
-func (s *Store) Count(ctx context.Context, tenantID pgtype.UUID, status string) (int64, error) {
+func (s *Store) Count(ctx context.Context, status string) (int64, error) {
 	return s.queries.CountPlatformDataImports(ctx,
 
 		status,
@@ -71,7 +71,7 @@ func (s *Store) UpdateStatus(ctx context.Context, params gen.UpdatePlatformDataI
 }
 
 // Delete removes an import row.
-func (s *Store) Delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) Delete(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.DeletePlatformDataImport(ctx,
 		id,
 	)

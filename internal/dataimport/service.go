@@ -183,20 +183,20 @@ func (s *Service) CreateImport(ctx context.Context, tenantID, userID pgtype.UUID
 }
 
 // GetImport retrieves a single import by ID.
-func (s *Service) GetImport(ctx context.Context, id, tenantID pgtype.UUID) (gen.PlatformDataImport, error) {
-	return s.store.Get(ctx, id, tenantID)
+func (s *Service) GetImport(ctx context.Context, id pgtype.UUID) (gen.PlatformDataImport, error) {
+	return s.store.Get(ctx, id)
 }
 
 // ListImports returns paginated imports for a tenant.
-func (s *Service) ListImports(ctx context.Context, tenantID pgtype.UUID, status string, page, limit int) ([]gen.PlatformDataImport, int64, error) {
+func (s *Service) ListImports(ctx context.Context, status string, page, limit int) ([]gen.PlatformDataImport, int64, error) {
 	offset := int32((page - 1) * limit) // #nosec
 
-	rows, err := s.store.List(ctx, tenantID, status, int32(limit), offset) // #nosec
+	rows, err := s.store.List(ctx, status, int32(limit), offset) // #nosec
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, err := s.store.Count(ctx, tenantID, status)
+	total, err := s.store.Count(ctx, status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -205,8 +205,8 @@ func (s *Service) ListImports(ctx context.Context, tenantID pgtype.UUID, status 
 }
 
 // DeleteImport removes an import record.
-func (s *Service) DeleteImport(ctx context.Context, id, tenantID pgtype.UUID) error {
-	return s.store.Delete(ctx, id, tenantID)
+func (s *Service) DeleteImport(ctx context.Context, id pgtype.UUID) error {
+	return s.store.Delete(ctx, id)
 }
 
 // ProcessImport is called by the Asynq worker. It reads the uploaded file,

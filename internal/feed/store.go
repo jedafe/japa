@@ -32,7 +32,7 @@ func (s *Store) insertFeedItem(ctx context.Context, params gen.InsertFeedItemPar
 
 // getContentsBySlugs returns published content for the given slugs in the order
 // provided by the slugs array. Used for the readiness roadmap feed.
-func (s *Store) getContentsBySlugs(ctx context.Context, tenantID, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]gen.ListContentsBySlugsRow, error) {
+func (s *Store) getContentsBySlugs(ctx context.Context, requesterID pgtype.UUID, slugs []string, limit, offset int32) ([]gen.ListContentsBySlugsRow, error) {
 	rows, err := s.read.ListContentsBySlugs(ctx, gen.ListContentsBySlugsParams{
 
 		Slugs:             slugs,
@@ -54,7 +54,7 @@ func (s *Store) getContentsBySlugs(ctx context.Context, tenantID, requesterID pg
 // the visitor's geo proximity.
 //
 
-func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
+func (s *Store) getExploreFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetExploreFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -76,7 +76,7 @@ func (s *Store) getExploreFeed(ctx context.Context, tenantID pgtype.UUID, visito
 // getPrimaryFeed returns the user's personalized feed from the feeds table.
 //
 
-func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
+func (s *Store) getPrimaryFeed(ctx context.Context, userID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetPrimaryFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -99,7 +99,7 @@ func (s *Store) getPrimaryFeed(ctx context.Context, tenantID, userID pgtype.UUID
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 
-func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
+func (s *Store) getSpaceFeed(ctx context.Context, spaceID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetSpaceFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -123,7 +123,7 @@ func (s *Store) getSpaceFeed(ctx context.Context, tenantID, spaceID, viewerID pg
 // viewerID is nullable — when valid, mutual user_blocks are excluded (§41).
 //
 
-func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
+func (s *Store) getProfileFeed(ctx context.Context, authorID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.GetProfileFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -146,7 +146,7 @@ func (s *Store) getProfileFeed(ctx context.Context, tenantID, authorID, viewerID
 // getTopFeed returns top published content from the 7-day rolling window.
 //
 
-func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetTopFeedRow, error) {
+func (s *Store) getTopFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetTopFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -168,7 +168,7 @@ func (s *Store) getTopFeed(ctx context.Context, tenantID pgtype.UUID, visitorCou
 // getRisingFeed returns rising content sorted by velocity score.
 //
 
-func (s *Store) getRisingFeed(ctx context.Context, tenantID pgtype.UUID, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
+func (s *Store) getRisingFeed(ctx context.Context, visitorCountryCode, visitorRegion string, limit, offset int32) ([]gen.GetRisingFeedRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -202,7 +202,7 @@ func (s *Store) updateContentScore(ctx context.Context, params gen.UpdateContent
 // < 30 days old. gravity is the decay exponent (default 1.8).
 //
 
-func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, gravity float64) error {
+func (s *Store) updateVelocityScores(ctx context.Context, gravity float64) error {
 	if err := s.write.UpdateVelocityScores(ctx,
 		gravity,
 	); err != nil {
@@ -215,7 +215,7 @@ func (s *Store) updateVelocityScores(ctx context.Context, tenantID pgtype.UUID, 
 // deleteFeedItemsByContent removes all feed rows referencing a content ID.
 //
 
-func (s *Store) deleteFeedItemsByContent(ctx context.Context, tenantID, contentID pgtype.UUID) error {
+func (s *Store) deleteFeedItemsByContent(ctx context.Context, contentID pgtype.UUID) error {
 	if err := s.write.DeleteFeedItemsByContent(ctx,
 		contentID,
 	); err != nil {
@@ -228,7 +228,7 @@ func (s *Store) deleteFeedItemsByContent(ctx context.Context, tenantID, contentI
 // deleteFeedItemsByUser removes all feed rows for a user.
 //
 
-func (s *Store) deleteFeedItemsByUser(ctx context.Context, tenantID, userID pgtype.UUID) error {
+func (s *Store) deleteFeedItemsByUser(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.DeleteFeedItemsByUser(ctx,
 		userID,
 	); err != nil {
@@ -241,7 +241,7 @@ func (s *Store) deleteFeedItemsByUser(ctx context.Context, tenantID, userID pgty
 // getFeedItemCount returns the total number of feed items for a user.
 //
 
-func (s *Store) getFeedItemCount(ctx context.Context, tenantID, userID pgtype.UUID) (int32, error) {
+func (s *Store) getFeedItemCount(ctx context.Context, userID pgtype.UUID) (int32, error) {
 	count, err := s.read.GetFeedItemCount(ctx,
 		userID,
 	)
@@ -254,7 +254,7 @@ func (s *Store) getFeedItemCount(ctx context.Context, tenantID, userID pgtype.UU
 
 // getFollowedEntityIDs returns the IDs of all entities of one type the user follows.
 func (s *Store) getFollowedEntityIDs(
-	ctx context.Context, tenantID, followerID pgtype.UUID, entityType string,
+	ctx context.Context, followerID pgtype.UUID, entityType string,
 ) ([]pgtype.UUID, error) {
 	ids, err := s.read.GetFollowedEntityIDsByType(ctx, gen.GetFollowedEntityIDsByTypeParams{
 
@@ -270,7 +270,7 @@ func (s *Store) getFollowedEntityIDs(
 
 // getMemberSpaceIDs returns the IDs of spaces the user is a member of.
 func (s *Store) getMemberSpaceIDs(
-	ctx context.Context, tenantID, userID pgtype.UUID,
+	ctx context.Context, userID pgtype.UUID,
 ) ([]pgtype.UUID, error) {
 	ids, err := s.read.GetMemberSpaceIDs(ctx,
 
@@ -296,7 +296,7 @@ func (s *Store) getForYouCandidates(
 }
 
 // listSourcesByContentIDs returns source attribution for a batch of content IDs.
-func (s *Store) listSourcesByContentIDs(ctx context.Context, tenantID pgtype.UUID, contentIDs []pgtype.UUID) (map[string]gen.ListSourcesByContentIDsRow, error) {
+func (s *Store) listSourcesByContentIDs(ctx context.Context, contentIDs []pgtype.UUID) (map[string]gen.ListSourcesByContentIDsRow, error) {
 	if len(contentIDs) == 0 {
 		return map[string]gen.ListSourcesByContentIDsRow{}, nil
 	}

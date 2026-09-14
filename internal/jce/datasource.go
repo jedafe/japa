@@ -68,7 +68,7 @@ type dataSourceMapped struct {
 
 // create inserts a new data source and returns the populated domain model.
 func (s *dataSourceStore) create(ctx context.Context, tenantID, userID pgtype.UUID, in DataSourceInput) (DataSource, error) {
-	params, err := dataSourceCreateParams(tenantID, in)
+	params, err := dataSourceCreateParams(in)
 	if err != nil {
 		return DataSource{}, err
 	}
@@ -105,7 +105,7 @@ func (s *dataSourceStore) create(ctx context.Context, tenantID, userID pgtype.UU
 
 // list returns a paginated slice of data sources for the tenant and the total
 // count, optionally filtered by entity_type and entity_id.
-func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, limit, offset int32) ([]DataSource, int64, error) {
+func (s *dataSourceStore) list(ctx context.Context, entityType *string, entityID *pgtype.UUID, limit, offset int32) ([]DataSource, int64, error) {
 	eid := pgtype.UUID{}
 	if entityID != nil {
 		eid = *entityID
@@ -146,7 +146,7 @@ func (s *dataSourceStore) list(ctx context.Context, tenantID pgtype.UUID, entity
 }
 
 // get returns a data source by id and tenant.
-func (s *dataSourceStore) get(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error) {
+func (s *dataSourceStore) get(ctx context.Context, id pgtype.UUID) (DataSource, error) {
 	row, err := s.read.GetDataSource(ctx,
 		id,
 	)
@@ -158,8 +158,8 @@ func (s *dataSourceStore) get(ctx context.Context, id, tenantID pgtype.UUID) (Da
 }
 
 // update modifies a data source and returns the updated domain model.
-func (s *dataSourceStore) update(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
-	params, err := dataSourceUpdateParams(id, tenantID, in)
+func (s *dataSourceStore) update(ctx context.Context, id pgtype.UUID, in DataSourceInput) (DataSource, error) {
+	params, err := dataSourceUpdateParams(id, in)
 	if err != nil {
 		return DataSource{}, err
 	}
@@ -173,7 +173,7 @@ func (s *dataSourceStore) update(ctx context.Context, id, tenantID pgtype.UUID, 
 }
 
 // delete removes a data source by id and tenant.
-func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *dataSourceStore) delete(ctx context.Context, id pgtype.UUID) error {
 	if err := s.write.DeleteDataSource(ctx,
 		id,
 	); err != nil {
@@ -184,7 +184,7 @@ func (s *dataSourceStore) delete(ctx context.Context, id, tenantID pgtype.UUID) 
 }
 
 // touch updates the freshness bookkeeping columns for a data source.
-func (s *dataSourceStore) touch(ctx context.Context, id, tenantID pgtype.UUID, lastVerifiedAt pgtype.Timestamptz, freshnessScore *int32) error {
+func (s *dataSourceStore) touch(ctx context.Context, id pgtype.UUID, lastVerifiedAt pgtype.Timestamptz, freshnessScore *int32) error {
 	if err := s.write.TouchDataSource(ctx, gen.TouchDataSourceParams{
 		ID: id,
 
@@ -199,8 +199,8 @@ func (s *dataSourceStore) touch(ctx context.Context, id, tenantID pgtype.UUID, l
 
 // match finds the most specific data source for the given scope, falling back to more
 // general scopes. It returns nil when no registered source matches.
-func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
-	passes := buildMatchPasses(tenantID, sourceName, entityType, entityID, dimensionSlug, sourceKind)
+func (s *dataSourceStore) match(ctx context.Context, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
+	passes := buildMatchPasses(sourceName, entityType, entityID, dimensionSlug, sourceKind)
 
 	for i, p := range passes {
 		row, err := s.read.MatchDataSource(ctx, p)
@@ -236,7 +236,7 @@ func (s *dataSourceStore) match(ctx context.Context, tenantID pgtype.UUID, entit
 //
 // This is the "five-pass" specificity fallback described in the Sub-spec 4 plan:
 // four entity-specific passes, then a global-entity-type repeat when no match is found.
-func buildMatchPasses(tenantID pgtype.UUID, sourceName string, entityType *string, entityID *pgtype.UUID, dimensionSlug string, sourceKind *string) []gen.MatchDataSourceParams {
+func buildMatchPasses(sourceName string, entityType *string, entityID *pgtype.UUID, dimensionSlug string, sourceKind *string) []gen.MatchDataSourceParams {
 	eid := pgtype.UUID{}
 	if entityID != nil {
 		eid = *entityID
@@ -455,7 +455,7 @@ func fromDataSourceInput(in DataSourceInput) (dataSourceMapped, error) {
 }
 
 // dataSourceCreateParams builds the sqlc params for creating a data source.
-func dataSourceCreateParams(tenantID pgtype.UUID, in DataSourceInput) (gen.CreateDataSourceParams, error) {
+func dataSourceCreateParams(in DataSourceInput) (gen.CreateDataSourceParams, error) {
 	m, err := fromDataSourceInput(in)
 	if err != nil {
 		return gen.CreateDataSourceParams{}, err
@@ -477,7 +477,7 @@ func dataSourceCreateParams(tenantID pgtype.UUID, in DataSourceInput) (gen.Creat
 // dataSourceUpdateParams builds the sqlc params for updating a data source.
 // FreshnessScore and LastVerifiedAt are intentionally left nil/invalid so the
 // existing values are preserved.
-func dataSourceUpdateParams(id, tenantID pgtype.UUID, in DataSourceInput) (gen.UpdateDataSourceParams, error) {
+func dataSourceUpdateParams(id pgtype.UUID, in DataSourceInput) (gen.UpdateDataSourceParams, error) {
 	m, err := fromDataSourceInput(in)
 	if err != nil {
 		return gen.UpdateDataSourceParams{}, err
@@ -505,7 +505,7 @@ func (s *Service) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in
 	}
 
 	userID := s.userIDFromContext(ctx)
-	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceManagePerm) {
+	if !s.permissionChecker(ctx, userID)(dataSourceManagePerm) {
 		return DataSource{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceManagePerm)
 	}
 
@@ -527,7 +527,7 @@ func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, ent
 	}
 
 	userID := s.userIDFromContext(ctx)
-	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceViewPerm) {
+	if !s.permissionChecker(ctx, userID)(dataSourceViewPerm) {
 		return nil, 0, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceViewPerm)
 	}
 
@@ -546,7 +546,7 @@ func (s *Service) ListDataSources(ctx context.Context, tenantID pgtype.UUID, ent
 	offset := safeInt32((page - 1) * pageSize)
 	limit := safeInt32(pageSize)
 
-	return s.dataSources.list(ctx, tenantID, entityType, entityID, limit, offset)
+	return s.dataSources.list(ctx, entityType, entityID, limit, offset)
 }
 
 // GetDataSource returns a single data source by id and tenant.
@@ -556,11 +556,11 @@ func (s *Service) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (
 	}
 
 	userID := s.userIDFromContext(ctx)
-	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceViewPerm) {
+	if !s.permissionChecker(ctx, userID)(dataSourceViewPerm) {
 		return DataSource{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceViewPerm)
 	}
 
-	ds, err := s.dataSources.get(ctx, id, tenantID)
+	ds, err := s.dataSources.get(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DataSource{}, fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
@@ -579,11 +579,11 @@ func (s *Service) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID
 	}
 
 	userID := s.userIDFromContext(ctx)
-	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceManagePerm) {
+	if !s.permissionChecker(ctx, userID)(dataSourceManagePerm) {
 		return DataSource{}, fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceManagePerm)
 	}
 
-	ds, err := s.dataSources.update(ctx, id, tenantID, in)
+	ds, err := s.dataSources.update(ctx, id, in)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DataSource{}, fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
@@ -605,11 +605,11 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 	}
 
 	userID := s.userIDFromContext(ctx)
-	if !s.permissionChecker(ctx, userID, tenantID)(dataSourceManagePerm) {
+	if !s.permissionChecker(ctx, userID)(dataSourceManagePerm) {
 		return fmt.Errorf("%w: missing %s", errpkg.ErrForbidden, dataSourceManagePerm)
 	}
 
-	if _, err := s.dataSources.get(ctx, id, tenantID); err != nil {
+	if _, err := s.dataSources.get(ctx, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: data source not found", errpkg.ErrNotFound)
 		}
@@ -617,7 +617,7 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 		return fmt.Errorf("getting data source for delete: %w", err)
 	}
 
-	if err := s.dataSources.delete(ctx, id, tenantID); err != nil {
+	if err := s.dataSources.delete(ctx, id); err != nil {
 		return fmt.Errorf("deleting data source: %w", err)
 	}
 
@@ -629,6 +629,6 @@ func (s *Service) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID
 
 // MatchDataSource finds the most specific data source for the given scope,
 // falling back to more general scopes. It returns nil when no registered source matches.
-func (s *Service) MatchDataSource(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
-	return s.dataSources.match(ctx, tenantID, entityType, entityID, dimensionSlug, sourceName, sourceKind)
+func (s *Service) MatchDataSource(ctx context.Context, entityType *string, entityID *pgtype.UUID, dimensionSlug, sourceName string, sourceKind *string) (*DataSource, error) {
+	return s.dataSources.match(ctx, entityType, entityID, dimensionSlug, sourceName, sourceKind)
 }
