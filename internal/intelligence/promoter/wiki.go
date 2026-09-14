@@ -76,7 +76,7 @@ func WithWikiAIModel(model string) WikiPromoterOption {
 }
 
 // NewWikiPromoter creates a promoter backed by the given store. The
-// tenantID and authorID identify the tenant and system author stamped onto
+// ID and authorID identify the tenant and system author stamped onto
 // the wiki_pages projection rows created by the create path.
 func NewWikiPromoter(store WikiStore, authorID pgtype.UUID, opts ...WikiPromoterOption) *WikiPromoter {
 	p := &WikiPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}

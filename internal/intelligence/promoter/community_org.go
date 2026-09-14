@@ -84,7 +84,7 @@ func WithCommunityOrgAIModel(model string) CommunityOrgPromoterOption {
 }
 
 // NewCommunityOrgPromoter creates a promoter backed by the given store. The
-// tenantID and authorID identify the tenant stamped onto the
+// ID and authorID identify the tenant stamped onto the
 // community_organisations projection rows created by the create path and
 // the system user credited as the review-log actor.
 func NewCommunityOrgPromoter(store CommunityOrgStore, authorID pgtype.UUID, opts ...CommunityOrgPromoterOption) *CommunityOrgPromoter {

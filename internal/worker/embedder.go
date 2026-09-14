@@ -12,7 +12,7 @@ import "context"
 // package owns the provider call and DB write.
 type ContentEmbedder interface {
 	// EmbedContent generates an embedding for the content identified by
-	// contentID+tenantID and stores it in content_scores.relevance_embedding.
+	// contentID+ID and stores it in content_scores.relevance_embedding.
 	// The text parameter contains the content body to embed.
 	EmbedContent(ctx context.Context, contentID [16]byte, text string) error
 }

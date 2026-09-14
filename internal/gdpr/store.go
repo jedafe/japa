@@ -479,7 +479,7 @@ func (s *Store) gdprExportInstructorPayouts(ctx context.Context, userID pgtype.U
 }
 
 // gdprExportCustomFieldValues exports custom_field_values for the user's
-// profile entity (BUG-020). The query takes only userID (no tenantID)
+// profile entity (BUG-020). The query takes only userID (no ID)
 // because custom_field_values is polymorphic on (entity_type, entity_id)
 // and the user's ID is the entity_id.
 func (s *Store) gdprExportCustomFieldValues(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {

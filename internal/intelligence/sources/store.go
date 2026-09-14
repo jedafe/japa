@@ -15,7 +15,7 @@ import (
 // adapter that wraps each generated call with the "sources: <op>: %w"
 // error prefix so callers get a consistent, traceable error chain.
 // // All queries are tenant-scoped (ADR-112 Amendment 2). Every wrapper method
-// takes a tenantID pgtype.UUID as its first argument (after ctx) and stamps it
+// takes a ID pgtype.UUID as its first argument (after ctx) and stamps it
 // into the sqlc query params, guaranteeing data isolation across tenants
 // regardless of what the caller populated in the params struct.
 type Store struct {
@@ -36,7 +36,7 @@ func NewStore(database *db.DB) *Store {
 	}
 }
 
-// Create inserts a new intel_sources row. The tenantID is stamped into the
+// Create inserts a new intel_sources row. The ID is stamped into the
 // row regardless of any value the caller set on arg.
 func (s *Store) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (Source, error) {
 
@@ -88,7 +88,7 @@ func (s *Store) GetByURL(ctx context.Context, sourceURL string) (Source, error) 
 }
 
 // List returns a page of sources ordered by created_at descending. The
-// tenantID is stamped into the query params regardless of any value the
+// ID is stamped into the query params regardless of any value the
 // caller set on arg.
 func (s *Store) List(ctx context.Context, arg gen.ListIntelSourcesParams) ([]Source, error) {
 
@@ -145,7 +145,7 @@ func (s *Store) UpdateEnabled(ctx context.Context, id SourceID, enabled bool) er
 // lastSuccessAt is stamped and consecutive_failures reset; on failure
 // lastErrorAt is stamped, the message stored, and the failure counter
 // incremented. The LastSuccessAt field on the params is a pgtype timestamp;
-// callers pass a non-zero value to indicate success. The tenantID is stamped
+// callers pass a non-zero value to indicate success. The ID is stamped
 // into the query params regardless of any value the caller set on
 // arg.
 func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSourceCrawlStatusParams) error {
@@ -158,7 +158,7 @@ func (s *Store) UpdateCrawlStatus(ctx context.Context, arg gen.UpdateIntelSource
 }
 
 // UpdateRobotsPolicy replaces the cached robots.txt policy JSON for a source.
-// The tenantID is stamped into the query params regardless of any value the
+// The ID is stamped into the query params regardless of any value the
 // caller set on arg.
 func (s *Store) UpdateRobotsPolicy(ctx context.Context, arg gen.UpdateIntelSourceRobotsPolicyParams) error {
 
@@ -198,7 +198,7 @@ func (s *Store) Delete(ctx context.Context, id SourceID) error {
 
 // Update edits the configurable fields of a source (name, domain, url,
 // category, trust level, crawl settings, license, usage restriction, enabled
-// toggle). Returns the updated row. The tenantID is stamped into the params
+// toggle). Returns the updated row. The ID is stamped into the params
 // regardless of any value the caller set on arg.
 func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (Source, error) {
 

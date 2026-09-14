@@ -69,7 +69,7 @@ type contentDocument struct {
 	EngagementScore   int64    `json:"engagement_score"` // weighted engagement for §54 ?sort=top
 }
 
-// IndexContent fetches the content row identified by contentID+tenantID and
+// IndexContent fetches the content row identified by contentID+ID and
 // upserts it into the posts index. UpsertDocuments is primary-key replace —
 // a document with the same id is overwritten — so this handles both create
 // and update without a separate code path.

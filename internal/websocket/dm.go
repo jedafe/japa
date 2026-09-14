@@ -633,7 +633,7 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 	return msgs, nil
 }
 
-// MarkAsRead marks messages as read and resets unread count. The tenantID
+// MarkAsRead marks messages as read and resets unread count. The ID
 // scopes the update so a cross-tenant conversation ID cannot be modified
 // (BUG-009, Rule 4: tenant-scoped). After resetting the DB column, the
 // Valkey badge counter jc:dm_total_unread:{user_id} is recalculated from

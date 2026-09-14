@@ -94,7 +94,7 @@ func (s *Service) GetProgramInfo(ctx context.Context) *ProgramInfo {
 	maxLinksPerUser := 10
 
 	if s.settings != nil {
-		// tenantID is zero-valued — affiliate settings are global (
+		// ID is zero-valued — affiliate settings are global (
 		// is required by the interface but affiliate config is not per-tenant).
 		proMonthly = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_monthly", 15)
 		proAnnual = s.settings.GetFloatOr(ctx, "affiliate.commission.pro_annual", 20)

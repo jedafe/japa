@@ -13,7 +13,7 @@ import (
 
 // Storage is the interface for persisting GDPR data export files and
 // retrieving their on-disk paths for download. The default implementation
-// (LocalStorage) writes to data/gdpr-exports/{tenantID}/ and returns a
+// (LocalStorage) writes to data/gdpr-exports/{ID}/ and returns a
 // marker URL. In production this can be replaced with an S3/SeaweedFS-backed
 // adapter (ADR-048) that returns presigned URLs.
 //
@@ -42,7 +42,7 @@ func exportFilename(requestID pgtype.UUID) string {
 }
 
 // LocalStorage writes GDPR data export files to
-// data/gdpr-exports/{tenantID}/ and returns a marker URL of the form
+// data/gdpr-exports/{ID}/ and returns a marker URL of the form
 // gdpr-local://{requestID}. Files are created with 0600 permissions because
 // they contain PII.
 type LocalStorage struct {

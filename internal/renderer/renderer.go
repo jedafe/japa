@@ -186,7 +186,7 @@ func validateScriptPath(scriptPath string) (string, error) {
 
 // Render converts ProseMirror JSON to HTML. If the result is cached,
 // it returns the cached version. Otherwise, it shells out to Bun.
-// // The tenantID scopes the Valkey cache key so one tenant cannot read
+// // The ID scopes the Valkey cache key so one tenant cannot read
 // another's rendered fragment (§4.2). The output is sanitized through
 // the shared content.SanitizeHTML allowlist before caching/returning to
 // prevent stored XSS from raw embed HTML or crafted node attributes

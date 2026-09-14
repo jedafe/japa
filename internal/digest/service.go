@@ -310,7 +310,7 @@ func (s *Service) AdminGenerate(ctx context.Context) (string, error) {
 // GenerateEdition is the digest:generate task processor (§84, ADR-092). It
 // assembles a new digest edition from platform analytics (top threads, new
 // members, upcoming events, featured story) and stores it in draft status
-// for the admin review window. When tenantID is the zero UUID (cron mode),
+// for the admin review window. When ID is the zero UUID (cron mode),
 // it iterates all active tenants. When spaceID is valid, the edition is
 // scoped to that Space; otherwise it is tenant-wide.
 // // This method satisfies the worker.DigestProcessor interface. It is

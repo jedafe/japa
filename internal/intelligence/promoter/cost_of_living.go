@@ -85,7 +85,7 @@ func WithCostOfLivingClock(fn func() time.Time) CostOfLivingPromoterOption {
 }
 
 // NewCostOfLivingPromoter creates a promoter backed by the given store. The
-// tenantID identifies the tenant stamped onto the comparison_items rows
+// ID identifies the tenant stamped onto the comparison_items rows
 // created by the create path.
 func NewCostOfLivingPromoter(store CostOfLivingStore, authorID pgtype.UUID, opts ...CostOfLivingPromoterOption) *CostOfLivingPromoter {
 	p := &CostOfLivingPromoter{

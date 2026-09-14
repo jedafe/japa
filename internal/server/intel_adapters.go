@@ -27,7 +27,7 @@ import (
 // intelSchedulerSourceAdapter wraps *sources.Store so it satisfies the
 // scheduler.DueSourceLister interface. The sources store exposes ListDue
 // (which wraps the gen.ListDueIntelSources query); the adapter passes the
-// configured tenantID through. Per ADR-112 Amendment 2, all intelligence
+// configured ID through. Per ADR-112 Amendment 2, all intelligence
 // queries are tenant-scoped.
 type intelSchedulerSourceAdapter struct {
 	store *sources.Store

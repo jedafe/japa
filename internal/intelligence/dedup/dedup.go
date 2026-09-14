@@ -43,7 +43,7 @@ type Service struct {
 
 // NewService creates a dedup service backed by the given record lister. Any
 // *stores.Store satisfies RecordLister, so callers can pass the shared
-// intelligence store directly. The tenantID scopes all queries per ADR-112
+// intelligence store directly. The ID scopes all queries per ADR-112
 // Amendment 2.
 func NewService(store RecordLister) *Service {
 	return &Service{store: store}
