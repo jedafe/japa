@@ -61,7 +61,7 @@ type DMConversationResult struct {
 // message. Used by HandleRespond to wire the §48 DM system (ADR-093).
 // Implemented by an adapter around websocket.DMService.
 type dmInitiator interface {
-	GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID, previewMessage string) (DMConversationResult, error)
+	GetOrCreateConversationForInitiator(ctx context.Context, initiatorID, recipientID pgtype.UUID, previewMessage string) (DMConversationResult, error)
 	SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error
 }
 
@@ -545,7 +545,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		message = "I'm responding to your mutual aid post: " + post.Title
 	}
 
-	result, err := h.dm.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, authorID, message)
+	result, err := h.dm.GetOrCreateConversationForInitiator(r.Context(), user.UserID, authorID, message)
 	if err != nil {
 		slog.Error("mutualaid: dm create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dm_failed", "Failed to open conversation")

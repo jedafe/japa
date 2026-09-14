@@ -7525,7 +7525,7 @@ type mutualAidDMAdapter struct {
 
 func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
 	ctx context.Context,
-	tenantID, initiatorID, recipientID pgtype.UUID,
+	initiatorID, recipientID pgtype.UUID,
 	previewMessage string,
 ) (mutualaid.DMConversationResult, error) {
 	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, initiatorID, recipientID, previewMessage)

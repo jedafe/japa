@@ -1194,7 +1194,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 		// the LLM (agent loop) will propose them via comparison.add_dimension.
 		dims := input.ComparisonFields
 
-		res, createErr := h.engine.CreateComparison(r.Context(), tenantID, user.UserID, CreateComparisonInput{
+		res, createErr := h.engine.CreateComparison(r.Context(), user.UserID, CreateComparisonInput{
 			CreateType: false, // no new type — Tier 3 prose-only or LLM proposes type
 			Title:      buildComparisonTitle(input.EntityType, input.EntityIDs),
 			Body:       "",

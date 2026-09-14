@@ -733,7 +733,7 @@ func (h *Handlers) CreateSelectionToken(w http.ResponseWriter, r *http.Request) 
 
 // CreateJCEComparisonFromToken handles POST /api/v1/jce/comparisons/from-token.
 func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -781,7 +781,7 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	result, err := h.Service.CreateJCEComparisonFromToken(r.Context(), tenantID, user.UserID, req.Token, input)
+	result, err := h.Service.CreateJCEComparisonFromToken(r.Context(), user.UserID, req.Token, input)
 	if err != nil {
 		if err.Error() == "valkey not configured" {
 			errpkg.WriteError(w, http.StatusNotImplemented, "not_implemented", "Selection token flow is not configured")

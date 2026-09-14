@@ -81,7 +81,7 @@ func (s *stubComparisonService) CreateComparisonType(_ context.Context, input Co
 	return s.createdType, nil
 }
 
-func (s *stubComparisonService) CreateComparison(_ context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
+func (s *stubComparisonService) CreateComparison(_ context.Context, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
 	if s.createComparisonErr != nil {
 		return ComparisonCreateResult{}, s.createComparisonErr
 	}
@@ -520,7 +520,7 @@ func TestCreateComparison_ForcesDraftStatus(t *testing.T) {
 	engine := NewComparisonEngine(deps)
 
 	// Pass status = "published" — engine should force "draft".
-	res, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, pgtype.UUID{}, CreateComparisonInput{
+	res, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, CreateComparisonInput{
 		Title:      "Test",
 		Status:     "published",
 		Items:      []ComparisonItemInput{{Name: "Item1"}},
@@ -561,7 +561,7 @@ func TestCreateComparison_CreateType(t *testing.T) {
 	deps := &ToolDeps{Comparison: svc}
 	engine := NewComparisonEngine(deps)
 
-	res, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, pgtype.UUID{}, CreateComparisonInput{
+	res, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, CreateComparisonInput{
 		CreateType: true,
 		TypeInput: ComparisonTypeCreateInput{
 			Name: "Education Systems",
@@ -589,7 +589,7 @@ func TestCreateComparison_MissingTitle(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	engine := NewComparisonEngine(deps)
 
-	_, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, pgtype.UUID{}, CreateComparisonInput{})
+	_, err := engine.CreateComparison(t.Context(), pgtype.UUID{}, CreateComparisonInput{})
 	if err == nil {
 		t.Error("expected error for missing title")
 	}
