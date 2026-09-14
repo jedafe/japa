@@ -260,6 +260,9 @@ func refactorPackage(p *packages.Package, removals map[types.Object][]int, writt
 		if written[path] {
 			continue
 		}
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
 		astutil.Apply(f, func(c *astutil.Cursor) bool {
 			switch n := c.Node().(type) {
 			case *ast.FuncDecl:
