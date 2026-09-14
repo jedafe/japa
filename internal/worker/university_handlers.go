@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ---------------------------------------------------------------------------
@@ -86,46 +84,9 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 		payload.PeriodEnd = end.Format(time.DateOnly)
 	}
 
-	// Collect tenant IDs: either the single requested tenant or all active
-	// ones (cron-mode sweep). An empty from the scheduler iterates
-	// every tenant so payouts are aggregated platform-wide (BUG-002).
-	var tenantIDs []pgtype.UUID
-
-	if "" != "" {
-		var tid pgtype.UUID
-		if err := tid.Scan(""); err != nil {
-			slog.Error("task:university:calculate_period_payouts: invalid id", "error", err)
-			return fmt.Errorf("task:university:calculate_period_payouts: invalid id: %w", err)
-		}
-
-		tenantIDs = []pgtype.UUID{tid}
-	} else {
-		if dbPool == nil {
-			slog.Warn("task:university:calculate_period_payouts: no db pool, cannot list tenants")
-			return nil
-		}
-
-		var err error
-
-		tenantIDs, err = gen.New(dbPool.Reader).ListActiveTenantIDs(ctx)
-		if err != nil {
-			slog.Error("task:university:calculate_period_payouts: list tenants failed", "error", err)
-			return fmt.Errorf("task:university:calculate_period_payouts: %w", err)
-		}
-	}
-
-	if len(tenantIDs) == 0 {
-		slog.Warn("task:university:calculate_period_payouts: no active tenants found")
-		return nil
-	}
-
-	for range tenantIDs {
-		if err := universityProcessor.CalculatePeriodPayouts(ctx,
-			payload.PeriodStart, payload.PeriodEnd); err != nil {
-			// Continue to the next tenant — a single tenant failure must not
-			// abort the whole sweep (mirrors the sitemap/RSS sweep handlers).
-			slog.Error("task:university:calculate_period_payouts: processor failed", "error", err)
-		}
+	if err := universityProcessor.CalculatePeriodPayouts(ctx,
+		payload.PeriodStart, payload.PeriodEnd); err != nil {
+		slog.Error("task:university:calculate_period_payouts: processor failed", "error", err)
 	}
 
 	return nil
