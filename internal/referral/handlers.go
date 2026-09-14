@@ -284,7 +284,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	// Global killswitch (referral.enabled, ADR-078 §60). When disabled, the
 	// redirect still resolves the code but does not track clicks or set the
 	// attribution cookie — the user is simply sent to the homepage.
-	if _, ok := nil(r); ok && !h.Service.Enabled(r.Context()) {
+	if !h.Service.Enabled(r.Context()) {
 		http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 		return
 	}

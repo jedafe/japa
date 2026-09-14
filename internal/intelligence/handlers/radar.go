@@ -693,7 +693,7 @@ func (h *Handlers) HandleRadarFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -750,7 +750,7 @@ func (h *Handlers) HandleRadarUnfollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -865,7 +865,7 @@ func (h *Handlers) HandleRadarSaved(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -910,7 +910,7 @@ func (h *Handlers) HandleRadarSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

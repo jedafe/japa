@@ -251,7 +251,7 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -508,7 +508,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -562,7 +562,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

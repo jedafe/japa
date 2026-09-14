@@ -198,7 +198,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -263,7 +263,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

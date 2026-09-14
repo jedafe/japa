@@ -89,7 +89,7 @@ func ValidateLeaderboardPeriod(period string) bool {
 
 // leaderboardCacheKey builds the Valkey key for a cached leaderboard.
 func leaderboardCacheKey(scope, period string) string {
-	return valkey.MustKey("leaderboard:%s:%s:%s", uuidStr(), scope, period)
+	return valkey.MustKey("leaderboard:%s:%s", scope, period)
 }
 
 // periodStartDate returns the UTC start-of-period time for weekly/monthly.

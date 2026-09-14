@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"

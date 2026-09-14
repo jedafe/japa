@@ -207,11 +207,7 @@ func (s *Store) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLRe
 // CountPendingHITLReviews returns the total count of pending reviews for a
 // tenant (used for pagination metadata in the admin HITL queue). When
 // sourceFilter is non-empty, only reviews with that source are counted.
-func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, sourceFilter string) (int64, error) {
-	if tenantID == (pgtype.UUID{}) {
-		return 0, errors.New("the id is required")
-	}
-
+func (s *Store) CountPendingHITLReviews(ctx context.Context, sourceFilter string) (int64, error) {
 	var total int64
 	if sourceFilter != "" {
 		err := s.read.QueryRow(ctx, `
@@ -267,7 +263,7 @@ type AIUsageByProvider struct {
 // GetAIUsageSummary returns aggregated AI usage for a tenant within the given
 // period. periodDays <= 0 defaults to 30. An optional provider filter limits
 // the summary to a single provider (empty string = all providers).
-func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, periodDays int, provider string) (AIUsageSummary, error) {
+func (s *Store) GetAIUsageSummary(ctx context.Context, periodDays int, provider string) (AIUsageSummary, error) {
 	if periodDays <= 0 {
 		periodDays = 30
 	}
@@ -282,7 +278,7 @@ func (s *Store) GetAIUsageSummary(ctx context.Context, tenantID pgtype.UUID, per
 		FROM ai_usage_log
 		WHERE created_at >= $1
 	`
-	totalsArgs := []any{tenantID, since}
+	totalsArgs := []any{since}
 
 	if provider != "" {
 		totalsQuery += ` AND provider = $1`

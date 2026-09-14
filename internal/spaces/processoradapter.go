@@ -145,14 +145,9 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string
 		return nil
 	}
 
-	var sid, tid pgtype.UUID
+	var sid pgtype.UUID
 	if err := sid.Scan(spaceID); err != nil {
 		slog.Warn("space:auto_populate — invalid space_id", "error", err)
-		return nil
-	}
-
-	if err := tid.Scan(); err != nil {
-		slog.Warn("space:auto_populate — invalid the id", "error", err)
 		return nil
 	}
 

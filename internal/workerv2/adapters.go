@@ -465,19 +465,13 @@ func (a *RemittanceAdapter) CheckAlerts(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
-	var total int
-
-	for _, tid := range []pgtype.UUID{} {
-		n, err := a.svc.CheckAndDispatchAlerts(ctx)
-		if err != nil {
-			slog.Warn("task:remittance:check_alerts: tenant check failed", "error", err)
-			continue
-		}
-
-		total += n
+	n, err := a.svc.CheckAndDispatchAlerts(ctx)
+	if err != nil {
+		slog.Warn("task:remittance:check_alerts: tenant check failed", "error", err)
+		return 0, err
 	}
 
-	return total, nil
+	return n, nil
 }
 
 // PruneOldRates iterates every tenant and prunes rates beyond the configured
@@ -606,12 +600,12 @@ func NewPushAdapter(svc *devices.Service, database *db.DB) *PushAdapter {
 // SendPush resolves the device token's tenant and user, then sends the push
 // notification. The notification payload is loaded from the notifications table.
 func (a *PushAdapter) SendPush(ctx context.Context, notificationID, deviceTokenID pgtype.UUID) error {
-	var tenantID, userID pgtype.UUID
+	var userID pgtype.UUID
 
 	err := a.db.Reader.QueryRow(
 		ctx,
 		"SELECT user_id FROM device_tokens WHERE id = $1", deviceTokenID,
-	).Scan(&pgtype.UUID{}, &userID)
+	).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("looking up device token: %w", err)
 	}

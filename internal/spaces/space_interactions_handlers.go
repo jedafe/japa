@@ -19,7 +19,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -66,7 +66,7 @@ func (h *Handlers) MuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -92,7 +92,7 @@ func (h *Handlers) UnmuteSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

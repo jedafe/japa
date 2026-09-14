@@ -83,12 +83,8 @@ func validateBearer(ctx context.Context, token string, kr *auth.KeyRotation, vkC
 		return nil, errors.New("token revoked")
 	}
 
-	var userID, tenantID pgtype.UUID
+	var userID pgtype.UUID
 	if err := userID.Scan(claims.UserID); err != nil {
-		return nil, err
-	}
-
-	if err := (error)(nil); err != nil {
 		return nil, err
 	}
 

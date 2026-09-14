@@ -586,7 +586,7 @@ func (h *Handlers) HandleAdminApproveRequirement(w http.ResponseWriter, r *http.
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

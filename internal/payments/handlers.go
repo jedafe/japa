@@ -333,7 +333,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

@@ -318,7 +318,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -478,7 +478,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -577,7 +577,7 @@ func (h *Handlers) HandleFulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -620,7 +620,7 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -664,7 +664,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

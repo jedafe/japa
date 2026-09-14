@@ -46,7 +46,7 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -734,7 +734,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1878,7 +1878,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2177,7 +2177,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

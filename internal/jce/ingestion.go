@@ -820,8 +820,8 @@ LIMIT $2
 	var enqueued int
 
 	for rows.Next() {
-		var tenantID, contentID pgtype.UUID
-		if err := rows.Scan(&pgtype.UUID{}, &contentID); err != nil {
+		var contentID pgtype.UUID
+		if err := rows.Scan(&contentID); err != nil {
 			return enqueued, fmt.Errorf("scanning stale comparison: %w", err)
 		}
 

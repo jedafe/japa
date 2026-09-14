@@ -165,7 +165,7 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -188,7 +188,7 @@ func (h *Handlers) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -219,7 +219,7 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -246,7 +246,7 @@ func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -304,7 +304,7 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -330,7 +330,7 @@ func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -357,7 +357,7 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -384,7 +384,7 @@ func (h *Handlers) CreateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -421,7 +421,7 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -448,7 +448,7 @@ func (h *Handlers) UpdateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -480,7 +480,7 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -510,7 +510,7 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -559,7 +559,7 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -592,7 +592,7 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -627,7 +627,7 @@ func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}

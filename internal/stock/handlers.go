@@ -191,7 +191,7 @@ func (h *StockHandlers) ImportPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}

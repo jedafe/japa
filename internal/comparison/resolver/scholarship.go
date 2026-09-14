@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/jedafe/japa/internal/scholarships"
 )
 

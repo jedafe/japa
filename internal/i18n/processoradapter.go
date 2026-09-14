@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
 )
 
@@ -35,12 +34,6 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 
 	if a.svc == nil {
 		slog.Warn("i18n:translate_language_pack — service not initialized, skipping")
-		return nil
-	}
-
-	var tid pgtype.UUID
-	if err := tid.Scan(); err != nil {
-		slog.Warn("i18n:translate_language_pack — invalid the id", "error", err)
 		return nil
 	}
 

@@ -74,13 +74,13 @@ func NewPrivacyChecker(read *gen.Queries) *PrivacyChecker {
 // // A pgx.ErrNoRows result is translated to (false, nil): a non-existent
 // entity has no exemption flag set, and the caller (tool handler) will
 // surface the not-found condition through its own lookup.
-func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	if c == nil || c.read == nil {
 		return false, errors.New("ai: privacy checker not configured")
 	}
 
-	if tenantID == (pgtype.UUID{}) || entityID == (pgtype.UUID{}) {
-		return false, errors.New("ai: the id and entity_id are required for privacy check")
+	if entityID == (pgtype.UUID{}) {
+		return false, errors.New("ai: entity_id is required for privacy check")
 	}
 
 	switch entityType {

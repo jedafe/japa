@@ -246,7 +246,7 @@ func (h *Hub) BroadcastToTenant(event WSEvent) {
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.PublishTenant(event)
+		bridge.PublishTenant(event, "")
 	}
 }
 

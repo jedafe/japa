@@ -74,7 +74,7 @@ const ragQueryCacheTTL = 10 * time.Minute
 // entry (§103 Geo-Filtered RAG amendment to §69).
 func ragQueryCacheKey(queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID) string {
 	h := sha256.New()
-	h.Write([16]byte{}[:])
+	h.Write(make([]byte, 16))
 
 	for _, f := range queryEmbedding {
 		bits := math.Float32bits(f)

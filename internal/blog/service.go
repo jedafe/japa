@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
-	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 // CreateSeriesInput holds parameters for creating a new blog series.
@@ -146,16 +145,7 @@ func (s *Service) DeleteSeries(ctx context.Context, id pgtype.UUID) error {
 // before linking to prevent cross-tenant content linkage. The position is
 // computed server-side (MAX+1) to avoid colliding with the unique constraint
 // on (series_id, position); use ReorderPostsInSeries for reordering.
-func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID, tenantID pgtype.UUID, position int32) error {
-	contentTenant, err := s.store.getContentTenantID(ctx, contentID)
-	if err != nil {
-		return fmt.Errorf("verifying content tenant for series link: %w", err)
-	}
-
-	if contentTenant != tenantID {
-		return fmt.Errorf("%w: content does not belong to this tenant", errpkg.ErrBelongsToAnother)
-	}
-
+func (s *Service) AddPostToSeries(ctx context.Context, seriesID, contentID pgtype.UUID, position int32) error {
 	return s.store.addPostToSeries(ctx, gen.AddPostToSeriesParams{
 		SeriesID:  seriesID,
 		ContentID: contentID,
