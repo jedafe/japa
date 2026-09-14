@@ -56,14 +56,6 @@ func (h *Handlers) requireTenant(w http.ResponseWriter, r *http.Request) (pgtype
 	return pgtype.UUID{}, true
 }
 
-// ID returns the tenant ID from the request context without writing an
-// error response. Used by handlers that need the tenant for a killswitch check
-// but must not produce an HTTP error when the tenant is absent (e.g. the public
-// redirect handler, which falls back to a plain redirect).
-func (h *Handlers) tenantID(r *http.Request) (pgtype.UUID, bool) {
-	return pgtype.UUID{}, true
-}
-
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
 	if s == "" {

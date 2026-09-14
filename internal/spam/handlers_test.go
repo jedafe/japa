@@ -55,8 +55,7 @@ func setupRouter(h *Handlers) *chi.Mux {
 }
 
 const (
-	testTenantID = "00000000-0000-0000-0000-000000000001"
-	testUserID   = "00000000-0000-0000-0000-000000000002"
+	testUserID = "00000000-0000-0000-0000-000000000002"
 )
 
 func addContextMiddleware(next http.Handler) http.Handler {

@@ -370,7 +370,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	sourceID, _, src, proceed, err := resolveIntelFetchSource(ctx, p)
+	sourceID, src, proceed, err := resolveIntelFetchSource(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -455,10 +455,10 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 // resolveIntelFetchSource resolves the source row for a fetch task: parses
 // the payload's source_id + , loads the source, and reports
 // proceed=false for the soft-skip cases (source deleted or disabled).
-func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceID, tenantID pgtype.UUID, src gen.IntelSource, proceed bool, err error) {
+func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceID pgtype.UUID, src gen.IntelSource, proceed bool, err error) {
 	sourceID, err = scanUUID(p.SourceID)
 	if err != nil {
-		return sourceID, pgtype.UUID{}, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
+		return sourceID, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
 	}
 
 	// Load the source row to resolve crawl_method, source_url, and trust_level.
@@ -466,18 +466,18 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Info("task:intel:fetch_source: source no longer exists, skipping", "source_id", sourceID.String())
-			return sourceID, pgtype.UUID{}, src, false, nil
+			return sourceID, src, false, nil
 		}
 
-		return sourceID, pgtype.UUID{}, src, false, fmt.Errorf("task:intel:fetch_source: load source: %w", err)
+		return sourceID, src, false, fmt.Errorf("task:intel:fetch_source: load source: %w", err)
 	}
 
 	if !src.Enabled {
 		slog.Info("task:intel:fetch_source: source is disabled, skipping", "source_id", sourceID.String())
-		return sourceID, pgtype.UUID{}, src, false, nil
+		return sourceID, src, false, nil
 	}
 
-	return sourceID, pgtype.UUID{}, src, true, nil
+	return sourceID, src, true, nil
 }
 
 // intelSourceConfigured reports whether a source has usable fetch config.

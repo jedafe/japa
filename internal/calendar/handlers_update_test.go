@@ -47,14 +47,12 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 		}
 	}
 
-	tenantID := pgtype.UUID{}
-
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, struct{}{}, &struct {
 		ID   pgtype.UUID
 		Name string
 		Slug string
-	}{ID: tenantID})
+	}{ID: pgtype.UUID{}})
 
 	if withUser {
 		userID := pgtype.UUID{}

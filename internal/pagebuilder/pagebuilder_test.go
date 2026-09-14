@@ -263,14 +263,6 @@ func TestPageJSONMarshaling(t *testing.T) {
 	}
 }
 
-// testTenantID returns a test tenant UUID.
-func testTenantID() pgtype.UUID {
-	var id pgtype.UUID
-	_ = id.Scan("00000000-0000-0000-0000-000000000001")
-
-	return id
-}
-
 // testUserID returns a test user UUID.
 func testUserID() pgtype.UUID {
 	var id pgtype.UUID

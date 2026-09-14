@@ -159,19 +159,5 @@ func RequireTOTPForAdmin(
 	}
 }
 
-// tenantIDFromRequest extracts the tenant ID from the request context,
-// falling back to the AuthenticatedUser's ID when the tenant
-// middleware hasn't set it (e.g., during early bootstrap).
-func tenantIDFromRequest(r *http.Request) pgtype.UUID {
-	if user := FromContext(r.Context()); user != nil &&
-		(pgtype.UUID{}).
-			Valid {
-		return (pgtype.UUID{})
-
-	}
-
-	return pgtype.UUID{}
-}
-
 // ErrNoRows — Sentinel: pgx.ErrNoRows re-exported for convenience.
 var ErrNoRows = pgx.ErrNoRows

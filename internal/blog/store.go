@@ -166,13 +166,6 @@ func (s *Store) listPostsInSeries(ctx context.Context, seriesID pgtype.UUID) ([]
 	return rows, nil
 }
 
-// getContentTenantID is a no-op compatibility helper. Cross-tenant verification
-// is no longer required in the single-tenant deployment.
-func (s *Store) getContentTenantID(ctx context.Context, contentID pgtype.UUID) (pgtype.UUID, error) {
-	_ = contentID
-	return pgtype.UUID{}, nil
-}
-
 // getSeriesForContent returns the series_id for a given content_id, or
 // pg.ErrNoRows if the content is not part of any series. Used by the editor
 // load to restore the series selector when editing existing content.

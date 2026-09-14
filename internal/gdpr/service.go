@@ -2888,18 +2888,17 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		for rows.Next() {
 			m := map[string]interface{}{}
 
-			var id, tenantID2, destSpaceID, submittedBy pgtype.UUID
+			var id, destSpaceID, submittedBy pgtype.UUID
 
 			var name, slug, orgType, originCommunity, status, claimStatus string
 
 			var isVerified, isCommunitySubmitted bool
 
 			var createdAt, updatedAt pgtype.Timestamptz
-			if scanErr := rows.Scan(&id, &tenantID2, &name, &slug, &orgType, &originCommunity,
+			if scanErr := rows.Scan(&id, &name, &slug, &orgType, &originCommunity,
 				&destSpaceID, &status, &claimStatus, &isVerified, &isCommunitySubmitted,
 				&submittedBy, &createdAt, &updatedAt); scanErr == nil {
 				m["id"] = id
-				m["the id"] = tenantID2
 				m["name"] = name
 				m["slug"] = slug
 				m["org_type"] = orgType
@@ -2938,15 +2937,15 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 
 		for rows.Next() {
 			var (
-				id, tenantID2, userID2, originSpaceID, destSpaceID pgtype.UUID
-				inputText, outputFormat, status                    string
-				outputText, aiModel                                *string
-				tokensUsed                                         *int32
-				createdAt, expiresAt                               pgtype.Timestamptz
+				id, userID2, originSpaceID, destSpaceID pgtype.UUID
+				inputText, outputFormat, status         string
+				outputText, aiModel                     *string
+				tokensUsed                              *int32
+				createdAt, expiresAt                    pgtype.Timestamptz
 			)
 
 			if err := rows.Scan(
-				&id, &tenantID2, &userID2, &originSpaceID, &destSpaceID,
+				&id, &userID2, &originSpaceID, &destSpaceID,
 				&inputText, &outputText, &outputFormat, &status, &aiModel,
 				&tokensUsed, &createdAt, &expiresAt,
 			); err != nil {

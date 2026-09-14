@@ -42,8 +42,6 @@ func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 func newRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
 
-	tenantID := pgtype.UUID{}
-
 	var r *http.Request
 	if body != "" {
 		r = httptest.NewRequest(method, path, bytes.NewBufferString(body))
@@ -58,7 +56,7 @@ func newRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *ht
 		ID   pgtype.UUID
 		Name string
 		Slug string
-	}{ID: tenantID})
+	}{ID: pgtype.UUID{}})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 		UserID: userID,
 	})
@@ -284,8 +282,6 @@ func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, userID, prof
 func newAuthenticatedRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
 
-	tenantID := pgtype.UUID{}
-
 	var r *http.Request
 	if body != "" {
 		r = httptest.NewRequest(method, path, bytes.NewBufferString(body))
@@ -300,7 +296,7 @@ func newAuthenticatedRequest(t *testing.T, method, path, body string, userID pgt
 		ID   pgtype.UUID
 		Name string
 		Slug string
-	}{ID: tenantID})
+	}{ID: pgtype.UUID{}})
 	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
 		UserID: userID,
 	})

@@ -160,7 +160,7 @@ func (s *Service) CreateRedirect(ctx context.Context, sourcePath, targetURL stri
 		return gen.Redirect{}, err
 	}
 
-	s.invalidateValkeyCache(ctx, "", sourcePath)
+	s.invalidateValkeyCache(ctx, sourcePath)
 
 	return r, nil
 }
@@ -199,12 +199,12 @@ func (s *Service) UpdateRedirect(ctx context.Context, id pgtype.UUID, sourcePath
 		return gen.Redirect{}, err
 	}
 
-	tenantIDStr := ""
+	// no tenant
 	// Invalidate the new source_path.
-	s.invalidateValkeyCache(ctx, tenantIDStr, sourcePath)
+	s.invalidateValkeyCache(ctx, sourcePath)
 	// Invalidate the old source_path if it changed.
 	if existing.SourcePath != sourcePath {
-		s.invalidateValkeyCache(ctx, tenantIDStr, existing.SourcePath)
+		s.invalidateValkeyCache(ctx, existing.SourcePath)
 	}
 
 	return r, nil
@@ -221,7 +221,7 @@ func (s *Service) DeleteRedirect(ctx context.Context, id pgtype.UUID) error {
 		return err
 	}
 
-	s.invalidateValkeyCache(ctx, "", r.SourcePath)
+	s.invalidateValkeyCache(ctx, r.SourcePath)
 
 	return nil
 }
@@ -263,7 +263,7 @@ func (s *Service) BulkAction(ctx context.Context, input BulkActionInput) error {
 		return fmt.Errorf("fetching redirects for bulk action: %w", err)
 	}
 
-	tenantIDStr := ""
+	// no tenant
 
 	switch input.Action {
 	case "activate":
@@ -281,7 +281,7 @@ func (s *Service) BulkAction(ctx context.Context, input BulkActionInput) error {
 	}
 	// Invalidate the Valkey cache for every affected source path.
 	for _, r := range existing {
-		s.invalidateValkeyCache(ctx, tenantIDStr, r.SourcePath)
+		s.invalidateValkeyCache(ctx, r.SourcePath)
 	}
 
 	return nil
@@ -302,7 +302,7 @@ func (s *Service) ResolveRedirect(ctx context.Context, path string) (string, int
 		return s.resolveFromDB(ctx, path)
 	}
 
-	cacheKey := redirectCacheKeyPrefix + "" + ":" + path
+	cacheKey := redirectCacheKeyPrefix + path
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry struct {
 			TargetURL  string `json:"target_url"`
@@ -340,7 +340,7 @@ func (s *Service) resolveFromDB(ctx context.Context, path string) (string, int) 
 	})
 
 	if s.vk != nil {
-		cacheKey := redirectCacheKeyPrefix + "" + ":" + path
+		cacheKey := redirectCacheKeyPrefix + path
 		// Propagate the request context instead of a detached Background one.
 		if err := s.vk.Set(ctx, cacheKey, string(entry), redirectCacheTTL).Err(); err != nil {
 			slog.Warn("failed to cache redirect", "key", cacheKey, "error", err)
@@ -368,12 +368,12 @@ func (s *Service) enqueueRecordHit(idStr string) {
 	}
 }
 
-func (s *Service) invalidateValkeyCache(ctx context.Context, tenantIDStr, sourcePath string) {
+func (s *Service) invalidateValkeyCache(ctx context.Context, sourcePath string) {
 	if s.vk == nil {
 		return
 	}
 
-	cacheKey := redirectCacheKeyPrefix + tenantIDStr + ":" + sourcePath
+	cacheKey := redirectCacheKeyPrefix + sourcePath
 	if err := s.vk.Del(ctx, cacheKey).Err(); err != nil {
 		slog.Warn("failed to invalidate redirect cache", "key", cacheKey, "error", err)
 	}
