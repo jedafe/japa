@@ -523,12 +523,6 @@ WHERE id = $1 AND status = 'published'
 	return nil
 }
 
-// ListActiveTenantIDs returns every active tenant ID. Used by the cron-mode
-// path of GenerateEdition (zero tenantID → iterate all tenants).
-func (s *Store) ListActiveTenantIDs(ctx context.Context) ([]pgtype.UUID, error) {
-	return gen.New(s.pool.Reader).ListActiveTenantIDs(ctx)
-}
-
 // DigestContent is the JSON shape stored in digest_editions.content. Each
 // section is assembled by AssembleDigestContent per §84 generation logic.
 // //nolint:revive // exported: stutter naming is intentional
