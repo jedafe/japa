@@ -349,7 +349,7 @@ type CreateReplyInput struct {
 }
 
 // CreateReply creates a new reply and increments the parent thread's reply_count.
-func (s *Service) CreateReply(ctx context.Context, tenantID, threadID, authorUserID pgtype.UUID, input CreateReplyInput) (gen.ForumReply, error) {
+func (s *Service) CreateReply(ctx context.Context, threadID, authorUserID pgtype.UUID, input CreateReplyInput) (gen.ForumReply, error) {
 	if input.Body == nil {
 		input.Body = []byte("[]")
 	}

@@ -429,8 +429,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -451,7 +450,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.service.GenerateGuide(r.Context(), tenantID, input)
+	resp, err := h.service.GenerateGuide(r.Context(), input)
 	if err != nil {
 		slog.Error("arrivalchecklist: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to accept generation request")

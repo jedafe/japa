@@ -107,7 +107,7 @@ type PrimaryFeedItem struct {
 // If space member count ≤ FanOutThreshold: push mode (write feeds rows).
 // If larger: pull mode (mark in hot cache, followers pull on next request).
 // The fan-out is handled by the worker.TypeContentFanOutToFeeds task.
-func (s *Service) FanOutPost(_ context.Context, tenantID, contentID, spaceID pgtype.UUID, contentType string) error {
+func (s *Service) FanOutPost(_ context.Context, contentID, spaceID pgtype.UUID, contentType string) error {
 	// Determine fan-out type based on space membership.
 	fanOutType := "followers" // default: fan out to author's followers
 	if spaceID.Valid {

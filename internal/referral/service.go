@@ -433,7 +433,7 @@ func (s *Service) CaptureSignupReferral(ctx context.Context, refereeUserID pgtyp
 // CheckConversion is called on payment completion. It checks if the payer
 // has a referral attribution, runs fraud checks, and transitions the referral
 // status. Called by the referral:check_conversion task.
-func (s *Service) CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error {
+func (s *Service) CheckConversion(ctx context.Context, payerID, paymentID pgtype.UUID, sessionID string) error {
 	code, err := s.GetAttribution(ctx, sessionID)
 	if err != nil {
 		return nil // No attribution — not a referred user.

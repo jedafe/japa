@@ -492,7 +492,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 
 // DeleteOwn soft-deletes the author's own achievement. The caller must verify
 // ownership (achievement.delete_own permission + author_id match).
-func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteOwn(ctx context.Context, contentID, userID pgtype.UUID) error {
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -548,7 +548,7 @@ func (s *Service) AdminList(ctx context.Context, status, milestoneType, q string
 // AdminSetStatus changes the publication status of an achievement (e.g.
 // publish / unpublish). Used by the moderation queue. Caller must hold the
 // achievement.moderate permission (enforced at route level).
-func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (AchievementDTO, error) {
+func (s *Service) AdminSetStatus(ctx context.Context, contentID pgtype.UUID, status string) (AchievementDTO, error) {
 	if status != content.StatusPublished && status != content.StatusDraft && status != content.StatusInReview {
 		return AchievementDTO{}, fmt.Errorf("invalid status: %s", status)
 	}
@@ -562,7 +562,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 
 // AdminDelete soft-deletes an achievement from the moderation queue. Caller
 // must hold the achievement.moderate permission (enforced at route level).
-func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+func (s *Service) AdminDelete(ctx context.Context, contentID pgtype.UUID) error {
 	if err := s.content.DeleteContent(ctx, contentID); err != nil {
 		return fmt.Errorf("achievement: admin delete: %w", err)
 	}

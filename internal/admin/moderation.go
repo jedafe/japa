@@ -1326,8 +1326,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1377,7 +1376,7 @@ func (h *Handlers) ModerateItem(w http.ResponseWriter, r *http.Request) {
 	// — on approve — publishes the draft. In that case we skip the generic
 	// content_reviews / content_reports updates below because they have no row
 	// for an ai_hitl_reviews ID and would fail the request.
-	handled, hookErr := h.handleStudioReview(ctx, rid, tenantID, user.UserID, input.Action, input.Reason)
+	handled, hookErr := h.handleStudioReview(ctx, rid, user.UserID, input.Action, input.Reason)
 	if hookErr != nil {
 		// Fail closed (BUG-004): the studio hook ran before the review status
 		// was committed, so the review stays pending and the reviewer sees
@@ -1510,7 +1509,7 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, reviewerID
 // The hook runs BEFORE the review status is committed — a hook failure is
 // returned as (true, err) so the caller can fail closed and leave the
 // review pending (BUG-004, matching the ai HITL approve/reject handlers).
-func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) (bool, error) {
+func (h *Handlers) handleStudioReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) (bool, error) {
 	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
 	var hitlSource, hitlStatus string
 

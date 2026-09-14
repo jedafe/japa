@@ -794,7 +794,7 @@ func parseTimestamp(s string) (pgtype.Timestamptz, error) {
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as description so a reviewer
 // can fill it manually (graceful degradation).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
 		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}

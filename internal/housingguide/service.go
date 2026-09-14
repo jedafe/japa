@@ -597,7 +597,7 @@ func (s *Service) AdminList(ctx context.Context, status, accommodationType, q st
 // Gateway via the "content_generation" category. If the dispatcher is nil
 // or the call fails, the draft is still created with the prompt as tips so
 // a reviewer can fill it manually (graceful degradation).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input GenerateGuideRequest) (GenerateDraftResponse, error) {
+func (s *Service) GenerateDraft(ctx context.Context, input GenerateGuideRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
 		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}

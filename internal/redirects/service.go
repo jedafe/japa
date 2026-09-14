@@ -312,7 +312,7 @@ func (s *Service) ResolveRedirect(ctx context.Context, tenantID pgtype.UUID, pat
 
 		if json.Unmarshal([]byte(cached), &entry) == nil && entry.TargetURL != "" {
 			// Hit counting moved to an Asynq task — no per-request goroutines.
-			s.enqueueRecordHit(tenantID, entry.RedirectID)
+			s.enqueueRecordHit(entry.RedirectID)
 			return entry.TargetURL, entry.HTTPStatus
 		}
 	}
@@ -347,14 +347,14 @@ func (s *Service) resolveFromDB(ctx context.Context, tenantID pgtype.UUID, path 
 		}
 	}
 
-	s.enqueueRecordHit(tenantID, r.ID.String())
+	s.enqueueRecordHit(r.ID.String())
 
 	return r.TargetUrl, int(r.HttpStatus)
 }
 
 // enqueueRecordHit hands hit counting to the worker (redirect:record_hit, low
 // queue). Best-effort: a failed enqueue must never fail the redirect itself.
-func (s *Service) enqueueRecordHit(tenantID pgtype.UUID, idStr string) {
+func (s *Service) enqueueRecordHit(idStr string) {
 	payload, err := json.Marshal(map[string]string{
 		"redirect_id": idStr,
 	})

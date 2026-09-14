@@ -266,7 +266,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	a.enrichUniversityFields(ctx, space, uniData)
 
 	// Enqueue logo fetch if a logo URL was found and the enqueuer is wired.
-	a.enqueueUniversityLogo(ctx, tenantID, space, uniData.Logo)
+	a.enqueueUniversityLogo(ctx, space, uniData.Logo)
 
 	slog.Info("space:auto_populate — populated university data from Wikidata", "space_id", space.ID.String(), "name", space.Name)
 
@@ -320,7 +320,7 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 
 	// Enqueue logo fetch from the Wikipedia thumbnail if available.
 	if wikiSummary.Thumbnail != "" {
-		a.enqueueUniversityLogo(ctx, tenantID, space, wikiSummary.Thumbnail)
+		a.enqueueUniversityLogo(ctx, space, wikiSummary.Thumbnail)
 	}
 
 	slog.Info("space:auto_populate — populated wiki content from Wikipedia fallback", "space_id", space.ID.String(), "type", "university", "name", space.Name)
@@ -446,7 +446,7 @@ func (a *ProcessorAdapter) enrichUniversityFields(ctx context.Context, space *ge
 
 // enqueueUniversityLogo enqueues university:fetch_logo if a logo URL is
 // available and the enqueuer is wired. Fire-and-forget — errors are logged.
-func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, tenantID pgtype.UUID, space *gen.GetSpaceByIDRow, logoURL string) {
+func (a *ProcessorAdapter) enqueueUniversityLogo(ctx context.Context, space *gen.GetSpaceByIDRow, logoURL string) {
 	if strings.TrimSpace(logoURL) == "" {
 		return
 	}

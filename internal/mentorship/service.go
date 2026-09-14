@@ -477,7 +477,7 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgty
 
 	// Enqueue embedding generation if bio changed and mentor is opted in.
 	if bioChanged && mergedIsMentor != nil && *mergedIsMentor && mergedBio != nil && *mergedBio != "" {
-		s.enqueueGenerateEmbedding(ctx, tenantID, userID)
+		s.enqueueGenerateEmbedding(ctx, userID)
 	}
 
 	return MentorProfile{
@@ -885,7 +885,7 @@ func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, conn
 	}
 
 	// active_mentee_count changed (pending → active) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
 
 	// §102 analytics: mentorship_accepted { mentor_username }
 	// The mentor (mentorID) is the actor.
@@ -949,7 +949,7 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 	}
 
 	// active_mentee_count changed (active → completed) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
 
 	// §102 analytics: mentorship_completed { connection_id }
 	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", conn.ID, nil)
@@ -984,7 +984,7 @@ func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID
 	}
 
 	// active_mentee_count changed (active → cancelled) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, tenantID, conn.MentorID)
+	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
 
 	return connectionFromModel(conn), nil
 }
@@ -1104,7 +1104,7 @@ func (s *Service) UpdateMeilisearch(ctx context.Context, userID pgtype.UUID) err
 }
 
 // enqueueGenerateEmbedding fires the mentor:generate_embedding Asynq task.
-func (s *Service) enqueueGenerateEmbedding(ctx context.Context, tenantID, userID pgtype.UUID) {
+func (s *Service) enqueueGenerateEmbedding(ctx context.Context, userID pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
@@ -1127,7 +1127,7 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, tenantID, userID
 // after a connection status change that affects the mentor's
 // active_mentee_count (§102 spec: Meilisearch document updated whenever
 // active_mentee_count changes).
-func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, tenantID, mentorID pgtype.UUID) {
+func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, mentorID pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}

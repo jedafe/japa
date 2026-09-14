@@ -66,7 +66,7 @@ func (h *Handlers) SetAsynqClient(c *asynq.Client) { h.asynqClient = c }
 
 // enqueueSearchIndex enqueues a Meilisearch re-index task for an organization.
 // operation is "index" (create/update) or "delete". Fire-and-forget per Rule 8.
-func (h *Handlers) enqueueSearchIndex(operation string, entityID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueSearchIndex(operation string, entityID pgtype.UUID) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -271,7 +271,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
-	h.enqueueSearchIndex("index", result.ID, tenantID)
+	h.enqueueSearchIndex("index", result.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
@@ -397,7 +397,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated org.
-	h.enqueueSearchIndex("index", id, tenantID)
+	h.enqueueSearchIndex("index", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
@@ -426,7 +426,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// §12 stale-index fix: remove the deleted org from the Meilisearch index.
-	h.enqueueSearchIndex("delete", id, tenantID)
+	h.enqueueSearchIndex("delete", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }
@@ -1028,7 +1028,7 @@ func (h *Handlers) AdminCreateOrganization(w http.ResponseWriter, r *http.Reques
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the new org.
-	h.enqueueSearchIndex("index", result.ID, tenantID)
+	h.enqueueSearchIndex("index", result.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
@@ -1083,7 +1083,7 @@ func (h *Handlers) AdminUpdateOrganization(w http.ResponseWriter, r *http.Reques
 	}
 
 	// §12 stale-index fix: enqueue Meilisearch re-index for the updated org.
-	h.enqueueSearchIndex("index", id, tenantID)
+	h.enqueueSearchIndex("index", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization updated"}})
 }
@@ -1107,7 +1107,7 @@ func (h *Handlers) AdminDeleteOrganization(w http.ResponseWriter, r *http.Reques
 	}
 
 	// §12 stale-index fix: remove the deleted org from the Meilisearch index.
-	h.enqueueSearchIndex("delete", id, tenantID)
+	h.enqueueSearchIndex("delete", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }

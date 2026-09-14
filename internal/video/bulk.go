@@ -608,7 +608,7 @@ func (s *Service) createVideoContent(ctx context.Context, tenantID, userID pgtyp
 	h := content.ComputeContentHashWithDistinguisher(body, source.ID.String())
 	contentHash = &h
 
-	_, err := s.content.CreateContentWithQueries(ctx, s.store.write, tenantID, content.CreateContentInput{
+	_, err := s.content.CreateContentWithQueries(ctx, s.store.write, content.CreateContentInput{
 		AuthorID:      authorID,
 		ContentType:   content.TypeVideo,
 		Title:         title,

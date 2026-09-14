@@ -7572,7 +7572,7 @@ func (d *personaActionDispatcher) CreateComment(ctx context.Context, tenantID, p
 	return c.ID, nil
 }
 
-func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantID, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error) {
+func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error) {
 	// forum_question: the persona starts a new thread. The content row was
 	// already published by DispatchAction; pass its ID as ContentID so the
 	// forum thread links to it via forum_threads.content_id (BUG-004 —
@@ -7592,7 +7592,7 @@ func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantI
 }
 
 func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error) {
-	r, err := d.forum.CreateReply(ctx, tenantID, threadID, personaUserID, forum.CreateReplyInput{
+	r, err := d.forum.CreateReply(ctx, threadID, personaUserID, forum.CreateReplyInput{
 		Body: body,
 	})
 	if err != nil {
@@ -7671,6 +7671,6 @@ type studioContentPublisherAdapter struct {
 	svc *content.Service
 }
 
-func (a *studioContentPublisherAdapter) UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error) {
+func (a *studioContentPublisherAdapter) UpdateContentStatus(ctx context.Context, contentID pgtype.UUID, status string) (any, error) {
 	return a.svc.UpdateContentStatus(ctx, contentID, status)
 }

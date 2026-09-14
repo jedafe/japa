@@ -96,8 +96,7 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -127,7 +126,7 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 		req.Mode = ModeCreate
 	}
 
-	imp, err := h.service.CreateImport(r.Context(), tenantID, user.UserID, req.Name, req.Type, req.Format, req.FileURL, req.Mode)
+	imp, err := h.service.CreateImport(r.Context(), user.UserID, req.Name, req.Type, req.Format, req.FileURL, req.Mode)
 	if err != nil {
 		slog.Error("dataimport: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "import_create_failed", "Failed to create import")

@@ -140,7 +140,7 @@ func (s *Service) SetEnqueuer(e Enqueuer) {
 
 // CreateImport creates a new import job and enqueues a background task.
 // The fileURL points to the uploaded file (SeaweedFS path or local path).
-func (s *Service) CreateImport(ctx context.Context, tenantID, userID pgtype.UUID, name, importType, format, fileURL, mode string) (gen.PlatformDataImport, error) {
+func (s *Service) CreateImport(ctx context.Context, userID pgtype.UUID, name, importType, format, fileURL, mode string) (gen.PlatformDataImport, error) {
 	if !ValidImportType(importType) {
 		return gen.PlatformDataImport{}, fmt.Errorf("invalid import_type: %s", importType)
 	}

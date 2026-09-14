@@ -543,7 +543,7 @@ func (a *ReferralAdapter) RecordClick(ctx context.Context, code, sessionID, ip, 
 // Delegates to referral.Service.CheckConversion which looks up the payer's
 // referral row, runs fraud checks, and transitions pending→qualified→credited.
 func (a *ReferralAdapter) CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error {
-	return a.svc.CheckConversion(ctx, tenantID, payerID, paymentID, sessionID)
+	return a.svc.CheckConversion(ctx, payerID, paymentID, sessionID)
 }
 
 // ReviewFlagged is the daily sweep hook (§60 referral:review_flagged).
@@ -576,7 +576,7 @@ func NewAdsSelfServeAdapter(svc *adsselfserve.Service, database *db.DB) *AdsSelf
 
 // RefundCampaignCredits resolves the campaign's tenant and refunds credits.
 func (a *AdsSelfServeAdapter) RefundCampaignCredits(ctx context.Context, campaignID pgtype.UUID) error {
-	return a.svc.RefundCampaignCredits(ctx, pgtype.UUID{}, campaignID)
+	return a.svc.RefundCampaignCredits(ctx, campaignID)
 }
 
 // NotifyCampaignStatus resolves the campaign's tenant and notifies the

@@ -321,13 +321,12 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	status, err := h.service.AdminGenerate(r.Context(), tenantID)
+	status, err := h.service.AdminGenerate(r.Context())
 	if err != nil {
 		slog.Error("digest: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to trigger digest generation")

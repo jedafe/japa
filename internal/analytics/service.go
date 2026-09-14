@@ -545,7 +545,7 @@ func (s *Service) RunSecurityScan(ctx context.Context) error {
 // EnqueueSecurityScan enqueues a background job to run the security scanner.
 // BUG-ANALYTICS-08 fix: pass the tenant ID in the payload so the worker
 // scans only the requesting tenant, not all tenants.
-func (s *Service) EnqueueSecurityScan(_ context.Context, tenantID pgtype.UUID) error {
+func (s *Service) EnqueueSecurityScan(_ context.Context) error {
 	payload, err := json.Marshal(map[string]any{})
 	if err != nil {
 		return fmt.Errorf("marshaling security scan payload: %w", err)

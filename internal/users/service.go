@@ -432,7 +432,7 @@ func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUI
 	// search index reflects the new name (§13/§19). Enqueued after commit
 	// so we don't index a row that might roll back.
 	if req.DisplayName != nil {
-		s.enqueueUserSearchIndex(tenantID, userID)
+		s.enqueueUserSearchIndex(userID)
 	}
 
 	return nil
@@ -866,7 +866,7 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 	// IndexUser method checks search_indexable and deletes the document
 	// if the user opted out, or upserts it if they opted back in.
 	// Enqueued after commit so we don't index a row that might roll back.
-	s.enqueueUserSearchIndex(tenantID, userID)
+	s.enqueueUserSearchIndex(userID)
 
 	return nil
 }
@@ -874,7 +874,7 @@ func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pg
 // enqueueUserSearchIndex enqueues a search:index_entity task for the user so
 // the Meilisearch index reflects their current search_indexable setting.
 // Best-effort — logs errors but never fails the caller.
-func (s *Service) enqueueUserSearchIndex(tenantID, userID pgtype.UUID) {
+func (s *Service) enqueueUserSearchIndex(userID pgtype.UUID) {
 	if s.enqueuer == nil {
 		return
 	}
@@ -1695,7 +1695,7 @@ func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUI
 	// changes so the search index reflects the new values (§13/§19).
 	// Enqueued after commit so we don't index a row that might roll back.
 	if result.UsernameChanged || result.DisplayNameChanged {
-		s.enqueueUserSearchIndex(tenantID, userID)
+		s.enqueueUserSearchIndex(userID)
 	}
 
 	return result, nil

@@ -487,7 +487,7 @@ type agentDraftProcessorAdapter struct {
 type agentDraftDispatcher interface {
 	// GenerateDraftBody synthesizes a draft body from the topic prompt +
 	// external search results. Returns markdown body text.
-	GenerateDraftBody(ctx context.Context, tenantID pgtype.UUID, contentType, topicPrompt, externalResults string) (string, error)
+	GenerateDraftBody(ctx context.Context, contentType, topicPrompt, externalResults string) (string, error)
 }
 
 // agentDraftDispatcherAdapter implements agentDraftDispatcher by calling
@@ -503,7 +503,7 @@ type aiDispatcherPort interface {
 }
 
 // GenerateDraftBody synthesizes a draft body via the AI gateway.
-func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, tenantID pgtype.UUID, contentType, topicPrompt, externalResults string) (string, error) {
+func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, contentType, topicPrompt, externalResults string) (string, error) {
 	prompt := fmt.Sprintf("Generate a %s draft about: %s", contentType, topicPrompt)
 	if externalResults != "" {
 		prompt += "\n\nExternal reference material:\n" + externalResults
@@ -575,7 +575,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	body := payload.TopicPrompt
 
 	if a.dispatcher != nil {
-		generated, gerr := a.dispatcher.GenerateDraftBody(ctx, tenantID, payload.ContentType, payload.TopicPrompt, payload.ExternalResults)
+		generated, gerr := a.dispatcher.GenerateDraftBody(ctx, payload.ContentType, payload.TopicPrompt, payload.ExternalResults)
 		if gerr != nil {
 			return fmt.Errorf("generating draft body: %w", gerr)
 		}
@@ -1069,12 +1069,12 @@ type campaignItemSyncer interface {
 // arrivalDraftGenerator is the subset of *arrivalchecklist.Service needed
 // for Studio routing (Approach B).
 type arrivalDraftGenerator interface {
-	GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req arrivalchecklist.GenerateGuideRequest) (arrivalchecklist.GenerateGuideResponse, error)
+	GenerateGuide(ctx context.Context, req arrivalchecklist.GenerateGuideRequest) (arrivalchecklist.GenerateGuideResponse, error)
 }
 
 // communityOrgDraftGenerator is the subset of *communitylocator.Service.
 type communityOrgDraftGenerator interface {
-	Generate(ctx context.Context, tenantID, generatedBy pgtype.UUID, input communitylocator.GenerateInput) (communitylocator.OrgDTO, error)
+	Generate(ctx context.Context, generatedBy pgtype.UUID, input communitylocator.GenerateInput) (communitylocator.OrgDTO, error)
 }
 
 // attestationDraftGenerator is the subset of *attestationguide.Service.
@@ -1084,7 +1084,7 @@ type attestationDraftGenerator interface {
 
 // languageTestDraftGenerator is the subset of *languagetesthub.Service.
 type languageTestDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input languagetesthub.GenerateRequirementRequest) (languagetesthub.RequirementDTO, error)
+	GenerateDraft(ctx context.Context, input languagetesthub.GenerateRequirementRequest) (languagetesthub.RequirementDTO, error)
 }
 
 // taxDraftGenerator is the subset of *taxcalculator.Service.
@@ -1101,22 +1101,22 @@ type credentialDraftGenerator interface {
 // housingDraftGenerator is the subset of *housingguide.Service needed for
 // Studio routing (Approach B, ADR-076 Amendment 1).
 type housingDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input housingguide.GenerateGuideRequest) (housingguide.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, input housingguide.GenerateGuideRequest) (housingguide.GenerateDraftResponse, error)
 }
 
 // visaRouteDraftGenerator is the subset of *visaroutes.Service.
 type visaRouteDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input visaroutes.GenerateRouteRequest) (visaroutes.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, input visaroutes.GenerateRouteRequest) (visaroutes.GenerateDraftResponse, error)
 }
 
 // wikiDraftGenerator is the subset of *wiki.Service.
 type wikiDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input wiki.GenerateDraftRequest) (wiki.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, input wiki.GenerateDraftRequest) (wiki.GenerateDraftResponse, error)
 }
 
 // calendarDraftGenerator is the subset of *calendar.Service.
 type calendarDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input calendar.GenerateDraftRequest) (calendar.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, input calendar.GenerateDraftRequest) (calendar.GenerateDraftResponse, error)
 }
 
 // docsDraftGenerator is the subset of *docs.Service.
@@ -1253,7 +1253,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	aiModel := ""
 
 	if a.dispatcher != nil {
-		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
+		generated, model, gerr := a.studioGenerateBody(ctx, job, persona, extractionContext)
 		if gerr != nil {
 			msg := "AI generation failed: " + gerr.Error()
 			_ = a.studio.MarkJobFailed(ctx, jobID, msg)
@@ -1402,7 +1402,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	aiModel := ""
 
 	if a.dispatcher != nil {
-		generated, model, gerr := a.studioGenerateBody(ctx, tenantID, job, persona, extractionContext)
+		generated, model, gerr := a.studioGenerateBody(ctx, job, persona, extractionContext)
 		if gerr != nil {
 			return fmt.Errorf("regenerate: generate body: %w", gerr)
 		}
@@ -1599,7 +1599,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.arrivalSvc.GenerateGuide(ctx, tenantID, arrivalchecklist.GenerateGuideRequest{
+		resp, err := a.arrivalSvc.GenerateGuide(ctx, arrivalchecklist.GenerateGuideRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
 			ApplicantType:      arrivalchecklist.ApplicantIndividual,
@@ -1620,7 +1620,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		org, err := a.communityOrgSvc.Generate(ctx, tenantID, persona.UserID, communitylocator.GenerateInput{
+		org, err := a.communityOrgSvc.Generate(ctx, persona.UserID, communitylocator.GenerateInput{
 			Prompt:             promptWithCtx,
 			DestinationSpaceID: destSpaceStr,
 		})
@@ -1671,7 +1671,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		dto, err := a.languageTestSvc.GenerateDraft(ctx, tenantID, languagetesthub.GenerateRequirementRequest{
+		dto, err := a.languageTestSvc.GenerateDraft(ctx, languagetesthub.GenerateRequirementRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
 			TestSlug:           testSlug,
@@ -1737,7 +1737,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.housingSvc.GenerateDraft(ctx, tenantID, housingguide.GenerateGuideRequest{
+		resp, err := a.housingSvc.GenerateDraft(ctx, housingguide.GenerateGuideRequest{
 			DestinationSpaceID: destSpaceStr,
 			AccommodationType:  visaCat,
 		})
@@ -1756,7 +1756,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.visaRouteSvc.GenerateDraft(ctx, tenantID, visaroutes.GenerateRouteRequest{
+		resp, err := a.visaRouteSvc.GenerateDraft(ctx, visaroutes.GenerateRouteRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
 			Prompt:             promptWithCtx,
@@ -1777,7 +1777,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		}
 		// Wiki needs a space_id + title. Use the job's TargetSpaceID and
 		// topic_prompt as the title.
-		resp, err := a.wikiSvc.GenerateDraft(ctx, tenantID, wiki.GenerateDraftRequest{
+		resp, err := a.wikiSvc.GenerateDraft(ctx, wiki.GenerateDraftRequest{
 			SpaceID:  job.TargetSpaceID.String(),
 			Title:    job.TopicPrompt,
 			Category: visaCat,
@@ -1798,7 +1798,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.calendarSvc.GenerateDraft(ctx, tenantID, calendar.GenerateDraftRequest{
+		resp, err := a.calendarSvc.GenerateDraft(ctx, calendar.GenerateDraftRequest{
 			DestinationSpaceID: destSpaceStr,
 			Category:           visaCat,
 			Prompt:             promptWithCtx,
@@ -1919,7 +1919,7 @@ func (a *studioDraftProcessorAdapter) routeToHITL(
 // the persona voice prompt when present and honoring per-job model/voice
 // overrides (ADR-114). Returns the body text and the model name (for ADR-088
 // ai_model column on studio_jobs).
-func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, tenantID pgtype.UUID, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, string, error) {
+func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, job studio.Job, persona gen.GetAIPersonaByIDRow, extractionContext string) (string, string, error) {
 	voicePrompt := persona.VoicePrompt
 
 	if job.VoiceID.Valid {

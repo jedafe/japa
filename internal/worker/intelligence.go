@@ -1032,8 +1032,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:promote: %w", err)
 	}
-
-	tenantID := parseTenantID(p.TenantID)
+	_ = parseTenantID(p.TenantID)
 
 	// Load the record to resolve its entity_type so we can dispatch to the
 	// correct domain promoter from the registry.
@@ -1078,7 +1077,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:intel:promote: promoted", "record_id", p.RecordID, "entity_type", record.EntityType, "action", result.Action, "domain_id", result.DomainID)
 
 	intelMaybeAutoPromoteStudio(ctx, recordID, p.RecordID, record, result)
-	intelMaybeEnqueueRegeneration(ctx, tenantID, record, result)
+	intelMaybeEnqueueRegeneration(ctx, record, result)
 
 	payload := marshalPayload(intelPostPublishPayload{
 		Version:    intelPayloadVersion,
@@ -1131,7 +1130,7 @@ func intelMaybeAutoPromoteStudio(ctx context.Context, recordID pgtype.UUID, reco
 // a projection table with a guide_id link), request a content body
 // regeneration from the latest extraction so the narrative content stays in
 // sync with the structured data.
-func intelMaybeEnqueueRegeneration(ctx context.Context, tenantID pgtype.UUID, record gen.IntelRecord, result IntelPromoteResult) {
+func intelMaybeEnqueueRegeneration(ctx context.Context, record gen.IntelRecord, result IntelPromoteResult) {
 	if result.ContentID == uuid.Nil || (result.Action != "created" && result.Action != "updated") {
 		return
 	}

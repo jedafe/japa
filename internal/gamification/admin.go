@@ -142,7 +142,7 @@ func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awa
 		}
 	} else {
 		// Fresh award — notify the recipient (fire-and-forget, Rule 8).
-		s.notifyBadgeAwarded(ctx, tenantID, userID, badge.Name)
+		s.notifyBadgeAwarded(ctx, userID, badge.Name)
 	}
 
 	var iconID *string

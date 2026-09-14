@@ -472,7 +472,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 			slog.Warn("dm: failed to create message request", "conversation_id", conv.ID.String(), "error", err)
 		}
 		// Enqueue push notification for the recipient (fire-and-forget).
-		s.enqueueDMNotifyRequest(ctx, tenantID, recipientID, senderID, conv.ID)
+		s.enqueueDMNotifyRequest(ctx, recipientID, senderID, conv.ID)
 	}
 
 	return ConversationResult{Conversation: conv, IsNew: true}, nil
@@ -541,7 +541,7 @@ func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, s
 	})
 
 	// Enqueue push notification for recipient — fire-and-forget.
-	s.enqueueDMNotifyMessage(ctx, tenantID, recipientID, senderID, conversationID, preview)
+	s.enqueueDMNotifyMessage(ctx, recipientID, senderID, conversationID, preview)
 
 	return nil
 }
@@ -850,7 +850,7 @@ func (s *DMService) GetOtherParticipant(ctx context.Context, conversationID, use
 }
 
 // enqueueDMNotifyMessage enqueues a push notification for a new DM message.
-func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipientID, senderID, conversationID pgtype.UUID, bodyPreview string) {
+func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, recipientID, senderID, conversationID pgtype.UUID, bodyPreview string) {
 	if s.AsynqClient == nil {
 		return
 	}
@@ -881,7 +881,7 @@ func (s *DMService) enqueueDMNotifyMessage(ctx context.Context, tenantID, recipi
 }
 
 // enqueueDMNotifyRequest enqueues a push notification for a new DM request.
-func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, tenantID, recipientID, senderID, conversationID pgtype.UUID) {
+func (s *DMService) enqueueDMNotifyRequest(ctx context.Context, recipientID, senderID, conversationID pgtype.UUID) {
 	if s.AsynqClient == nil {
 		return
 	}

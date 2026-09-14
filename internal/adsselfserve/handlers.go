@@ -51,7 +51,7 @@ func (h *Handlers) HandleListSlots(w http.ResponseWriter, r *http.Request) {
 // HandleCreateCampaign creates a self-serve ad campaign.
 // POST /org/{org_id}/ads/campaigns.
 func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handlers) HandleCreateCampaign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	campaign, err := h.svc.CreateCampaign(r.Context(), tenantID, orgID, userID, input)
+	campaign, err := h.svc.CreateCampaign(r.Context(), orgID, userID, input)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrFeatureDisabled):

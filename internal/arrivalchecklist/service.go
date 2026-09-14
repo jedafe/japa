@@ -545,7 +545,7 @@ func (s *Service) ApproveGuide(ctx context.Context, id, reviewerID pgtype.UUID, 
 // If the dispatcher is nil or the call fails, the draft is still created so
 // a reviewer can fill it manually (graceful degradation).
 // Ref: ADR-088, geo-aware-tool-pattern.md.
-func (s *Service) GenerateGuide(ctx context.Context, tenantID pgtype.UUID, req GenerateGuideRequest) (GenerateGuideResponse, error) {
+func (s *Service) GenerateGuide(ctx context.Context, req GenerateGuideRequest) (GenerateGuideResponse, error) {
 	if req.DestinationSpaceID == "" {
 		return GenerateGuideResponse{}, errors.New("destination_space_id is required")
 	}

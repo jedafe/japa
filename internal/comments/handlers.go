@@ -169,7 +169,7 @@ func (h *Handlers) enqueueEngagementUpdate(entityType string, entityID pgtype.UU
 // enqueueContentFanOut enqueues a content:fan_out_to_feeds task so a newly
 // created discussion thread appears in the author's followers' feeds
 // (Section 49 — Comment Thread Link Flow, BL-005). Fire-and-forget per Rule 8.
-func (h *Handlers) enqueueContentFanOut(contentID, tenantID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
+func (h *Handlers) enqueueContentFanOut(contentID, authorID, spaceID pgtype.UUID, contentType, fanOutType string) {
 	if h.asynqClient == nil {
 		return
 	}

@@ -160,7 +160,7 @@ func (s *Service) createJCEContentAndMetadata(
 		seoIndexable = visibility == content.VisibilityPublic && status == content.StatusPublished
 	}
 
-	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, tenantID, content.CreateContentInput{
+	contentRow, err := s.contentSvc.CreateContentWithQueries(ctx, q, content.CreateContentInput{
 		AuthorID:      userID,
 		SpaceID:       input.SpaceID,
 		ContentType:   content.TypeComparison,
@@ -688,7 +688,7 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, tenantID, userID 
 }
 
 // DeleteJCEComparison soft-deletes a JCE comparison.
-func (s *Service) DeleteJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, bypassOwnership bool) error {
+func (s *Service) DeleteJCEComparison(ctx context.Context, id, userID pgtype.UUID, bypassOwnership bool) error {
 	existing, err := s.contentSvc.GetContent(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting comparison for delete: %w", err)

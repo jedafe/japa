@@ -1088,7 +1088,7 @@ func (s *Service) InvalidateRateCache(ctx context.Context, tenantID pgtype.UUID,
 // TriggerFetch enqueues a remittance:fetch_rates task for a specific provider.
 // This is the admin-triggered entry point — the task handler then calls
 // FetchProviderRates to perform the actual API call and rate insertion.
-func (s *Service) TriggerFetch(ctx context.Context, tenantID, providerID pgtype.UUID) error {
+func (s *Service) TriggerFetch(ctx context.Context, providerID pgtype.UUID) error {
 	if s.enqueuer == nil {
 		return errors.New("remittance: no enqueuer configured")
 	}

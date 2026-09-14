@@ -451,7 +451,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 	if completed != nil && *completed && s.enqueuer != nil && s.settings != nil {
 		points := s.settings.GetIntOr(ctx, "checklist.completion_points", 0)
 		if points > 0 {
-			s.maybeAwardCompletionPoints(ctx, tenantID, userID, guideID, points)
+			s.maybeAwardCompletionPoints(ctx, userID, guideID, points)
 		}
 	}
 
@@ -461,7 +461,7 @@ func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID 
 // maybeAwardCompletionPoints checks whether all checklist items are now
 // completed and, if so, enqueues a wallet:award_points task. Fire-and-forget
 // per Rule 8 — failures are logged, never returned to the caller.
-func (s *Service) maybeAwardCompletionPoints(ctx context.Context, tenantID, userID, guideID pgtype.UUID, points int) {
+func (s *Service) maybeAwardCompletionPoints(ctx context.Context, userID, guideID pgtype.UUID, points int) {
 	items, err := s.GetChecklistItems(ctx, guideID)
 	if err != nil {
 		slog.Warn("checklist: completion check: list items", "error", err)

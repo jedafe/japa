@@ -727,8 +727,7 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -739,7 +738,7 @@ func (h *Handlers) DeleteComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteComparison(r.Context(), id, tenantID, user.UserID, hasAnyPermission(r, user, "comparison.delete_any")); err != nil {
+	if err := h.Service.DeleteComparison(r.Context(), id, user.UserID, hasAnyPermission(r, user, "comparison.delete_any")); err != nil {
 		if errors.Is(err, ErrNotOwner) {
 			errpkg.WriteError(w, http.StatusForbidden, "not_owner", "You can only delete your own comparisons")
 			return

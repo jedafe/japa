@@ -731,13 +731,12 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_level", "Level must be country, state, city, custom, or global")
 		return
 	}
+	_, // Custom spaces must be linked to at least one primary space (Section 05).
+		// The platform first keyword-matches the space name against primary geo
+		// spaces; if that fails, the creator must explicitly provide a parent_id
+		// or parent_space_ids. Parent linkage is resolved before creation.
 
-	// Custom spaces must be linked to at least one primary space (Section 05).
-	// The platform first keyword-matches the space name against primary geo
-	// spaces; if that fails, the creator must explicitly provide a parent_id
-	// or parent_space_ids. Parent linkage is resolved before creation.
-
-	tenantID, ok := h.requireTenant(w, r)
+		ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -882,10 +881,10 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// Section 05 pre-check above.
 
 	// Enqueue async auto-population (Wikipedia summary, flag image, etc.).
-	h.Service.EnqueueAutoPopulate(r.Context(), space.ID, tenantID)
+	h.Service.EnqueueAutoPopulate(r.Context(), space.ID)
 	// Enqueue Meilisearch index sync so the new space is searchable
 	// immediately (BL-004).
-	h.Service.EnqueueSearchIndex(r.Context(), space.ID, tenantID, "index")
+	h.Service.EnqueueSearchIndex(r.Context(), space.ID, "index")
 
 	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: spaces are
 	// part of the RAG corpus).
@@ -908,8 +907,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1099,7 +1097,7 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Re-sync the Meilisearch index so search reflects the update (BL-004).
-	h.Service.EnqueueSearchIndex(r.Context(), spaceID, tenantID, "index")
+	h.Service.EnqueueSearchIndex(r.Context(), spaceID, "index")
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix).
 	updDesc := ""
@@ -1123,8 +1121,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ID format")
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1169,7 +1166,7 @@ func (h *Handlers) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove the space from the Meilisearch index (BL-004).
-	h.Service.EnqueueSearchIndex(r.Context(), id, tenantID, "delete")
+	h.Service.EnqueueSearchIndex(r.Context(), id, "delete")
 
 	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: deleted spaces
 	// must not be retrievable in RAG).

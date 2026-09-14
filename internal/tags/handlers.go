@@ -78,7 +78,7 @@ func (h *Handlers) SetFieldDefLister(l TagFieldDefLister) { h.fieldDefs = l }
 // enqueueSearchIndex enqueues a Meilisearch index sync for a directory tag
 // (entity_type "directory_tag" — the /tags surface). operation is "index"
 // (create/update) or "delete". Fire-and-forget per Rule 8.
-func (h *Handlers) enqueueSearchIndex(operation string, tagID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueSearchIndex(operation string, tagID pgtype.UUID) {
 	if h.asynqClient == nil {
 		return
 	}
@@ -617,7 +617,7 @@ func splitTagNames(v any) []string {
 
 // CreateTag handles POST /api/v1/admin/tags.
 func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -710,14 +710,14 @@ func (h *Handlers) CreateTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Index the new directory tag for /search?type=tag (§12 stale-index fix).
-	h.enqueueSearchIndex("index", tag.ID, tenantID)
+	h.enqueueSearchIndex("index", tag.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": structToMap(tag)})
 }
 
 // UpdateTag handles PATCH /api/v1/admin/tags/{id}.
 func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -848,7 +848,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 
 	// Re-index the directory tag — name/description/content_count may have
 	// changed and the tags index would otherwise go stale (§12).
-	h.enqueueSearchIndex("index", tag.ID, tenantID)
+	h.enqueueSearchIndex("index", tag.ID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": structToMap(tag)})
 }
@@ -856,7 +856,7 @@ func (h *Handlers) UpdateTag(w http.ResponseWriter, r *http.Request) {
 // DeleteTag handles DELETE /api/v1/admin/tags/{id}.
 // Spec: "delete tag (only if no content tagged)" and system tags cannot be deleted.
 func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -897,7 +897,7 @@ func (h *Handlers) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Drop the directory tag from the tags index.
-	h.enqueueSearchIndex("delete", id, tenantID)
+	h.enqueueSearchIndex("delete", id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]bool{"deleted": true}})
 }

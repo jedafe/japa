@@ -545,8 +545,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -577,7 +576,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 	// ai_model='content_agent_v1' and ai_prompt_hash=SHA256(prompt), and
 	// inserts the row with status='ai_draft'. The draft enters the HITL
 	// review queue and is not visible to end users until ApproveOrg.
-	org, err := h.service.Generate(r.Context(), tenantID, user.UserID, input)
+	org, err := h.service.Generate(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateSlug) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_slug", "An organisation with this slug already exists")
