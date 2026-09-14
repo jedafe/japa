@@ -354,7 +354,7 @@ func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("fill_failed", err.Error()), nil
 		}
 
-		deps.Comparison.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+		deps.Comparison.DeleteJCEComparisonCaches(ctx, contentID)
 
 		return successToolResult(map[string]any{
 			"filled_count": len(result.Filled),

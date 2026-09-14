@@ -77,7 +77,7 @@ type ComparisonService interface {
 	UpsertComparisonValueWithMetadata(ctx context.Context, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
 
 	// Cache invalidation for JCE freshness/advisor after value mutations.
-	DeleteJCEComparisonCaches(ctx context.Context, contentID, tenantID pgtype.UUID)
+	DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID)
 }
 
 // JCEService is the subset of internal/jce.Service the JCE Sub-spec 4 AI

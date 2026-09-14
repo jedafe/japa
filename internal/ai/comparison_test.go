@@ -116,7 +116,7 @@ func (s *stubComparisonService) UpsertComparisonValueWithMetadata(_ context.Cont
 	}, nil
 }
 
-func (s *stubComparisonService) DeleteJCEComparisonCaches(_ context.Context, _, _ pgtype.UUID) {}
+func (s *stubComparisonService) DeleteJCEComparisonCaches(_ context.Context, _ pgtype.UUID) {}
 
 // ---------------------------------------------------------------------------
 // Provenance

@@ -423,8 +423,8 @@ func (a *agentComparisonAdapter) UpsertComparisonValueWithMetadata(ctx context.C
 	}, metadata)
 }
 
-func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, contentID, tenantID pgtype.UUID) {
-	a.svc.DeleteJCEComparisonCaches(ctx, contentID, tenantID)
+func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID) {
+	a.svc.DeleteJCEComparisonCaches(ctx, contentID)
 }
 
 // ---------------------------------------------------------------------------
