@@ -20,7 +20,6 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
-	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -72,7 +71,6 @@ type SearchHealthChecker interface {
 
 // Handlers holds dependencies for control panel HTTP handlers.
 type Handlers struct {
-	Service           *Service
 	DB                *db.DB
 	FeatureChecker    *features.Checker
 	SpamStore         *spam.Store
@@ -93,9 +91,8 @@ type Handlers struct {
 }
 
 // NewHandlers creates a new Handlers.
-func NewHandlers(service *Service, database *db.DB, featureChecker *features.Checker, spamStore *spam.Store, publicAPI *publicapi.Handlers) *Handlers {
+func NewHandlers(database *db.DB, featureChecker *features.Checker, spamStore *spam.Store, publicAPI *publicapi.Handlers) *Handlers {
 	return &Handlers{
-		Service:        service,
 		DB:             database,
 		FeatureChecker: featureChecker,
 		SpamStore:      spamStore,
@@ -169,200 +166,6 @@ func (h *Handlers) SetAIDispatcher(d *ai.Dispatcher) {
 // ListDeployments falls back to BuildVersion.
 func (h *Handlers) SetDeploymentVersion(version string) {
 	h.DeploymentVersion = version
-}
-
-// ---------------------------------------------------------------------------
-// Tenant Handlers (delegate to Service)
-// ---------------------------------------------------------------------------
-
-// ListTenants is an exported method.
-func (h *Handlers) ListTenants(w http.ResponseWriter, r *http.Request) {
-	// Parse pagination params (§17: filter + sort + paginate, no infinite scroll).
-	limit := int32(20)
-	offset := int32(0)
-
-	if s := r.URL.Query().Get("page_size"); s != "" {
-		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n > 0 {
-			limit = int32(n)
-			if limit > 100 {
-				limit = 100
-			}
-		}
-	}
-
-	if s := r.URL.Query().Get("page_offset"); s != "" {
-		if n, err := strconv.ParseInt(s, 10, 32); err == nil && n >= 0 {
-			offset = int32(n)
-		}
-	}
-
-	statusFilter := r.URL.Query().Get("status")
-
-	tenants, err := h.Service.ListTenants(r.Context(), statusFilter, limit, offset)
-	if err != nil {
-		slog.Error("control: list tenants", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tenants")
-
-		return
-	}
-
-	total, err := h.Service.CountTenants(r.Context(), statusFilter)
-	if err != nil {
-		slog.Error("control: count tenants", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count tenants")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data":   tenants,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
-	})
-}
-
-// CreateTenant is an exported method.
-func (h *Handlers) CreateTenant(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Name   string  `json:"name"`
-		Slug   string  `json:"slug"`
-		Domain *string `json:"domain"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	if input.Name == "" || input.Slug == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "name and slug are required")
-		return
-	}
-
-	tenant, err := h.Service.CreateTenant(r.Context(), CreateTenantInput{
-		Name:   input.Name,
-		Slug:   input.Slug,
-		Domain: input.Domain,
-	})
-	if err != nil {
-		slog.Error("control: create tenant", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tenant})
-}
-
-// GetTenant is an exported method.
-func (h *Handlers) GetTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
-		return
-	}
-
-	tenant, err := h.Service.GetTenant(r.Context(), id)
-	if err != nil {
-		slog.Error("control: get tenant", "error", err)
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Tenant not found")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
-}
-
-// UpdateTenant is an exported method.
-func (h *Handlers) UpdateTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
-		return
-	}
-
-	var input struct {
-		Name   string  `json:"name"`
-		Domain *string `json:"domain"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
-		return
-	}
-
-	tenant, err := h.Service.UpdateTenant(r.Context(), id, UpdateTenantInput{
-		Name:   input.Name,
-		Domain: input.Domain,
-	})
-	if err != nil {
-		slog.Error("control: update tenant", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update tenant")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
-}
-
-// DeleteTenant is an exported method.
-func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
-		return
-	}
-
-	tenant, err := h.Service.DeleteTenant(r.Context(), id)
-	if err != nil {
-		slog.Error("control: delete tenant", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete tenant")
-
-		return
-	}
-
-	h.auditTenantAction(r, "tenant.delete", id)
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
-}
-
-func (h *Handlers) SuspendTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
-		return
-	}
-
-	tenant, err := h.Service.SuspendTenant(r.Context(), id)
-	if err != nil {
-		slog.Error("control: suspend tenant", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to suspend tenant")
-
-		return
-	}
-
-	h.auditTenantAction(r, "tenant.suspend", id)
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
-}
-
-func (h *Handlers) UnsuspendTenant(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid tenant ID")
-		return
-	}
-
-	tenant, err := h.Service.UnsuspendTenant(r.Context(), id)
-	if err != nil {
-		slog.Error("control: unsuspend tenant", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unsuspend tenant")
-
-		return
-	}
-
-	h.auditTenantAction(r, "tenant.unsuspend", id)
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
 // ---------------------------------------------------------------------------
@@ -3145,25 +2948,6 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	}
 
 	return id, nil
-}
-
-// auditTenantAction writes an audit_logs row for a significant tenant
-// management action (suspend, unsuspend, delete). The actor is the
-// authenticated super-admin; the target is the affected tenant.
-func (h *Handlers) auditTenantAction(r *http.Request, actionType string, targetID pgtype.UUID) {
-	ctx := r.Context()
-
-	var actorID any
-	if u := auth.FromContext(ctx); u != nil {
-		actorID = u.UserID
-	}
-
-	ip := clientip.FromRequest(r)
-	if _, err := h.DB.Writer.Exec(ctx, `
-		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, ip_address) VALUES ($1, $2, 'tenant', $3, $4::inet)
-	`, actorID, actionType, targetID, ip); err != nil {
-		slog.Error("control: audit tenant action", "action", actionType, "error", err)
-	}
 }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {

@@ -2304,8 +2304,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	configHandlers := config.NewHandlers(settingsService)
 
 	// Control panel handlers (super-admin).
-	controlService := control.NewService(database)
-	controlHandlers := control.NewHandlers(controlService, database, featureChecker, spamStore, publicAPIHandlers)
+	controlHandlers := control.NewHandlers(database, featureChecker, spamStore, publicAPIHandlers)
 	controlHandlers.SetDeploymentVersion(cfg.DeploymentVersion)
 	// Wire Asynq inspector for queue monitoring (BE-040).
 	workerCfg := worker.DefaultConfig()
@@ -6888,30 +6887,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
 			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
 			r.Get("/backup-targets", controlHandlers.ListBackupTargets)
-
-			// Tenant Management — canonical RBAC per Section 21.
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Get("/tenants", controlHandlers.ListTenants)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Post("/tenants", controlHandlers.CreateTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Get("/tenants/{id}", controlHandlers.GetTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Patch("/tenants/{id}", controlHandlers.UpdateTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Delete("/tenants/{id}", controlHandlers.DeleteTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Post("/tenants/{id}/suspend", controlHandlers.SuspendTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Post("/tenants/{id}/unsuspend", controlHandlers.UnsuspendTenant)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Get("/tenants/{id}/settings", controlHandlers.GetTenantSettings)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Patch("/tenants/{id}/settings", controlHandlers.UpdateTenantSettings)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Patch("/tenants/{id}/settings/{key}", controlHandlers.UpdateTenantSettingKey)
-			r.With(rbac.RequirePermission(rbacResolver, "system.tenants.manage")).
-				Post("/tenants/{id}/settings/{key}/reset", controlHandlers.ResetTenantSetting)
 
 			// Wallet Currencies — super_admin CRUD
 			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).
