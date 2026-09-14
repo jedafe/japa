@@ -111,22 +111,21 @@ type aiDispatcher interface {
 // Service orchestrates JCE profiles, score factors, scoring, recommendations,
 // and data-source-backed value refresh.
 type Service struct {
-	db              *db.DB
-	compSvc         *comparison.Service
-	r               *resolver.Registry
-	settings        *config.Settings
-	vk              valkeycompat.Cmdable
-	features        features.FeatureChecker
-	enqueuer        taskEnqueuer
-	dispatcher      aiDispatcher
-	profiles        *profileStore
-	factors         *scoreFactorStore
-	recs            *recommendationStore
-	dataSources     *dataSourceStore
-	ingestion       *ingestionStore
-	engine          ScoringEngine
-	defaultTenantID pgtype.UUID
-	sources         dataSourceRegistry
+	db          *db.DB
+	compSvc     *comparison.Service
+	r           *resolver.Registry
+	settings    *config.Settings
+	vk          valkeycompat.Cmdable
+	features    features.FeatureChecker
+	enqueuer    taskEnqueuer
+	dispatcher  aiDispatcher
+	profiles    *profileStore
+	factors     *scoreFactorStore
+	recs        *recommendationStore
+	dataSources *dataSourceStore
+	ingestion   *ingestionStore
+	engine      ScoringEngine
+	sources     dataSourceRegistry
 }
 
 // NewService creates a JCE service backed by the given dependencies. The
@@ -182,13 +181,6 @@ func (s *Service) SetAIDispatcher(d aiDispatcher) {
 func (s *Service) SetSourceRegistry(r dataSourceRegistry) {
 	s.sources = r
 	s.dataSources.setSourceRegistry(r)
-}
-
-// SetDefaultTenant injects the platform default tenant ID. This is used by
-// global background sweeps (e.g. the stale JCE refresh sweep) to read
-// system_settings that are configured for the default tenant.
-func (s *Service) SetDefaultTenant(id pgtype.UUID) {
-	s.defaultTenantID = id
 }
 
 // Close stops background goroutines owned by the service.

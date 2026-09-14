@@ -250,16 +250,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	h := NewHandler(database)
 
-	// Resolve the default tenant ID once for boot-time system_settings reads
-	// that happen outside a request context (where tenant middleware would
-	// populate it). All system_settings are tenant-scoped; using a zero UUID
-	// would miss every row. Falls back to the well-known default tenant UUID
-	// if the lookup fails so the server still boots on a fresh database.
-	defaultTenantID := pgtype.UUID{Bytes: [16]byte{
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-	}, Valid: true}
-
 	// JWT key rotation — keys are persisted in the jwt_signing_keys table
 	// (§02) so they survive server restarts. On first boot (empty table),
 	// the key is seeded from JC_JWT_SECRET (or a random dev key) and
@@ -1614,7 +1604,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceService.SetFeatureChecker(featureChecker)
 	jceService.SetEnqueuer(taskEnqueuer)
 	jceService.SetAIDispatcher(jceAIDispatcher)
-	jceService.SetDefaultTenant(defaultTenantID)
+
 	// Wire the JCE ingestion service into the worker package so the
 	// jce:refresh_values Asynq handler can process refresh jobs.
 	worker.RegisterJCEService(jceService)
@@ -2019,7 +2009,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	intelExtractor := extractor.NewExtractor(
 		aiDispatcher,
-		extractor.WithTenantID(),
 		extractor.WithModel(intelExtractionModel),
 		extractor.WithMaxRetries(intelExtractionMaxRetries),
 	)
@@ -2033,7 +2022,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// must be a valid users(id) row to avoid the FK violation on
 	// contents.author_id (BUG: the prior code passed defaultTenantID, which
 	// is a tenant UUID, not a user UUID).
-	intelDefaultAuthorID := defaultTenantID // worst-case fallback (fixed below)
+	var intelDefaultAuthorID pgtype.UUID
 
 	if personaIDStr := settingsService.GetStringOr(context.Background(), "intel.default_persona_id", ""); personaIDStr != "" {
 		var personaID pgtype.UUID
@@ -2046,7 +2035,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		}
 	}
 
-	if intelDefaultAuthorID == defaultTenantID {
+	if intelDefaultAuthorID == (pgtype.UUID{}) {
 		// Final fallback: use the super admin user (seeded by migration 000124).
 		if sysUID, err := lookupSystemUserID(context.Background(), database); err == nil && sysUID.Valid {
 			intelDefaultAuthorID = sysUID
@@ -2160,7 +2149,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// HTTP handlers for the /api/v1/intel/* routes. The radar reuses the
 	// existing follows service (entity_type "space") and scholarships
 	// service (saved-scholarship tracker) so no parallel tables are needed.
-	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient, settingsService, defaultTenantID)
+	intelHandlers := intel_handlers.NewHandlers(intelStores, intelSourcesService, followService, scholarshipsService, asynqClient, settingsService)
 
 	// Admin Impersonation subsystem (Section 46).
 	impersonationStore := impersonation.NewStore(vkClient.Redis())

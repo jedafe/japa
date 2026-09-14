@@ -90,13 +90,6 @@ func WithCache(rdb valkeycompat.Cmdable) ExtractorOption {
 	return func(e *Extractor) { e.rdb = rdb }
 }
 
-// WithTenantID sets the tenant UUID used to scope all Valkey cache keys.
-// Required when WithCache is used so that cache entries are isolated per
-// tenant (ADR-112 Amendment 2 — tenant scoping).
-func WithTenantID() ExtractorOption {
-	return func(e *Extractor) {}
-}
-
 // NewExtractor creates an Extractor backed by the given AI gateway.
 func NewExtractor(gw AIGateway, opts ...ExtractorOption) *Extractor {
 	e := &Extractor{

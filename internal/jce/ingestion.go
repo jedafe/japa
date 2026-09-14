@@ -778,7 +778,7 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 	sweepHours := 24
 	sweepLimit := 1000
 
-	if s.settings != nil && s.defaultTenantID.Valid {
+	if s.settings != nil {
 		sweepHours = s.settings.GetIntOr(ctx, "jce.stale_refresh_sweep_hours", sweepHours)
 		sweepLimit = s.settings.GetIntOr(ctx, "jce.stale_refresh_sweep_limit", sweepLimit)
 	}
