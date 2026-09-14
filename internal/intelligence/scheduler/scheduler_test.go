@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -38,13 +37,6 @@ func startTestValkey(t *testing.T) valkeycompat.Cmdable {
 	t.Cleanup(func() { vk.Close() })
 
 	return valkeycompat.NewAdapter(vk)
-}
-
-// testTenantID is the default tenant UUID used for tenant-scoped Valkey keys
-// in tests. Matches the system default tenant (00000000-0000-0000-0000-000000000001)
-// per ADR-112 Amendment 2.
-func testTenantID() pgtype.UUID {
-	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
 }
 
 // fakeLister is a stand-in DueSourceLister so SelectDue can be tested without

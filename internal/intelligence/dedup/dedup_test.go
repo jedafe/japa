@@ -37,12 +37,6 @@ func (m *mockLister) ListIntelRecordsByExternalKey(_ context.Context, _ string) 
 	return m.crossSourceRecords, m.crossSourceErr
 }
 
-// testTenantID is the default tenant UUID used for tenant-scoped queries in
-// tests. Matches the system default tenant per ADR-112 Amendment 2.
-func testTenantID() pgtype.UUID {
-	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
-}
-
 func TestCheck_NewRecord(t *testing.T) {
 	t.Parallel()
 
