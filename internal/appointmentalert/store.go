@@ -788,7 +788,7 @@ WITH premium_embassies AS (
     -- Embassies that have at least one active alert from a premium-tier user.
     -- The RBAC chain: appointment_alerts → user_group_memberships →
     -- user_groups → group_roles → role_permissions → permissions.
-    SELECT DISTINCT a.embassy_slug, a.tenant_id
+    SELECT DISTINCT a.embassy_slug
     FROM appointment_alerts a
     JOIN user_group_memberships m ON m.user_id = a.user_id
     JOIN user_groups ug ON ug.id = m.group_id
@@ -811,7 +811,7 @@ WHERE e.is_active = true
           (CASE
               WHEN EXISTS (
                   SELECT 1 FROM premium_embassies pe
-                  WHERE pe.embassy_slug = e.slug AND pe.tenant_id = e.tenant_id
+                  WHERE pe.embassy_slug = e.slug
               )
               THEN LEAST(e.poll_interval_seconds, $1)
               ELSE e.poll_interval_seconds

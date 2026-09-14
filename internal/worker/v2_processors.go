@@ -1060,27 +1060,11 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var p struct {
-		TenantID string
-		SpaceID  string `json:"space_id"`
+		SpaceID string `json:"space_id"`
 	}
 
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
 		return fmt.Errorf("task:digest:generate: invalid payload: %w", err)
-	}
-
-	if p.TenantID == "" {
-		// Cron mode: iterate all tenants. The processor handles tenant
-		// iteration when tenantID is the zero UUID.
-		if err := digestProcessor.GenerateEdition(ctx, pgtype.UUID{}, pgtype.UUID{}); err != nil {
-			return fmt.Errorf("task:digest:generate: %w", err)
-		}
-
-		return nil
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:digest:generate: bad tenant_id: %w", err)
 	}
 
 	var spaceID pgtype.UUID
@@ -1090,7 +1074,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	if err := digestProcessor.GenerateEdition(ctx, tenantID, spaceID); err != nil {
+	if err := digestProcessor.GenerateEdition(ctx, pgtype.UUID{}, spaceID); err != nil {
 		return fmt.Errorf("task:digest:generate: %w", err)
 	}
 
@@ -1132,7 +1116,6 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		EditionID string `json:"edition_id"`
-		TenantID  string
 	}
 
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -1144,12 +1127,7 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:digest:send_email: bad edition_id: %w", err)
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:digest:send_email: bad tenant_id: %w", err)
-	}
-
-	if err := digestProcessor.SendEditionEmail(ctx, editionID, tenantID); err != nil {
+	if err := digestProcessor.SendEditionEmail(ctx, editionID, pgtype.UUID{}); err != nil {
 		return fmt.Errorf("task:digest:send_email: %w", err)
 	}
 
@@ -1170,7 +1148,6 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 
 	var p struct {
 		UserID             string `json:"user_id"`
-		TenantID           string
 		Stage              string `json:"stage"`
 		DestinationSpaceID string `json:"destination_space_id"`
 	}
@@ -1182,11 +1159,6 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 	var userID pgtype.UUID
 	if err := userID.Scan(p.UserID); err != nil {
 		return fmt.Errorf("task:japa_stage:recommend: bad user_id: %w", err)
-	}
-
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("task:japa_stage:recommend: bad tenant_id: %w", err)
 	}
 
 	if err := japaStageProcessor.RecommendForStage(ctx, userID, p.Stage, p.DestinationSpaceID); err != nil {

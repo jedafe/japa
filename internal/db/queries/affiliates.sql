@@ -117,7 +117,7 @@ WHERE user_id = @user_id AND is_active = true;
 
 -- name: DeactivateAffiliateLinkAdmin :exec
 -- Admin-scoped link deactivation (Section 56 admin management). Deactivates
--- by id + tenant_id without an ownership check (the admin has
+-- by id + the id without an ownership check (the admin has
 -- affiliate.admin.manage). Soft-delete only — the row is retained for audit.
 UPDATE user_affiliate_links
 SET is_active = false

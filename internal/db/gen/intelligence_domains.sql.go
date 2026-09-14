@@ -404,7 +404,7 @@ type CreateIntelJobParams struct {
 // custom_field_values infrastructure.
 //
 // All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
-// by tenant_id to guarantee data isolation across tenants.
+// by the id to guarantee data isolation across tenants.
 //
 // Ref: docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md (Section 8)
 // ===========================================================================
@@ -1182,7 +1182,7 @@ const getLanguageTestByName = `-- name: GetLanguageTestByName :one
 SELECT id, slug, name, official_url, validity_months, created_at, updated_at FROM language_tests WHERE name = $1 LIMIT 1
 `
 
-// language_tests is a global reference table (no tenant_id), so the
+// language_tests is a global reference table (no the id), so the
 // tenantID parameter is accepted for interface consistency but not used
 // in the filter. The promoter resolves the language_tests(id) FK from a
 // test_name extracted as free text.

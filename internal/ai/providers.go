@@ -205,7 +205,7 @@ func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProvider
 	// Build the SET clause dynamically based on which fields are provided.
 	setParts := []string{"updated_at = now()"}
 	args := []any{input.ID, input.TenantID}
-	argIdx := 3 // $1=id, $2=tenant_id, $3+
+	argIdx := 3 // $1=id, $2=the id, $3+
 
 	if input.Name != nil {
 		setParts = append(setParts, fmt.Sprintf("name = $%d", argIdx))

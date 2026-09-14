@@ -628,7 +628,7 @@ FROM (SELECT content_id, session_id, country_code, viewed_at
 
 -- name: GdprDeleteUserContentViews :exec
 -- Deletes user_content_views rows for the user being erased (Section 14,
--- ADR-014). The table has no tenant_id column — deletion is by user_id
+-- ADR-014). The table has no the id column — deletion is by user_id
 -- only, which is safe because user_ids are globally unique.
 DELETE FROM user_content_views WHERE user_id = @user_id;
 
@@ -720,12 +720,12 @@ FROM (
 ) t;
 
 -- name: GdprExportUserForumPollVotes :one
--- BUG-022: forum_poll_votes has no tenant_id column.
+-- BUG-022: forum_poll_votes has no the id column.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM forum_poll_votes WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserReplyViews :one
--- BUG-022: reply_views has no tenant_id column.
+-- BUG-022: reply_views has no the id column.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM reply_views WHERE user_id = @user_id) t;
 
@@ -1285,8 +1285,8 @@ DELETE FROM push_subscriptions WHERE user_id = @user_id;
 
 -- name: GdprExportAttestationCommunityUpdates :one
 -- §97: export attestation_community_updates authored by the user.
--- The table has no tenant_id column; tenant scoping is via the parent
--- pathway's tenant_id.
+-- The table has no the id column; tenant scoping is via the parent
+-- pathway's the id.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
  SELECT u.id, u.pathway_id, u.step_index, u.fee_estimate,

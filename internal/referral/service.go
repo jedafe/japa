@@ -141,7 +141,7 @@ func (s *Service) seedDefaultProgram(ctx context.Context) (Program, error) {
 
 	err := s.db.Writer.QueryRow(ctx, `
 		INSERT INTO referral_programs () VALUES ($1)
-		ON CONFLICT (tenant_id) DO NOTHING
+		ON CONFLICT (the id) DO NOTHING
 		RETURNING id, referrer_reward_cents, referee_reward_cents,
 		          max_referrals, cookie_days, is_active, description, created_at, updated_at
 	`).Scan(

@@ -212,7 +212,7 @@ func TestIngestion_RefreshComparison_Lifecycle(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 	if payload.TenantID != tenantID.String() {
-		t.Fatalf("payload tenant_id = %q, want %q", payload.TenantID, tenantID.String())
+		t.Fatalf("payload id = %q, want %q", payload.TenantID, tenantID.String())
 	}
 	if payload.ContentID != res.ID.String() {
 		t.Fatalf("payload content_id mismatch")
@@ -517,7 +517,7 @@ func TestIngestion_ScheduleStaleRefresh(t *testing.T) {
 		if payload.ContentID == res.ID.String() {
 			found = true
 			if payload.TenantID != tenantID.String() {
-				t.Fatalf("payload tenant_id mismatch")
+				t.Fatalf("payload id mismatch")
 			}
 		}
 	}

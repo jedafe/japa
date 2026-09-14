@@ -68,7 +68,7 @@ func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype
 // (e.g. "studio" for the Studio tab, §75 Review Routing).
 func ListPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID, sourceFilter string, limit, offset int32) ([]HITLReview, error) {
 	if tenantID == (pgtype.UUID{}) {
-		return nil, errors.New("tenant_id is required")
+		return nil, errors.New("id is required")
 	}
 
 	return store.ListPendingHITLReviews(ctx, sourceFilter, limit, offset)
@@ -79,7 +79,7 @@ func ListPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID,
 // that source are counted.
 func CountPendingReviews(ctx context.Context, store *Store, tenantID pgtype.UUID, sourceFilter string) (int64, error) {
 	if tenantID == (pgtype.UUID{}) {
-		return 0, errors.New("tenant_id is required")
+		return 0, errors.New("id is required")
 	}
 
 	return store.CountPendingHITLReviews(ctx, tenantID, sourceFilter)

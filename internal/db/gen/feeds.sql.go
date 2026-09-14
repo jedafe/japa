@@ -1656,7 +1656,7 @@ const pruneOldFeeds = `-- name: PruneOldFeeds :exec
 DELETE FROM feeds WHERE created_at < now() - interval '30 days'
 `
 
-// Intentionally global (no tenant_id filter): this is a retention prune that
+// Intentionally global (no the id filter): this is a retention prune that
 // runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
 func (q *Queries) PruneOldFeeds(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, pruneOldFeeds)

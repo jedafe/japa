@@ -12,7 +12,7 @@ RETURNING *;
 
 -- name: GetWSTicketForRedemption :one
 -- Resolves a ticket by ID when the Valkey cache misses, returning the
--- user_id and tenant_id needed to upgrade the WebSocket connection.
+-- user_id and the id needed to upgrade the WebSocket connection.
 SELECT * FROM ws_tickets
 WHERE id = @id AND used = false AND expires_at > now();
 

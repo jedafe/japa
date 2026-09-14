@@ -449,7 +449,7 @@ WHERE id = $1 AND used = false AND expires_at > now()
 `
 
 // Resolves a ticket by ID when the Valkey cache misses, returning the
-// user_id and tenant_id needed to upgrade the WebSocket connection.
+// user_id and the id needed to upgrade the WebSocket connection.
 func (q *Queries) GetWSTicketForRedemption(ctx context.Context, id pgtype.UUID) (WsTicket, error) {
 	row := q.db.QueryRow(ctx, getWSTicketForRedemption, id)
 	var i WsTicket

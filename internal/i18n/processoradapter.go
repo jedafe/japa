@@ -40,7 +40,7 @@ func (a *ProcessorAdapter) TranslatePack(ctx context.Context, packID, sourceLang
 
 	var tid pgtype.UUID
 	if err := tid.Scan(tenantID); err != nil {
-		slog.Warn("i18n:translate_language_pack — invalid tenant_id", "error", err)
+		slog.Warn("i18n:translate_language_pack — invalid the id", "error", err)
 		return nil
 	}
 

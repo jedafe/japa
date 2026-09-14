@@ -60,7 +60,7 @@ FROM contents c
 JOIN custom_field_values cfv
   ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
 JOIN custom_fields cf
-  ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
+  ON cf.id = cfv.field_id
 WHERE c.content_type = 'guide'
   AND c.guide_category = 'visa'
   AND c.status = 'published'
@@ -150,7 +150,7 @@ FROM contents c
 JOIN custom_field_values cfv
   ON cfv.entity_type = 'content' AND cfv.entity_id = c.id
 JOIN custom_fields cf
-  ON cf.id = cfv.field_id AND cf.tenant_id = c.tenant_id
+  ON cf.id = cfv.field_id
 WHERE c.id = $1
   AND c.content_type = 'guide'
   AND c.guide_category = 'visa'

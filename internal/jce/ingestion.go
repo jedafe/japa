@@ -796,18 +796,18 @@ WHERE ccm.smart_mode IS DISTINCT FROM 'none'
   AND c.visibility = 'public'
   AND NOT EXISTS (
       SELECT 1 FROM comparison_data_ingestion_jobs j
-      WHERE j.content_id = ccm.content_id AND j.tenant_id = ccm.tenant_id
+      WHERE j.content_id = ccm.content_id
         AND j.status IN ('pending','running')
   )
   AND (
       NOT EXISTS (
           SELECT 1 FROM comparison_data_ingestion_jobs j
-          WHERE j.content_id = ccm.content_id AND j.tenant_id = ccm.tenant_id
+          WHERE j.content_id = ccm.content_id
             AND j.status = 'completed'
       )
       OR (
           SELECT MAX(j.completed_at) FROM comparison_data_ingestion_jobs j
-          WHERE j.content_id = ccm.content_id AND j.tenant_id = ccm.tenant_id
+          WHERE j.content_id = ccm.content_id
             AND j.status = 'completed'
       ) < now() - make_interval(hours => $1)
   )

@@ -521,7 +521,7 @@ var defaultSettings = map[string]SettingCategory{
 		Key:   "page",
 		Label: "Page",
 		Settings: []SettingDef{
-			{Key: "cache_ttl_secs", Label: "Cache Ttl Secs", Type: "number", Description: "TTL for the published-page Valkey cache (`jc:page:{tenant_id}:{slug}`)", Value: 300},
+			{Key: "cache_ttl_secs", Label: "Cache Ttl Secs", Type: "number", Description: "TTL for the published-page Valkey cache (`jc:page:{the id}:{slug}`)", Value: 300},
 		},
 	},
 

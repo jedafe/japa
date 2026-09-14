@@ -535,7 +535,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			return "", nil, errors.New("password_hash is required (cannot import users without a password hash)")
 		}
 
-		conflict := "ON CONFLICT (tenant_id, username) DO NOTHING"
+		conflict := "ON CONFLICT (the id, username) DO NOTHING"
 		if mode == ModeUpsert {
 			conflict = "ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
 		}

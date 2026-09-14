@@ -1270,7 +1270,7 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(payload.TenantID); err != nil {
-		slog.Error("task:search:index_entity: invalid tenant_id", "value", payload.TenantID, "error", err)
+		slog.Error("task:search:index_entity: invalid id", "value", payload.TenantID, "error", err)
 		return err
 	}
 
@@ -1554,7 +1554,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 	}
 
 	if payload.SubmissionID == "" || payload.FormID == "" || payload.TenantID == "" {
-		return errors.New("task:form:fire_submission_triggers: submission_id, form_id, and tenant_id are required")
+		return errors.New("task:form:fire_submission_triggers: submission_id, form_id, and id are required")
 	}
 
 	var submissionID, tenantID, formID pgtype.UUID
@@ -1563,7 +1563,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 	}
 
 	if err := tenantID.Scan(payload.TenantID); err != nil {
-		return fmt.Errorf("task:form:fire_submission_triggers: invalid tenant_id: %w", err)
+		return fmt.Errorf("task:form:fire_submission_triggers: invalid id: %w", err)
 	}
 
 	if err := formID.Scan(payload.FormID); err != nil {
@@ -2260,7 +2260,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 
 		var tenantID pgtype.UUID
 		if err := tenantID.Scan(p.TenantID); err != nil {
-			return fmt.Errorf("task:content:generate_draft: bad tenant_id: %w", err)
+			return fmt.Errorf("task:content:generate_draft: bad id: %w", err)
 		}
 
 		if err := studioProcessor.GenerateJob(ctx, tenantID, id); err != nil {
@@ -2342,7 +2342,7 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 
 	tenantID, err := scanUUID(payload.TenantID)
 	if err != nil {
-		return fmt.Errorf("task:content:regenerate_from_source: bad tenant_id: %w", err)
+		return fmt.Errorf("task:content:regenerate_from_source: bad id: %w", err)
 	}
 
 	if err := studioProcessor.RegenerateFromSource(ctx, tenantID, contentID, intelRecordID); err != nil {
@@ -3823,8 +3823,8 @@ func HandleSecurityScan(ctx context.Context, t *asynq.Task) error {
 	if payload.TenantID != "" {
 		var tid pgtype.UUID
 		if err := tid.Scan(payload.TenantID); err != nil {
-			slog.Error("task:security:scan: invalid tenant_id", "error", err)
-			return fmt.Errorf("task:security:scan: invalid tenant_id: %w", err)
+			slog.Error("task:security:scan: invalid id", "error", err)
+			return fmt.Errorf("task:security:scan: invalid id: %w", err)
 		}
 
 		tenantIDs = []pgtype.UUID{tid}
@@ -5341,12 +5341,12 @@ func HandleTenantCleanupData(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if payload.TenantID == "" {
-		return errors.New("tenant:cleanup_data: missing tenant_id in payload")
+		return errors.New("tenant:cleanup_data: missing id in payload")
 	}
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(payload.TenantID); err != nil {
-		return fmt.Errorf("tenant:cleanup_data: invalid tenant_id %q: %w", payload.TenantID, err)
+		return fmt.Errorf("tenant:cleanup_data: invalid id %q: %w", payload.TenantID, err)
 	}
 
 	// Verify the tenant is still in 'deleted' status before cleanup.

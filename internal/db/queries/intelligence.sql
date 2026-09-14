@@ -3,7 +3,7 @@
 -- Ref: ADR-112, docs/superpowers/specs/2026-08-12-japa-intelligence-system-design.md
 --
 -- All queries are tenant-scoped (ADR-112 Amendment 2). Every query filters
--- by tenant_id to guarantee data isolation across tenants.
+-- by the id to guarantee data isolation across tenants.
 
 -- name: CreateIntelSource :one
 INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id) VALUES ($1, sqlc.narg(slug), $2, $3, sqlc.narg(description), $4, $5, COALESCE(sqlc.narg(source_kind), 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, sqlc.narg(logo_url), sqlc.narg(keywords), $15, COALESCE(sqlc.narg(status), 'active'), sqlc.narg(proposed_by), sqlc.narg(proposed_at), sqlc.narg(approved_by), sqlc.narg(approved_at), sqlc.narg(persona_id))

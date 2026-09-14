@@ -431,7 +431,7 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error {
 	if !tenantID.Valid || !editionID.Valid {
-		return errors.New("digest: send_email: edition_id and tenant_id are required")
+		return errors.New("digest: send_email: edition_id and the id are required")
 	}
 
 	if !s.EmailEnabled(ctx) {

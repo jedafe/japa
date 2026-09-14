@@ -142,7 +142,7 @@ func main() {
 		}
 
 		sb.WriteString(`) AS v(space_id, initials)
-			ON s.id = v.space_id AND s.tenant_id = v.tenant_id
+			ON s.id = v.space_id AND s.the id = v.the id
 		`)
 		sb.WriteString(`
 			ON CONFLICT (field_id, entity_type, entity_id) DO UPDATE

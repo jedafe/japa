@@ -965,7 +965,7 @@ DELETE FROM user_content_views WHERE user_id = $1
 `
 
 // Deletes user_content_views rows for the user being erased (Section 14,
-// ADR-014). The table has no tenant_id column — deletion is by user_id
+// ADR-014). The table has no the id column — deletion is by user_id
 // only, which is safe because user_ids are globally unique.
 func (q *Queries) GdprDeleteUserContentViews(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, gdprDeleteUserContentViews, userID)
@@ -1062,8 +1062,8 @@ FROM (
 `
 
 // §97: export attestation_community_updates authored by the user.
-// The table has no tenant_id column; tenant scoping is via the parent
-// pathway's tenant_id.
+// The table has no the id column; tenant scoping is via the parent
+// pathway's the id.
 func (q *Queries) GdprExportAttestationCommunityUpdates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportAttestationCommunityUpdates, userID)
 	var data interface{}
@@ -1856,7 +1856,7 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, poll_id, option_id, user_id, created_at FROM forum_poll_votes WHERE user_id = $1) t
 `
 
-// BUG-022: forum_poll_votes has no tenant_id column.
+// BUG-022: forum_poll_votes has no the id column.
 func (q *Queries) GdprExportUserForumPollVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserForumPollVotes, userID)
 	var data interface{}
@@ -2170,7 +2170,7 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT reply_id, user_id, viewed_at FROM reply_views WHERE user_id = $1) t
 `
 
-// BUG-022: reply_views has no tenant_id column.
+// BUG-022: reply_views has no the id column.
 func (q *Queries) GdprExportUserReplyViews(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserReplyViews, userID)
 	var data interface{}

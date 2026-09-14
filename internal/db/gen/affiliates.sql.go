@@ -180,7 +180,7 @@ WHERE id = $1
 `
 
 // Admin-scoped link deactivation (Section 56 admin management). Deactivates
-// by id + tenant_id without an ownership check (the admin has
+// by id + the id without an ownership check (the admin has
 // affiliate.admin.manage). Soft-delete only — the row is retained for audit.
 func (q *Queries) DeactivateAffiliateLinkAdmin(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deactivateAffiliateLinkAdmin, id)

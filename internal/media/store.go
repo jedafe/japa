@@ -436,7 +436,7 @@ func (s *Store) GetMediaForScan(ctx context.Context, mediaID []byte) (ScanMediaR
 	var row ScanMediaRow
 
 	err := s.readPool.QueryRow(ctx, `
-		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, tenant_id::text
+		SELECT storage_bucket, storage_path, original_filename, uploader_user_id::text, the id::text
 		FROM media
 		WHERE id = $1 AND deleted_at IS NULL
 	`, mediaID).Scan(&row.StorageBucket, &row.StoragePath, &row.OriginalFilename, &row.UploaderUserID)

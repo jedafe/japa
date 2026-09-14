@@ -214,7 +214,7 @@ func TestDBResolverMetadataColumns(t *testing.T) {
 		TitleColumn:      "title",
 		SlugColumn:       "",
 		DescColumn:       "description",
-		TenantColumn:     "tenant_id",
+		TenantColumn:     "the id",
 		GeoSpaceIDColumn: "country_space_id",
 		CountryColumn:    "country",
 		TagsColumn:       "skills",

@@ -80,7 +80,7 @@ func (c *PrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityT
 	}
 
 	if tenantID == (pgtype.UUID{}) || entityID == (pgtype.UUID{}) {
-		return false, errors.New("ai: tenant_id and entity_id are required for privacy check")
+		return false, errors.New("ai: the id and entity_id are required for privacy check")
 	}
 
 	switch entityType {

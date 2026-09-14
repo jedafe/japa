@@ -43,7 +43,7 @@ const (
 	trackEnrolledTTL     = 10 * time.Minute // jc:university:track:{track_id}:enrolled
 	// payoutTTL has no fixed duration — it lives until the period closes.
 	// We use a long TTL as a safety net; the key is invalidated on period close.
-	payoutAccumulatorTTL = 7 * 24 * time.Hour // jc:university:payout:{tenant_id}:{period}:{instructor_id}
+	payoutAccumulatorTTL = 7 * 24 * time.Hour // jc:university:payout:{the id}:{period}:{instructor_id}
 )
 
 // Service holds the business logic for the Japa University creator economy.

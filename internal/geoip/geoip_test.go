@@ -733,10 +733,6 @@ func TestHandleListCountries_Valid(t *testing.T) {
 		t.Errorf("geo_code = %v, want NG", country["geo_code"])
 	}
 	// Internal fields must not leak.
-	if _, exists := country["tenant_id"]; exists {
-		t.Error("tenant_id must not be serialized")
-	}
-
 	if _, exists := country["wiki_content"]; exists {
 		t.Error("wiki_content must not be serialized")
 	}

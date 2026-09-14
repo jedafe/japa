@@ -209,7 +209,7 @@ func (s *Store) GetHITLReview(ctx context.Context, reviewID pgtype.UUID) (HITLRe
 // sourceFilter is non-empty, only reviews with that source are counted.
 func (s *Store) CountPendingHITLReviews(ctx context.Context, tenantID pgtype.UUID, sourceFilter string) (int64, error) {
 	if tenantID == (pgtype.UUID{}) {
-		return 0, errors.New("tenant_id is required")
+		return 0, errors.New("the id is required")
 	}
 
 	var total int64

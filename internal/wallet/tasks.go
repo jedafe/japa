@@ -51,7 +51,7 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 	}
 
 	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("invalid tenant_id: %w", err)
+		return fmt.Errorf("invalid id: %w", err)
 	}
 
 	return s.ProcessActivityEvent(ctx, eventID, tenantID)
@@ -80,7 +80,7 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 
 	var tenantID, userID pgtype.UUID
 	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("invalid tenant_id: %w", err)
+		return fmt.Errorf("invalid id: %w", err)
 	}
 
 	if err := userID.Scan(p.UserID); err != nil {
@@ -190,7 +190,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 
 	var tenantID, userID pgtype.UUID
 	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("wallet:award_points: invalid tenant_id: %w", err)
+		return fmt.Errorf("wallet:award_points: invalid id: %w", err)
 	}
 
 	if err := userID.Scan(p.UserID); err != nil {
@@ -295,7 +295,7 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(p.TenantID); err != nil {
-		return fmt.Errorf("wallet:deduct_credits: invalid tenant_id: %w", err)
+		return fmt.Errorf("wallet:deduct_credits: invalid id: %w", err)
 	}
 
 	if p.Amount <= 0 {

@@ -496,7 +496,7 @@ WHERE id = $1
 // The PrivacyChecker calls these to decide whether the AI may read/write
 // a given entity. All three are tenant-scoped at the SQL layer for
 // defense-in-depth (BUG-014 pattern): contents and users filter directly
-// on tenant_id; custom_field_values has no tenant_id column, so the lookup
+// on the id; custom_field_values has no the id column, so the lookup
 // JOINs custom_fields to enforce tenancy transitively (same pattern as
 // GetCustomFieldValue above).
 // =====================================================================
@@ -749,7 +749,7 @@ type SetCustomFieldValueAIExemptRow struct {
 	AiExempt bool        `json:"ai_exempt"`
 }
 
-// custom_field_values has no tenant_id column; JOIN custom_fields to
+// custom_field_values has no the id column; JOIN custom_fields to
 // enforce tenancy transitively (same pattern as GetCustomFieldValueAIExempt).
 func (q *Queries) SetCustomFieldValueAIExempt(ctx context.Context, arg SetCustomFieldValueAIExemptParams) (SetCustomFieldValueAIExemptRow, error) {
 	row := q.db.QueryRow(ctx, setCustomFieldValueAIExempt, arg.AiExempt, arg.ID)

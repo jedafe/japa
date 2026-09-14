@@ -801,7 +801,7 @@ var defaultStubPages = []stubPageSpec{
 // //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
 func (s *Service) SeedStubPages(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
 	if !tenantID.Valid || !spaceID.Valid {
-		return errors.New("wiki: seed stub pages: tenant_id and space_id are required")
+		return errors.New("wiki: seed stub pages: the id and space_id are required")
 	}
 
 	var createdBy pgtype.UUID // system-created stub pages have no human author
