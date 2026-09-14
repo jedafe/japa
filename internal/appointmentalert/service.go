@@ -657,7 +657,7 @@ func (s *Service) ListUserAlerts(ctx context.Context, userID pgtype.UUID, status
 }
 
 // CreateAlert creates a new appointment alert for the given user.
-func (s *Service) CreateAlert(ctx context.Context, tenantID, userID pgtype.UUID, input CreateAlertInput) (AlertDTO, error) {
+func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, input CreateAlertInput) (AlertDTO, error) {
 	if input.EmbassySlug == "" {
 		return AlertDTO{}, errors.New("embassy_slug is required")
 	}

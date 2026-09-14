@@ -18,22 +18,22 @@ import (
 )
 
 type fakeResolver struct {
-	resolveFunc func(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error)
-	searchFunc  func(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error)
+	resolveFunc func(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error)
+	searchFunc  func(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error)
 }
 
-func (f *fakeResolver) Resolve(ctx context.Context, ref map[string]any, tenantID pgtype.UUID) (ResolvedItem, bool, error) {
-	return f.resolveFunc(ctx, ref, tenantID)
+func (f *fakeResolver) Resolve(ctx context.Context, ref map[string]any) (ResolvedItem, bool, error) {
+	return f.resolveFunc(ctx, ref)
 }
 
-func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, tenantID pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
-	return f.searchFunc(ctx, query, filters, tenantID, limit, offset)
+func (f *fakeResolver) Search(ctx context.Context, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
+	return f.searchFunc(ctx, query, filters, limit, offset)
 }
 
 func TestRegistryResolve(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register("test", &fakeResolver{
-		resolveFunc: func(_ context.Context, ref map[string]any, _ pgtype.UUID) (ResolvedItem, bool, error) {
+		resolveFunc: func(_ context.Context, ref map[string]any) (ResolvedItem, bool, error) {
 			id, _ := ref["id"].(string)
 			return ResolvedItem{ID: id, Title: "Found"}, true, nil
 		},
@@ -41,7 +41,7 @@ func TestRegistryResolve(t *testing.T) {
 
 	ctx := t.Context()
 
-	item, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"}, pgtype.UUID{})
+	item, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestRegistryResolveMissingType(t *testing.T) {
 	reg := NewRegistry()
 	ctx := t.Context()
 
-	_, err := reg.Resolve(ctx, map[string]any{"id": "abc"}, pgtype.UUID{})
+	_, err := reg.Resolve(ctx, map[string]any{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error for missing type")
 	}
@@ -69,7 +69,7 @@ func TestRegistryResolveUnsupported(t *testing.T) {
 	reg := NewRegistry()
 	ctx := t.Context()
 
-	_, err := reg.Resolve(ctx, map[string]any{"type": "missing", "id": "abc"}, pgtype.UUID{})
+	_, err := reg.Resolve(ctx, map[string]any{"type": "missing", "id": "abc"})
 	if !errors.Is(err, errors.New("unsupported item_ref type: missing")) && err.Error() != "unsupported item_ref type: missing" {
 		t.Fatalf("expected unsupported type error, got %v", err)
 	}
@@ -78,14 +78,14 @@ func TestRegistryResolveUnsupported(t *testing.T) {
 func TestRegistryResolveNotFound(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register("test", &fakeResolver{
-		resolveFunc: func(_ context.Context, _ map[string]any, _ pgtype.UUID) (ResolvedItem, bool, error) {
+		resolveFunc: func(_ context.Context, _ map[string]any) (ResolvedItem, bool, error) {
 			return ResolvedItem{}, false, nil
 		},
 	})
 
 	ctx := t.Context()
 
-	_, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"}, pgtype.UUID{})
+	_, err := reg.Resolve(ctx, map[string]any{"type": "test", "id": "abc"})
 	if err == nil {
 		t.Fatal("expected error for not found")
 	}
@@ -94,14 +94,14 @@ func TestRegistryResolveNotFound(t *testing.T) {
 func TestRegistrySearch(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register("test", &fakeResolver{
-		searchFunc: func(_ context.Context, query string, _ map[string]any, _ pgtype.UUID, limit, offset int32) ([]ResolvedItem, error) {
+		searchFunc: func(_ context.Context, query string, _ map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 			return []ResolvedItem{{ID: "1", Title: query}}, nil
 		},
 	})
 
 	ctx := t.Context()
 
-	items, err := reg.Search(ctx, "test", "q", nil, pgtype.UUID{}, 10, 0)
+	items, err := reg.Search(ctx, "test", "q", nil, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}

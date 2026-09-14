@@ -153,7 +153,7 @@ func (s *Service) notifyBadgeAwarded(ctx context.Context, tenantID, userID pgtyp
 		return
 	}
 
-	if err := s.notifier.Notify(ctx, tenantID, userID, NotifTypeBadgeAwarded,
+	if err := s.notifier.Notify(ctx, userID, NotifTypeBadgeAwarded,
 		"Badge earned: "+badgeName,
 		"You earned the "+badgeName+" badge.",
 		""); err != nil {
@@ -213,7 +213,7 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 	}
 
 	if s.notifier != nil {
-		if err := s.notifier.Notify(ctx, tenantID, userID, NotifTypeChallengeCompleted,
+		if err := s.notifier.Notify(ctx, userID, NotifTypeChallengeCompleted,
 			"Challenge completed: "+c.Name,
 			"You completed the "+c.Name+" challenge and earned your reward.",
 			"/challenges"); err != nil {

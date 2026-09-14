@@ -401,7 +401,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_NilResolvers(t *testing.T) {
 	t.Parallel()
 
 	input := `<p>hello world</p>`
-	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), pgtype.UUID{}, input, nil, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), input, nil, nil)
 
 	if out != input {
 		t.Fatalf("expected unchanged input when resolvers are nil, got: %s", out)
@@ -421,7 +421,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_CouponEmbed(t *testing.T) {
 	}
 	input := `<div data-type="coupon-embed" data-coupon-id="550e8400-e29b-41d4-a716-446655440000"></div>`
 
-	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), pgtype.UUID{}, input, mock, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), input, mock, nil)
 	if !strings.Contains(out, "Test Coupon") {
 		t.Fatalf("expected coupon title in output, got: %s", out)
 	}
@@ -445,7 +445,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_AffiliateLink(t *testing.T) {
 	}
 	input := `<a href="https://booking.com/hotel" data-affiliate-provider-id="550e8400-e29b-41d4-a716-446655440000">Book hotel</a>`
 
-	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), pgtype.UUID{}, input, nil, mock)
+	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), input, nil, mock)
 	if !strings.Contains(out, "https://booking.com/hotel?ref=japa20") {
 		t.Fatalf("expected rewritten href with tracking params, got: %s", out)
 	}
@@ -460,7 +460,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_AffiliateLinkNoProviderID(t *testi
 		},
 	}
 	input := `<a href="https://booking.com/hotel">Book hotel</a>`
-	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), pgtype.UUID{}, input, nil, mock)
+	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), input, nil, mock)
 	// Link without data-affiliate-provider-id should be left unchanged.
 	if strings.Contains(out, "should-not-appear") {
 		t.Fatalf("link without provider_id should not be rewritten, got: %s", out)
@@ -486,7 +486,7 @@ func TestResolveCouponEmbedsAndAffiliateLinks_DisplayMode(t *testing.T) {
 	}
 	input := `<div data-type="coupon-embed" data-coupon-id="550e8400-e29b-41d4-a716-446655440000" data-display-mode="compact"></div>`
 
-	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), pgtype.UUID{}, input, mock, nil)
+	out := resolveCouponEmbedsAndAffiliateLinks(t.Context(), input, mock, nil)
 	if !strings.Contains(out, "coupon-card-compact") {
 		t.Fatalf("expected compact class in output, got: %s", out)
 	}

@@ -189,7 +189,7 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	review, err := h.Service.CreateReview(r.Context(), tenantID, user.UserID, CreateReviewInput{
+	review, err := h.Service.CreateReview(r.Context(), user.UserID, CreateReviewInput{
 		EntityType: entityType,
 		EntityID:   entityID,
 		Rating:     input.Rating,

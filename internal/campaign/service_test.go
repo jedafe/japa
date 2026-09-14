@@ -107,7 +107,7 @@ func TestValidateCount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("count=%d", tt.count), func(t *testing.T) {
-			err := s.validateCount(ctx, pgtype.UUID{}, tt.count)
+			err := s.validateCount(ctx, tt.count)
 			if tt.wantErr && err == nil {
 				t.Fatalf("expected error for count %d", tt.count)
 			}
@@ -323,7 +323,7 @@ func TestOnStudioReviewApproved(t *testing.T) {
 	}
 	s := &Service{store: store}
 
-	if err := s.OnStudioReviewApproved(t.Context(), id, reviewID, id); err != nil {
+	if err := s.OnStudioReviewApproved(t.Context(), reviewID, id); err != nil {
 		t.Fatalf("OnStudioReviewApproved failed: %v", err)
 	}
 
@@ -348,7 +348,7 @@ func TestOnStudioReviewRejected(t *testing.T) {
 	}
 	s := &Service{store: store}
 
-	if err := s.OnStudioReviewRejected(t.Context(), id, reviewID, id); err != nil {
+	if err := s.OnStudioReviewRejected(t.Context(), reviewID, id); err != nil {
 		t.Fatalf("OnStudioReviewRejected failed: %v", err)
 	}
 

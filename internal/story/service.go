@@ -33,7 +33,7 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
-	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
 // FeatureChecker checks whether a feature flag is enabled for a tenant.
@@ -539,7 +539,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 		return ErrNotOwner
 	}
 
-	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
+	if err := s.content.DeleteContent(ctx, contentID); err != nil {
 		return fmt.Errorf("story: delete: %w", err)
 	}
 

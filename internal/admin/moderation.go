@@ -1522,7 +1522,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 			return true, nil
 		}
 
-		return h.updateAIHITLStudioReview(ctx, id, tenantID, reviewerID, action, reason)
+		return h.updateAIHITLStudioReview(ctx, id, reviewerID, action, reason)
 	}
 
 	// Fallback to the legacy content_reviews path.
@@ -1577,7 +1577,7 @@ func (h *Handlers) handleStudioReview(ctx context.Context, id, tenantID, reviewe
 // and invokes the studio hook. The hook runs BEFORE the status update so a
 // failed publish/reject leaves the review pending (BUG-004, same behaviour as
 // the ai HITL approve/reject handlers). Returns (handled, hookError).
-func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, action, reason string) (bool, error) {
+func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) (bool, error) {
 	var newHITLStatus string
 
 	switch action {

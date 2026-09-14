@@ -15,7 +15,7 @@ type stubIntelSourceManager struct {
 	byURL   map[string]gen.IntelSource
 }
 
-func (s *stubIntelSourceManager) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
+func (s *stubIntelSourceManager) Create(ctx context.Context, _ pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error) {
 	src := gen.IntelSource{
 		ID:         pgtype.UUID{Valid: true},
 		Name:       arg.Name,

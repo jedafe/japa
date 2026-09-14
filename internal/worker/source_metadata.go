@@ -9,7 +9,6 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -89,7 +88,7 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:intel:source_metadata: get source: %w", err)
 	}
 
-	preview, ok := fetchSourcePreview(ctx, sourceLinkPreviewerInstance, tenantID, src)
+	preview, ok := fetchSourcePreview(ctx, sourceLinkPreviewerInstance, src)
 	if !ok {
 		slog.Debug("task:intel:source_metadata: no preview available; skipping", "source_id", p.SourceID)
 		return nil
@@ -133,7 +132,7 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 
 // fetchSourcePreview tries the source's source_url first, then falls back to
 // https://domain. It returns the preview and a bool indicating success.
-func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, tenantID pgtype.UUID, src gen.IntelSource) (*Preview, bool) {
+func fetchSourcePreview(ctx context.Context, fetcher SourceLinkPreviewer, src gen.IntelSource) (*Preview, bool) {
 	if src.SourceUrl != "" {
 		preview, err := fetcher.Fetch(ctx, src.SourceUrl)
 		if err == nil {

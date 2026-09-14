@@ -81,7 +81,7 @@ func (s *stubComparisonService) CreateComparisonType(_ context.Context, input Co
 	return s.createdType, nil
 }
 
-func (s *stubComparisonService) CreateComparison(_ context.Context, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
+func (s *stubComparisonService) CreateComparison(_ context.Context, tenantID, userID pgtype.UUID, input ComparisonCreateInput) (ComparisonCreateResult, error) {
 	if s.createComparisonErr != nil {
 		return ComparisonCreateResult{}, s.createComparisonErr
 	}
@@ -196,7 +196,7 @@ func TestClassifyRequest_Unstructured_NoEntityType(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	engine := NewComparisonEngine(deps)
 
-	tier, typeRow, existing, missing, err := engine.ClassifyRequest(t.Context(), pgtype.UUID{}, "", nil)
+	tier, typeRow, existing, missing, err := engine.ClassifyRequest(t.Context(), "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestClassifyRequest_Unstructured_TypeNotFound(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	engine := NewComparisonEngine(deps)
 
-	tier, _, _, _, err := engine.ClassifyRequest(t.Context(), pgtype.UUID{}, "nonexistent", []string{"cost"})
+	tier, _, _, _, err := engine.ClassifyRequest(t.Context(), "nonexistent", []string{"cost"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestClassifyRequest_Structured_NoFieldsRequested(t *testing.T) {
 	deps := &ToolDeps{Comparison: svc}
 	engine := NewComparisonEngine(deps)
 
-	tier, typeRow, _, _, err := engine.ClassifyRequest(t.Context(), pgtype.UUID{}, "universities", nil)
+	tier, typeRow, _, _, err := engine.ClassifyRequest(t.Context(), "universities", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestClassifyRequest_SemiStructured_MissingFields(t *testing.T) {
 	engine := NewComparisonEngine(deps)
 
 	tier, _, existing, missing, err := engine.ClassifyRequest(
-		t.Context(), pgtype.UUID{}, "countries",
+		t.Context(), "countries",
 		[]string{"cost_of_living", "infrastructure"},
 	)
 	if err != nil {
@@ -316,7 +316,7 @@ func TestClassifyRequest_Structured_AllFieldsCovered(t *testing.T) {
 	engine := NewComparisonEngine(deps)
 
 	tier, _, _, missing, err := engine.ClassifyRequest(
-		t.Context(), pgtype.UUID{}, "countries",
+		t.Context(), "countries",
 		[]string{"cost_of_living", "healthcare"},
 	)
 	if err != nil {
@@ -337,7 +337,7 @@ func TestClassifyRequest_NilDeps(t *testing.T) {
 
 	engine := NewComparisonEngine(nil)
 
-	_, _, _, _, err := engine.ClassifyRequest(t.Context(), pgtype.UUID{}, "x", nil)
+	_, _, _, _, err := engine.ClassifyRequest(t.Context(), "x", nil)
 	if err == nil {
 		t.Error("expected error for nil deps")
 	}
@@ -357,7 +357,7 @@ func TestFillValues_Success(t *testing.T) {
 	dimID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 	itemID := mustUUID(t, "00000000-0000-0000-0000-000000000002")
 
-	result, err := engine.FillValues(t.Context(), pgtype.UUID{}, []FillValueInput{
+	result, err := engine.FillValues(t.Context(), []FillValueInput{
 		{
 			DimensionID: dimID,
 			ItemID:      itemID,
@@ -406,7 +406,7 @@ func TestFillValues_PartialFailure(t *testing.T) {
 	dimID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 	itemID := mustUUID(t, "00000000-0000-0000-0000-000000000002")
 
-	result, err := engine.FillValues(t.Context(), pgtype.UUID{}, []FillValueInput{
+	result, err := engine.FillValues(t.Context(), []FillValueInput{
 		{DimensionID: dimID, ItemID: itemID, Value: "x"},
 	})
 	if err != nil {
@@ -427,7 +427,7 @@ func TestFillValues_NilDeps(t *testing.T) {
 
 	engine := NewComparisonEngine(nil)
 
-	_, err := engine.FillValues(t.Context(), pgtype.UUID{}, nil)
+	_, err := engine.FillValues(t.Context(), nil)
 	if err == nil {
 		t.Error("expected error for nil deps")
 	}
@@ -458,7 +458,7 @@ func TestAddDimensions_Success(t *testing.T) {
 
 	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000010")
 
-	created, err := engine.AddDimensions(t.Context(), pgtype.UUID{}, []AddDimensionInput{
+	created, err := engine.AddDimensions(t.Context(), []AddDimensionInput{
 		{ContentID: contentID, Label: "infrastructure"},
 	})
 	if err != nil {
@@ -491,7 +491,7 @@ func TestAddDimensions_EmptyTypeDefaultsToText(t *testing.T) {
 
 	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000010")
 
-	_, err := engine.AddDimensions(t.Context(), pgtype.UUID{}, []AddDimensionInput{
+	_, err := engine.AddDimensions(t.Context(), []AddDimensionInput{
 		{ContentID: contentID, Label: "quality", DimensionType: ""},
 	})
 	if err != nil {
@@ -610,7 +610,7 @@ func TestReadComparison_Success(t *testing.T) {
 	deps := &ToolDeps{Comparison: svc}
 	engine := NewComparisonEngine(deps)
 
-	res, err := engine.ReadComparison(t.Context(), pgtype.UUID{}, pgtype.UUID{})
+	res, err := engine.ReadComparison(t.Context(), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1053,7 +1053,7 @@ func TestComparisonFillValuesPrivacyTarget_ValidContentID(t *testing.T) {
 
 	args := json.RawMessage(`{"content_id": "00000000-0000-0000-0000-000000000001", "values": []}`)
 
-	entityType, id, err := ComparisonFillValuesPrivacyTarget(t.Context(), args, pgtype.UUID{})
+	entityType, id, err := ComparisonFillValuesPrivacyTarget(t.Context(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1072,7 +1072,7 @@ func TestComparisonFillValuesPrivacyTarget_NoContentID(t *testing.T) {
 
 	args := json.RawMessage(`{"values": []}`)
 
-	entityType, _, err := ComparisonFillValuesPrivacyTarget(t.Context(), args, pgtype.UUID{})
+	entityType, _, err := ComparisonFillValuesPrivacyTarget(t.Context(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1087,7 +1087,7 @@ func TestComparisonReadPrivacyTarget_ValidContentID(t *testing.T) {
 
 	args := json.RawMessage(`{"content_id": "00000000-0000-0000-0000-000000000001"}`)
 
-	entityType, id, err := ComparisonReadPrivacyTarget(t.Context(), args, pgtype.UUID{})
+	entityType, id, err := ComparisonReadPrivacyTarget(t.Context(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1106,7 +1106,7 @@ func TestComparisonReadPrivacyTarget_InvalidContentID(t *testing.T) {
 
 	args := json.RawMessage(`{"content_id": "xyz"}`)
 
-	entityType, _, err := ComparisonReadPrivacyTarget(t.Context(), args, pgtype.UUID{})
+	entityType, _, err := ComparisonReadPrivacyTarget(t.Context(), args)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

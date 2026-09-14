@@ -158,11 +158,11 @@ func TestExtractTrailingJSONObject(t *testing.T) {
 
 type fakeSettingsForGenerate struct{}
 
-func (f *fakeSettingsForGenerate) GetStringOr(_ context.Context, _ pgtype.UUID, _, fallback string) string {
+func (f *fakeSettingsForGenerate) GetStringOr(_ context.Context, _, fallback string) string {
 	return fallback
 }
 
-func (f *fakeSettingsForGenerate) GetBoolOr(_ context.Context, _ pgtype.UUID, key string, fallback bool) bool {
+func (f *fakeSettingsForGenerate) GetBoolOr(_ context.Context, key string, fallback bool) bool {
 	if key == "video.enabled" || key == "video.ai_summary.enabled" {
 		return true
 	}
@@ -170,7 +170,7 @@ func (f *fakeSettingsForGenerate) GetBoolOr(_ context.Context, _ pgtype.UUID, ke
 	return fallback
 }
 
-func (f *fakeSettingsForGenerate) GetIntOr(_ context.Context, _ pgtype.UUID, _ string, fallback int) int {
+func (f *fakeSettingsForGenerate) GetIntOr(_ context.Context, _ string, fallback int) int {
 	return fallback
 }
 

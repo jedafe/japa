@@ -297,8 +297,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -329,7 +328,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entryID, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
+	entryID, err := h.service.Submit(r.Context(), user.UserID, input)
 	if err != nil {
 		slog.Error("calendar: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit calendar entry")

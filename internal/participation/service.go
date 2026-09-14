@@ -73,7 +73,7 @@ type ActionDispatcher interface {
 	// AddReaction adds a reaction to the target entity as the persona.
 	AddReaction(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error
 	// CreateBookmark bookmarks the target entity as the persona.
-	CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	CreateBookmark(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 	// SubmitForm submits a form as the persona.
 	SubmitForm(ctx context.Context, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error)
 }
@@ -455,7 +455,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 	case "react":
 		return s.dispatcher.AddReaction(ctx, personaUserID, payload.TargetEntityType, targetEntityID, payload.ReactionKey)
 	case "bookmark":
-		return s.dispatcher.CreateBookmark(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
+		return s.dispatcher.CreateBookmark(ctx, personaUserID, payload.TargetEntityType, targetEntityID)
 	case "form_submit":
 		var fieldValues map[string]any
 		if len(payload.Body) > 0 {

@@ -4,8 +4,6 @@ package ai
 import (
 	"context"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // stubCostSettingsReader is a minimal SettingsReader for cost tests.
@@ -14,7 +12,7 @@ type stubCostSettingsReader struct {
 	strings map[string]string
 }
 
-func (s *stubCostSettingsReader) GetStringOr(_ context.Context, _ pgtype.UUID, key, fallback string) string {
+func (s *stubCostSettingsReader) GetStringOr(_ context.Context, key, fallback string) string {
 	if s.strings == nil {
 		return fallback
 	}
@@ -26,11 +24,11 @@ func (s *stubCostSettingsReader) GetStringOr(_ context.Context, _ pgtype.UUID, k
 	return fallback
 }
 
-func (s *stubCostSettingsReader) GetIntOr(_ context.Context, _ pgtype.UUID, _ string, fallback int) int {
+func (s *stubCostSettingsReader) GetIntOr(_ context.Context, _ string, fallback int) int {
 	return fallback
 }
 
-func (s *stubCostSettingsReader) GetFloatOr(_ context.Context, _ pgtype.UUID, key string, fallback float64) float64 {
+func (s *stubCostSettingsReader) GetFloatOr(_ context.Context, key string, fallback float64) float64 {
 	if v, ok := s.floats[key]; ok {
 		return v
 	}
@@ -38,7 +36,7 @@ func (s *stubCostSettingsReader) GetFloatOr(_ context.Context, _ pgtype.UUID, ke
 	return fallback
 }
 
-func (s *stubCostSettingsReader) GetBoolOr(_ context.Context, _ pgtype.UUID, _ string, fallback bool) bool {
+func (s *stubCostSettingsReader) GetBoolOr(_ context.Context, _ string, fallback bool) bool {
 	return fallback
 }
 
@@ -55,8 +53,6 @@ func TestCostEstimatorResolution(t *testing.T) {
 	}
 
 	ctx := t.Context()
-
-	var tenantID pgtype.UUID
 
 	tests := []struct {
 		name     string
@@ -90,7 +86,7 @@ func TestCostEstimatorResolution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := estimator.Estimate(ctx, tenantID, tt.provider, tt.model, 1000)
+			got := estimator.Estimate(ctx, tt.provider, tt.model, 1000)
 			if got != tt.want {
 				t.Errorf("Estimate() = %v, want %v", got, tt.want)
 			}
@@ -105,9 +101,7 @@ func TestCostEstimatorFallbacks(t *testing.T) {
 	estimator := NewCostEstimator(nil)
 	ctx := t.Context()
 
-	var tenantID pgtype.UUID
-
-	got := estimator.Estimate(ctx, tenantID, "xiaomi", "mimo-v2-flash", 1000)
+	got := estimator.Estimate(ctx, "xiaomi", "mimo-v2-flash", 1000)
 	if got != defaultCostPer1kTokensUSD {
 		t.Errorf("Estimate() with nil settings = %v, want %v", got, defaultCostPer1kTokensUSD)
 	}
@@ -118,7 +112,7 @@ func TestCostEstimatorFallbacks(t *testing.T) {
 	}}
 	estimator = NewCostEstimator(settings)
 
-	got = estimator.Estimate(ctx, tenantID, "openai", "gpt-4o-mini", 1000)
+	got = estimator.Estimate(ctx, "openai", "gpt-4o-mini", 1000)
 	if got != 0.004 {
 		t.Errorf("Estimate() with legacy agent key = %v, want 0.004", got)
 	}
@@ -138,8 +132,6 @@ func TestCostEstimatorProviderCostOverrides(t *testing.T) {
 	}
 
 	ctx := t.Context()
-
-	var tenantID pgtype.UUID
 
 	estimator := NewCostEstimator(settings)
 
@@ -179,7 +171,7 @@ func TestCostEstimatorProviderCostOverrides(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := estimator.Estimate(ctx, tenantID, tt.provider, tt.model, 1000)
+			got := estimator.Estimate(ctx, tt.provider, tt.model, 1000)
 			if got != tt.want {
 				t.Errorf("Estimate() = %v, want %v", got, tt.want)
 			}

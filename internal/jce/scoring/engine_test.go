@@ -269,7 +269,7 @@ func TestEngine_JapaScoreWeightedAverage(t *testing.T) {
 		},
 	}
 
-	res, err := e.scoreRun(t.Context(), pgtype.UUID{}, cfg, factors, jce.ComparisonProfile{}, items, comparison.SmartModeNone)
+	res, err := e.scoreRun(t.Context(), cfg, factors, jce.ComparisonProfile{}, items, comparison.SmartModeNone)
 	if err != nil {
 		t.Fatalf("scoreRun failed: %v", err)
 	}

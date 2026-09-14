@@ -55,7 +55,7 @@ type fakeLister struct {
 	last int32
 }
 
-func (f *fakeLister) ListDue(_ context.Context, _ pgtype.UUID, limit int32) ([]gen.IntelSource, error) {
+func (f *fakeLister) ListDue(_ context.Context, limit int32) ([]gen.IntelSource, error) {
 	f.last = limit
 	if f.err != nil {
 		return nil, f.err

@@ -13,7 +13,7 @@ func TestSetUserTier_InvalidTier(t *testing.T) {
 
 	s := &Service{store: &Store{}}
 
-	err := s.SetUserTier(t.Context(), pgtype.UUID{}, pgtype.UUID{}, "premium")
+	err := s.SetUserTier(t.Context(), pgtype.UUID{}, "premium")
 	if err == nil {
 		t.Fatalf("expected error for invalid tier")
 	}

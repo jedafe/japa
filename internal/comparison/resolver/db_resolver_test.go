@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // fakeRow implements pgx.Row for QueryRow tests.
@@ -131,7 +130,6 @@ func (f *fakeDBTX) CopyFrom(_ context.Context, _ pgx.Identifier, _ []string, _ p
 }
 
 func TestDBResolverResolveByID(t *testing.T) {
-	tid := pgtype.UUID{Valid: true}
 	db := &fakeDBTX{
 		queryRowResults: []*fakeRow{{
 			values: []any{
@@ -151,7 +149,7 @@ func TestDBResolverResolveByID(t *testing.T) {
 		ActiveWhere:  "t.is_active = true",
 	})
 
-	item, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, tid)
+	item, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
@@ -175,7 +173,6 @@ func TestDBResolverResolveByID(t *testing.T) {
 }
 
 func TestDBResolverResolveBySlug(t *testing.T) {
-	tid := pgtype.UUID{Valid: true}
 	db := &fakeDBTX{
 		queryRowResults: []*fakeRow{{
 			values: []any{
@@ -195,7 +192,7 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 		ActiveWhere:  "t.verified = true",
 	})
 
-	item, found, err := r.Resolve(t.Context(), map[string]any{"slug": "orgco"}, tid)
+	item, found, err := r.Resolve(t.Context(), map[string]any{"slug": "orgco"})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}
@@ -213,7 +210,7 @@ func TestDBResolverResolveBySlug(t *testing.T) {
 func TestDBResolverResolveMissingRef(t *testing.T) {
 	r := NewDBResolver(&fakeDBTX{}, DBConfig{Entity: "test", Table: "test", IDColumn: "id", TitleColumn: "name"})
 
-	_, found, err := r.Resolve(t.Context(), map[string]any{}, pgtype.UUID{})
+	_, found, err := r.Resolve(t.Context(), map[string]any{})
 	if err == nil || found {
 		t.Fatal("expected error for missing ref")
 	}
@@ -229,7 +226,7 @@ func TestDBResolverResolveNotFound(t *testing.T) {
 		TitleColumn: "name",
 	})
 
-	_, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
+	_, found, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"})
 	if err != nil || found {
 		t.Fatalf("expected not found without error, got found=%v err=%v", found, err)
 	}
@@ -254,7 +251,7 @@ func TestDBResolverSearch(t *testing.T) {
 		TenantColumn: "tenant_id",
 	})
 
-	items, err := r.Search(t.Context(), "remit", nil, pgtype.UUID{Valid: true}, 10, 0)
+	items, err := r.Search(t.Context(), "remit", nil, 10, 0)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}
@@ -281,7 +278,7 @@ func TestDBResolverRejectsBadIdentifier(t *testing.T) {
 		TitleColumn: "name",
 	})
 
-	_, _, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"}, pgtype.UUID{})
+	_, _, err := r.Resolve(t.Context(), map[string]any{"id": "550e8400-e29b-41d4-a716-446655440000"})
 	if err == nil {
 		t.Fatal("expected error for invalid identifier")
 	}

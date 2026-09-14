@@ -28,12 +28,12 @@ type mockLister struct {
 	crossSourceErr error
 }
 
-func (m *mockLister) GetIntelRecordByExternalKey(_ context.Context, _ pgtype.UUID, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
+func (m *mockLister) GetIntelRecordByExternalKey(_ context.Context, arg gen.GetIntelRecordByExternalKeyParams) (gen.IntelRecord, error) {
 	m.calls = append(m.calls, arg)
 	return m.record, m.err
 }
 
-func (m *mockLister) ListIntelRecordsByExternalKey(_ context.Context, _ pgtype.UUID, _ string) ([]gen.IntelRecord, error) {
+func (m *mockLister) ListIntelRecordsByExternalKey(_ context.Context, _ string) ([]gen.IntelRecord, error) {
 	return m.crossSourceRecords, m.crossSourceErr
 }
 

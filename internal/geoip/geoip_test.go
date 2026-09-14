@@ -311,7 +311,7 @@ type mockSpacesService struct {
 	listErr error
 }
 
-func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
+func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _ pgtype.UUID, _ string) ([]gen.ListSpacesByLevelRow, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
@@ -319,7 +319,7 @@ func (m *mockSpacesService) ListSpacesByLevel(_ context.Context, _, _ pgtype.UUI
 	return m.countries, nil
 }
 
-func (m *mockSpacesService) ListStatesByCountryCode(_ context.Context, _ pgtype.UUID, _ string) ([]gen.ListStatesByCountryGeoCodeRow, error) {
+func (m *mockSpacesService) ListStatesByCountryCode(_ context.Context, _ string) ([]gen.ListStatesByCountryGeoCodeRow, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
@@ -327,7 +327,7 @@ func (m *mockSpacesService) ListStatesByCountryCode(_ context.Context, _ pgtype.
 	return m.states, nil
 }
 
-func (m *mockSpacesService) ListCitiesByState(_ context.Context, _, _ pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error) {
+func (m *mockSpacesService) ListCitiesByState(_ context.Context, _ pgtype.UUID) ([]gen.ListCitiesByStateIDRow, error) {
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
@@ -335,15 +335,15 @@ func (m *mockSpacesService) ListCitiesByState(_ context.Context, _, _ pgtype.UUI
 	return m.cities, nil
 }
 
-func (m *mockSpacesService) GetSpaceByGeoCode(_ context.Context, _ pgtype.UUID, _ string) (gen.GetSpaceByGeoCodeRow, error) {
+func (m *mockSpacesService) GetSpaceByGeoCode(_ context.Context, _ string) (gen.GetSpaceByGeoCodeRow, error) {
 	return m.countryByGeo, m.countryErr
 }
 
-func (m *mockSpacesService) FindCitySpaceByName(_ context.Context, _ pgtype.UUID, _ string) (gen.FindCitySpaceByNameRow, error) {
+func (m *mockSpacesService) FindCitySpaceByName(_ context.Context, _ string) (gen.FindCitySpaceByNameRow, error) {
 	return m.cityByName, m.cityErr
 }
 
-func (m *mockSpacesService) CreateCity(_ context.Context, _, _ pgtype.UUID, _ string) (gen.CreateSpaceRow, error) {
+func (m *mockSpacesService) CreateCity(_ context.Context, _ pgtype.UUID, _ string) (gen.CreateSpaceRow, error) {
 	return gen.CreateSpaceRow{}, nil
 }
 

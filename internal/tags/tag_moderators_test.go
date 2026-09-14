@@ -68,7 +68,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	}
 
 	// List → exactly one.
-	list, err := svc.ListTagModerators(ctx, tagID, tenantID)
+	list, err := svc.ListTagModerators(ctx, tagID)
 	if err != nil {
 		t.Fatalf("ListTagModerators: %v", err)
 	}
@@ -89,17 +89,17 @@ func TestTagModeratorsIntegration(t *testing.T) {
 		t.Fatalf("re-AddTagModerator: %v", err)
 	}
 
-	list, _ = svc.ListTagModerators(ctx, tagID, tenantID)
+	list, _ = svc.ListTagModerators(ctx, tagID)
 	if len(list) != 1 {
 		t.Fatalf("expected idempotent add to keep 1 moderator, got %d", len(list))
 	}
 
 	// Remove.
-	if err := svc.RemoveTagModerator(ctx, tagID, userID, tenantID); err != nil {
+	if err := svc.RemoveTagModerator(ctx, tagID, userID); err != nil {
 		t.Fatalf("RemoveTagModerator: %v", err)
 	}
 
-	list, _ = svc.ListTagModerators(ctx, tagID, tenantID)
+	list, _ = svc.ListTagModerators(ctx, tagID)
 	if len(list) != 0 {
 		t.Fatalf("expected 0 moderators after remove, got %d", len(list))
 	}

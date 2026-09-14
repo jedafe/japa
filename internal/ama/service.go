@@ -249,7 +249,7 @@ func (s *Service) CreateAMA(ctx context.Context, authorUserID pgtype.UUID, in Cr
 // author) or a holder of forum.ama.moderate may approve (§88
 // question_approval_required). Returns pgx.ErrNoRows if the question is not
 // found or not pending.
-func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, tenantID, callerUserID pgtype.UUID) error {
+func (s *Service) ApproveQuestion(ctx context.Context, threadID, replyID, callerUserID pgtype.UUID) error {
 	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -308,7 +308,7 @@ func (s *Service) CanClose(ctx context.Context, threadID, callerUserID pgtype.UU
 }
 
 // CloseAMA closes an AMA session (host or moderator only, per CanClose).
-func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID) error {
+func (s *Service) CloseAMA(ctx context.Context, threadID, callerUserID pgtype.UUID) error {
 	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -344,7 +344,7 @@ func (s *Service) CloseAMA(ctx context.Context, threadID, tenantID, callerUserID
 // UpdateAMA edits an AMA thread's title, body and anonymity flag. The caller
 // must be the host or hold forum.ama.moderate. closes_at and other ama_config
 // metadata are not modified.
-func (s *Service) UpdateAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
+func (s *Service) UpdateAMA(ctx context.Context, threadID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error) {
 	allowed, err := s.CanClose(ctx, threadID, callerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

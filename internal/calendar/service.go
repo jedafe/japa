@@ -433,7 +433,7 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 
 // Submit creates a new pending calendar entry. The caller must have the
 // calendar.submit permission (checked by the handler before calling).
-func (s *Service) Submit(ctx context.Context, tenantID, userID pgtype.UUID, input SubmitEntryInput) (string, error) {
+func (s *Service) Submit(ctx context.Context, userID pgtype.UUID, input SubmitEntryInput) (string, error) {
 	entry, err := s.buildEntry(ctx, input)
 	if err != nil {
 		return "", err

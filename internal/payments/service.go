@@ -262,7 +262,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 		if fErr != nil {
 			slog.Error("payments: failed to mark credit payment as failed", "payment_id", payment.ID, "error", fErr)
 		} else {
-			s.emitPaymentStatusWebhook(ctx, tenantID, failed)
+			s.emitPaymentStatusWebhook(ctx, failed)
 		}
 
 		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
@@ -273,7 +273,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, tenantID, userID pg
 	if err != nil {
 		slog.Error("payments: failed to mark credit payment as succeeded", "payment_id", payment.ID, "error", err)
 	} else {
-		s.emitPaymentStatusWebhook(ctx, tenantID, succeeded)
+		s.emitPaymentStatusWebhook(ctx, succeeded)
 	}
 
 	return payment, nil
@@ -301,7 +301,7 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 		return gen.Payment{}, err
 	}
 
-	s.emitPaymentStatusWebhook(ctx, tenantID, payment)
+	s.emitPaymentStatusWebhook(ctx, payment)
 
 	return payment, nil
 }
@@ -309,7 +309,7 @@ func (s *Service) UpdatePaymentStatus(ctx context.Context, id, tenantID pgtype.U
 // emitPaymentStatusWebhook fires payment.succeeded/payment.failed when a
 // payment transitions to those terminal statuses (Section 12). No-op for
 // other statuses. Fire-and-forget per Rule 8.
-func (s *Service) emitPaymentStatusWebhook(ctx context.Context, tenantID pgtype.UUID, payment gen.Payment) {
+func (s *Service) emitPaymentStatusWebhook(ctx context.Context, payment gen.Payment) {
 	var eventType string
 
 	switch payment.Status {

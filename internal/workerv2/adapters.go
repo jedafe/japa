@@ -357,7 +357,7 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 
 	var total int
 
-	for _, tid := range tenantIDs {
+	for range tenantIDs {
 		reminders, err := a.svc.FindNeedingReminders(ctx, 100)
 		if err != nil {
 			slog.Warn("task:scholarship:check_deadlines: tenant sweep failed", "error", err)
@@ -365,7 +365,7 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 		}
 
 		for _, r := range reminders {
-			if err := a.dispatchReminder(ctx, tid, r); err != nil {
+			if err := a.dispatchReminder(ctx, r); err != nil {
 				slog.Warn("task:scholarship:check_deadlines: dispatch reminder failed", "reminder_id", r.ID, "error", err)
 				continue
 			}
@@ -386,7 +386,7 @@ func (a *ScholarshipAdapter) CheckDeadlines(ctx context.Context) (int, error) {
 // owner announcing the approaching application deadline. The notification
 // type `scholarship.deadline_reminder` is created via the notifications
 // service's non-batch path (§35, ADR-073 §3).
-func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, tenantID pgtype.UUID, r gen.FindScholarshipsNeedingRemindersRow) error {
+func (a *ScholarshipAdapter) dispatchReminder(ctx context.Context, r gen.FindScholarshipsNeedingRemindersRow) error {
 	if a.notif == nil {
 		slog.Warn("task:scholarship:check_deadlines: notifications service not configured, skipping dispatch")
 		return nil
@@ -468,7 +468,7 @@ func (a *RemittanceAdapter) FetchAllRates(ctx context.Context) (int, error) {
 
 	var total int
 
-	for _, tid := range tenantIDs {
+	for range tenantIDs {
 		n, err := a.svc.FetchAllProviderRates(ctx)
 		if err != nil {
 			slog.Warn("task:remittance:fetch_rates: tenant sweep failed", "error", err)

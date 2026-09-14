@@ -1077,7 +1077,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 
 	slog.Info("task:intel:promote: promoted", "record_id", p.RecordID, "entity_type", record.EntityType, "action", result.Action, "domain_id", result.DomainID)
 
-	intelMaybeAutoPromoteStudio(ctx, tenantID, recordID, p.RecordID, record, result)
+	intelMaybeAutoPromoteStudio(ctx, recordID, p.RecordID, record, result)
 	intelMaybeEnqueueRegeneration(ctx, tenantID, record, result)
 
 	payload := marshalPayload(intelPostPublishPayload{
@@ -1101,7 +1101,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 // projection-table write (Approach B) where Studio owns the editorial
 // contents row. The guide_content promoter returns a real ContentID (it
 // writes contents directly) and is skipped.
-func intelMaybeAutoPromoteStudio(ctx context.Context, tenantID, recordID pgtype.UUID, recordIDStr string, record gen.IntelRecord, result IntelPromoteResult) {
+func intelMaybeAutoPromoteStudio(ctx context.Context, recordID pgtype.UUID, recordIDStr string, record gen.IntelRecord, result IntelPromoteResult) {
 	if intelStudioAutoPromote == nil || result.ContentID != uuid.Nil {
 		return
 	}

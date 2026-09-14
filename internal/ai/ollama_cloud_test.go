@@ -12,8 +12,6 @@ import (
 	"context"
 	"os"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestOllamaCloudProviderChat(t *testing.T) {
@@ -70,7 +68,7 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 	// Verify the cost estimator can resolve a price for this provider/model.
 	estimator := NewCostEstimator(&defaultCostSettings{})
 
-	cost := estimator.Estimate(ctx, pgtype.UUID{}, p.Name(), model, totalTokens)
+	cost := estimator.Estimate(ctx, p.Name(), model, totalTokens)
 	if cost <= 0 {
 		t.Fatalf("CostEstimator returned non-positive cost: %f", cost)
 	}
@@ -79,10 +77,10 @@ func TestOllamaCloudProviderChat(t *testing.T) {
 // defaultCostSettings is a minimal SettingsReader for the cost estimator test.
 type defaultCostSettings struct{}
 
-func (defaultCostSettings) GetStringOr(context.Context, pgtype.UUID, string, string) string {
+func (defaultCostSettings) GetStringOr(context.Context, string, string) string {
 	return "{}"
 }
-func (defaultCostSettings) GetIntOr(context.Context, pgtype.UUID, string, int) int { return 0 }
+func (defaultCostSettings) GetIntOr(context.Context, string, int) int { return 0 }
 func (s defaultCostSettings) GetFloatOr(ctx context.Context, key string, fallback float64) float64 {
 	if key == "ai.cost_per_1k_tokens_usd" {
 		return 0.002
@@ -91,4 +89,4 @@ func (s defaultCostSettings) GetFloatOr(ctx context.Context, key string, fallbac
 	return fallback
 }
 
-func (defaultCostSettings) GetBoolOr(context.Context, pgtype.UUID, string, bool) bool { return false }
+func (defaultCostSettings) GetBoolOr(context.Context, string, bool) bool { return false }

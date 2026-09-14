@@ -570,9 +570,9 @@ type ContentTypesService interface {
 // deletion, type-filtered listing, and status transitions.
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content tools).
 type ContentLifecycleService interface {
-	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
-	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+	UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 }
 
 // ---------------------------------------------------------------------------

@@ -29,7 +29,7 @@ func (f *fakeCalendarUpdater) Enabled(ctx context.Context) bool {
 	return f.enabled
 }
 
-func (f *fakeCalendarUpdater) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
+func (f *fakeCalendarUpdater) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
 	return f.entry, f.err
 }
 

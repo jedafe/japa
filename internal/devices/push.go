@@ -38,7 +38,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // FCM service-account JSON subset (only the fields we need).
@@ -444,7 +443,7 @@ func stringifyData(data map[string]interface{}) map[string]string {
 type NoopDispatcher struct{}
 
 // Dispatch is an exported method.
-func (NoopDispatcher) Dispatch(_ context.Context, _ pgtype.UUID, _, _ string, _ PushPayload) error {
+func (NoopDispatcher) Dispatch(_ context.Context, _, _ string, _ PushPayload) error {
 	return ErrNoDispatcher
 }
 

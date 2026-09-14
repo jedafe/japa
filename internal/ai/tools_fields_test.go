@@ -127,7 +127,7 @@ func TestCFVReadHandler_MissingEntityType(t *testing.T) {
 func TestCFVReadPrivacyTarget_Content(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"content","entity_id":"00000000-0000-0000-0000-000000000001"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestCFVReadPrivacyTarget_Content(t *testing.T) {
 func TestCFVReadPrivacyTarget_User(t *testing.T) {
 	t.Parallel()
 
-	et, _, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"user","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, _, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"user","entity_id":"00000000-0000-0000-0000-000000000001"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCFVReadPrivacyTarget_User(t *testing.T) {
 func TestCFVReadPrivacyTarget_UnknownType_Skips(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"organization","entity_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := CFVReadPrivacyTarget(t.Context(), json.RawMessage(`{"entity_type":"organization","entity_id":"00000000-0000-0000-0000-000000000001"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestCFVSetPrivacyTarget(t *testing.T) {
 		"field_id":"00000000-0000-0000-0000-000000000010",
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001"
-	}`), pgtype.UUID{})
+	}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestCFVBulkSetPrivacyTarget(t *testing.T) {
 		"entity_type":"content",
 		"entity_id":"00000000-0000-0000-0000-000000000001",
 		"values":[]
-	}`), pgtype.UUID{})
+	}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

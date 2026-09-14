@@ -44,7 +44,7 @@ func (s *Service) SetSettings(r forumSettingsReader) {
 // transaction. The poll is only created when input.Poll is non-nil and has at
 // least two options, so the thread and its poll are always committed (or
 // rolled back) together.
-func (s *Service) CreateThread(ctx context.Context, tenantID, authorUserID pgtype.UUID, input CreateThreadInput) (gen.ForumThread, error) {
+func (s *Service) CreateThread(ctx context.Context, authorUserID pgtype.UUID, input CreateThreadInput) (gen.ForumThread, error) {
 	if input.Title == "" {
 		return gen.ForumThread{}, errors.New("title is required")
 	}
@@ -181,7 +181,7 @@ func (s *Service) ListThreadsByTag(ctx context.Context, tagID pgtype.UUID, curso
 // UpdateThread updates a forum thread. The author can edit; a moderator
 // (or any holder of forum.thread.edit_any / super-admin wildcard) may also
 // edit. Ref: Section 08 + §26 RBAC CRUD.
-func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
+func (s *Service) UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
 	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return gen.ForumThread{}, fmt.Errorf("getting thread for update: %w", err)
@@ -217,7 +217,7 @@ func (s *Service) UpdateThread(ctx context.Context, id, tenantID, userID pgtype.
 
 // DeleteThread soft-deletes a forum thread. The author or a moderator
 // (forum.thread.delete_any / super-admin) may delete. Ref: Section 08 + §26.
-func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteThread(ctx context.Context, id, userID pgtype.UUID) error {
 	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for delete: %w", err)
@@ -240,7 +240,7 @@ func (s *Service) DeleteThread(ctx context.Context, id, tenantID, userID pgtype.
 // moderator (or a holder of forum.thread.solve / super-admin) may solve.
 // When parentReplyID is not provided, the top-voted reply is used as the
 // accepted answer (BL-012). Ref: Section 08 Solved flag.
-func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, parentReplyID pgtype.UUID) error {
+func (s *Service) SolveThread(ctx context.Context, id, solverUserID, parentReplyID pgtype.UUID) error {
 	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for solve: %w", err)
@@ -271,7 +271,7 @@ func (s *Service) SolveThread(ctx context.Context, id, tenantID, solverUserID, p
 
 // UnsolveThread reverts the solved flag (DELETE /forum/{id}/solve).
 // Ref: Section 08 Solved flag + api-routes-catalog L590.
-func (s *Service) UnsolveThread(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) UnsolveThread(ctx context.Context, id, userID pgtype.UUID) error {
 	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting thread for unsolve: %w", err)
@@ -475,7 +475,7 @@ func (s *Service) ListRepliesByThread(ctx context.Context, threadID pgtype.UUID)
 
 // UpdateReply updates a reply's body. The author can edit; a moderator
 // (forum.reply.edit_any / super-admin) may also edit. Ref: §26 RBAC CRUD.
-func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
+func (s *Service) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
 	reply, err := s.store.getReplyByID(ctx, id)
 	if err != nil {
 		return gen.ForumReply{}, fmt.Errorf("getting reply for update: %w", err)
@@ -510,7 +510,7 @@ func (s *Service) UpdateReply(ctx context.Context, id, tenantID, userID pgtype.U
 // DeleteReply soft-deletes a reply and decrements the thread reply count.
 // The author or a moderator (forum.reply.delete_any / super-admin) may
 // delete. Ref: §26 RBAC CRUD.
-func (s *Service) DeleteReply(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteReply(ctx context.Context, id, userID pgtype.UUID) error {
 	reply, err := s.store.getReplyByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("getting reply for delete: %w", err)
@@ -565,7 +565,7 @@ type VoteInput struct {
 }
 
 // Vote upserts a vote on a thread or reply and recalculates the entity's score.
-func (s *Service) Vote(ctx context.Context, tenantID, userID pgtype.UUID, input VoteInput) (gen.ForumVote, error) {
+func (s *Service) Vote(ctx context.Context, userID pgtype.UUID, input VoteInput) (gen.ForumVote, error) {
 	if input.Value != VoteDown && input.Value != VoteUp {
 		return gen.ForumVote{}, errors.New("vote value must be -1 or 1")
 	}

@@ -7023,7 +7023,7 @@ type gamificationNotifierAdapter struct {
 	svc *notifications.Service
 }
 
-func (a gamificationNotifierAdapter) Notify(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) error {
+func (a gamificationNotifierAdapter) Notify(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) error {
 	var zeroUUID pgtype.UUID
 	return a.svc.CreateNotification(ctx, recipientID, nType, "system", zeroUUID, nType, zeroUUID, title, body, actionURL)
 }
@@ -7577,7 +7577,7 @@ func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, tenantI
 	// already published by DispatchAction; pass its ID as ContentID so the
 	// forum thread links to it via forum_threads.content_id (BUG-004 —
 	// previously content_id was NULL, leaving an orphan content row).
-	t, err := d.forum.CreateThread(ctx, tenantID, personaUserID, forum.CreateThreadInput{
+	t, err := d.forum.CreateThread(ctx, personaUserID, forum.CreateThreadInput{
 		ContentID: contentID,
 		SpaceID:   spaceID,
 		Title:     title,
@@ -7612,7 +7612,7 @@ func (d *personaActionDispatcher) AddReaction(ctx context.Context, personaUserID
 	return err
 }
 
-func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (d *personaActionDispatcher) CreateBookmark(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
 	var zeroFolderID pgtype.UUID
 	// Empty folder lets content.CreateBookmark resolve the default folder
 	// from the entity/content type.
@@ -7672,5 +7672,5 @@ type studioContentPublisherAdapter struct {
 }
 
 func (a *studioContentPublisherAdapter) UpdateContentStatus(ctx context.Context, contentID, tenantID pgtype.UUID, status string) (any, error) {
-	return a.svc.UpdateContentStatus(ctx, contentID, tenantID, status)
+	return a.svc.UpdateContentStatus(ctx, contentID, status)
 }

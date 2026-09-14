@@ -49,15 +49,15 @@ type mockStore struct {
 	lastScholarship gen.Scholarship
 }
 
-func (m *mockStore) GetIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockStore) GetIntelRecord(_ context.Context, _ pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockStore) GetIntelSource(_ context.Context, _, _ pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockStore) GetIntelSource(_ context.Context, _ pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
-func (m *mockStore) GetScholarshipByIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.Scholarship, error) {
+func (m *mockStore) GetScholarshipByIntelRecord(_ context.Context, _ pgtype.UUID) (gen.Scholarship, error) {
 	if !m.hasExisting {
 		return gen.Scholarship{}, errors.New("pgx: no rows in result set")
 	}
@@ -68,14 +68,14 @@ func (m *mockStore) GetScholarshipByIntelRecord(_ context.Context, _, _ pgtype.U
 // GetCountrySpace returns the seeded country space id (BUG-005 fix). Tests
 // that want to exercise the space-resolution path set countrySpaceID; the
 // default zero value leaves country_space_id NULL.
-func (m *mockStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, _ string) (pgtype.UUID, error) {
+func (m *mockStore) GetCountrySpace(_ context.Context, _ string) (pgtype.UUID, error) {
 	return m.countrySpaceID, nil
 }
 
 // GetPersonaUserID returns an invalid UUID (no persona in the mock) so the
 // promoter falls back to the default authorID. Tests that want to exercise
 // the persona resolution path can override this.
-func (m *mockStore) GetPersonaUserID(_ context.Context, _, _ pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockStore) GetPersonaUserID(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
@@ -122,7 +122,7 @@ func (m *mockStore) UpdateContent(_ context.Context, arg gen.UpdateContentParams
 	return gen.UpdateContentRow{ID: arg.ID, Title: arg.Title, Slug: arg.Slug}, nil
 }
 
-func (m *mockStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
+func (m *mockStore) CreateScholarship(_ context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 	m.createScholarshipCalls = append(m.createScholarshipCalls, arg)
 	if m.failCreateScholarship {
 		return gen.Scholarship{}, errors.New("mock: create scholarship failed")
@@ -141,7 +141,7 @@ func (m *mockStore) CreateScholarship(_ context.Context, _ pgtype.UUID, arg gen.
 	return row, nil
 }
 
-func (m *mockStore) UpdateScholarship(_ context.Context, _ pgtype.UUID, arg gen.UpdateScholarshipParams) error {
+func (m *mockStore) UpdateScholarship(_ context.Context, arg gen.UpdateScholarshipParams) error {
 	m.updateScholarshipCalls = append(m.updateScholarshipCalls, arg)
 	// Reflect the update into lastScholarship so tests can assert final state.
 	m.lastScholarship = gen.Scholarship{
@@ -155,17 +155,17 @@ func (m *mockStore) UpdateScholarship(_ context.Context, _ pgtype.UUID, arg gen.
 	return nil
 }
 
-func (m *mockStore) CreateIntelReviewLog(_ context.Context, _ pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockStore) CreateIntelReviewLog(_ context.Context, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordStatus(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+func (m *mockStore) UpdateIntelRecordStatus(_ context.Context, arg gen.UpdateIntelRecordStatusParams) error {
 	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
-func (m *mockStore) UpdateIntelRecordPromoted(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordPromotedParams) error {
+func (m *mockStore) UpdateIntelRecordPromoted(_ context.Context, arg gen.UpdateIntelRecordPromotedParams) error {
 	m.promotedCalls = append(m.promotedCalls, arg)
 	return nil
 }
@@ -866,7 +866,6 @@ func TestScholarshipPromoter_RequiresThresholds(t *testing.T) {
 	p := NewScholarshipPromoter(
 		store,
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 	)
 
 	if _, err := p.Promote(t.Context(), uuid.UUID(recordID.Bytes)); !errors.Is(err, ErrThresholdsNotConfigured) {
@@ -1071,7 +1070,6 @@ func newTestPromoter(store Store, opts ...ScholarshipPromoterOption) *Scholarshi
 
 	return NewScholarshipPromoter(
 		store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		append(defaults, opts...)...,
 	)

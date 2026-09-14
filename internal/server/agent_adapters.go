@@ -622,7 +622,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	// fall back to creating a HITL review so a human can resolve it.
 	if a.perms != nil && userID.Valid &&
 		a.perms.HasPermission(ctx, userID, "agent.skip_hitl") {
-		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr == nil {
+		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, "published"); perr == nil {
 			slog.Info("agent draft: auto-published via agent.skip_hitl", "content_id", row.ID, "user_id", userID)
 			return nil
 		} else {
@@ -1178,7 +1178,7 @@ func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, tenantID, ba
 }
 
 // RetryFailed delegates to the studio service.
-func (a *studioDraftProcessorAdapter) RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+func (a *studioDraftProcessorAdapter) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
 	return a.studio.RetryFailed(ctx, jobID)
 }
 
@@ -1300,7 +1300,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// contents creation as a safe default.
 	if isToolTableType(job.ContentType) {
 		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, tenantID, jobID, job, persona, body, extractionContext); rerr == nil && routed {
-			a.routeToHITL(ctx, tenantID, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
+			a.routeToHITL(ctx, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
 			return nil
 		}
 
@@ -1333,9 +1333,9 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	skipHITL := a.perms != nil && job.CreatedBy.Valid &&
 		a.perms.HasPermission(ctx, job.CreatedBy, "agent.skip_hitl")
 	if skipHITL || a.studio.ShouldAutoPublish(ctx, job.ContentType, derefStr(job.GuideCategory)) {
-		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, tenantID, "published"); perr != nil {
+		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review", "job_id", jobID, "content_id", row.ID, "error", perr)
-			a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
+			a.routeToHITL(ctx, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 
 			return nil
 		}
@@ -1367,7 +1367,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// above (via tryToolTableRouting → routeToHITL). When we reach here
 	// the draft row lives in `contents`, so target_table must always be
 	// 'contents' — even for tool-table content types that fell back.
-	a.routeToHITL(ctx, tenantID, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
+	a.routeToHITL(ctx, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 
 	return nil
 }
@@ -1878,7 +1878,7 @@ func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, jobI
 // the appropriate target_table (migration 000477, ADR-076 Amendment 1).
 func (a *studioDraftProcessorAdapter) routeToHITL(
 	ctx context.Context,
-	tenantID, jobID, draftID pgtype.UUID,
+	jobID, draftID pgtype.UUID,
 	targetTable, contentType, aiModel string,
 	fvJSON []byte,
 ) {

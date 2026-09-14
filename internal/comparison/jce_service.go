@@ -698,7 +698,7 @@ func (s *Service) DeleteJCEComparison(ctx context.Context, id, tenantID, userID 
 		return errpkg.ErrForbidden
 	}
 
-	if err := s.contentSvc.DeleteContent(ctx, id, tenantID); err != nil {
+	if err := s.contentSvc.DeleteContent(ctx, id); err != nil {
 		return fmt.Errorf("deleting comparison content: %w", err)
 	}
 

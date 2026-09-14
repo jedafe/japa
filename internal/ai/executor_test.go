@@ -149,7 +149,7 @@ func TestCatalogForUser_FiltersByPermissionAndBlocklist(t *testing.T) {
 
 	perms := &stubPerms{granted: map[string]bool{"content.create": true}}
 
-	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{}, pgtype.UUID{})
+	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{})
 	names := toolConfigNames(got)
 
 	if !contains(names, "content.search") {
@@ -176,7 +176,7 @@ func TestCatalogForUser_UserLacksPermission(t *testing.T) {
 	reg.RegisterConfig("content.create", ToolConfig{FunctionName: "content.create"}, "content.create", pgtype.UUID{})
 
 	perms := &stubPerms{granted: map[string]bool{}}
-	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{}, pgtype.UUID{})
+	got := reg.CatalogForUser(t.Context(), perms, pgtype.UUID{})
 
 	if len(got) != 0 {
 		t.Errorf("expected empty catalog for user without content.create, got %d tools", len(got))
@@ -460,7 +460,7 @@ func TestExecute_PrivacyTargetZero_SkipsCheck(t *testing.T) {
 	reg.RegisterConfig("rag.search", ToolConfig{FunctionName: "rag.search"}, "", pgtype.UUID{})
 	reg.RegisterHandler("rag.search", stubSuccessHandler)
 	// Returns zero entity → executor should skip the privacy check.
-	reg.RegisterPrivacyTarget("rag.search", func(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+	reg.RegisterPrivacyTarget("rag.search", func(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 		return "", pgtype.UUID{}, nil
 	})
 
@@ -547,7 +547,7 @@ type stubPrivacy struct {
 	err    error
 }
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
 	if s == nil {
 		return false, nil
 	}
@@ -556,14 +556,14 @@ func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType
 }
 
 // stubSuccessHandler is a ToolHandler that always succeeds.
-func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
 	return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"ok":true}`}, nil
 }
 
 // fixedPrivacyTarget returns a PrivacyTargetFunc that always reports the
 // given entity type + ID, regardless of arguments.
 func fixedPrivacyTarget(et PrivacyEntityType, eid pgtype.UUID) PrivacyTargetFunc {
-	return func(ctx context.Context, args json.RawMessage, tenantID pgtype.UUID) (PrivacyEntityType, pgtype.UUID, error) {
+	return func(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
 		return et, eid, nil
 	}
 }
