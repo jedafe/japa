@@ -470,25 +470,16 @@ func TestHubAllBroadcastTriggersPublish(t *testing.T) {
 // mockBridge is a lightweight stand-in for PubSubBridge that records the
 // last Publish call without requiring a real Valkey connection.
 type mockBridge struct {
-	hub          *Hub
-	lastEvent    WSEvent
-	lastUserID   string
-	lastTenantID string
-	lastSpaceID  string
+	hub         *Hub
+	lastEvent   WSEvent
+	lastUserID  string
+	lastSpaceID string
 }
 
-func (m *mockBridge) Publish(event WSEvent, userID, tenantID, spaceID string) {
+func (m *mockBridge) Publish(event WSEvent, userID, spaceID string) {
 	m.lastEvent = event
 	m.lastUserID = userID
-	m.lastTenantID = tenantID
 	m.lastSpaceID = spaceID
-}
-
-// PublishTenant satisfies the extended Publisher interface (tenant-scoped
-// broadcast for presence). Records the call so tests can assert it fired.
-func (m *mockBridge) PublishTenant(event WSEvent, tenantID string) {
-	m.lastEvent = event
-	m.lastTenantID = tenantID
 }
 
 // Ensure mockBridge satisfies the implicit interface at compile time.

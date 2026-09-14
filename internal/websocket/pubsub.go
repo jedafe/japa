@@ -82,9 +82,7 @@ func (b *PubSubBridge) Start(ctx context.Context) {
 // Valkey for delivery to other instances. The local hub is NOT called
 // here — callers invoke BroadcastToUser/BroadcastToSpace/BroadcastToAll
 // for local delivery and call Publish separately for cross-instance.
-func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targetSpaceID string) {
-	// For space-scoped delivery the is carried in the message so
-	// receiving instances scope local delivery to the correct tenant.
+func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetSpaceID string) {
 	msg := PubSubMessage{
 		Type:          event.Type,
 		TargetUserID:  targetUserID,
@@ -100,27 +98,6 @@ func (b *PubSubBridge) Publish(event WSEvent, targetUserID, targetTenantID, targ
 
 	if err := b.rdb.Publish(context.Background(), PubSubChannel, data).Err(); err != nil {
 		slog.Error("websocket pubsub publish", "error", err)
-	}
-}
-
-// PublishTenant serialises a broadcast event as a PubSubMessage
-// and publishes it to Valkey for delivery to other instances. The local hub is
-// NOT called here — callers invoke BroadcastToTenant for local delivery and
-// PublishTenant separately for cross-instance.
-func (b *PubSubBridge) PublishTenant(event WSEvent, _ string) {
-	msg := PubSubMessage{
-		Type:    event.Type,
-		Payload: event.Payload,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		slog.Error("websocket pubsub marshal tenant broadcast", "error", err)
-		return
-	}
-
-	if err := b.rdb.Publish(context.Background(), PubSubChannel, data).Err(); err != nil {
-		slog.Error("websocket pubsub publish tenant broadcast", "error", err)
 	}
 }
 
