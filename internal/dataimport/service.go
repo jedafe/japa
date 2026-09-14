@@ -241,7 +241,7 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 	var errors []importErrorEntry
 
 	for i, row := range rows {
-		err := s.insertRow(ctx, pgtype.UUID{}, imp.ImportType, imp.Mode, row)
+		err := s.insertRow(ctx, imp.ImportType, imp.Mode, row)
 		if err != nil {
 			failed++
 
@@ -423,8 +423,8 @@ func parseJSON(r io.Reader) ([]map[string]string, error) {
 }
 
 // insertRow inserts or upserts a single row into the relevant table.
-func (s *Service) insertRow(ctx context.Context, tenantID pgtype.UUID, importType, mode string, row map[string]string) error {
-	query, args, err := buildImportQuery(importType, mode, tenantID, row)
+func (s *Service) insertRow(ctx context.Context, importType, mode string, row map[string]string) error {
+	query, args, err := buildImportQuery(importType, mode, row)
 	if err != nil {
 		return err
 	}
@@ -515,7 +515,7 @@ func parseUUIDString(s string) (string, error) {
 // type. In 'create' mode, rows that conflict on a natural key are skipped.
 // In 'upsert' mode, existing rows are updated. Returns an error if the row
 // fails validation (type mismatches, CHECK constraint violations, etc.).
-func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[string]string) (string, []any, error) {
+func buildImportQuery(importType, mode string, row map[string]string) (string, []any, error) {
 	switch importType {
 	case TypeUsers:
 		// users table has no display_name/bio — those are in user_profiles.
@@ -541,7 +541,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 		}
 
 		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)\n\t\t\t" + conflict,
-			[]any{tenantID, username, email, row["profile_type"], row["status"], passwordHash},
+			[]any{pgtype.UUID{}, username, email, row["profile_type"], row["status"], passwordHash},
 			nil
 
 	case TypePosts:
@@ -555,7 +555,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'blog_post'), $4, $5, COALESCE(NULLIF($6, ''), 'draft'), COALESCE(NULLIF($7, ''), 'public'), $8, $9, $10
 			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["author"], row["content_type"], row["title"], body, row["status"], row["visibility"], row["slug"], row["canonical_url"], contentHash},
+			[]any{pgtype.UUID{}, row["author"], row["content_type"], row["title"], body, row["status"], row["visibility"], row["slug"], row["canonical_url"], contentHash},
 			nil
 
 	case TypeComments:
@@ -567,7 +567,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			FROM contents c, users u
 			WHERE c.title = $2 AND u.username = $3
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["content_title"], row["author"], row["body"]},
+			[]any{pgtype.UUID{}, row["content_title"], row["author"], row["body"]},
 			nil
 
 	case TypeOrders:
@@ -583,7 +583,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'manual_transfer'), COALESCE(NULLIF($4, ''), 'donation'), $5, COALESCE(NULLIF($6, ''), 'NGN'), COALESCE(NULLIF($7, ''), 'pending')
 			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["buyer"], row["provider"], row["purpose_type"], amount, row["currency"], row["status"]},
+			[]any{pgtype.UUID{}, row["buyer"], row["provider"], row["purpose_type"], amount, row["currency"], row["status"]},
 			nil
 
 	case TypeTransactions:
@@ -627,7 +627,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			SELECT $1, u.id, $3, $4, $5, $6, $7, $8
 			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
+			[]any{pgtype.UUID{}, row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
 			nil
 
 	case TypeAnalytics:
@@ -652,7 +652,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			INSERT INTO platform_events (event_type, entity_type, entity_id)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["event_type"], row["entity_type"], entityIDArg},
+			[]any{pgtype.UUID{}, row["event_type"], row["entity_type"], entityIDArg},
 			nil
 
 	case TypeModeration:
@@ -686,7 +686,7 @@ func buildImportQuery(importType, mode string, tenantID pgtype.UUID, row map[str
 			SELECT $1, u.id, $3, $4, $5, COALESCE(NULLIF($6, ''), 'pending')
 			FROM users u WHERE u.username = $2
 			ON CONFLICT DO NOTHING`,
-			[]any{tenantID, row["reporter"], entityType, entityID, reason, row["status"]},
+			[]any{pgtype.UUID{}, row["reporter"], entityType, entityID, reason, row["status"]},
 			nil
 	}
 

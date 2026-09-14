@@ -176,7 +176,7 @@ func TestUpdatePageInputValidation(t *testing.T) {
 
 	svc := &Service{store: nil}
 
-	_, err := svc.UpdatePage(t.Context(), testID(), testTenantID(), UpdatePageInput{
+	_, err := svc.UpdatePage(t.Context(), testID(), UpdatePageInput{
 		Title: "",
 	})
 	if err == nil {

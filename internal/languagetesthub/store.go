@@ -740,10 +740,10 @@ RETURNING id, destination_space_id, visa_category, test_id,
 
 // DeleteRequirement deletes a language_test_requirements row by id,
 // scoped to a tenant.
-func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
 	const q = `DELETE FROM language_test_requirements WHERE id = $1`
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("languagetesthub: delete requirement: %w", err)
 	}
@@ -758,7 +758,7 @@ func (s *Store) DeleteRequirement(ctx context.Context, id, tenantID pgtype.UUID)
 // ApproveRequirement marks a requirement as reviewed and published by an
 // admin (HITL approve). Sets hitl_reviewed_by, hitl_reviewed_at=now(),
 // status='published', and optional review notes.
-func (s *Store) ApproveRequirement(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, reviewNotes *string) error {
+func (s *Store) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.UUID, reviewNotes *string) error {
 	const q = `
 UPDATE language_test_requirements
 SET hitl_reviewed_by = $2,
@@ -769,7 +769,7 @@ SET hitl_reviewed_by = $2,
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, reviewNotes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, reviewNotes)
 	if err != nil {
 		return fmt.Errorf("languagetesthub: approve requirement: %w", err)
 	}

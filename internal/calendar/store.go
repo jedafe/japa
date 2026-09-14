@@ -307,7 +307,7 @@ func (s *Store) GetEntry(ctx context.Context, id pgtype.UUID) (CalendarEntry, er
 
 // GetEntryForUpdate returns a single non-deleted calendar entry by id,
 // regardless of status. Used by the public edit path.
-func (s *Store) GetEntryForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (CalendarEntry, error) {
+func (s *Store) GetEntryForUpdate(ctx context.Context, id pgtype.UUID) (CalendarEntry, error) {
 	const q = `
 SELECT id, title, description, category,
        destination_space_id, origin_space_id,
@@ -324,7 +324,7 @@ LIMIT 1
 
 	var e CalendarEntry
 
-	err := s.pool.Writer.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Writer.QueryRow(ctx, q, id).Scan(
 		&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
 		&e.DestinationSpaceID, &e.OriginSpaceID,
 		&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
@@ -348,7 +348,7 @@ LIMIT 1
 // UpdateEntry updates the editable content fields of a calendar entry and
 // returns the refreshed row. Status, moderation and ownership fields are
 // left unchanged.
-func (s *Store) UpdateEntry(ctx context.Context, id, tenantID pgtype.UUID, entry CalendarEntry) (CalendarEntry, error) {
+func (s *Store) UpdateEntry(ctx context.Context, id pgtype.UUID, entry CalendarEntry) (CalendarEntry, error) {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE calendar_entries
 SET title = $2,
@@ -374,7 +374,7 @@ WHERE id = $1 AND deleted_at IS NULL
 	}
 
 	// Re-fetch from the writer connection to avoid read-replica lag.
-	return s.GetEntryForUpdate(ctx, id, tenantID)
+	return s.GetEntryForUpdate(ctx, id)
 }
 
 // ListEntriesFilter holds filter parameters for the public entry list.

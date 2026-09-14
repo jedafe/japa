@@ -102,7 +102,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -153,7 +153,7 @@ func (h *Handlers) ToggleFollow(w http.ResponseWriter, r *http.Request) {
 		entityType = input.EntityType
 	}
 
-	followed, err := h.service.ToggleFollow(r.Context(), tenantID, user.UserID, entityType, entityID)
+	followed, err := h.service.ToggleFollow(r.Context(), user.UserID, entityType, entityID)
 	if err != nil {
 		if errors.Is(err, ErrEntityNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "entity_not_found", "The target entity does not exist")

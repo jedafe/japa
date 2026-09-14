@@ -32,7 +32,7 @@ type sourceCrawlNowArgs struct {
 // SourceCrawlNowHandler returns a ToolHandler that enqueues an immediate
 // crawl for a single intel source. The source must exist and be enabled.
 func SourceCrawlNowHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.TaskEnqueuer == nil {
 			return errorToolResult("task_enqueuer_unavailable", "task enqueuer is not configured"), nil
 		}
@@ -91,7 +91,7 @@ type recordUpdateNowArgs struct {
 // intelligence fetch chain for a record or source. If record_id is given,
 // the source is resolved from the record; otherwise source_id is used directly.
 func RecordUpdateNowHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.TaskEnqueuer == nil {
 			return errorToolResult("task_enqueuer_unavailable", "task enqueuer is not configured"), nil
 		}
@@ -178,7 +178,7 @@ type contentRegenerateFromSourceArgs struct {
 // content:regenerate_from_source worker to rewrite an existing contents row
 // from a linked intelligence record.
 func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.TaskEnqueuer == nil {
 			return errorToolResult("task_enqueuer_unavailable", "task enqueuer is not configured"), nil
 		}

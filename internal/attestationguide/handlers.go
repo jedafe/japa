@@ -160,7 +160,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /attestation/:id — single published attestation
 // pathway detail.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -175,7 +175,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.GetByID(r.Context(), id, tenantID)
+	pathway, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
@@ -198,7 +198,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // pathway JSON so the client can render it to PDF. The Content-Disposition
 // filename uses .json to reflect the actual format. Public.
 func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -213,7 +213,7 @@ func (h *Handlers) HandleExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.GetByID(r.Context(), id, tenantID)
+	pathway, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
@@ -251,7 +251,7 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -272,7 +272,7 @@ func (h *Handlers) HandleSubmitUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	update, err := h.service.SubmitCommunityUpdate(r.Context(), pathwayID, tenantID, user.UserID, input)
+	update, err := h.service.SubmitCommunityUpdate(r.Context(), pathwayID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
@@ -409,7 +409,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -440,7 +440,7 @@ func (h *Handlers) HandleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.Create(r.Context(), tenantID, input)
+	pathway, err := h.service.Create(r.Context(), input)
 	if err != nil {
 		slog.Error("attestationguide: admin create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create attestation pathway")
@@ -461,7 +461,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -482,7 +482,7 @@ func (h *Handlers) HandleAdminGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pathway, err := h.service.GenerateDraft(r.Context(), tenantID, input)
+	pathway, err := h.service.GenerateDraft(r.Context(), input)
 	if err != nil {
 		slog.Error("attestationguide: admin generate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "generate_failed", "Failed to generate attestation pathway draft")
@@ -508,7 +508,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -536,7 +536,7 @@ func (h *Handlers) HandleAdminApprove(w http.ResponseWriter, r *http.Request) {
 		notes = *body.ReviewNotes
 	}
 
-	pathway, err := h.service.Approve(r.Context(), id, tenantID, user.UserID, notes)
+	pathway, err := h.service.Approve(r.Context(), id, user.UserID, notes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "pathway_not_found", "Attestation pathway not found")
@@ -562,7 +562,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -591,7 +591,7 @@ func (h *Handlers) HandleAdminReviewUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	update, err := h.service.ReviewCommunityUpdate(r.Context(), updateID, tenantID, user.UserID, *body.Approve)
+	update, err := h.service.ReviewCommunityUpdate(r.Context(), updateID, user.UserID, *body.Approve)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "update_not_found", "Community update not found")

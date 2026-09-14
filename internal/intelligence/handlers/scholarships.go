@@ -99,9 +99,8 @@ func (h *Handlers) HandleSearchScholarships(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	q := r.URL.Query()
@@ -310,7 +309,7 @@ func buildScholarshipFacets(items []radarItem) map[string]interface{} {
 // // GET /api/v1/intel/scholarships/{id}.
 func (h *Handlers) HandleScholarshipDetail(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Scholarship not found", "scholarship",
-		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.Scholarship, error) {
+		func(ctx context.Context, id pgtype.UUID) (gen.Scholarship, error) {
 			return h.intelStores.GetScholarship(ctx, id)
 		},
 		func(s gen.Scholarship) interface{} { return scholarshipToDetail(s) })

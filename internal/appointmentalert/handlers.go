@@ -245,7 +245,7 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -266,7 +266,7 @@ func (h *Handlers) HandleUpdateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alert, err := h.service.UpdateAlert(r.Context(), alertID, tenantID, user.UserID, input)
+	alert, err := h.service.UpdateAlert(r.Context(), alertID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
@@ -301,7 +301,7 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -316,7 +316,7 @@ func (h *Handlers) HandleDeleteMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteAlert(r.Context(), alertID, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteAlert(r.Context(), alertID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
 			return
@@ -477,7 +477,7 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -498,7 +498,7 @@ func (h *Handlers) HandleAdminUpdateEmbassy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	embassy, err := h.service.UpdateEmbassy(r.Context(), embassyID, tenantID, input)
+	embassy, err := h.service.UpdateEmbassy(r.Context(), embassyID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
@@ -524,7 +524,7 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -539,7 +539,7 @@ func (h *Handlers) HandleAdminPollEmbassy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.service.TriggerPoll(r.Context(), embassyID, tenantID); err != nil {
+	if err := h.service.TriggerPoll(r.Context(), embassyID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "embassy_not_found", "Embassy not found")
 			return

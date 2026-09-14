@@ -18,7 +18,7 @@ type FormTriggerProcessor interface {
 	// notify_admin). It must be idempotent on submissionID — duplicate
 	// deliveries are acceptable, duplicate side effects (e.g. double group
 	// assignment) are not.
-	FireSubmissionTriggers(ctx context.Context, submissionID, tenantID, formID pgtype.UUID, submitterUserID *pgtype.UUID, fieldValues []byte) error
+	FireSubmissionTriggers(ctx context.Context, submissionID, formID pgtype.UUID, submitterUserID *pgtype.UUID, fieldValues []byte) error
 }
 
 var formTriggerProcessor FormTriggerProcessor

@@ -46,7 +46,7 @@ type sourceDiscoverCandidate struct {
 // candidate sources, evaluates them, and persists proposed sources for
 // admin review.
 func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("source_discover_unavailable", "tool deps not configured"), nil
 		}
@@ -78,7 +78,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 
 		var err error
 		if deps.SearchWebFunc != nil {
-			_, results, err = deps.SearchWebFunc(ctx, deps.httpClient(), deps.Settings, tenantID, a.Query, int(a.Limit))
+			_, results, err = deps.SearchWebFunc(ctx, deps.httpClient(), deps.Settings, a.Query, int(a.Limit))
 		} else {
 			_, results, err = SearchWeb(ctx, deps.httpClient(), deps.Settings, a.Query, int(a.Limit))
 		}
@@ -156,7 +156,7 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 				enabled = true
 			}
 
-			src, cerr := deps.IntelSourceManager.Create(ctx, tenantID, gen.CreateIntelSourceParams{
+			src, cerr := deps.IntelSourceManager.Create(ctx, gen.CreateIntelSourceParams{
 
 				Name:                name,
 				Domain:              domain,

@@ -27,7 +27,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	t.Parallel()
 
 	userID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
-	tenantID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+
 	guideGroupID := mustUUID(t, "00000000-0000-0000-0000-000000000010")
 	fieldID := mustUUID(t, "00000000-0000-0000-0000-000000000030")
 
@@ -115,7 +115,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	// 1. content_types.list
 	typesHandler := ContentTypesListHandler(deps)
 
-	typesResult, err := typesHandler(t.Context(), json.RawMessage(`{}`), userID, tenantID)
+	typesResult, err := typesHandler(t.Context(), json.RawMessage(`{}`), userID)
 	if err != nil {
 		t.Fatalf("content_types.list failed: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	// 2. guide_categories.list
 	catsHandler := GuideCategoriesListHandler(deps)
 
-	catsResult, err := catsHandler(t.Context(), json.RawMessage(`{}`), userID, tenantID)
+	catsResult, err := catsHandler(t.Context(), json.RawMessage(`{}`), userID)
 	if err != nil {
 		t.Fatalf("guide_categories.list failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 
 	bulkCreateHandler := ContentBulkCreateHandler(deps)
 
-	createResult, err := bulkCreateHandler(t.Context(), json.RawMessage(bulkCreateArgs), userID, tenantID)
+	createResult, err := bulkCreateHandler(t.Context(), json.RawMessage(bulkCreateArgs), userID)
 	if err != nil {
 		t.Fatalf("content.bulk_create failed: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 			},
 		})
 
-		setResult, err := bulkSetHandler(t.Context(), json.RawMessage(setArgs), userID, tenantID)
+		setResult, err := bulkSetHandler(t.Context(), json.RawMessage(setArgs), userID)
 		if err != nil {
 			t.Fatalf("custom_field_values.bulk_set for %s failed: %v", contentID, err)
 		}
@@ -225,7 +225,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	})
 	bulkPublishHandler := ContentBulkPublishHandler(deps)
 
-	publishResult, err := bulkPublishHandler(t.Context(), json.RawMessage(publishArgs), userID, tenantID)
+	publishResult, err := bulkPublishHandler(t.Context(), json.RawMessage(publishArgs), userID)
 	if err != nil {
 		t.Fatalf("content.bulk_publish failed: %v", err)
 	}

@@ -199,7 +199,7 @@ func parseSort(r *http.Request) string {
 // BUG-006: caches results in Valkey (jc:explore:{tenant}:{geo}:{page}, Section 53, TTL 15min).
 // Uses distributed lock stampede protection (BUG-008).
 func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) GetExploreFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := int(offset) / int(limit)
-	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d", tenantID.String(), geoCode, geoRegion, sort, page)
+	cacheKey := vkcache.MustKey("explore:%s:%s:%s:%s:%d", "", geoCode, geoRegion, sort, page)
 
 	vc := visitor.FromContext(r.Context())
 
@@ -272,7 +272,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -283,7 +283,7 @@ func (h *Handlers) GetForYouFeed(w http.ResponseWriter, r *http.Request) {
 
 	vc := visitor.FromContext(r.Context())
 
-	items, err := h.service.GetForYouFeed(r.Context(), tenantID, user.UserID, sortMode, limit, offset, &vc)
+	items, err := h.service.GetForYouFeed(r.Context(), user.UserID, sortMode, limit, offset, &vc)
 	if err != nil {
 		slog.Error("feed: get for-you feed failed", "user_id", user.UserID, "sort", sortMode, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get For-You feed")

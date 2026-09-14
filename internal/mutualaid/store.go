@@ -179,7 +179,7 @@ RETURNING id, user_id, post_type, category, title, description,
 // GetPost returns a single publicly-visible post by id. A post is publicly
 // visible only when not soft-deleted AND not moderated/removed (BUG-009).
 // Removed posts are reachable via the admin endpoints, not the public one.
-func (s *Store) GetPost(ctx context.Context, id, tenantID pgtype.UUID) (PostRow, error) {
+func (s *Store) GetPost(ctx context.Context, id pgtype.UUID) (PostRow, error) {
 	const q = `
 SELECT m.id, m.user_id, m.post_type, m.category, m.title,
        m.description, m.destination_space_id, m.city_space_id, m.expires_at,
@@ -199,7 +199,7 @@ LIMIT 1
 
 	var r PostRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
@@ -334,7 +334,7 @@ WHERE %s
 
 // UpdatePost updates the mutable fields of the author's own post. Only
 // non-nil fields in input are applied.
-func (s *Store) UpdatePost(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePostInput) error {
+func (s *Store) UpdatePost(ctx context.Context, id pgtype.UUID, input UpdatePostInput) error {
 	const q = `
 UPDATE mutual_aid_posts
 SET category = $2,
@@ -344,7 +344,7 @@ SET category = $2,
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, input.Category, input.Title, input.Description)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, input.Category, input.Title, input.Description)
 	if err != nil {
 		return fmt.Errorf("mutualaid: update post: %w", err)
 	}
@@ -357,14 +357,14 @@ WHERE id = $1 AND deleted_at IS NULL
 }
 
 // DeletePost soft-deletes a post (sets deleted_at = now()).
-func (s *Store) DeletePost(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeletePost(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE mutual_aid_posts
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("mutualaid: delete post: %w", err)
 	}
@@ -377,14 +377,14 @@ WHERE id = $1 AND deleted_at IS NULL
 }
 
 // MarkFulfilled sets is_fulfilled=true and status='fulfilled' on a post.
-func (s *Store) MarkFulfilled(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) MarkFulfilled(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 UPDATE mutual_aid_posts
 SET is_fulfilled = true, status = 'fulfilled', updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("mutualaid: mark fulfilled: %w", err)
 	}
@@ -399,14 +399,14 @@ WHERE id = $1 AND deleted_at IS NULL
 // RenewPost extends expires_at by 30 days from newExpiry. The post is
 // flipped back to status='active' if it had expired, but is_fulfilled
 // is NOT reset (BUG-015: renewing should not un-fulfill a post).
-func (s *Store) RenewPost(ctx context.Context, id, tenantID pgtype.UUID, newExpiry pgtype.Timestamptz) error {
+func (s *Store) RenewPost(ctx context.Context, id pgtype.UUID, newExpiry pgtype.Timestamptz) error {
 	const q = `
 UPDATE mutual_aid_posts
 SET expires_at = $2, status = 'active', updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, newExpiry)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, newExpiry)
 	if err != nil {
 		return fmt.Errorf("mutualaid: renew post: %w", err)
 	}
@@ -537,14 +537,14 @@ WHERE %s
 }
 
 // AdminUpdateStatus sets the status of a post (moderation action).
-func (s *Store) AdminUpdateStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
+func (s *Store) AdminUpdateStatus(ctx context.Context, id pgtype.UUID, status string) error {
 	const q = `
 UPDATE mutual_aid_posts
 SET status = $2, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, status)
 	if err != nil {
 		return fmt.Errorf("mutualaid: admin update status: %w", err)
 	}

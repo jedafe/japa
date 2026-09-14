@@ -30,9 +30,9 @@ import (
 // Defined as an interface so the story package depends on a narrow contract,
 // not the full content service.
 type ContentService interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
-	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
@@ -40,7 +40,7 @@ type ContentService interface {
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // StoryDTO is the API response shape for a single story.
@@ -156,9 +156,9 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 // Enabled checks whether the story feature is enabled for the given tenant.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
-		return s.checker.IsEnabled(ctx, tenantID, "story.enabled")
+		return s.checker.IsEnabled(ctx, "story.enabled")
 	}
 
 	if s.settings == nil {
@@ -173,7 +173,7 @@ func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
 // moderation queue immediately per §79 ("Submission requires moderation
 // approval before publication").
 // Auth required (story.create permission checked at route level).
-func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, input SubmitStoryInput) (StoryDTO, error) {
+func (s *Service) Submit(ctx context.Context, authorID pgtype.UUID, input SubmitStoryInput) (StoryDTO, error) {
 	if input.Title == "" || input.DestinationSpaceID == "" {
 		return StoryDTO{}, fmt.Errorf("%w: title and destination_space_id are required", ErrValidation)
 	}
@@ -209,7 +209,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 	// the story_meta insert would surface a raw FK violation as a 500.
 	var sourceCountry, targetCountry *string
 	if originSpaceID.Valid {
-		code, err := s.store.GetCountrySpaceGeoCode(ctx, originSpaceID, tenantID)
+		code, err := s.store.GetCountrySpaceGeoCode(ctx, originSpaceID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, fmt.Errorf("%w: origin_space_id is not a country space", ErrValidation)
 		}
@@ -223,7 +223,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		}
 	}
 
-	destCode, err := s.store.GetCountrySpaceGeoCode(ctx, destSpaceID, tenantID)
+	destCode, err := s.store.GetCountrySpaceGeoCode(ctx, destSpaceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return StoryDTO{}, fmt.Errorf("%w: destination_space_id is not a country space", ErrValidation)
 	}
@@ -236,7 +236,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, authorID pgtype.UUID, in
 		targetCountry = &destCode
 	}
 
-	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
+	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:      authorID,
 		ContentType:   content.TypeStory,
 		Title:         input.Title,
@@ -350,7 +350,7 @@ func (s *Service) List(ctx context.Context, originSpaceID, destSpaceID pgtype.UU
 // (story.edit_own permission + author_id match). Only the provided (non-nil)
 // fields are updated. If bypassOwnership is true (caller has story.edit_any),
 // the ownership check is skipped so moderators/admins can edit any story.
-func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtype.UUID, input EditStoryInput, bypassOwnership bool) (StoryDTO, error) {
+func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditStoryInput, bypassOwnership bool) (StoryDTO, error) {
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
@@ -384,7 +384,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 			return StoryDTO{}, fmt.Errorf("%w: invalid destination_space_id", ErrValidation)
 		}
 
-		code, err := s.store.GetCountrySpaceGeoCode(ctx, newDestSpaceID, tenantID)
+		code, err := s.store.GetCountrySpaceGeoCode(ctx, newDestSpaceID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, fmt.Errorf("%w: destination_space_id is not a country space", ErrValidation)
 		} else if err != nil {
@@ -402,7 +402,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 				return StoryDTO{}, fmt.Errorf("%w: invalid origin_space_id", ErrValidation)
 			}
 
-			code, err := s.store.GetCountrySpaceGeoCode(ctx, newOriginSpaceID, tenantID)
+			code, err := s.store.GetCountrySpaceGeoCode(ctx, newOriginSpaceID)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return StoryDTO{}, fmt.Errorf("%w: origin_space_id is not a country space", ErrValidation)
 			} else if err != nil {
@@ -452,7 +452,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 	}
 
-	if _, err := s.content.UpdateContent(ctx, contentID, tenantID, userID, updateInput, false); err != nil {
+	if _, err := s.content.UpdateContent(ctx, contentID, userID, updateInput, false); err != nil {
 		return StoryDTO{}, fmt.Errorf("story: edit: update content: %w", err)
 	}
 
@@ -460,7 +460,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// destination's content_spaces row that UpdateContentSpaces kept as an
 	// additional space.
 	if newDestSpaceID.Valid {
-		if err := s.store.PruneContentSpacesExcept(ctx, contentID, newDestSpaceID, tenantID); err != nil {
+		if err := s.store.PruneContentSpacesExcept(ctx, contentID, newDestSpaceID); err != nil {
 			slog.Warn("story: edit: prune stale content_spaces failed", "content_id", contentID, "error", err)
 		}
 	}
@@ -470,7 +470,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 	// fields — a partial PATCH must not wipe the rest (destination_space_id
 	// is NOT NULL, so a zero-value meta would violate the constraint).
 	// An explicitly empty string clears a nullable field.
-	meta, err := s.store.GetStoryMeta(ctx, contentID, tenantID)
+	meta, err := s.store.GetStoryMeta(ctx, contentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return StoryDTO{}, pgx.ErrNoRows
@@ -514,7 +514,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, tenantID, userID pgtyp
 		}
 	}
 
-	if err := s.store.UpdateStoryMeta(ctx, contentID, tenantID, meta); err != nil {
+	if err := s.store.UpdateStoryMeta(ctx, contentID, meta); err != nil {
 		return StoryDTO{}, fmt.Errorf("story: edit: update story_meta: %w", err)
 	}
 
@@ -549,8 +549,8 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, userID pgtype.UUID, 
 // Verify marks a story as verified by an admin (story.verify permission).
 // Sets hitl_reviewed_by and hitl_reviewed_at per ADR-088 HITL review audit
 // trail.
-func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID pgtype.UUID) error {
-	if err := s.store.VerifyStory(ctx, contentID, tenantID, adminUserID); err != nil {
+func (s *Service) Verify(ctx context.Context, contentID, adminUserID pgtype.UUID) error {
+	if err := s.store.VerifyStory(ctx, contentID, adminUserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -563,8 +563,8 @@ func (s *Service) Verify(ctx context.Context, contentID, tenantID, adminUserID p
 
 // Unverify marks a story as unverified by an admin (story.verify permission).
 // Clears the verified flag and the HITL review audit trail.
-func (s *Service) Unverify(ctx context.Context, contentID, tenantID pgtype.UUID) error {
-	if err := s.store.UnverifyStory(ctx, contentID, tenantID); err != nil {
+func (s *Service) Unverify(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.store.UnverifyStory(ctx, contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}
@@ -779,7 +779,7 @@ type GenerateDraftResponse struct {
 // Gateway via the "content_generation" category. If the dispatcher is nil,
 // the draft is still created with the prompt as the body so a reviewer can
 // fill it manually (graceful degradation).
-func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
+func (s *Service) GenerateDraft(ctx context.Context, authorID pgtype.UUID, input GenerateDraftRequest) (GenerateDraftResponse, error) {
 	if input.DestinationSpaceID == "" {
 		return GenerateDraftResponse{}, errors.New("destination_space_id is required")
 	}
@@ -835,7 +835,7 @@ func (s *Service) GenerateDraft(ctx context.Context, tenantID, authorID pgtype.U
 	}
 
 	// 1. Create the contents row with content_type='story', status='draft'.
-	contentRow, err := s.content.CreateContent(ctx, tenantID, content.CreateContentInput{
+	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:    authorID,
 		ContentType: content.TypeStory,
 		Title:       storyTitle,

@@ -82,7 +82,7 @@ type Handlers struct {
 // follows service ensures auto-join for open spaces (BL-010 / Section 31)
 // and notification dispatch are applied consistently (H3).
 type FollowToggleService interface {
-	ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
+	ToggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
 // SetFollowToggleService injects the generic follows service for space follow.

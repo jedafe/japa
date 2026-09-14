@@ -108,7 +108,7 @@ func (h *Handlers) parsePagination(r *http.Request) (int32, int32) {
 
 // HandleListJobs — GET /api/v1/admin/studio/jobs.
 func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -138,7 +138,7 @@ func (h *Handlers) HandleListJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	jobs, total, err := h.svc.ListJobs(r.Context(), tenantID, f)
+	jobs, total, err := h.svc.ListJobs(r.Context(), f)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "studio_list_failed", err.Error())
 		return

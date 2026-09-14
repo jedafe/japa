@@ -50,7 +50,7 @@ type CustomFieldsService interface {
 
 // RAGService is the subset of internal/rag.Service the knowledge tools call.
 type RAGService interface {
-	Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
+	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error)
 }
 
 // ComparisonService is the subset of internal/comparison.Service the
@@ -91,7 +91,7 @@ type JCEService interface {
 	Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
 	Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
 	Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
-	Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
+	Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
 }
 
 // ComparisonTypeCreateInput mirrors comparison.CreateComparisonTypeInput
@@ -372,14 +372,14 @@ type LearningReorderEntry struct {
 type DocsService interface {
 	ListAllDocPages(ctx context.Context) ([]DocsPage, error)
 	GetDocPageByID(ctx context.Context, id pgtype.UUID) (*DocsPage, error)
-	CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req DocsCreatePageRequest) (pgtype.UUID, error)
-	UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, req DocsUpdatePageRequest) error
+	CreateDocPage(ctx context.Context, req DocsCreatePageRequest) (pgtype.UUID, error)
+	UpdateDocPage(ctx context.Context, id pgtype.UUID, req DocsUpdatePageRequest) error
 }
 
 // DocsOrganizer is the function-type bridge for docs.organize. The docs
 // service does not currently expose a parent_id/position update method, so
 // the wiring layer provides this bridge. nil disables docs.organize.
-type DocsOrganizer func(ctx context.Context, tenantID pgtype.UUID, entries []DocsOrganizeEntry) error
+type DocsOrganizer func(ctx context.Context, entries []DocsOrganizeEntry) error
 
 // DocsPage mirrors docs.DocPage (the subset the AI tools surface).
 type DocsPage struct {
@@ -629,7 +629,7 @@ type ToolDeps struct {
 
 	// SearchWebFunc overrides SearchWeb for tests and custom search wiring.
 	// If nil, SourceDiscoverHandler calls SearchWeb directly.
-	SearchWebFunc func(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error)
+	SearchWebFunc func(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error)
 
 	// ScholarshipSearcher queries the scholarships projection table.
 	ScholarshipSearcher ScholarshipSearcher // nil → scholarship.search returns "not configured"
@@ -668,7 +668,7 @@ type ProvisionedPersona struct {
 // PersonaProvisioner is the subset of the personas service used by the
 // personas.create agent tool.
 type PersonaProvisioner interface {
-	ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, personas []PersonaDefinition) ([]ProvisionedPersona, error)
+	ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID, personas []PersonaDefinition) ([]ProvisionedPersona, error)
 }
 
 // CampaignCreateInput is the payload for the content.campaign.create agent
@@ -705,7 +705,7 @@ type CampaignItemSummary struct {
 // CampaignService is the subset of the campaign service used by the
 // content.campaign.create agent tool.
 type CampaignService interface {
-	CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in CampaignCreateInput) (CampaignCreateResult, error)
+	CreateCampaign(ctx context.Context, userID pgtype.UUID, in CampaignCreateInput) (CampaignCreateResult, error)
 }
 
 // ToolsRegistryService is the subset of the per-tool services the
@@ -723,13 +723,13 @@ type ToolsRegistryService interface {
 	// ToolTypes returns the tool_type values in the catalog.
 	ToolTypes() []string
 	// CreateTool creates a new record in the named tool table.
-	CreateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error)
+	CreateTool(ctx context.Context, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error)
 	// UpdateTool updates an existing record in the named tool table.
-	UpdateTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
+	UpdateTool(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
 	// DeleteTool soft-deletes an existing record from the named tool table.
-	DeleteTool(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string) error
+	DeleteTool(ctx context.Context, userID pgtype.UUID, toolType, id string) error
 	// AssignGeo updates the geo-scoping fields of an existing record in the named tool table.
-	AssignGeo(ctx context.Context, tenantID, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
+	AssignGeo(ctx context.Context, userID pgtype.UUID, toolType, id string, payload map[string]any) (map[string]any, error)
 }
 
 // ToolCatalogEntry describes a single Japa tool in the registry catalog.
@@ -761,7 +761,7 @@ type IntelQuerier interface {
 // adapter.
 // // Ref: japaconnect-engineering/adr/ADR-112-intelligence-scholarships-table.md.
 type IntelSourceManager interface {
-	Create(ctx context.Context, tenantID pgtype.UUID, arg gen.CreateIntelSourceParams) (gen.IntelSource, error)
+	Create(ctx context.Context, arg gen.CreateIntelSourceParams) (gen.IntelSource, error)
 	GetByURL(ctx context.Context, sourceURL string) (gen.IntelSource, error)
 }
 

@@ -29,7 +29,7 @@ func (f *fakeCalendarUpdater) Enabled(ctx context.Context) bool {
 	return f.enabled
 }
 
-func (f *fakeCalendarUpdater) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
+func (f *fakeCalendarUpdater) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
 	return f.entry, f.err
 }
 
@@ -47,8 +47,7 @@ func newCalendarUpdateRequest(t *testing.T, body map[string]any, withUser bool, 
 		}
 	}
 
-	tenantID := pgtype.UUID{}
-	if err := tenantID.Scan(uuid.New().String()); err != nil {
+	if err := (error)(nil); err != nil {
 		t.Fatalf("scan tenant id: %v", err)
 	}
 

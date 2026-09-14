@@ -137,12 +137,12 @@ func parsePageParams(r *http.Request) (pageSize, pageOffset int32) {
 // HandleList handles GET /stories — list published stories with filters.
 // Query params: ?origin=&dest=&visa=&profession=&sort=top|latest&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -190,12 +190,12 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetBySlug handles GET /stories/:slug — single published story.
 func (h *Handlers) HandleGetBySlug(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -258,12 +258,12 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -284,7 +284,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	story, err := h.service.Submit(r.Context(), tenantID, user.UserID, input)
+	story, err := h.service.Submit(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrValidation) {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
@@ -308,7 +308,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -318,7 +318,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -329,7 +329,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	story, err := h.service.EditOwn(r.Context(), contentID, tenantID, user.UserID, input, hasPermission(r, user, "story.edit_any"))
+	story, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input, hasPermission(r, user, "story.edit_any"))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
@@ -364,7 +364,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -374,7 +374,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service == nil || !h.service.Enabled(r.Context(), tenantID) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -412,7 +412,7 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -427,12 +427,12 @@ func (h *Handlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.service.Enabled(r.Context(), tenantID) {
+	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
-	if err := h.service.Verify(r.Context(), contentID, tenantID, user.UserID); err != nil {
+	if err := h.service.Verify(r.Context(), contentID, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
@@ -456,7 +456,7 @@ func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -471,12 +471,12 @@ func (h *Handlers) HandleUnverify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.service.Enabled(r.Context(), tenantID) {
+	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
 
-	if err := h.service.Unverify(r.Context(), contentID, tenantID); err != nil {
+	if err := h.service.Unverify(r.Context(), contentID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "story_not_found", "Story not found")
 			return
@@ -499,7 +499,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -509,7 +509,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.service.Enabled(r.Context(), tenantID) {
+	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}
@@ -567,7 +567,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -582,7 +582,7 @@ func (h *Handlers) HandleAdminDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.service.Enabled(r.Context(), tenantID) {
+	if !h.service.Enabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusNotFound, "story_disabled", "Story wall is not available")
 		return
 	}

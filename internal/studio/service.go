@@ -57,7 +57,7 @@ type HITLReviewReader interface {
 // ToolTablePublisher publishes a non-contents draft row when its studio HITL
 // review is approved. The targetTable value comes from ai_hitl_reviews.
 type ToolTablePublisher interface {
-	Publish(ctx context.Context, tenantID, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error
+	Publish(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error
 }
 
 // Service holds the business logic for the AI Content Studio.
@@ -226,12 +226,12 @@ func (s *Service) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 }
 
 // ListJobs lists jobs with optional filters.
-func (s *Service) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFilter) ([]Job, int64, error) {
+func (s *Service) ListJobs(ctx context.Context, f JobListFilter) ([]Job, int64, error) {
 	if f.Limit <= 0 || f.Limit > 100 {
 		f.Limit = 50
 	}
 
-	return s.store.ListJobs(ctx, tenantID, f)
+	return s.store.ListJobs(ctx, f)
 }
 
 // RetryJob resets a failed job to queued and re-enqueues generation.
@@ -605,8 +605,8 @@ func (s *Service) ShouldAutoPublish(ctx context.Context, contentType, guideCateg
 // respecting studio.max_concurrent_jobs (ADR-076 §2/§7). Jobs beyond the
 // concurrency limit remain in 'queued' status and are picked up by subsequent
 // run_batch invocations (e.g. after a job completes and the active count drops).
-func (s *Service) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
-	jobs, _, err := s.store.ListJobs(ctx, tenantID, JobListFilter{
+func (s *Service) RunBatch(ctx context.Context, batchID pgtype.UUID) error {
+	jobs, _, err := s.store.ListJobs(ctx, JobListFilter{
 		BatchID: &batchID, Status: strPtr("queued"), Limit: 100,
 	})
 	if err != nil {
@@ -729,7 +729,7 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewer
 			return fmt.Errorf("studio: approve: tool-table publisher not wired for %s", targetTable)
 		}
 
-		if perr := s.toolTablePub.Publish(ctx, pgtype.UUID{}, reviewerID, targetTable, targetID, ""); perr != nil {
+		if perr := s.toolTablePub.Publish(ctx, reviewerID, targetTable, targetID, ""); perr != nil {
 			return fmt.Errorf("studio: approve: publish %s: %w", targetTable, perr)
 		}
 	} else {

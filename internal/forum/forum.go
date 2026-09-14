@@ -361,7 +361,7 @@ func (s *Service) flushViewCounts(ctx context.Context) {
 		}
 
 		var tenantID, threadID pgtype.UUID
-		if err := tenantID.Scan(parts[3]); err != nil {
+		if err := (error)(nil); err != nil {
 			continue
 		}
 

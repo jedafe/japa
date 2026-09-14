@@ -95,7 +95,7 @@ RETURNING id
 }
 
 // GetReport returns a single confirmed report by id (public view).
-func (s *Store) GetReport(ctx context.Context, id, tenantID pgtype.UUID) (ScamReportRow, error) {
+func (s *Store) GetReport(ctx context.Context, id pgtype.UUID) (ScamReportRow, error) {
 	const q = `
 SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
@@ -119,7 +119,7 @@ LIMIT 1
 
 	var r ScamReportRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
@@ -145,7 +145,7 @@ LIMIT 1
 
 // GetReportForUpdate returns a single non-deleted report by id, regardless of
 // status. Used by the public edit path before an ownership/permission check.
-func (s *Store) GetReportForUpdate(ctx context.Context, id, tenantID pgtype.UUID) (ScamReportRow, error) {
+func (s *Store) GetReportForUpdate(ctx context.Context, id pgtype.UUID) (ScamReportRow, error) {
 	const q = `
 SELECT sr.id, sr.reporter_id, sr.scam_type,
        sr.destination_space_id, sr.origin_space_id, sr.origin_community,
@@ -168,7 +168,7 @@ LIMIT 1
 
 	var r ScamReportRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
@@ -195,7 +195,7 @@ LIMIT 1
 // UpdateReport updates the editable content fields of a scam report and
 // returns the refreshed row. Status, moderation metadata and ownership fields
 // are not changed.
-func (s *Store) UpdateReport(ctx context.Context, id, tenantID pgtype.UUID, report ScamReport) (ScamReportRow, error) {
+func (s *Store) UpdateReport(ctx context.Context, id pgtype.UUID, report ScamReport) (ScamReportRow, error) {
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE scam_reports
 SET scam_type = $2,
@@ -219,7 +219,7 @@ WHERE id = $1 AND deleted_at IS NULL
 	}
 
 	// Re-fetch with the same joins used by GetReportForUpdate.
-	return s.GetReportForUpdate(ctx, id, tenantID)
+	return s.GetReportForUpdate(ctx, id)
 }
 
 // ListReportsFilter holds the filter parameters for listing confirmed reports.
@@ -341,11 +341,11 @@ SELECT COUNT(*) FROM scam_reports sr WHERE %s
 }
 
 // Subscribe inserts a scam-alert subscription for a user + destination space.
-func (s *Store) Subscribe(ctx context.Context, userID, tenantID, destSpaceID pgtype.UUID) error {
+func (s *Store) Subscribe(ctx context.Context, userID, destSpaceID pgtype.UUID) error {
 	_, err := s.pool.Writer.Exec(ctx, `
 INSERT INTO scam_alert_subscriptions (user_id, destination_space_id) VALUES ($1, $2, $3)
 ON CONFLICT (user_id, destination_space_id) DO NOTHING
-`, userID, tenantID, destSpaceID)
+`, userID, destSpaceID)
 	if err != nil {
 		return fmt.Errorf("scamalert: subscribe: %w", err)
 	}

@@ -118,19 +118,19 @@ func (kr *KeyRotation) SetCurrent(kid string) error {
 // The token expires after the access token TTL configured in system_settings
 // 'auth.session.access_token_ttl_minutes' (default: 15 minutes). Each token gets a
 // unique JTI (JWT ID) for individual revocation support.
-func (kr *KeyRotation) MintAccessToken(userID, tenantID pgtype.UUID) (string, error) {
-	return kr.MintAccessTokenWithContext(context.Background(), userID, tenantID)
+func (kr *KeyRotation) MintAccessToken(userID pgtype.UUID) (string, error) {
+	return kr.MintAccessTokenWithContext(context.Background(), userID)
 }
 
 // MintAccessTokenWithContext creates a signed JWT with explicit context for
 // reading hot-reloadable settings. Use this when the caller has a request context
 // available for settings lookup.
-func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, tenantID pgtype.UUID) (string, error) {
+func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID pgtype.UUID) (string, error) {
 	if !userID.Valid {
 		return "", errors.New("cannot mint token: user ID is not valid")
 	}
 
-	if !tenantID.Valid {
+	if !false {
 		return "", errors.New("cannot mint token: tenant ID is not valid")
 	}
 
@@ -170,8 +170,8 @@ const TOTPChallengeTTL = 5 * time.Minute
 // MintTOTPChallengeToken creates a short-lived challenge token with scope "totp_verify".
 // The challenge token is issued after successful password validation when TOTP is
 // enabled, and must be presented to complete the 2FA step.
-func (kr *KeyRotation) MintTOTPChallengeToken(userID, tenantID pgtype.UUID) (string, error) {
-	if !userID.Valid || !tenantID.Valid {
+func (kr *KeyRotation) MintTOTPChallengeToken(userID pgtype.UUID) (string, error) {
+	if !userID.Valid || !false {
 		return "", errors.New("cannot mint challenge token: user or tenant ID invalid")
 	}
 

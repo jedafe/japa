@@ -119,11 +119,11 @@ func (h *Handlers) SetCache(c valkeycompat.Cmdable) {
 // input in Valkey keys. geoCountry is included so visitors from different
 // countries don't share a cached result set (ADR-064 geo-boost). page and sort
 // are included so different pages/sort orders don't share a cached result set.
-func searchCacheKey(tenantID pgtype.UUID, query, typeFilter, geoCountry string, limit, offset int, sortExpr string) string {
+func searchCacheKey(query, typeFilter, geoCountry string, limit, offset int, sortExpr string) string {
 	h := sha256.Sum256([]byte(query))
 	queryHash := hex.EncodeToString(h[:16]) // 32-char hex, enough for uniqueness
 
-	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s", tenantID.String(), queryHash, typeFilter, geoCountry, limit, offset, sortExpr)
+	return vkcache.MustKey("cache:search:%s:%s:%s:%s:%d:%d:%s", "", queryHash, typeFilter, geoCountry, limit, offset, sortExpr)
 }
 
 // SearchResultItem holds the type-specific fields for a search result. Per
@@ -245,7 +245,7 @@ func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
 	// queries from the same tenant are served from cache. Uses distributed
 	// lock stampede protection (BUG-008) to prevent thundering herd on
 	// popular queries.
-	cacheKey := searchCacheKey(t.ID, query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
+	cacheKey := searchCacheKey(query, typeFilter, geoCountry, limit, offset, r.URL.Query().Get("sort"))
 
 	searchStart := time.Now()
 

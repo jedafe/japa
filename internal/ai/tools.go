@@ -270,7 +270,7 @@ type AllToolUsageStats struct {
 // GetAllToolUsageStats returns per-tool usage aggregated across all tools for
 // a tenant within the given period. Used by the admin /ai usage tab when no
 // specific tool_id is selected.
-func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype.UUID, since time.Time) ([]AllToolUsageStats, error) {
+func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, since time.Time) ([]AllToolUsageStats, error) {
 	rows, err := r.db.Reader.Query(ctx, `
 		SELECT
 			t.id::text,
@@ -283,7 +283,7 @@ func (r *ToolRegistry) GetAllToolUsageStats(ctx context.Context, tenantID pgtype
 		
 		GROUP BY t.id, t.name
 		ORDER BY invocations DESC
-	`, tenantID, since)
+	`, since)
 	if err != nil {
 		return nil, fmt.Errorf("fetching all tool usage stats: %w", err)
 	}

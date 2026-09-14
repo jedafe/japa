@@ -42,8 +42,8 @@ func run() error {
 		tenantStr = os.Args[1]
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(tenantStr); err != nil {
+	var ()
+	if err := (error)(nil); err != nil {
 		return fmt.Errorf("invalid tenant UUID %q: %w", tenantStr, err)
 	}
 

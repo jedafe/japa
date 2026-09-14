@@ -162,7 +162,7 @@ func (h *Handlers) ListLocales(w http.ResponseWriter, r *http.Request) {
 // Upsert handles create/update of a single translation.
 // POST /admin/translations.
 func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -194,7 +194,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.Upsert(r.Context(), tenantID, input.Locale, input.Key, input.Value, input.Context); err != nil {
+	if err := h.Service.Upsert(r.Context(), input.Locale, input.Key, input.Value, input.Context); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -209,7 +209,7 @@ func (h *Handlers) Upsert(w http.ResponseWriter, r *http.Request) {
 // UpsertBatch handles batch creation/update of translations.
 // POST /admin/translations/batch.
 func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -243,7 +243,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	if err := h.Service.UpsertBatch(r.Context(), tenantID, items); err != nil {
+	if err := h.Service.UpsertBatch(r.Context(), items); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -256,7 +256,7 @@ func (h *Handlers) UpsertBatch(w http.ResponseWriter, r *http.Request) {
 // Delete removes a translation.
 // DELETE /admin/translations/{id}?locale=en.
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -276,7 +276,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.Delete(r.Context(), tenantID, id, locale); err != nil {
+	if err := h.Service.Delete(r.Context(), id, locale); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -287,7 +287,7 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 // DeleteByLocale removes all translations for a locale.
 // DELETE /admin/i18n/languages/{locale}.
 func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -298,7 +298,7 @@ func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteByLocale(r.Context(), tenantID, locale); err != nil {
+	if err := h.Service.DeleteByLocale(r.Context(), locale); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -310,7 +310,7 @@ func (h *Handlers) DeleteByLocale(w http.ResponseWriter, r *http.Request) {
 // into the requested target locale and upserts the result.
 // POST /admin/i18n/strings/{id}/translate — body: {"target_locale": "fr"}.
 func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -378,7 +378,7 @@ func (h *Handlers) TranslateString(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upsert the translated value into the target locale.
-	if err := h.Service.Upsert(r.Context(), tenantID, input.TargetLocale, src.Key, translated, src.Context); err != nil {
+	if err := h.Service.Upsert(r.Context(), input.TargetLocale, src.Key, translated, src.Context); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -470,7 +470,7 @@ func extractAITranslationText(resp ai.Response) string {
 // GetLocaleTranslations returns all translations for a locale as a flat map.
 // GET /api/v1/translations/{locale}.
 func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -482,7 +482,7 @@ func (h *Handlers) GetLocaleTranslations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	data, err := h.Service.GetTranslationsByLocale(r.Context(), tenantID, locale)
+	data, err := h.Service.GetTranslationsByLocale(r.Context(), locale)
 	if err != nil {
 		handleServiceError(w, err)
 		return

@@ -44,8 +44,7 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 		}
 	}
 
-	tenantID := pgtype.UUID{}
-	if err := tenantID.Scan(uuid.New().String()); err != nil {
+	if err := (error)(nil); err != nil {
 		t.Fatalf("scan tenant id: %v", err)
 	}
 

@@ -14,7 +14,7 @@ type ContentEmbedder interface {
 	// EmbedContent generates an embedding for the content identified by
 	// contentID+tenantID and stores it in content_scores.relevance_embedding.
 	// The text parameter contains the content body to embed.
-	EmbedContent(ctx context.Context, contentID, tenantID [16]byte, text string) error
+	EmbedContent(ctx context.Context, contentID [16]byte, text string) error
 }
 
 var contentEmbedder ContentEmbedder

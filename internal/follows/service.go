@@ -59,7 +59,7 @@ var ErrEntityNotFound = errors.New("entity not found")
 // prevents count drift). Notification dispatch (Section 35, type
 // follow.received) is fire-and-forget per Rule 8 — it runs after the
 // transaction commits and never blocks or fails the follow.
-func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityId pgtype.UUID) (bool, error) {
+func (s *Service) ToggleFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityId pgtype.UUID) (bool, error) {
 	if !isValidEntityType(entityType) {
 		return false, fmt.Errorf("invalid entity type: %s", entityType)
 	}
@@ -71,7 +71,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	// Validate the target entity exists in the caller's tenant before
 	// inserting a follow row. The polymorphic entity_id has no FK, so
 	// without this check a follow row can dangle for a non-existent entity.
-	if err := s.validateEntityExists(ctx, tenantID, entityType, entityId); err != nil {
+	if err := s.validateEntityExists(ctx, entityType, entityId); err != nil {
 		return false, err
 	}
 
@@ -121,7 +121,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 		// The cache key pattern is
 		// jc:cache:feed:foryou:{}:{user_id}:{sort_mode}:{content_country}
 		// — we SCAN + DEL all variants for this user. Ref: Section 32.
-		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", tenantID, followerID)
+		pattern := valkey.MustKey("cache:feed:foryou:%s:%s:*", followerID)
 
 		var cursor uint64
 
@@ -162,7 +162,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 				// §64: auto-join via follow is a real membership — record
 				// space.joined so badge/challenge triggers (e.g.
 				// space_explorer) fire on this path too.
-				s.emitActivity(ctx, tenantID, followerID, wallet.ActivityKeySpaceJoined, "space:"+entityId.String(), nil)
+				s.emitActivity(ctx, followerID, wallet.ActivityKeySpaceJoined, "space:"+entityId.String(), nil)
 			}
 		}
 	}
@@ -177,7 +177,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 	// (e.g. super_connector) can fire. The reference is per (entity_type,
 	// entity_id) so unfollow/refollow cycles cannot farm the count.
 	if followed {
-		s.emitActivity(ctx, tenantID, followerID, wallet.ActivityKeyFollowCreated,
+		s.emitActivity(ctx, followerID, wallet.ActivityKeyFollowCreated,
 			fmt.Sprintf("follow:%s:%s", entityType, entityId.String()),
 			map[string]interface{}{"entity_type": entityType})
 	}
@@ -190,7 +190,7 @@ func (s *Service) ToggleFollow(ctx context.Context, tenantID, followerID pgtype.
 // avoids onboarding (and other bulk-follow paths) accidentally unfollowing an
 // entity the user is already following, while still preserving count updates,
 // auto-join, notifications, and activity events via ToggleFollow.
-func (s *Service) EnsureFollow(ctx context.Context, tenantID, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
+func (s *Service) EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error) {
 	following, err := s.IsFollowing(ctx, followerID, entityType, entityID)
 	if err != nil {
 		return false, fmt.Errorf("checking follow status: %w", err)
@@ -198,7 +198,7 @@ func (s *Service) EnsureFollow(ctx context.Context, tenantID, followerID pgtype.
 	if following {
 		return true, nil
 	}
-	return s.ToggleFollow(ctx, tenantID, followerID, entityType, entityID)
+	return s.ToggleFollow(ctx, followerID, entityType, entityID)
 }
 
 // GetFollow returns the follow row for a specific follower-entity pair.
@@ -473,7 +473,7 @@ func (s *Service) updateFollowerCount(ctx context.Context, entityType string, en
 // column has no FK constraint, so without this check a follow row can dangle
 // for a non-existent entity. Returns ErrEntityNotFound when the entity does
 // not exist.
-func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+func (s *Service) validateEntityExists(ctx context.Context, entityType string, entityID pgtype.UUID) error {
 	var table string
 
 	switch entityType {
@@ -496,7 +496,7 @@ func (s *Service) validateEntityExists(ctx context.Context, tenantID pgtype.UUID
 	err := s.db.Reader.QueryRow(
 		ctx,
 		fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1) AS exists", table),
-		entityID, tenantID,
+		entityID,
 	).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("checking entity existence: %w", err)

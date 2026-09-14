@@ -80,11 +80,11 @@ type AchievementRow struct {
 // GetSpaceLevel returns the level ('country', 'state', 'city', etc.) of the
 // space identified by id, or pgx.ErrNoRows if not found. Used by the service
 // to validate that destination_space_id is a country-level space (§89).
-func (s *Store) GetSpaceLevel(ctx context.Context, id, tenantID pgtype.UUID) (string, error) {
+func (s *Store) GetSpaceLevel(ctx context.Context, id pgtype.UUID) (string, error) {
 	const q = `SELECT level FROM spaces WHERE id = $1 AND deleted_at IS NULL`
 
 	var level string
-	if err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(&level); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, q, id).Scan(&level); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
 		}
@@ -118,7 +118,7 @@ INSERT INTO achievement_meta (
 }
 
 // GetMeta retrieves the achievement_meta row for a given content_id.
-func (s *Store) GetMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (AchievementMeta, error) {
+func (s *Store) GetMeta(ctx context.Context, contentID pgtype.UUID) (AchievementMeta, error) {
 	const q = `
 SELECT id, content_id, milestone_type, destination_space_id,
        origin_space_id, is_anonymous, created_at
@@ -128,7 +128,7 @@ WHERE content_id = $1
 
 	var m AchievementMeta
 
-	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, contentID).Scan(
 		&m.ID, &m.ContentID, &m.MilestoneType,
 		&m.DestinationSpaceID, &m.OriginSpaceID, &m.IsAnonymous, &m.CreatedAt,
 	)
@@ -145,7 +145,7 @@ WHERE content_id = $1
 
 // UpdateMeta updates the mutable structured fields on an achievement_meta row.
 // Called when the author edits their achievement.
-func (s *Store) UpdateMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta AchievementMeta) error {
+func (s *Store) UpdateMeta(ctx context.Context, contentID pgtype.UUID, meta AchievementMeta) error {
 	const q = `
 UPDATE achievement_meta
 SET milestone_type = $2,
@@ -157,7 +157,7 @@ WHERE content_id = $1
 
 	_, err := s.pool.Writer.Exec(
 		ctx, q,
-		contentID, tenantID,
+		contentID,
 		meta.MilestoneType, meta.DestinationSpaceID, meta.OriginSpaceID,
 		meta.IsAnonymous,
 	)
@@ -360,12 +360,12 @@ func scanAchievementRow(row pgx.Row) (AchievementRow, error) {
 // moderated) achievement is only visible to its own author. Pass a zero
 // (invalid) viewerID for anonymous access. Joins contents + achievement_meta
 // + spaces + users.
-func (s *Store) GetBySlug(ctx context.Context, slug string, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
+func (s *Store) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
 WHERE c.slug = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
-	args := []any{tenantID, slug}
+	args := []any{pgtype.UUID{}, slug}
 
 	if viewerID.Valid {
 		q += ` OR c.author_id = $1`
@@ -388,12 +388,12 @@ WHERE c.slug = $1 AND c.content_type = 'achievement'
 // submit/edit response paths so every mutation returns the complete DTO
 // (reaction_count, space names, author info) instead of the partial
 // metaToDTO shape.
-func (s *Store) GetByID(ctx context.Context, contentID, tenantID, viewerID pgtype.UUID) (AchievementRow, error) {
+func (s *Store) GetByID(ctx context.Context, contentID, viewerID pgtype.UUID) (AchievementRow, error) {
 	q := achievementSelectColumns + `
 WHERE c.id = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
-	args := []any{tenantID, contentID}
+	args := []any{pgtype.UUID{}, contentID}
 
 	if viewerID.Valid {
 		q += ` OR c.author_id = $1`

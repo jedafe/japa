@@ -96,7 +96,7 @@ type webhookEmitter interface {
 // sourceManager creates canonical intel_sources rows for entity profiles
 // (v2 source directory, Task 5).
 type sourceManager interface {
-	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
+	CreateSourceFromEntity(ctx context.Context, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
 // Service provides organization business logic.
@@ -222,25 +222,25 @@ func (s *Service) enqueueInvitationEmail(ctx context.Context, orgName, inviteeEm
 }
 
 // orgProfileCacheKey builds jc:org:profile:{}:{slug}.
-func orgProfileCacheKey(tenantID pgtype.UUID, slug string) string {
-	return valkey.MustKey("org:profile:%s:%s", tenantID.String(), slug)
+func orgProfileCacheKey(slug string) string {
+	return valkey.MustKey("org:profile::%s", slug)
 }
 
 // orgListCacheKey builds jc:org:list:{}:{page}.
-func orgListCacheKey(tenantID pgtype.UUID, page int32) string {
-	return valkey.MustKey("org:list:%s:%d", tenantID.String(), page)
+func orgListCacheKey(page int32) string {
+	return valkey.MustKey("org:list::%d", page)
 }
 
 // InvalidateOrgCache flushes all cached org entries for a tenant. Call after
 // any org CRUD mutation (create, update, delete, verify, unverify).
-func (s *Service) InvalidateOrgCache(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) InvalidateOrgCache(ctx context.Context) {
 	if s.vk == nil {
 		return
 	}
 
-	prefix := valkey.MustKey("org:*:%s:*", tenantID.String())
+	prefix := valkey.MustKey("org:*::*")
 	// Also flush the list cache for this tenant.
-	listPrefix := valkey.MustKey("org:list:%s:*", tenantID.String())
+	listPrefix := valkey.MustKey("org:list::*")
 
 	for _, pattern := range []string{prefix, listPrefix} {
 		var cursor uint64
@@ -267,14 +267,14 @@ func (s *Service) InvalidateOrgCache(ctx context.Context, tenantID pgtype.UUID) 
 // InvalidateOrgCacheByCmdable is a standalone invalidation function for
 // callers (e.g. admin handlers) that have a valkeycompat.Cmdable but not a
 // reference to the org Service. It flushes all jc:org:* keys for the tenant.
-func InvalidateOrgCacheByCmdable(ctx context.Context, vk valkeycompat.Cmdable, tenantID pgtype.UUID) {
+func InvalidateOrgCacheByCmdable(ctx context.Context, vk valkeycompat.Cmdable) {
 	if vk == nil {
 		return
 	}
 
 	for _, pattern := range []string{
-		valkey.MustKey("org:profile:%s:*", tenantID.String()),
-		valkey.MustKey("org:list:%s:*", tenantID.String()),
+		valkey.MustKey("org:profile::*"),
+		valkey.MustKey("org:list::*"),
 	} {
 		var cursor uint64
 
@@ -313,12 +313,12 @@ type cachedPublicOrgList struct {
 // getOrSetOrgProfile implements read-through cache for GetPublicOrganizationBySlug.
 // On cache miss, fetches from the store and populates the cache. On cache hit,
 // returns the cached org. Returns the org and a cache-hit flag for observability.
-func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, slug string) (gen.Organization, error) {
+func (s *Service) getOrSetOrgProfile(ctx context.Context, slug string) (gen.Organization, error) {
 	if s.vk == nil {
 		return s.store.GetPublicOrganizationBySlug(ctx, slug)
 	}
 
-	cacheKey := orgProfileCacheKey(tenantID, slug)
+	cacheKey := orgProfileCacheKey(slug)
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry cachedPublicOrg
 		if json.Unmarshal([]byte(cached), &entry) == nil {
@@ -344,13 +344,13 @@ func (s *Service) getOrSetOrgProfile(ctx context.Context, tenantID pgtype.UUID, 
 // getOrSetOrgList implements read-through cache for ListPublicOrganizations.
 // The cache key includes the page number; filter variations (search, orgType,
 // verified) are part of the key to avoid returning stale filtered results.
-func (s *Service) getOrSetOrgList(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
 	if s.vk == nil {
 		return s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
 	}
 
 	page := offset / max(limit, 1)
-	cacheKey := orgListCacheKey(tenantID, page)
+	cacheKey := orgListCacheKey(page)
 	// Include filter params in the key to avoid cross-filter cache pollution.
 	cacheKey = fmt.Sprintf("%s:%s:%s:%s:%d:%d", cacheKey, search, orgType, verified, limit, offset)
 

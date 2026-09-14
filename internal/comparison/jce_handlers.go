@@ -415,7 +415,7 @@ func canAccessJCEComparison(cmp JCEComparison, user *auth.AuthenticatedUser, byp
 
 // UpdateJCEComparison handles PATCH /api/v1/jce/comparisons/{id}.
 func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -444,7 +444,7 @@ func (h *Handlers) UpdateJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 	bypass := hasAnyPermission(r, user, "comparison.edit_any")
 
-	cmp, err := h.Service.UpdateJCEComparison(r.Context(), id, tenantID, user.UserID, UpdateJCEComparisonInput{
+	cmp, err := h.Service.UpdateJCEComparison(r.Context(), id, user.UserID, UpdateJCEComparisonInput{
 		Title:      body.Title,
 		Body:       body.Body,
 		Slug:       body.Slug,

@@ -72,7 +72,7 @@ func TestSelectDue_PassesBatchSizeAndReturnsRows(t *testing.T) {
 		{Name: "src-b", Domain: "b.example.com"},
 	}
 	fl := &fakeLister{rows: rows}
-	s := NewScheduler(fl, startTestValkey(t), testTenantID())
+	s := NewScheduler(fl, startTestValkey(t))
 
 	got, err := s.SelectDue(t.Context(), 42)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestSelectDue_PropagatesStoreError(t *testing.T) {
 	t.Parallel()
 
 	fl := &fakeLister{err: errors.New("boom")}
-	s := NewScheduler(fl, startTestValkey(t), testTenantID())
+	s := NewScheduler(fl, startTestValkey(t))
 
 	if _, err := s.SelectDue(t.Context(), 10); err == nil {
 		t.Fatal("expected error from store, got nil")
@@ -106,13 +106,13 @@ func TestSelectDue_PropagatesStoreError(t *testing.T) {
 func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
 
 	// Seed an effective interval of 240 mins (4x base), then observe a change.
-	if err := rdb.Set(ctx, intervalKey(testTenantID(), "s1"), "240", 0).Err(); err != nil {
+	if err := rdb.Set(ctx, intervalKey("s1"), "240", 0).Err(); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 	}
 
 	// The unchanged streak counter must be reset.
-	if n, _ := rdb.Get(ctx, unchangedCountKey(testTenantID(), "s1")).Int(); n != 0 {
+	if n, _ := rdb.Get(ctx, unchangedCountKey("s1")).Int(); n != 0 {
 		t.Errorf("unchanged count after change: got %d, want 0", n)
 	}
 }
@@ -138,7 +138,7 @@ func TestRecordCrawlOutcome_ChangedHalvesInterval(t *testing.T) {
 func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -161,7 +161,7 @@ func TestRecordCrawlOutcome_ChangedFloorsAtBase(t *testing.T) {
 func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -171,7 +171,7 @@ func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 			t.Fatalf("RecordCrawlOutcome #%d: %v", i, err)
 		}
 
-		n, _ := rdb.Get(ctx, unchangedCountKey(testTenantID(), "s3")).Int()
+		n, _ := rdb.Get(ctx, unchangedCountKey("s3")).Int()
 		if int64(n) != int64(i) {
 			t.Errorf("after %d unchanged crawls: counter=%d, want %d", i, n, i)
 		}
@@ -186,7 +186,7 @@ func TestRecordCrawlOutcome_UnchangedIncrementsCounter(t *testing.T) {
 func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -208,7 +208,7 @@ func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 		t.Errorf("effective interval after 5 unchanged: got %d, want 120", got)
 	}
 
-	if n, _ := rdb.Get(ctx, unchangedCountKey(testTenantID(), "s4")).Int(); n != 0 {
+	if n, _ := rdb.Get(ctx, unchangedCountKey("s4")).Int(); n != 0 {
 		t.Errorf("unchanged count after threshold: got %d, want 0 (reset)", n)
 	}
 }
@@ -216,19 +216,19 @@ func TestRecordCrawlOutcome_UnchangedThresholdDoublesInterval(t *testing.T) {
 func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
 
 	// Seed an interval already near the cap; doubling would exceed it.
 	nearCap := MaxEffectiveIntervalMins - 10
-	if err := rdb.Set(ctx, intervalKey(testTenantID(), "s5"), strconv.Itoa(nearCap), 0).Err(); err != nil {
+	if err := rdb.Set(ctx, intervalKey("s5"), strconv.Itoa(nearCap), 0).Err(); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	// Pre-set the counter to threshold-1 so the next unchanged crawl triggers
 	// the doubling path.
-	if err := rdb.Set(ctx, unchangedCountKey(testTenantID(), "s5"), strconv.Itoa(UnchangedThreshold-1), 0).Err(); err != nil {
+	if err := rdb.Set(ctx, unchangedCountKey("s5"), strconv.Itoa(UnchangedThreshold-1), 0).Err(); err != nil {
 		t.Fatalf("seed counter: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func TestRecordCrawlOutcome_DoublesCappedAtMax(t *testing.T) {
 
 func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
 	t.Parallel()
-	s := NewScheduler(&fakeLister{}, startTestValkey(t), testTenantID())
+	s := NewScheduler(&fakeLister{}, startTestValkey(t))
 	ctx := t.Context()
 
 	if err := s.RecordCrawlOutcome(ctx, "", 60, false); err == nil {
@@ -262,7 +262,7 @@ func TestRecordCrawlOutcome_RejectsEmptyIDAndBadBase(t *testing.T) {
 
 func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
 	t.Parallel()
-	s := NewScheduler(&fakeLister{}, startTestValkey(t), testTenantID())
+	s := NewScheduler(&fakeLister{}, startTestValkey(t))
 	ctx := t.Context()
 
 	const base int32 = 90
@@ -280,7 +280,7 @@ func TestEffectiveIntervalMins_DefaultsToBaseWhenAbsent(t *testing.T) {
 func TestRecordCrawlOutcome_ChangeResetsStreakThenUnchangedStartsFresh(t *testing.T) {
 	t.Parallel()
 	rdb := startTestValkey(t)
-	s := NewScheduler(&fakeLister{}, rdb, testTenantID())
+	s := NewScheduler(&fakeLister{}, rdb)
 	ctx := t.Context()
 
 	const base int32 = 60
@@ -301,7 +301,7 @@ func TestRecordCrawlOutcome_ChangeResetsStreakThenUnchangedStartsFresh(t *testin
 		t.Fatalf("post-change unchanged: %v", err)
 	}
 
-	n, _ := rdb.Get(ctx, unchangedCountKey(testTenantID(), "s7")).Int()
+	n, _ := rdb.Get(ctx, unchangedCountKey("s7")).Int()
 	if n != 1 {
 		t.Errorf("counter after reset + 1 unchanged: got %d, want 1", n)
 	}

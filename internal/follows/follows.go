@@ -89,7 +89,7 @@ func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e 
 // duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows —
 // treated as "already recorded" so unfollow/refollow cycles cannot farm the
 // activity count.
-func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
 	if s.activity == nil || !userID.Valid {
 		return
 	}
@@ -107,7 +107,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 		slog.Warn("follows: enqueue activity event failed", "activity_key", key, "error", err)
 	}
 }

@@ -26,7 +26,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -75,7 +75,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 			return
 		default:
 			// JoiningOpen — immediate membership.
-			if err := h.Service.Join(r.Context(), space.ID, user.UserID, tenantID); err != nil {
+			if err := h.Service.Join(r.Context(), space.ID, user.UserID); err != nil {
 				handleServiceError(w, err)
 				return
 			}

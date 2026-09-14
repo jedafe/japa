@@ -26,7 +26,7 @@ type CreditSpendInput struct {
 type CreditSpender interface {
 	SpendCredits(
 		ctx context.Context,
-		tenantID pgtype.UUID,
+
 		userID pgtype.UUID,
 		input CreditSpendInput,
 	) (int64, error)
@@ -48,7 +48,7 @@ type CreditSpender interface {
 // and the Section 28 Credit ledger in the same transaction").
 func (s *Service) PayWithCredit(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	userID pgtype.UUID,
 	amount int64,
 	purposeType string,
@@ -98,7 +98,7 @@ func (s *Service) PayWithCredit(
 		PurposeID:   purposeID,
 	}
 
-	newBalance, err := s.wallet.SpendCredits(ctx, tenantID, userID, input)
+	newBalance, err := s.wallet.SpendCredits(ctx, userID, input)
 	if err != nil {
 		// Debit failed — mark the payment as failed so it's not orphaned.
 		_, _ = s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusFailed)

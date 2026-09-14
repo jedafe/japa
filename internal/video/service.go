@@ -44,9 +44,9 @@ type UserManager interface {
 // stores uploaded video bytes (direct uploads). *media.Service satisfies
 // this interface.
 type MediaManager interface {
-	StoreFromURL(ctx context.Context, tenantID, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error)
+	StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error)
 	// StoreFromBytes persists raw file bytes as a confirmed media item.
-	StoreFromBytes(ctx context.Context, tenantID, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error)
+	StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, data []byte, filename string, attribution *media.MediaAttribution) (pgtype.UUID, error)
 	// GetMedia returns the stored media record so the caller can derive the
 	// serve URL from its storage bucket/path.
 	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
@@ -82,7 +82,7 @@ type ContentCreator interface {
 
 // SourceRegistry links a video source to the canonical intel_sources registry.
 type SourceRegistry interface {
-	CreateAutoForVideo(ctx context.Context, tenantID, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (gen.IntelSource, error)
+	CreateAutoForVideo(ctx context.Context, userID pgtype.UUID, title, sourceURL, thumbnailURL *string) (gen.IntelSource, error)
 }
 
 // Service coordinates video URL resolution, synthetic channel creation,
@@ -176,7 +176,7 @@ func (s *Service) isPlatformAllowed(ctx context.Context, platform string) bool {
 
 // ResolveURL resolves a public video URL, ensures a synthetic channel user,
 // stores the thumbnail, and persists the canonical video source.
-func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL string) (ResolveResult, error) {
+func (s *Service) ResolveURL(ctx context.Context, rawURL string) (ResolveResult, error) {
 	if !s.IsEnabled(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
@@ -196,12 +196,12 @@ func (s *Service) ResolveURL(ctx context.Context, tenantID pgtype.UUID, rawURL s
 		return ResolveResult{}, ErrUnsupportedPlatform
 	}
 
-	return s.createSourceFromMetadata(ctx, tenantID, metadata)
+	return s.createSourceFromMetadata(ctx, metadata)
 }
 
 // createSourceFromMetadata persists a video source from already-resolved
 // metadata. It is shared by ResolveURL and the bulk import processor.
-func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.UUID, metadata *Metadata) (ResolveResult, error) {
+func (s *Service) createSourceFromMetadata(ctx context.Context, metadata *Metadata) (ResolveResult, error) {
 	channelKey := metadata.ChannelKey()
 	email := fmt.Sprintf("synthetic-%s@synthetic.local", channelKey)
 
@@ -222,7 +222,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 	var thumbnailMediaID pgtype.UUID
 
 	if metadata.ThumbnailURL != "" {
-		id, err := s.media.StoreFromURL(ctx, tenantID, authorID, metadata.ThumbnailURL, "thumbnail.jpg")
+		id, err := s.media.StoreFromURL(ctx, authorID, metadata.ThumbnailURL, "thumbnail.jpg")
 		if err != nil {
 			// Thumbnail storage is best effort; keep the source even if the
 			// image cannot be ingested.
@@ -263,7 +263,7 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 
 	var intelSourceID pgtype.UUID
 	if s.sources != nil {
-		src, sErr := s.sources.CreateAutoForVideo(ctx, tenantID, authorID, &metadata.Title, &metadata.SourceURL, thumbnailURL)
+		src, sErr := s.sources.CreateAutoForVideo(ctx, authorID, &metadata.Title, &metadata.SourceURL, thumbnailURL)
 		if sErr != nil {
 			slog.Warn("video: failed to register canonical source", "source_url", metadata.SourceURL, "error", sErr)
 		} else {
@@ -299,12 +299,12 @@ func (s *Service) createSourceFromMetadata(ctx context.Context, tenantID pgtype.
 // video_sources row with source_type='upload', and returns the source plus a
 // TipTap `video` node document. Unlike ResolveURL, the author is the real
 // (non-synthetic) uploading user.
-func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.UUID, filename string, data []byte, title, description string) (ResolveResult, error) {
+func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filename string, data []byte, title, description string) (ResolveResult, error) {
 	if !s.IsEnabled(ctx) {
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
-	mediaID, err := s.media.StoreFromBytes(ctx, tenantID, uploaderID, data, filename, nil)
+	mediaID, err := s.media.StoreFromBytes(ctx, uploaderID, data, filename, nil)
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing uploaded video: %w", err)
 	}
@@ -325,7 +325,7 @@ func (s *Service) UploadVideo(ctx context.Context, tenantID, uploaderID pgtype.U
 
 	var intelSourceID pgtype.UUID
 	if s.sources != nil {
-		src, sErr := s.sources.CreateAutoForVideo(ctx, tenantID, uploaderID, &title, &sourceURL, nil)
+		src, sErr := s.sources.CreateAutoForVideo(ctx, uploaderID, &title, &sourceURL, nil)
 		if sErr != nil {
 			slog.Warn("video: failed to register canonical source for upload", "source_url", sourceURL, "error", sErr)
 		} else {

@@ -72,9 +72,9 @@ const ragQueryCacheTTL = 10 * time.Minute
 // so identical queries hit the cache. geo_space_id is included so a
 // geo-filtered retrieval and an unfiltered retrieval never share a cache
 // entry (§103 Geo-Filtered RAG amendment to §69).
-func ragQueryCacheKey(tenantID pgtype.UUID, queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID) string {
+func ragQueryCacheKey(queryEmbedding []float32, language string, topK int32, geoSpaceID *pgtype.UUID) string {
 	h := sha256.New()
-	h.Write(tenantID.Bytes[:])
+	h.Write([16]byte{}[:])
 
 	for _, f := range queryEmbedding {
 		bits := math.Float32bits(f)
@@ -183,7 +183,7 @@ func (s *Service) PurgeEntityType(ctx context.Context, entityType string) error 
 // invalid, retrieval is unfiltered (backward-compatible with §69).
 // // If rag.enabled is false, returns nil (the chat handler falls back to
 // non-RAG LLM call).
-func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
+func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RetrievedChunk, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, "rag.enabled", true); !enabled {
 			return nil, nil
@@ -222,7 +222,7 @@ func (s *Service) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, lan
 	geoActive := geoSpaceID != nil && geoSpaceID.Valid
 
 	// Check cache.
-	cacheKey := ragQueryCacheKey(tenantID, queryVec, language, topK, geoSpaceID)
+	cacheKey := ragQueryCacheKey(queryVec, language, topK, geoSpaceID)
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 			var results []RetrievedChunk

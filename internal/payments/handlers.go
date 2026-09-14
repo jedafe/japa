@@ -333,7 +333,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -392,7 +392,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		user.UserID,
 	)
 
-	result, err := h.Service.CreatePayment(r.Context(), tenantID, user.UserID, CreatePaymentInput{
+	result, err := h.Service.CreatePayment(r.Context(), user.UserID, CreatePaymentInput{
 		Provider:     input.Provider,
 		PurposeType:  input.PurposeType,
 		PurposeID:    input.PurposeID,
@@ -415,7 +415,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 // HandlePaystackWebhook handles POST /api/v1/payments/webhook/paystack.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -466,7 +466,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), ProviderPaystack, event, status); err != nil {
 		slog.Error("paystack webhook processing failed", "error", err)
-		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", tenantID, err))
+		errpkg.CaptureException(fmt.Errorf("paystack webhook processing failed (tenant=%s): %w", err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 
 		return
@@ -478,7 +478,7 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 // HandleStripeWebhook handles POST /api/v1/payments/webhook/stripe.
 // This endpoint is public (no auth required) as webhooks come from external services.
 func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -529,7 +529,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), ProviderStripe, event, status); err != nil {
 		slog.Error("stripe webhook processing failed", "error", err)
-		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", tenantID, err))
+		errpkg.CaptureException(fmt.Errorf("stripe webhook processing failed (tenant=%s): %w", err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 
 		return
@@ -543,7 +543,7 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 // NOWPayments IPN sends HMAC-SHA256 of the payload using the IPN secret,
 // with the signature in the x-nowpayments-sig header.
 func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -597,7 +597,7 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	// Process webhook
 	if err := h.Service.ProcessWebhook(r.Context(), ProviderNOWPayments, event, status); err != nil {
 		slog.Error("nowpayments webhook processing failed", "error", err)
-		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", tenantID, err))
+		errpkg.CaptureException(fmt.Errorf("nowpayments webhook processing failed (tenant=%s): %w", err))
 		errpkg.WriteError(w, http.StatusInternalServerError, "webhook_error", "Failed to process webhook")
 
 		return

@@ -50,7 +50,7 @@ type comparisonTypesListArgs struct {
 // types (Tier 1 + Tier 2 classification) before deciding whether to create
 // a new type (Tier 3).
 func ComparisonTypesListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Comparison == nil {
 			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
 		}
@@ -137,7 +137,7 @@ type comparisonCreateTypeArg struct {
 // type (Tier 2). The status is always forced to "draft" — the agent never
 // publishes directly (§103 behavior rule).
 func ComparisonCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Comparison == nil {
 			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
 		}
@@ -285,7 +285,7 @@ var validConfidenceLevels = map[string]bool{
 // Privacy: the executor's privacy gate blocks the call when the backing
 // content row is ai_exempt (registered via ComparisonFillValuesPrivacyTarget).
 func ComparisonFillValuesHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Comparison == nil {
 			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
 		}
@@ -417,7 +417,7 @@ var validDimensionTypes = map[string]bool{
 // must be authorized — the executor's RBAC gate checks the tool's
 // required_permission before dispatch.
 func ComparisonAddDimensionHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Comparison == nil {
 			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
 		}
@@ -495,7 +495,7 @@ type comparisonReadArgs struct {
 // its full items×dimensions value matrix. Privacy: the executor's privacy
 // gate blocks the call when the backing content row is ai_exempt.
 func ComparisonReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Comparison == nil {
 			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
 		}

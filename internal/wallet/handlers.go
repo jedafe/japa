@@ -269,7 +269,7 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -288,12 +288,12 @@ func (h *Handlers) ConvertPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pointsBalance, creditsBalance, err := h.Service.ConvertPointsToCredits(r.Context(), tenantID, user.UserID, ConvertPointsToCreditsInput{
+	pointsBalance, creditsBalance, err := h.Service.ConvertPointsToCredits(r.Context(), user.UserID, ConvertPointsToCreditsInput{
 		PointsToConvert: input.PointsToConvert,
 	})
 	if err != nil {
 		slog.Error("points conversion failed", "user_id", user.UserID, "points", input.PointsToConvert, "error", err)
-		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, tenantID, input.PointsToConvert, err))
+		errpkg.CaptureException(fmt.Errorf("points conversion failed (user=%s, tenant=%s, points=%d): %w", user.UserID, input.PointsToConvert, err))
 		handleServiceError(w, err)
 
 		return
@@ -606,7 +606,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -644,7 +644,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.Service.AdminAdjustBalance(r.Context(), tenantID, user.UserID, AdminAdjustInput{
+	balance, err := h.Service.AdminAdjustBalance(r.Context(), user.UserID, AdminAdjustInput{
 		UserID:     input.UserID,
 		LedgerType: input.LedgerType,
 		Amount:     input.Amount,
@@ -653,7 +653,7 @@ func (h *Handlers) AdminAdjust(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("admin wallet adjustment failed", "target_user_id", input.UserID, "amount", input.Amount, "error", err)
-		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, tenantID, input.Amount, err))
+		errpkg.CaptureException(fmt.Errorf("admin wallet adjustment failed (target_user=%s, tenant=%s, amount=%d): %w", input.UserID, input.Amount, err))
 		handleServiceError(w, err)
 
 		return
@@ -745,7 +745,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -763,7 +763,7 @@ func (h *Handlers) CreateWithdrawal(w http.ResponseWriter, r *http.Request) {
 
 	idempotencyKey := r.Header.Get("Idempotency-Key")
 
-	result, err := h.Service.CreateWithdrawal(r.Context(), tenantID, user.UserID, CreateWithdrawalInput{
+	result, err := h.Service.CreateWithdrawal(r.Context(), user.UserID, CreateWithdrawalInput{
 		CreditAmount:   input.CreditAmount,
 		CurrencyCode:   input.CurrencyCode,
 		PayoutMethodID: input.PayoutMethodID,

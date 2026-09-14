@@ -194,7 +194,7 @@ func (h *Handlers) GetRedirect(w http.ResponseWriter, r *http.Request) {
 
 // CreateRedirect is an exported method.
 func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -220,7 +220,7 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 		input.HTTPStatus = 301
 	}
 
-	redirect, err := h.Service.CreateRedirect(r.Context(), tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.Notes)
+	redirect, err := h.Service.CreateRedirect(r.Context(), input.SourcePath, input.TargetURL, input.HTTPStatus, input.Notes)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -231,7 +231,7 @@ func (h *Handlers) CreateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // UpdateRedirect is an exported method.
 func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -259,7 +259,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 		input.HTTPStatus = 301
 	}
 
-	redirect, err := h.Service.UpdateRedirect(r.Context(), id, tenantID, input.SourcePath, input.TargetURL, input.HTTPStatus, input.IsActive, input.Notes)
+	redirect, err := h.Service.UpdateRedirect(r.Context(), id, input.SourcePath, input.TargetURL, input.HTTPStatus, input.IsActive, input.Notes)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -270,7 +270,7 @@ func (h *Handlers) UpdateRedirect(w http.ResponseWriter, r *http.Request) {
 
 // DeleteRedirect is an exported method.
 func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -281,7 +281,7 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteRedirect(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteRedirect(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -291,7 +291,7 @@ func (h *Handlers) DeleteRedirect(w http.ResponseWriter, r *http.Request) {
 
 // BulkAction is an exported method.
 func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -307,7 +307,7 @@ func (h *Handlers) BulkAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.BulkAction(r.Context(), tenantID, input); err != nil {
+	if err := h.Service.BulkAction(r.Context(), input); err != nil {
 		handleServiceError(w, err)
 		return
 	}

@@ -302,8 +302,8 @@ func (s *Service) ListPathways(ctx context.Context, destSpaceID, issuingSpaceID,
 // notes. Only published pathways are returned to public callers — draft,
 // ai_draft, pending, and rejected pathways are hidden (ADR-088: ai_draft
 // status is NEVER visible to end users).
-func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (PathwayDetailDTO, error) {
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+func (s *Service) GetPathway(ctx context.Context, id pgtype.UUID) (PathwayDetailDTO, error) {
+	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDetailDTO{}, pgx.ErrNoRows
@@ -316,7 +316,7 @@ func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (Pat
 		return PathwayDetailDTO{}, pgx.ErrNoRows
 	}
 
-	notes, err := s.store.GetPathwayNotes(ctx, id, tenantID)
+	notes, err := s.store.GetPathwayNotes(ctx, id)
 	if err != nil {
 		slog.Error("credentialchecker: get pathway notes failed", "pathway_id", id, "error", err)
 
@@ -336,7 +336,7 @@ func (s *Service) GetPathway(ctx context.Context, id, tenantID pgtype.UUID) (Pat
 
 // CreatePathway creates a new credential pathway. Admin-only
 // (credential_checker.manage permission checked at route level).
-func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req CreatePathwayRequest) (PathwayDTO, error) {
+func (s *Service) CreatePathway(ctx context.Context, req CreatePathwayRequest) (PathwayDTO, error) {
 	if req.RegulatoryBody == "" {
 		return PathwayDTO{}, errors.New("regulatory_body is required")
 	}
@@ -414,7 +414,7 @@ func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req C
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: create pathway: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch created pathway: %w", err)
 	}
@@ -425,7 +425,7 @@ func (s *Service) CreatePathway(ctx context.Context, tenantID pgtype.UUID, req C
 // UpdatePathway updates the mutable fields on a credential pathway.
 // Admin-only (credential_checker.manage permission checked at route
 // level). Only provided (non-nil) fields are updated.
-func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, req UpdatePathwayRequest) (PathwayDTO, error) {
+func (s *Service) UpdatePathway(ctx context.Context, id pgtype.UUID, req UpdatePathwayRequest) (PathwayDTO, error) {
 	input := UpdatePathwayInput{
 		ProfessionID:           req.ProfessionID,
 		RegulatoryBody:         req.RegulatoryBody,
@@ -472,7 +472,7 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: update pathway: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch updated pathway: %w", err)
 	}
@@ -481,8 +481,8 @@ func (s *Service) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, r
 }
 
 // DeletePathway deletes a credential pathway by id for the tenant.
-func (s *Service) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
-	if err := s.store.DeletePathway(ctx, id, tenantID); err != nil {
+func (s *Service) DeletePathway(ctx context.Context, id pgtype.UUID) error {
+	if err := s.store.DeletePathway(ctx, id); err != nil {
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
 	}
 
@@ -493,8 +493,8 @@ func (s *Service) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) e
 // Admin-only (credential_checker.manage permission checked at route
 // level). Sets hitl_reviewed_by, hitl_reviewed_at = now(), status =
 // 'published'.
-func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) (PathwayDTO, error) {
-	if err := s.store.ApprovePathway(ctx, id, tenantID, reviewerID, notes); err != nil {
+func (s *Service) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) (PathwayDTO, error) {
+	if err := s.store.ApprovePathway(ctx, id, reviewerID, notes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PathwayDTO{}, pgx.ErrNoRows
 		}
@@ -502,7 +502,7 @@ func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID p
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: approve pathway: %w", err)
 	}
 
-	row, err := s.store.GetPathwayByID(ctx, id, tenantID)
+	row, err := s.store.GetPathwayByID(ctx, id)
 	if err != nil {
 		return PathwayDTO{}, fmt.Errorf("credentialchecker: fetch approved pathway: %w", err)
 	}
@@ -514,12 +514,12 @@ func (s *Service) ApprovePathway(ctx context.Context, id, tenantID, reviewerID p
 // (credential_checker.note permission checked at route level). Notes may
 // only be submitted on published pathways — draft/ai_draft/pending
 // pathways are not publicly visible and should not accumulate notes.
-func (s *Service) CreateNote(ctx context.Context, pathwayID, tenantID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
+func (s *Service) CreateNote(ctx context.Context, pathwayID, userID pgtype.UUID, note string) (CommunityNoteDTO, error) {
 	if note == "" {
 		return CommunityNoteDTO{}, errors.New("note is required")
 	}
 
-	pathway, err := s.store.GetPathwayByID(ctx, pathwayID, tenantID)
+	pathway, err := s.store.GetPathwayByID(ctx, pathwayID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CommunityNoteDTO{}, pgx.ErrNoRows

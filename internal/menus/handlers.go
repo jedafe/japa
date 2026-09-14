@@ -437,7 +437,7 @@ func (h *Handlers) requireItemInMenu(ctx context.Context, itemID, menuID pgtype.
 
 // GetMenuBySlug is an exported method.
 func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -466,7 +466,7 @@ func (h *Handlers) GetMenuBySlug(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	menu, err := h.Service.GetMenuBySlug(r.Context(), tenantID, slug, userGroupIDs, isAuthenticated, userID)
+	menu, err := h.Service.GetMenuBySlug(r.Context(), slug, userGroupIDs, isAuthenticated, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

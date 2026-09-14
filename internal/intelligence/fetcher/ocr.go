@@ -41,7 +41,6 @@ type OCRFetcher struct {
 	tesseractBin string
 	pdftoppmBin  string
 	rdb          valkeycompat.Cmdable
-	tenantID     pgtype.UUID
 }
 
 // NewOCRFetcher returns an OCRFetcher using the default binary names and
@@ -54,8 +53,8 @@ func NewOCRFetcher() *OCRFetcher {
 // result caching. The content hash of the PDF body is used as the cache
 // key so identical documents skip the expensive OCR step (BUG-17 fix).
 // The cache key is tenant-scoped per ADR-112 Amendment 2.
-func NewOCRFetcherWithCache(rdb valkeycompat.Cmdable, tenantID pgtype.UUID) *OCRFetcher {
-	return &OCRFetcher{tesseractBin: "tesseract", pdftoppmBin: "pdftoppm", rdb: rdb, tenantID: tenantID}
+func NewOCRFetcherWithCache(rdb valkeycompat.Cmdable) *OCRFetcher {
+	return &OCRFetcher{tesseractBin: "tesseract", pdftoppmBin: "pdftoppm", rdb: rdb}
 }
 
 // Available returns true if both tesseract and pdftoppm are installed.
@@ -86,7 +85,7 @@ func (f *OCRFetcher) ExtractText(body []byte) (string, error) {
 	// Compute content hash for cache key.
 	h := sha256.Sum256(body)
 	contentHash := hex.EncodeToString(h[:])
-	cacheKey := fmt.Sprintf("jc:intel:ocr_cache:%s:%s", f.tenantID.String(), contentHash)
+	cacheKey := fmt.Sprintf("jc:intel:ocr_cache:%s:%s", pgtype.UUID{}.String(), contentHash)
 
 	// Check cache first (BUG-17 fix).
 	if f.rdb != nil {

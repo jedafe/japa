@@ -66,8 +66,8 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 				return
 			}
 
-			var tenantID pgtype.UUID
-			if err := tenantID.Scan(""); err != nil {
+			var ()
+			if err := (error)(nil); err != nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid tenant ID")
 				return
 			}
@@ -121,8 +121,8 @@ func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Hand
 				return
 			}
 
-			var tenantID pgtype.UUID
-			if err := tenantID.Scan(""); err != nil {
+			var ()
+			if err := (error)(nil); err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}

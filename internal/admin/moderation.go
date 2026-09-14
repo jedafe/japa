@@ -44,7 +44,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -97,7 +97,7 @@ func (h *Handlers) ListModeration(w http.ResponseWriter, r *http.Request) {
 	// Filters are passed through for each sub-query; an empty filter string
 	// means "no filter" for that sub-query. Placeholders are shared across
 	// all three sub-queries so we can use a single arg list.
-	listArgs := []interface{}{tenantID, filterStatus, filterContentType, "%" + filterSearch + "%", limit, offset}
+	listArgs := []interface{}{pgtype.UUID{}, filterStatus, filterContentType, "%" + filterSearch + "%", limit, offset}
 
 	query := `
 SELECT id, body, status, entity_type, created_at, reviewer_user_id, author_username, queue_source
@@ -182,7 +182,7 @@ LIMIT $4 OFFSET $5`
 	}
 
 	// Count total with same filters (without LIMIT/OFFSET).
-	countArgs := []interface{}{tenantID, filterStatus, filterContentType, "%" + filterSearch + "%"}
+	countArgs := []interface{}{pgtype.UUID{}, filterStatus, filterContentType, "%" + filterSearch + "%"}
 	countQuery := `
 SELECT COALESCE(SUM(cnt), 0)::int FROM (
     SELECT COUNT(*) AS cnt
@@ -1120,7 +1120,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1132,7 +1132,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	// Route through the organizations service so the organization.verified
 	// webhook event is emitted (Section 12) and the org cache is invalidated.
 	if h.Orgs != nil {
-		if err := h.Orgs.VerifyOrganization(r.Context(), oid, tenantID, user.UserID); err != nil {
+		if err := h.Orgs.VerifyOrganization(r.Context(), oid, user.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 			return
 		}
@@ -1143,7 +1143,7 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Invalidate org cache so the verified status is reflected immediately.
-		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
+		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": true}})
@@ -1161,7 +1161,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1173,7 +1173,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 	// Route through the organizations service so the organization.unverified
 	// webhook event is emitted (Section 12) and the org cache is invalidated.
 	if h.Orgs != nil {
-		if err := h.Orgs.UnverifyOrganization(r.Context(), oid, tenantID, user.UserID); err != nil {
+		if err := h.Orgs.UnverifyOrganization(r.Context(), oid, user.UserID); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unverify organization")
 			return
 		}
@@ -1184,7 +1184,7 @@ func (h *Handlers) UnverifyOrganization(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey, tenantID)
+		organizations.InvalidateOrgCacheByCmdable(r.Context(), h.Valkey)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": orgID, "verified": false}})

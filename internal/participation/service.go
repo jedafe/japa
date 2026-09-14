@@ -59,7 +59,7 @@ type EventTracker interface {
 // an error. Implementations must tenant-scope every write.
 type ActionDispatcher interface {
 	// CreateComment posts a comment on targetContentID as the persona.
-	CreateComment(ctx context.Context, tenantID, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error)
+	CreateComment(ctx context.Context, personaUserID, targetContentID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// CreateForumThread creates a new forum thread (forum_question action).
 	// contentID is the published contents row that backs the thread's root
 	// post; the forum thread links to it via forum_threads.content_id
@@ -69,7 +69,7 @@ type ActionDispatcher interface {
 	// CreateForumReply posts a reply to a forum thread (forum_answer action).
 	CreateForumReply(ctx context.Context, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// ToggleFollow follows the target entity as the persona.
-	ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+	ToggleFollow(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 	// AddReaction adds a reaction to the target entity as the persona.
 	AddReaction(ctx context.Context, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID, reactionKey string) error
 	// CreateBookmark bookmarks the target entity as the persona.
@@ -230,7 +230,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	var tenantUUID pgtype.UUID
 	_ = tenantUUID.Scan("")
 	globalCap := s.getGlobalDailyCap(ctx)
-	globalToday := s.getGlobalDailyCounter(ctx, tenantUUID, today)
+	globalToday := s.getGlobalDailyCounter(ctx, today)
 
 	if totalToday >= policy.ActionsPerDay {
 		slog.Info("participation: run_activity: per-persona daily cap reached", "persona_id", personaID, "count", totalToday)
@@ -281,7 +281,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 
 		s.incrementDailyCounter(ctx, personaID, today, actionType)
 		s.incrementDailyCounter(ctx, personaID, today, "total")
-		s.incrementGlobalCounter(ctx, tenantUUID, today)
+		s.incrementGlobalCounter(ctx, today)
 
 		dispatched++
 	}
@@ -311,7 +311,6 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 	// existed (the 000482 backfill copies them, but this guard covers any
 	// row that escaped the backfill).
 	var (
-		tenantID   pgtype.UUID
 		contentID  pgtype.UUID
 		reviewerID pgtype.UUID
 		status     string
@@ -323,7 +322,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 		        c.author_id, COALESCE(cr.persona_payload::text, cr.feedback)::bytea
 		 FROM content_reviews cr
 		 JOIN contents c ON c.id = cr.content_id
-		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID).Scan(&tenantID, &contentID, &reviewerID, &status, &authorID, &payload)
+		 WHERE cr.id = $1 AND cr.source = 'persona_action'`, actionID).Scan(&pgtype.UUID{}, &contentID, &reviewerID, &status, &authorID, &payload)
 	if err != nil {
 		return fmt.Errorf("participation: load action: %w", err)
 	}
@@ -397,7 +396,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 			return nil
 		}
 
-		dispErr := s.dispatchNonContentAction(ctx, p, tenantID, authorID)
+		dispErr := s.dispatchNonContentAction(ctx, p, authorID)
 		if dispErr != nil {
 			slog.Error("participation: dispatch_action: non-content action failed", "action_id", actionID, "action_type", p.ActionType, "error", dispErr)
 			return dispErr
@@ -421,7 +420,7 @@ func (s *Service) DispatchAction(ctx context.Context, actionID pgtype.UUID) erro
 
 // dispatchNonContentAction routes a non-content persona action to the correct
 // existing action endpoint via the ActionDispatcher (ADR-077 §5, BUG-010).
-func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPayload, tenantID, personaUserID pgtype.UUID) error {
+func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPayload, personaUserID pgtype.UUID) error {
 	var (
 		targetContentID pgtype.UUID
 		targetEntityID  pgtype.UUID
@@ -436,7 +435,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 
 	switch payload.ActionType {
 	case "comment":
-		_, err := s.dispatcher.CreateComment(ctx, tenantID, personaUserID, targetContentID, payload.Body)
+		_, err := s.dispatcher.CreateComment(ctx, personaUserID, targetContentID, payload.Body)
 		return err
 	case "forum_answer":
 		// Look up the forum thread by the target content's content_id.
@@ -451,7 +450,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 
 		return err
 	case "follow":
-		return s.dispatcher.ToggleFollow(ctx, tenantID, personaUserID, payload.TargetEntityType, targetEntityID)
+		return s.dispatcher.ToggleFollow(ctx, personaUserID, payload.TargetEntityType, targetEntityID)
 	case "react":
 		return s.dispatcher.AddReaction(ctx, personaUserID, payload.TargetEntityType, targetEntityID, payload.ReactionKey)
 	case "bookmark":
@@ -569,7 +568,6 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	var p personas.PersonaDetail
 
 	var (
-		tenantID       pgtype.UUID
 		userID         pgtype.UUID
 		profileID      pgtype.UUID
 		voicePrompt    *string
@@ -582,7 +580,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 	err := s.db.Reader.QueryRow(ctx, `SELECT id, user_id, profile_id, disclosure_mode,
 		        autonomy_mode, voice_prompt, activity_policy, status, created_by,
 		        created_at, updated_at
-		 FROM ai_personas WHERE id = $1`, personaID).Scan(&p.ID, &tenantID, &userID, &profileID, &p.DisclosureMode,
+		 FROM ai_personas WHERE id = $1`, personaID).Scan(&p.ID, &pgtype.UUID{}, &userID, &profileID, &p.DisclosureMode,
 		&p.AutonomyMode, &voicePrompt, &activityPolicy, &p.Status, &createdBy,
 		&createdAt, &updatedAt)
 	if err != nil {
@@ -1020,12 +1018,12 @@ func (s *Service) incrementDailyCounter(ctx context.Context, personaID pgtype.UU
 	_, _ = pipe.Exec(ctx)
 }
 
-func (s *Service) getGlobalDailyCounter(ctx context.Context, tenantID pgtype.UUID, date string) int {
+func (s *Service) getGlobalDailyCounter(ctx context.Context, date string) int {
 	if s.vk == nil {
 		return 0
 	}
 
-	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
+	key := valkey.MustKey("persona:global::%s", date)
 
 	val, err := s.vk.Get(ctx, key).Int()
 	if err != nil {
@@ -1035,12 +1033,12 @@ func (s *Service) getGlobalDailyCounter(ctx context.Context, tenantID pgtype.UUI
 	return val
 }
 
-func (s *Service) incrementGlobalCounter(ctx context.Context, tenantID pgtype.UUID, date string) {
+func (s *Service) incrementGlobalCounter(ctx context.Context, date string) {
 	if s.vk == nil {
 		return
 	}
 
-	key := valkey.MustKey("persona:global:%s:%s", tenantID.String(), date)
+	key := valkey.MustKey("persona:global::%s", date)
 	pipe := s.vk.Pipeline()
 	pipe.Incr(ctx, key)
 	pipe.ExpireAt(ctx, key, nextMidnightUTC())

@@ -39,16 +39,16 @@ func NewServiceWithValkey(store *Store, rdb *valkey.Client) *Service {
 // the given tenant so the next request regenerates them from the updated
 // bot registry.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (s *Service) invalidateCaches(ctx context.Context, tenantID pgtype.UUID) {
+func (s *Service) invalidateCaches(ctx context.Context) {
 	if s.rdb == nil {
 		return
 	}
 
-	InvalidateRobotsCache(ctx, s.rdb, tenantID)
-	InvalidateLLMsCache(ctx, s.rdb, tenantID)
+	InvalidateRobotsCache(ctx, s.rdb)
+	InvalidateLLMsCache(ctx, s.rdb)
 
 	// Also invalidate the bot detection middleware's cached bot list.
-	botListKey := valkey.MustKey("bot_list:%s", tenantID.String())
+	botListKey := valkey.MustKey("bot_list:")
 	if err := s.rdb.Redis().Del(ctx, botListKey).Err(); err != nil {
 		slog.Warn("bots: failed to invalidate bot_list cache", "error", err)
 	}
@@ -112,7 +112,7 @@ func safeInt32(v int) int32 {
 // ---------------------------------------------------------------------------
 
 // CreateKnownBot adds a new bot to the registry for the given tenant.
-func (s *Service) CreateKnownBot(ctx context.Context, tenantID pgtype.UUID, input CreateKnownBotInput) (BotResponse, error) {
+func (s *Service) CreateKnownBot(ctx context.Context, input CreateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.createKnownBot(ctx, gen.CreateKnownBotParams{
 
 		Name:             input.Name,
@@ -126,7 +126,7 @@ func (s *Service) CreateKnownBot(ctx context.Context, tenantID pgtype.UUID, inpu
 		return BotResponse{}, fmt.Errorf("create known bot: %w", err)
 	}
 
-	s.invalidateCaches(ctx, tenantID)
+	s.invalidateCaches(ctx)
 
 	return botToResponse(bot), nil
 }
@@ -206,7 +206,7 @@ func (s *Service) ListKnownBotsWithCount(ctx context.Context, botType string, pa
 }
 
 // UpdateKnownBot modifies an existing bot entry.
-func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUID, input UpdateKnownBotInput) (BotResponse, error) {
+func (s *Service) UpdateKnownBot(ctx context.Context, botID pgtype.UUID, input UpdateKnownBotInput) (BotResponse, error) {
 	bot, err := s.store.updateKnownBot(ctx, gen.UpdateKnownBotParams{
 		ID: botID,
 
@@ -220,7 +220,7 @@ func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 		return BotResponse{}, fmt.Errorf("update known bot: %w", err)
 	}
 
-	s.invalidateCaches(ctx, tenantID)
+	s.invalidateCaches(ctx)
 
 	return botToResponse(bot), nil
 }
@@ -228,7 +228,7 @@ func (s *Service) UpdateKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 // DeleteKnownBot removes a bot entry. System bots (is_system=true) are
 // protected from deletion to preserve pre-seeded crawler configuration.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUID) error {
+func (s *Service) DeleteKnownBot(ctx context.Context, botID pgtype.UUID) error {
 	existing, err := s.store.getKnownBotByID(ctx, botID)
 	if err != nil {
 		return fmt.Errorf("delete known bot (lookup): %w", err)
@@ -242,7 +242,7 @@ func (s *Service) DeleteKnownBot(ctx context.Context, tenantID, botID pgtype.UUI
 		return fmt.Errorf("delete known bot: %w", err)
 	}
 
-	s.invalidateCaches(ctx, tenantID)
+	s.invalidateCaches(ctx)
 
 	return nil
 }

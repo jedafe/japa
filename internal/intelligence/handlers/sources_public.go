@@ -125,9 +125,8 @@ func (h *Handlers) HandleListSourceCollections(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	userID, authed := optionalUser(w, r)
@@ -226,9 +225,8 @@ func (h *Handlers) HandlePublicSourcesDirectory(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	q := r.URL.Query()
@@ -299,9 +297,8 @@ func (h *Handlers) HandleGetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
@@ -376,9 +373,8 @@ func (h *Handlers) HandleReportSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	user := auth.FromContext(r.Context())
@@ -573,9 +569,8 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
@@ -596,7 +591,7 @@ func (h *Handlers) HandleToggleSourceFollow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	isFollowing, err := h.followsSvc.ToggleFollow(r.Context(), tenantID, userID, follows.EntityTypeSource, row.ID)
+	isFollowing, err := h.followsSvc.ToggleFollow(r.Context(), userID, follows.EntityTypeSource, row.ID)
 	if err != nil {
 		slog.Error("intel: source follow toggle failed", "slug", slug, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "source_follow_failed", "Failed to follow source")
@@ -670,9 +665,8 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	var req proposeSourceRequest
@@ -738,9 +732,8 @@ func (h *Handlers) HandleListBlockedSources(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	ids, err := h.intelSources.ListBlockedSourceIDs(r.Context(), userID)
@@ -782,9 +775,8 @@ func (h *Handlers) HandleToggleSourceBlock(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = h.defaultTenant
+	if !false {
+
 	}
 
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))

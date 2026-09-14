@@ -29,7 +29,7 @@ type useCaseUpdateArgs struct {
 // UseCaseCreateHandler returns a ToolHandler that creates a new record in
 // the named tool table.
 func UseCaseCreateHandler(deps *ToolDeps, toolType string) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -39,7 +39,7 @@ func UseCaseCreateHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
 		}
 
-		record, err := deps.ToolsRegistry.CreateTool(ctx, tenantID, userID, toolType, payload)
+		record, err := deps.ToolsRegistry.CreateTool(ctx, userID, toolType, payload)
 		if err != nil {
 			return errorToolResult("create_failed", fmt.Sprintf("failed to create %s: %v", toolType, err)), nil
 		}
@@ -54,7 +54,7 @@ func UseCaseCreateHandler(deps *ToolDeps, toolType string) ToolHandler {
 // UseCaseUpdateHandler returns a ToolHandler that updates an existing record
 // in the named tool table.
 func UseCaseUpdateHandler(deps *ToolDeps, toolType string) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -68,7 +68,7 @@ func UseCaseUpdateHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		record, err := deps.ToolsRegistry.UpdateTool(ctx, tenantID, userID, toolType, a.ToolID, a.Payload)
+		record, err := deps.ToolsRegistry.UpdateTool(ctx, userID, toolType, a.ToolID, a.Payload)
 		if err != nil {
 			return errorToolResult("update_failed", fmt.Sprintf("failed to update %s: %v", toolType, err)), nil
 		}
@@ -84,7 +84,7 @@ func UseCaseUpdateHandler(deps *ToolDeps, toolType string) ToolHandler {
 // UseCaseDeleteHandler returns a ToolHandler that soft-deletes an existing
 // record from the named tool table.
 func UseCaseDeleteHandler(deps *ToolDeps, toolType string) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -98,7 +98,7 @@ func UseCaseDeleteHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		if err := deps.ToolsRegistry.DeleteTool(ctx, tenantID, userID, toolType, a.ToolID); err != nil {
+		if err := deps.ToolsRegistry.DeleteTool(ctx, userID, toolType, a.ToolID); err != nil {
 			return errorToolResult("delete_failed", fmt.Sprintf("failed to delete %s: %v", toolType, err)), nil
 		}
 
@@ -113,7 +113,7 @@ func UseCaseDeleteHandler(deps *ToolDeps, toolType string) ToolHandler {
 // UseCaseAssignGeoHandler returns a ToolHandler that updates the geo-scoping
 // fields of an existing record in the named tool table.
 func UseCaseAssignGeoHandler(deps *ToolDeps, toolType string) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -127,7 +127,7 @@ func UseCaseAssignGeoHandler(deps *ToolDeps, toolType string) ToolHandler {
 			return errorToolResult("missing_tool_id", "tool_id is required"), nil
 		}
 
-		record, err := deps.ToolsRegistry.AssignGeo(ctx, tenantID, userID, toolType, a.ToolID, a.Payload)
+		record, err := deps.ToolsRegistry.AssignGeo(ctx, userID, toolType, a.ToolID, a.Payload)
 		if err != nil {
 			return errorToolResult("assign_geo_failed", fmt.Sprintf("failed to assign geo for %s: %v", toolType, err)), nil
 		}

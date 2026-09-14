@@ -247,7 +247,7 @@ func journeyCacheToken(vc *visitor.VisitorContext) string {
 // per-content-region, and per-journey-context Valkey key. The journey token is
 // included because ranking now depends on destination, stage, visa, and roadmap
 // signals; without it a context change would serve a stale ranking.
-func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string, vc *visitor.VisitorContext) string {
+func forYouCacheKey(userID pgtype.UUID, sortMode string, vc *visitor.VisitorContext) string {
 	contentCountry := ""
 	contentRegion := ""
 
@@ -257,7 +257,7 @@ func forYouCacheKey(tenantID, userID pgtype.UUID, sortMode string, vc *visitor.V
 	}
 
 	return valkey.MustKey("cache:feed:foryou:%s:%s:%s:%s:%s:%s",
-		uuidToString(tenantID), uuidToString(userID), sortMode,
+		uuidToString(), uuidToString(userID), sortMode,
 		strings.ToUpper(contentCountry), strings.ToUpper(contentRegion),
 		journeyCacheToken(vc))
 }

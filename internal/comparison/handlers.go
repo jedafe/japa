@@ -668,7 +668,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -696,7 +696,7 @@ func (h *Handlers) UpdateComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.UpdateComparison(r.Context(), id, tenantID, UpdateComparisonInput{
+	result, err := h.Service.UpdateComparison(r.Context(), id, UpdateComparisonInput{
 		Title:      input.Title,
 		Slug:       input.Slug,
 		Body:       input.Body,

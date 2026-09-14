@@ -259,7 +259,7 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page
 // with its current approved revision content.
 func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -272,7 +272,7 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.service.GetWikiPage(r.Context(), tenantID, spaceSlug, pageSlug)
+	page, err := h.service.GetWikiPage(r.Context(), spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -296,7 +296,7 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 // HandleGetHistory handles GET /wiki/:space_slug/:page_slug/history —
 // revision history for a wiki page.
 func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -311,7 +311,7 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	revs, total, err := h.service.GetRevisionHistory(r.Context(), tenantID, spaceSlug, pageSlug, page, limit)
+	revs, total, err := h.service.GetRevisionHistory(r.Context(), spaceSlug, pageSlug, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -353,7 +353,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -408,7 +408,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 
 	input.SpaceSlug = spaceSlug
 
-	pageID, revID, err := h.service.CreatePageWithRevision(r.Context(), tenantID, user.UserID, input)
+	pageID, revID, err := h.service.CreatePageWithRevision(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination not found")
@@ -455,7 +455,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -524,7 +524,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	revID, err := h.service.SubmitRevision(r.Context(), tenantID, user.UserID, spaceSlug, pageSlug, input)
+	revID, err := h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")

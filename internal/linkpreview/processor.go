@@ -27,9 +27,9 @@ func NewProcessorAdapter(fetcher *Fetcher) *ProcessorAdapter {
 // FetchAndStore fetches a link preview with SSRF protection and stores it.
 // The blockID and tenantID parameters are reserved for future use when
 // content blocks store preview references in the database.
-func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tenantID string) error {
+func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID string) error {
 	var tid pgtype.UUID
-	if err := tid.Scan(tenantID); err != nil {
+	if err := tid.Scan(); err != nil {
 		slog.Warn("link_preview: invalid the id in task payload, using zero", "error", err)
 	}
 

@@ -176,7 +176,7 @@ type CreateCouponInput struct {
 }
 
 // CreateCoupon is an exported method.
-func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
+func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
 		Title: input.Title, Description: input.Description, Code: input.Code,
@@ -189,7 +189,7 @@ func (s *Service) CreateCoupon(ctx context.Context, tenantID, userID pgtype.UUID
 		return gen.Coupon{}, err
 	}
 
-	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+	s.invalidateCouponCaches(ctx, c.ID)
 
 	return c, nil
 }
@@ -234,10 +234,10 @@ func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *s
 	return s.store.listCoupons(ctx, status, couponType, search, pgtype.UUID{}, limit, offset)
 }
 
-func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
+func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsByTenantRow, error) {
 	// Only cache unfiltered first-page lists (jc:coupon_list:{tenant}, TTL 5min — Section 55).
 	canCache := providerID == nil && couponType == nil && search == nil && page == 1
-	cacheKey := valkey.MustKey("coupon_list:%s", tenantID.String())
+	cacheKey := valkey.MustKey("coupon_list:")
 
 	if canCache && s.vk != nil {
 		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
@@ -264,7 +264,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 	if canCache && s.vk != nil {
 		if data, jsonErr := json.Marshal(coupons); jsonErr == nil {
 			if err := s.vk.Set(ctx, cacheKey, string(data), couponListCacheTTL).Err(); err != nil {
-				slog.Warn("coupons: failed to cache coupon list", "tenant", tenantID.String(), "error", err)
+				slog.Warn("coupons: failed to cache coupon list", "tenant", "", "error", err)
 			}
 		}
 	}
@@ -276,7 +276,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, tenantID pgtype.UUID, p
 type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
-func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
+func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
 	_, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
@@ -298,13 +298,13 @@ func (s *Service) UpdateCoupon(ctx context.Context, id, tenantID pgtype.UUID, in
 		return gen.Coupon{}, err
 	}
 
-	s.invalidateCouponCaches(ctx, tenantID, c.ID)
+	s.invalidateCouponCaches(ctx, c.ID)
 
 	return c, nil
 }
 
 // DeleteCoupon is an exported method.
-func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
 	_, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
@@ -318,7 +318,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) er
 		return err
 	}
 
-	s.invalidateCouponCaches(ctx, tenantID, id)
+	s.invalidateCouponCaches(ctx, id)
 
 	return nil
 }
@@ -326,14 +326,14 @@ func (s *Service) DeleteCoupon(ctx context.Context, id, tenantID pgtype.UUID) er
 // invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}) and
 // the tenant coupon list cache (jc:coupon_list:{tenant}) after any coupon
 // mutation (Section 55). Best-effort: errors are logged.
-func (s *Service) invalidateCouponCaches(ctx context.Context, tenantID, couponID pgtype.UUID) {
+func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
 	keys := []string{
 		valkey.MustKey("coupon:%s", couponID.String()),
-		valkey.MustKey("coupon_list:%s", tenantID.String()),
+		valkey.MustKey("coupon_list:"),
 	}
 	if err := s.vk.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("coupons: failed to invalidate caches", "keys", keys, "error", err)

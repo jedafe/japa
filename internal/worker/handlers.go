@@ -1449,7 +1449,7 @@ func HandleImageProcessing(ctx context.Context, t *asynq.Task) error {
 		return errors.New("missing media_id")
 	}
 
-	if err := imageProcessor.ProcessImage(ctx, payload.MediaID, "", payload.Operation, payload.Width, payload.Height); err != nil {
+	if err := imageProcessor.ProcessImage(ctx, payload.MediaID, payload.Operation, payload.Width, payload.Height); err != nil {
 		slog.Error("task:content:process_image: failed", "media_id", payload.MediaID, "operation", payload.Operation, "error", err)
 		return err
 	}
@@ -1577,7 +1577,7 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 		}
 	}
 
-	if err := formTriggerProcessor.FireSubmissionTriggers(ctx, submissionID, tenantID, formID, submitterUserID, payload.FieldValues); err != nil {
+	if err := formTriggerProcessor.FireSubmissionTriggers(ctx, submissionID, formID, submitterUserID, payload.FieldValues); err != nil {
 		slog.Error("task:form:fire_submission_triggers: failed", "submission_id", payload.SubmissionID, "error", err)
 		return err
 	}
@@ -1829,7 +1829,7 @@ func HandleLinkPreviewFetch(ctx context.Context, t *asynq.Task) error {
 		return errors.New("missing url")
 	}
 
-	if err := linkPreviewProcessor.FetchAndStore(ctx, payload.URL, payload.BlockID, ""); err != nil {
+	if err := linkPreviewProcessor.FetchAndStore(ctx, payload.URL, payload.BlockID); err != nil {
 		slog.Error("task:content:fetch_link_preview: failed", "url", payload.URL, "error", err)
 		return err
 	}
@@ -1859,7 +1859,7 @@ func HandleLanguagePackAITranslate(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if err := aiTranslateProcessor.TranslatePack(ctx, payload.PackID, payload.SourceLang, payload.TargetLang, ""); err != nil {
+	if err := aiTranslateProcessor.TranslatePack(ctx, payload.PackID, payload.SourceLang, payload.TargetLang); err != nil {
 		slog.Error("task:i18n:translate_language_pack: translation failed", "pack_id", payload.PackID, "error", err)
 		return err
 	}
@@ -2205,7 +2205,7 @@ func HandleAIGenerateContentEmbedding(ctx context.Context, t *asynq.Task) error 
 		return nil
 	}
 
-	if err := contentEmbedder.EmbedContent(ctx, contentID.Bytes, [16]byte{}, text); err != nil {
+	if err := contentEmbedder.EmbedContent(ctx, contentID.Bytes, text); err != nil {
 		return fmt.Errorf("task:content:generate_embedding: %w", err)
 	}
 
@@ -2249,7 +2249,7 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 			return fmt.Errorf("task:content:generate_draft: bad id: %w", err)
 		}
 
-		if err := studioProcessor.GenerateJob(ctx, tenantID, id); err != nil {
+		if err := studioProcessor.GenerateJob(ctx, id); err != nil {
 			return fmt.Errorf("task:content:generate_draft: %w", err)
 		}
 
@@ -2325,12 +2325,7 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("task:content:regenerate_from_source: bad intel_record_id: %w", err)
 	}
 
-	tenantID, err := scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:content:regenerate_from_source: bad id: %w", err)
-	}
-
-	if err := studioProcessor.RegenerateFromSource(ctx, tenantID, contentID, intelRecordID); err != nil {
+	if err := studioProcessor.RegenerateFromSource(ctx, contentID, intelRecordID); err != nil {
 		return fmt.Errorf("task:content:regenerate_from_source: %w", err)
 	}
 
@@ -3275,7 +3270,7 @@ func generateSitemapForTenant(ctx context.Context, tenantID pgtype.UUID, baseURL
 	// Invalidate the on-demand sitemap Valkey cache so the live HTTP
 	// handlers serve fresh XML on next request (BE-11 fix).
 	// Ref: japaconnect-engineering/sections/26-seo-performance.md
-	seo.InvalidateSitemapCache(ctx, rdb, tenantID)
+	seo.InvalidateSitemapCache(ctx, rdb)
 }
 
 // HandleRSSRegenerate regenerates the RSS feed for published content.
@@ -3748,7 +3743,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if err := spaceAutoPopulateProcessor.AutoPopulateSpace(ctx, payload.SpaceID, ""); err != nil {
+	if err := spaceAutoPopulateProcessor.AutoPopulateSpace(ctx, payload.SpaceID); err != nil {
 		slog.Error("task:space:auto_populate: failed", "space_id", payload.SpaceID, "error", err)
 		return err
 	}
@@ -5385,7 +5380,7 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 		return errors.New("wiki:seed_stub_pages: space_id is required")
 	}
 
-	if err := wikiSeedStubPagesProcessor.SeedStubPages(ctx, payload.SpaceID, ""); err != nil {
+	if err := wikiSeedStubPagesProcessor.SeedStubPages(ctx, payload.SpaceID); err != nil {
 		slog.Error("task:wiki:seed_stub_pages: failed", "space_id", payload.SpaceID, "error", err)
 		return err
 	}

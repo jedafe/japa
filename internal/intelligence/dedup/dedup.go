@@ -38,16 +38,15 @@ type RecordLister interface {
 // Service wraps a RecordLister and exposes the dedup decision logic. It is
 // safe for concurrent use because it holds no mutable state.
 type Service struct {
-	store    RecordLister
-	tenantID pgtype.UUID
+	store RecordLister
 }
 
 // NewService creates a dedup service backed by the given record lister. Any
 // *stores.Store satisfies RecordLister, so callers can pass the shared
 // intelligence store directly. The tenantID scopes all queries per ADR-112
 // Amendment 2.
-func NewService(store RecordLister, tenantID pgtype.UUID) *Service {
-	return &Service{store: store, tenantID: tenantID}
+func NewService(store RecordLister) *Service {
+	return &Service{store: store}
 }
 
 // CheckResult describes the dedup outcome for a candidate intel record.

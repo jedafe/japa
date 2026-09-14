@@ -84,7 +84,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -103,7 +103,7 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.ResolveURL(r.Context(), tenantID, input.URL)
+	result, err := h.Service.ResolveURL(r.Context(), input.URL)
 	if err != nil {
 		if isVideoClientError(err) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_url", err.Error())
@@ -135,7 +135,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -188,7 +188,7 @@ func (h *Handlers) Upload(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.Service.UploadVideo(
 		r.Context(),
-		tenantID,
+
 		user.UserID,
 		header.Filename,
 		data,
@@ -362,7 +362,7 @@ func (h *Handlers) GetImportJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // userListQueryFunc loads a paginated list scoped to the authenticated user.
-type userListQueryFunc func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error)
+type userListQueryFunc func(ctx context.Context, userID pgtype.UUID, limit, offset int32) (any, error)
 
 // runUserList is the shared boilerplate for user-scoped list endpoints.
 func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch userListQueryFunc) {
@@ -371,14 +371,14 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	limit, offset := parsePage(r, "limit", "offset")
 
-	items, err := fetch(r.Context(), tenantID, user.UserID, limit, offset)
+	items, err := fetch(r.Context(), user.UserID, limit, offset)
 	if err != nil {
 		errpkg.HandleServiceError(w, err)
 		return
@@ -389,7 +389,7 @@ func (h *Handlers) runUserList(w http.ResponseWriter, r *http.Request, fetch use
 
 // ListImportJobs handles GET /api/v1/me/video-imports.
 func (h *Handlers) ListImportJobs(w http.ResponseWriter, r *http.Request) {
-	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
+	h.runUserList(w, r, func(ctx context.Context, userID pgtype.UUID, limit, offset int32) (any, error) {
 		return h.Service.ListImportJobsByUser(ctx, userID, limit, offset)
 	})
 }
@@ -507,7 +507,7 @@ func (h *Handlers) RetryMyImportJob(w http.ResponseWriter, r *http.Request) {
 
 // ListMyVideoClaims handles GET /api/v1/me/video-claims.
 func (h *Handlers) ListMyVideoClaims(w http.ResponseWriter, r *http.Request) {
-	h.runUserList(w, r, func(ctx context.Context, tenantID, userID pgtype.UUID, limit, offset int32) (any, error) {
+	h.runUserList(w, r, func(ctx context.Context, userID pgtype.UUID, limit, offset int32) (any, error) {
 		return h.Service.ListClaimsByUser(ctx, userID, limit, offset)
 	})
 }

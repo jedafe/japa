@@ -192,7 +192,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -213,7 +213,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.service.ProvisionPersonas(r.Context(), tenantID, user.UserID, inputs)
+	results, err := h.service.ProvisionPersonas(r.Context(), user.UserID, inputs)
 	if err != nil {
 		// Distinguish validation errors (400 with specific message) from
 		// provisioning failures (422 generic). Validation errors are wrapped

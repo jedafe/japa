@@ -2219,7 +2219,7 @@ func parseBudgetUSD(v string) float64 {
 // / per-task breakdowns aggregate from the ai_usage_log table via the AI store.
 // alert_triggered is derived from threshold vs spend.
 func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2239,7 +2239,7 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 	byTaskType := []any{}
 
 	if h.AIStore != nil {
-		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), tenantID, 30, "")
+		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), 30, "")
 		if err != nil {
 			slog.Error("control: get ai budget: usage summary", "error", err)
 		} else {
@@ -2282,7 +2282,7 @@ func (h *Handlers) GetAIBudget(w http.ResponseWriter, r *http.Request) {
 // Persists the monthly alert threshold (ai.monthly_budget_usd) to
 // system_settings and returns the updated budget summary.
 func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2321,7 +2321,7 @@ func (h *Handlers) UpdateAIBudget(w http.ResponseWriter, r *http.Request) {
 	byTaskType := []any{}
 
 	if h.AIStore != nil {
-		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), tenantID, 30, "")
+		summary, err := h.AIStore.GetAIUsageSummary(r.Context(), 30, "")
 		if err != nil {
 			slog.Error("control: update ai budget: usage summary", "error", err)
 		} else {
@@ -3683,7 +3683,7 @@ func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
 		rollout := 100
 
 		if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
-			enabled = h.FeatureChecker.IsEnabled(r.Context(), pgtype.UUID{}, ext.FeatureFlagKey)
+			enabled = h.FeatureChecker.IsEnabled(r.Context(), ext.FeatureFlagKey)
 
 			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
 				rollout = cfg.RolloutPercentage

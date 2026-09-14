@@ -43,10 +43,10 @@ func (s *stubIntelSourceManager) GetByURL(ctx context.Context, sourceURL string)
 	return gen.IntelSource{}, nil
 }
 
-type stubWebSearcher func(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error)
+type stubWebSearcher func(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error)
 
-func (s stubWebSearcher) Search(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
-	return s(ctx, client, settings, tenantID, query, limit)
+func (s stubWebSearcher) Search(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
+	return s(ctx, client, settings, query, limit)
 }
 
 type stubSettingsForDiscover struct{}
@@ -75,7 +75,7 @@ func TestSourceDiscoverHandler(t *testing.T) {
 	t.Parallel()
 
 	manager := &stubIntelSourceManager{byURL: map[string]gen.IntelSource{}}
-	searcher := func(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
+	searcher := func(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
 		return "test", []WebSearchResult{
 			{Title: "Example Scholarship", URL: "https://example.com/scholarship"},
 			{Title: "Another Scholarship", URL: "https://example.org/another"},
@@ -131,7 +131,7 @@ func TestSourceDiscoverHandler_Duplicate(t *testing.T) {
 			},
 		},
 	}
-	searcher := func(ctx context.Context, client *http.Client, settings SettingsReader, tenantID pgtype.UUID, query string, limit int) (string, []WebSearchResult, error) {
+	searcher := func(ctx context.Context, client *http.Client, settings SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
 		return "test", []WebSearchResult{
 			{Title: "Existing", URL: "https://example.com/existing"},
 			{Title: "New", URL: "https://example.com/new"},

@@ -20,7 +20,7 @@ import (
 // is returned (for the org admin dashboard). This avoids a routing conflict
 // between {slug} and {id} on the same path.
 func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -55,7 +55,7 @@ func (h *Handlers) GetPublicOrganization(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	org, err := h.service.GetPublicOrganizationBySlug(r.Context(), param, tenantID)
+	org, err := h.service.GetPublicOrganizationBySlug(r.Context(), param)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -120,7 +120,7 @@ func (h *Handlers) ListPublicMembers(w http.ResponseWriter, r *http.Request) {
 // verified (filter: "true"=verified only [default], "false"=unverified only,
 // "all"=all active orgs), page_size, page_offset.
 func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenantID(w, r)
+	_, ok := requireTenantID(w, r)
 	if !ok {
 		return
 	}
@@ -141,7 +141,7 @@ func (h *Handlers) ListPublicOrganizations(w http.ResponseWriter, r *http.Reques
 		verified = ""
 	}
 
-	rows, total, err := h.service.ListPublicOrganizations(r.Context(), tenantID, search, orgType, verified, limit, offset)
+	rows, total, err := h.service.ListPublicOrganizations(r.Context(), search, orgType, verified, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

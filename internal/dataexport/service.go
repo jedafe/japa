@@ -33,8 +33,8 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 // data/exports/{tenantID}/ and returns a relative download-endpoint URL.
 // In production this can be replaced with an S3/SeaweedFS-backed adapter.
 type Storage interface {
-	Store(ctx context.Context, tenantID, exportID pgtype.UUID, filename, mimeType string, data []byte) (url string, size int64, err error)
-	GetPath(tenantID, exportID pgtype.UUID, filename string) (string, error)
+	Store(ctx context.Context, exportID pgtype.UUID, filename, mimeType string, data []byte) (url string, size int64, err error)
+	GetPath(exportID pgtype.UUID, filename string) (string, error)
 }
 
 // LocalStorage writes export files to data/exports/{tenantID}/ and returns
@@ -54,13 +54,13 @@ func NewLocalStorage(root string) *LocalStorage {
 	return &LocalStorage{root: root}
 }
 
-func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
+func (ls *LocalStorage) dirForTenant() (string, error) {
 	abs, err := filepath.Abs(ls.root)
 	if err != nil {
 		return "", fmt.Errorf("resolving export root: %w", err)
 	}
 
-	dir := filepath.Join(abs, tenantID.String())
+	dir := filepath.Join(abs, "")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating export directory: %w", err)
 	}
@@ -69,8 +69,8 @@ func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
 }
 
 // Store is an exported method.
-func (ls *LocalStorage) Store(_ context.Context, tenantID, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
-	dir, err := ls.dirForTenant(tenantID)
+func (ls *LocalStorage) Store(_ context.Context, exportID pgtype.UUID, filename, mimeType string, data []byte) (string, int64, error) {
+	dir, err := ls.dirForTenant()
 	if err != nil {
 		return "", 0, err
 	}
@@ -92,8 +92,8 @@ func (ls *LocalStorage) Store(_ context.Context, tenantID, exportID pgtype.UUID,
 }
 
 // GetPath returns the local filesystem path for a tenant's export file.
-func (ls *LocalStorage) GetPath(tenantID, exportID pgtype.UUID, filename string) (string, error) {
-	dir, err := ls.dirForTenant(tenantID)
+func (ls *LocalStorage) GetPath(exportID pgtype.UUID, filename string) (string, error) {
+	dir, err := ls.dirForTenant()
 	if err != nil {
 		return "", err
 	}
@@ -275,7 +275,7 @@ func (s *Service) ProcessExport(ctx context.Context, exportID pgtype.UUID) error
 	}
 
 	// Collect data from the relevant table.
-	rows, colNames, err := s.collectData(ctx, pgtype.UUID{}, exp.ExportType, exp.IncludeMetadata)
+	rows, colNames, err := s.collectData(ctx, exp.ExportType, exp.IncludeMetadata)
 	if err != nil {
 		s.markFailed(ctx, exportID, fmt.Sprintf("collecting data: %v", err))
 		return fmt.Errorf("collecting data: %w", err)
@@ -323,8 +323,8 @@ func (s *Service) markFailed(ctx context.Context, exportID pgtype.UUID, errMsg s
 // map[string]any (column name → value) plus the ordered column names. This
 // uses raw SQL via pgx because each export type queries a different table
 // with different columns.
-func (s *Service) collectData(ctx context.Context, tenantID pgtype.UUID, exportType string, includeMetadata bool) ([]map[string]any, []string, error) {
-	query, args := buildExportQuery(exportType, tenantID, includeMetadata)
+func (s *Service) collectData(ctx context.Context, exportType string, includeMetadata bool) ([]map[string]any, []string, error) {
+	query, args := buildExportQuery(exportType, includeMetadata)
 	if query == "" {
 		return nil, nil, fmt.Errorf("unsupported export type: %s", exportType)
 	}
@@ -375,7 +375,7 @@ func (s *Service) collectData(ctx context.Context, tenantID pgtype.UUID, exportT
 // and content_reports have no updated_at column. The analytics query is
 // aggregated (GROUP BY), so metadata is exposed as min() aggregates rather
 // than bare columns (which would violate the GROUP BY rule).
-func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata bool) (string, []any) {
+func buildExportQuery(exportType string, includeMetadata bool) (string, []any) {
 	switch exportType {
 	case TypeUsers:
 		// users table has no display_name/bio — those are in user_profiles.
@@ -390,7 +390,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			p.display_name, p.bio` + meta + `
 			FROM users u
 			LEFT JOIN user_profiles p ON p.user_id = u.id
-			 ORDER BY u.created_at DESC`, []any{tenantID}
+			 ORDER BY u.created_at DESC`, []any{pgtype.UUID{}}
 
 	case TypePosts:
 		meta := ""
@@ -403,7 +403,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM contents c
 			JOIN users u ON u.id = c.author_id
 			WHERE c.deleted_at IS NULL
-			ORDER BY c.created_at DESC`, []any{tenantID}
+			ORDER BY c.created_at DESC`, []any{pgtype.UUID{}}
 
 	case TypeComments:
 		// comments table uses author_user_id (not user_id) and has no status column.
@@ -418,7 +418,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			JOIN users u ON u.id = cm.author_user_id
 			JOIN contents c ON c.id = cm.content_id
 			WHERE cm.deleted_at IS NULL
-			ORDER BY cm.created_at DESC`, []any{tenantID}
+			ORDER BY cm.created_at DESC`, []any{pgtype.UUID{}}
 
 	case TypeOrders:
 		// The orders table is `payments` in JapaConnect.
@@ -432,7 +432,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM payments p
 			JOIN users u ON u.id = p.user_id
 			
-			ORDER BY p.created_at DESC`, []any{tenantID}
+			ORDER BY p.created_at DESC`, []any{pgtype.UUID{}}
 
 	case TypeTransactions:
 		// The wallet transactions table is `wallet_ledger`. It has no
@@ -447,7 +447,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM wallet_ledger w
 			JOIN users u ON u.id = w.user_id
 			
-			ORDER BY w.created_at DESC`, []any{tenantID}
+			ORDER BY w.created_at DESC`, []any{pgtype.UUID{}}
 
 	case TypeAnalytics:
 		// The analytics events table is `platform_events`. The query is
@@ -463,7 +463,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM platform_events
 			
 			GROUP BY event_type, entity_type, entity_id, day
-			ORDER BY day DESC`, []any{tenantID}
+			ORDER BY day DESC`, []any{pgtype.UUID{}}
 
 	case TypeModeration:
 		// The moderation reports table is `content_reports`. It has no
@@ -478,7 +478,7 @@ func buildExportQuery(exportType string, tenantID pgtype.UUID, includeMetadata b
 			FROM content_reports cr
 			LEFT JOIN users u ON u.id = cr.reporter_user_id
 			
-			ORDER BY cr.created_at DESC`, []any{tenantID}
+			ORDER BY cr.created_at DESC`, []any{pgtype.UUID{}}
 	}
 
 	return "", nil
@@ -517,7 +517,7 @@ func (s *Service) generateFile(ctx context.Context, exp gen.PlatformDataExport, 
 		return "", 0, err
 	}
 
-	return s.storage.Store(ctx, pgtype.UUID{}, exp.ID, filename, mimeType, data)
+	return s.storage.Store(ctx, exp.ID, filename, mimeType, data)
 }
 
 // renderJSON marshals rows as pretty-printed JSON bytes.
@@ -626,7 +626,7 @@ func (s *Service) GetFilePath(ctx context.Context, id pgtype.UUID) (string, erro
 	baseName := sanitizeFilename(exp.Name)
 	filename := fmt.Sprintf("export_%s_%s.%s", baseName, exp.ID.String()[:8], exp.Format)
 
-	return s.storage.GetPath(pgtype.UUID{}, exp.ID, filename)
+	return s.storage.GetPath(exp.ID, filename)
 }
 
 // ListPendingExports returns pending exports for the worker.

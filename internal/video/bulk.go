@@ -303,7 +303,7 @@ func (s *Service) importBulkURLs(ctx context.Context, userID pgtype.UUID, job ge
 			continue
 		}
 
-		result, err := s.createSourceFromMetadata(ctx, pgtype.UUID{}, meta)
+		result, err := s.createSourceFromMetadata(ctx, meta)
 		if err != nil {
 			failed++
 

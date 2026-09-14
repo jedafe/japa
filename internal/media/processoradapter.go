@@ -55,7 +55,7 @@ func (a *ProcessorAdapter) ProcessImage(_ context.Context, mediaID, _, operation
 
 // Ensure ProcessorAdapter satisfies the interface at compile time.
 var _ interface {
-	ProcessImage(ctx context.Context, mediaID, tenantID, operation string, width, height int) error
+	ProcessImage(ctx context.Context, mediaID, operation string, width, height int) error
 } = (*ProcessorAdapter)(nil)
 
 // ProcessImageURL generates a signed imgproxy URL for a given storage path.

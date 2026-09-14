@@ -40,7 +40,7 @@ type jceArgs struct {
 // JCEAnalyzeHandler returns a ToolHandler that answers a natural-language
 // question about a comparison and profile.
 func JCEAnalyzeHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.JCE == nil {
 			return errorToolResult("jce_unavailable", "JCE service is not configured"), nil
 		}
@@ -86,7 +86,7 @@ func JCEAnalyzePrivacyTarget(ctx context.Context, args json.RawMessage) (Privacy
 // JCERankHandler returns a ToolHandler that ranks comparison items with
 // reasoning and confidence.
 func JCERankHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.JCE == nil {
 			return errorToolResult("jce_unavailable", "JCE service is not configured"), nil
 		}
@@ -132,7 +132,7 @@ func JCERankPrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEnt
 // JCEExplainHandler returns a ToolHandler that explains a single score or
 // recommendation for a comparison item and factor.
 func JCEExplainHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.JCE == nil {
 			return errorToolResult("jce_unavailable", "JCE service is not configured"), nil
 		}
@@ -187,7 +187,7 @@ func JCEExplainPrivacyTarget(ctx context.Context, args json.RawMessage) (Privacy
 // JCERecommendHandler returns a ToolHandler that returns the top next actions
 // and recommendations for a comparison and profile.
 func JCERecommendHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.JCE == nil {
 			return errorToolResult("jce_unavailable", "JCE service is not configured"), nil
 		}
@@ -233,7 +233,7 @@ func JCERecommendPrivacyTarget(ctx context.Context, args json.RawMessage) (Priva
 // JCERefreshHandler returns a ToolHandler that triggers a refresh of stale
 // comparison values from registered data sources.
 func JCERefreshHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.JCE == nil {
 			return errorToolResult("jce_unavailable", "JCE service is not configured"), nil
 		}
@@ -265,7 +265,7 @@ func JCERefreshHandler(deps *ToolDeps) ToolHandler {
 			sourceKind = &a.SourceKind
 		}
 
-		result, err := deps.JCE.Refresh(ctx, contentID, tenantID, userID, sourceKind)
+		result, err := deps.JCE.Refresh(ctx, contentID, userID, sourceKind)
 		if err != nil {
 			return errorToolResult("refresh_failed", err.Error()), nil
 		}

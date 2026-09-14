@@ -11,7 +11,7 @@ import "context"
 // the link_preview_fetch task handler; the linkpreview package owns the
 // SSRF-safe fetch, OG tag parsing, and cache/storage write.
 type LinkPreviewProcessor interface {
-	FetchAndStore(ctx context.Context, url, blockID, tenantID string) error
+	FetchAndStore(ctx context.Context, url, blockID string) error
 }
 
 var linkPreviewProcessor LinkPreviewProcessor

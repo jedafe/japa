@@ -30,7 +30,7 @@ type CreateCommentInput struct {
 
 // CreateComment creates a new comment or reply. The depth is computed from the
 // parent comment's depth (0 for top-level).
-func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUID, input CreateCommentInput) (gen.Comment, error) {
+func (s *Service) CreateComment(ctx context.Context, userID pgtype.UUID, input CreateCommentInput) (gen.Comment, error) {
 	var depth int32
 
 	if input.ParentID.Valid {
@@ -90,7 +90,7 @@ func (s *Service) CreateComment(ctx context.Context, tenantID, userID pgtype.UUI
 	// §64: record the comment.created activity so badge/challenge triggers
 	// (e.g. first_comment) can fire. Anonymous comments still carry
 	// author_user_id — anonymity is a display concern, not attribution.
-	s.emitActivity(ctx, tenantID, userID, wallet.ActivityKeyCommentCreated, "comment:"+comment.ID.String(), map[string]interface{}{
+	s.emitActivity(ctx, userID, wallet.ActivityKeyCommentCreated, "comment:"+comment.ID.String(), map[string]interface{}{
 		"content_id": input.ContentID.String(),
 	})
 

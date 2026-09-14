@@ -71,13 +71,13 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // planning group. Returns true if the user is a member; otherwise writes a
 // 403 error and returns false. §82: "Group check-ins and milestone details
 // are visible only to group members.".
-func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, groupID, tenantID pgtype.UUID) (*auth.AuthenticatedUser, bool) {
+func (h *Handlers) requireMembership(w http.ResponseWriter, r *http.Request, groupID pgtype.UUID) (*auth.AuthenticatedUser, bool) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return nil, false
 	}
 
-	isMember, err := h.service.IsMember(r.Context(), groupID, user.UserID, tenantID)
+	isMember, err := h.service.IsMember(r.Context(), groupID, user.UserID)
 	if err != nil {
 		slog.Error("planninggroups: membership check failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "membership_check_failed", "Failed to verify membership")
@@ -224,7 +224,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -250,7 +250,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := h.service.Create(r.Context(), tenantID, user.UserID, input)
+	group, err := h.service.Create(r.Context(), user.UserID, input)
 	if err != nil {
 		slog.Error("planninggroups: create failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create planning group")
@@ -269,7 +269,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -290,7 +290,7 @@ func (h *Handlers) HandleJoin(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if err := h.service.Join(r.Context(), groupID, user.UserID, tenantID, body.DepartureDate); err != nil {
+	if err := h.service.Join(r.Context(), groupID, user.UserID, body.DepartureDate); err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
@@ -320,7 +320,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -374,7 +374,7 @@ func (h *Handlers) HandleInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.InviteMember(r.Context(), groupID, inviteeID, tenantID); err != nil {
+	if err := h.service.InviteMember(r.Context(), groupID, inviteeID); err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			errpkg.WriteError(w, http.StatusNotFound, "group_not_found", "Planning group not found")
@@ -431,7 +431,7 @@ func (h *Handlers) HandleLeave(w http.ResponseWriter, r *http.Request) {
 // HandleGetMembers handles GET /planning-groups/:id/members — list members.
 // Auth + membership required (§82: group content is members-only).
 func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -446,7 +446,7 @@ func (h *Handlers) HandleGetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := h.requireMembership(w, r, groupID, tenantID); !ok {
+	if _, ok := h.requireMembership(w, r, groupID); !ok {
 		return
 	}
 
@@ -565,7 +565,7 @@ func (h *Handlers) HandleDelete(w http.ResponseWriter, r *http.Request) {
 // requesting user's milestones in a group. Auth + membership required
 // (§82: milestone details are visible only to group members).
 func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -580,12 +580,12 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	user, ok := h.requireMembership(w, r, groupID)
 	if !ok {
 		return
 	}
 
-	milestones, err := h.service.ListMilestones(r.Context(), groupID, user.UserID, tenantID)
+	milestones, err := h.service.ListMilestones(r.Context(), groupID, user.UserID)
 	if err != nil {
 		slog.Error("planninggroups: list milestones failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_milestones_failed", "Failed to list milestones")
@@ -599,7 +599,7 @@ func (h *Handlers) HandleListMilestones(w http.ResponseWriter, r *http.Request) 
 // HandleCreateMilestone handles POST /planning-groups/:id/milestones — create
 // a milestone for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -614,7 +614,7 @@ func (h *Handlers) HandleCreateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	user, ok := h.requireMembership(w, r, groupID)
 	if !ok {
 		return
 	}
@@ -653,7 +653,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -682,7 +682,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.UpdateMilestone(r.Context(), milestoneID, groupID, user.UserID, tenantID, body.Completed); err != nil {
+	if err := h.service.UpdateMilestone(r.Context(), milestoneID, groupID, user.UserID, body.Completed); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "milestone_not_found", "Milestone not found")
 			return
@@ -705,7 +705,7 @@ func (h *Handlers) HandleUpdateMilestone(w http.ResponseWriter, r *http.Request)
 // week's check-ins for a group. Auth + membership required (§82: group
 // check-ins are visible only to group members).
 func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -720,7 +720,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := h.requireMembership(w, r, groupID, tenantID); !ok {
+	if _, ok := h.requireMembership(w, r, groupID); !ok {
 		return
 	}
 
@@ -738,7 +738,7 @@ func (h *Handlers) HandleListCheckins(w http.ResponseWriter, r *http.Request) {
 // HandleCreateCheckin handles POST /planning-groups/:id/checkins — create a
 // weekly check-in for the requesting user. Auth + membership required.
 func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -753,7 +753,7 @@ func (h *Handlers) HandleCreateCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, ok := h.requireMembership(w, r, groupID, tenantID)
+	user, ok := h.requireMembership(w, r, groupID)
 	if !ok {
 		return
 	}

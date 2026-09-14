@@ -151,7 +151,7 @@ func (s *Service) Categories() []Option {
 
 // Create inserts a new mutual aid post. Auth required (permission checked at
 // route level based on post_type: create_offer, create_need, create_skill_swap).
-func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, input CreatePostRequest) (PostDTO, error) {
+func (s *Service) Create(ctx context.Context, userID pgtype.UUID, input CreatePostRequest) (PostDTO, error) {
 	if input.Title == "" {
 		return PostDTO{}, errors.New("title is required")
 	}
@@ -199,7 +199,7 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 	}
 
 	// Re-fetch via GetPost to populate joined space/author fields.
-	row, err := s.store.GetPost(ctx, post.ID, tenantID)
+	row, err := s.store.GetPost(ctx, post.ID)
 	if err != nil {
 		slog.Error("mutualaid: create re-fetch failed", "post_id", post.ID, "error", err)
 		return PostDTO{}, fmt.Errorf("mutualaid: create re-fetch: %w", err)
@@ -209,8 +209,8 @@ func (s *Service) Create(ctx context.Context, tenantID, userID pgtype.UUID, inpu
 }
 
 // Get returns a single active post by id. Anonymous-accessible.
-func (s *Service) Get(ctx context.Context, id, tenantID pgtype.UUID) (PostDTO, error) {
-	row, err := s.store.GetPost(ctx, id, tenantID)
+func (s *Service) Get(ctx context.Context, id pgtype.UUID) (PostDTO, error) {
+	row, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
@@ -257,8 +257,8 @@ func (s *Service) List(ctx context.Context, postType, category string, destSpace
 
 // UpdateOwn updates the author's own post. The caller must verify ownership
 // (mutual_aid.* permission + user_id match). Only non-nil fields are applied.
-func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdatePostRequest) (PostDTO, error) {
-	existing, err := s.store.GetPost(ctx, id, tenantID)
+func (s *Service) UpdateOwn(ctx context.Context, id, userID pgtype.UUID, input UpdatePostRequest) (PostDTO, error) {
+	existing, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
@@ -288,11 +288,11 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		storeInput.Description = input.Description
 	}
 
-	if err := s.store.UpdatePost(ctx, id, tenantID, storeInput); err != nil {
+	if err := s.store.UpdatePost(ctx, id, storeInput); err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: update: %w", err)
 	}
 
-	row, err := s.store.GetPost(ctx, id, tenantID)
+	row, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: update re-fetch: %w", err)
 	}
@@ -302,8 +302,8 @@ func (s *Service) UpdateOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 
 // DeleteOwn soft-deletes the author's own post. The caller must verify
 // ownership (mutual_aid.* permission + user_id match).
-func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	existing, err := s.store.GetPost(ctx, id, tenantID)
+func (s *Service) DeleteOwn(ctx context.Context, id, userID pgtype.UUID) error {
+	existing, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -316,7 +316,7 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 		return ErrNotOwner
 	}
 
-	if err := s.store.DeletePost(ctx, id, tenantID); err != nil {
+	if err := s.store.DeletePost(ctx, id); err != nil {
 		return fmt.Errorf("mutualaid: delete: %w", err)
 	}
 
@@ -324,8 +324,8 @@ func (s *Service) DeleteOwn(ctx context.Context, id, tenantID, userID pgtype.UUI
 }
 
 // MarkFulfilled marks a post as fulfilled by its author.
-func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
-	existing, err := s.store.GetPost(ctx, id, tenantID)
+func (s *Service) MarkFulfilled(ctx context.Context, id, userID pgtype.UUID) error {
+	existing, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
@@ -338,7 +338,7 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype
 		return ErrNotOwner
 	}
 
-	if err := s.store.MarkFulfilled(ctx, id, tenantID); err != nil {
+	if err := s.store.MarkFulfilled(ctx, id); err != nil {
 		return fmt.Errorf("mutualaid: fulfill: %w", err)
 	}
 
@@ -346,8 +346,8 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, tenantID, userID pgtype
 }
 
 // Renew extends a post's expiry by 30 days from now. Author-only.
-func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (PostDTO, error) {
-	existing, err := s.store.GetPost(ctx, id, tenantID)
+func (s *Service) Renew(ctx context.Context, id, userID pgtype.UUID) (PostDTO, error) {
+	existing, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows
@@ -361,11 +361,11 @@ func (s *Service) Renew(ctx context.Context, id, tenantID, userID pgtype.UUID) (
 	}
 
 	newExpiry := pgtype.Timestamptz{Time: time.Now().UTC().Add(PostExpiry), Valid: true}
-	if err := s.store.RenewPost(ctx, id, tenantID, newExpiry); err != nil {
+	if err := s.store.RenewPost(ctx, id, newExpiry); err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: renew: %w", err)
 	}
 
-	row, err := s.store.GetPost(ctx, id, tenantID)
+	row, err := s.store.GetPost(ctx, id)
 	if err != nil {
 		return PostDTO{}, fmt.Errorf("mutualaid: renew re-fetch: %w", err)
 	}
@@ -408,12 +408,12 @@ func (s *Service) AdminList(ctx context.Context, postType, status, q string, des
 }
 
 // AdminModerate sets the status of a post (moderation action).
-func (s *Service) AdminModerate(ctx context.Context, id, tenantID pgtype.UUID, status string) error {
+func (s *Service) AdminModerate(ctx context.Context, id pgtype.UUID, status string) error {
 	if status != StatusActive && status != StatusExpired && status != StatusRemoved && status != StatusFulfilled {
 		return fmt.Errorf("invalid status: %s", status)
 	}
 
-	if err := s.store.AdminUpdateStatus(ctx, id, tenantID, status); err != nil {
+	if err := s.store.AdminUpdateStatus(ctx, id, status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

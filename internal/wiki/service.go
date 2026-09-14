@@ -141,7 +141,7 @@ type GenerateDraftResponse struct {
 // Satisfied by *features.Checker via structural typing — defined locally to
 // avoid importing the features package (keeps the dependency graph clean).
 type FeatureChecker interface {
-	IsEnabled(ctx context.Context, tenantID pgtype.UUID, key string) bool
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // AIDispatcher is the subset of the AI Gateway the wiki service needs to
@@ -179,9 +179,9 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 // Enabled checks whether the wiki feature is enabled for the given tenant.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
-func (s *Service) Enabled(ctx context.Context, tenantID pgtype.UUID) bool {
+func (s *Service) Enabled(ctx context.Context) bool {
 	if s.checker != nil {
-		return s.checker.IsEnabled(ctx, tenantID, "wiki.enabled")
+		return s.checker.IsEnabled(ctx, "wiki.enabled")
 	}
 
 	if s.settings == nil {
@@ -295,7 +295,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 }
 
 // GetWikiPage returns a single wiki page with its current approved revision.
-func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
+func (s *Service) GetWikiPage(ctx context.Context, spaceSlug, pageSlug string) (WikiPageDetailDTO, error) {
 	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return WikiPageDetailDTO{}, ErrSpaceNotFound
@@ -320,7 +320,7 @@ func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSl
 	}
 
 	// Fetch the current approved revision.
-	rev, err := s.store.GetApprovedRevision(ctx, page.ID, tenantID)
+	rev, err := s.store.GetApprovedRevision(ctx, page.ID)
 	if err == nil {
 		dto.CurrentContent = json.RawMessage(rev.Content)
 		if rev.Summary != nil {
@@ -338,7 +338,7 @@ func (s *Service) GetWikiPage(ctx context.Context, tenantID pgtype.UUID, spaceSl
 }
 
 // GetRevisionHistory returns the revision history for a wiki page.
-func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
+func (s *Service) GetRevisionHistory(ctx context.Context, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionDTO, int64, error) {
 	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, 0, ErrSpaceNotFound
@@ -366,7 +366,7 @@ func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, 
 
 	offset := (page - 1) * limit
 
-	revs, total, err := s.store.ListRevisions(ctx, wikiPage.ID, tenantID, limit, offset)
+	revs, total, err := s.store.ListRevisions(ctx, wikiPage.ID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: history: list: %w", err)
 	}
@@ -386,7 +386,7 @@ func (s *Service) GetRevisionHistory(ctx context.Context, tenantID pgtype.UUID, 
 // inserting to prevent the same user from double-submitting concurrently.
 // The lock is released on success or failure; a 5-minute TTL auto-expires
 // if the process crashes mid-request.
-func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
+func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
 	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrSpaceNotFound
@@ -426,7 +426,7 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 
 	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
 	// Tenant-scoped per Rule 4 (VALKEY-004): jc:wiki_edit_lock:{}:{page_id}:{user_id}
-	lockKey := valkey.MustKey("wiki_edit_lock:%s:%s:%s", tenantID.String(), page.ID.String(), userID.String())
+	lockKey := valkey.MustKey("wiki_edit_lock::%s:%s", page.ID.String(), userID.String())
 	if s.vk != nil {
 		acquired, lerr := s.vk.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
 		if lerr != nil {
@@ -458,7 +458,7 @@ func (s *Service) SubmitRevision(ctx context.Context, tenantID, userID pgtype.UU
 // CreatePageWithRevision creates a new wiki page for the given space slug and
 // immediately submits an initial pending revision. The caller (handler) is
 // responsible for permission and reputation checks.
-func (s *Service) CreatePageWithRevision(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWikiPageInput) (string, string, error) {
+func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, input CreateWikiPageInput) (string, string, error) {
 	if input.Title == "" || input.Slug == "" || input.Category == "" {
 		return "", "", errors.New("title, slug, and category are required")
 	}
@@ -481,7 +481,7 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, tenantID, userID p
 		return "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
 	}
 
-	pageID, revID, err := s.store.CreatePageWithRevision(ctx, tenantID, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary)
+	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, input.Slug, input.Title, input.Category, normalizedContent, input.Summary)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
 			return "", "", ErrPageExists
@@ -799,8 +799,8 @@ var defaultStubPages = []stubPageSpec{
 // wiki:seed_stub_pages Asynq task handler.
 // // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 // //	japaconnect-engineering/adr/ADR-088-destination-wiki.md
-func (s *Service) SeedStubPages(ctx context.Context, tenantID, spaceID pgtype.UUID) error {
-	if !tenantID.Valid || !spaceID.Valid {
+func (s *Service) SeedStubPages(ctx context.Context, spaceID pgtype.UUID) error {
+	if !false || !spaceID.Valid {
 		return errors.New("wiki: seed stub pages: the id and space_id are required")
 	}
 

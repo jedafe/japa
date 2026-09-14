@@ -63,8 +63,8 @@ func (a *ToolAdapter) Recommend(ctx context.Context, contentID, userID, profileI
 }
 
 // Refresh implements ai.JCEService by delegating to Service.RefreshComparison.
-func (a *ToolAdapter) Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
-	res, err := a.svc.RefreshComparison(ctx, contentID, tenantID, userID, sourceKind)
+func (a *ToolAdapter) Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
+	res, err := a.svc.RefreshComparison(ctx, contentID, userID, sourceKind)
 	if err != nil {
 		return nil, err
 	}

@@ -105,7 +105,7 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 // HandleGetRates handles GET /api/v1/remittance/rates — latest rates for a
 // corridor. Query: send, receive.
 func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -123,7 +123,7 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rates, err := h.service.GetRates(r.Context(), tenantID, send, receive)
+	rates, err := h.service.GetRates(r.Context(), send, receive)
 	if err != nil {
 		slog.Error("remittance: get rates failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "rates_failed", "Failed to get rates")
@@ -139,7 +139,7 @@ func (h *Handlers) HandleGetRates(w http.ResponseWriter, r *http.Request) {
 // HandleCalculate handles GET /api/v1/remittance/calculate — send-amount
 // calculator. Query: send_amount, send, receive.
 func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -164,7 +164,7 @@ func (h *Handlers) HandleCalculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.Calculate(r.Context(), tenantID, sendAmount, send, receive)
+	result, err := h.service.Calculate(r.Context(), sendAmount, send, receive)
 	if err != nil {
 		slog.Error("remittance: calculate failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "calculate_failed", "Failed to calculate")

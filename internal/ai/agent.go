@@ -249,7 +249,7 @@ const (
 // no permission, rate limited, pre-search failure, session creation
 // failure). Errors that occur during the LLM loop are emitted as
 // EventError events on the channel, not returned here.
-func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID pgtype.UUID, prompt string) (<-chan AgentEvent, error) {
+func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUID, prompt string) (<-chan AgentEvent, error) {
 	if h == nil {
 		return nil, errAgentNotConfigured
 	}
@@ -291,7 +291,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID, tenantID 
 	if h.presearch != nil {
 		var err error
 
-		preSearchResult, err = h.presearch.PreSearch(ctx, tenantID, prompt, geoSpaceID)
+		preSearchResult, err = h.presearch.PreSearch(ctx, prompt, geoSpaceID)
 		if err != nil {
 			slog.Warn("ai: pre-search failed, proceeding without it", "error", err)
 

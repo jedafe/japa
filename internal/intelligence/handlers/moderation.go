@@ -88,9 +88,9 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 
 	// OptionalAuth: tenant may or may not be present. When absent, fall
 	// back to the default tenant so the public directory still renders.
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+
+	if !false {
+
 	}
 
 	category := r.URL.Query().Get("category")
@@ -470,9 +470,8 @@ func (h *Handlers) HandleReviewQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	page, limit := h.parsePagination(r)
@@ -558,9 +557,8 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	status := r.URL.Query().Get("status")
@@ -624,7 +622,7 @@ func (h *Handlers) HandleListIntelRecords(w http.ResponseWriter, r *http.Request
 // Ref: route catalog §2249 (intel record detail), BUG-B fix.
 func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) {
 	handleIntelGetByID(h, w, r, "Intel record not found", "intel record",
-		func(ctx context.Context, tenantID, id pgtype.UUID) (gen.IntelRecord, error) {
+		func(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error) {
 			return h.intelStores.GetIntelRecord(ctx, id)
 		},
 		func(rec gen.IntelRecord) interface{} { return intelRecordToResponse(rec) })
@@ -634,7 +632,7 @@ func (h *Handlers) HandleGetIntelRecord(w http.ResponseWriter, r *http.Request) 
 // check intelStores, resolve tenant, scan the {id} path param, load the
 // domain row, and write the response. getByID loads the row and toResp maps
 // it to the JSON response shape.
-func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Request, notFoundMsg, entityName string, getByID func(ctx context.Context, tenantID, id pgtype.UUID) (E, error), toResp func(E) interface{}) {
+func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Request, notFoundMsg, entityName string, getByID func(ctx context.Context, id pgtype.UUID) (E, error), toResp func(E) interface{}) {
 	if h.intelStores == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
 		return
@@ -644,9 +642,8 @@ func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	tenantID := pgtype.UUID{}
-	if !tenantID.Valid {
-		tenantID = defaultIntelTenantID
+	if !false {
+
 	}
 
 	id, ok := scanUUIDParam(w, r, "id")
@@ -654,7 +651,7 @@ func handleIntelGetByID[E any](h *Handlers, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	row, err := getByID(r.Context(), tenantID, id)
+	row, err := getByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", notFoundMsg)

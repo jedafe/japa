@@ -19,35 +19,35 @@ import (
 // Defining it as an interface makes the handler package testable without
 // requiring a real database or a fully wired Service.
 type service interface {
-	ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error)
-	CreateComparisonProfile(ctx context.Context, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-	GetComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) (ComparisonProfile, error)
-	UpdateComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
-	DeleteComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-	SetDefaultComparisonProfile(ctx context.Context, id, tenantID, userID pgtype.UUID) error
-	GetProfileStats(ctx context.Context, tenantID, userID pgtype.UUID, all bool) ([]ProfileStat, error)
+	ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error)
+	CreateComparisonProfile(ctx context.Context, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+	GetComparisonProfile(ctx context.Context, id, userID pgtype.UUID) (ComparisonProfile, error)
+	UpdateComparisonProfile(ctx context.Context, id, userID pgtype.UUID, in ComparisonProfileInput) (ComparisonProfile, error)
+	DeleteComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error
+	SetDefaultComparisonProfile(ctx context.Context, id, userID pgtype.UUID) error
+	GetProfileStats(ctx context.Context, userID pgtype.UUID, all bool) ([]ProfileStat, error)
 
-	ListScoreFactors(ctx context.Context, tenantID, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
-	CreateScoreFactor(ctx context.Context, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-	GetScoreFactor(ctx context.Context, id, tenantID pgtype.UUID) (ScoreFactor, error)
-	UpdateScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
-	DeleteScoreFactor(ctx context.Context, id, tenantID, userID pgtype.UUID) error
+	ListScoreFactors(ctx context.Context, comparisonTypeID pgtype.UUID, includeGlobal bool) ([]ScoreFactor, error)
+	CreateScoreFactor(ctx context.Context, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+	GetScoreFactor(ctx context.Context, id pgtype.UUID) (ScoreFactor, error)
+	UpdateScoreFactor(ctx context.Context, id, userID pgtype.UUID, in ScoreFactorInput) (ScoreFactor, error)
+	DeleteScoreFactor(ctx context.Context, id, userID pgtype.UUID) error
 
-	ScoreComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error)
-	GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
-	ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
-	PreviewScoreForItems(ctx context.Context, tenantID, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
+	ScoreComparison(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, smartMode string, force bool) (ScoreResult, error)
+	GetComparisonScore(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error)
+	ListRecommendations(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error)
+	PreviewScoreForItems(ctx context.Context, userID pgtype.UUID, in ScorePreviewInput) (ScoreResult, error)
 
 	// Data sources
-	ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error)
-	CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-	GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error)
-	UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error)
-	DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error
+	ListDataSources(ctx context.Context, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error)
+	CreateDataSource(ctx context.Context, in DataSourceInput) (DataSource, error)
+	GetDataSource(ctx context.Context, id pgtype.UUID) (DataSource, error)
+	UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataSourceInput) (DataSource, error)
+	DeleteDataSource(ctx context.Context, id pgtype.UUID) error
 
 	// Freshness and refresh
-	FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error)
-	RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
+	FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error)
+	RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error)
 	ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error)
 
 	// AI advisor
@@ -165,14 +165,14 @@ func (h *Handlers) ListProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	all := r.URL.Query().Get("all") == "true"
 
-	profiles, err := h.service.ListComparisonProfiles(r.Context(), tenantID, user.UserID, true, all)
+	profiles, err := h.service.ListComparisonProfiles(r.Context(), user.UserID, true, all)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -188,7 +188,7 @@ func (h *Handlers) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -203,7 +203,7 @@ func (h *Handlers) CreateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.CreateComparisonProfile(r.Context(), tenantID, user.UserID, input)
+	profile, err := h.service.CreateComparisonProfile(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -219,7 +219,7 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -230,7 +230,7 @@ func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.GetComparisonProfile(r.Context(), id, tenantID, user.UserID)
+	profile, err := h.service.GetComparisonProfile(r.Context(), id, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -246,7 +246,7 @@ func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -262,7 +262,7 @@ func (h *Handlers) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.UpdateComparisonProfile(r.Context(), id, tenantID, user.UserID, input)
+	profile, err := h.service.UpdateComparisonProfile(r.Context(), id, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -278,7 +278,7 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -289,7 +289,7 @@ func (h *Handlers) DeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteComparisonProfile(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteComparisonProfile(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -304,7 +304,7 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -315,7 +315,7 @@ func (h *Handlers) SetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.SetDefaultComparisonProfile(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.service.SetDefaultComparisonProfile(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -330,14 +330,14 @@ func (h *Handlers) GetProfileStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
 
 	all := r.URL.Query().Get("all") == "true"
 
-	stats, err := h.service.GetProfileStats(r.Context(), tenantID, user.UserID, all)
+	stats, err := h.service.GetProfileStats(r.Context(), user.UserID, all)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -357,7 +357,7 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -368,7 +368,7 @@ func (h *Handlers) ListScoreFactors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	factors, err := h.service.ListScoreFactors(r.Context(), tenantID, id, true)
+	factors, err := h.service.ListScoreFactors(r.Context(), id, true)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -384,7 +384,7 @@ func (h *Handlers) CreateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -405,7 +405,7 @@ func (h *Handlers) CreateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		input.ComparisonTypeID = &s
 	}
 
-	factor, err := h.service.CreateScoreFactor(r.Context(), tenantID, user.UserID, input)
+	factor, err := h.service.CreateScoreFactor(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -421,7 +421,7 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -432,7 +432,7 @@ func (h *Handlers) GetScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	factor, err := h.service.GetScoreFactor(r.Context(), id, tenantID)
+	factor, err := h.service.GetScoreFactor(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -448,7 +448,7 @@ func (h *Handlers) UpdateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -464,7 +464,7 @@ func (h *Handlers) UpdateScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	factor, err := h.service.UpdateScoreFactor(r.Context(), id, tenantID, user.UserID, input)
+	factor, err := h.service.UpdateScoreFactor(r.Context(), id, user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -480,7 +480,7 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -491,7 +491,7 @@ func (h *Handlers) DeleteScoreFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteScoreFactor(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.service.DeleteScoreFactor(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -510,7 +510,7 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -543,7 +543,7 @@ func (h *Handlers) ScoreComparison(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.ScoreComparison(r.Context(), id, tenantID, user.UserID, profileID, input.SmartMode, input.Force)
+	result, err := h.service.ScoreComparison(r.Context(), id, user.UserID, profileID, input.SmartMode, input.Force)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -559,7 +559,7 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -576,7 +576,7 @@ func (h *Handlers) GetComparisonScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.GetComparisonScore(r.Context(), id, tenantID, user.UserID, profileID)
+	result, err := h.service.GetComparisonScore(r.Context(), id, user.UserID, profileID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -592,7 +592,7 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -611,7 +611,7 @@ func (h *Handlers) ListRecommendations(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseLimit(r, 10)
 
-	recs, err := h.service.ListRecommendations(r.Context(), id, tenantID, user.UserID, profileID, limit)
+	recs, err := h.service.ListRecommendations(r.Context(), id, user.UserID, profileID, limit)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -627,7 +627,7 @@ func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -642,7 +642,7 @@ func (h *Handlers) PreviewScoreForItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.service.PreviewScoreForItems(r.Context(), tenantID, user.UserID, input)
+	result, err := h.service.PreviewScoreForItems(r.Context(), user.UserID, input)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -685,7 +685,7 @@ type advisorBody struct {
 // requireTenantAndUser resolves both tenant and authenticated user from the
 // request context and returns their UUIDs.
 func (h *Handlers) requireTenantAndUser(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, bool) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return pgtype.UUID{}, pgtype.UUID{}, false
 	}
@@ -695,7 +695,7 @@ func (h *Handlers) requireTenantAndUser(w http.ResponseWriter, r *http.Request) 
 		return pgtype.UUID{}, pgtype.UUID{}, false
 	}
 
-	return tenantID, user.UserID, true
+	return pgtype.UUID{}, user.UserID, true
 }
 
 // validSourceKind reports whether the supplied source kind is one of the
@@ -744,7 +744,7 @@ func dataSourceInputFromBody(body dataSourceCreateBody) (DataSourceInput, error)
 
 // HandleListDataSources handles GET /api/v1/jce/data-sources.
 func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -773,7 +773,7 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 	page := parseIntQuery(q, "page", 1)
 	pageSize := parseIntQuery(q, "page_size", 50)
 
-	sources, total, err := h.service.ListDataSources(r.Context(), tenantID, et, entityID, page, pageSize)
+	sources, total, err := h.service.ListDataSources(r.Context(), et, entityID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -792,7 +792,7 @@ func (h *Handlers) HandleListDataSources(w http.ResponseWriter, r *http.Request)
 
 // HandleCreateDataSource handles POST /api/v1/jce/data-sources.
 func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -813,7 +813,7 @@ func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ds, err := h.service.CreateDataSource(r.Context(), tenantID, in)
+	ds, err := h.service.CreateDataSource(r.Context(), in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -824,7 +824,7 @@ func (h *Handlers) HandleCreateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleGetDataSource handles GET /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -835,7 +835,7 @@ func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ds, err := h.service.GetDataSource(r.Context(), id, tenantID)
+	ds, err := h.service.GetDataSource(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -846,7 +846,7 @@ func (h *Handlers) HandleGetDataSource(w http.ResponseWriter, r *http.Request) {
 
 // HandleUpdateDataSource handles PATCH /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -873,7 +873,7 @@ func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ds, err := h.service.UpdateDataSource(r.Context(), id, tenantID, in)
+	ds, err := h.service.UpdateDataSource(r.Context(), id, in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -884,7 +884,7 @@ func (h *Handlers) HandleUpdateDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleDeleteDataSource handles DELETE /api/v1/jce/data-sources/{id}.
 func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -895,7 +895,7 @@ func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.service.DeleteDataSource(r.Context(), id, tenantID); err != nil {
+	if err := h.service.DeleteDataSource(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -905,7 +905,7 @@ func (h *Handlers) HandleDeleteDataSource(w http.ResponseWriter, r *http.Request
 
 // HandleGetFreshness handles GET /api/v1/jce/comparisons/{id}/freshness.
 func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -916,7 +916,7 @@ func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := h.service.FreshnessForComparison(r.Context(), contentID, tenantID, userID)
+	summary, err := h.service.FreshnessForComparison(r.Context(), contentID, userID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -927,7 +927,7 @@ func (h *Handlers) HandleGetFreshness(w http.ResponseWriter, r *http.Request) {
 
 // HandleRefreshComparison handles POST /api/v1/jce/comparisons/{id}/refresh.
 func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, userID, ok := h.requireTenantAndUser(w, r)
+	_, userID, ok := h.requireTenantAndUser(w, r)
 	if !ok {
 		return
 	}
@@ -948,7 +948,7 @@ func (h *Handlers) HandleRefreshComparison(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	job, err := h.service.RefreshComparison(r.Context(), contentID, tenantID, userID, body.SourceKind)
+	job, err := h.service.RefreshComparison(r.Context(), contentID, userID, body.SourceKind)
 	if err != nil {
 		handleServiceError(w, err)
 		return

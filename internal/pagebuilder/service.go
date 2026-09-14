@@ -226,8 +226,8 @@ func (s *Service) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 // the page.cache_ttl_secs system setting (default 300s). The cache is
 // invalidated on any page write (update/delete/publish/archive).
 // Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
-func (s *Service) GetPageBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (Page, error) {
-	cacheKey := pageCacheKey(tenantID, slug)
+func (s *Service) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
+	cacheKey := pageCacheKey(slug)
 
 	// Try Valkey cache first.
 	if s.redis != nil {
@@ -350,7 +350,7 @@ func (s *Service) DuplicatePage(ctx context.Context, id, createdBy pgtype.UUID) 
 }
 
 // UpdatePage updates an existing page with input validation.
-func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, input UpdatePageInput) (Page, error) {
+func (s *Service) UpdatePage(ctx context.Context, id pgtype.UUID, input UpdatePageInput) (Page, error) {
 	if input.Title == "" {
 		return Page{}, validationError("title is required")
 	}
@@ -371,8 +371,8 @@ func (s *Service) UpdatePage(ctx context.Context, id, tenantID pgtype.UUID, inpu
 	}
 
 	// Invalidate cache for both the old and new slug (slug may have changed).
-	s.invalidatePageCache(ctx, tenantID, existing.Slug)
-	s.invalidatePageCache(ctx, tenantID, p.Slug)
+	s.invalidatePageCache(ctx, existing.Slug)
+	s.invalidatePageCache(ctx, p.Slug)
 
 	return p, nil
 }
@@ -419,7 +419,7 @@ func sanitizeBlocksJSON(raw json.RawMessage) json.RawMessage {
 }
 
 // DeletePage removes a page and invalidates its cache.
-func (s *Service) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeletePage(ctx context.Context, id pgtype.UUID) error {
 	// Fetch the slug for cache invalidation before deletion.
 	existing, _ := s.store.GetPage(ctx, id)
 
@@ -427,31 +427,31 @@ func (s *Service) DeletePage(ctx context.Context, id, tenantID pgtype.UUID) erro
 		return err
 	}
 
-	s.invalidatePageCache(ctx, tenantID, existing.Slug)
+	s.invalidatePageCache(ctx, existing.Slug)
 
 	return nil
 }
 
 // PublishPage sets the page status to 'published' and stamps published_at.
-func (s *Service) PublishPage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
+func (s *Service) PublishPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	p, err := s.store.PublishPage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
 
-	s.invalidatePageCache(ctx, tenantID, p.Slug)
+	s.invalidatePageCache(ctx, p.Slug)
 
 	return p, nil
 }
 
 // ArchivePage sets the page status to 'archived'.
-func (s *Service) ArchivePage(ctx context.Context, id, tenantID pgtype.UUID) (Page, error) {
+func (s *Service) ArchivePage(ctx context.Context, id pgtype.UUID) (Page, error) {
 	p, err := s.store.ArchivePage(ctx, id)
 	if err != nil {
 		return Page{}, err
 	}
 
-	s.invalidatePageCache(ctx, tenantID, p.Slug)
+	s.invalidatePageCache(ctx, p.Slug)
 
 	return p, nil
 }
@@ -487,16 +487,16 @@ func (s *Service) ReorderBlocks(ctx context.Context, id pgtype.UUID, blocks []ma
 
 // invalidatePageCache deletes the Valkey cache entry for a published page.
 // Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
-func (s *Service) invalidatePageCache(ctx context.Context, tenantID pgtype.UUID, slug string) {
+func (s *Service) invalidatePageCache(ctx context.Context, slug string) {
 	if s.redis == nil || slug == "" {
 		return
 	}
 
-	_ = s.redis.Del(ctx, pageCacheKey(tenantID, slug)).Err()
+	_ = s.redis.Del(ctx, pageCacheKey(slug)).Err()
 }
 
 // pageCacheKey returns the Valkey key for a published page's cached data.
 // Ref: conventions/valkey-keys-catalog.md — jc:page:{}:{slug}.
-func pageCacheKey(tenantID pgtype.UUID, slug string) string {
-	return "jc:page:" + tenantID.String() + ":" + slug
+func pageCacheKey(slug string) string {
+	return "jc:page:" + "" + ":" + slug
 }

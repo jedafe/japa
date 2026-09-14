@@ -173,7 +173,7 @@ func (h *Handlers) UpdateProgram(w http.ResponseWriter, r *http.Request) {
 // ListReferrals returns all referrals for the tenant (legacy).
 // GET /admin/referral/referrals.
 func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -181,7 +181,7 @@ func (h *Handlers) ListReferrals(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parseOffset(r)
 
-	referrals, err := h.Service.ListReferrals(r.Context(), tenantID, limit, offset)
+	referrals, err := h.Service.ListReferrals(r.Context(), limit, offset)
 	if err != nil {
 		slog.Error("listing referrals", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list referrals")
@@ -284,7 +284,7 @@ func (h *Handlers) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	// Global killswitch (referral.enabled, ADR-078 §60). When disabled, the
 	// redirect still resolves the code but does not track clicks or set the
 	// attribution cookie — the user is simply sent to the homepage.
-	if _, ok := h.tenantID(r); ok && !h.Service.Enabled(r.Context()) {
+	if _, ok := nil(r); ok && !h.Service.Enabled(r.Context()) {
 		http.Redirect(w, r, "/?ref="+code, http.StatusFound)
 		return
 	}

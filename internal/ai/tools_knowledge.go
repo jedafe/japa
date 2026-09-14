@@ -61,7 +61,7 @@ type ragSearchArgs struct {
 // content row are stripped from the result set. When deps.Privacy is nil,
 // no filtering is applied.
 func RAGSearchHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.RAG == nil {
 			return errorToolResult("rag_unavailable", "RAG service is not configured"), nil
 		}
@@ -90,13 +90,13 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 			geoSpaceID = uuidPtr(id)
 		}
 
-		chunks, err := deps.RAG.Retrieve(ctx, tenantID, a.Query, a.Language, geoSpaceID)
+		chunks, err := deps.RAG.Retrieve(ctx, a.Query, a.Language, geoSpaceID)
 		if err != nil {
 			return errorToolResult("rag_search_failed", err.Error()), nil
 		}
 
 		// Filter out chunks whose source content is ai_exempt.
-		chunks = filterExemptRAGChunks(ctx, deps.Privacy, tenantID, chunks)
+		chunks = filterExemptRAGChunks(ctx, deps.Privacy, chunks)
 
 		// Apply the limit if the RAG service returned more than requested.
 		// nolint:gosec // G115: bounded
@@ -122,7 +122,7 @@ func RAGSearchHandler(deps *ToolDeps) ToolHandler {
 // Only entity_type = "content" chunks are checked (other entity types have
 // no ai_exempt column). When the privacy checker is nil, no filtering is
 // applied.
-func filterExemptRAGChunks(ctx context.Context, privacy PrivacyExemptionChecker, tenantID pgtype.UUID, chunks []RAGChunk) []RAGChunk {
+func filterExemptRAGChunks(ctx context.Context, privacy PrivacyExemptionChecker, chunks []RAGChunk) []RAGChunk {
 	if privacy == nil {
 		return chunks
 	}
@@ -143,7 +143,7 @@ func filterExemptRAGChunks(ctx context.Context, privacy PrivacyExemptionChecker,
 			continue
 		}
 
-		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, entityID)
+		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, entityID)
 		if err == nil && exempt {
 			continue
 		}
@@ -188,7 +188,7 @@ const externalSearchCacheTTL = 30 * time.Minute
 // checked by the executor's RBAC gate before dispatch. The handler itself
 // only verifies the provider + key are configured.
 func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("external_search_unavailable", "tool deps not configured"), nil
 		}
@@ -211,7 +211,7 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 		}
 
 		// Check cache (jc:agent:external:{hash}).
-		cacheKey := externalSearchCacheKey(tenantID, a.Query, a.Limit)
+		cacheKey := externalSearchCacheKey(a.Query, a.Limit)
 		if deps.Cache != nil {
 			if cached, err := deps.Cache.Get(ctx, cacheKey); err == nil && cached != "" {
 				// Cache hit — return the cached JSON directly.
@@ -258,8 +258,8 @@ func ExternalSearchHandler(deps *ToolDeps) ToolHandler {
 // SHA-256 of the + query + limit. Tenant-scoping prevents
 // cross-tenant cache sharing of external search results (Rule 4, §4.2).
 // Per the Valkey keys catalog (Rule 4).
-func externalSearchCacheKey(tenantID pgtype.UUID, query string, limit int32) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", tenantID.String(), query, limit)))
+func externalSearchCacheKey(query string, limit int32) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf(":%s:%d", query, limit)))
 	return valkey.MustKey("agent:external:%s", hex.EncodeToString(h[:16]))
 }
 

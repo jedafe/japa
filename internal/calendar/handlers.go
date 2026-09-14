@@ -39,7 +39,7 @@ import (
 // updater is the subset of Service methods used by the public edit handler.
 type updater interface {
 	Enabled(ctx context.Context) bool
-	Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error)
+	Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error)
 }
 
 // Handlers exposes the calendar endpoints.
@@ -353,7 +353,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -394,7 +394,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.updater.Update(r.Context(), entryID, tenantID, user.UserID, input)
+	entry, err := h.updater.Update(r.Context(), entryID, user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrEditForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "edit_forbidden", "You do not have permission to edit this calendar entry")

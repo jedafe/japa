@@ -200,7 +200,7 @@ func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (h *Handlers) MuteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.MuteUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
+	if err := h.service.MuteUser(r.Context(), user.UserID, targetID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to mute user")
 
 		return
@@ -239,7 +239,7 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -251,7 +251,7 @@ func (h *Handlers) UnmuteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.UnmuteUser(r.Context(), tenantID, user.UserID, targetID); err != nil {
+	if err := h.service.UnmuteUser(r.Context(), user.UserID, targetID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unmute user")
 
 		return

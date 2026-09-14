@@ -103,8 +103,8 @@ type GDPRService interface {
 // Local interface so admin does not import organizations (which would create
 // a cycle via server wiring).
 type OrgVerifier interface {
-	VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error
-	UnverifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error
+	VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error
+	UnverifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error
 }
 
 // NewHandlers creates Handlers with the given database pool.

@@ -50,12 +50,12 @@ type GamificationProcessor interface {
 // ImportProcessor handles content-import background tasks (§65, ADR-083).
 type ImportProcessor interface {
 	ProcessSource(ctx context.Context, importID pgtype.UUID) error
-	FetchMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error
+	FetchMedia(ctx context.Context, userID, contentID pgtype.UUID) error
 }
 
 // AssessmentProcessor handles assessment background tasks (§71, ADR-071).
 type AssessmentProcessor interface {
-	ScoreSubmission(ctx context.Context, submissionID, tenantID pgtype.UUID) error
+	ScoreSubmission(ctx context.Context, submissionID pgtype.UUID) error
 	CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error)
 }
 
@@ -103,7 +103,7 @@ type PersonaProcessor interface {
 
 // StudioProcessor handles AI Content Studio tasks (§75, ADR-076).
 type StudioProcessor interface {
-	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
+	RunBatch(ctx context.Context, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
 	// RetryBatchFailed retries all failed jobs in a batch asynchronously.
 	// Called by the studio:retry_failed task handler (ADR-076 §7).
@@ -113,11 +113,11 @@ type StudioProcessor interface {
 	// the draft contents row and routes it to the HITL review queue (or
 	// auto-publishes low-stakes types per studio.auto_publish_types). This is
 	// the actual payload of the extended content:generate_draft task.
-	GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	GenerateJob(ctx context.Context, jobID pgtype.UUID) error
 	// RegenerateFromSource rewrites the body of an existing contents row from
 	// the latest intel_record extraction, preserving its identity and status
 	// unless HITL is required (§75, ADR-076 Amendment 2).
-	RegenerateFromSource(ctx context.Context, tenantID, contentID, intelRecordID pgtype.UUID) error
+	RegenerateFromSource(ctx context.Context, contentID, intelRecordID pgtype.UUID) error
 }
 
 // AgentDraftProcessor handles the agent:create_draft_request task
@@ -159,8 +159,8 @@ type MentorProcessor interface {
 // matching active alert.
 // Ref: japaconnect-engineering/sections/91-embassy-appointment-alerter.md.
 type EmbassyAlerterProcessor interface {
-	PollEmbassy(ctx context.Context, embassyID, tenantID pgtype.UUID) error
-	DispatchAlerts(ctx context.Context, embassySlug string, tenantID pgtype.UUID) error
+	PollEmbassy(ctx context.Context, embassyID pgtype.UUID) error
+	DispatchAlerts(ctx context.Context, embassySlug string) error
 	ExpireAlerts(ctx context.Context) (int, error)
 	ScheduleDuePolls(ctx context.Context) (int, error)
 }
@@ -205,9 +205,9 @@ type CvFormatterProcessor interface {
 // notification preference enabled, reusing §62 Newsletter infrastructure.
 // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 type DigestProcessor interface {
-	GenerateEdition(ctx context.Context, tenantID, spaceID pgtype.UUID) error
+	GenerateEdition(ctx context.Context, spaceID pgtype.UUID) error
 	AutoPublishDueEditions(ctx context.Context) (int64, error)
-	SendEditionEmail(ctx context.Context, editionID, tenantID pgtype.UUID) error
+	SendEditionEmail(ctx context.Context, editionID pgtype.UUID) error
 }
 
 // JapaStageProcessor handles the japa_stage:recommend fan-out (§87, ADR-095).
@@ -236,7 +236,7 @@ type PlanningGroupProcessor interface {
 // reporter's contribution. Called fire-and-forget from the Review handler.
 // Ref: japaconnect-engineering/sections/81-scam-alert-board.md.
 type ScamAlertProcessor interface {
-	NotifySubscribers(ctx context.Context, reportID, tenantID pgtype.UUID) error
+	NotifySubscribers(ctx context.Context, reportID pgtype.UUID) error
 }
 
 // VisaTimelineProcessor handles Visa Timeline Tracker background tasks (§83,
@@ -567,7 +567,7 @@ func HandleImportProcessSource(ctx context.Context, t *asynq.Task) error {
 func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "import:fetch_media", importProcessor != nil, []string{"user_id", "content_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return importProcessor.FetchMedia(ctx, ids[0], ids[1], ids[2])
+			return importProcessor.FetchMedia(ctx, ids[1], ids[2])
 		})
 }
 
@@ -578,7 +578,7 @@ func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 func HandleAssessmentScoreSubmission(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "assessment:score_submission", assessmentProcessor != nil, []string{"submission_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return assessmentProcessor.ScoreSubmission(ctx, ids[0], ids[1])
+			return assessmentProcessor.ScoreSubmission(ctx, ids[0])
 		})
 }
 
@@ -775,7 +775,7 @@ func HandlePersonaDispatchAction(ctx context.Context, t *asynq.Task) error {
 func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "studio:run_batch", studioProcessor != nil, []string{"batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return studioProcessor.RunBatch(ctx, ids[0], ids[1])
+			return studioProcessor.RunBatch(ctx, ids[1])
 		})
 }
 
@@ -820,7 +820,7 @@ func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "embassy:poll", embassyAlerterProcessor != nil, []string{"embassy_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return embassyAlerterProcessor.PollEmbassy(ctx, ids[0], ids[1])
+			return embassyAlerterProcessor.PollEmbassy(ctx, ids[0])
 		})
 }
 
@@ -829,7 +829,7 @@ func HandleEmbassyPoll(ctx context.Context, t *asynq.Task) error {
 func HandleEmbassyDispatchAlerts(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "embassy:dispatch_alerts", embassyAlerterProcessor != nil, []string{},
 		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
-			return embassyAlerterProcessor.DispatchAlerts(ctx, p["embassy_slug"], ids[0])
+			return embassyAlerterProcessor.DispatchAlerts(ctx, p["embassy_slug"])
 		})
 }
 
@@ -1074,7 +1074,7 @@ func HandleDigestGenerate(ctx context.Context, t *asynq.Task) error {
 		}
 	}
 
-	if err := digestProcessor.GenerateEdition(ctx, pgtype.UUID{}, spaceID); err != nil {
+	if err := digestProcessor.GenerateEdition(ctx, spaceID); err != nil {
 		return fmt.Errorf("task:digest:generate: %w", err)
 	}
 
@@ -1127,7 +1127,7 @@ func HandleDigestSendEmail(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:digest:send_email: bad edition_id: %w", err)
 	}
 
-	if err := digestProcessor.SendEditionEmail(ctx, editionID, pgtype.UUID{}); err != nil {
+	if err := digestProcessor.SendEditionEmail(ctx, editionID); err != nil {
 		return fmt.Errorf("task:digest:send_email: %w", err)
 	}
 
@@ -1193,7 +1193,7 @@ func HandlePlanningGroupCheckinReminder(ctx context.Context, _ *asynq.Task) erro
 func HandleScamAlertNotifySubscribers(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "scam_alert:notify_subscribers", scamAlertProcessor != nil, []string{"report_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return scamAlertProcessor.NotifySubscribers(ctx, ids[0], ids[1])
+			return scamAlertProcessor.NotifySubscribers(ctx, ids[0])
 		})
 }
 

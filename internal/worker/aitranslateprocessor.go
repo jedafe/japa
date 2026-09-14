@@ -10,7 +10,7 @@ import "context"
 // strings via the AI gateway. The worker calls TranslatePack from the
 // language_pack_ai_translate task handler.
 type AITranslateProcessor interface {
-	TranslatePack(ctx context.Context, packID, sourceLang, targetLang, tenantID string) error
+	TranslatePack(ctx context.Context, packID, sourceLang, targetLang string) error
 }
 
 var aiTranslateProcessor AITranslateProcessor

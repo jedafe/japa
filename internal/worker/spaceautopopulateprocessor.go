@@ -11,7 +11,7 @@ import "context"
 // created space with default content — rules, tags, or sample posts
 // based on the space type.
 type SpaceAutoPopulateProcessor interface {
-	AutoPopulateSpace(ctx context.Context, spaceID, tenantID string) error
+	AutoPopulateSpace(ctx context.Context, spaceID string) error
 }
 
 var spaceAutoPopulateProcessor SpaceAutoPopulateProcessor

@@ -425,7 +425,7 @@ WHERE %s
 
 // GetPathwayByID returns a single credential pathway by its id, joining
 // credential_professions + spaces (issuing + destination).
-func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
+func (s *Store) GetPathwayByID(ctx context.Context, id pgtype.UUID) (PathwayRow, error) {
 	const q = `
 SELECT p.id, p.profession_id,
        pr.slug AS profession_slug, pr.name AS profession_name, pr.category AS profession_category,
@@ -447,7 +447,7 @@ LIMIT 1
 
 	var r PathwayRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.ProfessionID,
 		&r.ProfessionSlug, &r.ProfessionName, &r.ProfessionCategory,
 		&r.IssuingSpaceID, &r.IssuingSpaceName, &r.IssuingSpaceCode,
@@ -473,7 +473,7 @@ LIMIT 1
 // GetPathwayNotes returns published community notes for a pathway, joined
 // with the submitting user's username. Ordered by upvotes DESC then
 // created_at DESC.
-func (s *Store) GetPathwayNotes(ctx context.Context, pathwayID, tenantID pgtype.UUID) ([]CommunityNoteRow, error) {
+func (s *Store) GetPathwayNotes(ctx context.Context, pathwayID pgtype.UUID) ([]CommunityNoteRow, error) {
 	const q = `
 SELECT n.id, n.pathway_id, n.user_id, u.username AS user_name,
        n.note, n.upvotes, n.status, n.created_at
@@ -484,7 +484,7 @@ WHERE n.pathway_id = $1 AND n.status = 'published' AND n.deleted_at IS NULL
 ORDER BY n.upvotes DESC, n.created_at DESC
 `
 
-	rows, err := s.pool.Reader.Query(ctx, q, pathwayID, tenantID)
+	rows, err := s.pool.Reader.Query(ctx, q, pathwayID)
 	if err != nil {
 		return nil, fmt.Errorf("credentialchecker: get pathway notes: %w", err)
 	}
@@ -644,13 +644,13 @@ WHERE id = $%d
 
 // DeletePathway deletes a credential_pathways row by id and .
 // Returns pgx.ErrNoRows if the row does not exist for the tenant.
-func (s *Store) DeletePathway(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeletePathway(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM credential_pathways
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: delete pathway: %w", err)
 	}
@@ -665,7 +665,7 @@ WHERE id = $1
 // ApprovePathway marks a pathway as HITL-approved: sets hitl_reviewed_by,
 // hitl_reviewed_at = now(), status = 'published', and optional review
 // notes. Returns pgx.ErrNoRows if the row does not exist for the tenant.
-func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, notes *string) error {
+func (s *Store) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, notes *string) error {
 	const q = `
 UPDATE credential_pathways
 SET hitl_reviewed_by = $2,
@@ -676,7 +676,7 @@ SET hitl_reviewed_by = $2,
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes)
 	if err != nil {
 		return fmt.Errorf("credentialchecker: approve pathway: %w", err)
 	}

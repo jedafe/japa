@@ -40,13 +40,13 @@ import (
 
 // deleteEntity is a shared helper for DELETE handlers that follow the pattern:
 // require user → require tenant → parse UUID → call delete function → return 204.
-func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName, entityName string, deleteFn func(ctx context.Context, tenantID, id pgtype.UUID) error) {
+func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName, entityName string, deleteFn func(ctx context.Context, id pgtype.UUID) error) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -57,7 +57,7 @@ func deleteEntity(w http.ResponseWriter, r *http.Request, h *Handlers, paramName
 		return
 	}
 
-	if err := deleteFn(r.Context(), tenantID, id); err != nil {
+	if err := deleteFn(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -77,11 +77,11 @@ const statusInReview = "in_review"
 
 // ContentService is the subset of content.Service the blog post handlers need.
 type ContentService interface {
-	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
+	CreateContent(ctx context.Context, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
 	ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
-	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	// ResolveJSONLD resolves the admin-managed JSON-LD template for a content
@@ -717,7 +717,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSeries handles DELETE /api/v1/blog/series/{id}.
 func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
-	deleteEntity(w, r, h, "id", "series", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+	deleteEntity(w, r, h, "id", "series", func(ctx context.Context, id pgtype.UUID) error {
 		return h.Service.DeleteSeries(ctx, id)
 	})
 }
@@ -734,7 +734,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -766,7 +766,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.AddPostToSeries(r.Context(), seriesID, contentID, tenantID, input.Position); err != nil {
+	if err := h.Service.AddPostToSeries(r.Context(), seriesID, contentID, input.Position); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1273,7 +1273,7 @@ func (h *Handlers) FeaturePost(w http.ResponseWriter, r *http.Request) {
 
 // UnfeaturePost handles DELETE /api/v1/blog/featured/{contentId}.
 func (h *Handlers) UnfeaturePost(w http.ResponseWriter, r *http.Request) {
-	deleteEntity(w, r, h, "contentId", "content", func(ctx context.Context, tenantID, id pgtype.UUID) error {
+	deleteEntity(w, r, h, "contentId", "content", func(ctx context.Context, id pgtype.UUID) error {
 		return h.Service.UnfeaturePost(ctx, id)
 	})
 }
@@ -1421,7 +1421,7 @@ func (h *Handlers) ReorderFeatured(w http.ResponseWriter, r *http.Request) {
 // trusted-proxy model (clientip.ForwardedBaseURL) to prevent host-header
 // injection.
 func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1439,7 +1439,7 @@ func (h *Handlers) GetRSSFeed(w http.ResponseWriter, r *http.Request) {
 	// (jc:cache:feed:rss:{}) is populated by the worker from
 	// ListRSSFeedItems (all content types). Reading from it here would
 	// serve non-blog content (forum posts, etc.) as the blog feed.
-	cacheKey := valkey.MustKey("cache:feed:rss:blog:%s", tenantID.String())
+	cacheKey := valkey.MustKey("cache:feed:rss:blog:")
 	if h.Redis != nil {
 		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil && cached != "" {
 			w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
@@ -1878,7 +1878,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1976,7 +1976,7 @@ func (h *Handlers) CreatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	post, err := h.content.CreateContent(r.Context(), tenantID, createInput)
+	post, err := h.content.CreateContent(r.Context(), createInput)
 	if err != nil {
 		slog.Error("failed to create blog post", "error", err, "title", input.Title, "slug", input.Slug)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create blog post")
@@ -2177,7 +2177,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2306,7 +2306,7 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		bypassEditWindow = resolver.IsSuperAdmin(r.Context(), user.UserID)
 	}
 
-	updated, err := h.content.UpdateContent(r.Context(), id, tenantID, user.UserID, input, bypassEditWindow)
+	updated, err := h.content.UpdateContent(r.Context(), id, user.UserID, input, bypassEditWindow)
 	if err != nil {
 		handleServiceError(w, err)
 		return

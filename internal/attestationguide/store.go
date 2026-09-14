@@ -70,7 +70,7 @@ func NewStore(database *db.DB) *Store {
 // the service to build human-readable, jurisdiction-specific web research
 // queries. If the space is missing, not valid, or soft-deleted, it returns an
 // empty string with no error.
-func (s *Store) GetSpaceName(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+func (s *Store) GetSpaceName(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	if !spaceID.Valid {
 		return "", nil
 	}
@@ -83,7 +83,7 @@ LIMIT 1
 
 	var name string
 
-	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&name)
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID).Scan(&name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -279,7 +279,7 @@ WHERE %s
 // spaces for the issuing and destination jurisdictions. Returns any status
 // (used by admin handlers). Public handlers must use GetPublishedPathwayByID
 // to avoid leaking draft/ai_draft/pending/rejected pathways (BUG-001).
-func (s *Store) GetPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
+func (s *Store) GetPathwayByID(ctx context.Context, id pgtype.UUID) (PathwayRow, error) {
 	const q = `
 SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
@@ -297,7 +297,7 @@ LIMIT 1
 
 	var r PathwayRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
@@ -321,7 +321,7 @@ LIMIT 1
 // pathway by its id. Used by public handlers (HandleGet, HandleExportPDF,
 // SubmitCommunityUpdate) to prevent leaking draft/ai_draft/pending/rejected
 // pathways to anonymous users (BUG-001).
-func (s *Store) GetPublishedPathwayByID(ctx context.Context, id, tenantID pgtype.UUID) (PathwayRow, error) {
+func (s *Store) GetPublishedPathwayByID(ctx context.Context, id pgtype.UUID) (PathwayRow, error) {
 	const q = `
 SELECT p.id, p.document_type, p.issuing_space_id, p.destination_space_id,
        p.apostille_required, p.pathway_steps, p.community_last_verified, p.status,
@@ -339,7 +339,7 @@ LIMIT 1
 
 	var r PathwayRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&r.ID, &r.DocumentType, &r.IssuingSpaceID, &r.DestinationSpaceID,
 		&r.ApostilleRequired, &r.PathwaySteps, &r.CommunityLastVerified, &r.Status,
 		&r.IsActive, &r.AIGenerated, &r.AIModel, &r.AIPromptHash,
@@ -412,7 +412,7 @@ RETURNING id, document_type, issuing_space_id, destination_space_id,
 // UpdatePathway updates the mutable fields on an attestation_pathways
 // row. Only the provided (non-nil) fields are applied.
 // is_japabot_indexed is a GENERATED column and is NOT updated.
-func (s *Store) UpdatePathway(ctx context.Context, id, tenantID pgtype.UUID, p Pathway) error {
+func (s *Store) UpdatePathway(ctx context.Context, id pgtype.UUID, p Pathway) error {
 	steps := p.PathwaySteps
 	if steps == nil {
 		steps = []byte("[]")
@@ -438,7 +438,7 @@ WHERE id = $1
 
 	cmd, err := s.pool.Writer.Exec(
 		ctx, q,
-		id, tenantID,
+		id,
 		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, p.Status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
@@ -460,7 +460,7 @@ WHERE id = $1
 // apostille_required from the Hague Convention lookup (BUG-002), and sets
 // community_last_verified = now()::date if it was NULL (BUG-003).
 // Optionally records review notes.
-func (s *Store) ApprovePathway(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, apostilleRequired bool, notes *string) error {
+func (s *Store) ApprovePathway(ctx context.Context, id, reviewerID pgtype.UUID, apostilleRequired bool, notes *string) error {
 	const q = `
 UPDATE attestation_pathways
 SET hitl_reviewed_by        = $2,
@@ -473,7 +473,7 @@ SET hitl_reviewed_by        = $2,
 WHERE id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, reviewerID, notes, apostilleRequired)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, reviewerID, notes, apostilleRequired)
 	if err != nil {
 		return fmt.Errorf("attestationguide: approve pathway: %w", err)
 	}
@@ -515,7 +515,7 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 // ReviewCommunityUpdate sets the status of a community update to
 // approved or rejected and records the reviewer. The tenantID scopes
 // the update through its parent pathway to prevent cross-tenant access.
-func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, tenantID, reviewerID pgtype.UUID, status string) error {
+func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
 	const q = `
 UPDATE attestation_community_updates u
 SET status      = $2,
@@ -526,7 +526,7 @@ WHERE u.id = $1
   AND u.deleted_at IS NULL
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID, status, reviewerID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, status, reviewerID)
 	if err != nil {
 		return fmt.Errorf("attestationguide: review community update: %w", err)
 	}
@@ -543,13 +543,13 @@ WHERE u.id = $1
 // turnaround_days at the given step_index) and bumps community_last_verified
 // to today (BUG-003 + BUG-004). If stepIndex is nil the steps are not patched
 // (general note update) but community_last_verified is still bumped.
-func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID, tenantID pgtype.UUID, stepIndex *int32, feeEstimate *string, turnaroundDays *int32) error {
+func (s *Store) ApplyApprovedUpdateToPathway(ctx context.Context, pathwayID pgtype.UUID, stepIndex *int32, feeEstimate *string, turnaroundDays *int32) error {
 	// Load current pathway_steps so we can patch in Go (cleaner than nested
 	// jsonb_set SQL for conditional fields).
 	const loadQ = `SELECT pathway_steps FROM attestation_pathways WHERE id = $1`
 
 	var steps []byte
-	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID, tenantID).Scan(&steps); err != nil {
+	if err := s.pool.Reader.QueryRow(ctx, loadQ, pathwayID).Scan(&steps); err != nil {
 		return fmt.Errorf("attestationguide: apply update: load steps: %w", err)
 	}
 
@@ -580,7 +580,7 @@ SET pathway_steps            = $2,
     updated_at              = now()
 WHERE id = $1`
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, tenantID, steps)
+	cmd, err := s.pool.Writer.Exec(ctx, q, pathwayID, steps)
 	if err != nil {
 		return fmt.Errorf("attestationguide: apply update: %w", err)
 	}
@@ -594,7 +594,7 @@ WHERE id = $1`
 
 // GetCommunityUpdateByID returns a single attestation_community_updates
 // row by its id, scoped through the parent pathway's tenant.
-func (s *Store) GetCommunityUpdateByID(ctx context.Context, id, tenantID pgtype.UUID) (CommunityUpdate, error) {
+func (s *Store) GetCommunityUpdateByID(ctx context.Context, id pgtype.UUID) (CommunityUpdate, error) {
 	const q = `
 SELECT u.id, u.pathway_id, u.user_id, u.step_index, u.fee_estimate,
        u.turnaround_days, u.note, u.status, u.reviewed_by, u.created_at
@@ -606,7 +606,7 @@ LIMIT 1
 
 	var u CommunityUpdate
 
-	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.PathwayID, &u.UserID, &u.StepIndex, &u.FeeEstimate,
 		&u.TurnaroundDays, &u.Note, &u.Status, &u.ReviewedBy, &u.CreatedAt,
 	)

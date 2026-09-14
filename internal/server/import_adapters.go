@@ -42,8 +42,8 @@ func newContentCreatorAdapter(svc *content.Service) *contentCreatorAdapter {
 // CreateContent maps the import package's input to content.CreateContentInput,
 // delegates to content.Service, and returns the minimal ContentRow (just the
 // ID — the import pipeline only needs it to enqueue import:fetch_media).
-func (a *contentCreatorAdapter) CreateContent(ctx context.Context, tenantID pgtype.UUID, input contentimport.CreateContentInput) (contentimport.ContentRow, error) {
-	row, err := a.svc.CreateContent(ctx, tenantID, content.CreateContentInput{
+func (a *contentCreatorAdapter) CreateContent(ctx context.Context, input contentimport.CreateContentInput) (contentimport.ContentRow, error) {
+	row, err := a.svc.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:     input.AuthorID,
 		ContentType:  input.ContentType,
 		Title:        input.Title,
@@ -99,7 +99,7 @@ type imageAttrs struct {
 // FetchAndReplaceMedia reads the content body, finds external image URLs,
 // downloads each via the media pipeline, replaces the src with the stored
 // media URL, and saves the updated body.
-func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID, userID, contentID pgtype.UUID) error {
+func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, userID, contentID pgtype.UUID) error {
 	// 1. Read the current content body.
 	item, err := a.content.GetContent(ctx, contentID)
 	if err != nil {
@@ -117,7 +117,7 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 		return fmt.Errorf("parsing tiptap body: %w", err)
 	}
 
-	changed, newBody, err := a.replaceExternalImages(ctx, &doc, tenantID, userID)
+	changed, newBody, err := a.replaceExternalImages(ctx, &doc, userID)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 	}
 
 	// 3. Update the content body with the replaced URLs.
-	_, err = a.content.UpdateContent(ctx, contentID, tenantID, userID, content.UpdateContentInput{
+	_, err = a.content.UpdateContent(ctx, contentID, userID, content.UpdateContentInput{
 		Body: newBody,
 	}, true)
 	if err != nil {
@@ -141,8 +141,8 @@ func (a *mediaFetcherAdapter) FetchAndReplaceMedia(ctx context.Context, tenantID
 // via the media pipeline, and replaces them with stored media URLs. Returns
 // (changed, newBody, error). When no external images are found, changed is
 // false and newBody is empty — the caller skips the update.
-func (a *mediaFetcherAdapter) replaceExternalImages(ctx context.Context, doc *tiptapNode, tenantID, userID pgtype.UUID) (bool, string, error) {
-	changed := a.walkAndReplace(ctx, doc, tenantID, userID)
+func (a *mediaFetcherAdapter) replaceExternalImages(ctx context.Context, doc *tiptapNode, userID pgtype.UUID) (bool, string, error) {
+	changed := a.walkAndReplace(ctx, doc, userID)
 	if !changed {
 		return false, "", nil
 	}
@@ -158,14 +158,14 @@ func (a *mediaFetcherAdapter) replaceExternalImages(ctx context.Context, doc *ti
 // walkAndReplace recursively walks the TipTap node tree, replacing external
 // image src URLs with stored media URLs. Returns true if any replacement
 // was made.
-func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNode, tenantID, userID pgtype.UUID) bool {
+func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNode, userID pgtype.UUID) bool {
 	changed := false
 
 	if node.Type == "image" && len(node.Attrs) > 0 {
 		var attrs imageAttrs
 		if err := json.Unmarshal(node.Attrs, &attrs); err == nil {
 			if isExternalImageURL(attrs.Src) {
-				if newURL, ok := a.fetchAndStore(ctx, tenantID, userID, attrs.Src); ok {
+				if newURL, ok := a.fetchAndStore(ctx, userID, attrs.Src); ok {
 					attrs.Src = newURL
 					if updated, err := json.Marshal(attrs); err == nil {
 						node.Attrs = updated
@@ -177,7 +177,7 @@ func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNo
 	}
 
 	for i := range node.Content {
-		if a.walkAndReplace(ctx, &node.Content[i], tenantID, userID) {
+		if a.walkAndReplace(ctx, &node.Content[i], userID) {
 			changed = true
 		}
 	}
@@ -185,7 +185,7 @@ func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNo
 	// Also check link marks on text nodes — some imported content wraps
 	// images in links pointing to external CDNs.
 	for i := range node.Marks {
-		if a.walkAndReplace(ctx, &node.Marks[i], tenantID, userID) {
+		if a.walkAndReplace(ctx, &node.Marks[i], userID) {
 			changed = true
 		}
 	}
@@ -196,10 +196,10 @@ func (a *mediaFetcherAdapter) walkAndReplace(ctx context.Context, node *tiptapNo
 // fetchAndStore downloads an external image via media.Service.StoreFromURL
 // and returns the imgproxy URL for the stored media. Returns (url, false)
 // if the download fails — the original URL is kept.
-func (a *mediaFetcherAdapter) fetchAndStore(ctx context.Context, tenantID, userID pgtype.UUID, sourceURL string) (string, bool) {
+func (a *mediaFetcherAdapter) fetchAndStore(ctx context.Context, userID pgtype.UUID, sourceURL string) (string, bool) {
 	filename := filenameFromURL(sourceURL)
 
-	mediaID, err := a.media.StoreFromURL(ctx, tenantID, userID, sourceURL, filename)
+	mediaID, err := a.media.StoreFromURL(ctx, userID, sourceURL, filename)
 	if err != nil {
 		return "", false
 	}

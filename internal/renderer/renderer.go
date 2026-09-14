@@ -191,10 +191,10 @@ func validateScriptPath(scriptPath string) (string, error) {
 // the shared content.SanitizeHTML allowlist before caching/returning to
 // prevent stored XSS from raw embed HTML or crafted node attributes
 // (§5.1, §14 — Renderer must allowlist tags).
-func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, updatedAt pgtype.Timestamptz, json []byte) (string, error) {
+func (r *Renderer) Render(ctx context.Context, contentID pgtype.UUID, updatedAt pgtype.Timestamptz, json []byte) (string, error) {
 	// Try cache first
 	if r.cache != nil {
-		cacheKey := r.cacheKey(tenantID, contentID, updatedAt)
+		cacheKey := r.cacheKey(contentID, updatedAt)
 		if cached, err := r.cache.Redis().Get(ctx, cacheKey).Result(); err == nil {
 			return cached, nil
 		}
@@ -220,7 +220,7 @@ func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, 
 
 	// Cache the result (best-effort — failure does not break the response)
 	if r.cache != nil {
-		cacheKey := r.cacheKey(tenantID, contentID, updatedAt)
+		cacheKey := r.cacheKey(contentID, updatedAt)
 		_ = r.cache.Redis().Set(ctx, cacheKey, htmlOut, r.cacheTTL).Err()
 	}
 
@@ -299,10 +299,10 @@ func validateRenderInput(data []byte) error {
 // Format: jc:render:{}:{content_id}:{updated_at_hash}. The
 // scope prevents cross-tenant cache bleed (§4.2). Uses the
 // full SHA-256 hash to avoid collision risk from truncation (STD-003).
-func (r *Renderer) cacheKey(tenantID, contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
+func (r *Renderer) cacheKey(contentID pgtype.UUID, updatedAt pgtype.Timestamptz) string {
 	ts := updatedAt.Time.Unix()
 	hash := sha256.Sum256([]byte(strconv.FormatInt(ts, 10)))
 	tsHash := hex.EncodeToString(hash[:])
 
-	return valkey.MustKey("render:%s:%s:%s", tenantID.String(), contentID.String(), tsHash)
+	return valkey.MustKey("render::%s:%s", contentID.String(), tsHash)
 }

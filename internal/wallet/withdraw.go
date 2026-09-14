@@ -133,7 +133,7 @@ func (s *Service) CalculateWithdrawal(ctx context.Context, userID pgtype.UUID, i
 // configured) initiates the payout.
 //
 // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.UUID, input CreateWithdrawalInput) (WithdrawalResult, error) {
+func (s *Service) CreateWithdrawal(ctx context.Context, userID pgtype.UUID, input CreateWithdrawalInput) (WithdrawalResult, error) {
 	if input.CreditAmount <= 0 {
 		return WithdrawalResult{}, newValidationError("credit_amount", "credit amount must be positive")
 	}
@@ -200,7 +200,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, tenantID, userID pgtype.
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return WithdrawalResult{}, fmt.Errorf("acquiring wallet lock: %w", err)
 	}

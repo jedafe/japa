@@ -174,7 +174,7 @@ func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgt
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
@@ -184,7 +184,7 @@ func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgt
 		return pgtype.UUID{}, pgtype.UUID{}, pgtype.UUID{}, false
 	}
 
-	return user.UserID, tenantID, mediaID, true
+	return user.UserID, pgtype.UUID{}, mediaID, true
 }
 
 const defaultPageSize int32 = 20
@@ -294,7 +294,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -366,7 +366,7 @@ func (h *Handlers) InitiateUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.InitiateUpload(r.Context(), tenantID, user.UserID, input.Filename, input.MimeType, input.FileSize)
+	result, err := h.service.InitiateUpload(r.Context(), user.UserID, input.Filename, input.MimeType, input.FileSize)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "upload_error", err.Error())
 		return
@@ -968,7 +968,7 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1018,9 +1018,8 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		ext = "." + ext
 	}
 
-	storagePath := fmt.Sprintf("%s/%s/%s%s",
-		StoragePathTemp,
-		tenantID.String(),
+	storagePath := fmt.Sprintf("%s//%s%s", StoragePathTemp,
+
 		uuid.New().String(),
 		ext)
 

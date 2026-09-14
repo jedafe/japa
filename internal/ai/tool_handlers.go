@@ -172,7 +172,7 @@ func (h *ToolHandlers) DeleteTool(w http.ResponseWriter, r *http.Request) {
 // usage for ALL tools (used by the admin /ai usage tab).
 // GET /admin/ai/tools/usage?tool_id=...&days=30.
 func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -191,7 +191,7 @@ func (h *ToolHandlers) ListToolUsage(w http.ResponseWriter, r *http.Request) {
 
 	// All-tools mode: return per-tool aggregated usage.
 	if toolIDStr == "" {
-		stats, err := h.Registry.GetAllToolUsageStats(r.Context(), tenantID, since)
+		stats, err := h.Registry.GetAllToolUsageStats(r.Context(), since)
 		if err != nil {
 			slog.Error("fetching all tool usage stats", "error", err)
 			toolWriteError(w, http.StatusInternalServerError, "internal_error", "Failed to fetch usage stats")

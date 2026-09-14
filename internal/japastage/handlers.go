@@ -150,7 +150,7 @@ func (h *Handlers) HandleStages(w http.ResponseWriter, r *http.Request) {
 // view. Returns an empty data object (stage omitted) when the profile is not
 // public, so anonymous browsers simply see no stage.
 func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -166,7 +166,7 @@ func (h *Handlers) HandleGetByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.GetByUsername(r.Context(), tenantID, username)
+	profile, err := h.service.GetByUsername(r.Context(), username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
@@ -243,7 +243,7 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -253,7 +253,7 @@ func (h *Handlers) HandleGetOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.GetOwn(r.Context(), user.UserID, tenantID)
+	profile, err := h.service.GetOwn(r.Context(), user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
@@ -280,7 +280,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -306,7 +306,7 @@ func (h *Handlers) HandleUpdateOwn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.UpdateOwn(r.Context(), user.UserID, tenantID, input)
+	profile, err := h.service.UpdateOwn(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "profile_not_found", "Profile not found")

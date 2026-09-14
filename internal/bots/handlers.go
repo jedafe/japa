@@ -138,7 +138,7 @@ func (h *Handlers) GetKnownBot(w http.ResponseWriter, r *http.Request) {
 // CreateKnownBot creates a new known bot entry.
 // POST /api/v1/admin/bots.
 func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -187,7 +187,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bot, err := h.Service.CreateKnownBot(r.Context(), tenantID, CreateKnownBotInput{
+	bot, err := h.Service.CreateKnownBot(r.Context(), CreateKnownBotInput{
 		Name:             input.Name,
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          BotType(input.BotType),
@@ -205,7 +205,7 @@ func (h *Handlers) CreateKnownBot(w http.ResponseWriter, r *http.Request) {
 // UpdateKnownBot updates an existing known bot entry.
 // PUT /api/v1/admin/bots/:id.
 func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -249,7 +249,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bot, err := h.Service.UpdateKnownBot(r.Context(), tenantID, botID, UpdateKnownBotInput{
+	bot, err := h.Service.UpdateKnownBot(r.Context(), botID, UpdateKnownBotInput{
 		Name:             input.Name,
 		UserAgentPattern: input.UserAgentPattern,
 		BotType:          BotType(input.BotType),
@@ -267,7 +267,7 @@ func (h *Handlers) UpdateKnownBot(w http.ResponseWriter, r *http.Request) {
 // DeleteKnownBot removes a known bot entry.
 // DELETE /api/v1/admin/bots/:id.
 func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handlers) DeleteKnownBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteKnownBot(r.Context(), tenantID, botID); err != nil {
+	if err := h.Service.DeleteKnownBot(r.Context(), botID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

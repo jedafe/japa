@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jedafe/japa/internal/bots"
@@ -62,19 +61,19 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 // sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
 // "images", or "index".
-func sitemapCacheKey(tenantID pgtype.UUID, sitemapType string) string {
-	return "jc:cache:sitemap:" + tenantID.String() + ":" + sitemapType
+func sitemapCacheKey(sitemapType string) string {
+	return "jc:cache:sitemap:" + "" + ":" + sitemapType
 }
 
 // cachedSitemapXML tries to serve a cached sitemap from Valkey. Returns true
 // if a cache HIT was served (caller should return immediately). On miss or
 // error, returns false so the caller renders fresh XML.
-func (h *SitemapHandler) cachedSitemapXML(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, sitemapType string) bool {
+func (h *SitemapHandler) cachedSitemapXML(w http.ResponseWriter, r *http.Request, sitemapType string) bool {
 	if h.vkClient == nil {
 		return false
 	}
 
-	cached, err := h.vkClient.Redis().Get(r.Context(), sitemapCacheKey(tenantID, sitemapType)).Bytes()
+	cached, err := h.vkClient.Redis().Get(r.Context(), sitemapCacheKey(sitemapType)).Bytes()
 	if err != nil || len(cached) == 0 {
 		return false
 	}
@@ -90,12 +89,12 @@ func (h *SitemapHandler) cachedSitemapXML(w http.ResponseWriter, r *http.Request
 
 // cacheSitemapXML stores rendered sitemap XML in Valkey. Best-effort — a
 // cache write failure is logged but does not fail the request.
-func (h *SitemapHandler) cacheSitemapXML(ctx context.Context, tenantID pgtype.UUID, sitemapType string, data []byte) {
+func (h *SitemapHandler) cacheSitemapXML(ctx context.Context, sitemapType string, data []byte) {
 	if h.vkClient == nil {
 		return
 	}
 
-	if err := h.vkClient.Redis().Set(ctx, sitemapCacheKey(tenantID, sitemapType), data, sitemapCacheTTL).Err(); err != nil {
+	if err := h.vkClient.Redis().Set(ctx, sitemapCacheKey(sitemapType), data, sitemapCacheTTL).Err(); err != nil {
 		slog.Warn("sitemap: failed to cache", "type", sitemapType, "error", err)
 	}
 }
@@ -111,14 +110,14 @@ type sitemapCacheInvalidator interface {
 // by the sitemap:generate Asynq task after pre-generating fresh sitemaps so
 // the on-demand handlers serve the new content on next request.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
-func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator, tenantID pgtype.UUID) {
+func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 	if rdb == nil {
 		return
 	}
 
 	types := []string{"index", "content", "spaces", "tags", "users", "images"}
 	for _, t := range types {
-		if err := rdb.Del(ctx, sitemapCacheKey(tenantID, t)).Err(); err != nil {
+		if err := rdb.Del(ctx, sitemapCacheKey(t)).Err(); err != nil {
 			slog.Warn("sitemap: failed to invalidate cache", "type", t, "error", err)
 		}
 	}
@@ -201,8 +200,8 @@ type sitemapEntry struct {
 // invalidated by the sitemap:generate Asynq task.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "index") {
+
+	if h.cachedSitemapXML(w, r, "index") {
 		return
 	}
 
@@ -211,8 +210,8 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 	// Compute the lastmod for each sub-sitemap from the most recent row.
 	contentLastMod := h.latestContentLastMod(r.Context())
 	spacesLastMod := h.latestSpacesLastMod(r.Context())
-	usersLastMod := h.latestUsersLastMod(r.Context(), t.ID)
-	imagesLastMod := h.latestImagesLastMod(r.Context(), t.ID)
+	usersLastMod := h.latestUsersLastMod(r.Context())
+	imagesLastMod := h.latestImagesLastMod(r.Context())
 
 	entries := []sitemapEntry{
 		{Loc: base + "/sitemap-content.xml", LastMod: contentLastMod},
@@ -230,7 +229,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		Sitemaps: entries,
 	})
 	data := []byte(buf.String())
-	h.cacheSitemapXML(r.Context(), t.ID, "index", data)
+	h.cacheSitemapXML(r.Context(), "index", data)
 
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -263,10 +262,10 @@ func (h *SitemapHandler) latestSpacesLastMod(ctx context.Context) string {
 }
 
 // latestUsersLastMod returns the most recent active user updated_at, or empty.
-func (h *SitemapHandler) latestUsersLastMod(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *SitemapHandler) latestUsersLastMod(ctx context.Context) string {
 	var ts time.Time
 
-	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
+	err := h.reader.QueryRow(ctx, `SELECT u.updated_at FROM users u JOIN user_groups ug ON u.user_group_id = ug.id WHERE u.status = 'active' AND COALESCE(ug.allow_search_indexing, true) ORDER BY u.updated_at DESC LIMIT 1`).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -277,14 +276,14 @@ func (h *SitemapHandler) latestUsersLastMod(ctx context.Context, tenantID pgtype
 // latestImagesLastMod returns the most recent updated_at among content rows
 // that have a featured image and pass the Section 43 quality gate, or empty.
 // Used as the lastmod for /sitemap-images.xml in the sitemap index.
-func (h *SitemapHandler) latestImagesLastMod(ctx context.Context, tenantID pgtype.UUID) string {
+func (h *SitemapHandler) latestImagesLastMod(ctx context.Context) string {
 	var ts time.Time
 
 	err := h.reader.QueryRow(ctx, `SELECT c.updated_at FROM contents c
 		 WHERE c.status = 'published'
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
-		 ORDER BY c.updated_at DESC LIMIT 1`, tenantID).Scan(&ts)
+		 ORDER BY c.updated_at DESC LIMIT 1`).Scan(&ts)
 	if err != nil {
 		return ""
 	}
@@ -299,8 +298,8 @@ func (h *SitemapHandler) latestImagesLastMod(ctx context.Context, tenantID pgtyp
 // so the on-demand and pre-generated sitemaps agree.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md, sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "content") {
+
+	if h.cachedSitemapXML(w, r, "content") {
 		return
 	}
 
@@ -340,7 +339,7 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	h.serveSitemapBytes(w, r, t.ID, "content", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, "content", renderURLSetXML(entries))
 }
 
 // ServeSpacesSitemap serves space sitemap entries (P5.6 — Task 31), filtered
@@ -351,8 +350,8 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 // forum_threads joined to the space's content.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
 func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "spaces") {
+
+	if h.cachedSitemapXML(w, r, "spaces") {
 		return
 	}
 
@@ -375,7 +374,7 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		     GROUP BY c.space_id
 		 ) qc ON qc.space_id = s.id
 		 WHERE s.status = 'active' AND s.deleted_at IS NULL
-		 ORDER BY s.updated_at DESC`, t.ID)
+		 ORDER BY s.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -409,13 +408,13 @@ func (h *SitemapHandler) ServeSpacesSitemap(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	h.serveSitemapBytes(w, r, t.ID, "spaces", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, "spaces", renderURLSetXML(entries))
 }
 
 // ServeTagsSitemap serves tag sitemap entries (P5.6 — Task 31).
 func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "tags") {
+
+	if h.cachedSitemapXML(w, r, "tags") {
 		return
 	}
 
@@ -443,7 +442,7 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	h.serveSitemapBytes(w, r, t.ID, "tags", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, "tags", renderURLSetXML(entries))
 }
 
 // ServeUsersSitemap serves user profile sitemap entries (P5.6 — Task 31),
@@ -453,8 +452,8 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 // allow_search_indexing = false are excluded.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "users") {
+
+	if h.cachedSitemapXML(w, r, "users") {
 		return
 	}
 
@@ -462,7 +461,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		 JOIN user_groups ug ON u.user_group_id = ug.id
 		 WHERE u.status = 'active'
 		   AND COALESCE(ug.allow_search_indexing, true) = true
-		 ORDER BY u.updated_at DESC`, t.ID)
+		 ORDER BY u.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
 		return
@@ -489,7 +488,7 @@ func (h *SitemapHandler) ServeUsersSitemap(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	h.serveSitemapBytes(w, r, t.ID, "users", renderURLSetXML(entries))
+	h.serveSitemapBytes(w, r, "users", renderURLSetXML(entries))
 }
 
 // imageURLSet is a urlset with the image namespace, for image sitemaps.
@@ -524,8 +523,8 @@ type imageItem struct {
 // (media.MediaURL) using the media row's storage_bucket/storage_path.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Request) {
-	t := &struct{ ID pgtype.UUID }{}
-	if h.cachedSitemapXML(w, r, t.ID, "images") {
+
+	if h.cachedSitemapXML(w, r, "images") {
 		return
 	}
 
@@ -540,7 +539,7 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		   AND c.visibility = 'public' AND c.seo_indexable = true
 		   AND c.featured_image_id IS NOT NULL
 		   AND m.deleted_at IS NULL AND m.confirmed = true
-		 ORDER BY c.updated_at DESC`, t.ID)
+		 ORDER BY c.updated_at DESC`)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate image sitemap")
 		return
@@ -577,7 +576,7 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 		URLs:       entries,
 	})
 
-	h.serveSitemapBytes(w, r, t.ID, "images", []byte(buf.String()))
+	h.serveSitemapBytes(w, r, "images", []byte(buf.String()))
 }
 
 // resolveMediaURL builds a public, absolute media URL from
@@ -617,8 +616,8 @@ func renderURLSetXML(entries []urlEntry) []byte {
 
 // serveSitemapBytes writes pre-rendered sitemap XML bytes to the response,
 // sets standard headers, and caches the bytes in Valkey under the given type.
-func (h *SitemapHandler) serveSitemapBytes(w http.ResponseWriter, r *http.Request, tenantID pgtype.UUID, sitemapType string, data []byte) {
-	h.cacheSitemapXML(r.Context(), tenantID, sitemapType, data)
+func (h *SitemapHandler) serveSitemapBytes(w http.ResponseWriter, r *http.Request, sitemapType string, data []byte) {
+	h.cacheSitemapXML(r.Context(), sitemapType, data)
 	w.Header().Set("Content-Type", "application/xml")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Cache", "MISS")
@@ -661,11 +660,7 @@ func (h *SitemapHandler) writeXML(w http.ResponseWriter, entries []urlEntry) {
 func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	t := &struct{ ID pgtype.UUID }{}
-	if t == nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "tenant_unavailable", "No tenant available")
-		return
-	}
+
 
 	// Query the contents row with render-time resolution (Section 26).
 	// Uses raw pgxpool (the handler's existing pattern) until the
@@ -704,7 +699,7 @@ func (h *SitemapHandler) ValidateSEO(w http.ResponseWriter, r *http.Request) {
 		jsonldTemplate []byte
 	)
 
-	err := h.reader.QueryRow(r.Context(), q, id, t.ID).Scan(
+	err := h.reader.QueryRow(r.Context(), q, id).Scan(
 		&contentID, &title, &slug, &contentType, &body, &visibility, &seoIndexable,
 		&metaTitle, &metaDesc, &ogImageURL, &canonicalURL, &ogTitle, &ogDescription, &jsonldTemplate,
 	)

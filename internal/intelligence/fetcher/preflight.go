@@ -72,7 +72,7 @@ return count
 // robots), the lock is released before returning so the source is not
 // blocked until TTL expiry (BUG-10 fix, §4.3/§6.2). Only ErrCrawlLocked
 // (another worker holds the lock) leaves the lock in place.
-func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, tenantID pgtype.UUID) error {
+func (p *PreflightChecker) Check(ctx context.Context, source sources.Source) error {
 	// Resolve config values from system_settings (Rule 3, INTEL-014 fix).
 	crawlLockTTL := 3600
 	rateLimitPerMin := 10
@@ -89,7 +89,7 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 		sourceID = source.ID.String()
 	}
 
-	lockKey := fmt.Sprintf("jc:intel:crawllock:%s:%s", tenantID.String(), sourceID)
+	lockKey := fmt.Sprintf("jc:intel:crawllock::%s", sourceID)
 
 	locked, err := p.rdb.SetNX(ctx, lockKey, "1", time.Duration(crawlLockTTL)*time.Second).Result()
 	if err != nil {
@@ -116,20 +116,20 @@ func (p *PreflightChecker) Check(ctx context.Context, source sources.Source, ten
 	}
 
 	// 3. Rate limit (sliding window per domain).
-	if err := p.checkRateLimit(ctx, tenantID, source, rateLimitPerMin, releaseLock); err != nil {
+	if err := p.checkRateLimit(ctx, source, rateLimitPerMin, releaseLock); err != nil {
 		return err
 	}
 
 	// 4. Robots.txt check (INTEL-006 fix).
-	return p.checkRobots(ctx, tenantID, source, releaseLock)
+	return p.checkRobots(ctx, source, releaseLock)
 }
 
 // checkRateLimit enforces the per-domain sliding-window rate limit via the
 // atomic INCR + conditional EXPIRE Lua script (prevents the race where a
 // crash after INCR leaves the key without a TTL, permanently blocking the
 // domain). The lock is released on any failure.
-func (p *PreflightChecker) checkRateLimit(ctx context.Context, tenantID pgtype.UUID, source sources.Source, rateLimitPerMin int, releaseLock func()) error {
-	rateKey := fmt.Sprintf("jc:intel:ratelimit:%s:%s", tenantID.String(), source.Domain)
+func (p *PreflightChecker) checkRateLimit(ctx context.Context, source sources.Source, rateLimitPerMin int, releaseLock func()) error {
+	rateKey := fmt.Sprintf("jc:intel:ratelimit::%s", source.Domain)
 
 	result, err := p.rdb.Eval(ctx, rateLimitScript, []string{rateKey}, 60).Result()
 	if err != nil {
@@ -154,12 +154,12 @@ func (p *PreflightChecker) checkRateLimit(ctx context.Context, tenantID pgtype.U
 // checkRobots verifies the source URL against the domain's robots.txt policy
 // when a RobotsChecker is wired. If robots.txt is unreachable, RobotsChecker
 // defaults to allow-all (conservative). The lock is released on any failure.
-func (p *PreflightChecker) checkRobots(ctx context.Context, tenantID pgtype.UUID, source sources.Source, releaseLock func()) error {
+func (p *PreflightChecker) checkRobots(ctx context.Context, source sources.Source, releaseLock func()) error {
 	if p.robots == nil || source.SourceUrl == "" {
 		return nil
 	}
 
-	policy, err := p.robots.Check(ctx, tenantID, source.SourceUrl)
+	policy, err := p.robots.Check(ctx, source.SourceUrl)
 	if err != nil {
 		releaseLock()
 		return fmt.Errorf("fetcher: robots check: %w", err)
@@ -192,6 +192,6 @@ func (p *PreflightChecker) checkRobots(ctx context.Context, tenantID pgtype.UUID
 
 // ReleaseCrawlLock removes the crawl lock. Called after fetch completes
 // (success or failure) to allow immediate retry if needed.
-func (p *PreflightChecker) ReleaseCrawlLock(ctx context.Context, tenantID pgtype.UUID, sourceID string) {
-	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:crawllock:%s:%s", tenantID.String(), sourceID))
+func (p *PreflightChecker) ReleaseCrawlLock(ctx context.Context, sourceID string) {
+	p.rdb.Del(ctx, fmt.Sprintf("jc:intel:crawllock::%s", sourceID))
 }

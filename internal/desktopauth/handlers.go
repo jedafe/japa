@@ -104,7 +104,7 @@ func (h *Handlers) ExchangeKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mint a short-lived access token for the API key's user.
-	accessToken, err := h.KeyRotation.MintAccessTokenWithContext(ctx, keyCtx.UserID, (pgtype.UUID{}))
+	accessToken, err := h.KeyRotation.MintAccessTokenWithContext(ctx, keyCtx.UserID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to mint access token")
 		return

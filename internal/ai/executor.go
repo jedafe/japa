@@ -68,7 +68,7 @@ const (
 // // Handlers perform their own entity-level privacy checks via the injected
 // PrivacyChecker when they target a specific content/cfv/user row that the
 // executor-level PrivacyTargetFunc hook did not cover.
-type ToolHandler func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error)
+type ToolHandler func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error)
 
 // PrivacyTargetFunc extracts the target entity (type + ID) for the §103
 // step-3 privacy check from a tool call's arguments. The executor calls it
@@ -351,7 +351,7 @@ func (r *ToolHandlerRegistry) loadedConfig(functionName string) (loadedTool, boo
 // needs. Defined as an interface so the executor can be tested with a stub
 // instead of a live gen.Queries. The concrete *PrivacyChecker satisfies it.
 type PrivacyExemptionChecker interface {
-	IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error)
+	IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error)
 }
 
 // Executor runs the §103 tool-call pipeline. It is the single chokepoint
@@ -549,7 +549,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		}
 
 		if et != "" && eid != (pgtype.UUID{}) {
-			exempt, err := e.privacy.IsExempt(ctx, et, (pgtype.UUID{}), eid)
+			exempt, err := e.privacy.IsExempt(ctx, et, eid)
 			if err != nil {
 				resultErr = fmt.Errorf("ai: privacy check for %q: %w", call.Name, err)
 				return e.errorResult(resultErr), resultErr

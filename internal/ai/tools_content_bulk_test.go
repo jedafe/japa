@@ -65,7 +65,7 @@ func TestContentBulkCreateHandler_Success(t *testing.T) {
 	deps := &ToolDeps{
 		ContentTypes: contentSvc,
 		Permission:   permSvc,
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			created++
 			if created == 1 {
 				return ContentCreateRow{ID: contentID1, Title: input.Title, Slug: "first", Status: "draft", AuthorID: input.AuthorID}, nil
@@ -123,7 +123,7 @@ func TestContentBulkCreateHandler_PartialFailure(t *testing.T) {
 	deps := &ToolDeps{
 		ContentTypes: contentSvc,
 		Permission:   permSvc,
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{ID: contentID, Title: input.Title, Slug: "ok", Status: "draft", AuthorID: input.AuthorID}, nil
 		},
 	}
@@ -169,7 +169,7 @@ func TestContentBulkCreateHandler_UnauthorizedAuthor(t *testing.T) {
 	deps := &ToolDeps{
 		ContentTypes: contentSvc,
 		Permission:   permSvc,
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called without content.assign_author")
 			return ContentCreateRow{}, nil
 		},
@@ -221,7 +221,7 @@ func TestContentBulkCreateHandler_UnauthorizedContentType(t *testing.T) {
 	deps := &ToolDeps{
 		ContentTypes: contentSvc,
 		Permission:   permSvc,
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called for unauthorized content type")
 			return ContentCreateRow{}, nil
 		},

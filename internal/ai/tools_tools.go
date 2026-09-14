@@ -39,7 +39,7 @@ type toolsListArgs struct {
 // with record counts. The optional category filter narrows the result to
 // a specific tool category (e.g. "immigration", "financial", "community").
 func ToolsListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -84,7 +84,7 @@ type toolsReadArgs struct {
 // a tool table by type + ID. The tool_type identifies which tool table
 // (scholarship, visa_route, housing_guide, etc.) and tool_id is the UUID.
 func ToolsReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ToolsRegistry == nil {
 			return errorToolResult("tools_unavailable", "tools registry service is not configured"), nil
 		}
@@ -126,7 +126,7 @@ type toolsCreateArgs struct {
 // fields, so this handler returns a redirect message pointing the agent
 // to the dedicated tool API.
 func ToolsCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		var a toolsCreateArgs
 		if err := json.Unmarshal(args, &a); err != nil {
 			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
@@ -147,7 +147,7 @@ func ToolsCreateHandler(deps *ToolDeps) ToolHandler {
 // Each tool table has its own update endpoint, so this handler returns a
 // redirect message pointing the agent to the dedicated tool API.
 func ToolsUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		return errorToolResult("use_dedicated_api",
 			"each tool has a dedicated update API with type-specific fields. "+
 				"Use the tool's own endpoint (e.g. PUT /api/v1/admin/visa-routes/:id) to update records."), nil
@@ -159,7 +159,7 @@ func ToolsUpdateHandler(deps *ToolDeps) ToolHandler {
 // destination_space_id / city_space_id fields on their dedicated update
 // endpoints, so this handler returns a redirect message.
 func ToolsAssignGeoHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		return errorToolResult("use_dedicated_api",
 			"tool records are geo-scoped via destination_space_id / city_space_id on their dedicated update endpoints. "+
 				"Use the tool's own update API to assign geo scope."), nil

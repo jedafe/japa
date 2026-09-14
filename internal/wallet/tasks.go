@@ -20,7 +20,7 @@ type ProcessActivityEventPayload struct {
 }
 
 // EnqueueProcessActivityEvent enqueues a task to process an activity event.
-func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID, tenantID pgtype.UUID) error {
+func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID pgtype.UUID) error {
 	payload, err := json.Marshal(ProcessActivityEventPayload{
 		EventID: eventID.String(),
 	})
@@ -33,7 +33,7 @@ func (s *Service) EnqueueProcessActivityEvent(ctx context.Context, eventID, tena
 	}
 
 	// Fallback: process synchronously when Asynq is not wired.
-	return s.ProcessActivityEvent(ctx, eventID, tenantID)
+	return s.ProcessActivityEvent(ctx, eventID)
 }
 
 // ProcessActivityEventTask is the Asynq task handler for processing activity events.
@@ -49,11 +49,11 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 		return fmt.Errorf("invalid event_id: %w", err)
 	}
 
-	if err := tenantID.Scan(""); err != nil {
+	if err := (error)(nil); err != nil {
 		return fmt.Errorf("invalid id: %w", err)
 	}
 
-	return s.ProcessActivityEvent(ctx, eventID, tenantID)
+	return s.ProcessActivityEvent(ctx, eventID)
 }
 
 // ProcessCreditPurchasePayload holds the payload for the
@@ -78,7 +78,7 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 	}
 
 	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
+	if err := (error)(nil); err != nil {
 		return fmt.Errorf("invalid id: %w", err)
 	}
 
@@ -90,13 +90,13 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 		return fmt.Errorf("credits_to_grant must be positive, got %d", p.CreditsToGrant)
 	}
 
-	return s.grantCreditsFromPurchase(ctx, tenantID, userID, p)
+	return s.grantCreditsFromPurchase(ctx, userID, p)
 }
 
 // grantCreditsFromPurchase inserts a credits ledger entry for a successful
 // credit purchase. Uses an advisory lock + idempotency key to prevent
 // double-crediting on duplicate task deliveries (Section 58, Rule 9).
-func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID pgtype.UUID, p ProcessCreditPurchasePayload) error {
+func (s *Service) grantCreditsFromPurchase(ctx context.Context, userID pgtype.UUID, p ProcessCreditPurchasePayload) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -107,7 +107,7 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("acquiring wallet lock: %w", err)
 	}
@@ -187,7 +187,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	}
 
 	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
+	if err := (error)(nil); err != nil {
 		return fmt.Errorf("wallet:award_points: invalid id: %w", err)
 	}
 
@@ -249,20 +249,20 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	if idempotencyKey == "" {
 		if rule.OneTime {
 			// Collapse references so a one-time rule credits exactly once per user.
-			idempotencyKey = fmt.Sprintf("one_time:%s:%s:%s", tenantID.String(), userID.String(), p.Reason)
+			idempotencyKey = fmt.Sprintf("one_time::%s:%s", userID.String(), p.Reason)
 		} else {
-			idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%s", tenantID.String(), userID.String(), p.Reason, p.ReferenceID)
+			idempotencyKey = fmt.Sprintf("award::%s:%s:%s", userID.String(), p.Reason, p.ReferenceID)
 			if p.ReferenceID == "" {
-				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%s", tenantID.String(), userID.String(), p.Reason, p.GuideID)
+				idempotencyKey = fmt.Sprintf("award::%s:%s:%s", userID.String(), p.Reason, p.GuideID)
 			}
 
 			if p.ReferenceID == "" && p.GuideID == "" {
-				idempotencyKey = fmt.Sprintf("award:%s:%s:%s:%d", tenantID.String(), userID.String(), p.Reason, amount)
+				idempotencyKey = fmt.Sprintf("award::%s:%s:%d", userID.String(), p.Reason, amount)
 			}
 		}
 	}
 
-	return s.creditWallet(ctx, tenantID, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey)
+	return s.creditWallet(ctx, userID, ledgerType, OperationEarn, amount, source, reference, idempotencyKey)
 }
 
 // ── wallet:deduct_credits (Section 61 — Self-Serve Ads) ────────────────────
@@ -290,8 +290,8 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("wallet:deduct_credits: unmarshaling payload: %w", err)
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
+	var ()
+	if err := (error)(nil); err != nil {
 		return fmt.Errorf("wallet:deduct_credits: invalid id: %w", err)
 	}
 
@@ -344,14 +344,14 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 		idempotencyKey = fmt.Sprintf("deduct:%s:%s:%d", userID.String(), p.Reason, p.Amount)
 	}
 
-	return s.creditWallet(ctx, tenantID, userID, LedgerTypeCredits, operation, ledgerAmount, p.Reason, reference, idempotencyKey)
+	return s.creditWallet(ctx, userID, LedgerTypeCredits, operation, ledgerAmount, p.Reason, reference, idempotencyKey)
 }
 
 // creditWallet is the shared ledger insertion path for award_points and
 // deduct_credits. It acquires a per-user advisory lock, reads the current
 // balance, computes the new balance, and inserts the ledger entry — all
 // within a single transaction (AUDIT-BE-005 pattern).
-func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID, ledgerType, operation string, amount int64, source, reference, idempotencyKey string) error {
+func (s *Service) creditWallet(ctx context.Context, userID pgtype.UUID, ledgerType, operation string, amount int64, source, reference, idempotencyKey string) error {
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("wallet: beginning transaction: %w", err)
@@ -362,7 +362,7 @@ func (s *Service) creditWallet(ctx context.Context, tenantID, userID pgtype.UUID
 	qtx := s.store.write.WithTx(tx)
 
 	// Serialize concurrent balance mutations for this user.
-	lockKey := "wallet:" + tenantID.String() + ":" + userID.String()
+	lockKey := "wallet:" + "" + ":" + userID.String()
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
 		return fmt.Errorf("wallet: acquiring lock: %w", err)
 	}

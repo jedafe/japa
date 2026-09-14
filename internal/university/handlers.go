@@ -155,7 +155,7 @@ func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
 // total_revenue_kobo, courses_count) so the creator dashboard can render
 // without a second round-trip (BUG-003).
 func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -165,7 +165,7 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	prof, err := h.service.GetMyProfile(r.Context(), tenantID, user.UserID)
+	prof, err := h.service.GetMyProfile(r.Context(), user.UserID)
 	if err != nil {
 		// A user with no instructor profile is not an error — it just means they
 		// have not applied yet. Return an empty 200 so the dashboard can render
@@ -213,7 +213,7 @@ func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request
 
 // UpdateMyInstructorProfile handles PATCH /learn/university/instructor/me.
 func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -249,7 +249,7 @@ func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Requ
 		in.PayoutMethod = body.PayoutMethod
 	}
 
-	prof, err := h.service.UpdateMyProfile(r.Context(), tenantID, user.UserID, in)
+	prof, err := h.service.UpdateMyProfile(r.Context(), user.UserID, in)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -869,7 +869,7 @@ func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
 
 // AdminApproveInstructor handles POST /admin/university/instructors/{id}/approve.
 func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -891,7 +891,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	prof, err := h.service.ApproveInstructor(r.Context(), tenantID, instructorID, user.UserID, body.Tier, body.CommissionOverride)
+	prof, err := h.service.ApproveInstructor(r.Context(), instructorID, user.UserID, body.Tier, body.CommissionOverride)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -902,7 +902,7 @@ func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request
 
 // AdminRejectInstructor handles POST /admin/university/instructors/{id}/reject.
 func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -917,7 +917,7 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	prof, err := h.service.RejectInstructor(r.Context(), tenantID, instructorID, user.UserID)
+	prof, err := h.service.RejectInstructor(r.Context(), instructorID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -928,7 +928,7 @@ func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request)
 
 // AdminSuspendInstructor handles POST /admin/university/instructors/{id}/suspend.
 func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -943,7 +943,7 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	prof, err := h.service.SuspendInstructor(r.Context(), tenantID, instructorID, user.UserID)
+	prof, err := h.service.SuspendInstructor(r.Context(), instructorID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -954,7 +954,7 @@ func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request
 
 // AdminReinstateInstructor handles POST /admin/university/instructors/{id}/reinstate.
 func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -969,7 +969,7 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	prof, err := h.service.ReinstateInstructor(r.Context(), tenantID, instructorID, user.UserID)
+	prof, err := h.service.ReinstateInstructor(r.Context(), instructorID, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -981,7 +981,7 @@ func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Reque
 // AdminDeleteInstructor handles DELETE /admin/university/instructors/{id}.
 // Blocked while the instructor is approved — reject or suspend first.
 func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -991,7 +991,7 @@ func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.service.DeleteInstructor(r.Context(), tenantID, instructorID); err != nil {
+	if err := h.service.DeleteInstructor(r.Context(), instructorID); err != nil {
 		handleServiceError(w, err)
 		return
 	}

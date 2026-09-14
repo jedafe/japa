@@ -307,8 +307,8 @@ func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntr
 // Update edits a calendar entry's content fields. Ownership is enforced unless
 // the caller holds calendar.edit_any. Status, moderation and AI provenance
 // metadata are not modified by this endpoint.
-func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
-	existing, err := s.store.GetEntryForUpdate(ctx, id, tenantID)
+func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input UpdateEntryInput) (CalendarEntryDTO, error) {
+	existing, err := s.store.GetEntryForUpdate(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
@@ -327,7 +327,7 @@ func (s *Service) Update(ctx context.Context, id, tenantID, callerID pgtype.UUID
 		return CalendarEntryDTO{}, err
 	}
 
-	updated, err := s.store.UpdateEntry(ctx, id, tenantID, entry)
+	updated, err := s.store.UpdateEntry(ctx, id, entry)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows

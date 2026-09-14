@@ -151,8 +151,8 @@ func (s *Service) Stages() []Option {
 
 // GetOwn returns the authenticated user's own japa stage profile (full
 // view, including history and the visibility flag). Backs GET /me/japa-stage.
-func (s *Service) GetOwn(ctx context.Context, userID, tenantID pgtype.UUID) (ProfileDTO, error) {
-	row, err := s.store.GetUserProfile(ctx, userID, tenantID)
+func (s *Service) GetOwn(ctx context.Context, userID pgtype.UUID) (ProfileDTO, error) {
+	row, err := s.store.GetUserProfile(ctx, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileDTO{}, pgx.ErrNoRows
@@ -167,8 +167,8 @@ func (s *Service) GetOwn(ctx context.Context, userID, tenantID pgtype.UUID) (Pro
 // GetByUsername returns the public japa stage profile for a username. If the
 // profile is not public (japa_stage_is_public = false), an empty DTO is
 // returned without error so the public view simply shows nothing.
-func (s *Service) GetByUsername(ctx context.Context, tenantID pgtype.UUID, username string) (PublicProfileDTO, error) {
-	row, err := s.store.GetProfileByUsername(ctx, username, tenantID)
+func (s *Service) GetByUsername(ctx context.Context, username string) (PublicProfileDTO, error) {
+	row, err := s.store.GetProfileByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PublicProfileDTO{}, pgx.ErrNoRows
@@ -189,7 +189,7 @@ func (s *Service) GetByUsername(ctx context.Context, tenantID pgtype.UUID, usern
 // of the allowed values; destSpaceID may be empty to clear it. On success
 // the caller should fire the japa_stage:recommend Asynq task (Rule 8 —
 // fire-and-forget) so the worker can dispatch recommendations.
-func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, input UpdateStageInput) (ProfileDTO, error) {
+func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input UpdateStageInput) (ProfileDTO, error) {
 	if !ValidStage(input.Stage) {
 		return ProfileDTO{}, fmt.Errorf("invalid stage %q; must be one of: %s", input.Stage, JoinStages())
 	}
@@ -201,7 +201,7 @@ func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, i
 		}
 	}
 
-	if err := s.store.UpdateStage(ctx, userID, tenantID, input.Stage, destSpaceID, input.IsPublic); err != nil {
+	if err := s.store.UpdateStage(ctx, userID, input.Stage, destSpaceID, input.IsPublic); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ProfileDTO{}, pgx.ErrNoRows
 		}
@@ -209,7 +209,7 @@ func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, i
 		return ProfileDTO{}, fmt.Errorf("japastage: update own: %w", err)
 	}
 
-	row, err := s.store.GetUserProfile(ctx, userID, tenantID)
+	row, err := s.store.GetUserProfile(ctx, userID)
 	if err != nil {
 		return ProfileDTO{}, fmt.Errorf("japastage: reload profile: %w", err)
 	}

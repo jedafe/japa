@@ -133,7 +133,7 @@ LIMIT 1
 // GetLatestPublished returns the most recently published edition for a tenant
 // (and optionally a space). If spaceID is not valid, the tenant-wide digest
 // is returned.
-func (s *Store) GetLatestPublished(ctx context.Context, tenantID, spaceID pgtype.UUID) (DigestEdition, error) {
+func (s *Store) GetLatestPublished(ctx context.Context, spaceID pgtype.UUID) (DigestEdition, error) {
 	var (
 		q    strings.Builder
 		args []any
@@ -146,7 +146,7 @@ FROM digest_editions
 WHERE status = 'published'
 `)
 
-	args = append(args, tenantID)
+	args = append(args)
 
 	argIdx := 2
 	if spaceID.Valid {
@@ -576,7 +576,7 @@ type DigestStory struct {
 // When spaceID is valid, results are scoped to that Space; otherwise the
 // tenant-wide digest is assembled.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
-func (s *Store) AssembleDigestContent(ctx context.Context, tenantID, spaceID pgtype.UUID) (json.RawMessage, error) {
+func (s *Store) AssembleDigestContent(ctx context.Context, spaceID pgtype.UUID) (json.RawMessage, error) {
 	content := DigestContent{}
 
 	// 1. Top threads: top 5 forum threads by (vote_score × 3 + reply_count × 5)
@@ -593,7 +593,7 @@ WHERE ft.deleted_at IS NULL
   AND ft.created_at >= now() - interval '7 days'
 `)
 
-	tArgs = append(tArgs, tenantID)
+	tArgs = append(tArgs)
 
 	argIdx := 2
 	if spaceID.Valid {
@@ -638,7 +638,7 @@ WHERE u.created_at >= now() - interval '7 days'
   AND os.completed = true
 ORDER BY u.created_at DESC
 LIMIT 10
-`, tenantID)
+`)
 	if err != nil {
 		return nil, fmt.Errorf("digest: assemble: new members: %w", err)
 	}
@@ -675,7 +675,7 @@ WHERE c.content_type = 'event'
   AND c.publish_at >= now()
 `)
 
-	eArgs = append(eArgs, tenantID)
+	eArgs = append(eArgs)
 
 	argIdx = 2
 	if spaceID.Valid {
@@ -725,7 +725,7 @@ WHERE c.content_type = 'story'
   AND c.created_at >= now() - interval '30 days'
 `)
 
-	sArgs = append(sArgs, tenantID)
+	sArgs = append(sArgs)
 
 	argIdx = 2
 	if spaceID.Valid {

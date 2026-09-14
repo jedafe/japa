@@ -149,14 +149,14 @@ func (s *Store) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 }
 
 // ListJobs lists jobs with optional filters.
-func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFilter) ([]Job, int64, error) {
+func (s *Store) ListJobs(ctx context.Context, f JobListFilter) ([]Job, int64, error) {
 	query := `SELECT id, batch_id, persona_id, content_type, guide_category,
 	            topic_prompt, target_space_id, target_tags, intel_record_id,
 	            ai_model, voice_id, status, draft_content_id,
 	            review_id, generated_at, reviewed_at, published_at, error_message,
 	            created_by, created_at
 	         FROM studio_jobs `
-	args := []interface{}{tenantID}
+	args := []interface{}{pgtype.UUID{}}
 
 	argIdx := 2
 	if f.Status != nil {
@@ -226,7 +226,7 @@ func (s *Store) ListJobs(ctx context.Context, tenantID pgtype.UUID, f JobListFil
 	// Count total (without limit/offset) for pagination.
 	var total int64
 
-	countArgs := []interface{}{tenantID}
+	countArgs := []interface{}{pgtype.UUID{}}
 	countQuery := `SELECT count(*) FROM studio_jobs `
 	cIdx := 2
 

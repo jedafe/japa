@@ -366,7 +366,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 // CreateContent creates a new content row, ensuring slug uniqueness within
 // the tenant. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
-func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
+func (s *Service) CreateContent(ctx context.Context, input CreateContentInput) (gen.CreateContentRow, error) {
 	content, err := s.createContent(ctx, s.read, s.write, input)
 	if err != nil {
 		return content, err
@@ -376,7 +376,7 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 	// (e.g. first_post) can fire. Fire-and-forget. The WithQueries variant
 	// does not emit — it runs inside a caller's transaction, so the row is
 	// not committed yet.
-	s.emitActivity(ctx, tenantID, input.AuthorID, wallet.ActivityKeyContentCreated, "content:"+content.ID.String(), map[string]interface{}{
+	s.emitActivity(ctx, input.AuthorID, wallet.ActivityKeyContentCreated, "content:"+content.ID.String(), map[string]interface{}{
 		"content_type": string(input.ContentType),
 	})
 
@@ -1021,7 +1021,7 @@ func (s *Service) inferJourneyMetadataForUpdate(ctx context.Context, q *gen.Quer
 // UpdateContent updates an existing content row, recording a revision and
 // tracking slug changes in slug_history. The old slug is preserved for
 // 301 redirects.
-func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error) {
+func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error) {
 	existing, err := s.read.GetContentByID(ctx,
 		id,
 	)
@@ -1239,7 +1239,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 			}
 		}
 
-		if err := s.UpdateContentSpaces(ctx, content.ID, tenantID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
+		if err := s.UpdateContentSpaces(ctx, content.ID, editedBy, primarySpaceID, additional, input.BypassSpaceCheck); err != nil {
 			return gen.UpdateContentRow{}, fmt.Errorf("updating content spaces: %w", err)
 		}
 	}
@@ -2179,7 +2179,7 @@ func (s *Service) GetContentSpaces(ctx context.Context, contentID pgtype.UUID) (
 // is_primary = true). All space IDs are verified to exist in the tenant
 // before the transaction commits (BUG-018). The entire operation runs in a
 // transaction.
-func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) error {
+func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, userID, primarySpaceID pgtype.UUID, additionalSpaceIDs []pgtype.UUID, bypassSpaceCheck bool) error {
 	return db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Validate that the primary and all additional spaces exist in
 		// this tenant before mutating anything (BUG-018).
@@ -2204,7 +2204,7 @@ func (s *Service) UpdateContentSpaces(ctx context.Context, contentID, tenantID, 
 		// non-admin callers (Section 45 / BUG-018).
 		if !bypassSpaceCheck && s.spaceChecker != nil {
 			for _, sid := range spaceIDs {
-				ok, err := s.spaceChecker.CanPostInSpace(ctx, sid, userID, tenantID)
+				ok, err := s.spaceChecker.CanPostInSpace(ctx, sid, userID)
 				if err != nil {
 					return fmt.Errorf("checking space permission: %w", err)
 				}

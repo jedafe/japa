@@ -402,7 +402,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	sourceID, tenantID, src, proceed, err := resolveIntelFetchSource(ctx, p)
+	sourceID, _, src, proceed, err := resolveIntelFetchSource(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -424,7 +424,7 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	// Pre-flight checks: crawl lock, rate limit, license, robots.txt
 	// (INTEL-001/INTEL-006 fix). The crawl lock is acquired inside Check;
 	// on success the caller must release it after the fetch completes.
-	if err := intelPreflightCheck(ctx, tenantID, sourceID, src); err != nil {
+	if err := intelPreflightCheck(ctx, sourceID, src); err != nil {
 		return err
 	}
 
@@ -437,14 +437,14 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 	// Dispatch to the composite fetcher (selects adapter by crawl_method).
 	result, err := intelFetcher.Fetch(ctx, src)
 	if err != nil {
-		handleFetchFailure(ctx, tenantID, sourceID, sourceIDStr, src, err)
+		handleFetchFailure(ctx, sourceID, sourceIDStr, src, err)
 
 		return fmt.Errorf("task:intel:fetch_source: fetch: %w", err)
 	}
 
 	// Release the crawl lock after a successful fetch (INTEL-001 fix).
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, tenantID, sourceIDStr)
+		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
 	}
 
 	// Persist the raw document (headers + body + hash).
@@ -490,28 +490,26 @@ func HandleIntelFetchSource(ctx context.Context, t *asynq.Task) error {
 func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceID, tenantID pgtype.UUID, src gen.IntelSource, proceed bool, err error) {
 	sourceID, err = scanUUID(p.SourceID)
 	if err != nil {
-		return sourceID, tenantID, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
+		return sourceID, pgtype.UUID{}, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
 	}
-
-	tenantID = parseTenantID("")
 
 	// Load the source row to resolve crawl_method, source_url, and trust_level.
 	src, err = intelSourcesStore.Get(ctx, sourceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			slog.Info("task:intel:fetch_source: source no longer exists, skipping", "source_id", sourceID.String())
-			return sourceID, tenantID, src, false, nil
+			return sourceID, pgtype.UUID{}, src, false, nil
 		}
 
-		return sourceID, tenantID, src, false, fmt.Errorf("task:intel:fetch_source: load source: %w", err)
+		return sourceID, pgtype.UUID{}, src, false, fmt.Errorf("task:intel:fetch_source: load source: %w", err)
 	}
 
 	if !src.Enabled {
 		slog.Info("task:intel:fetch_source: source is disabled, skipping", "source_id", sourceID.String())
-		return sourceID, tenantID, src, false, nil
+		return sourceID, pgtype.UUID{}, src, false, nil
 	}
 
-	return sourceID, tenantID, src, true, nil
+	return sourceID, pgtype.UUID{}, src, true, nil
 }
 
 // intelSourceConfigured reports whether a source has usable fetch config.
@@ -541,12 +539,12 @@ func intelSourceConfigured(ctx context.Context, sourceID pgtype.UUID, src gen.In
 // on the source row; ErrCrawlLocked is a transient "another worker is
 // crawling" signal that does not increment consecutive_failures. The crawl
 // lock is acquired inside Check; on success the caller must release it.
-func intelPreflightCheck(ctx context.Context, tenantID, sourceID pgtype.UUID, src gen.IntelSource) error {
+func intelPreflightCheck(ctx context.Context, sourceID pgtype.UUID, src gen.IntelSource) error {
 	if intelPreflight == nil {
 		return nil
 	}
 
-	if err := intelPreflight.Check(ctx, src, tenantID); err != nil {
+	if err := intelPreflight.Check(ctx, src); err != nil {
 		if !errors.Is(err, fetcher.ErrCrawlLocked) {
 			_ = intelSourcesStore.UpdateCrawlStatus(ctx, gen.UpdateIntelSourceCrawlStatusParams{
 				ID:               sourceID,
@@ -565,10 +563,10 @@ func intelPreflightCheck(ctx context.Context, tenantID, sourceID pgtype.UUID, sr
 // releases the crawl lock (INTEL-001), records the failure on the source row
 // so consecutive_failures increments, and auto-disables the source once it
 // crosses the intel.consecutive_failure_disable_threshold (default 5).
-func handleFetchFailure(ctx context.Context, tenantID, sourceID pgtype.UUID, sourceIDStr string, src gen.IntelSource, fetchErr error) {
+func handleFetchFailure(ctx context.Context, sourceID pgtype.UUID, sourceIDStr string, src gen.IntelSource, fetchErr error) {
 	// Release the crawl lock so the source is not blocked until TTL expiry.
 	if intelPreflight != nil {
-		intelPreflight.ReleaseCrawlLock(ctx, tenantID, sourceIDStr)
+		intelPreflight.ReleaseCrawlLock(ctx, sourceIDStr)
 	}
 	// Record the failure on the source row so the retry_failed_source
 	// maintenance task can pick it up.

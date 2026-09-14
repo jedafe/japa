@@ -98,7 +98,7 @@ func (s *Service) sourceAutoCreateEnabled(ctx context.Context) bool {
 // The org insert, owner member insert, and member-count increment are wrapped
 // in a single transaction so a partial failure cannot leave an orphaned org
 // (BUG-007).
-func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtype.UUID, input CreateOrganizationInput) (gen.Organization, error) {
+func (s *Service) CreateOrganization(ctx context.Context, userID pgtype.UUID, input CreateOrganizationInput) (gen.Organization, error) {
 	if input.Name == "" {
 		return gen.Organization{}, errors.New("name is required")
 	}
@@ -207,7 +207,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		return gen.Organization{}, fmt.Errorf("committing transaction: %w", err)
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	// v2 source directory: auto-create an intel_sources row for the organization
 	// when the tenant setting is enabled (default false).
@@ -218,7 +218,7 @@ func (s *Service) CreateOrganization(ctx context.Context, tenantID, userID pgtyp
 		} else if org.OrgType == "business" || org.OrgType == "media" {
 			category = org.OrgType
 		}
-		source, sErr := s.sources.CreateSourceFromEntity(ctx, tenantID, org.ID, userID, "organization", org.Name, org.Slug, maybeString(org.WebsiteUrl), category)
+		source, sErr := s.sources.CreateSourceFromEntity(ctx, org.ID, userID, "organization", org.Name, org.Slug, maybeString(org.WebsiteUrl), category)
 		if sErr != nil {
 			slog.Warn("organizations: failed to create source for org", "org_id", org.ID, "error", sErr)
 		} else {
@@ -306,7 +306,7 @@ func (s *Service) ListOrganizations(ctx context.Context, orgType, countryCode, s
 }
 
 // UpdateOrganization updates an organization. Only owner or admin can update.
-func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID pgtype.UUID, input UpdateOrganizationInput) error {
+func (s *Service) UpdateOrganization(ctx context.Context, id, userID pgtype.UUID, input UpdateOrganizationInput) error {
 	if err := validateOrgType(input.OrgType); err != nil {
 		return err
 	}
@@ -338,7 +338,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 		return err
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	// ADR-064a: Feed the updated country_code into the user's
 	// destination_country custom field (geo-aware personalization).
@@ -353,7 +353,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id, tenantID, userID p
 }
 
 // DeleteOrganization soft-deletes an organization. Only owner can delete.
-func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID pgtype.UUID) error {
+func (s *Service) DeleteOrganization(ctx context.Context, id, userID pgtype.UUID) error {
 	role, err := s.store.GetMemberRole(ctx, id, userID)
 	if err != nil {
 		// BUG-021: A non-member (ErrNoRows) should get 403, not 500.
@@ -372,7 +372,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id, tenantID, userID p
 		return err
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	return nil
 }
@@ -830,7 +830,7 @@ func (s *Service) WithdrawOwnershipClaim(ctx context.Context, claimID, claimantU
 // partial failure cannot leave an approved claim with no ownership change or
 // an owner_user_id pointing at a non-member (BUG-006/BUG-007).
 // Ref: japaconnect-engineering/sections/07-organization-profiles-claim-ownership.md.
-func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
+func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy pgtype.UUID, input ReviewClaimInput) error {
 	// Fetch the claim before reviewing. This is required (not best-effort): on
 	// approval the claimant_user_id and organization_id drive the ownership
 	// transfer, so a failed fetch must abort the review — otherwise the claim
@@ -885,7 +885,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 	}
 
 	if approved {
-		s.InvalidateOrgCache(ctx, tenantID)
+		s.InvalidateOrgCache(ctx)
 	}
 
 	var eventType string
@@ -912,7 +912,7 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, tenantID, r
 // VerifyOrganization marks an organization as verified and emits the
 // organization.verified webhook event (Section 12). adminID is the
 // administrator who performed the verification (for the webhook payload).
-func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
+func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error {
 	// Fetch the org name for the webhook payload (best-effort).
 	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
@@ -923,7 +923,7 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID 
 		return fmt.Errorf("verifying organization: %w", err)
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	s.emitWebhook(ctx, "organization.verified", map[string]any{
 		"organization_id": id,
@@ -938,12 +938,12 @@ func (s *Service) VerifyOrganization(ctx context.Context, id, tenantID, adminID 
 // emits the organization.unverified webhook event (Section 12). Clears
 // verification_type as well (BUG-016). adminID is the administrator who
 // performed the unverification (for the webhook payload).
-func (s *Service) UnverifyOrganization(ctx context.Context, id, tenantID, adminID pgtype.UUID) error {
+func (s *Service) UnverifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error {
 	if err := s.store.UnverifyOrganization(ctx, id); err != nil {
 		return fmt.Errorf("unverifying organization: %w", err)
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	s.emitWebhook(ctx, "organization.unverified", map[string]any{
 		"organization_id": id,
@@ -963,8 +963,8 @@ func (s *Service) ActiveOrgExists(ctx context.Context, id pgtype.UUID) (bool, er
 // Uses read-through Valkey cache (jc:org:profile:{}:{slug}) when
 // a Valkey client is configured; falls back to direct DB on cache miss or
 // when caching is disabled.
-func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string, tenantID pgtype.UUID) (gen.Organization, error) {
-	return s.getOrSetOrgProfile(ctx, tenantID, slug)
+func (s *Service) GetPublicOrganizationBySlug(ctx context.Context, slug string) (gen.Organization, error) {
+	return s.getOrSetOrgProfile(ctx, slug)
 }
 
 // ListPublicMembers returns the org's ACTIVE members for the public Members tab.
@@ -983,8 +983,8 @@ func (s *Service) GetOrgOwnerPublicProfile(ctx context.Context, orgID pgtype.UUI
 // by verified status (empty = all, "true" = verified only, "false" = unverified
 // only). By default the handler passes verified="true" to preserve the original
 // behavior of only showing verified orgs.
-func (s *Service) ListPublicOrganizations(ctx context.Context, tenantID pgtype.UUID, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
-	return s.getOrSetOrgList(ctx, tenantID, search, orgType, verified, limit, offset)
+func (s *Service) ListPublicOrganizations(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
+	return s.getOrSetOrgList(ctx, search, orgType, verified, limit, offset)
 }
 
 func strPtr(s string) *string {
@@ -1045,7 +1045,7 @@ func (s *Service) AdminGetOrganization(ctx context.Context, id pgtype.UUID) (gen
 }
 
 // AdminUpdateOrganization updates an organisation without checking membership role.
-func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgtype.UUID, input UpdateOrganizationInput) error {
+func (s *Service) AdminUpdateOrganization(ctx context.Context, id pgtype.UUID, input UpdateOrganizationInput) error {
 	if err := validateOrgType(input.OrgType); err != nil {
 		return err
 	}
@@ -1063,18 +1063,18 @@ func (s *Service) AdminUpdateOrganization(ctx context.Context, id, tenantID pgty
 		return err
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	return nil
 }
 
 // AdminDeleteOrganization soft-deletes an organisation without checking ownership.
-func (s *Service) AdminDeleteOrganization(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) AdminDeleteOrganization(ctx context.Context, id pgtype.UUID) error {
 	if err := s.store.SoftDeleteOrganization(ctx, id); err != nil {
 		return err
 	}
 
-	s.InvalidateOrgCache(ctx, tenantID)
+	s.InvalidateOrgCache(ctx)
 
 	return nil
 }

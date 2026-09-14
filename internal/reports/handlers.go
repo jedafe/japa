@@ -179,7 +179,7 @@ func (h *Handlers) ListMyReports(w http.ResponseWriter, r *http.Request) {
 // ListReports handles GET /api/v1/admin/reports. Supports ?status= and
 // ?entity_type= filters.
 func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -215,7 +215,7 @@ func (h *Handlers) ListReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total, err := h.service.CountReports(r.Context(), tenantID, status, entityType, q)
+	total, err := h.service.CountReports(r.Context(), status, entityType, q)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to count reports")
 		return

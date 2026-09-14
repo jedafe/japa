@@ -256,7 +256,7 @@ WHERE destination_space_id = $1
 // tenant. Because cv_standards has no column, tenant isolation is
 // enforced by joining spaces on destination_space_id. Returns pgx.ErrNoRows
 // if the row does not exist or does not belong to the tenant.
-func (s *Store) DeleteStandard(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Store) DeleteStandard(ctx context.Context, id pgtype.UUID) error {
 	const q = `
 DELETE FROM cv_standards cs
 USING spaces sp
@@ -264,7 +264,7 @@ WHERE cs.id = $1
   AND cs.destination_space_id = sp.id
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("cvformatter: delete standard: %w", err)
 	}

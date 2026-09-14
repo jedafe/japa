@@ -34,7 +34,7 @@ func TestExecute_PrivacyFailClosed_NilChecker(t *testing.T) {
 
 	called := false
 
-	reg.RegisterHandler("content.read", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.read", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
 	})
@@ -142,7 +142,7 @@ func TestContentCreateHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{
 				ID:            uuidMust("44444444-4444-4444-4444-444444444444"),
 				Title:         input.Title,
@@ -177,7 +177,7 @@ func TestContentCreateHandler_NoForceHITL_NonHighStakesCategory(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{
 				ID:            uuidMust("44444444-4444-4444-4444-444444444444"),
 				Title:         input.Title,
@@ -212,7 +212,7 @@ func TestContentCreateHandler_NoForceHITL_NoCategory(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{
 				ID:          uuidMust("44444444-4444-4444-4444-444444444444"),
 				Title:       input.Title,
@@ -247,7 +247,7 @@ func TestContentCreateDraftHandler_ForceHITL_HighStakesCategory(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{
 				ID:            uuidMust("44444444-4444-4444-4444-444444444444"),
 				Title:         input.Title,

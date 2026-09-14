@@ -31,19 +31,19 @@ func NewUnreadCounter(vk *valkey.Client) *UnreadCounter {
 }
 
 // unreadKey builds the Valkey key for a tenant/user/space unread counter pair.
-func unreadKey(tenantID, userID, spaceID pgtype.UUID) string {
-	return valkey.MustKey("space_unread:%s:%s:%s", tenantID.String(), userID.String(), spaceID.String())
+func unreadKey(userID, spaceID pgtype.UUID) string {
+	return valkey.MustKey("space_unread::%s:%s", userID.String(), spaceID.String())
 }
 
 // Increment increments the unread count for a user in a space.
 // It silently fails if Valkey is unreachable — unread counts are a
 // nice-to-have, not critical path.
-func (c *UnreadCounter) Increment(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+func (c *UnreadCounter) Increment(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if c.rdb == nil {
 		return nil
 	}
 
-	key := unreadKey(tenantID, userID, spaceID)
+	key := unreadKey(userID, spaceID)
 
 	if err := c.rdb.Incr(ctx, key).Err(); err != nil {
 		return fmt.Errorf("incrementing space unread count: %w", err)
@@ -59,12 +59,12 @@ func (c *UnreadCounter) Increment(ctx context.Context, tenantID, userID, spaceID
 
 // Reset sets the unread count for a user in a space to 0.
 // Called when a user visits a space.
-func (c *UnreadCounter) Reset(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) error {
+func (c *UnreadCounter) Reset(ctx context.Context, userID, spaceID pgtype.UUID) error {
 	if c.rdb == nil {
 		return nil
 	}
 
-	key := unreadKey(tenantID, userID, spaceID)
+	key := unreadKey(userID, spaceID)
 
 	// Set to 0 with the 24-hour TTL in a single command so the key is
 	// never observable without an expiry (avoids the Set+Expire race that
@@ -78,12 +78,12 @@ func (c *UnreadCounter) Reset(ctx context.Context, tenantID, userID, spaceID pgt
 
 // Get returns the unread count for a user in a space.
 // Returns 0 on error (including Valkey unreachable).
-func (c *UnreadCounter) Get(ctx context.Context, tenantID, userID, spaceID pgtype.UUID) (int, error) {
+func (c *UnreadCounter) Get(ctx context.Context, userID, spaceID pgtype.UUID) (int, error) {
 	if c.rdb == nil {
 		return 0, nil
 	}
 
-	n, err := c.rdb.Get(ctx, unreadKey(tenantID, userID, spaceID)).Int()
+	n, err := c.rdb.Get(ctx, unreadKey(userID, spaceID)).Int()
 	if err != nil {
 		// redis.Nil means the key does not exist yet; treat as zero.
 		return 0, nil //nolint:nilerr // intentional: missing key = zero unread
@@ -94,7 +94,7 @@ func (c *UnreadCounter) Get(ctx context.Context, tenantID, userID, spaceID pgtyp
 
 // GetBatch returns unread counts for multiple spaces for a user.
 // Returns a map of spaceID string -> count. Missing or errored entries are 0.
-func (c *UnreadCounter) GetBatch(ctx context.Context, tenantID, userID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]int, error) {
+func (c *UnreadCounter) GetBatch(ctx context.Context, userID pgtype.UUID, spaceIDs []pgtype.UUID) (map[string]int, error) {
 	out := make(map[string]int, len(spaceIDs))
 	if c.rdb == nil {
 		return out, nil
@@ -102,7 +102,7 @@ func (c *UnreadCounter) GetBatch(ctx context.Context, tenantID, userID pgtype.UU
 
 	keys := make([]string, len(spaceIDs))
 	for i, sid := range spaceIDs {
-		keys[i] = unreadKey(tenantID, userID, sid)
+		keys[i] = unreadKey(userID, sid)
 	}
 
 	vals, err := c.rdb.MGet(ctx, keys...).Result()

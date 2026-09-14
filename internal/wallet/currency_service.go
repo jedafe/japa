@@ -104,7 +104,7 @@ func (s *Service) invalidateCurrenciesCache(ctx context.Context) {
 		return
 	}
 
-	_ = s.cacheInvalidator.InvalidateCurrenciesCache(ctx, pgtype.UUID{})
+	_ = s.cacheInvalidator.InvalidateCurrenciesCache(ctx)
 }
 
 // countSpacesByCurrency returns how many country spaces use a currency.
@@ -170,7 +170,7 @@ func (s *Service) listCreditPurchases(ctx context.Context, p gen.ListCreditPurch
 // The actual wallet crediting happens async via the wallet:process_credit_purchase
 // Asynq task after the payment webhook confirms success.
 // // Ref: japaconnect-engineering/sections/58-credit-currency-system.md.
-func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.UUID, input PurchaseCreditsInput) (PurchaseCreditsResult, error) {
+func (s *Service) purchaseCredits(ctx context.Context, userID pgtype.UUID, input PurchaseCreditsInput) (PurchaseCreditsResult, error) {
 	// Killswitch: wallet.credit_purchase_enabled (default true). When false,
 	// the endpoint returns 403 credit_purchase_disabled but spending existing
 	// credits continues to work (Section 58).
@@ -281,7 +281,7 @@ func (s *Service) purchaseCredits(ctx context.Context, tenantID, userID pgtype.U
 			metadata["pack_id"] = input.PackID
 		}
 
-		payment, err := s.paymentsService.CreatePayment(ctx, tenantID, userID, PaymentCreateInput{
+		payment, err := s.paymentsService.CreatePayment(ctx, userID, PaymentCreateInput{
 			Provider:    input.Provider,
 			PurposeType: "credit_purchase",
 			Amount:      fiatMinor,

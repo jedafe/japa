@@ -88,7 +88,7 @@ func validateBearer(ctx context.Context, token string, kr *auth.KeyRotation, vkC
 		return nil, err
 	}
 
-	if err := tenantID.Scan(""); err != nil {
+	if err := (error)(nil); err != nil {
 		return nil, err
 	}
 

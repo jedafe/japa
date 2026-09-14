@@ -255,16 +255,16 @@ func TestDiscountCodeValidation(t *testing.T) {
 
 // mockCreditSpender implements CreditSpender for testing.
 type mockCreditSpender struct {
-	spendFunc func(ctx context.Context, tenantID, userID pgtype.UUID, input CreditSpendInput) (int64, error)
+	spendFunc func(ctx context.Context, userID pgtype.UUID, input CreditSpendInput) (int64, error)
 }
 
 func (m *mockCreditSpender) SpendCredits(
 	ctx context.Context,
-	tenantID pgtype.UUID,
+
 	userID pgtype.UUID,
 	input CreditSpendInput,
 ) (int64, error) {
-	return m.spendFunc(ctx, tenantID, userID, input)
+	return m.spendFunc(ctx, userID, input)
 }
 
 func TestPayWithCredit_WalletNotConfigured(t *testing.T) {
@@ -272,7 +272,7 @@ func TestPayWithCredit_WalletNotConfigured(t *testing.T) {
 
 	svc := &Service{wallet: nil}
 
-	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected error for nil wallet, got nil")
 	}
@@ -283,7 +283,7 @@ func TestPayWithCredit_ZeroAmount(t *testing.T) {
 
 	svc := &Service{wallet: &mockCreditSpender{}}
 
-	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 0, PurposeAdSlot, "slot-1")
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, 0, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected error for zero amount, got nil")
 	}
@@ -294,7 +294,7 @@ func TestPayWithCredit_EmptyPurposeType(t *testing.T) {
 
 	svc := &Service{wallet: &mockCreditSpender{}}
 
-	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, "", "slot-1")
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, 100, "", "slot-1")
 	if err == nil {
 		t.Fatal("expected error for empty purpose_type, got nil")
 	}
@@ -323,7 +323,7 @@ func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
 		},
 	}
 
-	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+	_, err := svc.PayWithCredit(t.Context(), pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -360,7 +360,7 @@ func TestPayWithCredit_Success(t *testing.T) {
 
 	// PayWithCredit now creates the payment row FIRST. Without a store, this
 	// fails and SpendCredits is never called — verifying the safety property.
-	_, _ = svc.PayWithCredit(t.Context(), pgtype.UUID{}, pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
+	_, _ = svc.PayWithCredit(t.Context(), pgtype.UUID{}, 100, PurposeAdSlot, "slot-1")
 
 	if spendCalled {
 		t.Fatal("SpendCredits was called before payment row was created — violates BUG-004 ordering")

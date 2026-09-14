@@ -160,7 +160,7 @@ ON CONFLICT (content_id) DO UPDATE SET
 // UpdateStoryMeta updates the mutable structured fields on a story_meta row.
 // Called when a story is edited. Edits strip verification (verified=false and
 // the ADR-088 HITL review trail is cleared) until an admin re-verifies — §79.
-func (s *Store) UpdateStoryMeta(ctx context.Context, contentID, tenantID pgtype.UUID, meta StoryMeta) error {
+func (s *Store) UpdateStoryMeta(ctx context.Context, contentID pgtype.UUID, meta StoryMeta) error {
 	const q = `
 UPDATE story_meta
 SET origin_space_id = $2,
@@ -180,7 +180,7 @@ WHERE content_id = $1
 
 	_, err := s.pool.Writer.Exec(
 		ctx, q,
-		contentID, tenantID,
+		contentID,
 		meta.OriginSpaceID, meta.DestinationSpaceID,
 		meta.RelocationYear, meta.VisaCategory, meta.Profession,
 		meta.BiggestChallenge, meta.MostUsefulResource, meta.BestAdvice,
@@ -197,11 +197,11 @@ WHERE content_id = $1
 // any other level returns pgx.ErrNoRows (surfaced as a 400). The code keeps
 // the content row's source_country/target_country in sync when a story's
 // origin or destination changes through POST/PATCH /stories.
-func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID, tenantID pgtype.UUID) (string, error) {
+func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID pgtype.UUID) (string, error) {
 	const q = `SELECT geo_code FROM spaces WHERE id = $1 AND level = 'country' AND deleted_at IS NULL`
 
 	var code *string
-	err := s.pool.Reader.QueryRow(ctx, q, spaceID, tenantID).Scan(&code)
+	err := s.pool.Reader.QueryRow(ctx, q, spaceID).Scan(&code)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
@@ -222,14 +222,14 @@ func (s *Store) GetCountrySpaceGeoCode(ctx context.Context, spaceID, tenantID pg
 // (§79) — so on a destination change the previous filing must not linger as
 // an "additional" space (the generic UpdateContentSpaces preserves additional
 // rows, which is correct for multi-space content but not for stories).
-func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpaceID, tenantID pgtype.UUID) error {
+func (s *Store) PruneContentSpacesExcept(ctx context.Context, contentID, keepSpaceID pgtype.UUID) error {
 	// content_spaces has no column — the tenant scope is enforced
 	// by joining through contents.
 	const q = `DELETE FROM content_spaces
 WHERE content_id = $1 AND space_id <> $2
   AND content_id IN (SELECT id FROM contents WHERE id = $1)`
 
-	if _, err := s.pool.Writer.Exec(ctx, q, contentID, keepSpaceID, tenantID); err != nil {
+	if _, err := s.pool.Writer.Exec(ctx, q, contentID, keepSpaceID); err != nil {
 		return fmt.Errorf("story: prune content_spaces: %w", err)
 	}
 
@@ -237,7 +237,7 @@ WHERE content_id = $1 AND space_id <> $2
 }
 
 // GetStoryMeta retrieves the story_meta row for a given content_id.
-func (s *Store) GetStoryMeta(ctx context.Context, contentID, tenantID pgtype.UUID) (StoryMeta, error) {
+func (s *Store) GetStoryMeta(ctx context.Context, contentID pgtype.UUID) (StoryMeta, error) {
 	const q = `
 SELECT id, content_id, origin_space_id, destination_space_id,
        relocation_year, visa_category, profession, biggest_challenge,
@@ -250,7 +250,7 @@ WHERE content_id = $1
 
 	var m StoryMeta
 
-	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, contentID).Scan(
 		&m.ID, &m.ContentID, &m.OriginSpaceID, &m.DestinationSpaceID,
 		&m.RelocationYear, &m.VisaCategory, &m.Profession, &m.BiggestChallenge,
 		&m.MostUsefulResource, &m.BestAdvice, &m.Verified,
@@ -270,7 +270,7 @@ WHERE content_id = $1
 
 // VerifyStory marks a story as verified by an admin. Sets hitl_reviewed_by
 // and hitl_reviewed_at per ADR-088 HITL review audit trail.
-func (s *Store) VerifyStory(ctx context.Context, contentID, tenantID, adminUserID pgtype.UUID) error {
+func (s *Store) VerifyStory(ctx context.Context, contentID, adminUserID pgtype.UUID) error {
 	const q = `
 UPDATE story_meta
 SET verified = true,
@@ -280,7 +280,7 @@ SET verified = true,
 WHERE content_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID, adminUserID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, adminUserID)
 	if err != nil {
 		return fmt.Errorf("story: verify story: %w", err)
 	}
@@ -294,7 +294,7 @@ WHERE content_id = $1
 
 // UnverifyStory marks a story as unverified by an admin (story.verify
 // permission). Clears the verified flag and the HITL review audit trail.
-func (s *Store) UnverifyStory(ctx context.Context, contentID, tenantID pgtype.UUID) error {
+func (s *Store) UnverifyStory(ctx context.Context, contentID pgtype.UUID) error {
 	const q = `
 UPDATE story_meta
 SET verified = false,
@@ -304,7 +304,7 @@ SET verified = false,
 WHERE content_id = $1
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, contentID, tenantID)
+	cmd, err := s.pool.Writer.Exec(ctx, q, contentID)
 	if err != nil {
 		return fmt.Errorf("story: unverify story: %w", err)
 	}

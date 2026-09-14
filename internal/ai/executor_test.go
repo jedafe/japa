@@ -208,7 +208,7 @@ func TestExecute_Success(t *testing.T) {
 			"required": []any{"query"},
 		},
 	}, "", pgtype.UUID{})
-	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"results":[]}`}, nil
 	})
 
@@ -254,7 +254,7 @@ func TestExecute_SchemaValidation_MissingRequired(t *testing.T) {
 
 	called := false
 
-	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
 	})
@@ -285,7 +285,7 @@ func TestExecute_BlockedOperation(t *testing.T) {
 
 	called := false
 
-	reg.RegisterHandler("rbac.grant", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("rbac.grant", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
 	})
@@ -316,7 +316,7 @@ func TestExecute_RBACUnauthorized(t *testing.T) {
 
 	called := false
 
-	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
 	})
@@ -348,7 +348,7 @@ func TestExecute_RBACFailClosed_NilPerms(t *testing.T) {
 
 	called := false
 
-	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		called = true
 		return &ToolResult{Status: ToolCallStatusSuccess}, nil
 	})
@@ -485,7 +485,7 @@ func TestExecute_HandlerError(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
-	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		return nil, errors.New("boom")
 	})
 
@@ -508,7 +508,7 @@ func TestExecute_HandlerPanic_Recovered(t *testing.T) {
 
 	reg := NewToolHandlerRegistry()
 	reg.RegisterConfig("content.search", ToolConfig{FunctionName: "content.search"}, "", pgtype.UUID{})
-	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	reg.RegisterHandler("content.search", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		panic("kaboom")
 	})
 
@@ -547,7 +547,7 @@ type stubPrivacy struct {
 	err    error
 }
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
 	if s == nil {
 		return false, nil
 	}
@@ -556,7 +556,7 @@ func (s *stubPrivacy) IsExempt(ctx context.Context, entityType PrivacyEntityType
 }
 
 // stubSuccessHandler is a ToolHandler that always succeeds.
-func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+func stubSuccessHandler(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 	return &ToolResult{Status: ToolCallStatusSuccess, Content: `{"ok":true}`}, nil
 }
 

@@ -47,7 +47,7 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lits, err := h.catalog.GetActive(r.Context(), pgtype.UUID{})
+	lits, err := h.catalog.GetActive(r.Context())
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list literals")
 		return

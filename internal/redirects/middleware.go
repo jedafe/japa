@@ -39,7 +39,7 @@ func Middleware(service *Service, store any) func(http.Handler) http.Handler {
 				return
 			}
 
-			targetURL, httpStatus := service.ResolveRedirect(r.Context(), pgtype.UUID{}, path)
+			targetURL, httpStatus := service.ResolveRedirect(r.Context(), path)
 			if targetURL == "" || httpStatus == 0 {
 				next.ServeHTTP(w, r)
 				return

@@ -136,7 +136,7 @@ func DefaultPermAxes() SpacePermAxes {
 // sourceManager creates canonical intel_sources rows for entity profiles
 // (v2 source directory, Task 5).
 type sourceManager interface {
-	CreateSourceFromEntity(ctx context.Context, tenantID, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
+	CreateSourceFromEntity(ctx context.Context, entityID, userID pgtype.UUID, entityType, name, slug, sourceURL, category string) (gen.IntelSource, error)
 }
 
 // spaceSettingsReader is the subset of config.Settings used by the space service.
@@ -186,7 +186,7 @@ func (s *Service) SetActivityEmitter(e wallet.ActivityEmitter) { s.activity = e 
 // duplicate reference hits ON CONFLICT DO NOTHING and returns ErrNoRows —
 // treated as "already recorded" so leave/rejoin cycles cannot farm the
 // activity count.
-func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
+func (s *Service) emitActivity(ctx context.Context, userID pgtype.UUID, key, reference string, payload map[string]interface{}) {
 	if s.activity == nil || !userID.Valid {
 		return
 	}
@@ -204,7 +204,7 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 		return
 	}
 
-	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID, tenantID); err != nil {
+	if err := s.activity.EnqueueProcessActivityEvent(ctx, event.ID); err != nil {
 		slog.Warn("spaces: enqueue activity event failed", "activity_key", key, "error", err)
 	}
 }
@@ -212,12 +212,12 @@ func (s *Service) emitActivity(ctx context.Context, tenantID, userID pgtype.UUID
 // invalidateMutedSpacesCache deletes the tenant-scoped muted-spaces SET cache
 // for the user. Called after mute/unmute so the next read refetches from the
 // DB.
-func (s *Service) invalidateMutedSpacesCache(ctx context.Context, tenantID, userID pgtype.UUID) {
+func (s *Service) invalidateMutedSpacesCache(ctx context.Context, userID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	key := valkey.MustKey("muted_spaces:%s:%s", tenantID.String(), userID.String())
+	key := valkey.MustKey("muted_spaces::%s", userID.String())
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Warn("invalidate muted_spaces cache", "error", err)
 	}

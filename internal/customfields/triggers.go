@@ -29,13 +29,13 @@ type TriggerDispatcher struct {
 
 	// rbacAssigner assigns a user to a user group (assign_user_group trigger).
 	// Matches the rbac.Store.AddUserToGroup signature.
-	rbacAssigner func(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error
+	rbacAssigner func(ctx context.Context, userID, groupID pgtype.UUID) error
 
 	// ticketCreator creates a ticket (create_ticket trigger).
-	ticketCreator func(ctx context.Context, tenantID pgtype.UUID, subject, description string, submitterUserID *pgtype.UUID) error
+	ticketCreator func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error
 
 	// notifyAdmin sends an admin notification (notify_admin trigger).
-	notifyAdmin func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error
+	notifyAdmin func(ctx context.Context, title, body, actionURL string) error
 
 	// emailSender sends an email (send_email trigger). Returns the send error.
 	emailSender func(ctx context.Context, to, subject, body string) error
@@ -57,19 +57,19 @@ func NewTriggerDispatcher(service *Service) *TriggerDispatcher {
 
 // SetRBACAssigner wires the function used to add a user to a group for the
 // assign_user_group trigger type.
-func (d *TriggerDispatcher) SetRBACAssigner(f func(ctx context.Context, tenantID, userID, groupID pgtype.UUID) error) {
+func (d *TriggerDispatcher) SetRBACAssigner(f func(ctx context.Context, userID, groupID pgtype.UUID) error) {
 	d.rbacAssigner = f
 }
 
 // SetTicketCreator wires the function used to create a ticket for the
 // create_ticket trigger type.
-func (d *TriggerDispatcher) SetTicketCreator(f func(ctx context.Context, tenantID pgtype.UUID, subject, description string, submitterUserID *pgtype.UUID) error) {
+func (d *TriggerDispatcher) SetTicketCreator(f func(ctx context.Context, subject, description string, submitterUserID *pgtype.UUID) error) {
 	d.ticketCreator = f
 }
 
 // SetNotifyAdmin wires the function used to send an admin notification for
 // the notify_admin trigger type.
-func (d *TriggerDispatcher) SetNotifyAdmin(f func(ctx context.Context, tenantID pgtype.UUID, title, body, actionURL string) error) {
+func (d *TriggerDispatcher) SetNotifyAdmin(f func(ctx context.Context, title, body, actionURL string) error) {
 	d.notifyAdmin = f
 }
 
@@ -90,7 +90,7 @@ func (d *TriggerDispatcher) SetEmailSender(f func(ctx context.Context, to, subje
 // unique membership constraint).
 func (d *TriggerDispatcher) FireSubmissionTriggers(
 	ctx context.Context,
-	submissionID, tenantID, formID pgtype.UUID,
+	submissionID, formID pgtype.UUID,
 	submitterUserID *pgtype.UUID,
 	fieldValues []byte,
 ) error {
@@ -110,7 +110,7 @@ func (d *TriggerDispatcher) FireSubmissionTriggers(
 	}
 
 	for _, trig := range triggers {
-		if err := d.dispatchOne(ctx, trig, tenantID, submissionID, submitterUserID, values); err != nil {
+		if err := d.dispatchOne(ctx, trig, submissionID, submitterUserID, values); err != nil {
 			slog.Warn("customfields: form trigger failed",
 				"submission_id", submissionID.String(),
 				"trigger_type", trig.TriggerType,
@@ -126,7 +126,7 @@ func (d *TriggerDispatcher) FireSubmissionTriggers(
 func (d *TriggerDispatcher) dispatchOne(
 	ctx context.Context,
 	trig gen.FormSubmissionTrigger,
-	tenantID, submissionID pgtype.UUID,
+	submissionID pgtype.UUID,
 	submitterUserID *pgtype.UUID,
 	values map[string]any,
 ) error {
@@ -139,7 +139,7 @@ func (d *TriggerDispatcher) dispatchOne(
 
 	switch trig.TriggerType {
 	case "assign_user_group":
-		return d.fireAssignUserGroup(ctx, cfg, tenantID, submitterUserID)
+		return d.fireAssignUserGroup(ctx, cfg, submitterUserID)
 
 	case "send_email":
 		return d.fireSendEmail(ctx, cfg, values)
@@ -148,10 +148,10 @@ func (d *TriggerDispatcher) dispatchOne(
 		return d.fireSendWebhook(ctx, cfg, submissionID, values)
 
 	case "create_ticket":
-		return d.fireCreateTicket(ctx, cfg, tenantID, submitterUserID, values)
+		return d.fireCreateTicket(ctx, cfg, submitterUserID, values)
 
 	case "notify_admin":
-		return d.fireNotifyAdmin(ctx, cfg, tenantID, submissionID, values)
+		return d.fireNotifyAdmin(ctx, cfg, submissionID, values)
 
 	default:
 		slog.Warn("customfields: unknown form trigger type, skipping",
@@ -162,7 +162,7 @@ func (d *TriggerDispatcher) dispatchOne(
 
 // fireAssignUserGroup adds the submitter to the configured user group. No-op
 // for anonymous submissions (no submitterUserID).
-func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[string]any, tenantID pgtype.UUID, submitterUserID *pgtype.UUID) error {
+func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[string]any, submitterUserID *pgtype.UUID) error {
 	if submitterUserID == nil {
 		slog.Info("customfields: assign_user_group trigger skipped — anonymous submission")
 		return nil
@@ -183,7 +183,7 @@ func (d *TriggerDispatcher) fireAssignUserGroup(ctx context.Context, cfg map[str
 		return fmt.Errorf("assign_user_group: invalid user_group_id: %w", err)
 	}
 
-	return d.rbacAssigner(ctx, tenantID, *submitterUserID, groupID)
+	return d.rbacAssigner(ctx, *submitterUserID, groupID)
 }
 
 // fireSendEmail sends an email to the configured address. Supports templating
@@ -249,7 +249,7 @@ func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]
 }
 
 // fireCreateTicket creates a ticket from the submission.
-func (d *TriggerDispatcher) fireCreateTicket(ctx context.Context, cfg map[string]any, tenantID pgtype.UUID, submitterUserID *pgtype.UUID, values map[string]any) error {
+func (d *TriggerDispatcher) fireCreateTicket(ctx context.Context, cfg map[string]any, submitterUserID *pgtype.UUID, values map[string]any) error {
 	if d.ticketCreator == nil {
 		slog.Warn("customfields: create_ticket trigger — no ticket creator wired, skipping")
 		return nil
@@ -268,11 +268,11 @@ func (d *TriggerDispatcher) fireCreateTicket(ctx context.Context, cfg map[string
 		}
 	}
 
-	return d.ticketCreator(ctx, tenantID, expandTemplate(subject, values), expandTemplate(description, values), submitterUserID)
+	return d.ticketCreator(ctx, expandTemplate(subject, values), expandTemplate(description, values), submitterUserID)
 }
 
 // fireNotifyAdmin sends an admin notification about the submission.
-func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]any, tenantID, submissionID pgtype.UUID, values map[string]any) error {
+func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]any, submissionID pgtype.UUID, values map[string]any) error {
 	if d.notifyAdmin == nil {
 		slog.Warn("customfields: notify_admin trigger — no notifyAdmin wired, skipping")
 		return nil
@@ -290,7 +290,7 @@ func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]
 
 	actionURL, _ := cfg["action_url"].(string)
 
-	return d.notifyAdmin(ctx, tenantID, expandTemplate(title, values), expandTemplate(body, values), actionURL)
+	return d.notifyAdmin(ctx, expandTemplate(title, values), expandTemplate(body, values), actionURL)
 }
 
 // expandTemplate replaces {{key}} placeholders in s with the corresponding

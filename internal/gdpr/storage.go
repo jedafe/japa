@@ -25,13 +25,13 @@ type Storage interface {
 	// the file size in bytes. The filename is derived deterministically from
 	// the request ID so GetPath can resolve it later without storing extra
 	// metadata.
-	Store(ctx context.Context, tenantID, requestID pgtype.UUID, mimeType string, data []byte) (url string, size int64, err error)
+	Store(ctx context.Context, requestID pgtype.UUID, mimeType string, data []byte) (url string, size int64, err error)
 
 	// GetPath returns the absolute filesystem path for the export file
 	// belonging to the given request. Used by the download handler to serve
 	// the file with http.ServeFile. Returns an error if the file does not
 	// exist or the resolved path escapes the storage root.
-	GetPath(tenantID, requestID pgtype.UUID) (string, error)
+	GetPath(requestID pgtype.UUID) (string, error)
 }
 
 // exportFilename returns the deterministic filename for a GDPR data export.
@@ -59,13 +59,13 @@ func NewLocalStorage(root string) *LocalStorage {
 	return &LocalStorage{root: root}
 }
 
-func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
+func (ls *LocalStorage) dirForTenant() (string, error) {
 	abs, err := filepath.Abs(ls.root)
 	if err != nil {
 		return "", fmt.Errorf("resolving gdpr export root: %w", err)
 	}
 
-	dir := filepath.Join(abs, tenantID.String())
+	dir := filepath.Join(abs, "")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating gdpr export directory: %w", err)
 	}
@@ -74,8 +74,8 @@ func (ls *LocalStorage) dirForTenant(tenantID pgtype.UUID) (string, error) {
 }
 
 // Store implements Storage.
-func (ls *LocalStorage) Store(_ context.Context, tenantID, requestID pgtype.UUID, mimeType string, data []byte) (string, int64, error) {
-	dir, err := ls.dirForTenant(tenantID)
+func (ls *LocalStorage) Store(_ context.Context, requestID pgtype.UUID, mimeType string, data []byte) (string, int64, error) {
+	dir, err := ls.dirForTenant()
 	if err != nil {
 		return "", 0, err
 	}
@@ -100,8 +100,8 @@ func (ls *LocalStorage) Store(_ context.Context, tenantID, requestID pgtype.UUID
 }
 
 // GetPath implements Storage.
-func (ls *LocalStorage) GetPath(tenantID, requestID pgtype.UUID) (string, error) {
-	dir, err := ls.dirForTenant(tenantID)
+func (ls *LocalStorage) GetPath(requestID pgtype.UUID) (string, error) {
+	dir, err := ls.dirForTenant()
 	if err != nil {
 		return "", err
 	}

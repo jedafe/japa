@@ -74,7 +74,7 @@ type toolTablePublisher struct {
 // as reviewed and published. Unknown target tables are logged and skipped.
 //
 //nolint:gocyclo // dispatch switch over all tool-table target tables.
-func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error {
+func (p *toolTablePublisher) Publish(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error {
 	if !targetID.Valid {
 		return errors.New("tool-table publisher: target_id is invalid")
 	}
@@ -85,15 +85,15 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "attestation_pathways":
-		_, err := p.attestationSvc.Approve(ctx, targetID, tenantID, reviewerID, notes)
+		_, err := p.attestationSvc.Approve(ctx, targetID, reviewerID, notes)
 		return err
 
 	case "community_organisations":
-		_, err := p.communityOrgSvc.ApproveOrg(ctx, targetID, tenantID, reviewerID)
+		_, err := p.communityOrgSvc.ApproveOrg(ctx, targetID, reviewerID)
 		return err
 
 	case "credential_pathways":
-		_, err := p.credentialSvc.ApprovePathway(ctx, targetID, tenantID, reviewerID, strPtrOrNil(notes))
+		_, err := p.credentialSvc.ApprovePathway(ctx, targetID, reviewerID, strPtrOrNil(notes))
 		return err
 
 	case "housing_guides":
@@ -101,10 +101,10 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return err
 
 	case "language_test_requirements":
-		return p.languageTestSvc.ApproveRequirement(ctx, targetID, tenantID, reviewerID, notes)
+		return p.languageTestSvc.ApproveRequirement(ctx, targetID, reviewerID, notes)
 
 	case "tax_obligation_guides":
-		_, err := p.taxSvc.ApproveGuide(ctx, targetID, tenantID, reviewerID, taxcalculator.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
+		_, err := p.taxSvc.ApproveGuide(ctx, targetID, reviewerID, taxcalculator.ApproveGuideRequest{Notes: strPtrOrNil(notes)})
 		return err
 
 	case "visa_routes":
@@ -115,11 +115,11 @@ func (p *toolTablePublisher) Publish(ctx context.Context, tenantID, reviewerID p
 		return p.calendarSvc.AdminUpdate(ctx, targetID, reviewerID, "published", notes)
 
 	case "doc_pages":
-		if err := p.docsSvc.ApproveDocPage(ctx, tenantID, targetID, reviewerID); err != nil {
+		if err := p.docsSvc.ApproveDocPage(ctx, targetID, reviewerID); err != nil {
 			return err
 		}
 
-		return p.docsSvc.PublishDocPage(ctx, tenantID, targetID, reviewerID)
+		return p.docsSvc.PublishDocPage(ctx, targetID, reviewerID)
 
 	case "wiki_pages":
 		return p.publishWikiPage(ctx, reviewerID, targetID, notes)

@@ -41,7 +41,7 @@ import (
 // tracks for the tenant (including drafts — the agent needs to see the
 // full catalog for admin operations).
 func LearnTracksListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -85,7 +85,7 @@ type learnTrackCreateArgs struct {
 // track. The executor's RBAC gate checks the required_permission
 // (learning.admin.manage); the tool config sets requires_hitl = true.
 func LearnTracksCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -160,7 +160,7 @@ type learnTrackUpdateArgs struct {
 // LearnTracksUpdateHandler returns a ToolHandler that updates a learning
 // track.
 func LearnTracksUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -220,7 +220,7 @@ func LearnTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 // LearnLessonsListHandler returns a ToolHandler that lists all lessons for
 // the tenant (admin view, including drafts).
 func LearnLessonsListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -266,7 +266,7 @@ type learnLessonCreateArgs struct {
 // a module. The executor's RBAC gate checks the required_permission
 // (learning.admin.manage); the tool config sets requires_hitl = true.
 func LearnLessonsCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -346,7 +346,7 @@ type learnLessonUpdateArgs struct {
 
 // LearnLessonsUpdateHandler returns a ToolHandler that updates a lesson.
 func LearnLessonsUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}
@@ -417,7 +417,7 @@ type learnLessonReorderEntry struct {
 // LearnLessonsReorderHandler returns a ToolHandler that reorders lessons
 // by updating their sort_order values in bulk.
 func LearnLessonsReorderHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Learning == nil {
 			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
 		}

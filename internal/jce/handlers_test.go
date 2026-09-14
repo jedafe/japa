@@ -32,7 +32,7 @@ func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 	t.Helper()
 
 	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(uuid.New().String()); err != nil {
+	if err := (error)(nil); err != nil {
 		t.Fatalf("tenantID: %v", err)
 	}
 
@@ -40,10 +40,10 @@ func testTenantAndUser(t *testing.T) (pgtype.UUID, pgtype.UUID) {
 		t.Fatalf("userID: %v", err)
 	}
 
-	return tenantID, userID
+	return pgtype.UUID{}, userID
 }
 
-func newRequest(t *testing.T, method, path, body string, tenantID, userID pgtype.UUID) *http.Request {
+func newRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
 
 	var r *http.Request
@@ -91,8 +91,8 @@ func assertRoute404(t *testing.T, handler http.HandlerFunc, method, path, body s
 		body = "{}"
 	}
 
-	tenantID, userID := testTenantAndUser(t)
-	r := newRequest(t, method, path, body, tenantID, userID)
+	_, userID := testTenantAndUser(t)
+	r := newRequest(t, method, path, body, userID)
 	w := httptest.NewRecorder()
 	handler(w, r)
 
@@ -172,23 +172,23 @@ type fakeService struct {
 	advisorResult AdvisorResult
 }
 
-func (f *fakeService) ListComparisonProfiles(ctx context.Context, tenantID, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
+func (f *fakeService) ListComparisonProfiles(ctx context.Context, userID pgtype.UUID, includeTemplates, all bool) ([]ComparisonProfile, error) {
 	return append([]ComparisonProfile(nil), f.profiles...), nil
 }
 
-func (f *fakeService) GetComparisonScore(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
+func (f *fakeService) GetComparisonScore(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID) (ScoreResult, error) {
 	return f.score, nil
 }
 
-func (f *fakeService) ListRecommendations(ctx context.Context, contentID, tenantID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
+func (f *fakeService) ListRecommendations(ctx context.Context, contentID, userID pgtype.UUID, profileID *pgtype.UUID, limit int) ([]ComparisonRecommendation, error) {
 	return append([]ComparisonRecommendation(nil), f.recs...), nil
 }
 
-func (f *fakeService) ListDataSources(ctx context.Context, tenantID pgtype.UUID, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
+func (f *fakeService) ListDataSources(ctx context.Context, entityType *string, entityID *pgtype.UUID, page, pageSize int) ([]DataSource, int64, error) {
 	return append([]DataSource(nil), f.dataSources...), int64(len(f.dataSources)), nil
 }
 
-func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (f *fakeService) CreateDataSource(ctx context.Context, in DataSourceInput) (DataSource, error) {
 	return DataSource{
 		ID: uuid.New().String(),
 
@@ -204,11 +204,11 @@ func (f *fakeService) CreateDataSource(ctx context.Context, tenantID pgtype.UUID
 	}, nil
 }
 
-func (f *fakeService) GetDataSource(ctx context.Context, id, tenantID pgtype.UUID) (DataSource, error) {
+func (f *fakeService) GetDataSource(ctx context.Context, id pgtype.UUID) (DataSource, error) {
 	return f.ds, nil
 }
 
-func (f *fakeService) UpdateDataSource(ctx context.Context, id, tenantID pgtype.UUID, in DataSourceInput) (DataSource, error) {
+func (f *fakeService) UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataSourceInput) (DataSource, error) {
 	return DataSource{
 		ID: id.String(),
 
@@ -224,16 +224,16 @@ func (f *fakeService) UpdateDataSource(ctx context.Context, id, tenantID pgtype.
 	}, nil
 }
 
-func (f *fakeService) DeleteDataSource(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (f *fakeService) DeleteDataSource(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-func (f *fakeService) FreshnessForComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID) (FreshnessSummary, error) {
+func (f *fakeService) FreshnessForComparison(ctx context.Context, contentID, userID pgtype.UUID) (FreshnessSummary, error) {
 	f.freshness.ContentID = contentID.String()
 	return f.freshness, nil
 }
 
-func (f *fakeService) RefreshComparison(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
+func (f *fakeService) RefreshComparison(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (IngestionJob, error) {
 	f.job.ContentID = contentID.String()
 	f.job.SourceKind = sourceKind
 
@@ -283,7 +283,7 @@ func (f *fakeService) StreamAdvisor(ctx context.Context, contentID, userID, prof
 	return nil
 }
 
-func newAuthenticatedRequest(t *testing.T, method, path, body string, tenantID, userID pgtype.UUID) *http.Request {
+func newAuthenticatedRequest(t *testing.T, method, path, body string, userID pgtype.UUID) *http.Request {
 	t.Helper()
 
 	var r *http.Request
@@ -325,8 +325,8 @@ func TestHandlers_ListProfiles_Happy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/profiles", h.ListProfiles)
 
-	tenantID, userID := testTenantAndUser(t)
-	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/profiles", "", tenantID, userID)
+	_, userID := testTenantAndUser(t)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/profiles", "", userID)
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -355,9 +355,9 @@ func TestHandlers_GetComparisonScore_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/score", h.GetComparisonScore)
 
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/score?profile_id=not-a-uuid", uuid.New().String())
-	req := newAuthenticatedRequest(t, http.MethodGet, path, "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, path, "", userID)
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -388,9 +388,9 @@ func TestHandlers_ListRecommendations_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/recommendations", h.ListRecommendations)
 
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/recommendations?profile_id=malformed-uuid", uuid.New().String())
-	req := newAuthenticatedRequest(t, http.MethodGet, path, "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, path, "", userID)
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -421,10 +421,10 @@ func TestHandlers_ScoreComparison_InvalidProfileID(t *testing.T) {
 	r := chi.NewRouter()
 	r.Post("/jce/comparisons/{id}/score", h.ScoreComparison)
 
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	path := fmt.Sprintf("/jce/comparisons/%s/score", uuid.New().String())
 	body := `{"profile_id":"not-a-uuid","force":true}`
-	req := newAuthenticatedRequest(t, http.MethodPost, path, body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, path, body, userID)
 	rec := httptest.NewRecorder()
 
 	r.ServeHTTP(rec, req)
@@ -473,7 +473,7 @@ func TestHandlers_FeatureDisabled_Advisor(t *testing.T) {
 }
 
 func TestHandlers_ListDataSources_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
 		dataSources: []DataSource{
@@ -491,7 +491,7 @@ func TestHandlers_ListDataSources_Happy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/data-sources", h.HandleListDataSources)
 
-	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/data-sources", "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/data-sources", "", userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -513,7 +513,7 @@ func TestHandlers_ListDataSources_Happy(t *testing.T) {
 }
 
 func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -521,7 +521,7 @@ func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
 	r.Post("/jce/data-sources", h.HandleCreateDataSource)
 
 	body := `{"source_name":"Test","source_kind":"invalid","trust_level":3}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/data-sources", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/data-sources", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -545,7 +545,7 @@ func TestHandlers_CreateDataSource_InvalidSourceKind(t *testing.T) {
 }
 
 func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -553,7 +553,7 @@ func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
 	r.Post("/jce/data-sources", h.HandleCreateDataSource)
 
 	body := `{"source_name":"Test","source_kind":"official","trust_level":3,"entity_id":"not-a-uuid"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/data-sources", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/data-sources", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -577,7 +577,7 @@ func TestHandlers_CreateDataSource_InvalidEntityID(t *testing.T) {
 }
 
 func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
 
@@ -589,7 +589,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	dsID := uuid.New().String()
 
 	// Get
-	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/data-sources/"+dsID, "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/data-sources/"+dsID, "", userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -599,7 +599,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 
 	// Update
 	body := `{"source_name":"Updated","source_kind":"third_party","trust_level":4}`
-	req = newAuthenticatedRequest(t, http.MethodPatch, "/jce/data-sources/"+dsID, body, tenantID, userID)
+	req = newAuthenticatedRequest(t, http.MethodPatch, "/jce/data-sources/"+dsID, body, userID)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -620,7 +620,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 	}
 
 	// Delete
-	req = newAuthenticatedRequest(t, http.MethodDelete, "/jce/data-sources/"+dsID, "", tenantID, userID)
+	req = newAuthenticatedRequest(t, http.MethodDelete, "/jce/data-sources/"+dsID, "", userID)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -630,7 +630,7 @@ func TestHandlers_DataSourceCRUD_Happy(t *testing.T) {
 }
 
 func TestHandlers_GetFreshness_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -648,7 +648,7 @@ func TestHandlers_GetFreshness_Happy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/freshness", h.HandleGetFreshness)
 
-	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/comparisons/"+contentID+"/freshness", "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/comparisons/"+contentID+"/freshness", "", userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -674,7 +674,7 @@ func TestHandlers_GetFreshness_Happy(t *testing.T) {
 }
 
 func TestHandlers_RefreshComparison_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -690,7 +690,7 @@ func TestHandlers_RefreshComparison_Happy(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/refresh", h.HandleRefreshComparison)
 
 	body := `{"source_kind":"official"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/refresh", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/refresh", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -716,7 +716,7 @@ func TestHandlers_RefreshComparison_Happy(t *testing.T) {
 }
 
 func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
@@ -725,7 +725,7 @@ func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/refresh", h.HandleRefreshComparison)
 
 	body := `{"source_kind":"bad"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/refresh", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/refresh", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -749,7 +749,7 @@ func TestHandlers_RefreshComparison_InvalidSourceKind(t *testing.T) {
 }
 
 func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -762,7 +762,7 @@ func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
 	r := chi.NewRouter()
 	r.Get("/jce/comparisons/{id}/ingestion-jobs", h.HandleListIngestionJobs)
 
-	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/comparisons/"+contentID+"/ingestion-jobs", "", tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodGet, "/jce/comparisons/"+contentID+"/ingestion-jobs", "", userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -784,7 +784,7 @@ func TestHandlers_ListIngestionJobs_Happy(t *testing.T) {
 }
 
 func TestHandlers_Analyze_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	profileID := uuid.New().String()
 	fs := &fakeService{
@@ -803,7 +803,7 @@ func TestHandlers_Analyze_Happy(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/analyze", h.HandleAnalyze)
 
 	body := `{"profile_id":"` + profileID + `","question":"Which is best?"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/analyze", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/analyze", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -829,7 +829,7 @@ func TestHandlers_Analyze_Happy(t *testing.T) {
 }
 
 func TestHandlers_Explain_InvalidItemID(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
@@ -838,7 +838,7 @@ func TestHandlers_Explain_InvalidItemID(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/explain", h.HandleExplain)
 
 	body := `{"item_id":"not-a-uuid","factor_key":"cost"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/explain", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/explain", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -862,7 +862,7 @@ func TestHandlers_Explain_InvalidItemID(t *testing.T) {
 }
 
 func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{
 		Service: &Service{features: stubFeatureChecker{enabled: true}},
@@ -877,7 +877,7 @@ func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/advisor", h.HandleStreamAdvisor)
 
 	body := `{"question":"Which is best for me?"}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/advisor", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/advisor", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -901,7 +901,7 @@ func TestHandlers_StreamAdvisor_Happy(t *testing.T) {
 }
 
 func TestHandlers_StreamAdvisor_MissingQuestion(t *testing.T) {
-	tenantID, userID := testTenantAndUser(t)
+	_, userID := testTenantAndUser(t)
 	contentID := uuid.New().String()
 	fs := &fakeService{Service: &Service{features: stubFeatureChecker{enabled: true}}}
 	h := NewHandlers(fs)
@@ -910,7 +910,7 @@ func TestHandlers_StreamAdvisor_MissingQuestion(t *testing.T) {
 	r.Post("/jce/comparisons/{id}/advisor", h.HandleStreamAdvisor)
 
 	body := `{}`
-	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/advisor", body, tenantID, userID)
+	req := newAuthenticatedRequest(t, http.MethodPost, "/jce/comparisons/"+contentID+"/advisor", body, userID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

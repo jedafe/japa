@@ -177,7 +177,7 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -201,7 +201,7 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 	// rate limit, pre-search, session creation) and returns a channel. Pre-
 	// check failures come back as errors here — return them as JSON before
 	// opening the SSE stream so the client gets a proper status code.
-	events, err := h.agent.HandleAgentRequest(r.Context(), user.UserID, tenantID, input.Prompt)
+	events, err := h.agent.HandleAgentRequest(r.Context(), user.UserID, input.Prompt)
 	if err != nil {
 		writeAgentError(w, err)
 		return
@@ -1093,7 +1093,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1146,7 +1146,7 @@ func (h *AgentHTTPHandlers) HandleCompareEntities(w http.ResponseWriter, r *http
 			}
 		}
 
-		ps, psErr := h.preSearch.PreSearch(r.Context(), tenantID, query, geoSpaceID)
+		ps, psErr := h.preSearch.PreSearch(r.Context(), query, geoSpaceID)
 		if psErr != nil {
 			slog.Warn("ai: comparison pre-search failed (non-fatal)", "error", psErr)
 		} else {

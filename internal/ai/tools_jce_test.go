@@ -76,7 +76,7 @@ func (s *stubJCEService) Recommend(ctx context.Context, contentID, userID, profi
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
+func (s *stubJCEService) Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
 	s.refreshCalled = true
 	s.lastContentID = contentID
 	s.lastSourceKind = sourceKind

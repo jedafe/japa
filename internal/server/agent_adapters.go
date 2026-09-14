@@ -82,8 +82,8 @@ type agentRAGAdapter struct {
 
 // Retrieve calls rag.Service.Retrieve and converts each RetrievedChunk to
 // the ai-package mirror type.
-func (a *agentRAGAdapter) Retrieve(ctx context.Context, tenantID pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]ai.RAGChunk, error) {
-	chunks, err := a.svc.Retrieve(ctx, tenantID, query, language, geoSpaceID)
+func (a *agentRAGAdapter) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]ai.RAGChunk, error) {
+	chunks, err := a.svc.Retrieve(ctx, query, language, geoSpaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,13 +109,13 @@ type agentContentCreatorBridge struct {
 	svc *content.Service
 }
 
-func (b *agentContentCreatorBridge) create(ctx context.Context, tenantID pgtype.UUID, input ai.ContentCreateInput) (ai.ContentCreateRow, error) {
+func (b *agentContentCreatorBridge) create(ctx context.Context, input ai.ContentCreateInput) (ai.ContentCreateRow, error) {
 	var guideCategory *string
 	if input.GuideCategory != "" {
 		guideCategory = &input.GuideCategory
 	}
 
-	row, err := b.svc.CreateContent(ctx, tenantID, content.CreateContentInput{
+	row, err := b.svc.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:       input.AuthorID,
 		OrganizationID: input.OrganizationID,
 		SpaceID:        input.SpaceID,
@@ -155,7 +155,7 @@ type agentContentUpdaterBridge struct {
 	svc *content.Service
 }
 
-func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, tenantID, editedBy pgtype.UUID, input ai.ContentUpdateInput) (ai.ContentUpdateRow, error) {
+func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, editedBy pgtype.UUID, input ai.ContentUpdateInput) (ai.ContentUpdateRow, error) {
 	// Build the content.UpdateContentInput from the ai-package input. Only
 	// the pointer fields that are non-nil are set; the rest default to
 	// zero values that content.Service treats as "unchanged" when the
@@ -170,7 +170,7 @@ func (b *agentContentUpdaterBridge) update(ctx context.Context, contentID, tenan
 		geoSpaceID = *input.GeoSpaceID
 	}
 
-	row, err := b.svc.UpdateContent(ctx, contentID, tenantID, editedBy, content.UpdateContentInput{
+	row, err := b.svc.UpdateContent(ctx, contentID, editedBy, content.UpdateContentInput{
 		Title:       derefStr(input.Title),
 		Slug:        derefStr(input.Slug),
 		Body:        derefStr(input.Body),
@@ -544,7 +544,6 @@ func (a *agentDraftDispatcherAdapter) GenerateDraftBody(ctx context.Context, con
 // 4. Creates a HITL review with source='agent_draft_request' + the
 // created content_id.
 func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, payload worker.AgentDraftPayload) error {
-	tenantID := pgtype.UUID{}
 
 	var personaID pgtype.UUID
 	if err := personaID.Scan(payload.PersonaID); err != nil {
@@ -603,7 +602,7 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 	}
 
 	// 4. Create the contents row with status='draft'.
-	row, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+	row, err := a.contentSvc.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:    persona.UserID,
 		ContentType: payload.ContentType,
 		Title:       payload.TopicPrompt,
@@ -878,8 +877,8 @@ func (a *agentDocsAdapter) GetDocPageByID(ctx context.Context, id pgtype.UUID) (
 	return &aiP, nil
 }
 
-func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, tenantID pgtype.UUID, req ai.DocsCreatePageRequest) (pgtype.UUID, error) {
-	return a.svc.CreateDocPage(ctx, tenantID, docs.CreateDocPageRequest{
+func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, req ai.DocsCreatePageRequest) (pgtype.UUID, error) {
+	return a.svc.CreateDocPage(ctx, docs.CreateDocPageRequest{
 		Title:        req.Title,
 		Slug:         req.Slug,
 		Audience:     req.Audience,
@@ -891,8 +890,8 @@ func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, tenantID pgtype.UU
 	})
 }
 
-func (a *agentDocsAdapter) UpdateDocPage(ctx context.Context, tenantID, id pgtype.UUID, req ai.DocsUpdatePageRequest) error {
-	return a.svc.UpdateDocPage(ctx, tenantID, id, docs.UpdateDocPageRequest{
+func (a *agentDocsAdapter) UpdateDocPage(ctx context.Context, id pgtype.UUID, req ai.DocsUpdatePageRequest) error {
+	return a.svc.UpdateDocPage(ctx, id, docs.UpdateDocPageRequest{
 		Title:        req.Title,
 		Content:      req.Content,
 		ReviewStatus: req.ReviewStatus,
@@ -1079,7 +1078,7 @@ type communityOrgDraftGenerator interface {
 
 // attestationDraftGenerator is the subset of *attestationguide.Service.
 type attestationDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input attestationguide.GeneratePathwayInput) (attestationguide.PathwayDTO, error)
+	GenerateDraft(ctx context.Context, input attestationguide.GeneratePathwayInput) (attestationguide.PathwayDTO, error)
 }
 
 // languageTestDraftGenerator is the subset of *languagetesthub.Service.
@@ -1121,14 +1120,14 @@ type calendarDraftGenerator interface {
 
 // docsDraftGenerator is the subset of *docs.Service.
 type docsDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID pgtype.UUID, input docs.GenerateDraftRequest) (docs.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, input docs.GenerateDraftRequest) (docs.GenerateDraftResponse, error)
 }
 
 // storyDraftGenerator is the subset of *story.Service. Story creates both a
 // contents row and a story_meta row, so it needs the persona's backing
 // user_id as the author.
 type storyDraftGenerator interface {
-	GenerateDraft(ctx context.Context, tenantID, authorID pgtype.UUID, input story.GenerateDraftRequest) (story.GenerateDraftResponse, error)
+	GenerateDraft(ctx context.Context, authorID pgtype.UUID, input story.GenerateDraftRequest) (story.GenerateDraftResponse, error)
 }
 
 // toolTableTargetTable maps tool-table content types to their backing
@@ -1166,14 +1165,14 @@ type studioProcessorService interface {
 	MarkJobFailed(ctx context.Context, jobID pgtype.UUID, errMsg string) error
 	MarkJobPublished(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error
 	ShouldAutoPublish(ctx context.Context, contentType, guideCategory string) bool
-	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
+	RunBatch(ctx context.Context, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
 	RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error)
 }
 
 // RunBatch delegates to the studio service.
-func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error {
-	return a.studio.RunBatch(ctx, tenantID, batchID)
+func (a *studioDraftProcessorAdapter) RunBatch(ctx context.Context, batchID pgtype.UUID) error {
+	return a.studio.RunBatch(ctx, batchID)
 }
 
 // RetryFailed delegates to the studio service.
@@ -1193,7 +1192,7 @@ func (a *studioDraftProcessorAdapter) RetryBatchFailed(ctx context.Context, batc
 // 4. Route to the HITL review queue with source='studio', OR auto-publish
 // low-stakes types per studio.auto_publish_types (§75).
 // 5. Update the studio job to 'in_review' (or 'published').
-func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID, jobID pgtype.UUID) error {
+func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, jobID pgtype.UUID) error {
 	job, err := a.studio.GetJob(ctx, jobID)
 	if err != nil {
 		return fmt.Errorf("studio: generate: get job: %w", err)
@@ -1298,7 +1297,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	// required fields not available in the Studio job), fall through to
 	// contents creation as a safe default.
 	if isToolTableType(job.ContentType) {
-		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, tenantID, jobID, job, persona, body, extractionContext); rerr == nil && routed {
+		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, jobID, job, persona, body, extractionContext); rerr == nil && routed {
 			a.routeToHITL(ctx, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
 			return nil
 		}
@@ -1307,7 +1306,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 	}
 
 	// 5b. Create the contents row with status='draft' (default path).
-	row, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+	row, err := a.contentSvc.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:      persona.UserID,
 		SpaceID:       job.TargetSpaceID,
 		ContentType:   job.ContentType,
@@ -1375,7 +1374,7 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, tenantID,
 // intel_record extraction (§75, ADR-076 Amendment 2). It preserves the
 // content's identity and slug; if the live body has been manually edited or
 // the type requires HITL, it creates a new draft instead of overwriting.
-func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, tenantID, contentID, intelRecordID pgtype.UUID) error {
+func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, contentID, intelRecordID pgtype.UUID) error {
 	existing, err := a.contentSvc.GetContent(ctx, contentID)
 	if err != nil {
 		return fmt.Errorf("regenerate: get content: %w", err)
@@ -1445,7 +1444,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	needsHITL := highStakes || manual || (existing.Status == content.StatusPublished && !canAutoPublish)
 
 	if needsHITL {
-		draft, err := a.contentSvc.CreateContent(ctx, tenantID, content.CreateContentInput{
+		draft, err := a.contentSvc.CreateContent(ctx, content.CreateContentInput{
 			AuthorID:      persona.UserID,
 			SpaceID:       existing.GeoSpaceID,
 			ContentType:   existing.ContentType,
@@ -1469,7 +1468,7 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	hash := content.ComputeContentHash(body)
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 
-	updated, err := a.contentSvc.UpdateContent(ctx, contentID, tenantID, persona.UserID, content.UpdateContentInput{
+	updated, err := a.contentSvc.UpdateContent(ctx, contentID, persona.UserID, content.UpdateContentInput{
 		Title:         existing.Title,
 		Slug:          existing.Slug,
 		Body:          body,
@@ -1576,7 +1575,7 @@ func (a *studioDraftProcessorAdapter) hasManualEditSinceAIGeneration(ctx context
 // contents creation.
 func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 	ctx context.Context,
-	tenantID, jobID pgtype.UUID,
+	jobID pgtype.UUID,
 	job studio.Job,
 	persona gen.GetAIPersonaByIDRow,
 	body, extractionContext string,
@@ -1645,7 +1644,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		dto, err := a.attestationSvc.GenerateDraft(ctx, tenantID, attestationguide.GeneratePathwayInput{
+		dto, err := a.attestationSvc.GenerateDraft(ctx, attestationguide.GeneratePathwayInput{
 			DocumentType:       docType,
 			IssuingSpaceID:     destSpaceStr,
 			DestinationSpaceID: destSpaceStr,
@@ -1818,7 +1817,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 			return pgtype.UUID{}, "", false, nil
 		}
 
-		resp, err := a.docsSvc.GenerateDraft(ctx, tenantID, docs.GenerateDraftRequest{
+		resp, err := a.docsSvc.GenerateDraft(ctx, docs.GenerateDraftRequest{
 			Title:  job.TopicPrompt,
 			Prompt: promptWithCtx,
 		})
@@ -1839,7 +1838,7 @@ func (a *studioDraftProcessorAdapter) tryToolTableRouting(
 		// Story creates both a contents row and a story_meta row. The
 		// HITL review targets the contents row; the persona's backing user_id
 		// is the author.
-		resp, err := a.storySvc.GenerateDraft(ctx, tenantID, persona.UserID, story.GenerateDraftRequest{
+		resp, err := a.storySvc.GenerateDraft(ctx, persona.UserID, story.GenerateDraftRequest{
 			DestinationSpaceID: destSpaceStr,
 			VisaCategory:       visaCat,
 			Prompt:             promptWithCtx,
@@ -2078,7 +2077,7 @@ type agentPersonaProvisionerAdapter struct {
 	svc *personas.Service
 }
 
-func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, tenantID, adminUserID pgtype.UUID, defs []ai.PersonaDefinition) ([]ai.ProvisionedPersona, error) {
+func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, adminUserID pgtype.UUID, defs []ai.PersonaDefinition) ([]ai.ProvisionedPersona, error) {
 	inputs := make([]personas.PersonaInput, 0, len(defs))
 
 	for _, d := range defs {
@@ -2111,7 +2110,7 @@ func (a *agentPersonaProvisionerAdapter) ProvisionPersonas(ctx context.Context, 
 		})
 	}
 
-	results, err := a.svc.ProvisionPersonas(ctx, tenantID, adminUserID, inputs)
+	results, err := a.svc.ProvisionPersonas(ctx, adminUserID, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -2135,7 +2134,7 @@ type agentCampaignAdapter struct {
 	svc *campaign.Service
 }
 
-func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UUID, in ai.CampaignCreateInput) (ai.CampaignCreateResult, error) {
+func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, userID pgtype.UUID, in ai.CampaignCreateInput) (ai.CampaignCreateResult, error) {
 	autoProvision := true
 	if in.AutoProvisionPersonas != nil {
 		autoProvision = *in.AutoProvisionPersonas
@@ -2163,7 +2162,7 @@ func (a *agentCampaignAdapter) CreateCampaign(ctx context.Context, tenantID, use
 		RunImmediately:        runImmediately,
 	}
 
-	c, items, err := a.svc.CreateCampaign(ctx, tenantID, userID, cIn)
+	c, items, err := a.svc.CreateCampaign(ctx, userID, cIn)
 	if err != nil {
 		return ai.CampaignCreateResult{}, err
 	}

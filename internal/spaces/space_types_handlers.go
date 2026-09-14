@@ -65,12 +65,12 @@ func (h *Handlers) ListSpaceTypes(w http.ResponseWriter, r *http.Request) {
 
 // ListSpaceTypeCategories handles GET /api/v1/admin/space-type-categories.
 func (h *Handlers) ListSpaceTypeCategories(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
 
-	categories, err := h.Service.ListSpaceTypeCategories(r.Context(), tenantID)
+	categories, err := h.Service.ListSpaceTypeCategories(r.Context())
 	if err != nil {
 		handleServiceError(w, err)
 		return

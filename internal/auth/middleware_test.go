@@ -49,9 +49,8 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
-	tenantID := pgtype.UUID{Valid: true}
 
-	token, _ := kr.MintAccessToken(userID, tenantID)
+	token, _ := kr.MintAccessToken(userID)
 
 	called := false
 	handler := RequireAuth(kr, nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -129,8 +128,8 @@ func TestOptionalAuth_ValidToken(t *testing.T) {
 
 	kr := NewKeyRotation("key-test", []byte("test-secret-key-32-bytes-long!!!"))
 	userID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
-	tenantID := pgtype.UUID{Valid: true}
-	token, _ := kr.MintAccessToken(userID, tenantID)
+
+	token, _ := kr.MintAccessToken(userID)
 
 	handler := OptionalAuth(kr, nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		user := FromContext(r.Context())

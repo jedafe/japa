@@ -60,7 +60,7 @@ type ValkeyCache interface {
 // PointsAwarder credits reward points to a user's wallet (BUG-GAMMA-002).
 // Implemented by *wallet.Service; nil-safe on the Service struct.
 type PointsAwarder interface {
-	AwardPoints(ctx context.Context, tenantID, userID pgtype.UUID, points int, reason string) error
+	AwardPoints(ctx context.Context, userID pgtype.UUID, points int, reason string) error
 }
 
 // Notifier sends user notifications for badge awards and challenge
@@ -104,8 +104,8 @@ func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 // awards, notifications). It also re-checks lifetime_points badges on every
 // activity — this is the only call site where points can change, so wiring
 // EvaluatePointsBadges here is what makes lifetime_points triggers fire.
-func (s *Service) EvaluateForWallet(ctx context.Context, tenantID, userID pgtype.UUID, activityKey string) error {
-	if _, err := s.EvaluateBadges(ctx, tenantID, userID, activityKey); err != nil {
+func (s *Service) EvaluateForWallet(ctx context.Context, userID pgtype.UUID, activityKey string) error {
+	if _, err := s.EvaluateBadges(ctx, userID, activityKey); err != nil {
 		return err
 	}
 

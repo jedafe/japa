@@ -137,7 +137,7 @@ type contentSearchArgs struct {
 // applied — the wiring layer MUST provide a Privacy checker for the agent
 // to enforce the §103 privacy boundary.
 func ContentSearchHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Content == nil {
 			return errorToolResult("content_search_unavailable", "content service is not configured"), nil
 		}
@@ -169,7 +169,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("content_search_failed", err.Error()), nil
 			}
 
-			filtered := filterExemptContentFromSpace(ctx, deps.Privacy, tenantID, results)
+			filtered := filterExemptContentFromSpace(ctx, deps.Privacy, results)
 
 			return successToolResult(map[string]any{
 				"results":    contentSearchResultsFromSpace(filtered),
@@ -186,7 +186,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_search_failed", err.Error()), nil
 		}
 
-		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, tenantID, results)
+		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, results)
 
 		return successToolResult(map[string]any{
 			"results":    contentSearchResultsFromTenant(filtered),
@@ -202,7 +202,7 @@ func ContentSearchHandler(deps *ToolDeps) ToolHandler {
 
 // filterExemptContentFromTenant strips ai_exempt content from tenant-wide
 // search results. When the privacy checker is nil, no filtering is applied.
-func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemptionChecker, tenantID pgtype.UUID, rows []gen.ListContentsByTenantRow) []gen.ListContentsByTenantRow {
+func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemptionChecker, rows []gen.ListContentsByTenantRow) []gen.ListContentsByTenantRow {
 	if privacy == nil {
 		return rows
 	}
@@ -210,7 +210,7 @@ func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemption
 	out := make([]gen.ListContentsByTenantRow, 0, len(rows))
 
 	for _, r := range rows {
-		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
+		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, r.ID)
 		if err == nil && exempt {
 			continue
 		}
@@ -223,7 +223,7 @@ func filterExemptContentFromTenant(ctx context.Context, privacy PrivacyExemption
 
 // filterExemptContentFromSpace strips ai_exempt content from space-scoped
 // search results. When the privacy checker is nil, no filtering is applied.
-func filterExemptContentFromSpace(ctx context.Context, privacy PrivacyExemptionChecker, tenantID pgtype.UUID, rows []gen.SearchContentsBySpaceRow) []gen.SearchContentsBySpaceRow {
+func filterExemptContentFromSpace(ctx context.Context, privacy PrivacyExemptionChecker, rows []gen.SearchContentsBySpaceRow) []gen.SearchContentsBySpaceRow {
 	if privacy == nil {
 		return rows
 	}
@@ -231,7 +231,7 @@ func filterExemptContentFromSpace(ctx context.Context, privacy PrivacyExemptionC
 	out := make([]gen.SearchContentsBySpaceRow, 0, len(rows))
 
 	for _, r := range rows {
-		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
+		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, r.ID)
 		if err == nil && exempt {
 			continue
 		}
@@ -317,7 +317,7 @@ type contentReadArgs struct {
 // ai_exempt; the handler additionally filters ai_exempt field values from
 // the returned set.
 func ContentReadHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Content == nil {
 			return errorToolResult("content_read_unavailable", "content service is not configured"), nil
 		}
@@ -428,7 +428,7 @@ type aiProvenanceArgs struct {
 // Unlike content.read/update, this handler does not require deps.Content
 // (the read service) — it only needs deps.ContentCreator (the write bridge).
 func ContentCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("content_create_unavailable", "tool deps not configured"), nil
 		}
@@ -526,7 +526,7 @@ func ContentCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_create_unavailable", "content creation is not wired"), nil
 		}
 
-		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
+		row, err := deps.ContentCreator(ctx, ContentCreateInput{
 			AuthorID:       authorID,
 			SpaceID:        spaceID,
 			ContentType:    a.ContentType,
@@ -606,7 +606,7 @@ type ContentCreateRow struct {
 
 // ContentCreator is the function type the wiring layer provides to bridge
 // content.Service.CreateContent into the agent without an import cycle.
-type ContentCreator func(ctx context.Context, tenantID pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error)
+type ContentCreator func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error)
 
 // buildProvenance constructs the _ai_provenance metadata block. The
 // prompted_by_user_id is always the calling user (the agent acts on their
@@ -741,7 +741,7 @@ type contentCreateDraftArgs struct {
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Request Flow, HITL Source Tracking)
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 8, tasks 8.01, 8.02, 8.05).
 func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("content_create_draft_unavailable", "tool deps not configured"), nil
 		}
@@ -861,7 +861,7 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("field_values_error", fmt.Sprintf("failed to encode field values: %v", err)), nil
 		}
 
-		row, err := deps.ContentCreator(ctx, tenantID, ContentCreateInput{
+		row, err := deps.ContentCreator(ctx, ContentCreateInput{
 			AuthorID:       authorID,
 			SpaceID:        spaceID,
 			ContentType:    a.ContentType,
@@ -968,7 +968,7 @@ type contentUpdateArgs struct {
 // read service) — it only needs deps.ContentUpdater (the write bridge)
 // and optionally deps.Privacy (for defense-in-depth).
 func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("content_update_unavailable", "tool deps not configured"), nil
 		}
@@ -990,7 +990,7 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 		// Verify the content exists and is not exempt (defense-in-depth on
 		// top of the executor's privacy gate).
 		if deps.Privacy != nil {
-			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, contentID)
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}
@@ -1019,7 +1019,7 @@ func ContentUpdateHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		row, err := deps.ContentUpdater(ctx, contentID, tenantID, userID, ContentUpdateInput{
+		row, err := deps.ContentUpdater(ctx, contentID, userID, ContentUpdateInput{
 			Title:       a.Title,
 			Body:        a.Body,
 			Slug:        a.Slug,
@@ -1062,7 +1062,7 @@ type ContentUpdateRow struct {
 }
 
 // ContentUpdater is the function type bridging content.Service.UpdateContent.
-type ContentUpdater func(ctx context.Context, contentID, tenantID, editedBy pgtype.UUID, input ContentUpdateInput) (ContentUpdateRow, error)
+type ContentUpdater func(ctx context.Context, contentID, editedBy pgtype.UUID, input ContentUpdateInput) (ContentUpdateRow, error)
 
 // ContentUpdatePrivacyTarget extracts the content_id from content.update
 // arguments for the executor's privacy gate.
@@ -1092,7 +1092,7 @@ func ContentUpdatePrivacyTarget(ctx context.Context, args json.RawMessage) (Priv
 // Ref: japaconnect-engineering/sections/14-content-type-system.md
 // (Guide Content Type System).
 func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.GuideCategories == nil {
 			return errorToolResult("guide_categories_unavailable", "guide category service is not configured"), nil
 		}
@@ -1132,7 +1132,7 @@ func GuideCategoriesListHandler(deps *ToolDeps) ToolHandler {
 //
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Content Type Discovery).
 func ContentTypesListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentTypes == nil {
 			return errorToolResult("content_types_unavailable", "content type service is not configured"), nil
 		}
@@ -1283,7 +1283,7 @@ type contentDeleteArgs struct {
 // The underlying content.Service.DeleteContent performs a soft delete
 // (sets deleted_at = now()), per Rule 11 — never hard-delete user content.
 func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentLifecycle == nil {
 			return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
 		}
@@ -1303,7 +1303,7 @@ func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
 		// the handler re-checks to guard against a misconfigured
 		// PrivacyTargetFunc.
 		if deps.Privacy != nil {
-			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, contentID)
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}
@@ -1350,7 +1350,7 @@ type contentListArgs struct {
 // When content_type is empty, it falls back to the tenant-wide list
 // (deps.Content.ListContents). Exempt content is filtered post-query.
 func ContentListHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil {
 			return errorToolResult("content_unavailable", "content service is not configured"), nil
 		}
@@ -1377,7 +1377,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("content_list_failed", err.Error()), nil
 			}
 
-			filtered := filterExemptContentFromType(ctx, deps.Privacy, tenantID, rows)
+			filtered := filterExemptContentFromType(ctx, deps.Privacy, rows)
 
 			return successToolResult(map[string]any{
 				"results":      contentListResultsFromType(filtered),
@@ -1398,7 +1398,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("content_list_failed", err.Error()), nil
 		}
 
-		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, tenantID, results)
+		filtered := filterExemptContentFromTenant(ctx, deps.Privacy, results)
 
 		return successToolResult(map[string]any{
 			"results": contentSearchResultsFromTenant(filtered),
@@ -1409,7 +1409,7 @@ func ContentListHandler(deps *ToolDeps) ToolHandler {
 
 // filterExemptContentFromType strips ai_exempt content from type-filtered
 // listing results.
-func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionChecker, tenantID pgtype.UUID, rows []gen.ListContentsByTypeRow) []gen.ListContentsByTypeRow {
+func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionChecker, rows []gen.ListContentsByTypeRow) []gen.ListContentsByTypeRow {
 	if privacy == nil {
 		return rows
 	}
@@ -1417,7 +1417,7 @@ func filterExemptContentFromType(ctx context.Context, privacy PrivacyExemptionCh
 	out := make([]gen.ListContentsByTypeRow, 0, len(rows))
 
 	for _, r := range rows {
-		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, r.ID)
+		exempt, err := privacy.IsExempt(ctx, PrivacyEntityContent, r.ID)
 		if err == nil && exempt {
 			continue
 		}
@@ -1470,7 +1470,7 @@ type contentPublishArgs struct {
 // directly without HITL review (the tool config's requires_hitl flag
 // ensures a human reviews the action).
 func ContentPublishHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.ContentLifecycle == nil {
 			return errorToolResult("content_lifecycle_unavailable", "content lifecycle service is not configured"), nil
 		}
@@ -1492,7 +1492,7 @@ func ContentPublishHandler(deps *ToolDeps) ToolHandler {
 
 		// Defense-in-depth privacy re-check.
 		if deps.Privacy != nil {
-			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, tenantID, contentID)
+			exempt, err := deps.Privacy.IsExempt(ctx, PrivacyEntityContent, contentID)
 			if err != nil {
 				return errorToolResult("privacy_check_failed", err.Error()), nil
 			}

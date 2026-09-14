@@ -729,7 +729,7 @@ func (s *Service) FindScholarships(ctx context.Context, filters ScholarshipFilte
 // table joined with `contents` (editorial wrapper). A guide that has no row
 // in `scholarships` is not a finder-eligible scholarship and returns an error,
 // which SaveScholarship maps to ErrGuideNotFound.
-func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pgtype.UUID) (ScholarshipResult, error) {
+func (s *Service) GetScholarshipDetail(ctx context.Context, guideID pgtype.UUID) (ScholarshipResult, error) {
 	query := `
 		SELECT s.id, s.intel_record_id, s.guide_id, s.title, c.slug, c.meta_description,
 		       s.country, s.country_space_id, s.degree_level, s.fields_of_study, s.deadline, s.application_url,
@@ -767,7 +767,7 @@ func (s *Service) GetScholarshipDetail(ctx context.Context, tenantID, guideID pg
 		fieldValues       []byte
 	)
 
-	if err := s.store.pool.Reader.QueryRow(ctx, query, tenantID, guideID).Scan(
+	if err := s.store.pool.Reader.QueryRow(ctx, query, guideID).Scan(
 		&id, &intelRecordID, &gID, &r.Title, &slug, &summary,
 		&country, &countrySpaceID, &degreeLevel, &fieldsOfStudy, &deadline, &applicationURL,
 		&university, &eligibleCountries, &funding, &description, &fieldValues,
@@ -822,11 +822,11 @@ func sourceAttributionFromRow(src gen.ListSourcesByRecordIDsRow) SourceAttributi
 // validated to be a published scholarship guide first, and a duplicate save
 // (ON CONFLICT DO NOTHING) returns the existing tracker row instead of an
 // error so repeated saves are idempotent.
-func (s *Service) SaveScholarship(ctx context.Context, tenantID, userID, guideID pgtype.UUID) (gen.SavedScholarship, error) {
+func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UUID) (gen.SavedScholarship, error) {
 	// Validate the target is a published scholarship guide before saving.
 	// Without this, any content ID (draft, unpublished, or non-scholarship)
 	// could be saved to the tracker.
-	if _, err := s.GetScholarshipDetail(ctx, tenantID, guideID); err != nil {
+	if _, err := s.GetScholarshipDetail(ctx, guideID); err != nil {
 		return gen.SavedScholarship{}, ErrGuideNotFound
 	}
 
@@ -936,7 +936,7 @@ func (s *Service) IsSavedScholarship(ctx context.Context, userID, guideID pgtype
 // ListSavedScholarships returns a user's saved scholarships as
 // SavedScholarshipResponse rows (nested scholarship object). Each row
 // fetches the scholarship detail to populate the flat fields.
-func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pgtype.UUID, status string, page, limit int) ([]SavedScholarshipResponse, int64, error) {
+func (s *Service) ListSavedScholarships(ctx context.Context, userID pgtype.UUID, status string, page, limit int) ([]SavedScholarshipResponse, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -970,7 +970,7 @@ func (s *Service) ListSavedScholarships(ctx context.Context, tenantID, userID pg
 	out := make([]SavedScholarshipResponse, 0, len(rows))
 
 	for _, row := range rows {
-		sch, err := s.GetScholarshipDetail(ctx, tenantID, row.GuideID)
+		sch, err := s.GetScholarshipDetail(ctx, row.GuideID)
 		if err != nil {
 			// Fallback: build a minimal scholarship from the row's joined
 			// guide_title/guide_slug so a missing detail doesn't drop the

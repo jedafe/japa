@@ -163,7 +163,7 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -198,7 +198,7 @@ func (h *Handlers) CreateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.invalidateLiteralCache(r.Context(), tenantID)
+	h.invalidateLiteralCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{responseKeyData: lit})
 }
@@ -304,7 +304,7 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -331,7 +331,7 @@ func (h *Handlers) UpdateLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.invalidateLiteralCache(r.Context(), tenantID)
+	h.invalidateLiteralCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{responseKeyData: lit})
 }
@@ -412,12 +412,12 @@ func derefString(s *string) string {
 	return *s
 }
 
-func (h *Handlers) invalidateLiteralCache(ctx context.Context, tenantID pgtype.UUID) {
+func (h *Handlers) invalidateLiteralCache(ctx context.Context) {
 	if h.Catalog == nil {
 		return
 	}
 
-	if err := h.Catalog.Invalidate(ctx, tenantID); err != nil {
+	if err := h.Catalog.Invalidate(ctx); err != nil {
 		slog.Warn("admin: failed to invalidate literal cache", "error", err)
 	}
 }
@@ -428,7 +428,7 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -467,7 +467,7 @@ func (h *Handlers) DeleteLiteral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.invalidateLiteralCache(r.Context(), tenantID)
+	h.invalidateLiteralCache(r.Context())
 
 	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }

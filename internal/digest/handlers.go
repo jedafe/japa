@@ -92,7 +92,7 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 
 // HandleGetLatest handles GET /digest/latest — latest published digest.
 func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -111,7 +111,7 @@ func (h *Handlers) HandleGetLatest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	edition, err := h.service.GetLatest(r.Context(), tenantID, spaceID)
+	edition, err := h.service.GetLatest(r.Context(), spaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "no_digest", "No published digest available")
@@ -288,7 +288,7 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -298,7 +298,7 @@ func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.AdminPublish(r.Context(), tenantID, user.UserID, id); err != nil {
+	if err := h.service.AdminPublish(r.Context(), user.UserID, id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not publishable")
 			return

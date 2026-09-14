@@ -22,7 +22,7 @@ type personasCreateArgs struct {
 // PersonasCreateHandler returns a ToolHandler that provisions one or more
 // AI personas transactionally.
 func PersonasCreateHandler(deps *ToolDeps) ToolHandler {
-	return func(ctx context.Context, args json.RawMessage, userID, tenantID pgtype.UUID) (*ToolResult, error) {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.PersonaProvisioner == nil {
 			return errorToolResult("personas_not_configured", "persona provisioning is not configured"), nil
 		}
@@ -42,7 +42,7 @@ func PersonasCreateHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		results, err := deps.PersonaProvisioner.ProvisionPersonas(ctx, tenantID, userID, a.Personas)
+		results, err := deps.PersonaProvisioner.ProvisionPersonas(ctx, userID, a.Personas)
 		if err != nil {
 			return errorToolResult("personas_provision_failed", err.Error()), nil
 		}
