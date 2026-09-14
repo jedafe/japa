@@ -24,8 +24,8 @@ import (
 // API key is stored encrypted (api_key_encrypted) and never sent to the
 // frontend in plaintext — the JSON response uses api_key_masked instead.
 type ProviderConfig struct {
-	ID              pgtype.UUID `json:"id"`
-	TenantID        pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name            string    `json:"name"`
 	ProviderType    string    `json:"provider_type"`
 	APIKeyEncrypted string    `json:"-"`              // never serialized to JSON
@@ -151,7 +151,6 @@ func (s *ProviderStore) GetProvider(ctx context.Context, id pgtype.UUID) (Provid
 
 // CreateProviderInput is the payload for creating a new provider config.
 type CreateProviderInput struct {
-	TenantID     pgtype.UUID
 	Name         string
 	ProviderType string
 	APIKey       string // plaintext — encrypted before storage
@@ -188,7 +187,6 @@ func (s *ProviderStore) CreateProvider(ctx context.Context, input CreateProvider
 // UpdateProviderInput is the payload for updating a provider config.
 // APIKey is optional — if empty, the existing encrypted key is preserved.
 type UpdateProviderInput struct {
-	TenantID     pgtype.UUID
 	ID           pgtype.UUID
 	Name         *string
 	ProviderType *string
@@ -204,7 +202,7 @@ type UpdateProviderInput struct {
 func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProviderInput) (ProviderConfig, error) {
 	// Build the SET clause dynamically based on which fields are provided.
 	setParts := []string{"updated_at = now()"}
-	args := []any{input.ID, input.TenantID}
+	args := []any{input.ID, (pgtype.UUID{})}
 	argIdx := 3 // $1=id, $2=the id, $3+
 
 	if input.Name != nil {

@@ -27,10 +27,10 @@ const AccessTokenTTL = 15 * time.Minute
 // JWTClaims defines the structure of our access token claims.
 type JWTClaims struct {
 	jwt.RegisteredClaims
-	UserID   string `json:"uid"`
-	TenantID string `json:"tid"`
-	JTI      string `json:"jti"`
-	Scope    string `json:"scope,omitempty"` // "totp_verify" for challenge tokens
+	UserID string `json:"uid"`
+
+	JTI   string `json:"jti"`
+	Scope string `json:"scope,omitempty"` // "totp_verify" for challenge tokens
 }
 
 // KeyRotation holds the active signing keys for JWT rotation.
@@ -143,9 +143,9 @@ func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID, t
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        jti,
 		},
-		UserID:   userID.String(),
-		TenantID: tenantID.String(),
-		JTI:      jti,
+		UserID: userID.String(),
+
+		JTI: jti,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

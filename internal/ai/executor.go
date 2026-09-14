@@ -413,7 +413,6 @@ type ExecuteParams struct {
 	Call      ToolCall
 	SessionID pgtype.UUID
 	UserID    pgtype.UUID
-	TenantID  pgtype.UUID
 }
 
 // Execute runs the full §103 tool-call pipeline for a single LLM tool call
@@ -550,7 +549,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 		}
 
 		if et != "" && eid != (pgtype.UUID{}) {
-			exempt, err := e.privacy.IsExempt(ctx, et, p.TenantID, eid)
+			exempt, err := e.privacy.IsExempt(ctx, et, (pgtype.UUID{}), eid)
 			if err != nil {
 				resultErr = fmt.Errorf("ai: privacy check for %q: %w", call.Name, err)
 				return e.errorResult(resultErr), resultErr
@@ -566,7 +565,7 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	}
 
 	// Step 5 — Dispatch (§103 step 5).
-	hres, herr := handler(ctx, call.Arguments, p.UserID, p.TenantID)
+	hres, herr := handler(ctx, call.Arguments, p.UserID, (pgtype.UUID{}))
 	if herr != nil {
 		resultErr = fmt.Errorf("ai: tool %q failed: %w", call.Name, herr)
 		return e.errorResult(resultErr), resultErr

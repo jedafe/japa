@@ -215,8 +215,7 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -227,7 +226,7 @@ func (h *Handlers) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdatePrivacySettings(r.Context(), tenantID, user.UserID, &req); err != nil {
+	if err := h.Service.UpdatePrivacySettings(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -839,8 +838,7 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -851,7 +849,7 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.UpdateAccount(r.Context(), tenantID, user.UserID, &req)
+	result, err := h.Service.UpdateAccount(r.Context(), user.UserID, &req)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrUsernameCooldown):

@@ -225,7 +225,7 @@ func (s *Service) grantChallengeReward(ctx context.Context, tenantID, userID pgt
 
 // EvaluatePointsBadges checks lifetime_points badges against the user's
 // current lifetime points and awards any newly-earned badges.
-func (s *Service) EvaluatePointsBadges(ctx context.Context, tenantID, userID pgtype.UUID, currentLifetimePoints int64) ([]BadgeWithDetails, error) {
+func (s *Service) EvaluatePointsBadges(ctx context.Context, userID pgtype.UUID, currentLifetimePoints int64) ([]BadgeWithDetails, error) {
 	if !s.badgesEnabled(ctx) {
 		return nil, nil
 	}

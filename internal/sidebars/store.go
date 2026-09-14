@@ -212,8 +212,8 @@ func (s *Store) listActiveSidebarWidgets(ctx context.Context, sidebarID pgtype.U
 
 // SidebarWidgetJSON is the JSON-safe representation of a sidebar widget.
 type SidebarWidgetJSON struct {
-	ID               string `json:"id"`
-	TenantID         string
+	ID string `json:"id"`
+
 	SidebarID        string         `json:"sidebar_id"`
 	WidgetType       string         `json:"widget_type"`
 	Label            string         `json:"label"`
@@ -231,8 +231,8 @@ type SidebarWidgetJSON struct {
 
 // SidebarJSON is the JSON-safe representation of a sidebar.
 type SidebarJSON struct {
-	ID               string `json:"id"`
-	TenantID         string
+	ID string `json:"id"`
+
 	App              string              `json:"app"`
 	Position         string              `json:"position"`
 	Slug             string              `json:"slug"`

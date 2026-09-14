@@ -72,13 +72,13 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 // requireTenantFromContext extracts the tenant ID from the request context.
 // For DM handlers, we need the tenant from the auth token or context.
 func requireTenantFromContext(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
-	user, ok := requireUserFromContext(r)
+	_, ok := requireUserFromContext(r)
 	if !ok {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return pgtype.UUID{}, false
 	}
 
-	return user.TenantID, true
+	return pgtype.UUID{}, true
 }
 
 // ListConversations handles GET /api/v1/dm/conversations.
@@ -115,8 +115,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -147,7 +146,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), tenantID, user.UserID, recipientID, req.Message)
+	result, err := h.dmService.GetOrCreateConversationForInitiator(r.Context(), user.UserID, recipientID, req.Message)
 	if err != nil {
 		// Map DM privacy/block sentinel errors to 403 per Section 48.
 		switch {
@@ -169,7 +168,7 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 
 	// Send the initial message (BUG-003: previously the handler created a
 	// conversation but never sent the first message).
-	if err := h.dmService.SendMessage(r.Context(), tenantID, result.Conversation.ID, user.UserID, req.Message); err != nil {
+	if err := h.dmService.SendMessage(r.Context(), result.Conversation.ID, user.UserID, req.Message); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send initial message")
 		return
 	}
@@ -222,8 +221,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
-
-	tenantID, ok := requireTenantFromContext(w, r)
+	_, ok = requireTenantFromContext(w, r)
 	if !ok {
 		return
 	}
@@ -270,7 +268,7 @@ func (h *Handlers) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.dmService.SendMessage(r.Context(), tenantID, conversationID, user.UserID, req.Body); err != nil {
+	if err := h.dmService.SendMessage(r.Context(), conversationID, user.UserID, req.Body); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to send message")
 		return
 	}

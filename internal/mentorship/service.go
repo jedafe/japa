@@ -45,8 +45,8 @@ type ProgramWithCounts struct {
 
 // Match represents a mentor-mentee match with resolved names.
 type Match struct {
-	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	ProgramID      pgtype.UUID        `json:"program_id"`
 	MentorID       pgtype.UUID        `json:"mentor_id"`
 	MenteeID       pgtype.UUID        `json:"mentee_id"`
@@ -289,8 +289,8 @@ type EventTracker interface {
 
 // MentorProfile is the current user's mentor settings.
 type MentorProfile struct {
-	UserID            pgtype.UUID `json:"user_id"`
-	TenantID          pgtype.UUID
+	UserID pgtype.UUID `json:"user_id"`
+
 	IsMentor          *bool              `json:"is_mentor"`
 	MentorCapacity    *int16             `json:"mentor_capacity"`
 	MentorMaxCapacity int32              `json:"mentor_max_capacity"`
@@ -318,8 +318,8 @@ type MentorSummary struct {
 
 // Connection is a mentorship connection with resolved user names.
 type Connection struct {
-	ID                 pgtype.UUID `json:"id"`
-	TenantID           pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	MentorID           pgtype.UUID        `json:"mentor_id"`
 	MenteeID           pgtype.UUID        `json:"mentee_id"`
 	Status             string             `json:"status"`
@@ -419,7 +419,7 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 // UpdateMentorProfile toggles is_mentor and sets capacity/areas/bio.
 // PATCH /api/v1/me/mentor-profile
 // When mentor_bio changes, enqueues the mentor:generate_embedding task.
-func (s *Service) UpdateMentorProfile(ctx context.Context, tenantID, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string) (MentorProfile, error) {
+func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string) (MentorProfile, error) {
 	// Fetch current values for merge.
 	current, err := s.read.GetMentorProfile(ctx,
 
@@ -614,8 +614,8 @@ LIMIT $2
 
 	for rows.Next() {
 		var r struct {
-			UserID            pgtype.UUID
-			TenantID          pgtype.UUID
+			UserID pgtype.UUID
+
 			IsMentor          *bool
 			MentorCapacity    *int16
 			ActiveMenteeCount *int16
@@ -850,7 +850,7 @@ func (s *Service) ListIncomingConnections(ctx context.Context, mentorID pgtype.U
 // Only the mentor of the connection can accept. Also auto-opens a DM thread
 // between mentor and mentee (ADR-110 §48 integration).
 // PATCH /api/v1/me/mentorship/incoming/:id/accept.
-func (s *Service) AcceptConnection(ctx context.Context, tenantID, mentorID, connID pgtype.UUID) (Connection, error) {
+func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is the mentor of this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx,
 
@@ -926,7 +926,7 @@ func (s *Service) DeclineConnection(ctx context.Context, mentorID, connID pgtype
 // CompleteConnection completes an active connection (active → completed).
 // Either party (mentor or mentee) can complete.
 // PATCH /api/v1/mentorship/:id/complete.
-func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID) (Connection, error) {
+func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.UUID) (Connection, error) {
 	// Verify the current user is a participant in this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx,
 
@@ -960,7 +960,7 @@ func (s *Service) CompleteConnection(ctx context.Context, tenantID, userID, conn
 // CancelConnection cancels an active connection (active → cancelled).
 // Either party (mentor or mentee) can cancel.
 // PATCH /api/v1/mentorship/:id/cancel.
-func (s *Service) CancelConnection(ctx context.Context, tenantID, userID, connID pgtype.UUID, reason *string) (Connection, error) {
+func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UUID, reason *string) (Connection, error) {
 	// Verify the current user is a participant in this connection.
 	existing, err := s.read.GetMentorshipConnection(ctx,
 

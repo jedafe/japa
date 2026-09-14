@@ -41,8 +41,8 @@ func NewStore(database *db.DB) *Store {
 // sqlc types them as such (CASE WHEN ... THEN NULL ELSE ... END).
 // //nolint:revive // exported: stutter naming is intentional
 type AMAThread struct {
-	ID           pgtype.UUID
-	TenantID     pgtype.UUID
+	ID pgtype.UUID
+
 	Title        string
 	Slug         string
 	Body         []byte
@@ -57,7 +57,6 @@ type AMAThread struct {
 
 // CreateAMAParams holds the fields needed to insert an AMA thread.
 type CreateAMAParams struct {
-	TenantID          pgtype.UUID
 	AuthorUserID      pgtype.UUID
 	SpaceID           pgtype.UUID
 	Title             string

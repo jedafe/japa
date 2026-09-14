@@ -14,8 +14,8 @@ import (
 // carries the checkout_url from the provider response (BUG-012) so the
 // frontend can redirect the user to the provider's checkout page.
 type PaymentAPIResponse struct {
-	ID             pgtype.UUID `json:"id"`
-	TenantID       pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	UserID         pgtype.UUID        `json:"user_id"`
 	Provider       string             `json:"provider"`
 	ProviderRef    *string            `json:"provider_ref"`

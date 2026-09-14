@@ -383,8 +383,8 @@ func (s *Store) BulkSoftDeleteMediaOwn(ctx context.Context, uploaderID pgtype.UU
 
 // QuarantinedMedia holds the full media row including quarantine fields.
 type QuarantinedMedia struct {
-	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	UploaderUserID   pgtype.UUID        `json:"uploader_user_id"`
 	OriginalFilename string             `json:"original_filename"`
 	MimeType         string             `json:"mime_type"`
@@ -412,7 +412,6 @@ type ScanMediaRow struct {
 	StoragePath      string
 	OriginalFilename string
 	UploaderUserID   string
-	TenantID         string
 }
 
 // UpdateMediaStoragePath updates the storage path for a media item.

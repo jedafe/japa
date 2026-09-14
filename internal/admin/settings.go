@@ -94,7 +94,7 @@ type TaskEnqueuer interface {
 
 // GDPRService is the interface the admin hard-delete handler needs from the GDPR service.
 type GDPRService interface {
-	HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error
+	HardDeleteUser(ctx context.Context, userID pgtype.UUID) error
 }
 
 // OrgVerifier is the subset of the organizations service the admin verify

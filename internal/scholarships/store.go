@@ -287,8 +287,8 @@ func (s *Store) AdminDeleteScholarship(ctx context.Context, id pgtype.UUID) erro
 // slices and JSON fields are replaced, with empty JSONB values normalised to
 // '{}' so they satisfy the NOT NULL constraint.
 type UpdateScholarshipInput struct {
-	ID                   pgtype.UUID     `json:"id,omitempty"`
-	TenantID             pgtype.UUID     `json:"omitempty"`
+	ID pgtype.UUID `json:"id,omitempty"`
+
 	IntelRecordID        pgtype.UUID     `json:"intel_record_id,omitempty"`
 	GuideID              pgtype.UUID     `json:"guide_id,omitempty"`
 	SourceURL            *string         `json:"source_url,omitempty"`

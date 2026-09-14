@@ -77,8 +77,8 @@ type ProfessionRow struct {
 // credential_professions + spaces (issuing + destination), returned by
 // list and get-by-id queries.
 type PathwayRow struct {
-	ID                     pgtype.UUID
-	TenantID               pgtype.UUID
+	ID pgtype.UUID
+
 	ProfessionID           pgtype.UUID
 	ProfessionSlug         string
 	ProfessionName         string
@@ -125,7 +125,6 @@ type CommunityNoteRow struct {
 
 // CreatePathwayInput holds the fields for inserting a new pathway.
 type CreatePathwayInput struct {
-	TenantID               pgtype.UUID
 	ProfessionID           pgtype.UUID
 	IssuingSpaceID         pgtype.UUID
 	DestinationSpaceID     pgtype.UUID
@@ -286,7 +285,6 @@ SELECT id, name FROM spaces WHERE id = ANY($1)
 
 // ListPathwaysFilter holds the filter parameters for listing pathways.
 type ListPathwaysFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	ProfessionID       pgtype.UUID // optional (Valid = false → no filter)
 	IssuingSpaceID     pgtype.UUID // optional
@@ -536,8 +534,9 @@ RETURNING id
 	var id pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		input.TenantID, input.ProfessionID, input.IssuingSpaceID, input.DestinationSpaceID,
+		ctx, q, (pgtype.UUID{}),
+
+		input.ProfessionID, input.IssuingSpaceID, input.DestinationSpaceID,
 		input.RegulatoryBody, input.RegulatoryBodyURL, input.PathwayType,
 		input.TimelineEstimate, input.CostEstimateUSD, input.PathwayDescription,
 		input.OfficialApplicationURL, input.SourceURLLastChecked,

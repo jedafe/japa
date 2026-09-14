@@ -115,8 +115,7 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -147,7 +146,7 @@ func (h *Handlers) HardDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.GDPR.HardDeleteUser(r.Context(), userID, tenantID); err != nil {
+	if err := h.GDPR.HardDeleteUser(r.Context(), userID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "hard_delete_error", "Failed to hard delete user")
 		return
 	}

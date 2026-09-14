@@ -81,8 +81,8 @@ func personaEmail(slug string, tenantID pgtype.UUID) string {
 // names, the decoded activity_policy, and recent actions (§68 spec:
 // "persona detail + activity_policy + recent actions").
 type PersonaDetail struct {
-	ID                  string `json:"id"`
-	TenantID            string
+	ID string `json:"id"`
+
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -108,8 +108,8 @@ type PersonaDetail struct {
 // Includes activity stats (total_actions, last_action_at) per §68 spec
 // ("list all personas + activity stats").
 type PersonaListItem struct {
-	ID                  string `json:"id"`
-	TenantID            string
+	ID string `json:"id"`
+
 	UserID              string          `json:"user_id"`
 	ProfileID           string          `json:"profile_id"`
 	DisclosureMode      string          `json:"disclosure_mode"`
@@ -695,8 +695,8 @@ func IsHighStakesContent(guideCategory string, tags []string) bool {
 
 // PersonaVoice is the API-facing shared persona voice / tone record.
 type PersonaVoice struct {
-	ID          string `json:"id"`
-	TenantID    string
+	ID string `json:"id"`
+
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
 	Description string `json:"description,omitempty"`

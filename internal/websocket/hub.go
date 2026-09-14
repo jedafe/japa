@@ -36,10 +36,10 @@ type Hub struct {
 
 // Client represents a single WebSocket connection.
 type Client struct {
-	Hub            *Hub
-	Conn           *websocket.Conn
-	UserID         string
-	TenantID       string
+	Hub    *Hub
+	Conn   *websocket.Conn
+	UserID string
+
 	Send           chan []byte
 	SpaceIDs       map[string]bool          // subscribed spaces
 	SessionChecker func(userID string) bool // BUG-018: re-validate session on pong
@@ -290,7 +290,7 @@ func (h *Hub) deliverLocalTenant(tenantID string, event WSEvent) {
 	clients := make([]*Client, 0, len(h.clients))
 	for _, conns := range h.clients {
 		for c := range conns {
-			if c.TenantID == tenantID {
+			if "" == tenantID {
 				clients = append(clients, c)
 			}
 		}

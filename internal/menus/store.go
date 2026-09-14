@@ -193,8 +193,8 @@ func (s *Store) getUserGroupIDs(ctx context.Context, userID pgtype.UUID) ([]stri
 
 // MenuItem is the JSON-safe representation of a menu item with children.
 type MenuItem struct {
-	ID               string `json:"id"`
-	TenantID         string
+	ID string `json:"id"`
+
 	MenuID           string         `json:"menu_id"`
 	ParentID         *string        `json:"parent_id,omitempty"`
 	Label            string         `json:"label"`
@@ -214,8 +214,8 @@ type MenuItem struct {
 
 // MenuResponse is the JSON response for a menu with resolved items.
 type MenuResponse struct {
-	ID        string `json:"id"`
-	TenantID  string
+	ID string `json:"id"`
+
 	Slug      string     `json:"slug"`
 	Name      string     `json:"name"`
 	Placement string     `json:"placement"`

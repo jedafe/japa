@@ -24,10 +24,10 @@ import (
 const batchSize = 500
 
 type backfillEntry struct {
-	SpaceID  pgtype.UUID
-	TenantID pgtype.UUID
-	Name     string
-	Website  string
+	SpaceID pgtype.UUID
+
+	Name    string
+	Website string
 }
 
 func main() {
@@ -138,7 +138,7 @@ func main() {
 			fmt.Fprintf(&sb, "($%d::uuid, $%d::uuid, $%d::text)", base, base+1, base+2)
 
 			initials := universities.DeriveInitials(e.Name, nil, []string{e.Website})
-			args = append(args, e.SpaceID, e.TenantID, initials)
+			args = append(args, e.SpaceID, (pgtype.UUID{}), initials)
 		}
 
 		sb.WriteString(`) AS v(space_id, initials)

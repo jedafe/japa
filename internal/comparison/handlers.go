@@ -533,8 +533,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -594,7 +593,7 @@ func (h *Handlers) CreateComparison(w http.ResponseWriter, r *http.Request) {
 		items = append(items, ComparisonItemInput{Name: it.Name, Slug: it.Slug})
 	}
 
-	result, err := h.Service.CreateComparison(r.Context(), tenantID, user.UserID, CreateComparisonInput{
+	result, err := h.Service.CreateComparison(r.Context(), user.UserID, CreateComparisonInput{
 		Title:         input.Title,
 		Body:          input.Body,
 		Visibility:    input.Visibility,

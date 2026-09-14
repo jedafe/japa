@@ -57,8 +57,8 @@ func NewStore(database *db.DB) *Store {
 // GuideRow is the row shape returned by list and get-by-id queries for
 // tax_obligation_guides, joined with spaces for origin/destination names.
 type GuideRow struct {
-	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
+	ID pgtype.UUID
+
 	OriginSpaceID        pgtype.UUID
 	OriginSpaceName      *string
 	DestinationSpaceID   pgtype.UUID
@@ -83,8 +83,8 @@ type GuideRow struct {
 // TreatyRow is the row shape returned by treaty lookups for
 // tax_treaty_pairs, joined with spaces for origin/destination names.
 type TreatyRow struct {
-	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
+	ID pgtype.UUID
+
 	OriginSpaceID        pgtype.UUID
 	OriginSpaceName      *string
 	DestinationSpaceID   pgtype.UUID
@@ -98,7 +98,6 @@ type TreatyRow struct {
 
 // ListGuidesFilter holds the filter parameters for listing published guides.
 type ListGuidesFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	OriginSpaceID      pgtype.UUID // optional
 	EmploymentStatus   string      // optional
@@ -293,7 +292,6 @@ LIMIT 1
 // CreateGuideInput holds the fields needed to insert a new
 // tax_obligation_guides row.
 type CreateGuideInput struct {
-	TenantID             pgtype.UUID
 	OriginSpaceID        pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	EmploymentStatus     string
@@ -334,8 +332,9 @@ RETURNING id
 
 	var id pgtype.UUID
 	if err := s.pool.Writer.QueryRow(
-		ctx, q,
-		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID, in.EmploymentStatus,
+		ctx, q, (pgtype.UUID{}),
+
+		in.OriginSpaceID, in.DestinationSpaceID, in.EmploymentStatus,
 		in.ResidencyTrigger, in.WorldwideIncomeTaxed, in.FirstYearObligations,
 		checklist, status, in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
 	).Scan(&id); err != nil {
@@ -488,7 +487,6 @@ WHERE id = $1
 // TreatyUpsertInput holds the fields for creating or updating a
 // tax_treaty_pairs row via upsert.
 type TreatyUpsertInput struct {
-	TenantID           pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	TreatyExists       bool
@@ -516,8 +514,9 @@ RETURNING id
 
 	var id pgtype.UUID
 	if err := s.pool.Writer.QueryRow(
-		ctx, q,
-		in.TenantID, in.OriginSpaceID, in.DestinationSpaceID,
+		ctx, q, (pgtype.UUID{}),
+
+		in.OriginSpaceID, in.DestinationSpaceID,
 		in.TreatyExists, in.TreatySummary, in.TreatySourceURL,
 	).Scan(&id); err != nil {
 		return TreatyRow{}, fmt.Errorf("taxcalculator: upsert treaty: %w", err)
@@ -647,7 +646,6 @@ WHERE id = $1
 
 // AdminListFilter holds filter parameters for the admin guide list.
 type AdminListFilter struct {
-	TenantID           pgtype.UUID
 	Status             string      // optional
 	EmploymentStatus   string      // optional
 	DestinationSpaceID pgtype.UUID // optional
@@ -784,7 +782,7 @@ LEFT JOIN spaces ds ON ds.id = t.destination_space_id
 ORDER BY t.updated_at DESC
 `
 
-	tRows, err := s.pool.Reader.Query(ctx, treatyQuery, f.TenantID)
+	tRows, err := s.pool.Reader.Query(ctx, treatyQuery, (pgtype.UUID{}))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("taxcalculator: admin list treaties: %w", err)
 	}

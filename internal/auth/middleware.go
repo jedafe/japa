@@ -18,8 +18,8 @@ var UserContextKey = contextKey{"user"}
 
 // AuthenticatedUser holds the user info extracted from a validated JWT.
 type AuthenticatedUser struct {
-	UserID    pgtype.UUID
-	TenantID  pgtype.UUID
+	UserID pgtype.UUID
+
 	SessionID string // JTI from the JWT; used as a session-scoped cache key
 }
 
@@ -67,7 +67,7 @@ func RequireAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Handl
 			}
 
 			var tenantID pgtype.UUID
-			if err := tenantID.Scan(claims.TenantID); err != nil {
+			if err := tenantID.Scan(""); err != nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "invalid_token", "Token contains invalid tenant ID")
 				return
 			}
@@ -122,7 +122,7 @@ func OptionalAuth(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.Hand
 			}
 
 			var tenantID pgtype.UUID
-			if err := tenantID.Scan(claims.TenantID); err != nil {
+			if err := tenantID.Scan(""); err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}

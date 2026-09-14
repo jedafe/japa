@@ -54,7 +54,7 @@ type personaProvisioner interface {
 // studioService is the subset of the studio service the campaign layer uses to
 // create batches, retry jobs, and cancel jobs.
 type studioService interface {
-	CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, in studio.CreateBatchInput) (studio.Batch, []studio.Job, error)
+	CreateBatch(ctx context.Context, createdBy pgtype.UUID, in studio.CreateBatchInput) (studio.Batch, []studio.Job, error)
 	RetryJob(ctx context.Context, id pgtype.UUID) error
 	CancelJob(ctx context.Context, id pgtype.UUID) error
 	ListContentTypes(ctx context.Context) studio.ContentTypeResponse
@@ -126,7 +126,7 @@ func (s *Service) CreateCampaign(ctx context.Context, tenantID, userID pgtype.UU
 			return planned, items, fmt.Errorf("campaign: %w: run immediately requires campaign.run permission", errpkg.ErrForbidden)
 		}
 
-		if _, _, err := s.RunCampaign(ctx, tenantID, userID, campaign.ID); err != nil {
+		if _, _, err := s.RunCampaign(ctx, userID, campaign.ID); err != nil {
 			// Run failure is logged but the campaign is still planned. The caller
 			// can call /run again.
 			slog.Warn("campaign: run immediately failed after plan", "campaign_id", campaign.ID, "error", err)
@@ -242,7 +242,7 @@ func (s *Service) PlanCampaign(ctx context.Context, tenantID, userID, campaignID
 
 // RunCampaign converts planned campaign items into a Studio batch and updates
 // the campaign status to 'generating'.
-func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID pgtype.UUID) (studio.Batch, []studio.Job, error) {
+func (s *Service) RunCampaign(ctx context.Context, userID, campaignID pgtype.UUID) (studio.Batch, []studio.Job, error) {
 	campaign, err := s.store.GetCampaign(ctx, campaignID)
 	if err != nil {
 		return studio.Batch{}, nil, fmt.Errorf("campaign: get campaign: %w", err)
@@ -276,7 +276,7 @@ func (s *Service) RunCampaign(ctx context.Context, tenantID, userID, campaignID 
 
 	var desc *string
 
-	batch, createdJobs, err := s.studio.CreateBatch(ctx, tenantID, userID, studio.CreateBatchInput{
+	batch, createdJobs, err := s.studio.CreateBatch(ctx, userID, studio.CreateBatchInput{
 		Name:        campaign.Name,
 		Description: desc,
 		Jobs:        jobs,

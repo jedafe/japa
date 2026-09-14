@@ -148,7 +148,7 @@ func UserUpdateProfileHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("not_self", "user.update_profile can only update the calling user's own profile"), nil
 		}
 
-		if err := deps.Users.UpdateProfile(ctx, tenantID, userID, &UserProfileUpdateRequest{
+		if err := deps.Users.UpdateProfile(ctx, userID, &UserProfileUpdateRequest{
 			DisplayName:        a.DisplayName,
 			AvatarURL:          a.AvatarURL,
 			Bio:                a.Bio,

@@ -132,8 +132,8 @@ type ComparisonItemInput struct {
 
 // ComparisonCreateResult mirrors comparison.CreateComparisonResult / JCEComparisonResult.
 type ComparisonCreateResult struct {
-	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`
@@ -162,8 +162,8 @@ type ComparisonValueUpsertInput struct {
 // ComparisonDetail mirrors comparison.ComparisonDetail (the subset the AI
 // tools surface to the LLM).
 type ComparisonDetail struct {
-	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	AuthorID   pgtype.UUID                                `json:"author_id"`
 	Title      string                                     `json:"title"`
 	Slug       string                                     `json:"slug"`
@@ -278,8 +278,8 @@ type LearningStore interface {
 
 // LearningTrack mirrors learning.Track (the subset the AI tools surface).
 type LearningTrack struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Title       string             `json:"title"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description,omitempty"`
@@ -317,8 +317,8 @@ type LearningUpdateTrackInput struct {
 
 // LearningLesson mirrors learning.Lesson (the subset the AI tools surface).
 type LearningLesson struct {
-	ID              pgtype.UUID `json:"id"`
-	TenantID        pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	ModuleID        pgtype.UUID        `json:"module_id"`
 	Title           string             `json:"title"`
 	Slug            string             `json:"slug"`
@@ -482,7 +482,7 @@ type MenusUpdateMenuItemInput struct {
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (User tools).
 type UsersService interface {
 	GetProfile(ctx context.Context, userID pgtype.UUID) (*UserProfile, error)
-	UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UserProfileUpdateRequest) error
+	UpdateProfile(ctx context.Context, userID pgtype.UUID, req *UserProfileUpdateRequest) error
 }
 
 // UserProfile mirrors users.UserProfileResponse (the subset the AI tools

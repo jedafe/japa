@@ -14,8 +14,8 @@ import (
 // persists an AI-generated draft for HITL review.
 func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsPageRequest) error {
 	var tenantID pgtype.UUID
-	if err := tenantID.Scan(req.TenantID); err != nil {
-		return fmt.Errorf("docs: invalid the id %q: %w", req.TenantID, err)
+	if err := tenantID.Scan(""); err != nil {
+		return fmt.Errorf("docs: invalid the id %q: %w", "", err)
 	}
 
 	if req.Title == "" {

@@ -173,7 +173,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	case "country", "state", "city":
 		return a.populateGeoSpace(ctx, &space, spaceType)
 	case "university":
-		return a.populateUniversitySpace(ctx, &space, tid)
+		return a.populateUniversitySpace(ctx, &space)
 	default:
 		slog.Info("space:auto_populate — custom space, no auto-population needed", "space_id", spaceID, "type", spaceType)
 	}
@@ -231,7 +231,7 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 // founded_year, student_population, and official_website_url. When the
 // university logo enqueuer is wired and a logo URL is found, it enqueues
 // university:fetch_logo to download and store the logo.
-func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *gen.GetSpaceByIDRow, tenantID pgtype.UUID) error {
+func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *gen.GetSpaceByIDRow) error {
 	uniData, err := fetchWikidataUniversity(ctx, space.Name)
 	if err != nil {
 		// Retryable errors (429 rate limit, network): return the error so
@@ -247,7 +247,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 		// Non-retryable errors: fall back to Wikipedia summary, but still
 		// enrich custom fields and enqueue logo fetch from the Wikipedia
 		// thumbnail if available.
-		return a.populateUniversityFromWikipedia(ctx, space, tenantID)
+		return a.populateUniversityFromWikipedia(ctx, space)
 	}
 
 	wikiJSON, err := json.Marshal(uniData)
@@ -278,7 +278,7 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 // summary, stores it as wiki_content, enriches the official_website_url
 // custom field from the Wikipedia content URL, and enqueues a logo fetch
 // from the Wikipedia thumbnail if available.
-func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, space *gen.GetSpaceByIDRow, tenantID pgtype.UUID) error {
+func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, space *gen.GetSpaceByIDRow) error {
 	wikiSummary, err := fetchWikipediaSummary(ctx, space.Name)
 	if err != nil {
 		if errors.Is(err, ErrWikiNotFound) {

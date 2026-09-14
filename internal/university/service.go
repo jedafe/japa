@@ -240,7 +240,7 @@ func (s *Service) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.
 
 // ApproveTrack publishes a submitted track to the marketplace and enqueues
 // the course-approved notification + search index sync.
-func (s *Service) ApproveTrack(ctx context.Context, tenantID, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
+func (s *Service) ApproveTrack(ctx context.Context, trackID pgtype.UUID) (gen.ApproveUniversityTrackRow, error) {
 	row, err := s.store.ApproveTrack(ctx, trackID)
 	if err != nil {
 		return gen.ApproveUniversityTrackRow{}, err

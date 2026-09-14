@@ -461,8 +461,7 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -497,7 +496,7 @@ func (h *Handlers) HandleAdminAwardBadge(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	badge, err := h.service.AwardBadge(r.Context(), tenantID, badgeID, targetUserID, user.UserID)
+	badge, err := h.service.AwardBadge(r.Context(), badgeID, targetUserID, user.UserID)
 	if err != nil {
 		slog.Error("gamification: admin award badge failed", "error", err)
 		errpkg.WriteError(w, http.StatusBadRequest, "badge_award_failed", err.Error())

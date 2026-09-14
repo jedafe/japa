@@ -1040,7 +1040,7 @@ func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request
 
 // AdminApproveTrack handles POST /admin/university/tracks/{id}/approve.
 func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := requireTenant(w, r)
+	_, ok := requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1050,7 +1050,7 @@ func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	track, err := h.service.ApproveTrack(r.Context(), tenantID, trackID)
+	track, err := h.service.ApproveTrack(r.Context(), trackID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

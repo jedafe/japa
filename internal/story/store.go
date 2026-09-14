@@ -36,8 +36,8 @@ func NewStore(database *db.DB) *Store {
 // StoryMeta holds the structured fields for a single story.
 // //nolint:revive // exported: stutter naming is intentional
 type StoryMeta struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	ContentID          pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
@@ -62,8 +62,8 @@ type StoryMeta struct {
 // returned by list and get-by-slug queries.
 // //nolint:revive // exported: stutter naming is intentional
 type StoryRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	AuthorID           pgtype.UUID
 	Title              string
 	Slug               string
@@ -142,8 +142,9 @@ ON CONFLICT (content_id) DO UPDATE SET
 `
 
 	_, err := s.pool.Writer.Exec(
-		ctx, q,
-		meta.TenantID, meta.ContentID, meta.OriginSpaceID, meta.DestinationSpaceID,
+		ctx, q, (pgtype.UUID{}),
+
+		meta.ContentID, meta.OriginSpaceID, meta.DestinationSpaceID,
 		meta.RelocationYear, meta.VisaCategory, meta.Profession, meta.BiggestChallenge,
 		meta.MostUsefulResource, meta.BestAdvice, meta.Verified,
 		meta.AiGenerated, meta.AiModel, meta.HitlReviewedBy, meta.AiGeneratedAt,
@@ -317,7 +318,6 @@ WHERE content_id = $1
 
 // ListStoriesFilter holds the filter parameters for listing stories.
 type ListStoriesFilter struct {
-	TenantID      pgtype.UUID
 	OriginSpaceID pgtype.UUID // optional
 	DestSpaceID   pgtype.UUID // optional
 	VisaCategory  string      // optional
@@ -613,7 +613,6 @@ LIMIT 1
 
 // AdminListStoriesFilter holds filter parameters for the admin moderation list.
 type AdminListStoriesFilter struct {
-	TenantID    pgtype.UUID
 	Status      string      // optional: filter by content status
 	Verified    *bool       // optional: filter by verified state
 	Q           string      // optional: search title

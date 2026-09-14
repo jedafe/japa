@@ -47,8 +47,8 @@ func NewStore(database *db.DB) *Store {
 // CalendarEntry represents a single calendar_entries row.
 // //nolint:revive // exported: stutter naming is intentional
 type CalendarEntry struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	Title              string
 	Description        *string
 	Category           string
@@ -248,7 +248,7 @@ ORDER BY e.occurs_at ASC
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -325,7 +325,7 @@ LIMIT 1
 	var e CalendarEntry
 
 	err := s.pool.Writer.QueryRow(ctx, q, id, tenantID).Scan(
-		&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+		&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
 		&e.DestinationSpaceID, &e.OriginSpaceID,
 		&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 		&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -379,7 +379,6 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // ListEntriesFilter holds filter parameters for the public entry list.
 type ListEntriesFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	Category           string
@@ -481,7 +480,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,
@@ -609,7 +608,6 @@ func (s *Store) Unsubscribe(ctx context.Context, userID, destSpaceID pgtype.UUID
 
 // AdminListEntriesFilter holds filter parameters for the admin entry list.
 type AdminListEntriesFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	Category           string
@@ -741,7 +739,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var e CalendarEntry
 		if err := rows.Scan(
-			&e.ID, &e.TenantID, &e.Title, &e.Description, &e.Category,
+			&e.ID, &(pgtype.UUID{}), &e.Title, &e.Description, &e.Category,
 			&e.DestinationSpaceID, &e.OriginSpaceID,
 			&e.OccursAt, &e.EndsAt, &e.IsRecurring, &e.RecurrencePattern,
 			&e.SourceURL, &e.Status, &e.SubmittedBy, &e.ReviewedBy, &e.ReviewedAt,

@@ -74,8 +74,8 @@ func IsValidCategory(c string) bool {
 
 // Post is a single mutual_aid_posts row.
 type Post struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	UserID             pgtype.UUID
 	PostType           string
 	Category           *string
@@ -105,7 +105,6 @@ type PostRow struct {
 
 // CreatePostInput holds the fields for inserting a new post.
 type CreatePostInput struct {
-	TenantID           pgtype.UUID
 	UserID             pgtype.UUID
 	PostType           string
 	Category           *string
@@ -126,7 +125,6 @@ type UpdatePostInput struct {
 
 // ListPostsFilter holds the filter parameters for listing active posts.
 type ListPostsFilter struct {
-	TenantID           pgtype.UUID
 	PostType           string      // optional: need | offer | skill_swap
 	Category           string      // optional
 	DestinationSpaceID pgtype.UUID // optional
@@ -137,7 +135,6 @@ type ListPostsFilter struct {
 
 // AdminListPostsFilter holds filter parameters for the admin moderation list.
 type AdminListPostsFilter struct {
-	TenantID           pgtype.UUID
 	PostType           string // optional
 	Status             string // optional
 	DestinationSpaceID pgtype.UUID
@@ -162,12 +159,13 @@ RETURNING id, user_id, post_type, category, title, description,
 	var p Post
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		input.TenantID, input.UserID, input.PostType, input.Category,
+		ctx, q, (pgtype.UUID{}),
+
+		input.UserID, input.PostType, input.Category,
 		input.Title, input.Description, input.DestinationSpaceID,
 		input.CitySpaceID, input.ExpiresAt,
 	).Scan(
-		&p.ID, &p.TenantID, &p.UserID, &p.PostType, &p.Category, &p.Title,
+		&p.ID, &(pgtype.UUID{}), &p.UserID, &p.PostType, &p.Category, &p.Title,
 		&p.Description, &p.DestinationSpaceID, &p.CitySpaceID, &p.ExpiresAt,
 		&p.IsFulfilled, &p.Status, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt,
 	)
@@ -202,7 +200,7 @@ LIMIT 1
 	var r PostRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.UserID, &r.PostType, &r.Category, &r.Title,
+		&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
 		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 		&r.AuthorName, &r.AuthorAvatar,
@@ -302,7 +300,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.PostType, &r.Category, &r.Title,
+			&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
@@ -506,7 +504,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r PostRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.UserID, &r.PostType, &r.Category, &r.Title,
+			&r.ID, &(pgtype.UUID{}), &r.UserID, &r.PostType, &r.Category, &r.Title,
 			&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
 			&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
 			&r.AuthorName, &r.AuthorAvatar,
@@ -598,7 +596,7 @@ ORDER BY expires_at ASC`
 
 	for rows.Next() {
 		var p ExpiringPost
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
+		if err := rows.Scan(&p.ID, &(pgtype.UUID{}), &p.UserID, &p.Title, &p.ExpiresAt); err != nil {
 			return nil, fmt.Errorf("mutualaid: expiring soon scan: %w", err)
 		}
 
@@ -610,8 +608,8 @@ ORDER BY expires_at ASC`
 
 // ExpiringPost is a post that is about to expire (for notifications).
 type ExpiringPost struct {
-	ID        pgtype.UUID
-	TenantID  pgtype.UUID
+	ID pgtype.UUID
+
 	UserID    pgtype.UUID
 	Title     string
 	ExpiresAt pgtype.Timestamptz

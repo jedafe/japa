@@ -52,9 +52,9 @@ type CreateAPIKeyResponse struct {
 
 // APIKeyContext holds the validated API key info injected into request context.
 type APIKeyContext struct {
-	KeyID         pgtype.UUID
-	UserID        pgtype.UUID
-	TenantID      pgtype.UUID
+	KeyID  pgtype.UUID
+	UserID pgtype.UUID
+
 	Scopes        []string
 	KeyPrefix     string
 	RateLimitTier string

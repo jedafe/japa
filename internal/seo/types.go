@@ -8,8 +8,8 @@ import (
 
 // PageMetadata holds all SEO-relevant metadata for a content page.
 type PageMetadata struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Slug        string    `json:"slug"`

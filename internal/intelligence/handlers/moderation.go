@@ -407,7 +407,6 @@ type intelRecordResponse struct {
 	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
 	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
 	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
-	TenantID          pgtype.UUID
 }
 
 // intelRecordToResponse converts a generated intel record row to the

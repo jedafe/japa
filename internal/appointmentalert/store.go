@@ -49,8 +49,8 @@ func NewStore(database *db.DB) *Store {
 // EmbassyRow is a row from monitored_embassies, optionally joined to
 // spaces for the destination name.
 type EmbassyRow struct {
-	ID                  pgtype.UUID
-	TenantID            pgtype.UUID
+	ID pgtype.UUID
+
 	DestinationSpaceID  pgtype.UUID
 	DestSpaceName       *string
 	Slug                string
@@ -65,8 +65,8 @@ type EmbassyRow struct {
 
 // AlertRow is a row from appointment_alerts.
 type AlertRow struct {
-	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
+	ID pgtype.UUID
+
 	UserID               pgtype.UUID
 	DestinationSpaceID   pgtype.UUID
 	DestSpaceName        *string
@@ -87,7 +87,6 @@ type AlertRow struct {
 // ListEmbassiesFilter holds the filter parameters for listing monitored
 // embassies.
 type ListEmbassiesFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	ActiveOnly         bool
 	Limit              int32
@@ -258,8 +257,9 @@ RETURNING id, destination_space_id, slug, name, booking_url,
 	var out EmbassyRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		r.TenantID, r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
+		ctx, q, (pgtype.UUID{}),
+
+		r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
 		r.PollIntervalSeconds, r.IsActive,
 	).Scan(
 		&out.ID, &out.DestinationSpaceID, &out.Slug, &out.Name,
@@ -396,11 +396,10 @@ WHERE id = $1
 
 // ListUserAlertsFilter holds the filter parameters for a user's alerts.
 type ListUserAlertsFilter struct {
-	TenantID pgtype.UUID
-	UserID   pgtype.UUID
-	Status   string // optional: active|paused|fired|expired
-	Limit    int32
-	Offset   int32
+	UserID pgtype.UUID
+	Status string // optional: active|paused|fired|expired
+	Limit  int32
+	Offset int32
 }
 
 // ListUserAlerts returns a paginated list of a user's appointment alerts.
@@ -552,8 +551,9 @@ RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
 	var out AlertRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		r.TenantID, r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
+		ctx, q, (pgtype.UUID{}),
+
+		r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
 		r.DateRangeStart, r.DateRangeEnd, status, r.ExpiresAt, channels,
 	).Scan(
 		&out.ID, &out.UserID, &out.DestinationSpaceID,

@@ -414,7 +414,7 @@ func (s *Service) GetProgress(ctx context.Context, userID, guideID pgtype.UUID) 
 // nil notes preserves the existing notes via SQL COALESCE. When the item is
 // the final one needed for full completion and checklist.completion_points >
 // 0, a wallet:award_points task is enqueued fire-and-forget (Rule 8).
-func (s *Service) UpsertProgress(ctx context.Context, tenantID, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string) (gen.ChecklistProgress, error) {
+func (s *Service) UpsertProgress(ctx context.Context, userID, guideID pgtype.UUID, itemKey string, completed *bool, notes *string) (gen.ChecklistProgress, error) {
 	// Resolve nil completed: a note-only PATCH must preserve the existing
 	// completion state. Fetch the current row; if none exists, default to
 	// false (new item, not yet checked).

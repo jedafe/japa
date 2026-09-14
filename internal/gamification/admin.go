@@ -117,7 +117,7 @@ func (s *Service) UpdateBadge(ctx context.Context, badgeID pgtype.UUID, in Updat
 
 // AwardBadge manually awards a badge to a user (admin). Returns the awarded
 // badge details. If the user already has the badge, returns the existing row.
-func (s *Service) AwardBadge(ctx context.Context, tenantID, badgeID, userID, awardedBy pgtype.UUID) (BadgeWithDetails, error) {
+func (s *Service) AwardBadge(ctx context.Context, badgeID, userID, awardedBy pgtype.UUID) (BadgeWithDetails, error) {
 	// Verify the badge exists.
 	badge, err := s.store.GetBadgeDefinitionByID(ctx, badgeID)
 	if err != nil {

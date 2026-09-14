@@ -37,8 +37,8 @@ func NewStore(database *db.DB) *Store {
 
 // Timeline holds a single visa_timelines row.
 type Timeline struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	UserID             pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
@@ -59,8 +59,8 @@ type Timeline struct {
 
 // Milestone holds a single visa_timeline_milestones row.
 type Milestone struct {
-	ID            pgtype.UUID
-	TenantID      pgtype.UUID
+	ID pgtype.UUID
+
 	TimelineID    pgtype.UUID
 	MilestoneType string
 	OccurredAt    pgtype.Timestamptz
@@ -70,8 +70,8 @@ type Milestone struct {
 
 // ProcessingStat holds a single visa_processing_stats row.
 type ProcessingStat struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	VisaCategory       string
@@ -564,7 +564,6 @@ ORDER BY period_start ASC
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID           pgtype.UUID
 	UserID             pgtype.UUID // optional: filter by submitter
 	DestinationSpaceID pgtype.UUID // optional
 	VisaCategory       string      // optional
@@ -816,8 +815,7 @@ DO UPDATE SET
 // visa_timeline:prompt_update nudge (§83, ADR-091). Only timelines updated
 // more than 7 days ago are returned so the prompt is not spammy.
 func (s *Store) InProgressTimelineOwners(ctx context.Context) ([]struct {
-	UserID   pgtype.UUID
-	TenantID pgtype.UUID
+	UserID pgtype.UUID
 }, error,
 ) {
 	const q = `
@@ -842,14 +840,12 @@ WHERE t.deleted_at IS NULL
 	defer rows.Close()
 
 	var out []struct {
-		UserID   pgtype.UUID
-		TenantID pgtype.UUID
+		UserID pgtype.UUID
 	}
 
 	for rows.Next() {
 		var r struct {
-			UserID   pgtype.UUID
-			TenantID pgtype.UUID
+			UserID pgtype.UUID
 		}
 
 		if err := rows.Scan(&r.UserID); err != nil {
@@ -914,8 +910,8 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 	}
 
 	var raws []struct {
-		ID            string `json:"id"`
-		TenantID      string
+		ID string `json:"id"`
+
 		TimelineID    string  `json:"timeline_id"`
 		MilestoneType string  `json:"milestone_type"`
 		OccurredAt    string  `json:"occurred_at"`
@@ -953,7 +949,6 @@ func decodeMilestonesJSON(raw []byte) []Milestone {
 // CreateProcessingTimeInput holds the fields for inserting a processing-time
 // stat row. It is used by the service layer after the request has been parsed.
 type CreateProcessingTimeInput struct {
-	TenantID           pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	VisaCategory       string

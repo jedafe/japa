@@ -304,7 +304,7 @@ func (h *Handlers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UpdateProfile(r.Context(), user.TenantID, user.UserID, &req); err != nil {
+	if err := h.Service.UpdateProfile(r.Context(), user.UserID, &req); err != nil {
 		handleServiceError(w, err)
 		return
 	}

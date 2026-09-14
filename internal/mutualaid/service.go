@@ -458,7 +458,8 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 			zeroUUID := pgtype.UUID{}
 
 			for _, p := range expiring {
-				if !p.UserID.Valid || !p.TenantID.Valid {
+				if !p.UserID.Valid || !(pgtype.UUID{}).
+					Valid {
 					continue
 				}
 

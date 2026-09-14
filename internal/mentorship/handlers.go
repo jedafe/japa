@@ -542,7 +542,7 @@ func (h *Handlers) GetMyMentorProfile(w http.ResponseWriter, r *http.Request) {
 // UpdateMyMentorProfile toggles is_mentor and sets capacity/areas/bio.
 // PATCH /api/v1/me/mentor-profile.
 func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -564,7 +564,7 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	profile, err := h.Service.UpdateMentorProfile(r.Context(), tenantID, userID,
+	profile, err := h.Service.UpdateMentorProfile(r.Context(), userID,
 		input.IsMentor, input.MentorCapacity, input.MentorAreas, input.MentorBio)
 	if err != nil {
 		if errors.Is(err, ErrCapacityExceeded) {
@@ -736,7 +736,7 @@ func (h *Handlers) ListIncomingConnections(w http.ResponseWriter, r *http.Reques
 // Only the mentor of the connection can accept.
 // PATCH /api/v1/me/mentorship/incoming/{id}/accept.
 func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -752,7 +752,7 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := h.Service.AcceptConnection(r.Context(), tenantID, userID, connID)
+	conn, err := h.Service.AcceptConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
@@ -812,7 +812,7 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 // Either party (mentor or mentee) can complete.
 // PATCH /api/v1/mentorship/{id}/complete.
 func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -828,7 +828,7 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := h.Service.CompleteConnection(r.Context(), tenantID, userID, connID)
+	conn, err := h.Service.CompleteConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):
@@ -850,7 +850,7 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 // Either party (mentor or mentee) can cancel.
 // PATCH /api/v1/mentorship/{id}/cancel.
 func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -878,7 +878,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn, err := h.Service.CancelConnection(r.Context(), tenantID, userID, connID, input.CancelReason)
+	conn, err := h.Service.CancelConnection(r.Context(), userID, connID, input.CancelReason)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrConnectionNotFound):

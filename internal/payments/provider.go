@@ -29,7 +29,6 @@ type Provider interface {
 
 // PaymentRequest holds parameters for initiating a payment.
 type PaymentRequest struct {
-	TenantID     string
 	UserID       string
 	Email        string // Required by Paystack /transaction/initialize
 	Amount       int64

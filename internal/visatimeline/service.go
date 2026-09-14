@@ -721,7 +721,7 @@ func parseSpaceID(v string) (pgtype.UUID, error) {
 }
 
 // CreateProcessingTime creates a new visa_processing_stats row.
-func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID, input CreateProcessingTimeRequest) (ProcessingStatDTO, error) {
+func (s *Service) CreateProcessingTime(ctx context.Context, input CreateProcessingTimeRequest) (ProcessingStatDTO, error) {
 	if input.DestinationSpaceID == "" {
 		return ProcessingStatDTO{}, errors.New("destination_space_id is required")
 	}
@@ -755,7 +755,7 @@ func (s *Service) CreateProcessingTime(ctx context.Context, tenantID pgtype.UUID
 	}
 
 	row, err := s.store.CreateProcessingTime(ctx, CreateProcessingTimeInput{
-		TenantID:           tenantID,
+
 		OriginSpaceID:      originSpaceID,
 		DestinationSpaceID: destSpaceID,
 		VisaCategory:       input.VisaCategory,

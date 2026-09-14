@@ -275,7 +275,7 @@ func (h *Handlers) HandleListBatches(w http.ResponseWriter, r *http.Request) {
 
 // HandleCreateBatch — POST /api/v1/admin/studio/batches.
 func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -291,7 +291,7 @@ func (h *Handlers) HandleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	batch, jobs, err := h.svc.CreateBatch(r.Context(), tenantID, user.UserID, in)
+	batch, jobs, err := h.svc.CreateBatch(r.Context(), user.UserID, in)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "batch_create_failed", err.Error())
 		return
@@ -327,7 +327,7 @@ func (h *Handlers) HandleGetBatch(w http.ResponseWriter, r *http.Request) {
 // request — batches may contain many failed jobs and retrying them
 // synchronously would time out.
 func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -337,7 +337,7 @@ func (h *Handlers) HandleRetryBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.EnqueueRetryFailed(r.Context(), tenantID, id); err != nil {
+	if err := h.svc.EnqueueRetryFailed(r.Context(), id); err != nil {
 		h.writeError(w, http.StatusBadRequest, "batch_retry_failed", err.Error())
 		return
 	}

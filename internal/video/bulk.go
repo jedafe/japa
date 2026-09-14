@@ -316,7 +316,7 @@ func (s *Service) importBulkURLs(ctx context.Context, userID pgtype.UUID, job ge
 		imported++
 
 		if s.content != nil {
-			if err := s.createVideoContent(ctx, pgtype.UUID{}, userID, job, result.Source); err != nil {
+			if err := s.createVideoContent(ctx, userID, job, result.Source); err != nil {
 				errorLog = append(errorLog, bulkErrorLogEntry{URL: rawURL, Message: "content: " + err.Error()})
 				slog.WarnContext(ctx, "failed to create content for bulk video", "url", rawURL, "error", err)
 			}
@@ -571,7 +571,7 @@ func (s *Service) failJob(ctx context.Context, job gen.VideoImportJob, message s
 	return err
 }
 
-func (s *Service) createVideoContent(ctx context.Context, tenantID, userID pgtype.UUID, job gen.VideoImportJob, source gen.VideoSource) error {
+func (s *Service) createVideoContent(ctx context.Context, userID pgtype.UUID, job gen.VideoImportJob, source gen.VideoSource) error {
 	if s.content == nil {
 		return nil
 	}

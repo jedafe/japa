@@ -59,8 +59,8 @@ type CampaignListFilter struct {
 
 // Campaign is the API-facing content_campaigns row.
 type Campaign struct {
-	ID                    string `json:"id"`
-	TenantID              string
+	ID string `json:"id"`
+
 	Name                  string   `json:"name"`
 	Prompt                string   `json:"prompt"`
 	Status                string   `json:"status"`

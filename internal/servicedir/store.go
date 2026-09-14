@@ -99,8 +99,8 @@ func NewStore(database *db.DB) *Store {
 
 // ServiceMeta holds the structured fields for a single service listing.
 type ServiceMeta struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	ContentID          pgtype.UUID
 	OrgID              pgtype.UUID
 	ServiceCategory    *string
@@ -124,8 +124,8 @@ type ServiceMeta struct {
 // ServiceRow is the joined result of contents + service_listing_meta +
 // spaces + organizations, returned by list and get-by-slug queries.
 type ServiceRow struct {
-	ID                pgtype.UUID
-	TenantID          pgtype.UUID
+	ID pgtype.UUID
+
 	AuthorID          pgtype.UUID
 	Title             string
 	Slug              string
@@ -186,8 +186,9 @@ INSERT INTO service_listing_meta (
 	}
 
 	_, err := s.pool.Writer.Exec(
-		ctx, q,
-		meta.TenantID, meta.ContentID, meta.OrgID, meta.ServiceCategory,
+		ctx, q, (pgtype.UUID{}),
+
+		meta.ContentID, meta.OrgID, meta.ServiceCategory,
 		meta.DestinationSpaceID, meta.CitySpaceID, originCommunities,
 		meta.IsRemote, meta.WebsiteURL, meta.BookingURL, meta.PriceRange,
 		meta.IsVerified, meta.VerificationType, claimStatus, meta.ClaimedByOrgID,
@@ -214,7 +215,7 @@ WHERE content_id = $1
 	var m ServiceMeta
 
 	err := s.pool.Reader.QueryRow(ctx, q, contentID, tenantID).Scan(
-		&m.ID, &m.TenantID, &m.ContentID, &m.OrgID, &m.ServiceCategory,
+		&m.ID, &(pgtype.UUID{}), &m.ContentID, &m.OrgID, &m.ServiceCategory,
 		&m.DestinationSpaceID, &m.CitySpaceID, &m.OriginCommunities,
 		&m.IsRemote, &m.WebsiteURL, &m.BookingURL, &m.PriceRange,
 		&m.IsVerified, &m.VerificationType, &m.ClaimStatus, &m.ClaimedByOrgID,
@@ -271,7 +272,6 @@ WHERE content_id = $1
 
 // ListServicesFilter holds the filter parameters for listing services.
 type ListServicesFilter struct {
-	TenantID        pgtype.UUID
 	DestSpaceID     pgtype.UUID // optional, ?dest=
 	CitySpaceID     pgtype.UUID // optional, ?city= (BUG-005)
 	ServiceCategory string      // optional, ?category=
@@ -400,7 +400,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OrgID, &r.OrgName, &r.OrgSlug,
@@ -471,7 +471,7 @@ LIMIT 1
 	var r ServiceRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
-		&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+		&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 		&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 		&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 		&r.OrgID, &r.OrgName, &r.OrgSlug,
@@ -497,7 +497,6 @@ LIMIT 1
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID        pgtype.UUID
 	DestSpaceID     pgtype.UUID // optional, ?dest= (BUG-011)
 	Status          string      // optional: filter by content status
 	IsVerified      *bool       // optional: filter by verified state
@@ -614,7 +613,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ServiceRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
+			&r.ID, &(pgtype.UUID{}), &r.AuthorID, &r.Title, &r.Slug, &r.Body, &r.BodyHTML,
 			&r.Status, &r.Visibility, &r.ViewCount, &r.CommentCount,
 			&r.PublishedAt, &r.CreatedAt, &r.UpdatedAt,
 			&r.OrgID, &r.OrgName, &r.OrgSlug,

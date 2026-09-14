@@ -36,8 +36,8 @@ func NewStore(database *db.DB) *Store {
 // ProfileRow is the joined result of user_profiles + users + spaces,
 // returned by get-by-user and get-by-username queries.
 type ProfileRow struct {
-	UserID            pgtype.UUID
-	TenantID          pgtype.UUID
+	UserID pgtype.UUID
+
 	Username          *string
 	DisplayName       *string
 	AvatarURL         *string

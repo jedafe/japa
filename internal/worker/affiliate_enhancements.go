@@ -172,7 +172,6 @@ var affScanDomains = []string{
 func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		ContentID string `json:"content_id"`
-		TenantID  string
 	}
 
 	if err := json.Unmarshal(t.Payload(), &payload); err != nil {
@@ -188,7 +187,7 @@ func HandleContentScanAffiliateLinks(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if err := tenantID.Scan(payload.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		return err
 	}
 	// AUDIT-BE-TASK-001: respect the affiliate.scan_on_publish system setting.

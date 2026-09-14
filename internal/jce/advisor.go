@@ -322,11 +322,11 @@ func fallbackAdvisorText(kind string, input AdvisorInput, ranking []AdvisorRankI
 // builds the prompt, calls the dispatcher, and returns a result whose ranking
 // and next actions are derived from the engine.
 func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInput) (AdvisorResult, error) {
-	if !s.featureEnabled(ctx, input.TenantID, advisorFeatureFlag) {
+	if !s.featureEnabled(ctx, (pgtype.UUID{}), advisorFeatureFlag) {
 		return AdvisorResult{}, fmt.Errorf("%w: %s disabled", errpkg.ErrFeatureDisabled, advisorFeatureFlag)
 	}
 
-	if !s.featureEnabled(ctx, input.TenantID, "feature.jce.scoring") {
+	if !s.featureEnabled(ctx, (pgtype.UUID{}), "feature.jce.scoring") {
 		return AdvisorResult{}, fmt.Errorf("%w: feature.jce.scoring disabled", errpkg.ErrFeatureDisabled)
 	}
 
@@ -364,7 +364,9 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	cacheSeed := advisorCacheSeed(kind, input)
 
-	cacheKey := advisorCacheKey(input.TenantID, input.ContentID, ptrToUUID(input.ProfileID), cacheSeed)
+	cacheKey := advisorCacheKey((pgtype.UUID{}),
+
+		input.ContentID, ptrToUUID(input.ProfileID), cacheSeed)
 	if s.vk != nil {
 		data, err := s.vk.Get(ctx, cacheKey).Bytes()
 		if err == nil && len(data) > 0 {
@@ -441,7 +443,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 
 	var recommendations []ComparisonRecommendation
 	if kind == "recommend" || kind == "analyze" {
-		recommendations, err = s.ListRecommendations(ctx, input.ContentID, input.TenantID, input.UserID, input.ProfileID, recCount)
+		recommendations, err = s.ListRecommendations(ctx, input.ContentID, (pgtype.UUID{}), input.UserID, input.ProfileID, recCount)
 		if err != nil {
 			// Fall back to the recommendations embedded in the score result if
 			// the recommendation store cannot be queried.
@@ -475,7 +477,7 @@ func (s *Service) runAdvisor(ctx context.Context, kind string, input AdvisorInpu
 		}
 	}
 
-	freshness, err := s.FreshnessForComparison(ctx, input.ContentID, input.TenantID, input.UserID)
+	freshness, err := s.FreshnessForComparison(ctx, input.ContentID, (pgtype.UUID{}), input.UserID)
 	if err != nil {
 		return AdvisorResult{}, fmt.Errorf("loading freshness: %w", err)
 	}

@@ -162,8 +162,7 @@ func (s *Service) FeatureEnabled(ctx context.Context) bool {
 
 // EnrollInput is an exported type.
 type EnrollInput struct {
-	TenantID pgtype.UUID
-	UserID   pgtype.UUID
+	UserID pgtype.UUID
 }
 
 // Enroll is an exported method.
@@ -399,7 +398,6 @@ type RecordClickInput struct {
 	IPHash      string
 	UAHash      string
 	ReferrerURL *string
-	TenantID    pgtype.UUID
 }
 
 // RecordClick is an exported method.

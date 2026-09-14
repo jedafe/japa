@@ -14,7 +14,6 @@ type GenerateDocsPageRequest struct {
 	Audience        string
 	RelatedFeatures []string
 	UserID          string
-	TenantID        string
 }
 
 // DocsPageGenerator defines the contract for generating a docs page via AI

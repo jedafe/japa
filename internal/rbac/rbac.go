@@ -51,8 +51,8 @@ type Permission struct {
 
 // Group represents a user group.
 type Group struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name        string   `json:"name"`
 	Slug        string   `json:"slug"`
 	Description string   `json:"description"`

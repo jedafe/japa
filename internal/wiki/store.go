@@ -36,8 +36,8 @@ func NewStore(database *db.DB) *Store {
 // WikiPage represents a single wiki page row.
 // //nolint:revive // exported: stutter naming is intentional
 type WikiPage struct {
-	ID               pgtype.UUID
-	TenantID         pgtype.UUID
+	ID pgtype.UUID
+
 	SpaceID          pgtype.UUID
 	Slug             string
 	Title            string
@@ -86,8 +86,8 @@ type WikiDestination struct {
 // WikiRevision represents a single revision row.
 // //nolint:revive // exported: stutter naming is intentional
 type WikiRevision struct {
-	ID              pgtype.UUID
-	TenantID        pgtype.UUID
+	ID pgtype.UUID
+
 	WikiPageID      pgtype.UUID
 	Content         []byte // TipTap JSON
 	Summary         *string
@@ -699,7 +699,6 @@ RETURNING id
 
 // AdminListPagesFilter holds filter parameters for the admin page list.
 type AdminListPagesFilter struct {
-	TenantID pgtype.UUID
 	SpaceID  pgtype.UUID
 	Category string
 	IsLocked *bool
