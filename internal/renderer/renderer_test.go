@@ -20,11 +20,6 @@ func TestCacheKey(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 
-	var ()
-	if err := (error)(nil); err != nil {
-		t.Fatal(err)
-	}
-
 	var contentID pgtype.UUID
 	if err := contentID.Scan("550e8400-e29b-41d4-a716-446655440000"); err != nil {
 		t.Fatal(err)
@@ -34,12 +29,12 @@ func TestCacheKey(t *testing.T) {
 
 	key := r.cacheKey(contentID, updatedAt)
 
-	// Key should start with the jc:render:{}: prefix
+	// Key should start with the jc:render:: prefix
 	if len(key) < 10 {
 		t.Fatalf("cache key too short: %s", key)
 	}
 
-	if key[:11] != "jc:render:1" {
+	if key[:11] != "jc:render::" {
 		t.Fatalf("cache key prefix wrong: %s", key)
 	}
 
@@ -57,16 +52,6 @@ func TestCacheKey(t *testing.T) {
 		t.Fatalf("different timestamps produced same key: %s", key)
 	}
 
-	// Different tenant must produce a different key (§4.2 tenant scoping)
-	var tenantID2 pgtype.UUID
-	if err := tenantID2.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
-		t.Fatal(err)
-	}
-
-	key4 := r.cacheKey(contentID, updatedAt)
-	if key == key4 {
-		t.Fatalf("different tenants produced same key: %s", key)
-	}
 }
 
 func TestNew(t *testing.T) {

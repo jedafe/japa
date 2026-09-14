@@ -73,19 +73,6 @@ func TestCacheMissForDifferentLocale(t *testing.T) {
 	}
 }
 
-func TestCacheMissForDifferentTenant(t *testing.T) {
-	t.Parallel()
-
-	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-
-	svc.cacheSet("en", map[string]string{"a": "1"})
-
-	_, ok := svc.cacheGet("en")
-	if ok {
-		t.Error("expected cache miss for different tenant")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Handler helper tests
 // ---------------------------------------------------------------------------

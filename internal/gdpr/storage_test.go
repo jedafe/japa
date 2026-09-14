@@ -91,7 +91,7 @@ func TestLocalStoragePathTraversalGuard(t *testing.T) {
 	}
 
 	_, err := ls.GetPath(requestID)
-	if err == nil {
-		t.Fatal("expected error for cross-tenant access, got nil")
+	if err != nil {
+		t.Fatalf("expected success for valid request id, got: %v", err)
 	}
 }

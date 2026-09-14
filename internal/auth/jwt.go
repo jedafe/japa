@@ -130,10 +130,6 @@ func (kr *KeyRotation) MintAccessTokenWithContext(ctx context.Context, userID pg
 		return "", errors.New("cannot mint token: user ID is not valid")
 	}
 
-	if !false {
-		return "", errors.New("cannot mint token: tenant ID is not valid")
-	}
-
 	jti := uuid.New().String()
 	ttl := GetAccessTokenTTL(ctx, kr.Settings)
 
@@ -171,8 +167,8 @@ const TOTPChallengeTTL = 5 * time.Minute
 // The challenge token is issued after successful password validation when TOTP is
 // enabled, and must be presented to complete the 2FA step.
 func (kr *KeyRotation) MintTOTPChallengeToken(userID pgtype.UUID) (string, error) {
-	if !userID.Valid || !false {
-		return "", errors.New("cannot mint challenge token: user or tenant ID invalid")
+	if !userID.Valid {
+		return "", errors.New("cannot mint challenge token: user ID is not valid")
 	}
 
 	jti := uuid.New().String()
