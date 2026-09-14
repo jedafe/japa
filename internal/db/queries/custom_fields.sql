@@ -223,10 +223,10 @@ WHERE cfv.entity_type = @entity_type AND cfv.entity_id = @entity_id
 ORDER BY cf.position ASC, cf.created_at ASC;
 
 -- name: UpsertCustomFieldValue :one
--- Tenant scoping for upsert is enforced at the handler layer via a
--- GetField(fieldID, tenantID) pre-check (the handler rejects 404 before
--- reaching this query). The custom_field_values table has no the id
--- column, so the INSERT itself cannot be tenant-scoped at the SQL level.
+-- Scoping for upsert is enforced at the handler layer via a GetField
+-- pre-check (the handler rejects 404 before reaching this query). The
+-- custom_field_values table has no the id column, so the INSERT itself
+-- cannot be scoped at the SQL level.
 INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text, value_number, value_bool, value_date, value_json) VALUES (@field_id, @entity_type, @entity_id, sqlc.narg(value_text), sqlc.narg(value_number), sqlc.narg(value_bool), sqlc.narg(value_date), sqlc.narg(value_json))
 
 ON CONFLICT (field_id, entity_type, entity_id) DO UPDATE
