@@ -9,16 +9,9 @@ import (
 )
 
 // Publisher is the interface for cross-instance message delivery.
-// PubSubBridge implements this using Valkey pub/sub. The targetTenantID
-// scopes space delivery so cross-tenant space ID collisions cannot leak
-// events on other instances (Rule 4: tenant-scoped).
+// PubSubBridge implements this using Valkey pub/sub.
 type Publisher interface {
-	Publish(event WSEvent, targetUserID, targetTenantID, targetSpaceID string)
-	// PublishTenant publishes a tenant-scoped broadcast so only instances
-	// with clients in the same tenant deliver it locally. Used for presence
-	// and other tenant-wide events that must not cross tenant boundaries
-	// (Rule 4: tenant-scoped, §5.3 cross-tenant leak prevention).
-	PublishTenant(event WSEvent, targetTenantID string)
+	Publish(event WSEvent, targetUserID, targetSpaceID string)
 }
 
 // Hub manages WebSocket connections and broadcasts.
@@ -30,7 +23,7 @@ type Hub struct {
 	// caused a reconnect war: each kicked client immediately re-minted a ticket
 	// and re-registered, kicking the other side in turn.
 	clients          map[string]map[*Client]struct{}
-	spaceSubscribers map[string]map[*Client]struct{} // tenant:space -> connections
+	spaceSubscribers map[string]map[*Client]struct{} // space -> connections
 	pubsub           Publisher
 }
 
@@ -135,7 +128,7 @@ func (h *Hub) BroadcastToUser(userID string, event WSEvent) {
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.Publish(event, userID, "", "")
+		bridge.Publish(event, userID, "")
 	}
 }
 
@@ -182,7 +175,7 @@ func (h *Hub) BroadcastToSpace(spaceID string, event WSEvent) {
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.Publish(event, "", "", spaceID)
+		bridge.Publish(event, "", spaceID)
 	}
 }
 
@@ -229,24 +222,7 @@ func (h *Hub) BroadcastToAll(event WSEvent) {
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.Publish(event, "", "", "")
-	}
-}
-
-// BroadcastToTenant sends an event to every connected client in a specific
-// tenant on this instance and publishes to Valkey for delivery on other
-// instances. Use this for presence and other tenant-scoped broadcasts so a
-// user in tenant A never receives events from tenant B (Rule 4: tenant-scoped,
-// §5.3 cross-tenant leak prevention).
-func (h *Hub) BroadcastToTenant(event WSEvent) {
-	h.deliverLocalTenant(event)
-
-	h.mu.RLock()
-	bridge := h.pubsub
-	h.mu.RUnlock()
-
-	if bridge != nil {
-		bridge.PublishTenant(event, "")
+		bridge.Publish(event, "", "")
 	}
 }
 

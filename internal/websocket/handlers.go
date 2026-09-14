@@ -225,10 +225,8 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Register with hub.
 	h.hub.Register(client)
 
-	// Send presence event to the caller's tenant only. Broadcasting to all
-	// connected clients would leak presence across tenant boundaries (Rule 4:
-	// tenant-scoped, §5.3 cross-tenant leak prevention).
-	h.hub.BroadcastToTenant(WSEvent{
+	// Send presence event to all connected clients.
+	h.hub.BroadcastToAll(WSEvent{
 		Type:    EventPresence,
 		Payload: map[string]interface{}{"user_id": userID.String(), "status": "online"},
 	})
@@ -250,13 +248,13 @@ func (c *Client) readPump(dmSvc *DMService) {
 	defer func() {
 		c.Hub.Unregister(c)
 
-		// Broadcast an offline presence event to the tenant — but only
+		// Broadcast an offline presence event to all clients — but only
 		// if the user has no other active connection (multi-device).
-		// The connect path broadcasts "online" via BroadcastToTenant;
+		// The connect path broadcasts "online" via BroadcastToAll;
 		// without this counterpart, other users see the user as online
 		// indefinitely after disconnect (§11 presence tracking).
 		if !c.Hub.IsUserOnline(c.UserID) {
-			c.Hub.BroadcastToTenant(WSEvent{
+			c.Hub.BroadcastToAll(WSEvent{
 				Type: EventPresence,
 				Payload: map[string]interface{}{
 					"user_id": c.UserID,
