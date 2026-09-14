@@ -77,17 +77,16 @@ type tagService interface {
 
 // Handlers exposes the /api/v1/intel/* HTTP routes.
 type Handlers struct {
-	intelStores   *stores.Store
-	intelSources  *sources.Service
-	followsSvc    *follows.Service
-	scholarSvc    *scholarships.Service
-	asynqClient   *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
-	settings      SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
-	defaultTenant pgtype.UUID    // tenant ID for settings reads
-	videos        videoStore     // optional; enables video source item feeds
-	contents      contentStore   // optional; enables comparison source item feeds
-	reportSvc     reportService  // optional; creates source reports from the detail page
-	tagSvc        tagService     // optional; ensures source keyword tags exist
+	intelStores  *stores.Store
+	intelSources *sources.Service
+	followsSvc   *follows.Service
+	scholarSvc   *scholarships.Service
+	asynqClient  *asynq.Client  // enqueues intel:promote on review approve (BUG-003)
+	settings     SettingsReader // system_settings reader (INTEL-016); nil → hardcoded defaults
+	videos       videoStore     // optional; enables video source item feeds
+	contents     contentStore   // optional; enables comparison source item feeds
+	reportSvc    reportService  // optional; creates source reports from the detail page
+	tagSvc       tagService     // optional; ensures source keyword tags exist
 }
 
 // defaultIntelTenantID is the system tenant UUID used as a fallback for
@@ -115,16 +114,14 @@ func NewHandlers(
 	scholarSvc *scholarships.Service,
 	asynqClient *asynq.Client,
 	settings SettingsReader,
-	defaultTenant pgtype.UUID,
 ) *Handlers {
 	return &Handlers{
-		intelStores:   intelStores,
-		intelSources:  intelSources,
-		followsSvc:    followsSvc,
-		scholarSvc:    scholarSvc,
-		asynqClient:   asynqClient,
-		settings:      settings,
-		defaultTenant: defaultTenant,
+		intelStores:  intelStores,
+		intelSources: intelSources,
+		followsSvc:   followsSvc,
+		scholarSvc:   scholarSvc,
+		asynqClient:  asynqClient,
+		settings:     settings,
 	}
 }
 
