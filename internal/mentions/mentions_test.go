@@ -281,7 +281,7 @@ type mockBlockChecker struct {
 	blocked bool
 }
 
-func (m *mockBlockChecker) IsBlocked(_ context.Context, _, _, _ pgtype.UUID) (bool, error) {
+func (m *mockBlockChecker) IsBlocked(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return m.blocked, nil
 }
 
@@ -289,7 +289,7 @@ type mockMemberChecker struct {
 	isMember bool
 }
 
-func (m *mockMemberChecker) IsMember(_ context.Context, _, _, _ pgtype.UUID) (bool, error) {
+func (m *mockMemberChecker) IsMember(_ context.Context, _, _ pgtype.UUID) (bool, error) {
 	return m.isMember, nil
 }
 
@@ -297,7 +297,7 @@ type mockUserStatusChecker struct {
 	erasedIDs map[pgtype.UUID]bool
 }
 
-func (m *mockUserStatusChecker) IsErased(_ context.Context, _, userID pgtype.UUID) (bool, error) {
+func (m *mockUserStatusChecker) IsErased(_ context.Context, userID pgtype.UUID) (bool, error) {
 	return m.erasedIDs[userID], nil
 }
 

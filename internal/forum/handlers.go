@@ -78,7 +78,7 @@ type ContentStore interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
-	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	EnsureContentScore(ctx context.Context, contentID pgtype.UUID) error
 }
 
@@ -515,7 +515,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		h.enqueueContentEmbedding(contentID, tenantID)
 	}
 
-	thread, err := h.Service.CreateThread(r.Context(), tenantID, user.UserID, CreateThreadInput{
+	thread, err := h.Service.CreateThread(r.Context(), user.UserID, CreateThreadInput{
 		ContentID:         contentID,
 		SpaceID:           spaceID,
 		ParentReplyID:     parentReplyID,
@@ -529,7 +529,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Roll back the backing content row so we don't leave an orphan.
 		if h.content != nil && contentID.Valid {
-			if delErr := h.content.DeleteContent(r.Context(), contentID, tenantID); delErr != nil {
+			if delErr := h.content.DeleteContent(r.Context(), contentID); delErr != nil {
 				slog.Warn("forum: failed to clean up backing content after thread creation failure", "content_id", contentID.String(), "error", delErr)
 			}
 		}
@@ -1019,7 +1019,7 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thread, err := h.Service.UpdateThread(r.Context(), id, tenantID, user.UserID, input.Title, input.Body, input.IsAnonymous)
+	thread, err := h.Service.UpdateThread(r.Context(), id, user.UserID, input.Title, input.Body, input.IsAnonymous)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1069,13 +1069,13 @@ func (h *Handlers) DeleteThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteThread(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.Service.DeleteThread(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	if h.content != nil && thread.ContentID.Valid {
-		if err := h.content.DeleteContent(r.Context(), thread.ContentID, tenantID); err != nil {
+		if err := h.content.DeleteContent(r.Context(), thread.ContentID); err != nil {
 			slog.Warn("forum: failed to delete backing content for thread", "content_id", thread.ContentID.String(), "error", err)
 		}
 	}
@@ -1101,8 +1101,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1127,7 +1126,7 @@ func (h *Handlers) SolveThread(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.Service.SolveThread(r.Context(), id, tenantID, user.UserID, parentReplyID); err != nil {
+	if err := h.Service.SolveThread(r.Context(), id, user.UserID, parentReplyID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1144,8 +1143,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1156,7 +1154,7 @@ func (h *Handlers) UnsolveThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.UnsolveThread(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.Service.UnsolveThread(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1308,8 +1306,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1329,7 +1326,7 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reply, err := h.Service.UpdateReply(r.Context(), id, tenantID, user.UserID, input.Body)
+	reply, err := h.Service.UpdateReply(r.Context(), id, user.UserID, input.Body)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1344,8 +1341,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1356,7 +1352,7 @@ func (h *Handlers) DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteReply(r.Context(), id, tenantID, user.UserID); err != nil {
+	if err := h.Service.DeleteReply(r.Context(), id, user.UserID); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1410,8 +1406,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1446,7 +1441,7 @@ func (h *Handlers) VoteOnThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vote, err := h.Service.Vote(r.Context(), tenantID, user.UserID, VoteInput{
+	vote, err := h.Service.Vote(r.Context(), user.UserID, VoteInput{
 		EntityType: input.EntityType,
 		EntityID:   entityID,
 		Value:      input.Value,

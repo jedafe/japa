@@ -423,7 +423,7 @@ func TestServiceIsAdminWithoutRBACReturnsFalse(t *testing.T) {
 	svc := NewService(store, nil)
 
 	// Without an RBAC resolver wired, IsAdmin returns false (defensive).
-	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true})
+	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
 	if got {
 		t.Error("IsAdmin() = true, want false when no RBAC resolver is wired")
 	}
@@ -432,7 +432,7 @@ func TestServiceIsAdminWithoutRBACReturnsFalse(t *testing.T) {
 // stubAdminChecker is a test-only AdminCapabilityChecker.
 type stubAdminChecker struct{ admin bool }
 
-func (s stubAdminChecker) HasAdminCapability(_ context.Context, _, _ pgtype.UUID) bool {
+func (s stubAdminChecker) HasAdminCapability(_ context.Context, _ pgtype.UUID) bool {
 	return s.admin
 }
 
@@ -442,7 +442,7 @@ func TestServiceIsAdminWithRBACResolver(t *testing.T) {
 	svc := NewService(store, nil)
 	svc.SetRBAC(stubAdminChecker{admin: true})
 
-	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{Bytes: [16]byte{2}, Valid: true})
+	got := svc.IsAdmin(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true})
 	if !got {
 		t.Error("IsAdmin() = false, want true when resolver reports admin capability")
 	}

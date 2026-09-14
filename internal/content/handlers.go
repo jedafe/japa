@@ -1887,7 +1887,7 @@ func (h *Handlers) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteContent(r.Context(), id, tenantID); err != nil {
+	if err := h.Service.DeleteContent(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -1948,7 +1948,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// §79: author-facing publish of a story lands in in_review (moderation
 	// queue); story moderators publish directly.
 	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID) {
-		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
+		updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -1957,7 +1957,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusPublished)
+	updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusPublished)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2022,7 +2022,7 @@ func (h *Handlers) ArchiveContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusArchived)
+	updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusArchived)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -2091,7 +2091,7 @@ func (h *Handlers) ScheduleContent(w http.ResponseWriter, r *http.Request) {
 	// Author-facing schedule submits for review; story moderators may
 	// schedule directly.
 	if prevContent.ContentType == TypeStory && !isStoryModerator(r, user.UserID) {
-		updated, err := h.Service.UpdateContentStatus(r.Context(), id, tenantID, StatusInReview)
+		updated, err := h.Service.UpdateContentStatus(r.Context(), id, StatusInReview)
 		if err != nil {
 			handleServiceError(w, err)
 			return

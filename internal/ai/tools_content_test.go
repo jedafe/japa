@@ -105,7 +105,7 @@ type stubPrivacyChecker struct {
 	err    error
 }
 
-func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
 	return s.exempt, s.err
 }
 
@@ -114,7 +114,7 @@ type selectivePrivacyChecker struct {
 	exemptIDs map[string]bool
 }
 
-func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
+func (s *selectivePrivacyChecker) IsExempt(ctx context.Context, entityType PrivacyEntityType, tenantID, entityID pgtype.UUID) (bool, error) {
 	if !entityID.Valid {
 		return false, nil
 	}
@@ -381,7 +381,7 @@ func TestContentReadHandler_InvalidUUID(t *testing.T) {
 func TestContentReadPrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := ContentReadPrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := ContentReadPrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestContentUpdateHandler_PrivacyBlocked(t *testing.T) {
 func TestContentUpdatePrivacyTarget(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := ContentUpdatePrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	et, id, err := ContentUpdatePrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1007,7 +1007,7 @@ type stubRAGService struct {
 	err    error
 }
 
-func (s *stubRAGService) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (s *stubRAGService) Retrieve(ctx context.Context, _ pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
 	return s.chunks, s.err
 }
 

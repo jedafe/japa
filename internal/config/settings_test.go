@@ -2,8 +2,6 @@ package config
 
 import (
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestParseBoolRoundTrip verifies parseBool handles all JSONB storage formats
@@ -99,13 +97,10 @@ func TestSettingsCacheInvalidation(t *testing.T) {
 
 	s := &Settings{cache: make(map[string]cachedSetting)}
 
-	var tid pgtype.UUID
-	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
+	s.cache["test_key"] = cachedSetting{Value: `true`}
+	s.InvalidateSettings(t.Context())
 
-	s.cache[tid.String()+":test_key"] = cachedSetting{Value: `true`}
-	s.InvalidateSettings(t.Context(), tid)
-
-	if _, ok := s.cache[tid.String()+":test_key"]; ok {
+	if _, ok := s.cache["test_key"]; ok {
 		t.Error("invalidate should have removed the cached entry")
 	}
 }

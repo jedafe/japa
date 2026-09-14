@@ -662,7 +662,7 @@ func (s *Service) DeleteComparison(ctx context.Context, id, tenantID, deletedBy 
 		}
 	}
 
-	return s.contentSvc.DeleteContent(ctx, id, tenantID)
+	return s.contentSvc.DeleteContent(ctx, id)
 }
 
 // ComparisonDetail is the full detail view for a single comparison: the parent

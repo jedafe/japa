@@ -39,7 +39,7 @@ func main() {
 			packages.NeedImports |
 			packages.NeedDeps,
 		Dir:   absRoot,
-		Tests: false,
+		Tests: true,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")
@@ -254,6 +254,10 @@ func allImplementersRemove(pkgs []*packages.Package, namedByPkg map[*packages.Pa
 
 func refactorPackage(p *packages.Package, removals map[types.Object][]int) error {
 	for _, f := range p.Syntax {
+		fname := p.Fset.Position(f.Pos()).Filename
+		if !strings.HasSuffix(fname, "_test.go") {
+			continue
+		}
 		astutil.Apply(f, func(c *astutil.Cursor) bool {
 			switch n := c.Node().(type) {
 			case *ast.FuncDecl:

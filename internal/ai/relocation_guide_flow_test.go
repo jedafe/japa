@@ -85,7 +85,7 @@ func TestRelocationGuideBulkFlow(t *testing.T) {
 	// Step 5: content.bulk_publish transitions status.
 	publishedIDs := []pgtype.UUID{}
 	contentLifecycle := &stubContentLifecycleService{
-		updateStatusFunc: func(ctx context.Context, id, tid pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+		updateStatusFunc: func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 			publishedIDs = append(publishedIDs, id)
 			return gen.UpdateContentStatusRow{
 				ID:     id,

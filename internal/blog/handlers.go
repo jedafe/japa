@@ -82,8 +82,8 @@ type ContentService interface {
 	GetContentBySlug(ctx context.Context, slug string) (gen.GetContentBySlugRow, error)
 	ListContentsByType(ctx context.Context, contentType, guideCategory string, cursor pgtype.Timestamptz, cursorID pgtype.UUID, offset, limit int32, sort string, vctx visitor.VisitorContext, filter visibility.VisibilityFilter) ([]gen.ListContentsByTypeRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
-	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
-	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 	// ResolveJSONLD resolves the admin-managed JSON-LD template for a content
 	// type (Section 14 / Section 26). Returns nil when no active template
 	// exists so the caller can fall back to a hardcoded generator.
@@ -1128,7 +1128,7 @@ func (h *Handlers) ApproveReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Flip the content status to published on approval.
-	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, tenantID, content.StatusPublished); err != nil {
+	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, content.StatusPublished); err != nil {
 		slog.Error("failed to publish content on approve", "error", err, "content_id", review.ContentID)
 	}
 
@@ -1146,8 +1146,7 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1195,7 +1194,7 @@ func (h *Handlers) RejectReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Flip the content status back to draft on rejection.
-	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, tenantID, "draft"); err != nil {
+	if _, err := h.content.UpdateContentStatus(r.Context(), review.ContentID, "draft"); err != nil {
 		slog.Error("failed to revert content to draft on reject", "error", err, "content_id", review.ContentID)
 	}
 
@@ -1854,7 +1853,7 @@ func (h *Handlers) AdminListPosts(w http.ResponseWriter, r *http.Request) {
 // a blog post (Rule 11: user content is soft-deleted, never hard-deleted).
 // H2: returns 204 No Content on success (REST DELETE convention).
 func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -1865,7 +1864,7 @@ func (h *Handlers) AdminDeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
+	if err := h.content.DeleteContent(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -2019,8 +2018,7 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2044,7 +2042,7 @@ func (h *Handlers) SubmitForReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.content.UpdateContentStatus(r.Context(), contentID, tenantID, statusInReview)
+	post, err := h.content.UpdateContentStatus(r.Context(), contentID, statusInReview)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to submit post for review")
 		return
@@ -2337,8 +2335,7 @@ func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok = h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -2353,7 +2350,7 @@ func (h *Handlers) DeletePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.content.DeleteContent(r.Context(), id, tenantID); err != nil {
+	if err := h.content.DeleteContent(r.Context(), id); err != nil {
 		handleServiceError(w, err)
 		return
 	}

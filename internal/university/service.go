@@ -646,7 +646,7 @@ func (s *Service) enqueue(ctx context.Context, taskType string, payload map[stri
 // creator whose instructor application was approved. Called by the
 // university:notify_instructor_approved task handler.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
-func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID, instructorID pgtype.UUID) error {
+func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, instructorID pgtype.UUID) error {
 	if s.notifier == nil {
 		slog.Info("university:notify_instructor_approved: no notifier wired, logging only", "instructor_id", instructorID)
 		return nil
@@ -681,7 +681,7 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, tenantID
 // creator whose track was approved to the marketplace. Called by the
 // university:notify_course_approved task handler.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
-func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, tenantID, trackID pgtype.UUID) error {
+func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, trackID pgtype.UUID) error {
 	if s.notifier == nil {
 		slog.Info("university:notify_course_approved: no notifier wired, logging only", "track_id", trackID)
 		return nil

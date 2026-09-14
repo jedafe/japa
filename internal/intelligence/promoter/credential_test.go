@@ -29,19 +29,19 @@ type mockCredentialStore struct {
 	statusCalls    []gen.UpdateIntelRecordStatusParams
 }
 
-func (m *mockCredentialStore) GetIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.IntelRecord, error) {
+func (m *mockCredentialStore) GetIntelRecord(_ context.Context, _ pgtype.UUID) (gen.IntelRecord, error) {
 	return m.record, nil
 }
 
-func (m *mockCredentialStore) GetIntelSource(_ context.Context, _, _ pgtype.UUID) (gen.IntelSource, error) {
+func (m *mockCredentialStore) GetIntelSource(_ context.Context, _ pgtype.UUID) (gen.IntelSource, error) {
 	return m.source, nil
 }
 
-func (m *mockCredentialStore) GetPersonaUserID(_ context.Context, _, _ pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockCredentialStore) GetPersonaUserID(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockCredentialStore) GetCredentialPathwayByIntelRecord(_ context.Context, _, _ pgtype.UUID) (gen.CredentialPathway, error) {
+func (m *mockCredentialStore) GetCredentialPathwayByIntelRecord(_ context.Context, _ pgtype.UUID) (gen.CredentialPathway, error) {
 	if !m.hasExisting {
 		return gen.CredentialPathway{}, errors.New("pgx: no rows in result set")
 	}
@@ -65,7 +65,7 @@ func (m *mockCredentialStore) GetCredentialProfessionByName(_ context.Context, n
 	return gen.CredentialProfession{ID: m.professionID, Slug: "nurse", Name: name}, nil
 }
 
-func (m *mockCredentialStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, countryCode string) (pgtype.UUID, error) {
+func (m *mockCredentialStore) GetCountrySpace(_ context.Context, countryCode string) (pgtype.UUID, error) {
 	switch countryCode {
 	case "USA":
 		return m.issuingSpaceID, nil
@@ -76,7 +76,7 @@ func (m *mockCredentialStore) GetCountrySpace(_ context.Context, _ pgtype.UUID, 
 	return pgtype.UUID{}, nil
 }
 
-func (m *mockCredentialStore) CreateCredentialPathwayIntel(_ context.Context, _ pgtype.UUID, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
+func (m *mockCredentialStore) CreateCredentialPathwayIntel(_ context.Context, arg gen.CreateCredentialPathwayIntelParams) (gen.CredentialPathway, error) {
 	m.createCalls = append(m.createCalls, arg)
 
 	return gen.CredentialPathway{
@@ -89,17 +89,17 @@ func (m *mockCredentialStore) CreateCredentialPathwayIntel(_ context.Context, _ 
 	}, nil
 }
 
-func (m *mockCredentialStore) UpdateCredentialPathwayIntel(_ context.Context, _ pgtype.UUID, arg gen.UpdateCredentialPathwayIntelParams) error {
+func (m *mockCredentialStore) UpdateCredentialPathwayIntel(_ context.Context, arg gen.UpdateCredentialPathwayIntelParams) error {
 	m.updateCalls = append(m.updateCalls, arg)
 	return nil
 }
 
-func (m *mockCredentialStore) UpdateIntelRecordStatus(_ context.Context, _ pgtype.UUID, arg gen.UpdateIntelRecordStatusParams) error {
+func (m *mockCredentialStore) UpdateIntelRecordStatus(_ context.Context, arg gen.UpdateIntelRecordStatusParams) error {
 	m.statusCalls = append(m.statusCalls, arg)
 	return nil
 }
 
-func (m *mockCredentialStore) CreateIntelReviewLog(_ context.Context, _ pgtype.UUID, arg gen.CreateIntelReviewLogParams) error {
+func (m *mockCredentialStore) CreateIntelReviewLog(_ context.Context, arg gen.CreateIntelReviewLogParams) error {
 	m.reviewLogCalls = append(m.reviewLogCalls, arg)
 	return nil
 }
@@ -152,7 +152,6 @@ func TestCredentialPromoter_CreatePath(t *testing.T) {
 
 	p := NewCredentialPromoter(
 		store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		WithCredentialClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)
@@ -255,7 +254,6 @@ func TestCredentialPromoter_UpdateRespectsEditorialOverrides(t *testing.T) {
 
 	p := NewCredentialPromoter(
 		store,
-		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		WithCredentialClock(func() time.Time { return time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC) }),
 	)

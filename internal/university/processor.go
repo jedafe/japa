@@ -93,7 +93,7 @@ func (p *Processor) SendInstructorPayout(ctx context.Context, tenantID, payoutID
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, instructorID string) error {
-	tID, err := scanUUID(tenantID)
+	_, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: notify instructor approved: %w", err)
 	}
@@ -103,7 +103,7 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, inst
 		return fmt.Errorf("university: notify instructor approved: bad instructor_id: %w", err)
 	}
 
-	return p.service.NotifyInstructorApprovedDispatch(ctx, tID, iID)
+	return p.service.NotifyInstructorApprovedDispatch(ctx, iID)
 }
 
 // NotifyCourseApproved handles university:notify_course_approved.
@@ -112,7 +112,7 @@ func (p *Processor) NotifyInstructorApproved(ctx context.Context, tenantID, inst
 // service (wired via Service.SetNotifier). If no notifier is wired, logs only.
 // Ref: japaconnect-engineering/sections/35-notification-system.md.
 func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID string) error {
-	tID, err := scanUUID(tenantID)
+	_, err := scanUUID(tenantID)
 	if err != nil {
 		return fmt.Errorf("university: notify course approved: %w", err)
 	}
@@ -122,7 +122,7 @@ func (p *Processor) NotifyCourseApproved(ctx context.Context, tenantID, trackID 
 		return fmt.Errorf("university: notify course approved: bad track_id: %w", err)
 	}
 
-	return p.service.NotifyCourseApprovedDispatch(ctx, tID, trID)
+	return p.service.NotifyCourseApprovedDispatch(ctx, trID)
 }
 
 // FetchLogo handles university:fetch_logo (Section 39, low tier).

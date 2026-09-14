@@ -15,7 +15,7 @@ import (
 // stubContentLifecycleService is a minimal ContentLifecycleService for bulk
 // publish tests.
 type stubContentLifecycleService struct {
-	updateStatusFunc func(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+	updateStatusFunc func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
 	listErr          error
 	deleteErr        error
 }
@@ -32,9 +32,9 @@ func (s *stubContentLifecycleService) ListContentsByType(ctx context.Context, co
 	return nil, nil
 }
 
-func (s *stubContentLifecycleService) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+func (s *stubContentLifecycleService) UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 	if s.updateStatusFunc != nil {
-		return s.updateStatusFunc(ctx, id, tenantID, status)
+		return s.updateStatusFunc(ctx, id, status)
 	}
 
 	return gen.UpdateContentStatusRow{}, nil
@@ -267,7 +267,7 @@ func TestContentBulkPublishHandler_Success(t *testing.T) {
 	updated := 0
 	deps := &ToolDeps{
 		ContentLifecycle: &stubContentLifecycleService{
-			updateStatusFunc: func(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+			updateStatusFunc: func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 				updated++
 				return gen.UpdateContentStatusRow{ID: id, Title: fmt.Sprintf("Title %d", updated), Slug: fmt.Sprintf("slug-%d", updated), Status: status, UpdatedAt: pgtype.Timestamptz{}}, nil
 			},
@@ -305,7 +305,7 @@ func TestContentBulkPublishHandler_InvalidUUID(t *testing.T) {
 
 	deps := &ToolDeps{
 		ContentLifecycle: &stubContentLifecycleService{
-			updateStatusFunc: func(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+			updateStatusFunc: func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 				t.Fatal("update should not be called for invalid content_id")
 				return gen.UpdateContentStatusRow{}, nil
 			},

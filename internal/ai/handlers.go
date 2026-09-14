@@ -1,23 +1,3 @@
-// Package ai — handlers.go provides HTTP handlers for the AI Core system.
-// // Routes:
-// //	POST /api/v1/ai/generate — generate AI output via the gateway
-// POST /api/v1/ai/chat — JapaBot conversational AI
-// POST /api/v1/ai/assist/improve — improve writing quality
-// POST /api/v1/ai/assist/summarize — summarize text
-// POST /api/v1/ai/assist/translate — translate text
-// POST /api/v1/ai/assist/generate-tags — generate content tags
-// POST /api/v1/ai/assist/generate-og — generate OG metadata
-// POST /api/v1/ai/hitl — create HITL review
-// GET /api/v1/ai/hitl/pending — list pending reviews
-// POST /api/v1/ai/hitl/{id}/approve — approve a review
-// POST /api/v1/ai/hitl/{id}/reject — reject a review with reason
-// GET /api/v1/ai/conversations — list user conversations
-// GET /api/v1/ai/conversations/{id} — get a specific conversation
-// GET /api/v1/ai/categories — list AI categories
-// GET /admin/ai/context/{user_id} — view user's AI context (Honcho)
-// DELETE /admin/ai/context/{user_id}/{entry_id} — delete a specific context entry
-// GET /admin/ai/usage — aggregated AI usage (Section 20)
-// GET /admin/ai/models — list available AI models
 package ai
 
 import (
@@ -43,6 +23,8 @@ import (
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/worker"
 )
+
+var tenantID pgtype.UUID
 
 // TaskEnqueueClient is the interface for enqueueing background tasks.
 type TaskEnqueueClient interface {
@@ -79,7 +61,7 @@ type PersonaVoiceResolver interface {
 // calls the real wallet, learning, mentorship, forum, referral, and moderation
 // services/stores (BUG-001).
 type UserContextProvider interface {
-	GetUserAIContextData(ctx context.Context, userID, tenantID pgtype.UUID, categories []string) (map[string]any, error)
+	GetUserAIContextData(ctx context.Context, userID pgtype.UUID, categories []string) (map[string]any, error)
 }
 
 // StudioReviewHook is called when an ai_hitl_reviews row with source='studio'
@@ -202,7 +184,7 @@ func (h *Handlers) resolveVoicePrompt(ctx context.Context, userID pgtype.UUID, v
 func (h *Handlers) applyModelAndVoice(
 	w http.ResponseWriter,
 	r *http.Request,
-	tenantID pgtype.UUID,
+
 	payload map[string]any,
 	model, voiceID, category, defaultKey string,
 ) bool {
@@ -297,7 +279,7 @@ var aiContextCategories = map[string]string{
 // corresponding permission node (all default OFF, including super_admin).
 // // Caller-supplied input.Context is merged last (lowest precedence) so the
 // server remains the authority over what the AI can see.
-func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgtype.UUID, clientContext map[string]any) map[string]any {
+func (h *Handlers) buildUserAIContext(ctx context.Context, userID pgtype.UUID, clientContext map[string]any) map[string]any {
 	out := map[string]any{}
 
 	// 1. Prior Honcho memory (Section 20 persistent context).
@@ -336,7 +318,7 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID, tenantID pgty
 
 		// Fetch actual data for the enabled categories (BUG-001).
 		if h.userContext != nil && len(enabledKeys) > 0 {
-			if data, err := h.userContext.GetUserAIContextData(ctx, userID, tenantID, enabledKeys); err == nil {
+			if data, err := h.userContext.GetUserAIContextData(ctx, userID, enabledKeys); err == nil {
 				for k, v := range data {
 					out[k] = v
 				}
@@ -412,7 +394,7 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 // when the ai.content_assist_enabled system setting is false (Section 20 V1
 // Tool Catalog; conventions/system-settings-catalog.md).
 func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter) bool {
-	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), "ai.content_assist_enabled", true) {
+	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, "ai.content_assist_enabled", true) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
 		return false
 	}
@@ -552,12 +534,12 @@ func toInt32(v float64) int32 {
 // request. The provider name, model, and token counts are extracted from
 // the Response. Cost is estimated from token usage using the per-provider
 // price settings (ai.* and agent.cost_per_1k_tokens).
-func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, tenantID, userID pgtype.UUID, taskType, category string, req Request) (Response, error) {
+func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, userID pgtype.UUID, taskType, category string, req Request) (Response, error) {
 	cacheEnabled := false
 	cacheTTL := 0
 
 	if h.Settings != nil {
-		cacheEnabled = h.Settings.GetBoolOr(r.Context(), "ai.cache_enabled", false)
+		cacheEnabled = h.Settings.GetBoolOr(ctx, "ai.cache_enabled", false)
 		cacheTTL = h.Settings.GetIntOr(ctx, "ai.cache_ttl_seconds", 300)
 	}
 
@@ -663,7 +645,6 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	var input struct {
 		Category      string         `json:"category"`
@@ -800,7 +781,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 		"tenant_id": tenantID.String(),
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, input.Category, "ai.model.default."+input.Category) {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, input.Category, "ai.model.default."+input.Category) {
 		return
 	}
 
@@ -808,7 +789,7 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "generate", input.Category, Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "generate", input.Category, Request{
 		Category: input.Category,
 		Payload:  payload,
 	})
@@ -905,7 +886,6 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
 	// default true). A disabled toggle short-circuits before any provider call.
 	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), "ai.japabot_enabled", true) {
@@ -957,7 +937,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// + per-category site-activity context gated by ai.context.* nodes. The
 	// server is the authority over what the AI can see — client-supplied
 	// context is merged at lowest precedence.
-	aiContext := h.buildUserAIContext(r.Context(), user.UserID, tenantID, input.Context)
+	aiContext := h.buildUserAIContext(r.Context(), user.UserID, input.Context)
 
 	// RAG retrieval step (Section 69, ADR-069): when rag.enabled is true and
 	// a RAG service is configured, embed the user's query and retrieve the
@@ -1005,7 +985,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"conversation_id": input.ConversationID,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "chat", "ai.model.default.chat") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "chat", "ai.model.default.chat") {
 		return
 	}
 
@@ -1013,7 +993,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "chat", "chat", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "chat", "chat", Request{
 		Category: "chat",
 		Payload:  payload,
 	})
@@ -1108,7 +1088,6 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
@@ -1147,7 +1126,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		"tone":      tone,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
@@ -1155,7 +1134,7 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_improve", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_improve", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -1176,7 +1155,6 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1216,7 +1194,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		"max_words": maxWords,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
@@ -1224,7 +1202,7 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_summarize", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_summarize", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -1245,7 +1223,6 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1286,7 +1263,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		"target_locale": input.TargetLocale,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
@@ -1294,7 +1271,7 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_translate", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_translate", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -1315,7 +1292,6 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1347,11 +1323,11 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		"task":      "generate_tags",
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_tags", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_generate_tags", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -1372,7 +1348,6 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
@@ -1411,11 +1386,11 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		"content_type": contentType,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_generate_og", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_generate_og", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -1493,7 +1468,6 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if !h.requireContentAssistEnabled(r.Context(), w) {
 		return
 	}
@@ -1526,14 +1500,14 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		"max_tokens":      4096,
 	}
 
-	if !h.applyModelAndVoice(w, r, tenantID, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
 		return
 	}
 
 	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
 	writeHumanizePayload(payload, hEnabled, hLevel)
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), tenantID, user.UserID, "assist_draft", "content_generation", Request{
+	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_draft", "content_generation", Request{
 		Category: "content_generation",
 		Payload:  payload,
 	})
@@ -2240,7 +2214,6 @@ func (h *Handlers) HandleListPendingHITL(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
 	sourceFilter := r.URL.Query().Get("source")
@@ -2319,7 +2292,6 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "invalid review ID")
@@ -2369,7 +2341,6 @@ func (h *Handlers) HandleRejectHITL(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
 
 	var reviewID pgtype.UUID
 	if err := reviewID.Scan(chi.URLParam(r, "id")); err != nil {
@@ -2434,7 +2405,6 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	var input struct {
 		Claim   string `json:"claim"`
 		Context string `json:"context,omitempty"`
@@ -2463,7 +2433,7 @@ func (h *Handlers) HandleVerifyHITL(w http.ResponseWriter, r *http.Request) {
 		query = fmt.Sprintf("%s\nContext: %s", input.Claim, input.Context)
 	}
 
-	provider, results, err := SearchWeb(r.Context(), client, h.Settings, tenantID, query, 5)
+	provider, results, err := SearchWeb(r.Context(), client, h.Settings, query, 5)
 	if err != nil {
 		slog.Warn("ai: HITL verification search failed", "error", err)
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "verification_unavailable", "The verification service is temporarily unavailable")
@@ -2536,7 +2506,7 @@ func (h *Handlers) HandleGetUserContext(w http.ResponseWriter, r *http.Request) 
 
 	t := &struct{ ID pgtype.UUID }{}
 	if t != nil {
-		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
+		ok, err := h.Store.UserBelongsToTenant(r.Context(), userID)
 		if err != nil {
 			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")
@@ -2605,7 +2575,7 @@ func (h *Handlers) HandleDeleteUserContextEntry(w http.ResponseWriter, r *http.R
 
 	t := &struct{ ID pgtype.UUID }{}
 	if t != nil {
-		ok, err := h.Store.UserBelongsToTenant(r.Context(), t.ID, userID)
+		ok, err := h.Store.UserBelongsToTenant(r.Context(), userID)
 		if err != nil {
 			slog.Error("verifying user tenant membership", "error", err, "user_id", userID)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify user")

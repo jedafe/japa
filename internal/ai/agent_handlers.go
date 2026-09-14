@@ -291,8 +291,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -300,7 +299,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	// Build the catalog filtered by the user's RBAC grants. Reuses the
 	// agent's buildToolCatalog which reads from the jc:agent:tools:{user_id}
 	// cache (10-min TTL) when a cache is configured.
-	tools := h.agent.buildToolCatalog(r.Context(), user.UserID, tenantID)
+	tools := h.agent.buildToolCatalog(r.Context(), user.UserID)
 
 	// Resolve geo context for the response. The agent handler's
 	// resolveGeoContext returns (geoSpaceID, summary); we surface the

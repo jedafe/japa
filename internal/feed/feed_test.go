@@ -3,8 +3,6 @@ package feed
 import (
 	"math"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ---------------------------------------------------------------------------
@@ -251,10 +249,8 @@ func TestGetFeedUnknownTimeline(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
-	tenantID := pgtype.UUID{}
-	_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.GetFeed(t.Context(), tenantID, "bogus", nil, nil, nil, SortLatest, 20, 0, "", "")
+	_, err := svc.GetFeed(t.Context(), "bogus", nil, nil, nil, SortLatest, 20, 0, "", "")
 	if err == nil {
 		t.Error("expected error for unknown timeline")
 	}
@@ -264,10 +260,8 @@ func TestGetFeedPrimaryRequiresUserID(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
-	tenantID := pgtype.UUID{}
-	_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.GetFeed(t.Context(), tenantID, "primary", nil, nil, nil, SortLatest, 20, 0, "", "")
+	_, err := svc.GetFeed(t.Context(), "primary", nil, nil, nil, SortLatest, 20, 0, "", "")
 	if err == nil {
 		t.Error("expected error when primary feed has nil user_id")
 	}
@@ -277,10 +271,8 @@ func TestGetFeedSpaceRequiresSpaceID(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
-	tenantID := pgtype.UUID{}
-	_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.GetFeed(t.Context(), tenantID, "space", nil, nil, nil, SortLatest, 20, 0, "", "")
+	_, err := svc.GetFeed(t.Context(), "space", nil, nil, nil, SortLatest, 20, 0, "", "")
 	if err == nil {
 		t.Error("expected error when space feed has nil space_id")
 	}
@@ -290,10 +282,8 @@ func TestGetFeedProfileRequiresAuthorID(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{}
-	tenantID := pgtype.UUID{}
-	_ = tenantID.Scan("00000000-0000-0000-0000-000000000001")
 
-	_, err := svc.GetFeed(t.Context(), tenantID, "profile", nil, nil, nil, SortLatest, 20, 0, "", "")
+	_, err := svc.GetFeed(t.Context(), "profile", nil, nil, nil, SortLatest, 20, 0, "", "")
 	if err == nil {
 		t.Error("expected error when profile feed has nil author_id")
 	}

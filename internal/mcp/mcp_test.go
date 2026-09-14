@@ -466,7 +466,7 @@ func (s *stubPerms) HasPermission(ctx context.Context, userID pgtype.UUID, permK
 
 type stubPrivacy struct{}
 
-func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, entityID pgtype.UUID) (bool, error) {
+func (s *stubPrivacy) IsExempt(ctx context.Context, entityType ai.PrivacyEntityType, entityID, tenantID pgtype.UUID) (bool, error) {
 	return false, nil
 }
 

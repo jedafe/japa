@@ -68,7 +68,7 @@ type AffiliateLinkRenderResult struct {
 // a coupon or provider from another tenant (BE-LOW-001). Best-effort:
 // resolution failures are logged and the original placeholder/link is left
 // in place.
-func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, tenantID pgtype.UUID, input string, couponResolver CouponResolver, affiliateResolver AffiliateLinkResolver) string {
+func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, input string, couponResolver CouponResolver, affiliateResolver AffiliateLinkResolver) string {
 	if couponResolver == nil && affiliateResolver == nil {
 		return input
 	}

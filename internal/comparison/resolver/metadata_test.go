@@ -220,7 +220,7 @@ func TestDBResolverMetadataColumns(t *testing.T) {
 		TagsColumn:       "skills",
 	})
 
-	item, found, err := r.Resolve(t.Context(), map[string]any{"id": id.String()}, pgtype.UUID{Valid: true})
+	item, found, err := r.Resolve(t.Context(), map[string]any{"id": id.String()})
 	if err != nil {
 		t.Fatalf("resolve failed: %v", err)
 	}

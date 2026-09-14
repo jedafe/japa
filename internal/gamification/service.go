@@ -66,7 +66,7 @@ type PointsAwarder interface {
 // Notifier sends user notifications for badge awards and challenge
 // completions (BUG-GAMMA-003, ADR-082 §2). Fire-and-forget per Rule 8.
 type Notifier interface {
-	Notify(ctx context.Context, tenantID, recipientID pgtype.UUID, nType, title, body, actionURL string) error
+	Notify(ctx context.Context, recipientID pgtype.UUID, nType, title, body, actionURL string) error
 }
 
 // Service holds the business logic for the gamification layer.

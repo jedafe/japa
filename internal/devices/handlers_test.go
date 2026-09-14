@@ -239,7 +239,7 @@ func TestIsValidPlatform(t *testing.T) {
 func TestSendPush_NoDispatcher_ErrNoDispatcher(t *testing.T) {
 	s := &Service{settings: &fakeSettings{enabled: true}}
 
-	err := s.SendPush(t.Context(), pgtype.UUID{}, pgtype.UUID{}, PushPayload{})
+	err := s.SendPush(t.Context(), pgtype.UUID{}, PushPayload{})
 	if !errors.Is(err, ErrNoDispatcher) {
 		t.Errorf("expected ErrNoDispatcher, got %v", err)
 	}
@@ -250,7 +250,7 @@ func TestSendPush_NoDispatcher_ErrNoDispatcher(t *testing.T) {
 func TestSendPush_Disabled_ErrPushDisabled(t *testing.T) {
 	s := &Service{settings: &fakeSettings{enabled: false}}
 
-	err := s.SendPush(t.Context(), pgtype.UUID{}, pgtype.UUID{}, PushPayload{})
+	err := s.SendPush(t.Context(), pgtype.UUID{}, PushPayload{})
 	if !errors.Is(err, ErrPushDisabled) {
 		t.Errorf("expected ErrPushDisabled, got %v", err)
 	}
@@ -261,11 +261,11 @@ type fakeSettings struct {
 	enabled bool
 }
 
-func (f *fakeSettings) GetSetting(_ context.Context, _ pgtype.UUID, _ string) (string, error) {
+func (f *fakeSettings) GetSetting(_ context.Context, _ string) (string, error) {
 	return "", errors.New("not configured")
 }
 
-func (f *fakeSettings) GetSettingBool(_ context.Context, _ pgtype.UUID, _ string) (bool, error) {
+func (f *fakeSettings) GetSettingBool(_ context.Context, _ string) (bool, error) {
 	return f.enabled, nil
 }
 
@@ -279,9 +279,8 @@ func strBody(s string) *bytesReader { return &bytesReader{b: []byte(s)} }
 // a clear credential error (not a silent success or panic).
 func TestCompositeDispatcher_NoCredentials_ReturnsError(t *testing.T) {
 	d := NewCompositeDispatcher(&fakeSettings{enabled: true})
-	tenantID := validUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	err := d.Dispatch(t.Context(), tenantID, PlatformIOS, "fake-token", PushPayload{Title: "t", Body: "b"})
+	err := d.Dispatch(t.Context(), PlatformIOS, "fake-token", PushPayload{Title: "t", Body: "b"})
 	if err == nil {
 		t.Error("expected error for unconfigured APNs credentials, got nil")
 	}
@@ -290,7 +289,7 @@ func TestCompositeDispatcher_NoCredentials_ReturnsError(t *testing.T) {
 		t.Errorf("expected 'not configured' in error, got: %v", err)
 	}
 
-	err = d.Dispatch(t.Context(), tenantID, PlatformAndroid, "fake-token", PushPayload{Title: "t", Body: "b"})
+	err = d.Dispatch(t.Context(), PlatformAndroid, "fake-token", PushPayload{Title: "t", Body: "b"})
 	if err == nil {
 		t.Error("expected error for unconfigured FCM credentials, got nil")
 	}
@@ -304,9 +303,8 @@ func TestCompositeDispatcher_NoCredentials_ReturnsError(t *testing.T) {
 // is rejected (it's handled by the VAPID pipeline in internal/notifications).
 func TestCompositeDispatcher_WebPlatform_ReturnsError(t *testing.T) {
 	d := NewCompositeDispatcher(&fakeSettings{enabled: true})
-	tenantID := validUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	err := d.Dispatch(t.Context(), tenantID, PlatformWeb, "fake-token", PushPayload{})
+	err := d.Dispatch(t.Context(), PlatformWeb, "fake-token", PushPayload{})
 	if err == nil {
 		t.Error("expected error for web platform, got nil")
 	}
@@ -320,9 +318,8 @@ func TestCompositeDispatcher_WebPlatform_ReturnsError(t *testing.T) {
 // unknown platform is rejected.
 func TestCompositeDispatcher_UnknownPlatform_ReturnsError(t *testing.T) {
 	d := NewCompositeDispatcher(&fakeSettings{enabled: true})
-	tenantID := validUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	err := d.Dispatch(t.Context(), tenantID, "desktop", "fake-token", PushPayload{})
+	err := d.Dispatch(t.Context(), "desktop", "fake-token", PushPayload{})
 	if err == nil {
 		t.Error("expected error for unknown platform, got nil")
 	}
@@ -334,9 +331,8 @@ func TestCompositeDispatcher_UnknownPlatform_ReturnsError(t *testing.T) {
 
 // TestNoopDispatcher_ReturnsErrNoDispatcher verifies the noop sentinel.
 func TestNoopDispatcher_ReturnsErrNoDispatcher(t *testing.T) {
-	tenantID := validUUID(t, "00000000-0000-0000-0000-000000000001")
 
-	err := NoopDispatcher{}.Dispatch(t.Context(), tenantID, PlatformIOS, "tok", PushPayload{})
+	err := NoopDispatcher{}.Dispatch(t.Context(), PlatformIOS, "tok", PushPayload{})
 	if !errors.Is(err, ErrNoDispatcher) {
 		t.Errorf("expected ErrNoDispatcher, got %v", err)
 	}

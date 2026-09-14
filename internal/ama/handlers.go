@@ -39,8 +39,8 @@ import (
 // patcher is the subset of Service methods used by the PATCH /forum/ama/:id
 // handler, which dispatches between close and edit.
 type patcher interface {
-	CloseAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID) error
-	UpdateAMA(ctx context.Context, threadID, tenantID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error)
+	CloseAMA(ctx context.Context, threadID, callerUserID pgtype.UUID) error
+	UpdateAMA(ctx context.Context, threadID, callerUserID pgtype.UUID, in UpdateAMAInput) (AMAThreadDTO, error)
 }
 
 // Handlers exposes the AMA endpoints.
@@ -259,8 +259,7 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -270,7 +269,7 @@ func (h *Handlers) HandleClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.patcher.CloseAMA(r.Context(), threadID, tenantID, user.UserID)
+	err := h.patcher.CloseAMA(r.Context(), threadID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "ama_not_found", "AMA thread not found")
@@ -307,8 +306,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -329,7 +327,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dto, err := h.patcher.UpdateAMA(r.Context(), threadID, tenantID, user.UserID, UpdateAMAInput{
+	dto, err := h.patcher.UpdateAMA(r.Context(), threadID, user.UserID, UpdateAMAInput{
 		Title:       req.Title,
 		Body:        req.Body,
 		IsAnonymous: req.IsAnonymous,
@@ -391,8 +389,7 @@ func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -407,7 +404,7 @@ func (h *Handlers) HandleApproveQuestion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err := h.service.ApproveQuestion(r.Context(), threadID, replyID, tenantID, user.UserID)
+	err := h.service.ApproveQuestion(r.Context(), threadID, replyID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "question_not_found", "Pending question not found")

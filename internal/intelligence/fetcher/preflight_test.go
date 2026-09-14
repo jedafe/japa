@@ -46,7 +46,7 @@ type mockSettings struct {
 	rateLimitPerMin int
 }
 
-func (m mockSettings) GetIntOr(_ context.Context, _ pgtype.UUID, key string, _ int) int {
+func (m mockSettings) GetIntOr(_ context.Context, key string, _ int) int {
 	switch key {
 	case "intel.crawl_lock_ttl_secs":
 		return m.crawlLockTTL

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TestCachedSettingJSONRoundTrip guards the Valkey settings cache: the entry
@@ -57,18 +56,15 @@ func TestGetSettingCachesMissing(t *testing.T) {
 
 	s := &Settings{cache: make(map[string]cachedSetting)}
 
-	var tid pgtype.UUID
-	_ = tid.Scan("11111111-1111-1111-1111-111111111111")
-
 	cacheKey := "missing_key"
 	s.cache[cacheKey] = cachedSetting{Value: "", CreatedAt: time.Now(), Missing: true}
 
-	_, err := s.GetSetting(t.Context(), tid, "missing_key")
+	_, err := s.GetSetting(t.Context(), "missing_key")
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("expected pgx.ErrNoRows from cached missing setting, got %v", err)
 	}
 
-	if got := s.GetIntOr(t.Context(), tid, "missing_key", 42); got != 42 {
+	if got := s.GetIntOr(t.Context(), "missing_key", 42); got != 42 {
 		t.Errorf("GetIntOr fallback not returned for missing setting: got %d, want 42", got)
 	}
 
@@ -76,7 +72,7 @@ func TestGetSettingCachesMissing(t *testing.T) {
 		t.Errorf("GetBoolOr fallback not returned for missing setting: got %v, want true", got)
 	}
 
-	if got := s.GetStringOr(t.Context(), tid, "missing_key", "fallback"); got != "fallback" {
+	if got := s.GetStringOr(t.Context(), "missing_key", "fallback"); got != "fallback" {
 		t.Errorf("GetStringOr fallback not returned for missing setting: got %q, want %q", got, "fallback")
 	}
 }

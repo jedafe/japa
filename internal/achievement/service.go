@@ -32,8 +32,8 @@ type ContentService interface {
 	CreateContent(ctx context.Context, tenantID pgtype.UUID, input content.CreateContentInput) (gen.CreateContentRow, error)
 	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
 	UpdateContent(ctx context.Context, id, tenantID, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
-	UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
-	DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error
+	UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error)
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
 }
 
 // AchievementDTO is the API response shape for a single achievement.
@@ -506,7 +506,7 @@ func (s *Service) DeleteOwn(ctx context.Context, contentID, tenantID, userID pgt
 		return ErrNotOwner
 	}
 
-	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
+	if err := s.content.DeleteContent(ctx, contentID); err != nil {
 		return fmt.Errorf("achievement: delete: %w", err)
 	}
 
@@ -553,7 +553,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 		return AchievementDTO{}, fmt.Errorf("invalid status: %s", status)
 	}
 
-	if _, err := s.content.UpdateContentStatus(ctx, contentID, tenantID, status); err != nil {
+	if _, err := s.content.UpdateContentStatus(ctx, contentID, status); err != nil {
 		return AchievementDTO{}, fmt.Errorf("achievement: admin set status: %w", err)
 	}
 
@@ -563,7 +563,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, contentID, tenantID pgtype
 // AdminDelete soft-deletes an achievement from the moderation queue. Caller
 // must hold the achievement.moderate permission (enforced at route level).
 func (s *Service) AdminDelete(ctx context.Context, contentID, tenantID pgtype.UUID) error {
-	if err := s.content.DeleteContent(ctx, contentID, tenantID); err != nil {
+	if err := s.content.DeleteContent(ctx, contentID); err != nil {
 		return fmt.Errorf("achievement: admin delete: %w", err)
 	}
 

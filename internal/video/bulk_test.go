@@ -35,7 +35,7 @@ func (f *fakeEnqueuer) Enqueue(taskType string, payload []byte, _ ...interface{}
 
 type fakeUserManagerForBulk struct{}
 
-func (f *fakeUserManagerForBulk) EnsureSyntheticUser(_ context.Context, _ pgtype.UUID, _ users.SyntheticUserInput) (pgtype.UUID, error) {
+func (f *fakeUserManagerForBulk) EnsureSyntheticUser(_ context.Context, _ users.SyntheticUserInput) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
@@ -49,11 +49,11 @@ func (f *fakeMediaManagerForBulk) StoreFromBytes(_ context.Context, _, _ pgtype.
 	return pgtype.UUID{}, nil
 }
 
-func (f *fakeMediaManagerForBulk) GetMedia(_ context.Context, _, _ pgtype.UUID) (gen.Medium, error) {
+func (f *fakeMediaManagerForBulk) GetMedia(_ context.Context, _ pgtype.UUID) (gen.Medium, error) {
 	return gen.Medium{}, errors.New("not implemented")
 }
 
-func (f *fakeMediaManagerForBulk) MaxUploadBytes(_ context.Context, _ pgtype.UUID) int64 {
+func (f *fakeMediaManagerForBulk) MaxUploadBytes(_ context.Context) int64 {
 	return 50 << 20
 }
 
@@ -66,7 +66,7 @@ func (f *fakeResolverForBulk) Platform() string { return "" }
 
 type fakeSettingsForBulk struct{}
 
-func (f *fakeSettingsForBulk) GetStringOr(_ context.Context, _ pgtype.UUID, key, fallback string) string {
+func (f *fakeSettingsForBulk) GetStringOr(_ context.Context, key, fallback string) string {
 	if key == "video.import.youtube_api_key" {
 		return "fake-api-key"
 	}
@@ -74,7 +74,7 @@ func (f *fakeSettingsForBulk) GetStringOr(_ context.Context, _ pgtype.UUID, key,
 	return fallback
 }
 
-func (f *fakeSettingsForBulk) GetBoolOr(_ context.Context, _ pgtype.UUID, key string, fallback bool) bool {
+func (f *fakeSettingsForBulk) GetBoolOr(_ context.Context, key string, fallback bool) bool {
 	if key == "video.enabled" {
 		return true
 	}
@@ -82,7 +82,7 @@ func (f *fakeSettingsForBulk) GetBoolOr(_ context.Context, _ pgtype.UUID, key st
 	return fallback
 }
 
-func (f *fakeSettingsForBulk) GetIntOr(_ context.Context, _ pgtype.UUID, key string, fallback int) int {
+func (f *fakeSettingsForBulk) GetIntOr(_ context.Context, key string, fallback int) int {
 	if key == "video.import.max_items_per_run" {
 		return 50
 	}
@@ -202,7 +202,6 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	tenantID := mustParseUUID(t, uuid.New().String())
 	userID := mustParseUUID(t, uuid.New().String())
 	jobID := mustParseUUID(t, uuid.New().String())
 
@@ -217,7 +216,7 @@ func TestService_StartBulkImport_EnqueuesTask(t *testing.T) {
 	enqueuer := &fakeEnqueuer{}
 	svc.SetEnqueuer(enqueuer)
 
-	job, err := svc.StartBulkImport(ctx, tenantID, userID, BulkImportRequest{
+	job, err := svc.StartBulkImport(ctx, userID, BulkImportRequest{
 		SourceType:  "channel",
 		SourceURL:   "https://www.youtube.com/channel/UCtest",
 		AutoPublish: false,

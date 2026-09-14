@@ -367,7 +367,7 @@ func (s *Service) inferJourneyMetadataForCreate(ctx context.Context, q *gen.Quer
 // the tenant. If the provided slug is empty, one is derived from the title.
 // The content hash and read time are computed automatically from the body.
 func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
-	content, err := s.createContent(ctx, s.read, s.write, tenantID, input)
+	content, err := s.createContent(ctx, s.read, s.write, input)
 	if err != nil {
 		return content, err
 	}
@@ -389,14 +389,14 @@ func (s *Service) CreateContent(ctx context.Context, tenantID pgtype.UUID, input
 // service's CreateComparison method, which must atomically create the content
 // row plus its items and dimensions). Ref: §6.2 transaction boundary, BUG-001.
 func (s *Service) CreateContentWithQueries(ctx context.Context, q *gen.Queries, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
-	return s.createContent(ctx, q, q, tenantID, input)
+	return s.createContent(ctx, q, q, input)
 }
 
 // createContent is the shared implementation behind CreateContent and
 // CreateContentWithQueries. It accepts separate read/write queries so the
 // non-transactional path can use the reader/writer split while the
 // transactional path uses a single queries instance for both.
-func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries, tenantID pgtype.UUID, input CreateContentInput) (gen.CreateContentRow, error) {
+func (s *Service) createContent(ctx context.Context, readQ, writeQ *gen.Queries, input CreateContentInput) (gen.CreateContentRow, error) {
 	slug := input.Slug
 	if slug == "" {
 		slug = Slugify(input.Title)
@@ -1288,7 +1288,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, tenantID, editedBy pgty
 // published). When transitioning to 'published', published_at is stamped
 // if it was previously null. Publishing or scheduling requires a primary
 // space (Section 14 / BUG-007).
-func (s *Service) UpdateContentStatus(ctx context.Context, id, tenantID pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+func (s *Service) UpdateContentStatus(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
 	if !IsValidStatus(status) {
 		return gen.UpdateContentStatusRow{}, fmt.Errorf("%w: %q", ErrInvalidStatus, status)
 	}
@@ -1475,7 +1475,7 @@ func (s *Service) EnsureContentScore(ctx context.Context, contentID pgtype.UUID)
 }
 
 // DeleteContent soft-deletes a content row, scoped to the tenant.
-func (s *Service) DeleteContent(ctx context.Context, id, tenantID pgtype.UUID) error {
+func (s *Service) DeleteContent(ctx context.Context, id pgtype.UUID) error {
 	// Fetch the row before soft-deleting so the webhook payload can carry
 	// the slug/title/author (the deleted_at filter would hide it after).
 	existing, err := s.read.GetContentByID(ctx,

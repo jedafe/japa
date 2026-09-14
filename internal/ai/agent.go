@@ -456,7 +456,7 @@ func (h *AgentHandler) runLoop(
 	}
 
 	// --- Task 5.06: build tool catalog (cached) ---
-	tools := h.buildToolCatalog(loopCtx, userID, tenantID)
+	tools := h.buildToolCatalog(loopCtx, userID)
 	toolDefs := configsToToolDefinitions(tools)
 
 	// --- Task 5.07: build system prompt ---
@@ -832,7 +832,7 @@ func (h *AgentHandler) trackCost(ctx context.Context, userID pgtype.UUID, cost f
 // buildToolCatalog returns the tool configs available to the user, filtered
 // by RBAC. The result is cached in jc:agent:tools:{user_id} for 10 minutes
 // (task 5.06). When the registry or perms checker is nil, returns nil.
-func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID, tenantID pgtype.UUID) []ToolConfig {
+func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID pgtype.UUID) []ToolConfig {
 	if h.registry == nil {
 		return nil
 	}

@@ -3,8 +3,6 @@ package server
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/worker"
 )

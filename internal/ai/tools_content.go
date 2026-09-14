@@ -1313,7 +1313,7 @@ func ContentDeleteHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		if err := deps.ContentLifecycle.DeleteContent(ctx, contentID, tenantID); err != nil {
+		if err := deps.ContentLifecycle.DeleteContent(ctx, contentID); err != nil {
 			return errorToolResult("content_delete_failed", err.Error()), nil
 		}
 
@@ -1502,7 +1502,7 @@ func ContentPublishHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		row, err := deps.ContentLifecycle.UpdateContentStatus(ctx, contentID, tenantID, status)
+		row, err := deps.ContentLifecycle.UpdateContentStatus(ctx, contentID, status)
 		if err != nil {
 			return errorToolResult("content_publish_failed", err.Error()), nil
 		}

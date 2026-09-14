@@ -184,7 +184,7 @@ func TestBlockUser_SelfBlock(t *testing.T) {
 	ctx := t.Context()
 	userID := pgtype.UUID{Valid: true}
 
-	err := svc.BlockUser(ctx, pgtype.UUID{Valid: true}, userID, userID)
+	err := svc.BlockUser(ctx, pgtype.UUID{Valid: true}, userID)
 	if err == nil {
 		t.Fatal("expected error for self-block")
 	}
@@ -201,7 +201,7 @@ func TestUnblockUser_SelfBlock(t *testing.T) {
 	ctx := t.Context()
 	userID := pgtype.UUID{Valid: true}
 
-	err := svc.UnblockUser(ctx, pgtype.UUID{Valid: true}, userID, userID)
+	err := svc.UnblockUser(ctx, pgtype.UUID{Valid: true}, userID)
 	if err == nil {
 		t.Fatal("expected error for self-unblock")
 	}

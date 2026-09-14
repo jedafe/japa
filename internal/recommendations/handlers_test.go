@@ -19,7 +19,7 @@ type mockSettings struct {
 	ints    map[string]int
 }
 
-func (m mockSettings) GetStringOr(_ context.Context, _ pgtype.UUID, key, fb string) string {
+func (m mockSettings) GetStringOr(_ context.Context, key, fb string) string {
 	if v, ok := m.strings[key]; ok {
 		return v
 	}
@@ -27,7 +27,7 @@ func (m mockSettings) GetStringOr(_ context.Context, _ pgtype.UUID, key, fb stri
 	return fb
 }
 
-func (m mockSettings) GetIntOr(_ context.Context, _ pgtype.UUID, key string, fb int) int {
+func (m mockSettings) GetIntOr(_ context.Context, key string, fb int) int {
 	if v, ok := m.ints[key]; ok {
 		return v
 	}
@@ -43,15 +43,15 @@ type mockTrending struct {
 	err     error
 }
 
-func (m mockTrending) GetTrendingContent(context.Context, pgtype.UUID, string, string, int32) ([]gen.GetTrendingContentRow, error) {
+func (m mockTrending) GetTrendingContent(context.Context, string, string, int32) ([]gen.GetTrendingContentRow, error) {
 	return m.content, m.err
 }
 
-func (m mockTrending) GetTrendingSpaces(context.Context, pgtype.UUID, string, string, int32) ([]gen.GetTrendingSpacesRow, error) {
+func (m mockTrending) GetTrendingSpaces(context.Context, string, string, int32) ([]gen.GetTrendingSpacesRow, error) {
 	return m.spaces, m.err
 }
 
-func (m mockTrending) GetSpaceLevels(_ context.Context, _ pgtype.UUID, _ []pgtype.UUID) (map[[16]byte]string, error) {
+func (m mockTrending) GetSpaceLevels(_ context.Context, _ []pgtype.UUID) (map[[16]byte]string, error) {
 	return m.levels, nil
 }
 
@@ -164,7 +164,7 @@ func TestResolveToolSlugs_ExactMatchWins(t *testing.T) {
 		"*:*": ["destination-wiki"]
 	}`
 	h := &Handlers{settings: mockSettings{strings: map[string]string{"geo_personalization.stage_tool_matrix": matrix}}}
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
 	// Exact match returns all 4 in priority order (exact first, then wildcard merge).
 	if len(got) != 4 || got[0] != "visa-route-comparison" {
 		t.Errorf("got %v, want 4 slugs with visa-route-comparison first", got)
@@ -180,7 +180,7 @@ func TestResolveToolSlugs_ArchetypeWildcardFallback(t *testing.T) {
 	}`
 	h := &Handlers{settings: mockSettings{strings: map[string]string{"geo_personalization.stage_tool_matrix": matrix}}}
 
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "unknown_stage"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "unknown_stage"})
 	if len(got) != 3 || got[0] != "embassy-alerter" {
 		t.Errorf("got %v, want archetype-wildcard fallback", got)
 	}
@@ -192,7 +192,7 @@ func TestResolveToolSlugs_StarStarFallback(t *testing.T) {
 	matrix := `{"*:*": ["destination-wiki", "community-locator"]}`
 	h := &Handlers{settings: mockSettings{strings: map[string]string{"geo_personalization.stage_tool_matrix": matrix}}}
 
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeGlobalTraveler, JapaStage: "unknown"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeGlobalTraveler, JapaStage: "unknown"})
 	if len(got) != 2 || got[0] != "destination-wiki" {
 		t.Errorf("got %v, want *:* fallback", got)
 	}
@@ -202,7 +202,7 @@ func TestResolveToolSlugs_InvalidJSONFallsBack(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{settings: mockSettings{strings: map[string]string{"geo_personalization.stage_tool_matrix": "not-json"}}}
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
 	// Should fall back to defaultToolSlugs.
 	if len(got) == 0 {
 		t.Error("expected fallback slugs on invalid JSON")
@@ -214,7 +214,7 @@ func TestResolveToolSlugs_EmptySettingFallsBack(t *testing.T) {
 
 	h := &Handlers{settings: mockSettings{}}
 
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeDiaspora, JapaStage: "settled"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeDiaspora, JapaStage: "settled"})
 	if len(got) == 0 {
 		t.Error("expected fallback slugs on empty setting")
 	}
@@ -225,7 +225,7 @@ func TestResolveToolSlugs_NilSettingsFallsBack(t *testing.T) {
 
 	h := &Handlers{}
 
-	got := h.resolveToolSlugs(t.Context(), validUUID(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
+	got := h.resolveToolSlugs(t.Context(), visitor.VisitorContext{Archetype: visitor.ArchetypeOriginVisitor, JapaStage: "planning"})
 	if len(got) == 0 {
 		t.Error("expected fallback slugs on nil settings")
 	}
@@ -276,15 +276,15 @@ func TestResolveLimit_DefaultAndClamp(t *testing.T) {
 	t.Parallel()
 	// max=5: the default (10) is clamped down to 5; explicit 3 is under the cap.
 	h := &Handlers{settings: mockSettings{ints: map[string]int{"geo_personalization.recommendations_max_limit": 5}}}
-	if got := h.resolveLimit(t.Context(), validUUID(), ""); got != 5 {
+	if got := h.resolveLimit(t.Context(), ""); got != 5 {
 		t.Errorf("default limit clamped to max = %d, want 5", got)
 	}
 
-	if got := h.resolveLimit(t.Context(), validUUID(), "100"); got != 5 {
+	if got := h.resolveLimit(t.Context(), "100"); got != 5 {
 		t.Errorf("clamped limit = %d, want 5", got)
 	}
 
-	if got := h.resolveLimit(t.Context(), validUUID(), "3"); got != 3 {
+	if got := h.resolveLimit(t.Context(), "3"); got != 3 {
 		t.Errorf("limit = %d, want 3", got)
 	}
 }
@@ -293,7 +293,7 @@ func TestResolveLimit_DefaultMaxAllowsDefaultLimit(t *testing.T) {
 	t.Parallel()
 	// max=20 (default): the default limit 10 is under the cap.
 	h := &Handlers{settings: mockSettings{ints: map[string]int{"geo_personalization.recommendations_max_limit": 20}}}
-	if got := h.resolveLimit(t.Context(), validUUID(), ""); got != 10 {
+	if got := h.resolveLimit(t.Context(), ""); got != 10 {
 		t.Errorf("default limit = %d, want 10", got)
 	}
 }
@@ -302,7 +302,7 @@ func TestResolveLimit_NilSettingsDefaultMax(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}
-	if got := h.resolveLimit(t.Context(), validUUID(), "100"); got != defaultMaxLimit {
+	if got := h.resolveLimit(t.Context(), "100"); got != defaultMaxLimit {
 		t.Errorf("clamped limit = %d, want default %d", got, defaultMaxLimit)
 	}
 }
@@ -311,7 +311,7 @@ func TestResolveCacheTTL_Configurable(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{settings: mockSettings{ints: map[string]int{"geo_personalization.recommendations_cache_ttl_seconds": 300}}}
-	if got := h.resolveCacheTTL(t.Context(), validUUID()); got.Seconds() != 300 {
+	if got := h.resolveCacheTTL(t.Context()); got.Seconds() != 300 {
 		t.Errorf("cache TTL = %v, want 300s", got)
 	}
 }
@@ -320,7 +320,7 @@ func TestResolveCacheTTL_NilSettingsDefault(t *testing.T) {
 	t.Parallel()
 
 	h := &Handlers{}
-	if got := h.resolveCacheTTL(t.Context(), validUUID()); got != defaultCacheTTL {
+	if got := h.resolveCacheTTL(t.Context()); got != defaultCacheTTL {
 		t.Errorf("cache TTL = %v, want default %v", got, defaultCacheTTL)
 	}
 }

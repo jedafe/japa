@@ -343,7 +343,7 @@ func publishOneBulkItem(ctx context.Context, deps *ToolDeps, tenantID pgtype.UUI
 		}
 	}
 
-	row, err := deps.ContentLifecycle.UpdateContentStatus(ctx, contentID, tenantID, status)
+	row, err := deps.ContentLifecycle.UpdateContentStatus(ctx, contentID, status)
 	if err != nil {
 		res.ErrorCode = "content_publish_failed"
 		res.Error = err.Error()

@@ -572,9 +572,9 @@ type mockTypingCall struct {
 	userID         string
 }
 
-func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, tenantID, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
+func (m *mockDMServiceForTyping) GetOtherParticipant(_ context.Context, conversationID, userID pgtype.UUID) (pgtype.UUID, error) {
 	m.calls = append(m.calls, mockTypingCall{
-		tenantID:       tenantID.String(),
+		tenantID:       "",
 		conversationID: conversationID.String(),
 		userID:         userID.String(),
 	})

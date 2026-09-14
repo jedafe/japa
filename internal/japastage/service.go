@@ -231,7 +231,7 @@ func (s *Service) UpdateOwn(ctx context.Context, userID, tenantID pgtype.UUID, i
 // abort the others. The task is idempotent on (user_id, stage, set_at) —
 // notification dedup + Honcho memory content are keyed on the same stage
 // payload, so a retry never double-sends a divergent recommendation.
-func (s *Service) RecommendForStage(ctx context.Context, userID, tenantID pgtype.UUID, stage, destSpaceID string) error {
+func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, destSpaceID string) error {
 	if s.settings == nil {
 		return nil
 	}

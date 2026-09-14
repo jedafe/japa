@@ -104,7 +104,7 @@ type PersonaProcessor interface {
 // StudioProcessor handles AI Content Studio tasks (§75, ADR-076).
 type StudioProcessor interface {
 	RunBatch(ctx context.Context, tenantID, batchID pgtype.UUID) error
-	RetryFailed(ctx context.Context, tenantID, jobID pgtype.UUID) error
+	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
 	// RetryBatchFailed retries all failed jobs in a batch asynchronously.
 	// Called by the studio:retry_failed task handler (ADR-076 §7).
 	RetryBatchFailed(ctx context.Context, batchID pgtype.UUID) (int, error)
@@ -216,7 +216,7 @@ type DigestProcessor interface {
 // via Honcho, and prompts a Readiness Assessment when stage=planning and the
 // member has no completed assessment.
 type JapaStageProcessor interface {
-	RecommendForStage(ctx context.Context, userID, tenantID pgtype.UUID, stage, destSpaceID string) error
+	RecommendForStage(ctx context.Context, userID pgtype.UUID, stage, destSpaceID string) error
 }
 
 // PlanningGroupProcessor handles Planning Groups background tasks (§82,
@@ -1189,7 +1189,7 @@ func HandleJapaStageRecommend(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("task:japa_stage:recommend: bad tenant_id: %w", err)
 	}
 
-	if err := japaStageProcessor.RecommendForStage(ctx, userID, tenantID, p.Stage, p.DestinationSpaceID); err != nil {
+	if err := japaStageProcessor.RecommendForStage(ctx, userID, p.Stage, p.DestinationSpaceID); err != nil {
 		return fmt.Errorf("task:japa_stage:recommend: %w", err)
 	}
 

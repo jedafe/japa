@@ -76,7 +76,7 @@ func (s *stubJCEService) Recommend(ctx context.Context, contentID, userID, profi
 	return s.result, s.err
 }
 
-func (s *stubJCEService) Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
+func (s *stubJCEService) Refresh(ctx context.Context, contentID, tenantID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
 	s.refreshCalled = true
 	s.lastContentID = contentID
 	s.lastSourceKind = sourceKind
@@ -445,7 +445,7 @@ func TestJCEPrivacyTargets(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			args := json.RawMessage(`{"content_id":"` + tt.content + `"}`)
 
-			et, id, err := tt.fn(t.Context(), args, pgtype.UUID{})
+			et, id, err := tt.fn(t.Context(), args)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -464,7 +464,7 @@ func TestJCEPrivacyTargets(t *testing.T) {
 func TestJCEPrivacyTarget_MissingContentID(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := JCEAnalyzePrivacyTarget(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
+	et, id, err := JCEAnalyzePrivacyTarget(t.Context(), json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestJCEPrivacyTarget_MissingContentID(t *testing.T) {
 func TestJCEPrivacyTarget_InvalidContentID(t *testing.T) {
 	t.Parallel()
 
-	et, id, err := JCEAnalyzePrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"not-a-uuid"}`), pgtype.UUID{})
+	et, id, err := JCEAnalyzePrivacyTarget(t.Context(), json.RawMessage(`{"content_id":"not-a-uuid"}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

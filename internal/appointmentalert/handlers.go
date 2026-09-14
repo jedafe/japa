@@ -189,8 +189,7 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -221,7 +220,7 @@ func (h *Handlers) HandleCreateMyAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alert, err := h.service.CreateAlert(r.Context(), tenantID, user.UserID, input)
+	alert, err := h.service.CreateAlert(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSMSPremiumOnly) {
 			errpkg.WriteError(w, http.StatusForbidden, "sms_premium_only", "The SMS notification channel is only available to premium users")

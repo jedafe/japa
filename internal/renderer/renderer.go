@@ -216,7 +216,7 @@ func (r *Renderer) Render(ctx context.Context, tenantID, contentID pgtype.UUID, 
 	// href rewriting (Section 55 P4). This runs AFTER sanitization so the
 	// injected coupon widget HTML and rewritten hrefs are safe. Best-effort:
 	// resolution failures are logged and the original placeholder is left.
-	htmlOut = resolveCouponEmbedsAndAffiliateLinks(ctx, tenantID, htmlOut, r.couponResolver, r.affiliateResolver)
+	htmlOut = resolveCouponEmbedsAndAffiliateLinks(ctx, htmlOut, r.couponResolver, r.affiliateResolver)
 
 	// Cache the result (best-effort — failure does not break the response)
 	if r.cache != nil {

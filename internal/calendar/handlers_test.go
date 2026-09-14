@@ -210,7 +210,7 @@ func TestParsePageParams_InvalidValues(t *testing.T) {
 func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
 		SourceURL: "",
@@ -225,7 +225,7 @@ func TestSubmit_RejectsEmptySourceURL(t *testing.T) {
 func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "",
 		Category:  "visa_window",
 		SourceURL: "https://example.com",
@@ -240,7 +240,7 @@ func TestSubmit_RejectsEmptyTitle(t *testing.T) {
 func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "",
 		SourceURL: "https://example.com",
@@ -255,7 +255,7 @@ func TestSubmit_RejectsEmptyCategory(t *testing.T) {
 func TestSubmit_RejectsJavaScriptScheme(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
 		SourceURL: "javascript:alert(1)",
@@ -270,7 +270,7 @@ func TestSubmit_RejectsJavaScriptScheme(t *testing.T) {
 func TestSubmit_RejectsDataScheme(t *testing.T) {
 	svc := NewService(nil, &config.Settings{})
 
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
 		SourceURL: "data:text/html,<script>alert(1)</script>",
@@ -287,7 +287,7 @@ func TestSubmit_AcceptsHTTPSScheme(t *testing.T) {
 	// Submit will fail at the store layer (nil store), but it should pass
 	// the source_url validation and fail later — we check the error is NOT
 	// the source_url validation error.
-	_, err := svc.Submit(nil, pgtype.UUID{}, pgtype.UUID{}, SubmitEntryInput{
+	_, err := svc.Submit(nil, pgtype.UUID{}, SubmitEntryInput{
 		Title:     "Test Event",
 		Category:  "visa_window",
 		SourceURL: "https://example.com/official-source",

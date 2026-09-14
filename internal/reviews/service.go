@@ -21,7 +21,7 @@ type CreateReviewInput struct {
 }
 
 // CreateReview creates a new review, enforcing one-per-user-per-entity.
-func (s *Service) CreateReview(ctx context.Context, tenantID, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.Review, error) {
+func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.Review, error) {
 	if input.EntityType == "" {
 		return gen.Review{}, errors.New("entity_type is required")
 	}
