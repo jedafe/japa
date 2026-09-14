@@ -2134,7 +2134,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// so the 11 Asynq task handlers (schedule_crawls → notify_discoveries)
 	// can dispatch to the concrete services.
 	intelRobotsChecker := intel_fetcher.NewRobotsChecker(vkClient.Redis())
-	intelPreflightChecker := intel_fetcher.NewPreflightChecker(vkClient.Redis(), intelRobotsChecker, settingsService, defaultTenantID)
+	intelPreflightChecker := intel_fetcher.NewPreflightChecker(vkClient.Redis(), intelRobotsChecker, settingsService)
 	worker.RegisterIntelDependencies(
 		intelSourcesStore,
 		intelStores,

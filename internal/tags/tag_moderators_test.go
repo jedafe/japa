@@ -29,7 +29,7 @@ func TestTagModeratorsIntegration(t *testing.T) {
 	svc := NewService(database)
 
 	// Minimal fixtures (cascade cleanup at the end).
-	var tenantID, userID, tagID pgtype.UUID
+	var userID, tagID pgtype.UUID
 
 	mustExecReturning := func(query string, args ...any) pgtype.UUID {
 		var id pgtype.UUID

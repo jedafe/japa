@@ -63,7 +63,7 @@ func newTestChecker(t *testing.T, crawlLockTTLSecs, rateLimitPerMin int) *Prefli
 	return NewPreflightChecker(startTestValkey(t), nil, mockSettings{
 		crawlLockTTL:    crawlLockTTLSecs,
 		rateLimitPerMin: rateLimitPerMin,
-	}, testTenantID())
+	})
 }
 
 func validUUID() pgtype.UUID {
@@ -71,17 +71,9 @@ func validUUID() pgtype.UUID {
 	return pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
 }
 
-// testTenantID is the default tenant UUID used for tenant-scoped Valkey keys
-// in tests. Matches the system default tenant (00000000-0000-0000-0000-000000000001)
-// per ADR-112 Amendment 2.
-func testTenantID() pgtype.UUID {
-	return pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
-}
-
 func TestPreflightCheck_CrawlLock(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
-	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
 	if err := p.Check(t.Context(), src); err != nil {
@@ -96,7 +88,6 @@ func TestPreflightCheck_CrawlLock(t *testing.T) {
 func TestPreflightCheck_ReleaseCrawlLock(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
-	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "example.com", TrustLevel: 1}
 	if err := p.Check(t.Context(), src); err != nil {
@@ -113,7 +104,6 @@ func TestPreflightCheck_ReleaseCrawlLock(t *testing.T) {
 func TestPreflightCheck_LicenseRepublish(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
-	tid := testTenantID()
 
 	proprietary := "proprietary"
 
@@ -126,7 +116,6 @@ func TestPreflightCheck_LicenseRepublish(t *testing.T) {
 func TestPreflightCheck_LicenseNilTier3(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
-	tid := testTenantID()
 
 	// Tier 3 with no license at all should be refused.
 	src := sources.Source{ID: validUUID(), Domain: "blog.example.com", TrustLevel: 3}
@@ -138,7 +127,6 @@ func TestPreflightCheck_LicenseNilTier3(t *testing.T) {
 func TestPreflightCheck_LicenseAllowedTier1(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 10)
-	tid := testTenantID()
 
 	// Tier 1 (official) is not subject to the license check even with a
 	// proprietary license.
@@ -153,7 +141,6 @@ func TestPreflightCheck_LicenseAllowedTier1(t *testing.T) {
 func TestPreflightCheck_RateLimited(t *testing.T) {
 	t.Parallel()
 	p := newTestChecker(t, 3600, 2)
-	tid := testTenantID()
 
 	src := sources.Source{ID: validUUID(), Domain: "ratelimit.example.com", TrustLevel: 1}
 	// First two checks pass (counter 1 and 2); the third exceeds the limit.

@@ -32,7 +32,7 @@ func TestRAGSearchHandler_Success(t *testing.T) {
 
 	handler := RAGSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"scholarships"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestRAGSearchHandler_GeoFiltered(t *testing.T) {
 
 	handler := RAGSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x","geo_space_id":"00000000-0000-0000-0000-000000000005"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x","geo_space_id":"00000000-0000-0000-0000-000000000005"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ type ragCapture struct {
 	chunks []RAGChunk
 }
 
-func (r *ragCapture) Retrieve(ctx context.Context, _ pgtype.UUID, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
+func (r *ragCapture) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID) ([]RAGChunk, error) {
 	r.geo = geoSpaceID
 	return r.chunks, nil
 }
@@ -100,7 +100,7 @@ func TestRAGSearchHandler_MissingQuery(t *testing.T) {
 	deps := &ToolDeps{RAG: &stubRAGService{}}
 	handler := RAGSearchHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -111,7 +111,7 @@ func TestRAGSearchHandler_NoDeps(t *testing.T) {
 
 	handler := RAGSearchHandler(nil)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -133,7 +133,7 @@ func TestRAGSearchHandler_Limit(t *testing.T) {
 
 	handler := RAGSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x","limit":2}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x","limit":2}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRAGSearchHandler_PrivacyFiltersExempt(t *testing.T) {
 
 	handler := RAGSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestRAGSearchHandler_NoPrivacyChecker(t *testing.T) {
 	}
 
 	handler := RAGSearchHandler(deps)
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"x"}`), pgtype.UUID{})
 	m := parseToolResult(t, tr)
 
 	results, _ := m["results"].([]any)
@@ -220,7 +220,7 @@ func TestExternalSearchHandler_NoAPIKey(t *testing.T) {
 	}
 	handler := ExternalSearchHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -237,7 +237,7 @@ func TestExternalSearchHandler_NoSettings(t *testing.T) {
 	deps := &ToolDeps{}
 	handler := ExternalSearchHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -251,7 +251,7 @@ func TestExternalSearchHandler_MissingQuery(t *testing.T) {
 	}
 	handler := ExternalSearchHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -270,7 +270,7 @@ func TestExternalSearchHandler_UnknownProvider(t *testing.T) {
 
 	handler := ExternalSearchHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -297,7 +297,7 @@ func TestExternalSearchHandler_CacheHit(t *testing.T) {
 
 	handler := ExternalSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

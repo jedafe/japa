@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -78,8 +77,6 @@ func TestCacheMissForDifferentTenant(t *testing.T) {
 	t.Parallel()
 
 	svc := &Service{cache: make(map[cacheKey]*cacheEntry)}
-	tenant1 := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	tenant2 := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
 	svc.cacheSet("en", map[string]string{"a": "1"})
 

@@ -77,7 +77,7 @@ func TestContentCreateDraftHandler_Success_PersonaAuthor(t *testing.T) {
 	var capturedInput ContentCreateInput
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
 			return ContentCreateRow{
 				ID:          contentID,
@@ -195,7 +195,7 @@ func TestContentCreateDraftHandler_FallsBackToCallingUser_WhenPersonaResolverNil
 	var capturedInput ContentCreateInput
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
 			return ContentCreateRow{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Status: "draft", AuthorID: input.AuthorID}, nil
 		},
@@ -204,7 +204,7 @@ func TestContentCreateDraftHandler_FallsBackToCallingUser_WhenPersonaResolverNil
 
 	handler := ContentCreateDraftHandler(deps)
 
-	_, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID, pgtype.UUID{})
+	_, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestContentCreateDraftHandler_PersonaResolverError_FallsBackToAuthorArg(t *
 	var capturedInput ContentCreateInput
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			capturedInput = input
 			return ContentCreateRow{ID: mustUUID(t, "00000000-0000-0000-0000-000000000001"), Status: "draft", AuthorID: input.AuthorID}, nil
 		},
@@ -243,7 +243,7 @@ func TestContentCreateDraftHandler_PersonaResolverError_FallsBackToAuthorArg(t *
 
 	handler := ContentCreateDraftHandler(deps)
 
-	_, err := handler(t.Context(), argsJSON, callingUserID, pgtype.UUID{})
+	_, err := handler(t.Context(), argsJSON, callingUserID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,14 +258,14 @@ func TestContentCreateDraftHandler_MissingBody(t *testing.T) {
 	t.Parallel()
 
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			t.Fatal("creator should not be called for invalid input")
 			return ContentCreateRow{}, nil
 		},
 	}
 	handler := ContentCreateDraftHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error (missing body)", tr.Status)
 	}
@@ -277,7 +277,7 @@ func TestContentCreateDraftHandler_NoCreatorWired(t *testing.T) {
 	deps := &ToolDeps{} // no ContentCreator
 	handler := ContentCreateDraftHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error (no creator wired)", tr.Status)
 	}
@@ -288,7 +288,7 @@ func TestContentCreateDraftHandler_HITLFailure_NonFatal(t *testing.T) {
 
 	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
 	deps := &ToolDeps{
-		ContentCreator: func(ctx context.Context, tid pgtype.UUID, input ContentCreateInput) (ContentCreateRow, error) {
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
 			return ContentCreateRow{ID: contentID, Status: "draft", AuthorID: input.AuthorID}, nil
 		},
 		HITL: &stubHITLStore{err: errors.New("db down")},
@@ -296,7 +296,7 @@ func TestContentCreateDraftHandler_HITLFailure_NonFatal(t *testing.T) {
 
 	handler := ContentCreateDraftHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

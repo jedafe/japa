@@ -106,7 +106,7 @@ func TestJCEAnalyzeHandler_Success(t *testing.T) {
 
 	handler := JCEAnalyzeHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","question":"which is best?"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","question":"which is best?"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestJCERankHandler_Success(t *testing.T) {
 
 	handler := JCERankHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestJCEExplainHandler_Success(t *testing.T) {
 
 	handler := JCEExplainHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","item_id":"00000000-0000-0000-0000-000000000002","factor_key":"cost","question":"why?"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","item_id":"00000000-0000-0000-0000-000000000002","factor_key":"cost","question":"why?"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestJCERecommendHandler_Success(t *testing.T) {
 
 	handler := JCERecommendHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestJCERefreshHandler_Success(t *testing.T) {
 
 	handler := JCERefreshHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","source_kind":"official"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","source_kind":"official"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestJCERefreshHandler_WithoutSourceKind(t *testing.T) {
 
 	handler := JCERefreshHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestJCERefreshHandler_Unauthorized(t *testing.T) {
 
 	handler := JCERefreshHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestJCERefreshHandler_NoPermissionChecker(t *testing.T) {
 
 	handler := JCERefreshHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestJCEHandlers_NoJCE(t *testing.T) {
 
 	handler := JCEAnalyzeHandler(&ToolDeps{})
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestJCEHandlers_InvalidContentID(t *testing.T) {
 	deps := &ToolDeps{JCE: &stubJCEService{}}
 	handler := JCEAnalyzeHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"not-a-uuid"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestJCEHandlers_ServiceError(t *testing.T) {
 	deps := &ToolDeps{JCE: &stubJCEService{err: errors.New("boom")}}
 	handler := JCEAnalyzeHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

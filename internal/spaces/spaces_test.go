@@ -223,7 +223,6 @@ func TestUnreadCounter_NilClient(t *testing.T) {
 	t.Parallel()
 
 	c := NewUnreadCounter(nil)
-	tid := mustUUID(t, "440e8400-e29b-41d4-a716-446655440000")
 	uid := mustUUID(t, "550e8400-e29b-41d4-a716-446655440000")
 	sid := mustUUID(t, "660e8400-e29b-41d4-a716-446655440000")
 

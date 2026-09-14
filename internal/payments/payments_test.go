@@ -314,7 +314,6 @@ func TestPayWithCredit_ErrInsufficientCredit(t *testing.T) {
 			spendFunc: func(
 				_ context.Context,
 				_ pgtype.UUID,
-				_ pgtype.UUID,
 				_ CreditSpendInput,
 			) (int64, error) {
 				spendCalled = true
@@ -348,7 +347,6 @@ func TestPayWithCredit_Success(t *testing.T) {
 		wallet: &mockCreditSpender{
 			spendFunc: func(
 				_ context.Context,
-				_ pgtype.UUID,
 				_ pgtype.UUID,
 				_ CreditSpendInput,
 			) (int64, error) {

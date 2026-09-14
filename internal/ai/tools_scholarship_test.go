@@ -48,7 +48,7 @@ func TestScholarshipSearchHandler(t *testing.T) {
 
 	handler := ScholarshipSearchHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"country":"NGA","level":"Masters","limit":5}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"country":"NGA","level":"Masters","limit":5}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestScholarshipSearchHandler_NoDeps(t *testing.T) {
 
 	handler := ScholarshipSearchHandler(&ToolDeps{})
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"country":"NGA"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"country":"NGA"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}

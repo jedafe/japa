@@ -66,7 +66,7 @@ func TestSourceCrawlNowHandler(t *testing.T) {
 
 	handler := SourceCrawlNowHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"source_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"source_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSourceCrawlNowHandler_DisabledSource(t *testing.T) {
 
 	handler := SourceCrawlNowHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"source_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"source_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -118,7 +118,7 @@ func TestRecordUpdateNowHandler_ByRecord(t *testing.T) {
 
 	handler := RecordUpdateNowHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"record_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"record_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRecordUpdateNowHandler_MissingRecordAndSource(t *testing.T) {
 
 	handler := RecordUpdateNowHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"record_id":""}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"record_id":""}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -163,7 +163,7 @@ func TestContentRegenerateFromSourceHandler(t *testing.T) {
 
 	handler := ContentRegenerateFromSourceHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","intel_record_id":"00000000-0000-0000-0000-000000000002"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","intel_record_id":"00000000-0000-0000-0000-000000000002"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestContentRegenerateFromSourceHandler_MissingArgs(t *testing.T) {
 
 	handler := ContentRegenerateFromSourceHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}
@@ -208,7 +208,7 @@ func TestContentRegenerateFromSourceHandler_EnqueueFailure(t *testing.T) {
 
 	handler := ContentRegenerateFromSourceHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","intel_record_id":"00000000-0000-0000-0000-000000000002"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","intel_record_id":"00000000-0000-0000-0000-000000000002"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
 	}

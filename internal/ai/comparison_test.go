@@ -639,7 +639,7 @@ func TestComparisonTypesListHandler_Success(t *testing.T) {
 
 	handler := ComparisonTypesListHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestComparisonTypesListHandler_NilDeps(t *testing.T) {
 
 	handler := ComparisonTypesListHandler(nil)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -689,7 +689,7 @@ func TestComparisonCreateHandler_Success(t *testing.T) {
 	args := `{"title":"TUM vs Stuttgart","items":[{"name":"TUM"},{"name":"Stuttgart"}],"dimensions":["cost","ranking"]}`
 	handler := ComparisonCreateHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -710,7 +710,7 @@ func TestComparisonCreateHandler_MissingTitle(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	handler := ComparisonCreateHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"items":[{"name":"x"}]}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"items":[{"name":"x"}]}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -726,7 +726,7 @@ func TestComparisonCreateHandler_MissingItems(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	handler := ComparisonCreateHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"title":"x"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"x"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -757,7 +757,7 @@ func TestComparisonFillValuesHandler_Success(t *testing.T) {
 	}`
 	handler := ComparisonFillValuesHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -807,7 +807,7 @@ func TestComparisonFillValuesHandler_DefaultsSourceToLLM(t *testing.T) {
 	}`
 	handler := ComparisonFillValuesHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -836,7 +836,7 @@ func TestComparisonFillValuesHandler_MissingContentID(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	handler := ComparisonFillValuesHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"values":[]}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"values":[]}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -864,7 +864,7 @@ func TestComparisonAddDimensionHandler_Success(t *testing.T) {
 	}`
 	handler := ComparisonAddDimensionHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -890,7 +890,7 @@ func TestComparisonReadHandler_Success(t *testing.T) {
 	args := `{"content_id": "00000000-0000-0000-0000-000000000001"}`
 	handler := ComparisonReadHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -917,7 +917,7 @@ func TestComparisonReadHandler_InvalidUUID(t *testing.T) {
 	deps := &ToolDeps{Comparison: newStubComparisonService()}
 	handler := ComparisonReadHandler(deps)
 
-	tr, err := handler(t.Context(), json.RawMessage(`{"content_id": "not-a-uuid"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(`{"content_id": "not-a-uuid"}`), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -945,7 +945,7 @@ func TestComparisonFillValuesHandler_InvalidSource(t *testing.T) {
 		}]
 	}`
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -975,7 +975,7 @@ func TestComparisonFillValuesHandler_InvalidConfidence(t *testing.T) {
 		}]
 	}`
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestComparisonAddDimensionHandler_InvalidDimensionType(t *testing.T) {
 		"dimensions": [{"label": "test", "dimension_type": "invalid_type"}]
 	}`
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1033,7 +1033,7 @@ func TestComparisonAddDimensionHandler_ValidDimensionTypes(t *testing.T) {
 		}`, dt)
 		handler := ComparisonAddDimensionHandler(deps)
 
-		tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+		tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 		if err != nil {
 			t.Fatalf("unexpected error for type %q: %v", dt, err)
 		}

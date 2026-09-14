@@ -90,9 +90,6 @@ func TestLocalStoragePathTraversalGuard(t *testing.T) {
 		t.Fatalf("Store failed: %v", err)
 	}
 
-	// A different tenant should not be able to access the file.
-	otherTenant := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
-
 	_, err := ls.GetPath(requestID)
 	if err == nil {
 		t.Fatal("expected error for cross-tenant access, got nil")

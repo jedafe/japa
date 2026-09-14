@@ -33,7 +33,7 @@ func TestContentEmbedder_NilDispatcher(t *testing.T) {
 
 	ce := NewContentEmbedder(nil, nil)
 
-	err := ce.EmbedContent(t.Context(), [16]byte{1}, [16]byte{2}, "test")
+	err := ce.EmbedContent(t.Context(), [16]byte{1}, "test")
 	if err != nil {
 		t.Fatalf("expected nil error with nil dispatcher (graceful skip), got: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestContentEmbedder_NilWriter(t *testing.T) {
 
 	ce := NewContentEmbedder(d, nil)
 
-	err := ce.EmbedContent(t.Context(), [16]byte{1}, [16]byte{2}, "test")
+	err := ce.EmbedContent(t.Context(), [16]byte{1}, "test")
 	if err == nil {
 		t.Fatal("expected error with nil writer, got nil")
 	}

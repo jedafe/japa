@@ -540,7 +540,6 @@ func TestApproveReview_MissingReviewID(t *testing.T) {
 
 func TestApproveReview_MissingReviewerID(t *testing.T) {
 	t.Parallel()
-	_ = pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
 
 	err := ApproveReview(t.Context(), nil, pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, pgtype.UUID{})
 	if err == nil || err.Error() != "reviewer_id is required" {

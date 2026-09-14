@@ -81,7 +81,7 @@ func TestContentBulkCreateHandler_Success(t *testing.T) {
 			{"title":"First","content_type":"blog_post"},
 			{"title":"Second","content_type":"blog_post"}
 		]
-	}`), userID, pgtype.UUID{})
+	}`), userID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestContentBulkCreateHandler_PartialFailure(t *testing.T) {
 			{"title":"OK","content_type":"blog_post"},
 			{"content_type":"blog_post"}
 		]
-	}`), userID, pgtype.UUID{})
+	}`), userID)
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success", tr.Status)
 	}
@@ -178,7 +178,7 @@ func TestContentBulkCreateHandler_UnauthorizedAuthor(t *testing.T) {
 	handler := ContentBulkCreateHandler(deps)
 	args := fmt.Sprintf(`{"items":[{"title":"T","content_type":"blog_post","author_id":"%s"}]}`, otherID.String())
 
-	tr, _ := handler(t.Context(), json.RawMessage(args), userID, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(args), userID)
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}
@@ -229,7 +229,7 @@ func TestContentBulkCreateHandler_UnauthorizedContentType(t *testing.T) {
 
 	handler := ContentBulkCreateHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"items":[{"title":"T","content_type":"guide"}]}`), userID, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"items":[{"title":"T","content_type":"guide"}]}`), userID)
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}
@@ -277,7 +277,7 @@ func TestContentBulkPublishHandler_Success(t *testing.T) {
 	handler := ContentBulkPublishHandler(deps)
 	args := fmt.Sprintf(`{"content_ids":["%s","%s"]}`, contentID1.String(), contentID2.String())
 
-	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{}, pgtype.UUID{})
+	tr, err := handler(t.Context(), json.RawMessage(args), pgtype.UUID{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestContentBulkPublishHandler_InvalidUUID(t *testing.T) {
 
 	handler := ContentBulkPublishHandler(deps)
 
-	tr, _ := handler(t.Context(), json.RawMessage(`{"content_ids":["bad"],"status":"published"}`), pgtype.UUID{}, pgtype.UUID{})
+	tr, _ := handler(t.Context(), json.RawMessage(`{"content_ids":["bad"],"status":"published"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusSuccess {
 		t.Fatalf("status = %q, want success (partial failure)", tr.Status)
 	}

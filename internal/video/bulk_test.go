@@ -41,11 +41,11 @@ func (f *fakeUserManagerForBulk) EnsureSyntheticUser(_ context.Context, _ users.
 
 type fakeMediaManagerForBulk struct{}
 
-func (f *fakeMediaManagerForBulk) StoreFromURL(_ context.Context, _, _ pgtype.UUID, _, _ string) (pgtype.UUID, error) {
+func (f *fakeMediaManagerForBulk) StoreFromURL(_ context.Context, _ pgtype.UUID, _, _ string) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 
-func (f *fakeMediaManagerForBulk) StoreFromBytes(_ context.Context, _, _ pgtype.UUID, _ []byte, _ string, _ *media.MediaAttribution) (pgtype.UUID, error) {
+func (f *fakeMediaManagerForBulk) StoreFromBytes(_ context.Context, _ pgtype.UUID, _ []byte, _ string, _ *media.MediaAttribution) (pgtype.UUID, error) {
 	return pgtype.UUID{}, nil
 }
 

@@ -44,9 +44,7 @@ func newJobUpdateRequest(t *testing.T, body map[string]any, withUser bool, orgID
 		}
 	}
 
-	if err := (error)(nil); err != nil {
-		t.Fatalf("scan tenant id: %v", err)
-	}
+	tenantID := pgtype.UUID{}
 
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, struct{}{}, &struct {

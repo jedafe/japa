@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/intelligence/sources"
@@ -32,10 +31,9 @@ type SettingsReader interface {
 // PreflightChecker enforces robots.txt, rate-limit, license, and crawl-lock
 // rules before any adapter runs.
 type PreflightChecker struct {
-	rdb             valkeycompat.Cmdable
-	robots          *RobotsChecker
-	settings        SettingsReader
-	defaultTenantID pgtype.UUID
+	rdb      valkeycompat.Cmdable
+	robots   *RobotsChecker
+	settings SettingsReader
 }
 
 // NewPreflightChecker returns a PreflightChecker backed by the given Valkey
@@ -44,12 +42,11 @@ type PreflightChecker struct {
 // at check time per Rule 3. robots may be nil to skip robots.txt checks
 // (not recommended for production). settings may be nil to fall back to
 // hardcoded defaults (3600s TTL, 10 req/min).
-func NewPreflightChecker(rdb valkeycompat.Cmdable, robots *RobotsChecker, settings SettingsReader, defaultTenantID pgtype.UUID) *PreflightChecker {
+func NewPreflightChecker(rdb valkeycompat.Cmdable, robots *RobotsChecker, settings SettingsReader) *PreflightChecker {
 	return &PreflightChecker{
-		rdb:             rdb,
-		robots:          robots,
-		settings:        settings,
-		defaultTenantID: defaultTenantID,
+		rdb:      rdb,
+		robots:   robots,
+		settings: settings,
 	}
 }
 
