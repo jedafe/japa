@@ -657,7 +657,7 @@ ORDER BY f.created_at DESC
 LIMIT 20;
 
 -- name: PruneOldFeeds :exec
--- Intentionally global (no tenant_id filter): this is a retention prune that
+-- Intentionally global (no the id filter): this is a retention prune that
 -- runs weekly across all tenants. Ref: Section 32, asynq-tasks catalog.
 DELETE FROM feeds WHERE created_at < now() - interval '30 days';
 

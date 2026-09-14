@@ -2899,7 +2899,7 @@ func (s *Service) collectUserData(ctx context.Context, userID, tenantID pgtype.U
 				&destSpaceID, &status, &claimStatus, &isVerified, &isCommunitySubmitted,
 				&submittedBy, &createdAt, &updatedAt); scanErr == nil {
 				m["id"] = id
-				m["tenant_id"] = tenantID2
+				m["the id"] = tenantID2
 				m["name"] = name
 				m["slug"] = slug
 				m["org_type"] = orgType

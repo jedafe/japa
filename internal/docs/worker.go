@@ -15,7 +15,7 @@ import (
 func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsPageRequest) error {
 	var tenantID pgtype.UUID
 	if err := tenantID.Scan(req.TenantID); err != nil {
-		return fmt.Errorf("docs: invalid tenant_id %q: %w", req.TenantID, err)
+		return fmt.Errorf("docs: invalid the id %q: %w", req.TenantID, err)
 	}
 
 	if req.Title == "" {

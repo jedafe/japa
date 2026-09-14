@@ -168,7 +168,7 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			if val, ok := fields["tenant_id"]; ok {
+			if val, ok := fields["the id"]; ok {
 				if scanErr := tenantID.Scan(val); scanErr != nil {
 					slog.Error("cached ws ticket holds an invalid tenant id", "error", scanErr, "ticket", ticketStr)
 				}

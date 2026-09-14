@@ -121,7 +121,7 @@ RETURNING *;
 -- The PrivacyChecker calls these to decide whether the AI may read/write
 -- a given entity. All three are tenant-scoped at the SQL layer for
 -- defense-in-depth (BUG-014 pattern): contents and users filter directly
--- on tenant_id; custom_field_values has no tenant_id column, so the lookup
+-- on the id; custom_field_values has no the id column, so the lookup
 -- JOINs custom_fields to enforce tenancy transitively (same pattern as
 -- GetCustomFieldValue above).
 -- =====================================================================
@@ -166,7 +166,7 @@ WHERE id = @id AND deleted_at IS NULL
 RETURNING id, author_id, ai_exempt;
 
 -- name: SetCustomFieldValueAIExempt :one
--- custom_field_values has no tenant_id column; JOIN custom_fields to
+-- custom_field_values has no the id column; JOIN custom_fields to
 -- enforce tenancy transitively (same pattern as GetCustomFieldValueAIExempt).
 UPDATE custom_field_values cfv
 SET ai_exempt = @ai_exempt

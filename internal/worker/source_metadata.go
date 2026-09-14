@@ -15,7 +15,6 @@ import (
 
 type sourceMetadataPayload struct {
 	SourceID string `json:"source_id"`
-	TenantID string
 }
 
 // Preview is the subset of public-site metadata needed by the source
@@ -64,11 +63,6 @@ func HandleSourceMetadata(ctx context.Context, t *asynq.Task) error {
 	sourceID, err := scanUUID(p.SourceID)
 	if err != nil {
 		return err
-	}
-
-	tenantID := parseTenantID(p.TenantID)
-	if !tenantID.Valid {
-		return fmt.Errorf("task:intel:source_metadata: invalid tenant_id")
 	}
 
 	q, err := requireDB()

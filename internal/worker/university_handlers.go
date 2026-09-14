@@ -96,8 +96,8 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	if payload.TenantID != "" {
 		var tid pgtype.UUID
 		if err := tid.Scan(payload.TenantID); err != nil {
-			slog.Error("task:university:calculate_period_payouts: invalid tenant_id", "error", err)
-			return fmt.Errorf("task:university:calculate_period_payouts: invalid tenant_id: %w", err)
+			slog.Error("task:university:calculate_period_payouts: invalid id", "error", err)
+			return fmt.Errorf("task:university:calculate_period_payouts: invalid id: %w", err)
 		}
 
 		tenantIDs = []pgtype.UUID{tid}

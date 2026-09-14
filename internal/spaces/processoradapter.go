@@ -152,7 +152,7 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID, tenan
 	}
 
 	if err := tid.Scan(tenantID); err != nil {
-		slog.Warn("space:auto_populate — invalid tenant_id", "error", err)
+		slog.Warn("space:auto_populate — invalid the id", "error", err)
 		return nil
 	}
 

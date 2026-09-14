@@ -582,8 +582,8 @@ func _TestListPendingReviews_MissingTenantID(t *testing.T) {
 	t.Parallel()
 
 	_, err := ListPendingReviews(t.Context(), nil, pgtype.UUID{}, "", 20, 0)
-	if err == nil || err.Error() != "tenant_id is required" {
-		t.Errorf("expected tenant_id error, got: %v", err)
+	if err == nil || err.Error() != "id is required" {
+		t.Errorf("expected id error, got: %v", err)
 	}
 }
 

@@ -172,8 +172,8 @@ WHERE field_id = @field_id AND user_group_id = @user_group_id;
 
 -- name: GetCustomFieldValue :one
 -- BUG-014: JOIN custom_fields to enforce tenant scoping at the SQL layer
--- (defense-in-depth). The custom_field_values table has no tenant_id column;
--- tenancy is enforced transitively via field_id → custom_fields.tenant_id.
+-- (defense-in-depth). The custom_field_values table has no the id column;
+-- tenancy is enforced transitively via field_id → custom_fields.the id.
 SELECT cfv.id, cfv.field_id, cfv.entity_type, cfv.entity_id, cfv.value_text,
  cfv.value_number, cfv.value_bool, cfv.value_date, cfv.value_json,
  cfv.created_at, cfv.updated_at, cfv.ai_exempt
@@ -225,7 +225,7 @@ ORDER BY cf.position ASC, cf.created_at ASC;
 -- name: UpsertCustomFieldValue :one
 -- Tenant scoping for upsert is enforced at the handler layer via a
 -- GetField(fieldID, tenantID) pre-check (the handler rejects 404 before
--- reaching this query). The custom_field_values table has no tenant_id
+-- reaching this query). The custom_field_values table has no the id
 -- column, so the INSERT itself cannot be tenant-scoped at the SQL level.
 INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_text, value_number, value_bool, value_date, value_json) VALUES (@field_id, @entity_type, @entity_id, sqlc.narg(value_text), sqlc.narg(value_number), sqlc.narg(value_bool), sqlc.narg(value_date), sqlc.narg(value_json))
 
@@ -240,7 +240,7 @@ RETURNING id, field_id, entity_type, entity_id, value_text, value_number,
  value_bool, value_date, value_json, created_at, updated_at, ai_exempt;
 
 -- name: DeleteCustomFieldValue :exec
--- BUG-014: tenant scoping via a subquery check on custom_fields.tenant_id.
+-- BUG-014: tenant scoping via a subquery check on custom_fields.the id.
 DELETE FROM custom_field_values
 WHERE field_id = @field_id AND entity_type = @entity_type AND entity_id = @entity_id
  AND EXISTS (SELECT 1 FROM custom_fields cf WHERE cf.id = custom_field_values.field_id);

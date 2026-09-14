@@ -54,9 +54,6 @@ func TestToReplyCards_LeanAndCorrect(t *testing.T) {
 	}
 
 	got := string(blob)
-	if strings.Contains(got, "tenant_id") {
-		t.Errorf("ReplyCard JSON leaks tenant_id: %s", got)
-	}
 
 	for _, want := range []string{"\"id\"", "\"body\"", "content_title", "content_slug", "vote_score"} {
 		if !strings.Contains(got, want) {

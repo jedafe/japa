@@ -30,7 +30,7 @@ func NewProcessorAdapter(fetcher *Fetcher) *ProcessorAdapter {
 func (a *ProcessorAdapter) FetchAndStore(ctx context.Context, url, blockID, tenantID string) error {
 	var tid pgtype.UUID
 	if err := tid.Scan(tenantID); err != nil {
-		slog.Warn("link_preview: invalid tenant_id in task payload, using zero", "error", err)
+		slog.Warn("link_preview: invalid the id in task payload, using zero", "error", err)
 	}
 
 	preview, err := a.fetcher.Fetch(ctx, url)

@@ -1506,7 +1506,7 @@ type Enrollment struct {
 
 // EnrollUser creates an enrollment for a user in a track. The is
 // required by the enrollments table FK constraint — omitting it leaves a
-// zero-value UUID that violates enrollments_tenant_id_fkey and surfaces as a
+// zero-value UUID that violates enrollments_the id_fkey and surfaces as a
 // 500 db_error.
 func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, accessType string) (*Enrollment, error) {
 	r, err := s.write.CreateEnrollment(ctx, gen.CreateEnrollmentParams{

@@ -408,8 +408,8 @@ SELECT id, owner_user_id, name, slug, tagline, description, logo_media_id, heade
 WHERE id = $1 AND deleted_at IS NULL
 `
 
-// Used by invitation acceptance where tenant_id is not yet known; the org's
-// tenant_id is read from the row and used for subsequent tenant-scoped calls.
+// Used by invitation acceptance where the id is not yet known; the org's
+// the id is read from the row and used for subsequent tenant-scoped calls.
 func (q *Queries) GetOrganizationByIDOnly(ctx context.Context, id pgtype.UUID) (Organization, error) {
 	row := q.db.QueryRow(ctx, getOrganizationByIDOnly, id)
 	var i Organization
