@@ -324,26 +324,6 @@ func (h *Handlers) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 
 	h.auditTenantAction(r, "tenant.delete", id)
 
-	// Enqueue the tenant:cleanup_data task with a 30-day delay so all
-	// non-cascading child data is hard-deleted after the grace period.
-	// The initiated_by field carries the admin's user ID for traceability.
-	if h.Client != nil {
-		initiatedBy := "system"
-		if u := auth.FromContext(r.Context()); u != nil {
-			initiatedBy = u.UserID.String()
-		}
-
-		payload, _ := json.Marshal(map[string]string{"initiated_by": initiatedBy})
-
-		task := asynq.NewTask(worker.TypeTenantCleanupData, payload)
-		if _, err := h.Client.Enqueue(
-			task,
-			asynq.ProcessAt(time.Now().Add(30*24*time.Hour)),
-			asynq.Queue(worker.QueueForTask(worker.TypeTenantCleanupData))); err != nil {
-			slog.Error("control: enqueue cleanup task", "error", err)
-		}
-	}
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tenant})
 }
 
