@@ -189,7 +189,7 @@ func (s *Store) MarkReminderSent(ctx context.Context, id pgtype.UUID) error {
 // AdminListScholarships returns a paginated, filtered list of scholarships for
 // the admin management page. q is an optional case-insensitive search over
 // title/university/country; status is an optional verification_status filter.
-// The tenantID is stamped into the query params.
+// The ID is stamped into the query params.
 func (s *Store) AdminListScholarships(ctx context.Context, arg gen.AdminListScholarshipsParams) ([]gen.Scholarship, error) {
 
 	rows, err := s.queries.AdminListScholarships(ctx, arg)
@@ -227,7 +227,7 @@ func (s *Store) AdminGetScholarship(ctx context.Context, id pgtype.UUID) (gen.Sc
 	return row, nil
 }
 
-// AdminCreateScholarship creates a new scholarship record. The tenantID is
+// AdminCreateScholarship creates a new scholarship record. The ID is
 // stamped into the query params.
 func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateScholarshipParams) (gen.Scholarship, error) {
 
@@ -240,7 +240,7 @@ func (s *Store) AdminCreateScholarship(ctx context.Context, arg gen.CreateSchola
 }
 
 // AdminUpdateScholarship updates an existing scholarship record. The
-// tenantID is stamped into the query params.
+// ID is stamped into the query params.
 func (s *Store) AdminUpdateScholarship(ctx context.Context, arg gen.UpdateScholarshipParams) error {
 
 	if err := s.queries.UpdateScholarship(ctx, arg); err != nil {
@@ -252,7 +252,7 @@ func (s *Store) AdminUpdateScholarship(ctx context.Context, arg gen.UpdateSchola
 
 // AdminDeleteScholarship deletes a scholarship record and soft-deletes the
 // guide content row it referenced (Rule 11 — user content is soft-deleted, never
-// hard-deleted). The tenantID is stamped into the query params for tenant
+// hard-deleted). The ID is stamped into the query params for tenant
 // isolation. The guide content row is soft-deleted so it stops appearing in the
 // finder and content listings without losing audit history.
 func (s *Store) AdminDeleteScholarship(ctx context.Context, id pgtype.UUID) error {

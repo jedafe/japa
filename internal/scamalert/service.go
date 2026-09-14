@@ -346,7 +346,7 @@ func (s *Service) Submit(ctx context.Context, reporterID pgtype.UUID, input Subm
 }
 
 // buildScamReport validates a submit/update input and converts it into a
-// ScamReport value. The caller is responsible for setting TenantID, ReporterID
+// ScamReport value. The caller is responsible for setting ID, ReporterID
 // and Status for create, and for supplying the report id/tenant for update.
 func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {

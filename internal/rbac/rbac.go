@@ -113,7 +113,7 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 // HasPermission checks if a user has a specific permission.
 // This is the canonical access check - never hardcode role names.
 // // Usage:
-// //	if rbac.HasPermission(ctx, userID, tenantID, "blog.publish") {
+// //	if rbac.HasPermission(ctx, userID, ID, "blog.publish") {
 // allowPublish()
 // }
 func (r *RBAC) HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool {

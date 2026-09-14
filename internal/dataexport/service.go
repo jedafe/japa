@@ -30,14 +30,14 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 
 // Storage is the interface for storing export files and retrieving their
 // download URLs. The default implementation (LocalStorage) writes to
-// data/exports/{tenantID}/ and returns a relative download-endpoint URL.
+// data/exports/{ID}/ and returns a relative download-endpoint URL.
 // In production this can be replaced with an S3/SeaweedFS-backed adapter.
 type Storage interface {
 	Store(ctx context.Context, exportID pgtype.UUID, filename, mimeType string, data []byte) (url string, size int64, err error)
 	GetPath(exportID pgtype.UUID, filename string) (string, error)
 }
 
-// LocalStorage writes export files to data/exports/{tenantID}/ and returns
+// LocalStorage writes export files to data/exports/{ID}/ and returns
 // a download URL of the form /api/v1/admin/data-exports/{exportID}/download.
 // Files are created with 0600 permissions because they contain PII.
 type LocalStorage struct {

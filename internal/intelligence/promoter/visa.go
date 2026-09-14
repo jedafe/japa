@@ -78,7 +78,7 @@ func WithVisaAIModel(model string) VisaPromoterOption {
 	return func(p *VisaPromoter) { p.aiModel = &model }
 }
 
-// NewVisaPromoter creates a promoter backed by the given store. The tenantID
+// NewVisaPromoter creates a promoter backed by the given store. The ID
 // and authorID identify the tenant and system author stamped onto the
 // contents guide rows created by the create path.
 func NewVisaPromoter(store VisaStore, authorID pgtype.UUID, opts ...VisaPromoterOption) *VisaPromoter {

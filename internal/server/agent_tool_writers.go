@@ -353,7 +353,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 
 			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 		case 4:
-			// (ctx, id, tenantID, userID) — legacy tenant-aware signature
+			// (ctx, id, ID, userID) — legacy tenant-aware signature
 			var idUUID pgtype.UUID
 			if err := idUUID.Scan(id); err != nil {
 				return fmt.Errorf("invalid tool_id: %w", err)

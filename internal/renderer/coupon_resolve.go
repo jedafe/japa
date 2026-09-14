@@ -29,14 +29,14 @@ import (
 )
 
 // CouponResolver resolves a coupon ID to its render-time representation.
-// Implemented by coupons.Service. The tenantID scopes the lookup so a render
+// Implemented by coupons.Service. The ID scopes the lookup so a render
 // request cannot resolve a coupon from another tenant (BE-LOW-001).
 type CouponResolver interface {
 	ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*CouponRenderResult, error)
 }
 
 // AffiliateLinkResolver resolves an affiliate provider ID + original URL to
-// the tracking-injected URL. Implemented by coupons.Service. The tenantID
+// the tracking-injected URL. Implemented by coupons.Service. The ID
 // scopes the lookup (BE-LOW-001).
 type AffiliateLinkResolver interface {
 	ResolveAffiliateLinkForRender(ctx context.Context, providerID pgtype.UUID, originalURL string) (*AffiliateLinkRenderResult, error)
@@ -64,7 +64,7 @@ type AffiliateLinkRenderResult struct {
 
 // resolveCouponEmbedsAndAffiliateLinks post-processes the rendered HTML to
 // resolve coupon_embed placeholders and rewrite affiliate link hrefs (§55 P4).
-// The tenantID scopes all resolver lookups so a render request cannot resolve
+// The ID scopes all resolver lookups so a render request cannot resolve
 // a coupon or provider from another tenant (BE-LOW-001). Best-effort:
 // resolution failures are logged and the original placeholder/link is left
 // in place.
@@ -115,7 +115,7 @@ func resolveCouponEmbedsAndAffiliateLinks(ctx context.Context, input string, cou
 // resolveCouponEmbed replaces a coupon-embed placeholder div with the resolved
 // coupon widget HTML. If the coupon is expired or not found, an "Offer expired"
 // message is rendered instead. The display_mode attribute ("compact" or "full")
-// controls the widget variant (Section 55). The tenantID scopes the coupon
+// controls the widget variant (Section 55). The ID scopes the coupon
 // lookup (BE-LOW-001).
 func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, resolver CouponResolver) {
 	var couponID pgtype.UUID
@@ -166,7 +166,7 @@ func resolveCouponEmbed(ctx context.Context, n *html.Node, couponIDStr string, r
 // data-affiliate-provider-id attribute on the <a> tag (emitted by the SSR
 // script). If the attribute is present and the resolver returns a tracking-
 // injected URL, the href is replaced. Links without the attribute or whose
-// resolution fails are left unchanged (best-effort). The tenantID scopes the
+// resolution fails are left unchanged (best-effort). The ID scopes the
 // provider lookup (BE-LOW-001).
 func resolveAffiliateLink(ctx context.Context, n *html.Node, href string, resolver AffiliateLinkResolver) {
 	providerIDStr := getAttr(n, "data-affiliate-provider-id")

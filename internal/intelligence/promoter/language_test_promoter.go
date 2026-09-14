@@ -86,7 +86,7 @@ func WithLanguageTestAIModel(model string) LanguageTestPromoterOption {
 }
 
 // NewLanguageTestPromoter creates a promoter backed by the given store. The
-// tenantID and authorID identify the tenant and system author stamped onto
+// ID and authorID identify the tenant and system author stamped onto
 // the language_test_requirements projection rows created by the create path.
 func NewLanguageTestPromoter(store LanguageTestStore, authorID pgtype.UUID, opts ...LanguageTestPromoterOption) *LanguageTestPromoter {
 	p := &LanguageTestPromoter{store: store, authorID: authorID, aiModel: ptr("gpt-4o-mini"), now: time.Now}

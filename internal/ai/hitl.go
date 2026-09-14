@@ -31,7 +31,7 @@ func CreateHITLReview(ctx context.Context, store *Store, review HITLReview) (HIT
 	return store.CreateHITLReview(ctx, review)
 }
 
-// ApproveReview approves a pending HITL review. The tenantID scopes the
+// ApproveReview approves a pending HITL review. The ID scopes the
 // update to the caller's tenant (Section 09 multi-tenancy).
 func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID) error {
 	if reviewID == (pgtype.UUID{}) {
@@ -45,7 +45,7 @@ func ApproveReview(ctx context.Context, store *Store, reviewID, reviewerID pgtyp
 	return store.ApproveHITLReview(ctx, reviewID, reviewerID)
 }
 
-// RejectReview rejects a pending HITL review with a reason. The tenantID
+// RejectReview rejects a pending HITL review with a reason. The ID
 // scopes the update to the caller's tenant (Section 09 multi-tenancy).
 func RejectReview(ctx context.Context, store *Store, reviewID, reviewerID pgtype.UUID, reason string) error {
 	if reviewID == (pgtype.UUID{}) {

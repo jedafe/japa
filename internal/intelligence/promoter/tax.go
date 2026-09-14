@@ -78,7 +78,7 @@ func WithTaxAIModel(model string) TaxPromoterOption {
 	return func(p *TaxPromoter) { p.aiModel = &model }
 }
 
-// NewTaxPromoter creates a promoter backed by the given store. The tenantID
+// NewTaxPromoter creates a promoter backed by the given store. The ID
 // and authorID identify the tenant and system author stamped onto the
 // tax_obligation_guides projection rows created by the create path.
 func NewTaxPromoter(store TaxStore, authorID pgtype.UUID, opts ...TaxPromoterOption) *TaxPromoter {

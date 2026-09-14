@@ -833,7 +833,7 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// BUG-009: pass tenantID so the query is tenant-scoped, preventing
+	// BUG-009: pass ID so the query is tenant-scoped, preventing
 	// cross-tenant information disclosure via series membership probing.
 	seriesID, err := h.Service.GetSeriesForContent(r.Context(), contentID)
 	if err != nil {

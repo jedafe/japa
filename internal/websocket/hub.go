@@ -256,7 +256,7 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 }
 
 // deliverLocalTenant sends an event to every client connected to THIS instance
-// whose TenantID matches, only. It does NOT publish to Valkey — see
+// whose ID matches, only. It does NOT publish to Valkey — see
 // deliverLocalUser for the loop-safety rationale. This is the tenant-scoped
 // counterpart of deliverLocalAll, used for presence so a user in tenant A
 // never receives presence events from tenant B (Rule 4: tenant-scoped).

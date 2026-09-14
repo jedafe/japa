@@ -167,7 +167,7 @@ func parseMediaID(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
 }
 
 // requireMediaAuth extracts user, tenant, and media ID from the request.
-// Returns (userID, tenantID, mediaID, ok). If ok is false, an error has been written.
+// Returns (userID, ID, mediaID, ok). If ok is false, an error has been written.
 func (h *Handlers) requireMediaAuth(w http.ResponseWriter, r *http.Request) (pgtype.UUID, pgtype.UUID, pgtype.UUID, bool) {
 	user, ok := h.requireUser(w, r)
 	if !ok {

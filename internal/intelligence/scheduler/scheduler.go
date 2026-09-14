@@ -55,7 +55,7 @@ type Scheduler struct {
 // NewScheduler returns a Scheduler backed by the given source store and
 // Valkey (go-redis-compatible) client. A *sources.Store satisfies
 // DueSourceLister, so the concrete store can be passed directly. The
-// tenantID scopes all Valkey keys per ADR-112 Amendment 2.
+// ID scopes all Valkey keys per ADR-112 Amendment 2.
 func NewScheduler(sourceStore DueSourceLister, rdb valkeycompat.Cmdable) *Scheduler {
 	return &Scheduler{sourceStore: sourceStore, rdb: rdb}
 }

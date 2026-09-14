@@ -1183,7 +1183,7 @@ SELECT id, slug, name, official_url, validity_months, created_at, updated_at FRO
 `
 
 // language_tests is a global reference table (no the id), so the
-// tenantID parameter is accepted for interface consistency but not used
+// ID parameter is accepted for interface consistency but not used
 // in the filter. The promoter resolves the language_tests(id) FK from a
 // test_name extracted as free text.
 func (q *Queries) GetLanguageTestByName(ctx context.Context, name string) (LanguageTest, error) {

@@ -234,7 +234,7 @@ func (f *Fetcher) SetBlacklist(blacklist []string) {
 
 // Fetch retrieves a link preview for the given URL.
 // It checks the cache first, then fetches and parses the page if not cached.
-// The tenantID is used to resolve per-tenant settings (fetch timeout, domain
+// The ID is used to resolve per-tenant settings (fetch timeout, domain
 // blacklist) from system_settings (BUG-002, BUG-004).
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 	// Validate URL for SSRF

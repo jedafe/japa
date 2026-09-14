@@ -178,7 +178,7 @@ type GetScoreInput struct {
 }
 
 // ScorePreviewInput scores a list of item refs without creating a comparison.
-// TenantID and UserID are not exposed to JSON clients; the handler/service must
+// ID and UserID are not exposed to JSON clients; the handler/service must
 // set them from the request context before calling the engine.
 type ScorePreviewInput struct {
 	UserID       *string                 `json:"-"`

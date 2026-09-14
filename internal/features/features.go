@@ -96,7 +96,7 @@ func (c *Checker) Close() {
 // but NOT cached — the next request retries the DB.
 func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 	// Ref: .jeos/sections/42-feature-flags.md (removal in progress).
-	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
+	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
 	if cached := c.cacheGet(key); cached != nil {
 		return *cached
 	}
@@ -127,7 +127,7 @@ func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 
 // queryEnabled queries the database for the feature flag. When the flag is
 // enabled and its config carries a rollout_percentage between 0 and 100
-// (exclusive), a deterministic hash of (tenantID, key) decides whether this
+// (exclusive), a deterministic hash of (ID, key) decides whether this
 // tenant falls inside the rollout cohort (BL-013 / Section 42). This gives a
 // stable per-tenant-per-flag result: the same tenant always sees the same
 // outcome for a given flag until the percentage or enabled state changes.
@@ -168,7 +168,7 @@ func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-// hashInRollout deterministically decides whether a (tenantID, key) pair falls
+// hashInRollout deterministically decides whether a (ID, key) pair falls
 // inside the rollout cohort. It hashes the pair into a 0–99 bucket and returns
 // true when bucket < percentage. The result is stable for a given pair.
 func hashInRollout(key string, percentage int) bool {
@@ -227,7 +227,7 @@ func (c *Checker) ClearCache() {
 }
 
 // ClearCacheForTenant clears all cached flag values.
-// The tenantID parameter is kept for Phase 1 compatibility and is ignored.
+// The ID parameter is kept for Phase 1 compatibility and is ignored.
 func (c *Checker) ClearCacheForTenant() {
 	c.ClearCache()
 	c.valkeyFlushAll(context.Background())

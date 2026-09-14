@@ -97,7 +97,7 @@ type webhookEmitter interface {
 }
 
 // spaceBroadcaster publishes a live update to a space's WebSocket room
-// (Section 10). Used for poll/vote count live updates. The tenantID scopes
+// (Section 10). Used for poll/vote count live updates. The ID scopes
 // the subscription so cross-tenant space ID collisions cannot leak events
 // (Rule 4: tenant-scoped). Ref: Section 08.
 type spaceBroadcaster interface {

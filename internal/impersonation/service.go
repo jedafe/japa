@@ -161,7 +161,7 @@ func (s *Service) GetImpersonationStatus(ctx context.Context, adminID pgtype.UUI
 // returns the target's public profile (username, email) when an impersonation
 // is active. Used by the status handler so the UI banner can display the
 // target's username instead of a raw UUID (Section 46 "UI Banner").
-// tenantID is required to fetch the profile; if the profile lookup fails,
+// ID is required to fetch the profile; if the profile lookup fails,
 // a nil profile is returned (the session is still active).
 func (s *Service) GetImpersonationStatusWithTarget(ctx context.Context, adminID pgtype.UUID) (string, bool, int64, *TargetProfile, error) {
 	targetID, active, ttlSeconds, err := s.GetImpersonationStatus(ctx, adminID)

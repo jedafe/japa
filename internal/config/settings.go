@@ -201,7 +201,7 @@ func (s *Settings) setValkeyCache(ctx context.Context, cacheKey string, entry ca
 // the database. The cache is invalidated by Set/Update calls and by the TTL.
 func (s *Settings) GetSetting(ctx context.Context, key string) (string, error) {
 	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
-	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
+	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
 	cacheKey := key
 
 	if value, ok, err := s.getFromL1(cacheKey, key); ok {
@@ -284,7 +284,7 @@ func parseInt(sv string) (int, error) {
 // Callers should invoke this after any system_settings write.
 func (s *Settings) InvalidateSettings(ctx context.Context) {
 	// Ref: .jeos/sections/04-multi-tenancy.md (removal in progress).
-	// tenantID is kept in the public signature for Phase 1 compatibility and is ignored.
+	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
 
 	s.mu.Lock()
 	s.cache = make(map[string]cachedSetting)

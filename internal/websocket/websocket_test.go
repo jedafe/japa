@@ -749,5 +749,5 @@ func TestHandleTypingEventMissingConversationIDIgnores(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// WS-006: SessionChecker signature (userID + tenantID)
+// WS-006: SessionChecker signature (userID + ID)
 // ---------------------------------------------------------------------------

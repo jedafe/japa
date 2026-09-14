@@ -866,7 +866,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
-	// persisted to data/gdpr-exports/{tenantID}/. Swap for an S3/SeaweedFS
+	// persisted to data/gdpr-exports/{ID}/. Swap for an S3/SeaweedFS
 	// adapter (ADR-048) in production via gdprService.SetStorage(...).
 	gdprService.SetStorage(gdpr.NewLocalStorage(""))
 	gdprHandlers := gdpr.NewHandlers(gdprService)

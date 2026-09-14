@@ -1266,12 +1266,6 @@ func HandleSearchIndexSync(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	var tenantID pgtype.UUID
-	if err := tenantID.Scan(""); err != nil {
-		slog.Error("task:search:index_entity: invalid id", "value", "", "error", err)
-		return err
-	}
-
 	entityType := payload.EntityType
 	if entityType == "" {
 		entityType = entityTypeContent
@@ -1551,17 +1545,13 @@ func HandleFormFireSubmissionTriggers(ctx context.Context, t *asynq.Task) error 
 		return err
 	}
 
-	if payload.SubmissionID == "" || payload.FormID == "" || "" == "" {
-		return errors.New("task:form:fire_submission_triggers: submission_id, form_id, and id are required")
+	if payload.SubmissionID == "" || payload.FormID == "" {
+		return errors.New("task:form:fire_submission_triggers: submission_id and form_id are required")
 	}
 
-	var submissionID, tenantID, formID pgtype.UUID
+	var submissionID, formID pgtype.UUID
 	if err := submissionID.Scan(payload.SubmissionID); err != nil {
 		return fmt.Errorf("task:form:fire_submission_triggers: invalid submission_id: %w", err)
-	}
-
-	if err := tenantID.Scan(""); err != nil {
-		return fmt.Errorf("task:form:fire_submission_triggers: invalid id: %w", err)
 	}
 
 	if err := formID.Scan(payload.FormID); err != nil {
@@ -2242,11 +2232,6 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 		var id pgtype.UUID
 		if err := id.Scan(p.JobID); err != nil {
 			return fmt.Errorf("task:content:generate_draft: bad job_id: %w", err)
-		}
-
-		var tenantID pgtype.UUID
-		if err := tenantID.Scan(""); err != nil {
-			return fmt.Errorf("task:content:generate_draft: bad id: %w", err)
 		}
 
 		if err := studioProcessor.GenerateJob(ctx, id); err != nil {

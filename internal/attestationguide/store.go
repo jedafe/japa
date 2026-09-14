@@ -513,7 +513,7 @@ RETURNING id, pathway_id, user_id, step_index, fee_estimate, turnaround_days,
 }
 
 // ReviewCommunityUpdate sets the status of a community update to
-// approved or rejected and records the reviewer. The tenantID scopes
+// approved or rejected and records the reviewer. The ID scopes
 // the update through its parent pathway to prevent cross-tenant access.
 func (s *Store) ReviewCommunityUpdate(ctx context.Context, id, reviewerID pgtype.UUID, status string) error {
 	const q = `
