@@ -794,7 +794,7 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 				if time.Now().After(retentionDeadline) {
 					slog.Info("gdpr: performing physical erasure", "user_id", request.UserID.String(), "request_id", requestID.String())
 
-					if hardErr := s.hardDeleteUser(ctx, request.UserID, pgtype.UUID{}); hardErr != nil {
+					if hardErr := s.hardDeleteUser(ctx, request.UserID); hardErr != nil {
 						s.markDeletionFailed(ctx, requestID)
 						return fmt.Errorf("hard deleting user %s: %w", request.UserID, hardErr)
 					}
@@ -894,7 +894,7 @@ func (s *Service) logDeletionAudit(ctx context.Context, request gen.AccountDelet
 // hardDeleteUser performs physical deletion of the user row after handling
 // non-CASCADE foreign key references. Called only when gdpr.hard_delete_enabled
 // is true and the retention period has elapsed.
-func (s *Service) hardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
+func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error {
 	// Resolve the deleted-user placeholder UUID from settings, or use zero UUID.
 	deletedUserPlaceholder := pgtype.UUID{}
 	_ = deletedUserPlaceholder.Scan("00000000-0000-0000-0000-000000000000")
@@ -1977,8 +1977,8 @@ func (s *Service) enqueueSearchIndexDelete(entityID pgtype.UUID, entityType stri
 // It performs the full GDPR cascade (reassign content, nullify refs, physical delete)
 // in a single transaction. This is the same logic as the internal hardDeleteUser
 // but exposed for admin use on already-soft-deleted users.
-func (s *Service) HardDeleteUser(ctx context.Context, userID, tenantID pgtype.UUID) error {
-	return s.hardDeleteUser(ctx, userID, tenantID)
+func (s *Service) HardDeleteUser(ctx context.Context, userID pgtype.UUID) error {
+	return s.hardDeleteUser(ctx, userID)
 }
 
 // ListPendingDeletionRequests returns pending deletion requests for the

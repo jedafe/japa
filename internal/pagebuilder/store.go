@@ -59,7 +59,7 @@ func (s *Store) ListBlocks(ctx context.Context, q string, page, limit int32) ([]
 	for rows.Next() {
 		var b Block
 		if err := rows.Scan(
-			&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
+			&b.ID, &(pgtype.UUID{}), &b.Name, &b.Slug, &b.Category, &b.Component,
 			&b.DefaultConfig, &b.ConfigSchema,
 			&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
 		); err != nil {
@@ -98,7 +98,7 @@ func (s *Store) GetBlock(ctx context.Context, id pgtype.UUID) (Block, error) {
 		FROM pagebuilder_blocks
 		WHERE id = $1
 	`, id).Scan(
-		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
+		&b.ID, &(pgtype.UUID{}), &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
 	)
@@ -130,7 +130,7 @@ func (s *Store) CreateBlock(ctx context.Context, input CreateBlockInput) (Block,
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
 	`, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled).Scan(
-		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
+		&b.ID, &(pgtype.UUID{}), &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
 	)
@@ -166,7 +166,7 @@ func (s *Store) UpdateBlock(ctx context.Context, id pgtype.UUID, input UpdateBlo
 		          COALESCE(config_schema, '{}'::jsonb),
 		          preview_image, is_system, is_enabled, created_at, updated_at
 	`, id, input.Name, input.Slug, input.Category, input.Component, defaultConfig, configSchema, input.PreviewImage, input.IsEnabled).Scan(
-		&b.ID, &b.TenantID, &b.Name, &b.Slug, &b.Category, &b.Component,
+		&b.ID, &(pgtype.UUID{}), &b.Name, &b.Slug, &b.Category, &b.Component,
 		&b.DefaultConfig, &b.ConfigSchema,
 		&b.PreviewImage, &b.IsSystem, &b.IsEnabled, &b.CreatedAt, &b.UpdatedAt,
 	)
@@ -227,7 +227,7 @@ func (s *Store) ListTemplates(ctx context.Context, q, category string, page, lim
 	for rows.Next() {
 		var t Template
 		if err := rows.Scan(
-			&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
+			&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description, &t.PageType,
 			&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scanning template: %w", err)
@@ -265,7 +265,7 @@ func (s *Store) GetTemplate(ctx context.Context, id pgtype.UUID) (Template, erro
 		FROM pagebuilder_templates
 		WHERE id = $1
 	`, id).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
@@ -290,7 +290,7 @@ func (s *Store) CreateTemplate(ctx context.Context, input CreateTemplateInput) (
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 	`, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID, input.CreatedBy).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Store) UpdateTemplate(ctx context.Context, id pgtype.UUID, input Update
 		          COALESCE(blocks, '[]'::jsonb),
 		          is_active, thumbnail_media_id, schema_version, is_system, created_by, created_at, updated_at
 	`, id, input.Name, input.Slug, input.Description, input.PageType, blocks, input.IsActive, input.ThumbnailMediaID).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description, &t.PageType,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description, &t.PageType,
 		&t.Blocks, &t.IsActive, &t.ThumbnailMediaID, &t.SchemaVersion, &t.IsSystem, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
@@ -381,7 +381,7 @@ func (s *Store) ListThemes(ctx context.Context, q string, page, limit int32) ([]
 	for rows.Next() {
 		var t Theme
 		if err := rows.Scan(
-			&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
+			&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description,
 			&t.Colors, &t.Typography, &t.Spacing,
 			&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
@@ -421,7 +421,7 @@ func (s *Store) GetTheme(ctx context.Context, id pgtype.UUID) (Theme, error) {
 		FROM pagebuilder_themes
 		WHERE id = $1
 	`, id).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -459,7 +459,7 @@ func (s *Store) CreateTheme(ctx context.Context, input CreateThemeInput) (Theme,
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
 	`, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -500,7 +500,7 @@ func (s *Store) UpdateTheme(ctx context.Context, id pgtype.UUID, input UpdateThe
 		          COALESCE(spacing, '{}'::jsonb),
 		          is_default, created_at, updated_at
 	`, id, input.Name, input.Slug, input.Description, colors, typography, spacing, input.IsDefault).Scan(
-		&t.ID, &t.TenantID, &t.Name, &t.Slug, &t.Description,
+		&t.ID, &(pgtype.UUID{}), &t.Name, &t.Slug, &t.Description,
 		&t.Colors, &t.Typography, &t.Spacing,
 		&t.IsDefault, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -603,7 +603,7 @@ func (s *Store) ListPages(ctx context.Context, f PageListFilter, page, limit int
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(
-			&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+			&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 			&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 			&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
@@ -655,7 +655,7 @@ func (s *Store) ListPublishedPages(ctx context.Context) ([]Page, error) {
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(
-			&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+			&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 			&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 			&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
@@ -680,7 +680,7 @@ func (s *Store) GetPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 		FROM pages
 		WHERE id = $1
 	`, id).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -703,7 +703,7 @@ func (s *Store) GetPageBySlug(ctx context.Context, slug string) (Page, error) {
 		FROM pages
 		WHERE slug = $1 AND status = 'published' AND page_type IN ('page', 'landing')
 	`, slug).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -760,7 +760,7 @@ func (s *Store) CreatePage(ctx context.Context, createdBy pgtype.UUID, input Cre
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
 	`, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, status, pageType, createdBy).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -808,7 +808,7 @@ func (s *Store) UpdatePage(ctx context.Context, id pgtype.UUID, input UpdatePage
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
 	`, id, input.Title, input.Slug, input.Description, input.TemplateID, input.ThemeID, blocks, meta, input.Status, input.PageType).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -848,7 +848,7 @@ func (s *Store) PublishPage(ctx context.Context, id pgtype.UUID) (Page, error) {
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
 	`, id).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -872,7 +872,7 @@ func (s *Store) ArchivePage(ctx context.Context, id pgtype.UUID) (Page, error) {
 		          COALESCE(meta, '{}'::jsonb),
 		          status, page_type, published_at, created_by, created_at, updated_at
 	`, id).Scan(
-		&p.ID, &p.TenantID, &p.Title, &p.Slug, &p.Description,
+		&p.ID, &(pgtype.UUID{}), &p.Title, &p.Slug, &p.Description,
 		&p.TemplateID, &p.ThemeID, &p.Blocks, &p.Meta,
 		&p.Status, &p.PageType, &p.PublishedAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)

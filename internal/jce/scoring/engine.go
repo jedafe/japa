@@ -137,7 +137,7 @@ type scoreRunResult struct {
 // Score computes and persists JapaScores and recommendations for a comparison.
 // // Ref: docs/superpowers/specs/2026-08-25-jce-subspec-2-design.md §6.5.
 func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResult, error) {
-	_ = stringToUUID(input.TenantID)
+	_ = stringToUUID("")
 
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
@@ -487,7 +487,7 @@ func (e *Engine) Score(ctx context.Context, input jce.ScoreInput) (jce.ScoreResu
 
 // GetScore returns a previously computed ScoreResult from cache or DB.
 func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.ScoreResult, error) {
-	_ = stringToUUID(input.TenantID)
+	_ = stringToUUID("")
 
 	contentID, err := parseUUID(input.ContentID)
 	if err != nil {
@@ -729,7 +729,7 @@ func (e *Engine) GetScore(ctx context.Context, input jce.GetScoreInput) (jce.Sco
 
 // PreviewScoreForItems scores a list of item refs without creating content.
 func (e *Engine) PreviewScoreForItems(ctx context.Context, input jce.ScorePreviewInput) (jce.ScoreResult, error) {
-	_ = stringToUUID(input.TenantID)
+	_ = stringToUUID("")
 
 	typeID, err := parseUUID(input.TypeID)
 	if err != nil {

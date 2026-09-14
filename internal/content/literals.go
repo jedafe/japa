@@ -32,7 +32,7 @@ func (s *Service) ResolveContentFields(ctx context.Context, v any, rc literals.R
 		return nil
 	}
 
-	tokens, err := s.loadTemplateLiterals(ctx, rc.TenantID)
+	tokens, err := s.loadTemplateLiterals(ctx, (pgtype.UUID{}))
 	if err != nil {
 		return fmt.Errorf("loading template literals: %w", err)
 	}

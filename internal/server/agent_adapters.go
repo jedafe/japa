@@ -296,7 +296,7 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 			})
 		}
 
-		res, err := a.svc.CreateJCEComparison(ctx, tenantID, userID, comparison.CreateJCEComparisonInput{
+		res, err := a.svc.CreateJCEComparison(ctx, userID, comparison.CreateJCEComparisonInput{
 			Title:      input.Title,
 			Body:       input.Body,
 			Visibility: input.Visibility,
@@ -328,7 +328,7 @@ func (a *agentComparisonAdapter) CreateComparison(ctx context.Context, tenantID,
 		items = append(items, comparison.ComparisonItemInput{Name: it.Name, Slug: it.Slug})
 	}
 
-	res, err := a.svc.CreateComparison(ctx, tenantID, userID, comparison.CreateComparisonInput{
+	res, err := a.svc.CreateComparison(ctx, userID, comparison.CreateComparisonInput{
 		Title:      input.Title,
 		Body:       input.Body,
 		Visibility: input.Visibility,
@@ -1000,7 +1000,7 @@ func (a *agentUsersAdapter) GetProfile(ctx context.Context, userID pgtype.UUID) 
 	}, nil
 }
 
-func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *ai.UserProfileUpdateRequest) error {
+func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *ai.UserProfileUpdateRequest) error {
 	var uReq *users.UpdateProfileRequest
 	if req != nil {
 		uReq = &users.UpdateProfileRequest{
@@ -1013,7 +1013,7 @@ func (a *agentUsersAdapter) UpdateProfile(ctx context.Context, tenantID, userID 
 		}
 	}
 
-	return a.svc.UpdateProfile(ctx, tenantID, userID, uReq)
+	return a.svc.UpdateProfile(ctx, userID, uReq)
 }
 
 // ---------------------------------------------------------------------------

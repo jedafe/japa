@@ -242,8 +242,7 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -258,7 +257,7 @@ func (h *Handlers) HandleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	batch, jobs, err := h.service.RunCampaign(r.Context(), tenantID, user.UserID, id)
+	batch, jobs, err := h.service.RunCampaign(r.Context(), user.UserID, id)
 	if err != nil {
 		slog.Error("campaign: run failed", "error", err, "id", id.String())
 		h.writeServiceError(w, err)

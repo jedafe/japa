@@ -65,8 +65,8 @@ type TestRow struct {
 // RequirementRow holds a joined language_test_requirements +
 // language_tests + spaces row, returned by list and admin-list queries.
 type RequirementRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	DestinationSpaceID pgtype.UUID
 	DestSpaceName      *string
 	DestSpaceCode      *string
@@ -92,8 +92,8 @@ type RequirementRow struct {
 
 // ResourceRow holds a single language_test_resources row.
 type ResourceRow struct {
-	ID              pgtype.UUID
-	TenantID        pgtype.UUID
+	ID pgtype.UUID
+
 	TestID          pgtype.UUID
 	Title           string
 	ResourceURL     string
@@ -105,8 +105,8 @@ type ResourceRow struct {
 
 // ScoreStoryRow holds a joined language_score_stories + users row.
 type ScoreStoryRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	UserID             pgtype.UUID
 	TestID             pgtype.UUID
 	StartingLevel      *string
@@ -239,7 +239,6 @@ LIMIT $2
 // requirements. DestinationSpaceID and VisaCategory are optional filters
 // used by the public requirements endpoint.
 type ListRequirementsFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	VisaCategory       string      // optional
 	TestID             pgtype.UUID // optional (zero = no filter)
@@ -361,7 +360,6 @@ LIMIT $%d OFFSET $%d
 // AdminListRequirementsFilter — AdminListRequirements returns requirements (any status) for the admin
 // moderation queue. Supports optional filters by status and destination.
 type AdminListRequirementsFilter struct {
-	TenantID           pgtype.UUID
 	Status             string // optional
 	DestinationSpaceID pgtype.UUID
 	Q                  string // optional search on test name / notes
@@ -475,7 +473,6 @@ WHERE %s
 
 // CreateRequirementInput holds the fields for inserting a new requirement.
 type CreateRequirementInput struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID
 	VisaCategory       *string
 	TestID             pgtype.UUID
@@ -519,8 +516,9 @@ RETURNING id, destination_space_id, visa_category, test_id,
 	var r RequirementRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		in.TenantID, in.DestinationSpaceID, in.VisaCategory, in.TestID,
+		ctx, q, (pgtype.UUID{}),
+
+		in.DestinationSpaceID, in.VisaCategory, in.TestID,
 		in.MinimumScore, scoreBreakdown, in.Notes, in.SourceURL, status,
 		in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
 	).Scan(
@@ -920,7 +918,6 @@ LIMIT $%d OFFSET $%d
 
 // CreateStoryInput holds the fields for inserting a new score story.
 type CreateStoryInput struct {
-	TenantID           pgtype.UUID
 	UserID             pgtype.UUID
 	TestID             pgtype.UUID
 	StartingLevel      *string
@@ -953,8 +950,9 @@ RETURNING id, user_id, test_id, starting_level, final_score,
 	var r ScoreStoryRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		in.TenantID, in.UserID, in.TestID, in.StartingLevel, in.FinalScore,
+		ctx, q, (pgtype.UUID{}),
+
+		in.UserID, in.TestID, in.StartingLevel, in.FinalScore,
 		in.DestinationSpaceID, in.PrepDurationWeeks, in.ResourcesUsed,
 		in.Advice, status,
 	).Scan(

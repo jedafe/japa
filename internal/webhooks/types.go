@@ -45,8 +45,8 @@ type TestWebhookRequest struct {
 // internal service/store use. The secret must never be serialized to a JSON
 // response except in the single create-response (§12: "secret shown once").
 type WebhookEndpointWithSecret struct {
-	ID         pgtype.UUID
-	TenantID   pgtype.UUID
+	ID pgtype.UUID
+
 	Name       string
 	URL        string
 	Secret     string
@@ -62,8 +62,8 @@ type WebhookEndpointWithSecret struct {
 // WebhookEndpointResponse is the JSON-safe representation of a webhook endpoint.
 // The secret is never included (§12: "secret shown once" — only on create).
 type WebhookEndpointResponse struct {
-	ID         string `json:"id"`
-	TenantID   string
+	ID string `json:"id"`
+
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	EventTypes []string   `json:"event_types"`

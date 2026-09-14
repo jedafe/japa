@@ -703,8 +703,8 @@ func (s *Service) ApplyDiscountCodeUse(ctx context.Context, codeID, userID, paym
 
 // CreateRefundInput holds parameters for creating a refund.
 type CreateRefundInput struct {
-	PaymentID   string
-	TenantID    pgtype.UUID
+	PaymentID string
+
 	Amount      int64
 	Reason      string
 	ProviderRef string

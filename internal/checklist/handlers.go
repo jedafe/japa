@@ -213,8 +213,7 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-
-	tenantID, ok := requireTenant(w, r)
+	_, ok = requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -241,7 +240,7 @@ func (h *Handlers) HandleUpdateProgress(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	row, err := h.service.UpsertProgress(r.Context(), tenantID, user.UserID, guideID, itemKey, body.Completed, body.Notes)
+	row, err := h.service.UpsertProgress(r.Context(), user.UserID, guideID, itemKey, body.Completed, body.Notes)
 	if err != nil {
 		slog.Error("checklist: update progress failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update progress")

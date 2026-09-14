@@ -47,8 +47,7 @@ func main() {
 	defer rows.Close()
 
 	type sourceRow struct {
-		ID       pgtype.UUID
-		TenantID pgtype.UUID
+		ID pgtype.UUID
 	}
 
 	var sources []sourceRow

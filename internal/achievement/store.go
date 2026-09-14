@@ -36,8 +36,8 @@ func NewStore(database *db.DB) *Store {
 // AchievementMeta holds the structured fields for a single achievement.
 // //nolint:revive // exported: stutter naming is intentional
 type AchievementMeta struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	ContentID          pgtype.UUID
 	MilestoneType      *string
 	DestinationSpaceID pgtype.UUID
@@ -50,8 +50,8 @@ type AchievementMeta struct {
 // + users, returned by list and get-by-slug queries.
 // //nolint:revive // exported: stutter naming is intentional
 type AchievementRow struct {
-	ID              pgtype.UUID
-	TenantID        pgtype.UUID
+	ID pgtype.UUID
+
 	AuthorID        pgtype.UUID
 	Title           string
 	Slug            string
@@ -105,8 +105,9 @@ INSERT INTO achievement_meta (
 `
 
 	_, err := s.pool.Writer.Exec(
-		ctx, q,
-		meta.TenantID, meta.ContentID, meta.MilestoneType,
+		ctx, q, (pgtype.UUID{}),
+
+		meta.ContentID, meta.MilestoneType,
 		meta.DestinationSpaceID, meta.OriginSpaceID, meta.IsAnonymous,
 	)
 	if err != nil {
@@ -169,7 +170,6 @@ WHERE content_id = $1
 
 // ListAchievementsFilter holds the filter parameters for listing achievements.
 type ListAchievementsFilter struct {
-	TenantID      pgtype.UUID
 	DestSpaceID   pgtype.UUID // optional
 	MilestoneType string      // optional
 	Sort          string      // "top" | "latest" (default: latest)
@@ -502,7 +502,6 @@ LIMIT $2
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID      pgtype.UUID
 	Status        string // optional: filter by content status
 	MilestoneType string // optional: filter by milestone type
 	Q             string // optional: search title

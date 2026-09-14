@@ -34,8 +34,8 @@ func NewStore(database *db.DB) *Store {
 
 // ScamReport holds a single row from the scam_reports table.
 type ScamReport struct {
-	ID                    pgtype.UUID
-	TenantID              pgtype.UUID
+	ID pgtype.UUID
+
 	ReporterID            pgtype.UUID
 	ScamType              string
 	DestinationSpaceID    pgtype.UUID
@@ -120,7 +120,7 @@ LIMIT 1
 	var r ScamReportRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
+		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -169,7 +169,7 @@ LIMIT 1
 	var r ScamReportRow
 
 	err := s.pool.Reader.QueryRow(ctx, q, id, tenantID).Scan(
-		&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
+		&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 		&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 		&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 		&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -224,7 +224,6 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // ListReportsFilter holds the filter parameters for listing confirmed reports.
 type ListReportsFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	ScamType           string      // optional
 	Limit              int32
@@ -305,7 +304,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
+			&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,
@@ -428,7 +427,6 @@ WHERE id = $1 AND status = 'confirmed'
 
 // AdminListReportsFilter holds filter parameters for the admin moderation list.
 type AdminListReportsFilter struct {
-	TenantID           pgtype.UUID
 	Status             string      // optional: under_review|confirmed|debunked|duplicate
 	DestinationSpaceID pgtype.UUID // optional
 	ScamType           string      // optional
@@ -547,7 +545,7 @@ LIMIT $%d OFFSET $%d
 	for rows.Next() {
 		var r ScamReportRow
 		if err := rows.Scan(
-			&r.ID, &r.TenantID, &r.ReporterID, &r.ScamType,
+			&r.ID, &(pgtype.UUID{}), &r.ReporterID, &r.ScamType,
 			&r.DestinationSpaceID, &r.OriginSpaceID, &r.OriginCommunity,
 			&r.PlatformUsed, &r.ApproximateDate, &r.AmountRange, &r.Description,
 			&r.ReportedToAuthorities, &r.Status, &r.ModeratorNote,

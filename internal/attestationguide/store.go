@@ -97,8 +97,8 @@ LIMIT 1
 
 // Pathway holds a single attestation_pathways row.
 type Pathway struct {
-	ID                    pgtype.UUID
-	TenantID              pgtype.UUID
+	ID pgtype.UUID
+
 	DocumentType          string
 	IssuingSpaceID        pgtype.UUID
 	DestinationSpaceID    pgtype.UUID
@@ -144,7 +144,6 @@ type CommunityUpdate struct {
 
 // ListPathwaysFilter holds the filter parameters for listing pathways.
 type ListPathwaysFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	DocumentType       string      // optional
 	IssuingSpaceID     pgtype.UUID // optional
@@ -390,8 +389,9 @@ RETURNING id, document_type, issuing_space_id, destination_space_id,
 	var out Pathway
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		p.TenantID, p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
+		ctx, q, (pgtype.UUID{}),
+
+		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
 		p.HITLReviewedBy, p.HITLReviewedAt, p.HITLReviewNotes,
@@ -624,10 +624,9 @@ LIMIT 1
 // ListCommunityUpdatesFilter holds filter parameters for listing community
 // updates in the admin moderation queue (BUG-005).
 type ListCommunityUpdatesFilter struct {
-	TenantID pgtype.UUID
-	Status   string // optional; default: pending
-	Limit    int32
-	Offset   int32
+	Status string // optional; default: pending
+	Limit  int32
+	Offset int32
 }
 
 // ListCommunityUpdates returns a paginated list of attestation_community_updates
@@ -716,7 +715,6 @@ WHERE %s
 
 // AdminListFilter holds filter parameters for the admin pathway list.
 type AdminListFilter struct {
-	TenantID           pgtype.UUID
 	Status             string      // optional
 	DocumentType       string      // optional
 	DestinationSpaceID pgtype.UUID // optional

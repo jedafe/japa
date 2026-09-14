@@ -545,8 +545,8 @@ func maskAPIKey(key string) string {
 // responses. The encrypted API key is never serialized; instead a masked
 // version is derived for admin display.
 type AdNetworkDTO struct {
-	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Provider     string             `json:"provider"`
 	Name         string             `json:"name"`
 	ClientID     *string            `json:"client_id"`

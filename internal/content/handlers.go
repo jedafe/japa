@@ -507,7 +507,7 @@ func (h *Handlers) enqueueModerationScan(entityType string, entityID pgtype.UUID
 // // The worker decides push vs pull per space based on feed.fanout_threshold.
 // Fire-and-forget per Rule 8.
 // Ref: japaconnect-engineering/sections/32-activity-feed-timeline.md.
-func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, tenantID, authorID, primarySpaceID pgtype.UUID, contentType string) {
+func (h *Handlers) enqueueFeedFanOut(ctx context.Context, contentID, authorID, primarySpaceID pgtype.UUID, contentType string) {
 	if h.AsynqClient == nil {
 		return
 	}
@@ -773,7 +773,7 @@ func extractTitleKeywords(title string) []string {
 // content create/update so previews are cached for editor display.
 // BUG-004: also extracts URLs from data-url attributes used by link
 // preview block nodes, not just href attributes on inline links.
-func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID, tenantID pgtype.UUID) {
+func (h *Handlers) enqueueLinkPreviewsForBody(bodyHTML string, contentID pgtype.UUID) {
 	if h.AsynqClient == nil || bodyHTML == "" {
 		return
 	}
@@ -1137,7 +1137,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.enqueueAffiliateLinkScan(content.ID)
-		h.enqueueFeedFanOut(r.Context(), content.ID, tenantID, user.UserID, content.SpaceID, content.ContentType)
+		h.enqueueFeedFanOut(r.Context(), content.ID, user.UserID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds so new content appears without
 		// waiting for the hourly cron.
 		h.enqueueRSSRegenerate()
@@ -1145,7 +1145,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
-	h.enqueueLinkPreviewsForBody(input.BodyHtml, content.ID, tenantID)
+	h.enqueueLinkPreviewsForBody(input.BodyHtml, content.ID)
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": content})
 }
@@ -1838,14 +1838,14 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue feed fan-out when content transitions to published (BL-005).
 	// This covers the draft→published path that CreateContent doesn't handle.
 	if prevErr == nil && prevContent.Status != StatusPublished && content.Status == StatusPublished {
-		h.enqueueFeedFanOut(r.Context(), id, tenantID, content.AuthorID, content.SpaceID, content.ContentType)
+		h.enqueueFeedFanOut(r.Context(), id, content.AuthorID, content.SpaceID, content.ContentType)
 		// RSS-013: regenerate RSS feeds on draft→published transition.
 		h.enqueueRSSRegenerate()
 	}
 
 	// Enqueue link preview fetches for external URLs in the body — fire-and-forget
 	// (Section 15 — external links get async OG/oEmbed scrape, BUG-003).
-	h.enqueueLinkPreviewsForBody(input.BodyHtml, id, tenantID)
+	h.enqueueLinkPreviewsForBody(input.BodyHtml, id)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
 }
@@ -1970,7 +1970,7 @@ func (h *Handlers) PublishContent(w http.ResponseWriter, r *http.Request) {
 	// Enqueue feed fan-out when content transitions to published (BL-005).
 	// This covers the draft→published path that CreateContent doesn't handle.
 	if prevErr == nil && prevContent.Status != StatusPublished {
-		h.enqueueFeedFanOut(r.Context(), id, tenantID, updated.AuthorID, updated.SpaceID, updated.ContentType)
+		h.enqueueFeedFanOut(r.Context(), id, updated.AuthorID, updated.SpaceID, updated.ContentType)
 		// RSS-013: regenerate RSS feeds on explicit publish.
 		h.enqueueRSSRegenerate()
 	}
@@ -2584,8 +2584,8 @@ func (h *Handlers) ListUserReactions(w http.ResponseWriter, r *http.Request) {
 // preserves the raw JSON so clients receive a parsed object (§24 data types,
 // §3.3 contract drift).
 type jsonldTemplateResponse struct {
-	ID          string `json:"id"`
-	TenantID    string
+	ID string `json:"id"`
+
 	ContentType string          `json:"content_type"`
 	Template    json.RawMessage `json:"template"`
 	IsActive    bool            `json:"is_active"`

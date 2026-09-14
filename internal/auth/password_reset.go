@@ -21,16 +21,16 @@ const (
 
 // ResetTokenRecord represents a password reset token from the database.
 type ResetTokenRecord struct {
-	UserID    pgtype.UUID
-	TenantID  pgtype.UUID
+	UserID pgtype.UUID
+
 	ExpiresAt time.Time
 	UsedAt    pgtype.Timestamptz
 }
 
 // VerificationTokenRecord represents an email verification token from the database.
 type VerificationTokenRecord struct {
-	UserID     pgtype.UUID
-	TenantID   pgtype.UUID
+	UserID pgtype.UUID
+
 	ExpiresAt  time.Time
 	VerifiedAt pgtype.Timestamptz
 }

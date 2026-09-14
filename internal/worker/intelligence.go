@@ -248,7 +248,6 @@ const intelPayloadVersion = "v1"
 type intelSourcePayload struct {
 	Version  string `json:"version"`
 	SourceID string `json:"source_id"`
-	TenantID string
 }
 
 type intelDetectChangesPayload struct {
@@ -256,20 +255,18 @@ type intelDetectChangesPayload struct {
 	SourceID  string `json:"source_id"`
 	RawDocID  string `json:"raw_doc_id"`
 	PriorHash string `json:"prior_hash"`
-	TenantID  string
 }
 
 type intelExtractPayload struct {
 	Version  string `json:"version"`
 	RecordID string `json:"record_id"`
 	RawDocID string `json:"raw_doc_id"`
-	TenantID string
 }
 
 type intelRecordPayload struct {
-	Version        string `json:"version"`
-	RecordID       string `json:"record_id"`
-	TenantID       string
+	Version  string `json:"version"`
+	RecordID string `json:"record_id"`
+
 	ReviewerUserID string `json:"reviewer_user_id,omitempty"` // INTEL-026: set on approve, empty on auto-publish
 }
 
@@ -278,14 +275,12 @@ type intelPostPublishPayload struct {
 	RecordID   string `json:"record_id"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string
 }
 
 type intelNotifyPayload struct {
 	Version    string `json:"version"`
 	DomainID   string `json:"domain_id"`
 	EntityType string `json:"entity_type"`
-	TenantID   string
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +493,7 @@ func resolveIntelFetchSource(ctx context.Context, p intelSourcePayload) (sourceI
 		return sourceID, tenantID, src, false, fmt.Errorf("task:intel:fetch_source: %w", err)
 	}
 
-	tenantID = parseTenantID(p.TenantID)
+	tenantID = parseTenantID("")
 
 	// Load the source row to resolve crawl_method, source_url, and trust_level.
 	src, err = intelSourcesStore.Get(ctx, sourceID)
@@ -631,7 +626,7 @@ func HandleIntelDetectChanges(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:detect_changes: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	// Load the freshly persisted raw document to get its content_hash.
 	rawDocID, err := scanUUID(p.RawDocID)
@@ -701,7 +696,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:extract: raw_doc_id: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	// Load the raw document to get the source text (body) and source id.
 	rawDoc, err := intelStores.GetIntelRawDocument(ctx, rawDocID)
@@ -745,7 +740,7 @@ func HandleIntelExtract(ctx context.Context, t *asynq.Task) error {
 		return errors.New("task:intel:extract: no records extracted")
 	}
 
-	return intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, p.TenantID, results)
+	return intelPersistExtractedRecords(ctx, rawDoc.SourceID, rawDocID, entityType, "", results)
 }
 
 // intelPersistExtractedRecords persists one intel_record per extraction
@@ -839,7 +834,7 @@ func HandleIntelDedup(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:dedup: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
@@ -941,7 +936,7 @@ func HandleIntelPublishGate(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:publish_gate: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	record, err := intelStores.GetIntelRecord(ctx, recordID)
 	if err != nil {
@@ -1032,7 +1027,7 @@ func HandleIntelPromote(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:promote: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	// Load the record to resolve its entity_type so we can dispatch to the
 	// correct domain promoter from the registry.
@@ -1253,7 +1248,7 @@ func HandleIntelNotifyDiscoveries(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:notify_discoveries: domain_id: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	// Resolve the geo space id for the promoted entity. For scholarships
 	// (and other domains with a country_space_id column), load the row
@@ -1399,7 +1394,7 @@ func HandleIntelRetryFailedSource(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:intel:retry_failed_source: %w", err)
 	}
-	_ = parseTenantID(p.TenantID)
+	_ = parseTenantID("")
 
 	// Verify the source exists before re-enqueuing the fetch.
 	if _, err := intelSourcesStore.Get(ctx, sourceID); err != nil {

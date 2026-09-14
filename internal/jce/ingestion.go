@@ -30,7 +30,6 @@ const (
 // refreshValuesPayload is the JSON body enqueued for a refresh task.
 // It mirrors the payload struct in internal/worker/jce_refresh.go.
 type refreshValuesPayload struct {
-	TenantID       string
 	ContentID      string  `json:"content_id"`
 	SourceKind     *string `json:"source_kind,omitempty"`
 	IngestionJobID string  `json:"ingestion_job_id"`

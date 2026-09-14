@@ -53,7 +53,6 @@ func NewStoreWithReader(database *db.DB) *Store {
 
 // CreateIPBlockInput holds the parameters for creating an IP block.
 type CreateIPBlockInput struct {
-	TenantID  pgtype.UUID
 	CIDR      string
 	BlockType string
 	Reason    *string
@@ -294,7 +293,6 @@ func (s *Store) IsBlocked(ctx context.Context, userA, userB pgtype.UUID) (bool, 
 
 // CreateCensoredWordInput holds parameters for creating a censored word.
 type CreateCensoredWordInput struct {
-	TenantID    pgtype.UUID
 	Pattern     string
 	Action      string
 	Replacement *string

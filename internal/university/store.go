@@ -50,8 +50,8 @@ func (s *Store) DB() *db.DB { return s.db }
 
 // InstructorProfile is the API-facing instructor profile record.
 type InstructorProfile struct {
-	ID              string `json:"id"`
-	TenantID        string
+	ID string `json:"id"`
+
 	UserID          string          `json:"user_id"`
 	DisplayName     string          `json:"display_name"`
 	Headline        *string         `json:"headline,omitempty"`
@@ -468,8 +468,8 @@ func (s *Store) GetCatalogTrackBySlug(ctx context.Context, slug string) (gen.Get
 // (ADR-060). The sqlc-generated row type cannot carry extra fields, so we map
 // it through this struct in the handler.
 type CatalogTrackDetail struct {
-	ID                      pgtype.UUID `json:"id"`
-	TenantID                pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Title                   string             `json:"title"`
 	Slug                    string             `json:"slug"`
 	Description             *string            `json:"description,omitempty"`

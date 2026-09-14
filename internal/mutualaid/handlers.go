@@ -62,7 +62,7 @@ type DMConversationResult struct {
 // Implemented by an adapter around websocket.DMService.
 type dmInitiator interface {
 	GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID, previewMessage string) (DMConversationResult, error)
-	SendMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error
+	SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error
 }
 
 // Handlers exposes the mutual aid board endpoints.
@@ -553,7 +553,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.dm.SendMessage(r.Context(), tenantID, result.ConversationID, user.UserID, message); err != nil {
+	if err := h.dm.SendMessage(r.Context(), result.ConversationID, user.UserID, message); err != nil {
 		slog.Error("mutualaid: dm send failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dm_send_failed", "Failed to send initial message")
 

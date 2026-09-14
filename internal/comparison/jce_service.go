@@ -72,8 +72,8 @@ type CreateJCEComparisonInput struct {
 
 // JCEComparisonResult holds the result of creating a JCE comparison.
 type JCEComparisonResult struct {
-	ID         pgtype.UUID `json:"id"`
-	TenantID   pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	AuthorID   pgtype.UUID `json:"author_id"`
 	Title      string      `json:"title"`
 	Slug       string      `json:"slug"`
@@ -121,7 +121,7 @@ type JCEComparisonListResult struct {
 func (s *Service) createJCEContentAndMetadata(
 	ctx context.Context,
 	q *gen.Queries,
-	tenantID, userID pgtype.UUID,
+	userID pgtype.UUID,
 	input CreateJCEComparisonInput,
 ) (gen.CreateContentRow, gen.ComparisonContentMetadatum, error) {
 	if input.Title == "" {
@@ -251,7 +251,7 @@ func sliceContains(ss []string, s string) bool {
 }
 
 // CreateJCEComparison creates a quick or detailed JCE comparison.
-func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgtype.UUID, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
+func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, input CreateJCEComparisonInput) (JCEComparisonResult, error) {
 	var typeDef *gen.GetComparisonTypeByIDRow
 
 	var typeCfg jceTypeConfig
@@ -302,7 +302,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, tenantID, userID pgty
 	input.Dimensions = dedupeStringDimensions(input.Dimensions)
 
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
-		contentRow, metadata, err := s.createJCEContentAndMetadata(ctx, q, tenantID, userID, input)
+		contentRow, metadata, err := s.createJCEContentAndMetadata(ctx, q, userID, input)
 		if err != nil {
 			return JCEComparisonResult{}, err
 		}
@@ -706,7 +706,7 @@ func (s *Service) DeleteJCEComparison(ctx context.Context, id, userID pgtype.UUI
 }
 
 // PromoteJCEComparison promotes a quick comparison to a new detailed draft.
-func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID pgtype.UUID, bypassOwnership bool) (JCEComparisonResult, error) {
+func (s *Service) PromoteJCEComparison(ctx context.Context, id, userID pgtype.UUID, bypassOwnership bool) (JCEComparisonResult, error) {
 	existing, err := s.GetJCEComparison(ctx, id.String())
 	if err != nil {
 		return JCEComparisonResult{}, fmt.Errorf("getting comparison for promotion: %w", err)
@@ -727,7 +727,7 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, tenantID, userID
 	}
 
 	return db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (JCEComparisonResult, error) {
-		newContent, newMetadata, err := s.createJCEContentAndMetadata(ctx, q, tenantID, userID, CreateJCEComparisonInput{
+		newContent, newMetadata, err := s.createJCEContentAndMetadata(ctx, q, userID, CreateJCEComparisonInput{
 			Title:   existing.Content.Title,
 			Body:    existing.Content.Body,
 			SpaceID: existing.Content.SpaceID,
@@ -952,7 +952,6 @@ func generateToken() (string, error) {
 
 // CreateSelectionTokenInput holds the guest selection payload.
 type CreateSelectionTokenInput struct {
-	TenantID pgtype.UUID
 	TypeSlug string
 	ItemRefs []map[string]any
 }
@@ -1087,7 +1086,7 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, tenantID, us
 		}
 	}
 
-	result, err := s.CreateJCEComparison(ctx, tenantID, userID, input)
+	result, err := s.CreateJCEComparison(ctx, userID, input)
 	if err != nil {
 		return JCEComparisonResult{}, fmt.Errorf("creating comparison from token: %w", err)
 	}

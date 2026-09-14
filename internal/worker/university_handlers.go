@@ -30,7 +30,6 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 	}
 
 	var payload struct {
-		TenantID  string
 		UserID    string `json:"user_id"`
 		TrackID   string `json:"track_id"`
 		PaymentID string `json:"payment_id"`
@@ -43,7 +42,7 @@ func HandleUniversityProcessEnrollment(ctx context.Context, t *asynq.Task) error
 		return err
 	}
 
-	if err := universityProcessor.ProcessEnrollment(ctx, payload.TenantID, payload.UserID,
+	if err := universityProcessor.ProcessEnrollment(ctx, "", payload.UserID,
 		payload.TrackID, payload.PaymentID, payload.Source, payload.GrossKobo); err != nil {
 		slog.Error("task:university:process_enrollment: processor failed", "error", err)
 		return err
@@ -69,7 +68,6 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	}
 
 	var payload struct {
-		TenantID    string
 		PeriodStart string `json:"period_start"`
 		PeriodEnd   string `json:"period_end"`
 	}
@@ -93,9 +91,9 @@ func HandleUniversityCalculatePeriodPayouts(ctx context.Context, t *asynq.Task) 
 	// every tenant so payouts are aggregated platform-wide (BUG-002).
 	var tenantIDs []pgtype.UUID
 
-	if payload.TenantID != "" {
+	if "" != "" {
 		var tid pgtype.UUID
-		if err := tid.Scan(payload.TenantID); err != nil {
+		if err := tid.Scan(""); err != nil {
 			slog.Error("task:university:calculate_period_payouts: invalid id", "error", err)
 			return fmt.Errorf("task:university:calculate_period_payouts: invalid id: %w", err)
 		}
@@ -146,7 +144,6 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 	}
 
 	var payload struct {
-		TenantID string
 		PayoutID string `json:"payout_id"`
 	}
 
@@ -155,7 +152,7 @@ func HandleUniversitySendInstructorPayout(ctx context.Context, t *asynq.Task) er
 		return err
 	}
 
-	if err := universityProcessor.SendInstructorPayout(ctx, payload.TenantID, payload.PayoutID); err != nil {
+	if err := universityProcessor.SendInstructorPayout(ctx, "", payload.PayoutID); err != nil {
 		slog.Error("task:university:send_instructor_payout: processor failed", "error", err)
 		return err
 	}
@@ -175,7 +172,6 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 	}
 
 	var payload struct {
-		TenantID     string
 		InstructorID string `json:"instructor_id"`
 	}
 
@@ -183,7 +179,7 @@ func HandleUniversityNotifyInstructorApproved(ctx context.Context, t *asynq.Task
 		return err
 	}
 
-	return universityProcessor.NotifyInstructorApproved(ctx, payload.TenantID, payload.InstructorID)
+	return universityProcessor.NotifyInstructorApproved(ctx, "", payload.InstructorID)
 }
 
 // HandleUniversityNotifyCourseApproved notifies a creator that their
@@ -197,15 +193,14 @@ func HandleUniversityNotifyCourseApproved(ctx context.Context, t *asynq.Task) er
 	}
 
 	var payload struct {
-		TenantID string
-		TrackID  string `json:"track_id"`
+		TrackID string `json:"track_id"`
 	}
 
 	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		return err
 	}
 
-	return universityProcessor.NotifyCourseApproved(ctx, payload.TenantID, payload.TrackID)
+	return universityProcessor.NotifyCourseApproved(ctx, "", payload.TrackID)
 }
 
 // HandleUniversityFetchLogo downloads a university logo from a remote URL,
@@ -227,7 +222,6 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 	}
 
 	var payload struct {
-		TenantID   string
 		SpaceID    string `json:"space_id"`
 		LogoURL    string `json:"logo_url"`
 		UploadedBy string `json:"uploaded_by"`
@@ -243,7 +237,7 @@ func HandleUniversityFetchLogo(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
-	if err := universityProcessor.FetchLogo(ctx, payload.TenantID, payload.SpaceID, payload.LogoURL, payload.UploadedBy); err != nil {
+	if err := universityProcessor.FetchLogo(ctx, "", payload.SpaceID, payload.LogoURL, payload.UploadedBy); err != nil {
 		slog.Error("task:university:fetch_logo: processor failed", "error", err)
 		return err
 	}

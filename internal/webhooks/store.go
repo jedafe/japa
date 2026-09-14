@@ -16,8 +16,8 @@ import (
 
 // WebhookEndpoint is the configuration for a single outgoing webhook target.
 type WebhookEndpoint struct {
-	ID         pgtype.UUID
-	TenantID   pgtype.UUID
+	ID pgtype.UUID
+
 	Name       string
 	URL        string
 	Secret     string
@@ -28,8 +28,8 @@ type WebhookEndpoint struct {
 
 // WebhookDelivery is a single delivery attempt record stored in the database.
 type WebhookDelivery struct {
-	ID               pgtype.UUID
-	TenantID         pgtype.UUID
+	ID pgtype.UUID
+
 	EndpointID       pgtype.UUID
 	EventID          pgtype.UUID
 	EventType        string
@@ -46,8 +46,8 @@ type WebhookDelivery struct {
 
 // WebhookDeliveryResponse is the JSON-safe representation of a webhook delivery.
 type WebhookDeliveryResponse struct {
-	ID               string `json:"id"`
-	TenantID         string
+	ID string `json:"id"`
+
 	EndpointID       string     `json:"endpoint_id"`
 	EventID          string     `json:"event_id"`
 	EventType        string     `json:"event_type"`

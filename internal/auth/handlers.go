@@ -176,8 +176,8 @@ type Querier interface {
 
 // User represents a user record from the database.
 type User struct {
-	ID              pgtype.UUID
-	TenantID        pgtype.UUID
+	ID pgtype.UUID
+
 	Email           string
 	PasswordHash    pgtype.Text
 	Username        string
@@ -189,9 +189,9 @@ type User struct {
 
 // RefreshToken represents a refresh token record.
 type RefreshToken struct {
-	ID        pgtype.UUID
-	UserID    pgtype.UUID
-	TenantID  pgtype.UUID
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+
 	TokenHash string
 	ExpiresAt time.Time
 	RevokedAt pgtype.Timestamptz
@@ -552,7 +552,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasTOTP {
-		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID, user.TenantID)
+		challengeToken, err := h.KeyRotation.MintTOTPChallengeToken(user.ID, (pgtype.UUID{}))
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create challenge token")
 			return
@@ -573,7 +573,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, user.TenantID)
+	accessToken, err := h.KeyRotation.MintAccessToken(user.ID, (pgtype.UUID{}))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -717,7 +717,7 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	accessToken, err := h.KeyRotation.MintAccessToken(stored.UserID, stored.TenantID)
+	accessToken, err := h.KeyRotation.MintAccessToken(stored.UserID, (pgtype.UUID{}))
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "token_error", "Failed to create session")
 		return
@@ -791,7 +791,7 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	var tenantID pgtype.UUID
-	if err := tenantID.Scan(claims.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}
@@ -897,7 +897,7 @@ func (h *AuthHandlers) ConsumeBackupCode(w http.ResponseWriter, r *http.Request)
 	}
 
 	var tenantID pgtype.UUID
-	if err := tenantID.Scan(claims.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
 	}

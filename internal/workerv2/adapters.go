@@ -190,7 +190,6 @@ func NewImportAdapter(svc *contentimport.Service, database *db.DB) *ImportAdapte
 
 // importRow holds the fields needed to call ProcessSource.
 type importRow struct {
-	TenantID   pgtype.UUID
 	SourceType string
 	SourceURL  string
 }
@@ -216,7 +215,7 @@ func (a *ImportAdapter) ProcessSource(ctx context.Context, importID pgtype.UUID)
 		return err
 	}
 
-	return a.svc.ProcessSource(ctx, r.TenantID, importID, r.SourceType, r.SourceURL)
+	return a.svc.ProcessSource(ctx, (pgtype.UUID{}), importID, r.SourceType, r.SourceURL)
 }
 
 // FetchMedia delegates to the contentimport service's FetchMedia method,
@@ -542,7 +541,7 @@ func (a *ReferralAdapter) RecordClick(ctx context.Context, code, sessionID, ip, 
 // CheckConversion runs the referral conversion check for a successful payment.
 // Delegates to referral.Service.CheckConversion which looks up the payer's
 // referral row, runs fraud checks, and transitions pending→qualified→credited.
-func (a *ReferralAdapter) CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error {
+func (a *ReferralAdapter) CheckConversion(ctx context.Context, payerID, paymentID pgtype.UUID, sessionID string) error {
 	return a.svc.CheckConversion(ctx, payerID, paymentID, sessionID)
 }
 

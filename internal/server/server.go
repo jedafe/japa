@@ -7528,7 +7528,7 @@ func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
 	tenantID, initiatorID, recipientID pgtype.UUID,
 	previewMessage string,
 ) (mutualaid.DMConversationResult, error) {
-	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, tenantID, initiatorID, recipientID, previewMessage)
+	result, err := a.dm.GetOrCreateConversationForInitiator(ctx, initiatorID, recipientID, previewMessage)
 	if err != nil {
 		return mutualaid.DMConversationResult{}, err
 	}
@@ -7541,10 +7541,10 @@ func (a *mutualAidDMAdapter) GetOrCreateConversationForInitiator(
 
 func (a *mutualAidDMAdapter) SendMessage(
 	ctx context.Context,
-	tenantID, conversationID, senderID pgtype.UUID,
+	conversationID, senderID pgtype.UUID,
 	body string,
 ) error {
-	return a.dm.SendMessage(ctx, tenantID, conversationID, senderID, body)
+	return a.dm.SendMessage(ctx, conversationID, senderID, body)
 }
 
 // personaActionDispatcher adapts the existing action services (comments,
@@ -7591,7 +7591,7 @@ func (d *personaActionDispatcher) CreateForumThread(ctx context.Context, persona
 	return t.ID, nil
 }
 
-func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error) {
+func (d *personaActionDispatcher) CreateForumReply(ctx context.Context, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error) {
 	r, err := d.forum.CreateReply(ctx, threadID, personaUserID, forum.CreateReplyInput{
 		Body: body,
 	})

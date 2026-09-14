@@ -309,7 +309,7 @@ func (s *Service) GetPublicProfileByUsername(ctx context.Context, username strin
 // overwritten; nil fields are left unchanged via a read-then-merge strategy.
 // Supports both URL-based (avatar_url/cover_url) and media-system
 // (avatar_media_id/header_media_id) fields per Section 50 (BUG-004).
-func (s *Service) UpdateProfile(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateProfileRequest) error {
+func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *UpdateProfileRequest) error {
 	// BUG-002: Wrap the read-merge-upsert in a transaction with a FOR UPDATE
 	// lock on the user_profiles row so two concurrent PATCH /me/profile
 	// calls cannot both read the same baseline and the second write
@@ -818,7 +818,7 @@ func (s *Service) GetPrivacySettings(ctx context.Context, userID pgtype.UUID) (*
 // UPDATE lock on the user_privacy_settings row so two concurrent PATCH
 // /me/privacy calls cannot both read the same baseline and the second
 // write overwrite the first (lost update).
-func (s *Service) UpdatePrivacySettings(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
+func (s *Service) UpdatePrivacySettings(ctx context.Context, userID pgtype.UUID, req *UpdatePrivacyRequest) error {
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
 		// Read current settings with FOR UPDATE lock held until commit.
 		current, err := s.store.getUserPrivacySettingsForUpdateTx(ctx, q, userID)
@@ -1600,7 +1600,7 @@ type UpdateAccountResult struct {
 // commit. This prevents two concurrent PATCH /me/account requests from
 // both passing the uniqueness check and both writing, which would create
 // a duplicate username or email.
-func (s *Service) UpdateAccount(ctx context.Context, tenantID, userID pgtype.UUID, req *UpdateAccountRequest) (*UpdateAccountResult, error) {
+func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *UpdateAccountRequest) (*UpdateAccountResult, error) {
 	result, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (*UpdateAccountResult, error) {
 		txResult := &UpdateAccountResult{}
 

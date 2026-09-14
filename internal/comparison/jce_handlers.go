@@ -246,7 +246,7 @@ func marshalItemRef(ref any) []byte {
 
 // CreateJCEComparison handles POST /api/v1/jce/comparisons.
 func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -321,7 +321,7 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := h.Service.CreateJCEComparison(r.Context(), tenantID, user.UserID, CreateJCEComparisonInput{
+	res, err := h.Service.CreateJCEComparison(r.Context(), user.UserID, CreateJCEComparisonInput{
 		Title:         body.Title,
 		Body:          body.Body,
 		SpaceID:       spaceID,
@@ -510,7 +510,7 @@ func (h *Handlers) DeleteJCEComparison(w http.ResponseWriter, r *http.Request) {
 
 // PromoteJCEComparison handles POST /api/v1/jce/comparisons/{id}/promote.
 func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) {
-	tenantID, ok := h.requireTenant(w, r)
+	_, ok := h.requireTenant(w, r)
 	if !ok {
 		return
 	}
@@ -528,7 +528,7 @@ func (h *Handlers) PromoteJCEComparison(w http.ResponseWriter, r *http.Request) 
 
 	bypass := hasAnyPermission(r, user, "comparison.edit_any")
 
-	res, err := h.Service.PromoteJCEComparison(r.Context(), id, tenantID, user.UserID, bypass)
+	res, err := h.Service.PromoteJCEComparison(r.Context(), id, user.UserID, bypass)
 	if err != nil {
 		if errors.Is(err, errpkg.ErrForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only promote your own comparisons")

@@ -31,8 +31,8 @@ const (
 
 // Block represents a pagebuilder_blocks row.
 type Block struct {
-	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name          string             `json:"name"`
 	Slug          string             `json:"slug"`
 	Category      string             `json:"category"`
@@ -76,8 +76,8 @@ type UpdateBlockInput struct {
 
 // Template represents a pagebuilder_templates row.
 type Template struct {
-	ID               pgtype.UUID `json:"id"`
-	TenantID         pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name             string             `json:"name"`
 	Slug             string             `json:"slug"`
 	Description      *string            `json:"description"`
@@ -121,8 +121,8 @@ type UpdateTemplateInput struct {
 
 // Theme represents a pagebuilder_themes row.
 type Theme struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name        string             `json:"name"`
 	Slug        string             `json:"slug"`
 	Description *string            `json:"description"`
@@ -162,8 +162,8 @@ type UpdateThemeInput struct {
 
 // Page represents a pages row.
 type Page struct {
-	ID          pgtype.UUID `json:"id"`
-	TenantID    pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Title       string              `json:"title"`
 	Slug        string              `json:"slug"`
 	Description *string             `json:"description"`

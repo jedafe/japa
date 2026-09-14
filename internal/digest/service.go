@@ -177,11 +177,10 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailD
 // AdminListFilter holds admin list filter parameters (§84 admin pattern:
 // filter + sort + paginate, no infinite scroll).
 type AdminListFilter struct {
-	TenantID pgtype.UUID
-	SpaceID  pgtype.UUID
-	Status   string // draft|review|published|cancelled
-	Sort     string // created_at|published_at|scheduled_for (default: created_at)
-	Order    string // asc|desc (default: desc)
+	SpaceID pgtype.UUID
+	Status  string // draft|review|published|cancelled
+	Sort    string // created_at|published_at|scheduled_for (default: created_at)
+	Order   string // asc|desc (default: desc)
 }
 
 // AdminList returns all digest editions for admin management (paginated,
@@ -402,7 +401,7 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 
 	for _, e := range published {
 		// Clear the draft review lock (mirrors AdminPublish, §84).
-		s.clearDraftLock(ctx, e.TenantID, e.ID)
+		s.clearDraftLock(ctx, (pgtype.UUID{}), e.ID)
 
 		// Fire-and-forget: enqueue digest:send_email so subscribed members
 		// receive the now-published edition. A failed enqueue is logged but

@@ -383,7 +383,7 @@ var (
 // non-mutual-follow senders so the recipient can see what the requester
 // wants to say (Section 48: "first message text; shown in the request
 // preview").
-func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, senderID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
+func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
 		return ConversationResult{}, errors.New("cannot create conversation with yourself")
@@ -479,7 +479,7 @@ func (s *DMService) GetOrCreateConversation(ctx context.Context, tenantID, sende
 }
 
 // SendMessage sends a message in a conversation.
-func (s *DMService) SendMessage(ctx context.Context, tenantID, conversationID, senderID pgtype.UUID, body string) error {
+func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pgtype.UUID, body string) error {
 	if body == "" {
 		return errors.New("message body cannot be empty")
 	}
@@ -823,8 +823,8 @@ func (s *DMService) DeleteMessage(ctx context.Context, conversationID, messageID
 // checking blocks and privacy settings per Section 48. The previewMessage
 // is stored as the dm_requests.preview_message when a message request is
 // created for a non-mutual-follow sender (Section 48 spec).
-func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, tenantID, initiatorID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
-	return s.GetOrCreateConversation(ctx, tenantID, initiatorID, recipientID, previewMessage)
+func (s *DMService) GetOrCreateConversationForInitiator(ctx context.Context, initiatorID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
+	return s.GetOrCreateConversation(ctx, initiatorID, recipientID, previewMessage)
 }
 
 // GetOtherParticipant returns the ID of the other participant in a

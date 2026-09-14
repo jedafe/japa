@@ -3,14 +3,13 @@ package literals
 import (
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/literals/expr"
 )
 
 // TemplateLiteral is the runtime model for a tenant token definition.
 type TemplateLiteral struct {
-	ID          string
-	TenantID    string
+	ID string
+
 	Key         string
 	Kind        string
 	Value       string
@@ -31,7 +30,6 @@ type RenderContext struct {
 	DestinationCountry string
 	DestinationCode    string
 	TenantName         string
-	TenantID           pgtype.UUID
 }
 
 // reservedKeys are built-in variable and function names that cannot be

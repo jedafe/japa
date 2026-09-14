@@ -450,8 +450,8 @@ func (h *Handlers) HandleAdminRetryImport(w http.ResponseWriter, r *http.Request
 
 // importResponse is the JSON representation of a content_imports row.
 type importResponse struct {
-	ID            string `json:"id"`
-	TenantID      string
+	ID string `json:"id"`
+
 	UserID        string          `json:"user_id"`
 	SourceType    string          `json:"source_type"`
 	SourceURL     *string         `json:"source_url"`

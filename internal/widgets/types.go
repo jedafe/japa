@@ -15,8 +15,8 @@ import (
 
 // Widget is a widget_configurations row.
 type Widget struct {
-	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Name         string          `json:"name"`
 	WidgetType   string          `json:"widget_type"`
 	Config       json.RawMessage `json:"config"`

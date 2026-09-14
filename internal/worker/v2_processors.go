@@ -79,7 +79,7 @@ type RemittanceProcessor interface {
 // ReferralProcessor handles referral background tasks (§60, ADR-078).
 type ReferralProcessor interface {
 	RecordClick(ctx context.Context, code, sessionID, ip, userAgent string) error
-	CheckConversion(ctx context.Context, tenantID, payerID, paymentID pgtype.UUID, sessionID string) error
+	CheckConversion(ctx context.Context, payerID, paymentID pgtype.UUID, sessionID string) error
 	ReviewFlagged(ctx context.Context, referralID pgtype.UUID) error
 }
 
@@ -688,7 +688,7 @@ func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "referral:check_conversion", referralProcessor != nil,
 		[]string{"payer_id", "payment_id"},
 		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
-			return referralProcessor.CheckConversion(ctx, ids[0], ids[1], ids[2], p["session_id"])
+			return referralProcessor.CheckConversion(ctx, ids[1], ids[2], p["session_id"])
 		})
 }
 

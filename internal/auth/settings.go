@@ -163,8 +163,11 @@ func RequireTOTPForAdmin(
 // falling back to the AuthenticatedUser's TenantID when the tenant
 // middleware hasn't set it (e.g., during early bootstrap).
 func tenantIDFromRequest(r *http.Request) pgtype.UUID {
-	if user := FromContext(r.Context()); user != nil && user.TenantID.Valid {
-		return user.TenantID
+	if user := FromContext(r.Context()); user != nil &&
+		(pgtype.UUID{}).
+			Valid {
+		return (pgtype.UUID{})
+
 	}
 
 	return pgtype.UUID{}

@@ -74,8 +74,8 @@ type StandardRow struct {
 
 // SessionRow holds a single cv_format_sessions row.
 type SessionRow struct {
-	ID                 pgtype.UUID
-	TenantID           pgtype.UUID
+	ID pgtype.UUID
+
 	UserID             pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
@@ -278,7 +278,6 @@ WHERE cs.id = $1
 
 // SessionInput holds the fields for creating a new cv_format_sessions row.
 type SessionInput struct {
-	TenantID           pgtype.UUID
 	UserID             pgtype.UUID
 	OriginSpaceID      pgtype.UUID
 	DestinationSpaceID pgtype.UUID
@@ -321,8 +320,9 @@ RETURNING id, user_id, origin_space_id, destination_space_id,
 	var r SessionRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		input.TenantID, input.UserID, input.OriginSpaceID,
+		ctx, q, (pgtype.UUID{}),
+
+		input.UserID, input.OriginSpaceID,
 		input.DestinationSpaceID, input.InputText, outputFormat,
 		input.AIModel, input.AIPromptHash,
 		input.OriginalFilename, input.FileStoragePath,

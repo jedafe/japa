@@ -67,8 +67,8 @@ func NewStore(database *db.DB) *Store {
 // (destination + city) + users (submitter), returned by list and
 // get-by-slug queries.
 type OrgRow struct {
-	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
+	ID pgtype.UUID
+
 	Name                 string
 	Slug                 string
 	OrgType              string
@@ -111,7 +111,6 @@ type OrgRow struct {
 // CreateOrgInput holds the fields for inserting a new community
 // organisation row.
 type CreateOrgInput struct {
-	TenantID             pgtype.UUID
 	Name                 string      `json:"name"`
 	Slug                 string      `json:"slug"`
 	OrgType              string      `json:"org_type"`
@@ -168,8 +167,9 @@ RETURNING id
 	var id pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q,
-		in.TenantID, in.Name, in.Slug, in.OrgType, in.OriginCommunity,
+		ctx, q, (pgtype.UUID{}),
+
+		in.Name, in.Slug, in.OrgType, in.OriginCommunity,
 		in.DestinationSpaceID, in.CitySpaceID, in.Address, in.Latitude, in.Longitude,
 		in.WebsiteURL, in.MeetingFrequency, in.ContactInfo,
 		in.JapaconnectSpaceID, in.JapaconnectOrgID,
@@ -422,7 +422,6 @@ WHERE id = $%d AND deleted_at IS NULL
 // ListOrgsFilter holds the filter parameters for listing community
 // organisations.
 type ListOrgsFilter struct {
-	TenantID           pgtype.UUID
 	DestinationSpaceID pgtype.UUID // optional
 	CitySpaceID        pgtype.UUID // optional
 	OriginCommunity    string      // optional
@@ -732,7 +731,6 @@ WHERE id = $1 AND deleted_at IS NULL
 
 // AdminListFilter holds filter parameters for the admin moderation list.
 type AdminListFilter struct {
-	TenantID           pgtype.UUID
 	Status             string      // optional
 	Q                  string      // optional: search name
 	DestinationSpaceID pgtype.UUID // optional: geo-aware ?dest= filter

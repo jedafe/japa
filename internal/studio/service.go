@@ -174,7 +174,7 @@ func (s *Service) CreateJob(ctx context.Context, createdBy pgtype.UUID, in Creat
 // content:generate_draft jobs respecting studio.max_concurrent_jobs
 // (ADR-076 §2/§7). This avoids flooding the AI gateway and keeps the HTTP
 // request fast — batch generation is inherently asynchronous.
-func (s *Service) CreateBatch(ctx context.Context, tenantID, createdBy pgtype.UUID, in CreateBatchInput) (Batch, []Job, error) {
+func (s *Service) CreateBatch(ctx context.Context, createdBy pgtype.UUID, in CreateBatchInput) (Batch, []Job, error) {
 	if !s.isEnabled(ctx) {
 		return Batch{}, nil, errors.New("studio: feature is disabled")
 	}
@@ -669,7 +669,7 @@ func (s *Service) RetryFailed(ctx context.Context, jobID pgtype.UUID) error {
 
 // EnqueueRetryFailed enqueues a studio:retry_failed task for a batch. Called
 // by the HTTP handler so batch retry is asynchronous (ADR-076 §7).
-func (s *Service) EnqueueRetryFailed(ctx context.Context, tenantID, batchID pgtype.UUID) error {
+func (s *Service) EnqueueRetryFailed(ctx context.Context, batchID pgtype.UUID) error {
 	return s.enqueueRetryFailed(ctx, batchID)
 }
 

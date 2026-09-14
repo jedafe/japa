@@ -445,7 +445,7 @@ func (s *Service) canCreateComparisonForType(ctx context.Context, typeID, userID
 // Ref: japaconnect-engineering/sections/30-generic-comparison-system.md.
 //
 //nolint:gocyclo // Creates content, type-specific dimensions, caller-supplied dimensions, and items in one transaction.
-func (s *Service) CreateComparison(ctx context.Context, tenantID, userID pgtype.UUID, input CreateComparisonInput) (CreateComparisonResult, error) {
+func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, input CreateComparisonInput) (CreateComparisonResult, error) {
 	if input.Title == "" {
 		return CreateComparisonResult{}, errors.New("title is required")
 	}

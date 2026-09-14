@@ -203,7 +203,7 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 	argIdx := 2
 
 	if spaceID != nil {
@@ -284,7 +284,9 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 		GROUP BY t.id, t.name, t.slug
 		ORDER BY usage_count DESC, t.name ASC
 		LIMIT $1
-	`, w.TenantID, limit)
+	`, (pgtype.UUID{}),
+
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering trending_tags: %w", err)
 	}
@@ -384,7 +386,9 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 		GROUP BY u.id, u.username, up.display_name, up.avatar_url
 		ORDER BY points DESC
 		LIMIT $1
-	`, w.TenantID, limit)
+	`, (pgtype.UUID{}),
+
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering user_leaderboard: %w", err)
 	}
@@ -470,7 +474,9 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 		WHERE s.deleted_at IS NULL
 		ORDER BY s.created_at DESC
 		LIMIT $1
-	`, w.TenantID, limit)
+	`, (pgtype.UUID{}),
+
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering featured_spaces: %w", err)
 	}
@@ -566,7 +572,7 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'
 	            AND (cf.featured_until IS NULL OR cf.featured_until > now())`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 	argIdx := 2
 
 	if spaceID != nil {
@@ -666,7 +672,7 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	          LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'blog_post'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if spaceID != nil {
@@ -754,7 +760,7 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 		query += " AND ft.solved = false AND ft.reply_count = 0"
 	}
 
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if spaceID != nil {
@@ -823,7 +829,7 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'job_listing'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if spaceID != nil {
@@ -901,7 +907,7 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'achievement'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if milestoneType != "" {
@@ -973,7 +979,7 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	          FROM learning_tracks lt
 	          LEFT JOIN media m ON m.id = lt.cover_media_id AND m.deleted_at IS NULL
 	          WHERE lt.is_published = true`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if difficulty != "" {
@@ -1041,7 +1047,7 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	                 content, email_sent
 	          FROM digest_editions
 	          WHERE status = 'published'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if spaceID != nil {
@@ -1112,7 +1118,7 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	          FROM reviews r
 	          LEFT JOIN users u ON u.id = r.reviewer_user_id AND u.deleted_at IS NULL
 	          WHERE r.status = 'published'`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if entityType != "" {
@@ -1180,7 +1186,9 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 		
 		ORDER BY ci.created_at DESC
 		LIMIT $1
-	`, w.TenantID, limit)
+	`, (pgtype.UUID{}),
+
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering comparisons: %w", err)
 	}
@@ -1239,7 +1247,7 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 	                 website_url, is_verified, is_active
 	          FROM community_organisations
 	          WHERE is_active = true`
-	args := []any{w.TenantID}
+	args := []any{(pgtype.UUID{})}
 
 	argIdx := 2
 	if orgType != "" {
@@ -1315,7 +1323,9 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 		  AND mp.is_available = true
 		ORDER BY mp.rating_avg DESC, mp.session_count DESC
 		LIMIT $1
-	`, w.TenantID, limit)
+	`, (pgtype.UUID{}),
+
+		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering mentor_spotlight: %w", err)
 	}

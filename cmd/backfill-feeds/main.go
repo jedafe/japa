@@ -43,9 +43,9 @@ func main() {
 	defer rows.Close()
 
 	type contentRow struct {
-		ContentID   pgtype.UUID
-		AuthorID    pgtype.UUID
-		TenantID    pgtype.UUID
+		ContentID pgtype.UUID
+		AuthorID  pgtype.UUID
+
 		ContentType string
 	}
 

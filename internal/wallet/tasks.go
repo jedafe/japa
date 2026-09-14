@@ -16,8 +16,7 @@ import (
 
 // ProcessActivityEventPayload holds the payload for the process_activity_event task.
 type ProcessActivityEventPayload struct {
-	EventID  string `json:"event_id"`
-	TenantID string
+	EventID string `json:"event_id"`
 }
 
 // EnqueueProcessActivityEvent enqueues a task to process an activity event.
@@ -50,7 +49,7 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 		return fmt.Errorf("invalid event_id: %w", err)
 	}
 
-	if err := tenantID.Scan(p.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		return fmt.Errorf("invalid id: %w", err)
 	}
 
@@ -61,8 +60,8 @@ func (s *Service) ProcessActivityEventTask(ctx context.Context, payload []byte) 
 // wallet:process_credit_purchase task (Section 58). Enqueued by the payment
 // webhook handler when a credit_purchase payment transitions to "succeeded".
 type ProcessCreditPurchasePayload struct {
-	PaymentID      string `json:"payment_id"`
-	TenantID       string
+	PaymentID string `json:"payment_id"`
+
 	UserID         string `json:"user_id"`
 	CreditsToGrant int    `json:"credits_to_grant"`
 	CurrencyCode   string `json:"currency_code"`
@@ -79,7 +78,7 @@ func (s *Service) ProcessCreditPurchaseTask(ctx context.Context, payload []byte)
 	}
 
 	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		return fmt.Errorf("invalid id: %w", err)
 	}
 
@@ -168,7 +167,6 @@ func (s *Service) grantCreditsFromPurchase(ctx context.Context, tenantID, userID
 // user_id + reason + reference. Callers that need a cross-reference
 // idempotency scope (e.g. assessment completion per form) should provide one.
 type AwardPointsPayload struct {
-	TenantID       string
 	UserID         string `json:"user_id"`
 	Points         int64  `json:"points"`
 	Amount         int64  `json:"amount"`
@@ -189,7 +187,7 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 	}
 
 	var tenantID, userID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		return fmt.Errorf("wallet:award_points: invalid id: %w", err)
 	}
 
@@ -274,7 +272,6 @@ func (s *Service) AwardPointsTask(ctx context.Context, payload []byte) error {
 // campaign refund (credit back). The organization_id is resolved to the
 // org owner's user_id for the ledger entry.
 type DeductCreditsPayload struct {
-	TenantID       string
 	OrganizationID string `json:"organization_id"`
 	UserID         string `json:"user_id,omitempty"`
 	Amount         int64  `json:"amount"`
@@ -294,7 +291,7 @@ func (s *Service) DeductCreditsTask(ctx context.Context, payload []byte) error {
 	}
 
 	var tenantID pgtype.UUID
-	if err := tenantID.Scan(p.TenantID); err != nil {
+	if err := tenantID.Scan(""); err != nil {
 		return fmt.Errorf("wallet:deduct_credits: invalid id: %w", err)
 	}
 

@@ -53,8 +53,8 @@ type TaskEnqueuer interface {
 
 // Program represents the referral program settings for a tenant.
 type Program struct {
-	ID                  pgtype.UUID `json:"id"`
-	TenantID            pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	ReferrerRewardCents int32              `json:"referrer_reward_cents"`
 	RefereeRewardCents  int32              `json:"referee_reward_cents"`
 	MaxReferrals        int32              `json:"max_referrals"`
@@ -691,8 +691,8 @@ func (s *Service) AdminListFlagged(ctx context.Context, page, limit int) ([]gen.
 
 // Referral represents a single referral record (legacy struct for old routes).
 type Referral struct {
-	ID                  pgtype.UUID `json:"id"`
-	TenantID            pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	ReferrerID          pgtype.UUID         `json:"referrer_id"`
 	RefereeID           *pgtype.UUID        `json:"referee_id,omitempty"`
 	ReferralCode        string              `json:"referral_code"`

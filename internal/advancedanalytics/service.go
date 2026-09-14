@@ -454,7 +454,8 @@ func (h *Handlers) HandleExport(w http.ResponseWriter, r *http.Request) {
 // writes a 401 error + false if no authenticated user is present.
 func requireAuthUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	u := auth.FromContext(r.Context())
-	if u == nil || !u.UserID.Valid || !u.TenantID.Valid {
+	if u == nil || !u.UserID.Valid || !(pgtype.UUID{}).
+		Valid {
 		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return nil, false
 	}

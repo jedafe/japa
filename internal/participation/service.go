@@ -67,7 +67,7 @@ type ActionDispatcher interface {
 	// leaving an orphan published content row).
 	CreateForumThread(ctx context.Context, personaUserID, contentID, spaceID pgtype.UUID, title, slug string, body []byte) (pgtype.UUID, error)
 	// CreateForumReply posts a reply to a forum thread (forum_answer action).
-	CreateForumReply(ctx context.Context, tenantID, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
+	CreateForumReply(ctx context.Context, personaUserID, threadID pgtype.UUID, body []byte) (pgtype.UUID, error)
 	// ToggleFollow follows the target entity as the persona.
 	ToggleFollow(ctx context.Context, tenantID, personaUserID pgtype.UUID, entityType string, entityID pgtype.UUID) error
 	// AddReaction adds a reaction to the target entity as the persona.
@@ -228,7 +228,7 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	totalToday := s.getDailyCounter(ctx, personaID, today, "total")
 
 	var tenantUUID pgtype.UUID
-	_ = tenantUUID.Scan(persona.TenantID)
+	_ = tenantUUID.Scan("")
 	globalCap := s.getGlobalDailyCap(ctx)
 	globalToday := s.getGlobalDailyCounter(ctx, tenantUUID, today)
 
@@ -447,7 +447,7 @@ func (s *Service) dispatchNonContentAction(ctx context.Context, payload actionPa
 			return fmt.Errorf("participation: find forum thread for answer: %w", err)
 		}
 
-		_, err = s.dispatcher.CreateForumReply(ctx, tenantID, personaUserID, threadID, payload.Body)
+		_, err = s.dispatcher.CreateForumReply(ctx, personaUserID, threadID, payload.Body)
 
 		return err
 	case "follow":
@@ -606,7 +606,7 @@ func (s *Service) loadPersona(ctx context.Context, personaID pgtype.UUID) (perso
 // run_activity cycle within the cache window.
 func (s *Service) findEligibleContent(ctx context.Context, persona personas.PersonaDetail, policy ActivityPolicy) ([]eligibleContent, error) {
 	var tenantID, userID pgtype.UUID
-	_ = tenantID.Scan(persona.TenantID)
+	_ = tenantID.Scan("")
 	_ = userID.Scan(persona.UserID)
 
 	minAge := time.Now().Add(-time.Duration(policy.MinContentAgeHours) * time.Hour)
@@ -804,7 +804,7 @@ type actionPayload struct {
 // human approval) or "approved" (autonomous dispatch).
 func (s *Service) createPersonaAction(ctx context.Context, persona personas.PersonaDetail, content eligibleContent, actionType, status string) (reviewID, contentID pgtype.UUID, payload actionPayload, err error) {
 	var tenantID, userID, profileID pgtype.UUID
-	_ = tenantID.Scan(persona.TenantID)
+	_ = tenantID.Scan("")
 	_ = userID.Scan(persona.UserID)
 	_ = profileID.Scan(persona.ProfileID)
 
@@ -899,7 +899,7 @@ func (s *Service) routeToReviewQueue(ctx context.Context, persona personas.Perso
 	}
 
 	var tenantID, userID pgtype.UUID
-	_ = tenantID.Scan(persona.TenantID)
+	_ = tenantID.Scan("")
 	_ = userID.Scan(persona.UserID)
 
 	// Record a synthetic platform_event for the queued action (ADR-068 §4, P10).

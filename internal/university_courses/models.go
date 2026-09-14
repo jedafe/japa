@@ -7,8 +7,8 @@ import (
 // CourseCatalog is a canonical university course definition, independent of
 // the offering university.
 type CourseCatalog struct {
-	ID                   pgtype.UUID
-	TenantID             pgtype.UUID
+	ID pgtype.UUID
+
 	Title                string
 	Slug                 string
 	Description          *string

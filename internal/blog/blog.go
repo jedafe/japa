@@ -40,7 +40,6 @@ const (
 // the listing query.
 // //nolint:revive // exported: stutter naming is intentional
 type BlogListFilter struct {
-	TenantID pgtype.UUID
 	SpaceID  pgtype.UUID // zero → no filter
 	AuthorID pgtype.UUID // zero → no filter
 	SeriesID pgtype.UUID // zero → no filter
@@ -52,8 +51,8 @@ type BlogListFilter struct {
 // It mirrors the underlying blog_series row plus a computed cover_image_url
 // built from the linked media storage bucket/path (Section 34).
 type Series struct {
-	ID            pgtype.UUID `json:"id"`
-	TenantID      pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	Title         string             `json:"title"`
 	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`

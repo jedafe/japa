@@ -37,8 +37,8 @@ func NewStore(database *db.DB) *Store {
 // DigestEdition represents a single digest_editions row.
 // //nolint:revive // exported: stutter naming is intentional
 type DigestEdition struct {
-	ID           pgtype.UUID
-	TenantID     pgtype.UUID
+	ID pgtype.UUID
+
 	SpaceID      pgtype.UUID
 	Cadence      string
 	Status       string // draft|review|published|cancelled (§84)
@@ -55,8 +55,8 @@ type DigestEdition struct {
 // EditionRow is the full row shape for digest_editions returned by update
 // and read-back operations. JSON tags keep AI tool payloads snake_case.
 type EditionRow struct {
-	ID           pgtype.UUID `json:"id"`
-	TenantID     pgtype.UUID
+	ID pgtype.UUID `json:"id"`
+
 	SpaceID      pgtype.UUID        `json:"space_id,omitempty"`
 	Cadence      string             `json:"cadence"`
 	Status       string             `json:"status"`
@@ -178,13 +178,12 @@ WHERE status = 'published'
 
 // ListEditionsFilter holds filter parameters for the admin edition list.
 type ListEditionsFilter struct {
-	TenantID pgtype.UUID
-	SpaceID  pgtype.UUID
-	Status   string
-	Sort     string // created_at|published_at|scheduled_for (default: created_at)
-	Order    string // asc|desc (default: desc)
-	Limit    int32
-	Offset   int32
+	SpaceID pgtype.UUID
+	Status  string
+	Sort    string // created_at|published_at|scheduled_for (default: created_at)
+	Order   string // asc|desc (default: desc)
+	Limit   int32
+	Offset  int32
 }
 
 // allowedSortColumns maps sort keys to their qualified column names. Only
@@ -469,8 +468,7 @@ WHERE id = $1 AND status IN ('draft', 'review', 'scheduled')
 // PublishedEdition is the minimal row returned by AutoPublishDueEditions so
 // the service can clear draft locks and enqueue digest:send_email per edition.
 type PublishedEdition struct {
-	ID       pgtype.UUID
-	TenantID pgtype.UUID
+	ID pgtype.UUID
 }
 
 // AutoPublishDueEditions publishes every draft/review edition whose

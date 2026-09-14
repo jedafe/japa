@@ -283,9 +283,9 @@ func (s *Service) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]g
 
 // AddTagModeratorInput holds parameters for assigning a tag moderator.
 type AddTagModeratorInput struct {
-	TagID            pgtype.UUID
-	UserID           pgtype.UUID
-	TenantID         pgtype.UUID
+	TagID  pgtype.UUID
+	UserID pgtype.UUID
+
 	AssignedBy       string
 	AssignedByUserID pgtype.UUID
 }

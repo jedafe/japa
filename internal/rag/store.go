@@ -147,8 +147,7 @@ func (s *Store) CountEntityChunks(ctx context.Context, entityType string, entity
 
 // PublishedContentID is a single published content ID for re-index batching.
 type PublishedContentID struct {
-	ID       pgtype.UUID
-	TenantID pgtype.UUID
+	ID pgtype.UUID
 }
 
 // ListPublishedContentIDs returns a batch of published content IDs for

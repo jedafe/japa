@@ -116,7 +116,7 @@ func (s *Service) EvaluateForWallet(ctx context.Context, tenantID, userID pgtype
 		return fmt.Errorf("gamification: lifetime points lookup: %w", err)
 	}
 
-	if _, err := s.EvaluatePointsBadges(ctx, tenantID, userID, lifetime); err != nil {
+	if _, err := s.EvaluatePointsBadges(ctx, userID, lifetime); err != nil {
 		return err
 	}
 
